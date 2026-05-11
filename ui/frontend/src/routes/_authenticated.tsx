@@ -1,13 +1,36 @@
+import { useEffect, useRef } from 'react';
 import { createFileRoute, Outlet } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { RouteGuard } from '@/components/route-guard';
 import { Sidebar, MobileNav } from '@/components/navigation';
 import { useHealthStatus } from '@/hooks/use-health-status';
+import { useActiveJob } from '@/hooks';
+import { gameKeys } from '@/hooks/use-games';
+import { JobType } from '@/types';
 
 export const Route = createFileRoute('/_authenticated')({
   component: AuthenticatedLayout,
 });
 
+function useInvalidateGamesOnImportComplete() {
+  const queryClient = useQueryClient();
+  const { data: activeImportJob } = useActiveJob(JobType.IMPORT);
+  const wasTerminalRef = useRef<boolean | undefined>(undefined);
+
+  useEffect(() => {
+    const isTerminal = activeImportJob?.isTerminal;
+    if (isTerminal && wasTerminalRef.current === false) {
+      queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+    }
+    if (isTerminal !== undefined) {
+      wasTerminalRef.current = isTerminal;
+    }
+  }, [activeImportJob?.isTerminal, queryClient]);
+}
+
 export function AuthenticatedLayout() {
+  useInvalidateGamesOnImportComplete();
   const { data: health } = useHealthStatus();
 
   return (

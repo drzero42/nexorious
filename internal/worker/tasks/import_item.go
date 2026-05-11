@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/db/models"
+	"github.com/drzero42/nexorious-go/internal/services/igdb"
 )
 
 // importPayload is the PendingTask.Payload shape for "import_item".
@@ -43,14 +46,28 @@ type importGameData struct {
 }
 
 type importPlatformData struct {
-	PlatformID      string     `json:"platform_id"`
-	StorefrontID    string     `json:"storefront_id"`
-	StoreGameID     *string    `json:"store_game_id"`
-	StoreUrl        *string    `json:"store_url"`
-	IsAvailable     bool       `json:"is_available"`
-	HoursPlayed     *float64   `json:"hours_played"`
-	OwnershipStatus *string    `json:"ownership_status"`
-	AcquiredDate    *time.Time `json:"acquired_date"`
+	PlatformID      string   `json:"platform_id"`
+	StorefrontID    string   `json:"storefront_id"`
+	StoreGameID     *string  `json:"store_game_id"`
+	StoreUrl        *string  `json:"store_url"`
+	IsAvailable     bool     `json:"is_available"`
+	HoursPlayed     *float64 `json:"hours_played"`
+	OwnershipStatus *string  `json:"ownership_status"`
+	AcquiredDate    *string  `json:"acquired_date"` // date-only or RFC3339
+}
+
+// parseFlexibleDate accepts either a date-only string ("2006-01-02") or a full
+// RFC3339 timestamp and returns a *time.Time, or nil if s is nil/unparseable.
+func parseFlexibleDate(s *string) *time.Time {
+	if s == nil {
+		return nil
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if t, err := time.Parse(layout, *s); err == nil {
+			return &t
+		}
+	}
+	return nil
 }
 
 type importTagData struct {
@@ -60,7 +77,7 @@ type importTagData struct {
 
 // NewImportItemHandler returns a TaskHandler that processes a single import job item.
 // It never returns an error — failures are recorded on the JobItem itself.
-func NewImportItemHandler(db *bun.DB) func(ctx context.Context, task *models.PendingTask) error {
+func NewImportItemHandler(db *bun.DB, igdbClient *igdb.Client, storagePath string) func(ctx context.Context, task *models.PendingTask) error {
 	return func(ctx context.Context, task *models.PendingTask) error {
 		// ── 1. Parse payload ──────────────────────────────────────────────────
 		var payload importPayload
@@ -94,33 +111,61 @@ func NewImportItemHandler(db *bun.DB) func(ctx context.Context, task *models.Pen
 			return nil
 		}
 
-		// ── 5. Upsert Game (don't overwrite existing richer data) ─────────────
-		game := &models.Game{
-			ID:            gd.IGDBID,
-			Title:         gd.Title,
-			Description:   gd.Description,
-			Genre:         gd.Genre,
-			Developer:     gd.Developer,
-			Publisher:     gd.Publisher,
-			CoverArtUrl:   gd.CoverArtUrl,
-			RatingAverage: gd.RatingAverage,
-			LastUpdated:   time.Now().UTC(),
-			CreatedAt:     time.Now().UTC(),
-		}
-		if gd.ReleaseDate != nil {
-			if t, err := time.Parse(time.RFC3339, *gd.ReleaseDate); err == nil {
-				game.ReleaseDate = &t
+		// ── 5. Upsert Game — fetch from IGDB if not already in DB ────────────
+		var existingGame models.Game
+		gameExists := db.NewSelect().Model(&existingGame).Where("id = ?", gd.IGDBID).Scan(ctx) == nil
+
+		var game *models.Game
+		if !gameExists && igdbClient.Configured() {
+			md, igdbErr := igdbClient.FetchFullMetadata(ctx, int(gd.IGDBID))
+			if igdbErr != nil {
+				slog.Warn("import_item: IGDB fetch failed, falling back to JSON data", "igdb_id", gd.IGDBID, "err", igdbErr)
+			} else {
+				game = igdbMetadataToGame(md)
+				if md.CoverArtURL != nil {
+					imageID := igdbExtractImageID(*md.CoverArtURL)
+					if imageID != "" {
+						localURL, dlErr := igdbClient.DownloadCoverArt(ctx, imageID, storagePath)
+						if dlErr != nil {
+							slog.Warn("import_item: cover art download failed", "igdb_id", gd.IGDBID, "err", dlErr)
+						} else {
+							game.CoverArtUrl = &localURL
+						}
+					}
+				}
 			}
 		}
 
-		_, err := db.NewInsert().
-			Model(game).
-			On("CONFLICT (id) DO NOTHING"). // preserve richer IGDB data
-			Exec(ctx)
-		if err != nil {
-			markItemFailed(ctx, db, &item, fmt.Sprintf("upsert game: %v", err))
-			checkJobCompletion(ctx, db, item.JobID)
-			return nil
+		if game == nil {
+			// Fall back to JSON export data (IGDB unconfigured or fetch failed)
+			now := time.Now().UTC()
+			game = &models.Game{
+				ID:            gd.IGDBID,
+				Title:         gd.Title,
+				Description:   gd.Description,
+				Genre:         gd.Genre,
+				Developer:     gd.Developer,
+				Publisher:     gd.Publisher,
+				CoverArtUrl:   gd.CoverArtUrl,
+				RatingAverage: gd.RatingAverage,
+				LastUpdated:   now,
+				CreatedAt:     now,
+			}
+			if gd.ReleaseDate != nil {
+				if t, err := time.Parse(time.RFC3339, *gd.ReleaseDate); err == nil {
+					game.ReleaseDate = &t
+				}
+			}
+		}
+
+		var err error
+		if !gameExists {
+			_, err = db.NewInsert().Model(game).Exec(ctx)
+			if err != nil {
+				markItemFailed(ctx, db, &item, fmt.Sprintf("insert game: %v", err))
+				checkJobCompletion(ctx, db, item.JobID)
+				return nil
+			}
 		}
 
 		// ── 6. Check for existing UserGame ────────────────────────────────────
@@ -217,7 +262,7 @@ func NewImportItemHandler(db *bun.DB) func(ctx context.Context, task *models.Pen
 				IsAvailable:     pd.IsAvailable,
 				HoursPlayed:     pd.HoursPlayed,
 				OwnershipStatus: pd.OwnershipStatus,
-				AcquiredDate:    pd.AcquiredDate,
+				AcquiredDate:    parseFlexibleDate(pd.AcquiredDate),
 				CreatedAt:       now,
 				UpdatedAt:       now,
 			}
@@ -316,6 +361,58 @@ func markItemCompleted(ctx context.Context, db *bun.DB, item *models.JobItem, re
 	if err != nil {
 		slog.Error("import_item: markItemCompleted", "id", item.ID, "err", err)
 	}
+}
+
+// igdbMetadataToGame maps an IGDB GameMetadata response to a models.Game ready for insert.
+func igdbMetadataToGame(md *igdb.GameMetadata) *models.Game {
+	now := time.Now().UTC()
+	game := &models.Game{
+		ID:                         int32(md.IgdbID),
+		Title:                      md.Title,
+		Description:                md.Description,
+		Genre:                      md.Genre,
+		Developer:                  md.Developer,
+		Publisher:                  md.Publisher,
+		CoverArtUrl:                md.CoverArtURL,
+		RatingAverage:              md.RatingAverage,
+		RatingCount:                md.RatingCount,
+		HowlongtobeatMain:          md.HowlongtobeatMain,
+		HowlongtobeatExtra:         md.HowlongtobeatExtra,
+		HowlongtobeatCompletionist: md.HowlongtobeatCompletionist,
+		IgdbSlug:                   &md.IgdbSlug,
+		GameModes:                  md.GameModes,
+		Themes:                     md.Themes,
+		PlayerPerspectives:         md.PlayerPerspectives,
+		LastUpdated:                now,
+		CreatedAt:                  now,
+	}
+	if md.ReleaseDate != nil {
+		if t, err := time.Parse("2006-01-02", *md.ReleaseDate); err == nil {
+			game.ReleaseDate = &t
+		}
+	}
+	if len(md.PlatformIDs) > 0 {
+		ids := make([]string, len(md.PlatformIDs))
+		for i, id := range md.PlatformIDs {
+			ids[i] = strconv.Itoa(id)
+		}
+		s := strings.Join(ids, ",")
+		game.IgdbPlatformIds = &s
+	}
+	if len(md.PlatformNames) > 0 {
+		s := strings.Join(md.PlatformNames, ",")
+		game.IgdbPlatformNames = &s
+	}
+	return game
+}
+
+// igdbExtractImageID extracts the bare image ID from an IGDB cover art URL.
+func igdbExtractImageID(coverURL string) string {
+	parts := strings.Split(coverURL, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.TrimSuffix(parts[len(parts)-1], ".jpg")
 }
 
 // checkJobCompletion counts remaining pending items and updates the parent Job if done.

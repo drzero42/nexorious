@@ -219,7 +219,7 @@ func main() {
 	// Worker pool — created early so the Echo server can reference it.
 	// -------------------------------------------------------------------------
 	pool := worker.NewPool(db)
-	pool.Register("import_item", tasks.NewImportItemHandler(db))
+	pool.Register("import_item", tasks.NewImportItemHandler(db, igdbClient, cfg.StoragePath))
 	pool.Register("export_json", tasks.NewExportJSONHandler(db, cfg.StoragePath))
 	pool.Register("export_csv", tasks.NewExportCSVHandler(db, cfg.StoragePath))
 	pool.Register("dispatch_sync", tasks.NewDispatchSyncHandler(db, steamsvc.NewClient(), psnsvc.NewClient()))
@@ -250,7 +250,7 @@ func main() {
 		},
 		RebuildServices: func(newDB *bun.DB) error {
 			newPool := worker.NewPool(newDB)
-			newPool.Register("import_item", tasks.NewImportItemHandler(newDB))
+			newPool.Register("import_item", tasks.NewImportItemHandler(newDB, igdbClient, cfg.StoragePath))
 			newPool.Register("export_json", tasks.NewExportJSONHandler(newDB, cfg.StoragePath))
 			newPool.Register("export_csv", tasks.NewExportCSVHandler(newDB, cfg.StoragePath))
 			newPool.Register("dispatch_sync", tasks.NewDispatchSyncHandler(newDB, steamsvc.NewClient(), psnsvc.NewClient()))

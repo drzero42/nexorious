@@ -17,8 +17,10 @@ import (
 	bunmigrate "github.com/uptrace/bun/migrate"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/db/migrations"
 	"github.com/drzero42/nexorious-go/internal/db/models"
+	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
 
@@ -145,7 +147,7 @@ func TestImportItem_BasicGame(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db)
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
 	task := makePendingTask(t, itemID)
 	err := handler(ctx, task)
 	if err != nil {
@@ -213,7 +215,7 @@ func TestImportItem_MissingIGDBID(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db)
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
 	task := makePendingTask(t, itemID)
 	err := handler(ctx, task)
 	if err != nil {
@@ -248,7 +250,7 @@ func TestImportItem_DuplicateGame(t *testing.T) {
 
 	// First import.
 	itemID1 := insertTestJobItem(t, db, jobID, userID, gameData)
-	handler := tasks.NewImportItemHandler(db)
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
 	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
 		t.Fatalf("first import error: %v", err)
 	}
@@ -331,7 +333,7 @@ func TestImportItem_WithPlatformsAndTags(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db)
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
 	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
@@ -393,7 +395,7 @@ func TestImportItem_JobCompletion(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db)
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
 	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
@@ -431,7 +433,7 @@ func TestImportItem_PreservesTimestamps(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db)
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
 	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
