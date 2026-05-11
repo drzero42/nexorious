@@ -181,7 +181,13 @@ POST /api/sync/:storefront          → ManualSyncTriggerResponse
 GET  /api/sync/:storefront/status   → SyncStatusResponse
 ```
 
-`POST /api/sync/:storefront` — creates a high-priority sync job. Returns 409 if a `pending` or `processing` job already exists for this user+storefront. Dispatch to the worker pool via `pool.Submit`.
+`POST /api/sync/:storefront` — creates a high-priority sync job. Sequence:
+
+1. Query `jobs` WHERE `user_id = :user AND job_type = 'sync' AND source = :storefront AND status IN ('pending', 'processing')`. If found → 409.
+2. Insert a `jobs` row (`status = 'pending'`, `priority = high`). This is the user-visible record; `job_id` in the response is `jobs.id`.
+3. Insert a `pending_tasks` row with `payload = {"job_id": "<jobs.id>", "user_id": "...", "storefront": "steam"}` and wake the worker pool.
+
+`GET /api/sync/:storefront/status` queries the same `jobs` table (not `pending_tasks`) for the active job. `active_job_id` is `jobs.id`. `last_synced_at` is read from `user_sync_configs.last_synced_at`.
 
 **`ManualSyncTriggerResponse`:**
 ```json
@@ -269,7 +275,7 @@ Operates on `external_games.is_skipped`. When `is_skipped = true` the sync worke
 
 **`GET /api/sync/ignored`** — returns all `external_games` rows for the authenticated user where `is_skipped = true`.
 
-**`POST /api/sync/ignored/:id`** — sets `is_skipped = true` on the external game. `:id` is `external_games.id`. Returns 404 if the row does not exist or belongs to a different user.
+**`POST /api/sync/ignored/:id`** — sets `is_skipped = true` on the external game. `:id` is `external_games.id`. Returns 404 if the row does not exist or belongs to a different user. Idempotent: returns 204 if the game is already skipped.
 
 **`DELETE /api/sync/ignored/:id`** — sets `is_skipped = false`. Returns 404 if not found or wrong user. 204 on success.
 
@@ -298,6 +304,7 @@ Register static-segment routes (`/steam/verify`, `/psn/configure`, `/psn/status`
 | PSN configure: PSN rejects token | 400 |
 | Disconnect with no row | 204 (idempotent) |
 | Skip/un-skip: external game not found or wrong user | 404 |
+| Skip: game already skipped | 204 (idempotent) |
 
 ---
 
@@ -321,10 +328,12 @@ if err := client.AuthWithNPSSO(ctx, npssoToken); err != nil {
 profile, err := client.GetProfile(ctx, "me")
 // profile.OnlineID → online_id
 // profile.NpID     → account_id (Sony's stable per-account identifier)
-// Region stored as "us" (the configured default); refinable by sync worker later if needed.
+// profile.Region (ISO alpha-2, e.g. "US", "GB") → region; store whatever PSN returns.
 ```
 
-The auth exchange (`AuthWithNPSSO`) is purely against `ca.account.sony.com` and does not require a region. The `Options.Region` field is used only for the profile endpoint URL prefix; "us" works for global users' own profile lookup via the "me" identifier.
+The auth exchange (`AuthWithNPSSO`) is purely against `ca.account.sony.com` and does not require a region. The `Options.Region` field is used only for the profile endpoint URL prefix; `"us"` works for the initial profile fetch via the `"me"` identifier regardless of the user's actual region.
+
+The `region` stored in credentials is the ISO alpha-2 code returned by the PSN profile call (confirmed from Python: `client.get_region().alpha_2`). If `go-psn-api`'s `GetProfile` does not expose a region field, store `""` rather than hardcoding `"us"`.
 
 ### Handler Interfaces
 

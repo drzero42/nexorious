@@ -364,6 +364,9 @@ DELETE /api/sync/psn/disconnect
 GET  /api/sync/config               All sync configs for current user
 GET  /api/sync/config/:storefront
 PUT  /api/sync/config/:storefront
+GET    /api/sync/ignored            List external games where is_skipped = true
+POST   /api/sync/ignored/:id        Skip an external game (idempotent; 204 if already skipped)
+DELETE /api/sync/ignored/:id        Un-skip an external game
 # Epic sync auth endpoints deferred — legendary-gl OAuth flow; see 2026-05-10-sync-api-design.md
 
 GET  /health
