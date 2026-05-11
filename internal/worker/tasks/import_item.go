@@ -46,8 +46,8 @@ type importGameData struct {
 }
 
 type importPlatformData struct {
-	PlatformID      string   `json:"platform_id"`
-	StorefrontID    string   `json:"storefront_id"`
+	PlatformID      string   `json:"platform_name"`
+	StorefrontID    string   `json:"storefront_name"`
 	StoreGameID     *string  `json:"store_game_id"`
 	StoreUrl        *string  `json:"store_url"`
 	IsAvailable     bool     `json:"is_available"`

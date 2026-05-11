@@ -317,8 +317,8 @@ func TestImportItem_WithPlatformsAndTags(t *testing.T) {
 		"title":   "Platform Game",
 		"platforms": []any{
 			map[string]any{
-				"platform_id":      "pc",
-				"storefront_id":    "steam",
+				"platform_name":      "pc",
+				"storefront_name":    "steam",
 				"hours_played":     10.0,
 				"ownership_status": "owned",
 				"is_available":     true,
@@ -395,8 +395,8 @@ func TestImportItem_PlatformsSkippedWithoutSeed(t *testing.T) {
 		"title":   "Unseeded Platform Game",
 		"platforms": []any{
 			map[string]any{
-				"platform_id":      "pc",
-				"storefront_id":    "steam",
+				"platform_name":      "pc",
+				"storefront_name":    "steam",
 				"ownership_status": "owned",
 				"is_available":     true,
 			},
@@ -441,8 +441,8 @@ func TestImportItem_ReimportMergesPlatforms(t *testing.T) {
 		"title":   "Merge Game",
 		"platforms": []any{
 			map[string]any{
-				"platform_id":      "pc",
-				"storefront_id":    "steam",
+				"platform_name":      "pc",
+				"storefront_name":    "steam",
 				"ownership_status": "owned",
 				"is_available":     true,
 			},
