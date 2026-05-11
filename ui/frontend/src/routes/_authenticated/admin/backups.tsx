@@ -50,7 +50,6 @@ import {
   Upload,
   Loader2,
   Settings,
-  Clock,
   HardDrive,
   Users,
   Gamepad2,
@@ -473,20 +472,6 @@ function BackupPage() {
               </div>
             </div>
 
-            {config && (
-              <div className="rounded-lg bg-muted/50 p-4 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  <span>
-                    {config.schedule === 'manual'
-                      ? 'No automatic backups scheduled'
-                      : config.schedule === 'daily'
-                        ? `Daily at ${config.scheduleTime} UTC`
-                        : `Weekly on ${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][config.scheduleDay ?? 0]} at ${config.scheduleTime} UTC`}
-                  </span>
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>
