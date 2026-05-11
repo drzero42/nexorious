@@ -400,47 +400,33 @@ function GameConfirmPage() {
     PlatformSelection[]
   >([]);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [game, setGame] = React.useState<IGDBGameCandidate | null>(null);
-  const [gameLoadError, setGameLoadError] = React.useState<string | null>(null);
-  const [isHydrated, setIsHydrated] = React.useState(false);
 
-  // Mark as hydrated after first client render
-  React.useEffect(() => {
-    setIsHydrated(true);
-  }, []);
-
-  // Load game data from sessionStorage after hydration
-  React.useEffect(() => {
-    // Wait for hydration to complete
-    if (!isHydrated) return;
-
-    // If no igdb_id in URL after hydration, show error
-    if (!igdbId) {
-      setGameLoadError('No game ID provided. Please search for a game first.');
-      return;
-    }
-
+  // Read game data from sessionStorage on first render — lazy initializer avoids an effect.
+  // igdbId is already computed by useMemo above, so it is in scope here.
+  const [game] = React.useState<IGDBGameCandidate | null>(() => {
+    if (!igdbId) return null;
     try {
       const storedGame = sessionStorage.getItem(SELECTED_GAME_STORAGE_KEY);
       if (storedGame) {
         const parsedGame = JSON.parse(storedGame) as IGDBGameCandidate;
-        // Verify the stored game matches the requested IGDB ID
         // Use Number() to ensure consistent comparison (JSON parse gives plain number)
         if (Number(parsedGame.igdb_id) === Number(igdbId)) {
-          setGame(parsedGame);
-          // Clear from storage after successful load
           sessionStorage.removeItem(SELECTED_GAME_STORAGE_KEY);
-          return;
+          return parsedGame;
         }
       }
-      // No valid game data found
-      setGameLoadError(
-        'Game data not found. Please search for the game again.'
-      );
     } catch {
-      setGameLoadError('Failed to load game data. Please try again.');
+      // fall through — gameLoadError will report the issue
     }
-  }, [isHydrated, igdbId]);
+    return null;
+  });
+
+  // Derive error message rather than storing it in state
+  const gameLoadError = React.useMemo<string | null>(() => {
+    if (!igdbId) return 'No game ID provided. Please search for a game first.';
+    if (!game) return 'Game data not found. Please search for the game again.';
+    return null;
+  }, [igdbId, game]);
 
   // Fetch available platforms
   const { data: platforms, isLoading: isPlatformsLoading } = useAllPlatforms();
@@ -449,8 +435,8 @@ function GameConfirmPage() {
   const importFromIGDB = useImportFromIGDB();
   const createUserGame = useCreateUserGame();
 
-  // Show loading while hydrating or loading platforms/game data
-  const isLoading = !isHydrated || isPlatformsLoading || (!game && !gameLoadError);
+  // Show loading while platforms or game data are still being fetched
+  const isLoading = isPlatformsLoading || (!game && !gameLoadError);
 
   const handleBack = () => {
     navigate({ to: '/games/add' });

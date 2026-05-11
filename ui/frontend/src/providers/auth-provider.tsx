@@ -68,9 +68,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Ref to track current tokens for use in callbacks
+  // Ref to track current tokens for use in callbacks — updated after each render
+  // so callbacks always see the latest values without needing them as deps.
   const tokensRef = useRef({ accessToken, refreshToken });
-  tokensRef.current = { accessToken, refreshToken };
+  useEffect(() => {
+    tokensRef.current = { accessToken, refreshToken };
+  });
 
   // Ref for refresh deduplication
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);

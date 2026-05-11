@@ -61,8 +61,9 @@ function ProfilePageSkeleton() {
 function ProfilePage() {
   const { user, logout } = useAuth();
 
-  // Username state
-  const [newUsername, setNewUsername] = useState('');
+  // Username state — initialized directly from user since the route guard
+  // ensures user is non-null before this component renders.
+  const [newUsername, setNewUsername] = useState(user?.username ?? '');
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [usernameError, setUsernameError] = useState('');
@@ -81,13 +82,6 @@ function ProfilePage() {
   // Derived values
   const passwordStrength = useMemo(() => calculatePasswordStrength(newPassword), [newPassword]);
   const passwordsMatch = newPassword && confirmPassword && newPassword === confirmPassword;
-
-  // Initialize username field
-  useEffect(() => {
-    if (user) {
-      setNewUsername(user.username);
-    }
-  }, [user]);
 
   // Debounced username availability check
   const checkUsername = useCallback(async (username: string) => {

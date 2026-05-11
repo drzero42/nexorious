@@ -46,7 +46,6 @@ function MaintenancePageSkeleton() {
 function MaintenancePage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
-  const [isLoading, setIsLoading] = useState(true);
   const [isSeedLoading, setIsSeedLoading] = useState(false);
   const [seedResult, setSeedResult] = useState<SeedDataResult | null>(null);
   const [isRefreshLoading, setIsRefreshLoading] = useState(false);
@@ -71,8 +70,6 @@ function MaintenancePage() {
   useEffect(() => {
     if (currentUser && !currentUser.isAdmin) {
       navigate({ to: '/dashboard', replace: true });
-    } else if (currentUser?.isAdmin) {
-      setIsLoading(false);
     }
   }, [currentUser, navigate]);
 
@@ -125,13 +122,12 @@ function MaintenancePage() {
     }
   };
 
-  // Show nothing while checking auth
-  if (!currentUser?.isAdmin) {
-    return null;
+  if (!currentUser) {
+    return <MaintenancePageSkeleton />;
   }
 
-  if (isLoading) {
-    return <MaintenancePageSkeleton />;
+  if (!currentUser.isAdmin) {
+    return null;
   }
 
   return (

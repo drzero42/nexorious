@@ -58,12 +58,16 @@ function TestConsumer() {
 
 // Test component that throws when used outside provider
 function TestConsumerWithoutProvider() {
+  let errorMessage: string | null = null;
   try {
     useAuth();
-    return <div>Should have thrown</div>;
   } catch (error) {
-    return <div data-testid="error-thrown">{(error as Error).message}</div>;
+    errorMessage = (error as Error).message;
   }
+  if (errorMessage !== null) {
+    return <div data-testid="error-thrown">{errorMessage}</div>;
+  }
+  return <div>Should have thrown</div>;
 }
 
 describe("AuthProvider", () => {

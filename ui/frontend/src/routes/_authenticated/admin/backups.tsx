@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useAuth } from '@/providers';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -109,7 +109,6 @@ function BackupPageSkeleton() {
 function BackupPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
-  const [isLoading, setIsLoading] = useState(true);
   const [config, setConfig] = useState<BackupConfig | null>(null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
@@ -151,19 +150,39 @@ function BackupPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load backup data';
       toast.error(message);
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 
-  // Check admin access
+  // Admin guard — navigation only, no setState
   useEffect(() => {
     if (currentUser && !currentUser.isAdmin) {
       navigate({ to: '/dashboard', replace: true });
-    } else if (currentUser?.isAdmin) {
-      loadData();
     }
-  }, [currentUser, navigate, loadData]);
+  }, [currentUser, navigate]);
+
+  // Initial data load — inline async IIFE so setState runs after await, not synchronously
+  const initialLoadDoneRef = useRef(false);
+  useEffect(() => {
+    if (!currentUser?.isAdmin || initialLoadDoneRef.current) return;
+    initialLoadDoneRef.current = true;
+    void (async () => {
+      try {
+        const [configData, backupsData] = await Promise.all([
+          backupApi.getBackupConfig(),
+          backupApi.listBackups(),
+        ]);
+        setConfig(configData);
+        setBackups(backupsData);
+        setSchedule(configData.schedule);
+        setScheduleTime(configData.scheduleTime);
+        setScheduleDay(configData.scheduleDay ?? 0);
+        setRetentionMode(configData.retentionMode);
+        setRetentionValue(configData.retentionValue);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to load backup data');
+      }
+    })();
+  }, [currentUser?.isAdmin]);
 
   const handleSaveConfig = async () => {
     try {
@@ -275,12 +294,15 @@ function BackupPage() {
     }
   };
 
-  // Show nothing while checking auth
-  if (!currentUser?.isAdmin) {
+  if (!currentUser) {
+    return <BackupPageSkeleton />;
+  }
+
+  if (!currentUser.isAdmin) {
     return null;
   }
 
-  if (isLoading) {
+  if (config === null) {
     return <BackupPageSkeleton />;
   }
 
