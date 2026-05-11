@@ -24,7 +24,7 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 | Build frontend           | `make frontend`                                          |
 | Build everything         | `make`                                                   |
 | Run server               | `./nexorious`                                            |
-| Run tests (Go)           | `go test ./...`                                          |
+| Run tests (Go)           | `go test -timeout 300s ./...`                            |
 | Run single test          | `go test ./internal/api/... -run TestGamesList -v`       |
 | Run tests with coverage  | `go test -cover ./...`                                   |
 | Type check (frontend)    | `npm run check`  (from `ui/`)                            |
@@ -142,6 +142,7 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 2. **Branching**: Create a feature branch before starting any task
 3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/`; never hand-edit generated code
 4. **Testing**: Run `go test ./...` after any Go changes; `npm run check && npm run test` after any frontend changes
+5. **Plan files**: `docs/superpowers/plans/` is tracked — always commit the plan file on the feature branch
 
 ### Branch Workflow (MANDATORY)
 - ✅ Always create a branch before starting task work
@@ -185,3 +186,7 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - **`iofs.Source.Next(ver)`** — returns `(uint, error)`, not 3 values
 - **`os.Exit` skips deferred calls** — call `pool.Close()` explicitly before any `os.Exit` in main; deferred `pool.Close()` will not run
 - **Background goroutines** — use `context.Background()`, not `c.Request().Context()`, for work that outlives an HTTP handler
+- **`errcheck` linter and `resp.Body`** — always `defer func() { _ = resp.Body.Close() }()`; bare `defer resp.Body.Close()` is flagged by errcheck
+- **Priority type mismatch** — `jobs.priority` is TEXT (`'high'`/`'low'`); `pending_tasks.priority` is INTEGER; don't conflate the two columns
+- **Echo v5 route order** — register static routes before parameterised ones (e.g. `GET /sync/steam/status` before `GET /sync/:id`); Echo v5 doesn't auto-sort and will match the wrong handler otherwise
+- **Service package import cycles** — if `internal/api` imports `internal/services/steam` and vice-versa, break the cycle by having each service package define its own local summary types; `router.go` bridges them with adapter structs that satisfy the handler's interface
