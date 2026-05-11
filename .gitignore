@@ -2,7 +2,10 @@
 /nexorious
 
 # Frontend build output (populated by make frontend)
-ui/dist/
+ui/frontend/dist/*
+!ui/frontend/dist/.gitkeep
+ui/frontend/node_modules/
+ui/frontend/src/routeTree.gen.ts
 
 # devenv
 .devenv/

@@ -340,3 +340,89 @@ func loginAndGetToken(t *testing.T, handler interface {
 	}
 	return token
 }
+
+func TestListPlatforms_HasIconURL(t *testing.T) {
+	db := setupAuthTestDB(t)
+	cfg := testCfg()
+	e := newTestEcho(t, db, cfg)
+	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+
+	rec := getAuth(t, e, "/api/platforms", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var platforms []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &platforms); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	var pcWindows map[string]any
+	for _, p := range platforms {
+		if p["name"] == "pc-windows" {
+			pcWindows = p
+			break
+		}
+	}
+	if pcWindows == nil {
+		t.Fatal("expected pc-windows platform in list")
+	}
+
+	iconURL, ok := pcWindows["icon_url"].(string)
+	if !ok {
+		t.Fatalf("expected icon_url string, got %T: %v", pcWindows["icon_url"], pcWindows["icon_url"])
+	}
+	want := "/logos/platforms/pc-windows/pc-windows-icon-light.svg"
+	if iconURL != want {
+		t.Fatalf("expected icon_url=%q, got %q", want, iconURL)
+	}
+
+	// Storefronts embedded in platform response also need icon_url
+	storefronts, _ := pcWindows["storefronts"].([]any)
+	for _, sfAny := range storefronts {
+		sf, ok := sfAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		if sf["icon"] != nil {
+			if _, ok := sf["icon_url"].(string); !ok {
+				t.Fatalf("storefront %v has icon but missing icon_url", sf["name"])
+			}
+		}
+	}
+}
+
+func TestListStorefronts_HasIconURL(t *testing.T) {
+	db := setupAuthTestDB(t)
+	cfg := testCfg()
+	e := newTestEcho(t, db, cfg)
+	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+
+	rec := getAuth(t, e, "/api/platforms/storefronts/", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var storefronts []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &storefronts); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	var steam map[string]any
+	for _, s := range storefronts {
+		if s["name"] == "steam" {
+			steam = s
+			break
+		}
+	}
+	if steam == nil {
+		t.Fatal("expected steam storefront in list")
+	}
+
+	iconURL, ok := steam["icon_url"].(string)
+	if !ok {
+		t.Fatalf("expected icon_url string, got %T: %v", steam["icon_url"], steam["icon_url"])
+	}
+	want := "/logos/storefronts/steam/steam-icon-light.svg"
+	if iconURL != want {
+		t.Fatalf("expected icon_url=%q, got %q", want, iconURL)
+	}
+}

@@ -184,8 +184,8 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		platformsGroup.GET("", ph.HandleListPlatforms)
 		platformsGroup.GET("/simple-list", ph.HandleSimpleList)
 		platformsGroup.GET("/storefronts/simple-list", ph.HandleStorefrontSimpleList)
-		platformsGroup.GET("/storefronts/:storefront", ph.HandleGetStorefront)
 		platformsGroup.GET("/storefronts/", ph.HandleListStorefronts)
+		platformsGroup.GET("/storefronts/:storefront", ph.HandleGetStorefront)
 		platformsGroup.GET("/:platform/storefronts", ph.HandlePlatformStorefronts)
 		platformsGroup.GET("/:platform/default-storefront", ph.HandleDefaultStorefront)
 		platformsGroup.GET("/:platform", ph.HandleGetPlatform)
@@ -329,7 +329,7 @@ func (a *psnClientAdapter) GetAccountInfo(ctx context.Context, npssoToken string
 }
 
 func spaHandler() echo.HandlerFunc {
-	fsys, err := fs.Sub(ui.UIBox, "dist")
+	fsys, err := fs.Sub(ui.UIBox, "frontend/dist")
 	if err != nil {
 		panic(fmt.Sprintf("api: failed to create SPA sub-FS: %v", err))
 	}

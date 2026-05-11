@@ -2,7 +2,7 @@ package ui
 
 import "embed"
 
-//go:embed all:dist
+//go:embed all:frontend/dist
 var UIBox embed.FS
 
 //go:embed all:migrate

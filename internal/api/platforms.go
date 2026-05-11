@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
@@ -37,13 +38,74 @@ func (h *PlatformsHandler) HandleListPlatforms(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list platforms")
 	}
-	return c.JSON(http.StatusOK, platforms)
+	resp := make([]platformResponse, len(platforms))
+	for i, p := range platforms {
+		resp[i] = toPlatformResponse(p)
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 // simpleItem is a minimal name/display_name pair used by simple-list endpoints.
 type simpleItem struct {
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
+}
+
+// storefrontResponse is the API response DTO for a storefront, including icon_url.
+type storefrontResponse struct {
+	Name        string  `json:"name"`
+	DisplayName string  `json:"display_name"`
+	Icon        *string `json:"icon"`
+	BaseURL     *string `json:"base_url"`
+	IconURL     *string `json:"icon_url"`
+}
+
+// platformResponse is the API response DTO for a platform, including icon_url.
+type platformResponse struct {
+	Name              string               `json:"name"`
+	DisplayName       string               `json:"display_name"`
+	Icon              *string              `json:"icon"`
+	IgdbPlatformID    *int32               `json:"igdb_platform_id"`
+	DefaultStorefront *string              `json:"default_storefront"`
+	Storefronts       []storefrontResponse `json:"storefronts,omitempty"`
+	IconURL           *string              `json:"icon_url"`
+}
+
+// iconURL constructs the logo URL for a platform or storefront icon.
+// Returns nil if icon is nil.
+func iconURL(category, name string, icon *string) *string {
+	if icon == nil {
+		return nil
+	}
+	u := fmt.Sprintf("/logos/%s/%s/%s", category, name, *icon)
+	return &u
+}
+
+// toStorefrontResponse converts a models.Storefront to a storefrontResponse DTO.
+func toStorefrontResponse(sf models.Storefront) storefrontResponse {
+	return storefrontResponse{
+		Name:        sf.Name,
+		DisplayName: sf.DisplayName,
+		Icon:        sf.Icon,
+		BaseURL:     sf.BaseUrl,
+		IconURL:     iconURL("storefronts", sf.Name, sf.Icon),
+	}
+}
+
+// toPlatformResponse converts a models.Platform to a platformResponse DTO.
+func toPlatformResponse(p models.Platform) platformResponse {
+	resp := platformResponse{
+		Name:              p.Name,
+		DisplayName:       p.DisplayName,
+		Icon:              p.Icon,
+		IgdbPlatformID:    p.IgdbPlatformID,
+		DefaultStorefront: p.DefaultStorefront,
+		IconURL:           iconURL("platforms", p.Name, p.Icon),
+	}
+	for _, sf := range p.Storefronts {
+		resp.Storefronts = append(resp.Storefronts, toStorefrontResponse(sf))
+	}
+	return resp
 }
 
 // HandleSimpleList handles GET /api/platforms/simple-list.
@@ -77,7 +139,7 @@ func (h *PlatformsHandler) HandleGetPlatform(c *echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get platform")
 	}
-	return c.JSON(http.StatusOK, platform)
+	return c.JSON(http.StatusOK, toPlatformResponse(platform))
 }
 
 // HandlePlatformStorefronts handles GET /api/platforms/:platform/storefronts.
@@ -107,14 +169,18 @@ func (h *PlatformsHandler) HandlePlatformStorefronts(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list storefronts")
 	}
-	return c.JSON(http.StatusOK, storefronts)
+	resp := make([]storefrontResponse, len(storefronts))
+	for i, sf := range storefronts {
+		resp[i] = toStorefrontResponse(sf)
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 // defaultStorefrontResponse is the response for GET /api/platforms/:platform/default-storefront.
 type defaultStorefrontResponse struct {
-	Platform            string             `json:"platform"`
-	PlatformDisplayName string             `json:"platform_display_name"`
-	DefaultStorefront   *models.Storefront `json:"default_storefront"`
+	Platform            string              `json:"platform"`
+	PlatformDisplayName string              `json:"platform_display_name"`
+	DefaultStorefront   *storefrontResponse `json:"default_storefront"`
 }
 
 // HandleDefaultStorefront handles GET /api/platforms/:platform/default-storefront.
@@ -148,7 +214,8 @@ func (h *PlatformsHandler) HandleDefaultStorefront(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get default storefront")
 		}
 		if err == nil {
-			resp.DefaultStorefront = &sf
+			sfResp := toStorefrontResponse(sf)
+			resp.DefaultStorefront = &sfResp
 		}
 	}
 
@@ -166,7 +233,11 @@ func (h *PlatformsHandler) HandleListStorefronts(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list storefronts")
 	}
-	return c.JSON(http.StatusOK, storefronts)
+	resp := make([]storefrontResponse, len(storefronts))
+	for i, sf := range storefronts {
+		resp[i] = toStorefrontResponse(sf)
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 // HandleStorefrontSimpleList handles GET /api/platforms/storefronts/simple-list.
@@ -199,5 +270,5 @@ func (h *PlatformsHandler) HandleGetStorefront(c *echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get storefront")
 	}
-	return c.JSON(http.StatusOK, sf)
+	return c.JSON(http.StatusOK, toStorefrontResponse(sf))
 }
