@@ -27,8 +27,8 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 | Run tests (Go)           | `go test -timeout 300s ./...`                            |
 | Run single test          | `go test ./internal/api/... -run TestGamesList -v`       |
 | Run tests with coverage  | `go test -cover ./...`                                   |
-| Type check (frontend)    | `npm run check`  (from `ui/`)                            |
-| Run frontend tests       | `npm run test`   (from `ui/`)                            |
+| Type check (frontend)    | `npm run check`  (from `ui/frontend/`)                   |
+| Run frontend tests       | `npm run test`   (from `ui/frontend/`)                   |
 | Lint Go                  | `golangci-lint run`                                      |
 | Run API client           | `slumber`                                                |
 
@@ -50,11 +50,11 @@ devenv shell
 ### Build
 ```bash
 make             # frontend → go build
-make frontend    # builds React SPA into ui/dist/
+make frontend    # builds React SPA into ui/frontend/dist/
 make build       # compiles the Go binary
 ```
 
-`ui/dist/` is gitignored and must be populated by `make frontend` before `go build`. The Go binary embeds `ui/dist` and `ui/migrate` via `//go:embed`.
+`ui/frontend/dist/` is gitignored and must be populated by `make frontend` before `go build`. The Go binary embeds `ui/frontend/dist` and `ui/migrate` via `//go:embed`.
 
 ### Initial Setup
 ```bash
@@ -79,7 +79,7 @@ export DATABASE_URL="postgres://..."
 - `internal/filter/` — dynamic query builder (Bun) for user-game list filtering
 - `internal/ratelimit/` — interface + local (`x/time/rate`) and PostgreSQL implementations
 - `internal/config/` — config struct via `caarlos0/env`
-- `ui/` — React SPA source (`ui/src/`) + build output (`ui/dist/`) + migration HTML (`ui/migrate/`)
+- `ui/` — contains `ui/frontend/` (React SPA source + build output), `ui/migrate/` (migration HTML), `ui/db-error/`, `ui/setup/`
 
 ## Architecture
 
@@ -99,7 +99,7 @@ Echo middleware blocks all non-migration routes until state is `Ready`. Workers 
 ### Frontend Embedding (Stash pattern)
 `ui/ui.go` exposes two `embed.FS` vars:
 ```go
-//go:embed dist
+//go:embed frontend/dist
 var UIBox embed.FS      // main React SPA
 
 //go:embed migrate
@@ -109,7 +109,7 @@ FastAPI is eliminated; the Go binary serves the React SPA itself.
 
 ### Frontend Stack (unchanged from nexorious)
 - Vite 6 + React 19 + TypeScript
-- TanStack Router (file-based routes in `ui/src/routes/`)
+- TanStack Router (file-based routes in `ui/frontend/src/routes/`)
 - TanStack Query, Tailwind CSS v4, shadcn/ui, React Hook Form + Zod, TipTap
 - Vitest + @testing-library/react
 
@@ -131,7 +131,7 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 - **Framework**: stdlib `testing` + `testcontainers-go` (spins up real PostgreSQL containers)
 - Run all: `go test ./...`
 - Run single: `go test ./internal/api/... -run TestFunctionName -v`
-- Frontend: from `ui/` — `npm run test`, single file: `npm run test game-card.test.tsx`
+- Frontend: from `ui/frontend/` — `npm run test`, single file: `npm run test game-card.test.tsx`
 
 ## Development Rules
 
@@ -190,3 +190,4 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - **Priority type mismatch** — `jobs.priority` is TEXT (`'high'`/`'low'`); `pending_tasks.priority` is INTEGER; don't conflate the two columns
 - **Echo v5 route order** — register static routes before parameterised ones (e.g. `GET /sync/steam/status` before `GET /sync/:id`); Echo v5 doesn't auto-sort and will match the wrong handler otherwise
 - **Service package import cycles** — if `internal/api` imports `internal/services/steam` and vice-versa, break the cycle by having each service package define its own local summary types; `router.go` bridges them with adapter structs that satisfy the handler's interface
+- **Platform/storefront `icon` field** — DB stores bare filename (e.g. `steam-icon-light.svg`); API responses must construct `icon_url` as `/logos/storefronts/<name>/<filename>` (or `platforms/`). Logos are bundled in the SPA dist and served at `/logos/...` — not `/static/logos/`.
