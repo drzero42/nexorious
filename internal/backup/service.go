@@ -95,7 +95,7 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 	ctx := context.Background()
 	var statsUsers, statsGames, statsTags int
 	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&statsUsers)
-	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM games").Scan(&statsGames)
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT game_id) FROM user_games").Scan(&statsGames)
 	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&statsTags)
 
 	var migrationVersion int64
