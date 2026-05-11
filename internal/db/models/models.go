@@ -98,6 +98,9 @@ type UserGamePlatform struct {
 	SyncFromSource         bool       `bun:"sync_from_source,notnull"     json:"sync_from_source"`
 	CreatedAt              time.Time  `bun:"created_at,notnull"           json:"created_at"`
 	UpdatedAt              time.Time  `bun:"updated_at,notnull"           json:"updated_at"`
+
+	PlatformRecord   *Platform   `bun:"rel:belongs-to,join:platform=name"   json:"-"`
+	StorefrontRecord *Storefront `bun:"rel:belongs-to,join:storefront=name" json:"-"`
 }
 
 type Platform struct {

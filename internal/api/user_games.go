@@ -45,13 +45,82 @@ type createUserGameRequest struct {
 	PersonalNotes  *string  `json:"personal_notes"`
 }
 
+// userGamePlatformResponse is the API DTO for a user game platform entry with nested detail objects.
+type userGamePlatformResponse struct {
+	ID                     string              `json:"id"`
+	UserGameID             string              `json:"user_game_id"`
+	Platform               *string             `json:"platform"`
+	Storefront             *string             `json:"storefront"`
+	StoreGameID            *string             `json:"store_game_id"`
+	StoreUrl               *string             `json:"store_url"`
+	IsAvailable            bool                `json:"is_available"`
+	HoursPlayed            *float64            `json:"hours_played"`
+	OwnershipStatus        *string             `json:"ownership_status"`
+	AcquiredDate           *time.Time          `json:"acquired_date"`
+	OriginalPlatformName   *string             `json:"original_platform_name"`
+	OriginalStorefrontName *string             `json:"original_storefront_name"`
+	ExternalGameID         *string             `json:"external_game_id"`
+	SyncFromSource         bool                `json:"sync_from_source"`
+	CreatedAt              time.Time           `json:"created_at"`
+	UpdatedAt              time.Time           `json:"updated_at"`
+	PlatformDetails        *platformResponse   `json:"platform_details,omitempty"`
+	StorefrontDetails      *storefrontResponse `json:"storefront_details,omitempty"`
+}
+
+func toUserGamePlatformResponse(ugp models.UserGamePlatform) userGamePlatformResponse {
+	resp := userGamePlatformResponse{
+		ID:                     ugp.ID,
+		UserGameID:             ugp.UserGameID,
+		Platform:               ugp.Platform,
+		Storefront:             ugp.Storefront,
+		StoreGameID:            ugp.StoreGameID,
+		StoreUrl:               ugp.StoreUrl,
+		IsAvailable:            ugp.IsAvailable,
+		HoursPlayed:            ugp.HoursPlayed,
+		OwnershipStatus:        ugp.OwnershipStatus,
+		AcquiredDate:           ugp.AcquiredDate,
+		OriginalPlatformName:   ugp.OriginalPlatformName,
+		OriginalStorefrontName: ugp.OriginalStorefrontName,
+		ExternalGameID:         ugp.ExternalGameID,
+		SyncFromSource:         ugp.SyncFromSource,
+		CreatedAt:              ugp.CreatedAt,
+		UpdatedAt:              ugp.UpdatedAt,
+	}
+	if ugp.PlatformRecord != nil {
+		pr := toPlatformResponse(*ugp.PlatformRecord)
+		resp.PlatformDetails = &pr
+	}
+	if ugp.StorefrontRecord != nil {
+		sr := toStorefrontResponse(*ugp.StorefrontRecord)
+		resp.StorefrontDetails = &sr
+	}
+	return resp
+}
+
+// userGameWithPlatformsResponse wraps UserGame but serialises Platforms as DTOs with nested details.
+type userGameWithPlatformsResponse struct {
+	models.UserGame
+	Platforms []userGamePlatformResponse `json:"platforms"`
+}
+
+func toUserGameWithPlatformsResponse(ug models.UserGame) userGameWithPlatformsResponse {
+	resp := userGameWithPlatformsResponse{UserGame: ug}
+	for _, p := range ug.Platforms {
+		resp.Platforms = append(resp.Platforms, toUserGamePlatformResponse(p))
+	}
+	if resp.Platforms == nil {
+		resp.Platforms = []userGamePlatformResponse{}
+	}
+	return resp
+}
+
 // UserGameListResponse is the paginated response for GET /api/user-games.
 type UserGameListResponse struct {
-	UserGames []models.UserGame `json:"user_games"`
-	Total     int               `json:"total"`
-	Page      int               `json:"page"`
-	PerPage   int               `json:"per_page"`
-	Pages     int               `json:"pages"`
+	UserGames []userGameWithPlatformsResponse `json:"user_games"`
+	Total     int                             `json:"total"`
+	Page      int                             `json:"page"`
+	PerPage   int                             `json:"per_page"`
+	Pages     int                             `json:"pages"`
 }
 
 var allowedUserGameSortFields = map[string]string{
@@ -162,7 +231,7 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	// Short-circuit: no results.
 	if total == 0 {
 		return c.JSON(http.StatusOK, UserGameListResponse{
-			UserGames: []models.UserGame{},
+			UserGames: []userGameWithPlatformsResponse{},
 			Total:     0,
 			Page:      page,
 			PerPage:   perPage,
@@ -198,7 +267,7 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 
 	if len(ids) == 0 {
 		return c.JSON(http.StatusOK, UserGameListResponse{
-			UserGames: []models.UserGame{},
+			UserGames: []userGameWithPlatformsResponse{},
 			Total:     total,
 			Page:      page,
 			PerPage:   perPage,
@@ -212,7 +281,9 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		Model(&userGames).
 		Where("user_game.id IN (?)", bun.List(ids)).
 		Relation("Game").
-		Relation("Platforms").
+		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
+		}).
 		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
 			return q.Relation("Tag")
 		})
@@ -231,8 +302,12 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
+	dtos := make([]userGameWithPlatformsResponse, len(userGames))
+	for i, ug := range userGames {
+		dtos[i] = toUserGameWithPlatformsResponse(ug)
+	}
 	return c.JSON(http.StatusOK, UserGameListResponse{
-		UserGames: userGames,
+		UserGames: dtos,
 		Total:     total,
 		Page:      page,
 		PerPage:   perPage,
@@ -296,7 +371,7 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
-	return c.JSON(http.StatusCreated, ug)
+	return c.JSON(http.StatusCreated, toUserGameWithPlatformsResponse(*ug))
 }
 
 // HandleGetUserGame handles GET /api/user-games/:id.
@@ -314,7 +389,9 @@ func (h *UserGamesHandler) HandleGetUserGame(c *echo.Context) error {
 		Where("user_game.id = ?", id).
 		Where("user_game.user_id = ?", userID).
 		Relation("Game").
-		Relation("Platforms").
+		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
+		}).
 		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
 			return q.Relation("Tag")
 		}).
@@ -326,7 +403,7 @@ func (h *UserGamesHandler) HandleGetUserGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
-	return c.JSON(http.StatusOK, ug)
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
 }
 
 // allowedUpdateFields is the set of mutable fields on a user game.
@@ -425,7 +502,9 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 	if err := h.db.NewSelect().Model(&ug).
 		Where("user_game.id = ?", ug.ID).
 		Relation("Game").
-		Relation("Platforms").
+		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
+		}).
 		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
 			return q.Relation("Tag")
 		}).
@@ -433,7 +512,7 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
-	return c.JSON(http.StatusOK, ug)
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
 }
 
 // HandleDeleteUserGame handles DELETE /api/user-games/:id.
@@ -519,7 +598,7 @@ func (h *UserGamesHandler) HandleUpdateProgress(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
-	return c.JSON(http.StatusOK, ug)
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
 }
 
 type bulkUpdateRequest struct {
@@ -768,14 +847,17 @@ func (h *UserGamesHandler) HandleListPlatforms(c *echo.Context) error {
 	var platforms []models.UserGamePlatform
 	err := h.db.NewSelect().Model(&platforms).
 		Where("user_game_id = ?", userGameID).
+		Relation("PlatformRecord").
+		Relation("StorefrontRecord").
 		Scan(ctx)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	if platforms == nil {
-		platforms = []models.UserGamePlatform{}
+	dtos := make([]userGamePlatformResponse, len(platforms))
+	for i, p := range platforms {
+		dtos[i] = toUserGamePlatformResponse(p)
 	}
-	return c.JSON(http.StatusOK, platforms)
+	return c.JSON(http.StatusOK, dtos)
 }
 
 // HandleCreatePlatform handles POST /api/user-games/:id/platforms.
@@ -848,7 +930,12 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	return c.JSON(http.StatusCreated, plat)
+	_ = h.db.NewSelect().Model(plat).
+		Where("id = ?", plat.ID).
+		Relation("PlatformRecord").
+		Relation("StorefrontRecord").
+		Scan(ctx)
+	return c.JSON(http.StatusCreated, toUserGamePlatformResponse(*plat))
 }
 
 // HandleUpdatePlatform handles PUT /api/user-games/:id/platforms/:platform_id.
@@ -938,7 +1025,12 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	return c.JSON(http.StatusOK, plat)
+	_ = h.db.NewSelect().Model(&plat).
+		Where("id = ?", plat.ID).
+		Relation("PlatformRecord").
+		Relation("StorefrontRecord").
+		Scan(ctx)
+	return c.JSON(http.StatusOK, toUserGamePlatformResponse(plat))
 }
 
 // HandleDeletePlatform handles DELETE /api/user-games/:id/platforms/:platform_id.
