@@ -75,8 +75,8 @@ type UserGame struct {
 	UpdatedAt      time.Time `bun:"updated_at,notnull" json:"updated_at"`
 
 	Game      *Game              `bun:"rel:belongs-to,join:game_id=id"       json:"game,omitempty"`
-	Platforms []UserGamePlatform `bun:"rel:has-many,join:id=user_game_id"    json:"platforms,omitempty"`
-	Tags      []UserGameTag      `bun:"rel:has-many,join:id=user_game_id"    json:"tags,omitempty"`
+	Platforms []UserGamePlatform `bun:"rel:has-many,join:id=user_game_id"    json:"platforms"`
+	Tags      []UserGameTag      `bun:"rel:has-many,join:id=user_game_id"    json:"tags"`
 }
 
 type UserGamePlatform struct {

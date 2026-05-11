@@ -61,6 +61,28 @@ rm -rf .devenv/state/postgres
 devenv up
 ```
 
+## Frontend Dev Server
+
+For iterating on frontend changes, use Vite's dev server instead of rebuilding the full embedded binary on every change. Vite proxies `/api` and `/static` requests to the running Go backend.
+
+**Two-terminal workflow:**
+
+```bash
+# Terminal 1 — build and run the Go server
+go build -o nexorious ./cmd/nexorious && ./nexorious
+
+# Terminal 2 — Vite dev server with HMR on :3000
+cd ui/frontend && npm run dev
+```
+
+Open `http://localhost:3000`. Frontend changes hot-reload instantly; backend changes require rebuilding and restarting the Go server (Terminal 1).
+
+The proxy target defaults to `http://localhost:8000`. Override with `API_TARGET` if your backend runs on a different port:
+
+```bash
+API_TARGET=http://localhost:9000 npm run dev
+```
+
 ## API Client (Slumber)
 
 The project includes a [Slumber](https://github.com/LucasPickering/slumber) collection for testing the API from the terminal. Slumber is included in the devenv shell — no separate install needed.

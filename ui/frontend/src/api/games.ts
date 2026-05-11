@@ -325,7 +325,7 @@ function transformUserGame(apiUserGame: UserGameApiResponse): UserGame {
     play_status: apiUserGame.play_status,
     hours_played: apiUserGame.hours_played,
     personal_notes: apiUserGame.personal_notes,
-    platforms: apiUserGame.platforms.map(transformUserGamePlatform),
+    platforms: (apiUserGame.platforms ?? []).map(transformUserGamePlatform),
     tags: apiUserGame.tags?.map(transformTag),
     created_at: apiUserGame.created_at,
     updated_at: apiUserGame.updated_at,
@@ -417,7 +417,7 @@ export async function getUserGames(
   params?: GetUserGamesParams
 ): Promise<UserGamesListResponse> {
   const queryString = buildUserGamesQueryParams(params);
-  const path = queryString ? `/user-games/?${queryString}` : '/user-games/';
+  const path = queryString ? `/user-games?${queryString}` : '/user-games';
   const response = await api.get<UserGameListApiResponse>(path);
 
   return {

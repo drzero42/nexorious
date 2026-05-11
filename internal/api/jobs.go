@@ -29,6 +29,67 @@ func NewJobsHandler(db *bun.DB, pool *worker.Pool) *JobsHandler {
 	return &JobsHandler{db: db, pool: pool}
 }
 
+// jobItemCounts fetches aggregated item status counts for a job and returns a
+// progress map ready for the API response.
+func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) map[string]any {
+	type statusCount struct {
+		Status string `bun:"status"`
+		Count  int    `bun:"count"`
+	}
+	var counts []statusCount
+	_ = h.db.NewRaw(`
+		SELECT status, COUNT(*)::int AS count
+		FROM job_items
+		WHERE job_id = ?
+		GROUP BY status`,
+		jobID,
+	).Scan(ctx, &counts)
+
+	m := map[string]int{
+		"pending": 0, "processing": 0, "completed": 0,
+		"pending_review": 0, "skipped": 0, "failed": 0,
+	}
+	for _, sc := range counts {
+		m[sc.Status] = sc.Count
+	}
+	total := 0
+	for _, v := range m {
+		total += v
+	}
+	percent := 0
+	if total > 0 {
+		percent = (m["completed"] + m["skipped"]) * 100 / total
+	}
+	return map[string]any{
+		"pending": m["pending"], "processing": m["processing"],
+		"completed": m["completed"], "pending_review": m["pending_review"],
+		"skipped": m["skipped"], "failed": m["failed"],
+		"total": total, "percent": percent,
+	}
+}
+
+// toJobResponse builds the complete job API response DTO including computed fields.
+func toJobResponse(job *models.Job, progress map[string]any) map[string]any {
+	return map[string]any{
+		"id":               job.ID,
+		"user_id":          job.UserID,
+		"job_type":         job.JobType,
+		"source":           job.Source,
+		"status":           job.Status,
+		"priority":         job.Priority,
+		"file_path":        job.FilePath,
+		"total_items":      job.TotalItems,
+		"error_message":    job.ErrorMessage,
+		"auto_retry_done":  job.AutoRetryDone,
+		"created_at":       job.CreatedAt,
+		"started_at":       job.StartedAt,
+		"completed_at":     job.CompletedAt,
+		"is_terminal":      job.IsTerminal(),
+		"duration_seconds": job.DurationSeconds(),
+		"progress":         progress,
+	}
+}
+
 // HandleListJobs handles GET /api/jobs.
 func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
@@ -107,14 +168,20 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list jobs")
 	}
 
-	if jobs == nil {
-		jobs = []models.Job{}
-	}
-
 	totalPages := int(math.Ceil(float64(total) / float64(perPage)))
 
+	emptyProgress := map[string]any{
+		"pending": 0, "processing": 0, "completed": 0,
+		"pending_review": 0, "skipped": 0, "failed": 0,
+		"total": 0, "percent": 0,
+	}
+	jobDTOs := make([]map[string]any, 0, len(jobs))
+	for i := range jobs {
+		jobDTOs = append(jobDTOs, toJobResponse(&jobs[i], emptyProgress))
+	}
+
 	return c.JSON(http.StatusOK, map[string]any{
-		"items":       jobs,
+		"jobs":        jobDTOs,
 		"total":       total,
 		"page":        page,
 		"per_page":    perPage,
@@ -176,39 +243,36 @@ func (h *JobsHandler) HandleActiveJob(c *echo.Context) error {
 	}
 
 	jobType := c.Param("job_type")
+	ctx := context.Background()
 
-	// Try active job first.
+	// Try in-progress job first.
 	var job models.Job
-	err := h.db.NewRaw(`
-		SELECT * FROM jobs
-		WHERE user_id = ? AND job_type = ? AND status IN ('pending', 'processing')
-		ORDER BY created_at DESC
-		LIMIT 1`,
-		userID, jobType,
-	).Scan(context.Background(), &job)
-	if err == nil {
-		return c.JSON(http.StatusOK, job)
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	err := h.db.NewSelect().Model(&job).
+		Where("user_id = ? AND job_type = ? AND status IN ('pending', 'processing')", userID, jobType).
+		OrderExpr("created_at DESC").
+		Limit(1).
+		Scan(ctx)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get active job")
 	}
 
-	// Fall back to most recent.
-	err = h.db.NewRaw(`
-		SELECT * FROM jobs
-		WHERE user_id = ? AND job_type = ?
-		ORDER BY created_at DESC
-		LIMIT 1`,
-		userID, jobType,
-	).Scan(context.Background(), &job)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return c.JSON(http.StatusOK, nil)
+	// Fall back to most recent completed/failed/cancelled job.
+	if errors.Is(err, sql.ErrNoRows) {
+		err = h.db.NewSelect().Model(&job).
+			Where("user_id = ? AND job_type = ?", userID, jobType).
+			OrderExpr("created_at DESC").
+			Limit(1).
+			Scan(ctx)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return c.JSON(http.StatusOK, nil)
+			}
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get active job")
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get active job")
 	}
 
-	return c.JSON(http.StatusOK, job)
+	progress := h.jobItemCounts(ctx, job.ID)
+	return c.JSON(http.StatusOK, toJobResponse(&job, progress))
 }
 
 // recentJobItem is a summary of a job item for the recent jobs endpoint.
@@ -289,10 +353,12 @@ func (h *JobsHandler) HandleGetJob(c *echo.Context) error {
 	}
 
 	jobID := c.Param("id")
+	ctx := context.Background()
 
 	var job models.Job
-	err := h.db.NewRaw(`SELECT * FROM jobs WHERE id = ? AND user_id = ?`, jobID, userID).
-		Scan(context.Background(), &job)
+	err := h.db.NewSelect().Model(&job).
+		Where("id = ? AND user_id = ?", jobID, userID).
+		Scan(ctx)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
@@ -300,45 +366,8 @@ func (h *JobsHandler) HandleGetJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job")
 	}
 
-	// Item counts by status.
-	type statusCount struct {
-		Status string `bun:"status"`
-		Count  int    `bun:"count"`
-	}
-	var counts []statusCount
-	err = h.db.NewRaw(`
-		SELECT status, COUNT(*)::int AS count
-		FROM job_items
-		WHERE job_id = ?
-		GROUP BY status`,
-		jobID,
-	).Scan(context.Background(), &counts)
-	if err != nil {
-		counts = nil
-	}
-
-	itemCounts := make(map[string]int)
-	for _, sc := range counts {
-		itemCounts[sc.Status] = sc.Count
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"id":               job.ID,
-		"user_id":          job.UserID,
-		"job_type":         job.JobType,
-		"source":           job.Source,
-		"status":           job.Status,
-		"priority":         job.Priority,
-		"file_path":        job.FilePath,
-		"total_items":      job.TotalItems,
-		"error_message":    job.ErrorMessage,
-		"auto_retry_done":  job.AutoRetryDone,
-		"created_at":       job.CreatedAt,
-		"started_at":       job.StartedAt,
-		"completed_at":     job.CompletedAt,
-		"duration_seconds": job.DurationSeconds(),
-		"item_counts":      itemCounts,
-	})
+	progress := h.jobItemCounts(ctx, job.ID)
+	return c.JSON(http.StatusOK, toJobResponse(&job, progress))
 }
 
 // HandleGetJobItems handles GET /api/jobs/:id/items.
