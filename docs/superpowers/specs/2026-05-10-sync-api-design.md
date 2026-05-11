@@ -121,7 +121,7 @@ type UserSyncConfig struct {
 
 **PSN:**
 ```json
-{ "npsso_token": "abc...64chars", "online_id": "MyPSNName", "account_id": "123456", "region": "SIEE", "is_verified": true, "token_expired_at": null }
+{ "npsso_token": "abc...64chars", "online_id": "MyPSNName", "account_id": "123456", "region": "GB", "is_verified": true, "token_expired_at": null }
 ```
 
 `is_verified` is set to `true` at configure time. The PSN sync worker sets it to `false` and writes the current UTC timestamp to `token_expired_at` when PSN rejects the token. `token_expired_at` is `null` until the first expiry event.
@@ -260,14 +260,14 @@ Validation: reject immediately (400) if token length ≠ 64.
 
 On valid token: exchange with PSN to retrieve `online_id`, `account_id`, `region`; upsert `user_sync_configs` row for `storefront = "psn"`; store credentials JSON; return:
 ```json
-{ "success": true, "online_id": "MyPSNName", "account_id": "123456", "region": "SIEE", "message": "PSN configured successfully" }
+{ "success": true, "online_id": "MyPSNName", "account_id": "123456", "region": "GB", "message": "PSN configured successfully" }
 ```
 
 On PSN rejection: 400 `{ "error": "invalid_npsso_token" }`.
 
 **`GET /api/sync/psn/status`** — reads from the PSN credentials row:
 ```json
-{ "is_configured": true, "online_id": "MyPSNName", "account_id": "123456", "region": "SIEE", "token_expired": false }
+{ "is_configured": true, "online_id": "MyPSNName", "account_id": "123456", "region": "GB", "token_expired": false }
 ```
 `token_expired` is derived as `is_verified == false AND token_expired_at != null` from the stored credentials JSON — this distinguishes "token expired" from "never configured". At configure time `is_verified` is set to `true` and `token_expired_at` to `null`. When the PSN sync worker receives a token rejection, it updates the credentials row: `is_verified = false`, `token_expired_at = <current UTC timestamp>`. Returns zeroed response if no row exists.
 
@@ -349,7 +349,7 @@ Payload: `{ "job_id": "...", "user_id": "...", "storefront": "steam"|"psn" }`
 Phases:
 1. **Mark job processing.** Set `jobs.status = 'processing'`, `jobs.started_at = now()`.
 2. **Read credentials.** Load the `user_sync_configs` row for `(user_id, storefront)`. Parse `storefront_credentials`. If credentials are missing or `is_verified = false` (PSN), fail the job immediately with a descriptive error.
-3. **Fetch library from adapter.** Call the storefront-specific adapter (Steam or PSN) to retrieve the current game library. Returns a list of `ExternalLibraryEntry` structs, each with: `external_id`, `title`, `raw_platform` (e.g. `"pc-windows"` for Steam, `"playstation-5"` for PSN), `playtime_hours`, `ownership_status`, `is_subscription`.
+3. **Fetch library from adapter.** Call the storefront-specific adapter (Steam or PSN) to retrieve the current game library. Returns a list of `ExternalLibraryEntry` structs, each with: `external_id`, `title`, `raw_platform` (e.g. `"pc-windows"` for Steam; `"playstation-5"` or `"playstation-4"` for PSN — one entry per platform entitlement), `playtime_hours`, `ownership_status`, `is_subscription`.
 4. **Upsert `ExternalGame` rows.** For each entry, upsert by `(user_id, storefront, external_id)`. Always update `title`, `playtime_hours`, `is_subscription`, `ownership_status`, `is_available = true`.
 5. **Mark removed games.** Query all `ExternalGame` rows for `(user_id, storefront)` WHERE `is_available = true`. Any row whose `external_id` was not in the fetched set is set to `is_available = false`. If `is_subscription = true`, downgrade linked `UserGamePlatform.ownership_status` to `'no_longer_owned'`.
 6. **Dispatch `ProcessSyncItemTask`** for each `ExternalGame` WHERE `is_available = true AND is_skipped = false`. Each job item's `source_metadata_json` carries `{ "external_game_id": "...", "raw_platform": "pc-windows" }` (the `raw_platform` comes from the adapter entry — NOT stored on `ExternalGame`).
@@ -363,7 +363,7 @@ Payload: carried in `job_items.source_metadata_json = { "external_game_id": "...
 
 Platform and storefront resolution for `UserGamePlatform`:
 
-- `raw_platform` (from `source_metadata_json`) is passed to `platform_resolution.go` → resolved to a canonical `platforms.name` slug (e.g. `"playstation-5"` → `"ps5"`, `"pc-windows"` → `"pc-windows"`).
+- `raw_platform` (from `source_metadata_json`) is passed to `platform_resolution.go` → resolved to a canonical `platforms.name` slug (e.g. `"playstation-5"` → `"ps5"`, `"playstation-4"` → `"ps4"`, `"pc-windows"` → `"pc-windows"`).
 - The sync-source storefront identifier (from `ExternalGame.storefront`, e.g. `"psn"`) is mapped to the collection storefront slug (e.g. `"playstation-store"`) — this mapping is also in `platform_resolution.go`. Steam: `"steam"` → `"steam"` (same). PSN: `"psn"` → `"playstation-store"`.
 
 **Why `ExternalGame` has no `platform` field:** The Python model had `ExternalGame.platform` as an FK to `platforms.name`, populated by the sync adapter. This was incorrect — the canonical platform for a collection entry is a property of how the game appears in the user's collection (`UserGamePlatform`), not a permanent attribute of the external game record. The Go port intentionally omits this field. The platform flows through `source_metadata_json` on the job item and is resolved at processing time, not stored redundantly on `ExternalGame`.
@@ -373,7 +373,9 @@ Phases:
 2. If `eg.is_skipped`, mark item `SKIPPED`.
 3. **Phase 4 — IGDB resolution.** If `eg.resolved_igdb_id` is null, run IGDB matching. Score ≥ 0.85 → auto-match, store `resolved_igdb_id`. Score < 0.85 → `PENDING_REVIEW`. No candidates → `PENDING_REVIEW`.
 4. **Phase 5 — Collection sync.** Resolve `raw_platform` → platform slug and sync-source storefront → storefront slug via `platform_resolution.go`. Find existing `UserGamePlatform` by `external_game_id`, or by `(user_game_id, platform, storefront)`. Create if missing. Update `hours_played` and `ownership_status` (never downgrade ownership rank: `owned > borrowed/rented > subscription > no_longer_owned`).
-5. **Job completion check.** After each item is processed, count remaining non-terminal items (`pending`, `processing`, `pending_review`). If zero, mark `jobs.status = 'completed'`. `PENDING_REVIEW` items block completion — user must resolve them first via the job-items UI.
+5. **Job completion check.** After each item is processed, count remaining non-terminal items (`pending`, `processing`, `pending_review`). If zero, mark `jobs.status = 'completed'`. `PENDING_REVIEW` items block completion — the job stays in `processing` state indefinitely until the user resolves each item via the job-items UI (confirmed from Python `_check_and_update_job_completion`). There is no intermediate job status; `processing` is the correct state while review is pending.
+
+**`auto_add` is not used in sync processing.** The `auto_add` flag on `UserSyncConfig` is stored and exposed via the config API but has no effect on sync task execution — `ProcessSyncItemTask` always creates or updates `UserGamePlatform` rows unconditionally when IGDB resolution succeeds. This matches Python behavior: neither `dispatch_sync_items` nor `process_sync_item` reads `auto_add`. The field is preserved for potential future use.
 
 ### PSN Client Library
 
@@ -398,7 +400,7 @@ profile, err := client.GetProfile(ctx, "me")
 
 The auth exchange (`AuthWithNPSSO`) is purely against `ca.account.sony.com` and does not require a region. The `Options.Region` field is used only for the profile endpoint URL prefix; `"us"` works for the initial profile fetch via the `"me"` identifier regardless of the user's actual region.
 
-The `region` stored in credentials is the ISO alpha-2 code returned by the PSN profile call (confirmed from Python: `client.get_region().alpha_2`). If `go-psn-api`'s `GetProfile` does not expose a region field, store `""` rather than hardcoding `"us"`.
+The `region` stored in credentials is the ISO 3166-1 alpha-2 code returned by the PSN profile call, **uppercase** (e.g. `"US"`, `"GB"`), confirmed from Python: `client.get_region().alpha_2`. If `go-psn-api`'s `GetProfile` does not expose a region field, store `""` rather than hardcoding a default.
 
 ### Handler Interfaces
 
@@ -424,7 +426,7 @@ type PSNClient interface {
 type PSNAccountInfo struct {
     OnlineID  string
     AccountID string // Sony NpID — stable account identifier
-    Region    string // e.g. "us", "gb" — stored for sync worker use
+    Region    string // ISO 3166-1 alpha-2 uppercase, e.g. "US", "GB" — stored for sync worker use
 }
 
 // Sentinel errors the handler maps to specific API error codes.
