@@ -4,8 +4,10 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/go-co-op/gocron/v2"
+	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/backup"
@@ -61,6 +63,14 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		gocron.CronJob("*/30 * * * *", false),
 		gocron.NewTask(func() {
 			CleanupExpiredSessions(ctx, s.db)
+		}),
+	)
+
+	// Check pending syncs — every 15 minutes.
+	_, _ = s.scheduler.NewJob(
+		gocron.CronJob("*/15 * * * *", false),
+		gocron.NewTask(func() {
+			CheckPendingSyncs(ctx, s.db, s.pool)
 		}),
 	)
 
@@ -191,6 +201,62 @@ func CleanupUnreferencedGames(ctx context.Context, db *bun.DB) {
 	rows, _ := result.RowsAffected()
 	if rows > 0 {
 		slog.Info("cleanup: deleted unreferenced games", "count", rows)
+	}
+}
+
+// CheckPendingSyncs dispatches sync jobs for overdue non-manual sync configs.
+func CheckPendingSyncs(ctx context.Context, db *bun.DB, pool *worker.Pool) {
+	var configs []models.UserSyncConfig
+	if err := db.NewSelect().Model(&configs).Where("frequency != 'manual'").Scan(ctx); err != nil {
+		slog.Error("CheckPendingSyncs: query configs", "err", err)
+		return
+	}
+
+	now := time.Now().UTC()
+	intervals := map[string]float64{
+		"hourly": 3600,
+		"daily":  86400,
+		"weekly": 604800,
+	}
+
+	for _, cfg := range configs {
+		if cfg.Storefront == "epic" {
+			continue
+		}
+
+		needsSync := false
+		if cfg.LastSyncedAt == nil {
+			needsSync = true
+		} else if threshold, ok := intervals[cfg.Frequency]; ok {
+			needsSync = now.Sub(*cfg.LastSyncedAt).Seconds() >= threshold
+		}
+
+		if !needsSync {
+			continue
+		}
+
+		var existingID string
+		err := db.NewRaw(
+			`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
+			cfg.UserID, cfg.Storefront,
+		).Scan(ctx, &existingID)
+		if err == nil {
+			continue // already running
+		}
+
+		jobID := uuid.NewString()
+		_, err = db.NewRaw(
+			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at) VALUES (?, ?, 'sync', ?, 'pending', 'low', now())`,
+			jobID, cfg.UserID, cfg.Storefront,
+		).Exec(ctx)
+		if err != nil {
+			slog.Error("CheckPendingSyncs: insert job", "err", err)
+			continue
+		}
+
+		_ = pool.Submit(ctx, "dispatch_sync", map[string]string{
+			"job_id": jobID, "user_id": cfg.UserID, "storefront": cfg.Storefront,
+		}, 1)
 	}
 }
 

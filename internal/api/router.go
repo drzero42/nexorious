@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -18,6 +20,8 @@ import (
 	maint "github.com/drzero42/nexorious-go/internal/middleware"
 	migrate "github.com/drzero42/nexorious-go/internal/migrate"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
+	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
+	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
 	"github.com/drzero42/nexorious-go/internal/worker"
 	"github.com/drzero42/nexorious-go/ui"
 )
@@ -270,6 +274,13 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		adminBackups.GET("/:id/download", bh.HandleDownloadBackup)
 		adminBackups.POST("/:id/restore", bh.HandleRestore)
 		adminBackups.POST("/restore/upload", bh.HandleRestoreUpload)
+
+		// Sync routes (all JWT-protected)
+		steamSvc := steamsvc.NewClient()
+		psnSvc := psnsvc.NewClient()
+		synch := NewSyncHandler(db, pool, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc})
+		syncGroup := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+		synch.RegisterRoutes(syncGroup)
 	}
 
 	// Static cover art files from disk
@@ -281,6 +292,40 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 
 	// SPA catch-all — serves ui.UIBox; falls back to index.html
 	e.GET("/*", spaHandler())
+}
+
+// steamClientAdapter bridges steamsvc.Client to the SteamClient interface
+// without creating an import cycle between internal/api and internal/services/steam.
+type steamClientAdapter struct{ c *steamsvc.Client }
+
+func (a *steamClientAdapter) GetPlayerSummaries(ctx context.Context, apiKey, steamID string) (*SteamPlayerSummary, error) {
+	s, err := a.c.GetPlayerSummaries(ctx, apiKey, steamID)
+	if s == nil {
+		return nil, err
+	}
+	return &SteamPlayerSummary{
+		PersonaName:              s.PersonaName,
+		CommunityVisibilityState: s.CommunityVisibilityState,
+	}, err
+}
+
+// psnClientAdapter bridges psnsvc.Client to the PSNClient interface
+// without creating an import cycle between internal/api and internal/services/psn.
+type psnClientAdapter struct{ c *psnsvc.Client }
+
+func (a *psnClientAdapter) GetAccountInfo(ctx context.Context, npssoToken string) (*PSNAccountInfo, error) {
+	info, err := a.c.GetAccountInfo(ctx, npssoToken)
+	if err != nil {
+		if errors.Is(err, psnsvc.ErrInvalidNPSSOToken) {
+			return nil, ErrInvalidNPSSOToken
+		}
+		return nil, err
+	}
+	return &PSNAccountInfo{
+		OnlineID:  info.OnlineID,
+		AccountID: info.AccountID,
+		Region:    info.Region,
+	}, nil
 }
 
 func spaHandler() echo.HandlerFunc {

@@ -26,6 +26,8 @@ import (
 	maint "github.com/drzero42/nexorious-go/internal/middleware"
 	"github.com/drzero42/nexorious-go/internal/scheduler"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
+	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
+	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
 	"github.com/drzero42/nexorious-go/internal/worker"
 	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
@@ -220,7 +222,8 @@ func main() {
 	pool.Register("import_item", tasks.NewImportItemHandler(db))
 	pool.Register("export_json", tasks.NewExportJSONHandler(db, cfg.StoragePath))
 	pool.Register("export_csv", tasks.NewExportCSVHandler(db, cfg.StoragePath))
-	// pool.Register("process_sync_item", syncHandler)
+	pool.Register("dispatch_sync", tasks.NewDispatchSyncHandler(db, steamsvc.NewClient(), psnsvc.NewClient()))
+	pool.Register("process_sync_item", tasks.NewProcessSyncItemHandler(db, igdbClient))
 	// pool.Register("metadata_refresh_process", metadataHandler)
 
 	// -------------------------------------------------------------------------
@@ -250,6 +253,8 @@ func main() {
 			newPool.Register("import_item", tasks.NewImportItemHandler(newDB))
 			newPool.Register("export_json", tasks.NewExportJSONHandler(newDB, cfg.StoragePath))
 			newPool.Register("export_csv", tasks.NewExportCSVHandler(newDB, cfg.StoragePath))
+			newPool.Register("dispatch_sync", tasks.NewDispatchSyncHandler(newDB, steamsvc.NewClient(), psnsvc.NewClient()))
+			newPool.Register("process_sync_item", tasks.NewProcessSyncItemHandler(newDB, igdbClient))
 			newPool.Start(shutdownCtx, cfg.WorkerCount)
 			pool = newPool
 

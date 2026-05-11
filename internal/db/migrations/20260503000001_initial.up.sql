@@ -167,14 +167,14 @@ CREATE INDEX user_game_tags_tag_id_idx ON user_game_tags (tag_id);
 CREATE TABLE external_games (
     id               TEXT PRIMARY KEY,             -- UUID v4
     user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    storefront       TEXT NOT NULL REFERENCES storefronts(name) ON DELETE CASCADE,
+    storefront       TEXT NOT NULL,
     external_id      TEXT NOT NULL,                -- platform's game ID
     title            TEXT NOT NULL,
     resolved_igdb_id INTEGER REFERENCES games(id) ON DELETE SET NULL,
     is_skipped       BOOLEAN NOT NULL DEFAULT false,
     is_available     BOOLEAN NOT NULL DEFAULT true,
     is_subscription  BOOLEAN NOT NULL DEFAULT false,
-    playtime_hours   NUMERIC(10,2),
+    playtime_hours   INTEGER NOT NULL DEFAULT 0,
     ownership_status TEXT,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -195,20 +195,20 @@ ALTER TABLE user_game_platforms
 
 -- User sync configs (per-user, per-platform sync settings and credentials)
 CREATE TABLE user_sync_configs (
-    id                   TEXT PRIMARY KEY,         -- UUID v4
-    user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    platform             TEXT NOT NULL,            -- 'steam', 'psn', 'epic'
-    frequency            TEXT NOT NULL DEFAULT 'manual',  -- 'manual' | 'hourly' | 'daily' | 'weekly'
-    auto_add             BOOLEAN NOT NULL DEFAULT false,
-    platform_credentials TEXT,                     -- JSON encrypted at rest (AES-GCM)
-    last_synced_at       TIMESTAMPTZ,
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(user_id, platform)
+    id                     TEXT PRIMARY KEY,
+    user_id                TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    storefront             TEXT NOT NULL,
+    frequency              TEXT NOT NULL DEFAULT 'manual',
+    auto_add               BOOLEAN NOT NULL DEFAULT false,
+    storefront_credentials TEXT,
+    last_synced_at         TIMESTAMPTZ,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(user_id, storefront)
 );
 
-CREATE INDEX user_sync_configs_user_id_idx ON user_sync_configs (user_id);
-CREATE INDEX user_sync_configs_platform_idx ON user_sync_configs (platform);
+CREATE INDEX user_sync_configs_user_id_idx    ON user_sync_configs (user_id);
+CREATE INDEX user_sync_configs_storefront_idx ON user_sync_configs (storefront);
 
 -- Jobs (user-visible background task tracking)
 CREATE TABLE jobs (

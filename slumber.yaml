@@ -433,6 +433,89 @@ requests:
             igdb_id: "{{prompt(message='IGDB ID to import') | json_parse()}}"
             download_cover_art: true
 
+  sync:
+    name: Sync
+    requests:
+      list_config:
+        name: List Config
+        method: GET
+        url: "{{base_url}}/api/sync/config"
+        $ref: "#/.authenticated"
+
+      get_steam_config:
+        name: Get Steam Config
+        method: GET
+        url: "{{base_url}}/api/sync/config/steam"
+        $ref: "#/.authenticated"
+
+      update_steam_config:
+        name: Update Steam Config
+        method: PUT
+        url: "{{base_url}}/api/sync/config/steam"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            frequency: "daily"
+            auto_add: false
+
+      steam_verify:
+        name: Steam Verify
+        method: POST
+        url: "{{base_url}}/api/sync/steam/verify"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            steam_id: "{{prompt(message='Steam ID')}}"
+            web_api_key: "{{prompt(message='Web API Key', sensitive=true)}}"
+
+      steam_disconnect:
+        name: Steam Disconnect
+        method: DELETE
+        url: "{{base_url}}/api/sync/steam/connection"
+        $ref: "#/.authenticated"
+
+      psn_configure:
+        name: PSN Configure
+        method: POST
+        url: "{{base_url}}/api/sync/psn/configure"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            npsso_token: "{{prompt(message='NPSSO Token', sensitive=true)}}"
+
+      psn_status:
+        name: PSN Status
+        method: GET
+        url: "{{base_url}}/api/sync/psn/status"
+        $ref: "#/.authenticated"
+
+      psn_disconnect:
+        name: PSN Disconnect
+        method: DELETE
+        url: "{{base_url}}/api/sync/psn/disconnect"
+        $ref: "#/.authenticated"
+
+      trigger_steam:
+        name: Trigger Steam Sync
+        method: POST
+        url: "{{base_url}}/api/sync/steam"
+        $ref: "#/.authenticated"
+
+      steam_sync_status:
+        name: Steam Sync Status
+        method: GET
+        url: "{{base_url}}/api/sync/steam/status"
+        $ref: "#/.authenticated"
+
+      list_ignored:
+        name: List Ignored
+        method: GET
+        url: "{{base_url}}/api/sync/ignored"
+        $ref: "#/.authenticated"
+
   tags:
     name: Tags
     requests:

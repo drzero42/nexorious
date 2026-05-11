@@ -1,0 +1,471 @@
+package api_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/labstack/echo/v5"
+	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious-go/internal/api"
+	"github.com/drzero42/nexorious-go/internal/auth"
+	"github.com/drzero42/nexorious-go/internal/worker"
+)
+
+type stubSteamClient struct {
+	summary *api.SteamPlayerSummary
+	err     error
+}
+
+func (s *stubSteamClient) GetPlayerSummaries(_ context.Context, _, _ string) (*api.SteamPlayerSummary, error) {
+	return s.summary, s.err
+}
+
+type stubPSNClient struct {
+	info *api.PSNAccountInfo
+	err  error
+}
+
+func (s *stubPSNClient) GetAccountInfo(_ context.Context, _ string) (*api.PSNAccountInfo, error) {
+	return s.info, s.err
+}
+
+func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient) (interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, *worker.Pool) {
+	t.Helper()
+	cfg := testCfg()
+	pool := worker.NewPool(db)
+	e := echo.New()
+	ah := api.NewAuthHandler(db, cfg)
+	e.POST("/api/auth/login", ah.HandleLogin)
+	synch := api.NewSyncHandler(db, pool, steam, psn)
+	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	synch.RegisterRoutes(g)
+	return e, pool
+}
+
+func TestSyncCompiles(t *testing.T) {
+	var _ api.SteamClient = (*stubSteamClient)(nil)
+	var _ api.PSNClient = (*stubPSNClient)(nil)
+}
+
+// ─── Sync config tests ────────────────────────────────────────────────────────
+
+func TestSyncConfig_ListDefaults(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "cfg-list-1")
+
+	rec := getAuth(t, e, "/api/sync/config", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["total"].(float64) != 3 {
+		t.Fatalf("expected total=3, got %v", resp["total"])
+	}
+	configs := resp["configs"].([]any)
+	if len(configs) != 3 {
+		t.Fatalf("expected 3 configs, got %d", len(configs))
+	}
+	for _, c := range configs {
+		cfg := c.(map[string]any)
+		if cfg["is_configured"].(bool) {
+			t.Fatalf("expected is_configured=false for virtual default, storefront=%v", cfg["storefront"])
+		}
+	}
+}
+
+func TestSyncConfig_Put_CreatesRow(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "cfg-put-1")
+
+	rec := putJSONAuth(t, e, "/api/sync/config/steam", map[string]any{
+		"frequency": "daily",
+		"auto_add":  true,
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["frequency"] != "daily" {
+		t.Fatalf("expected frequency=daily, got %v", resp["frequency"])
+	}
+	if resp["auto_add"].(bool) != true {
+		t.Fatalf("expected auto_add=true")
+	}
+}
+
+func TestSyncConfig_Put_InvalidStorefront(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "cfg-invalid-1")
+
+	rec := putJSONAuth(t, e, "/api/sync/config/gog", map[string]any{"frequency": "daily"}, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestSyncConfig_Put_EpicAllowed(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "cfg-epic-1")
+
+	rec := putJSONAuth(t, e, "/api/sync/config/epic", map[string]any{"frequency": "weekly"}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for epic config, got %d", rec.Code)
+	}
+}
+
+// ─── Sync trigger and status tests ───────────────────────────────────────────
+
+func TestSyncTrigger_CreatesJob(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "trig-1")
+
+	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["storefront"] != "steam" {
+		t.Fatalf("expected storefront=steam, got %v", resp["storefront"])
+	}
+	if resp["status"] != "queued" {
+		t.Fatalf("expected status=queued, got %v", resp["status"])
+	}
+	if resp["job_id"] == nil {
+		t.Fatal("expected job_id")
+	}
+}
+
+func TestSyncTrigger_EpicReturns400(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "trig-epic-1")
+
+	rec := postJSONAuth(t, e, "/api/sync/epic", nil, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for epic trigger, got %d", rec.Code)
+	}
+}
+
+func TestSyncTrigger_DuplicateReturns409(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "trig-dup-1")
+
+	postJSONAuth(t, e, "/api/sync/steam", nil, token)
+	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 on duplicate, got %d", rec.Code)
+	}
+}
+
+func TestSyncStatus_ReflectsActiveJob(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "stat-1")
+
+	rec := getAuth(t, e, "/api/sync/steam/status", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var status map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
+		t.Fatalf("unmarshal status: %v", err)
+	}
+	if status["is_syncing"].(bool) {
+		t.Fatal("expected is_syncing=false before trigger")
+	}
+
+	postJSONAuth(t, e, "/api/sync/steam", nil, token)
+
+	rec2 := getAuth(t, e, "/api/sync/steam/status", token)
+	if err := json.Unmarshal(rec2.Body.Bytes(), &status); err != nil {
+		t.Fatalf("unmarshal status2: %v", err)
+	}
+	if !status["is_syncing"].(bool) {
+		t.Fatal("expected is_syncing=true after trigger")
+	}
+	if status["active_job_id"] == nil {
+		t.Fatal("expected active_job_id to be set")
+	}
+}
+
+func TestSteamVerify_BadSteamID(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "sv-bad-id")
+
+	rec := postJSONAuth(t, e, "/api/sync/steam/verify", map[string]any{
+		"steam_id":    "12345",
+		"web_api_key": "AABBCCDD00112233445566778899AABB",
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal resp: %v", err)
+	}
+	if resp["valid"].(bool) {
+		t.Fatal("expected valid=false for bad steam_id")
+	}
+	if resp["error"] != "invalid_steam_id" {
+		t.Fatalf("expected error=invalid_steam_id, got %v", resp["error"])
+	}
+}
+
+func TestSteamVerify_BadAPIKey(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "sv-bad-key")
+
+	rec := postJSONAuth(t, e, "/api/sync/steam/verify", map[string]any{
+		"steam_id":    "76561198012345678",
+		"web_api_key": "tooshort",
+	}, token)
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal resp: %v", err)
+	}
+	if resp["valid"].(bool) {
+		t.Fatal("expected valid=false for bad api key")
+	}
+	if resp["error"] != "invalid_api_key" {
+		t.Fatalf("expected error=invalid_api_key, got %v", resp["error"])
+	}
+}
+
+func TestSteamVerify_StubSuccess(t *testing.T) {
+	db := setupAuthTestDB(t)
+	stub := &stubSteamClient{
+		summary: &api.SteamPlayerSummary{PersonaName: "Frostbyte", CommunityVisibilityState: 3},
+	}
+	e, _ := newSyncTestApp(t, db, stub, &stubPSNClient{})
+	userID, token := setupTagUser(t, db, e, "sv-ok")
+
+	rec := postJSONAuth(t, e, "/api/sync/steam/verify", map[string]any{
+		"steam_id":    "76561198012345678",
+		"web_api_key": "AABBCCDD00112233445566778899AABB",
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal resp: %v", err)
+	}
+	if !resp["valid"].(bool) {
+		t.Fatalf("expected valid=true, got error=%v", resp["error"])
+	}
+	if resp["steam_username"] != "Frostbyte" {
+		t.Fatalf("expected steam_username=Frostbyte, got %v", resp["steam_username"])
+	}
+
+	var creds string
+	err := db.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`, userID).
+		Scan(context.Background(), &creds)
+	if err != nil {
+		t.Fatalf("credentials not stored: %v", err)
+	}
+	if creds == "" {
+		t.Fatal("expected non-empty credentials")
+	}
+}
+
+func TestSteamDisconnect_Idempotent(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "sd-1")
+
+	rec := deleteAuth(t, e, "/api/sync/steam/connection", token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 even with no row, got %d", rec.Code)
+	}
+}
+
+// --- PSN tests ---------------------------------------------------------------
+
+func TestPSNConfigure_ShortToken(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "psn-short")
+
+	rec := postJSONAuth(t, e, "/api/sync/psn/configure", map[string]any{
+		"npsso_token": "tooshort",
+	}, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestPSNConfigure_StubSuccess(t *testing.T) {
+	db := setupAuthTestDB(t)
+	stub := &stubPSNClient{
+		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456", Region: "GB"},
+	}
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, stub)
+	userID, token := setupTagUser(t, db, e, "psn-ok")
+
+	token64 := strings.Repeat("a", 64)
+	rec := postJSONAuth(t, e, "/api/sync/psn/configure", map[string]any{
+		"npsso_token": token64,
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal resp: %v", err)
+	}
+	if !resp["success"].(bool) {
+		t.Fatal("expected success=true")
+	}
+	if resp["online_id"] != "MyPSNName" {
+		t.Fatalf("expected online_id=MyPSNName, got %v", resp["online_id"])
+	}
+
+	var creds string
+	if err := db.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'psn'`, userID).
+		Scan(context.Background(), &creds); err != nil {
+		t.Fatalf("scan credentials: %v", err)
+	}
+	if creds == "" {
+		t.Fatal("expected credentials stored")
+	}
+}
+
+func TestPSNStatus_NoRow(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "psn-stat-empty")
+
+	rec := getAuth(t, e, "/api/sync/psn/status", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal resp: %v", err)
+	}
+	if resp["is_configured"].(bool) {
+		t.Fatal("expected is_configured=false")
+	}
+	if resp["token_expired"].(bool) {
+		t.Fatal("expected token_expired=false")
+	}
+	if resp["online_id"] != "" {
+		t.Fatalf("expected online_id='', got %v", resp["online_id"])
+	}
+}
+
+func TestPSNDisconnect_Idempotent(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "psn-disc-1")
+
+	rec := deleteAuth(t, e, "/api/sync/psn/disconnect", token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+}
+
+// ─── Ignored / skip / unskip tests ───────────────────────────────────────────
+
+func insertExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID, title string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, false, true, false, 0, now(), now())`,
+		id, userID, storefront, extID, title,
+	)
+	if err != nil {
+		t.Fatalf("insertExternalGame: %v", err)
+	}
+}
+
+func TestIgnored_EmptyList(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "ign-empty")
+
+	rec := getAuth(t, e, "/api/sync/ignored", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp []any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal resp: %v", err)
+	}
+	if len(resp) != 0 {
+		t.Fatalf("expected empty list, got %v", resp)
+	}
+}
+
+func TestIgnored_SkipAndUnskip(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, db, e, "ign-roundtrip")
+	insertExternalGame(t, db, "eg-1", userID, "steam", "730", "CS2")
+
+	rec := postJSONAuth(t, e, "/api/sync/ignored/eg-1", nil, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+
+	rec2 := postJSONAuth(t, e, "/api/sync/ignored/eg-1", nil, token)
+	if rec2.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on idempotent skip, got %d", rec2.Code)
+	}
+
+	rec3 := getAuth(t, e, "/api/sync/ignored", token)
+	var resp []map[string]any
+	if err := json.Unmarshal(rec3.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal resp: %v", err)
+	}
+	if len(resp) != 1 || resp[0]["id"] != "eg-1" {
+		t.Fatalf("expected eg-1 in ignored list, got %v", resp)
+	}
+
+	rec4 := deleteAuth(t, e, "/api/sync/ignored/eg-1", token)
+	if rec4.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on unskip, got %d", rec4.Code)
+	}
+
+	var isSkipped bool
+	if err := db.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-1'`).Scan(context.Background(), &isSkipped); err != nil {
+		t.Fatalf("scan is_skipped: %v", err)
+	}
+	if isSkipped {
+		t.Fatal("expected is_skipped=false after unskip")
+	}
+}
+
+func TestIgnored_404ForUnknown(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "ign-404")
+
+	rec := postJSONAuth(t, e, "/api/sync/ignored/nonexistent", nil, token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
