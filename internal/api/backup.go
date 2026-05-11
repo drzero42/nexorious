@@ -142,7 +142,7 @@ func (h *BackupHandler) HandleUpdateConfig(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	_, err = h.db.NewUpdate().Model((*models.BackupConfig)(nil)).
+	_, err = h.db.NewUpdate().
 		TableExpr("backup_config").
 		Set("schedule_cron = ?", cron).
 		Set("retention_mode = ?", req.RetentionMode).
