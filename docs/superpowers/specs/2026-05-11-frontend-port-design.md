@@ -161,6 +161,8 @@ The Go backend makes IGDB credentials optional. When unconfigured, `GET /health`
 
 ### Data fetching
 
+`GET /health` already returns `igdb_configured: boolean` (implemented in `internal/api/router.go`, covered by `TestHealth_ReportsIGDBConfiguredTrue/False`). No backend change needed.
+
 A `useHealthStatus` TanStack Query hook fetches `GET /health`. It is configured with a 60-second stale time and refetches on window focus. Components that need IGDB availability call this hook and receive the cached result — no prop drilling or context required.
 
 ```ts
@@ -187,8 +189,8 @@ The banner is persistent (not dismissible) — it stays visible as long as IGDB 
 
 Two specific interaction points are disabled when `igdb_configured === false`:
 
-- **Add game flow** (`src/routes/_authenticated/games/add.*`) — the IGDB search tab or button is rendered in a disabled state with a tooltip: *"IGDB not configured"*
-- **Any other IGDB import trigger** — same treatment
+- **Add game flow** (`src/routes/_authenticated/games/add.index.tsx`) — the `<IGDBSearch>` component is rendered in a disabled state with a tooltip: *"IGDB not configured"*
+- **IGDB Data Refresh** (`src/routes/_authenticated/admin/maintenance.tsx`) — the "IGDB Data Refresh" `<Button onClick={handleStartMetadataRefresh}>` is disabled with the same tooltip
 
 Non-IGDB features (browsing the collection, editing user games, managing tags/platforms, import/export, sync) are unaffected regardless of IGDB state.
 
@@ -203,11 +205,11 @@ IGDB endpoints return `503` when IGDB credentials are not configured. At call si
 The existing test suite is copied verbatim. Tests that require updating as part of this port:
 
 - **`src/api/admin.test.ts`** — remove `total_wishlist_items` fixture value and assertions
+- **`src/components/games/game-card.test.tsx`** — update nine `/static/logos/` fixture paths to `/logos/` (platforms icon_url values)
+- **`src/components/games/game-list.test.tsx`** — same `/static/logos/` → `/logos/` fixture update
 - **`src/hooks/use-health-status.test.ts`** *(new)* — covers `igdb_configured: true` and `igdb_configured: false` cases
-- **`src/routes/_authenticated.test.tsx`** *(new)* — asserts IGDB banner renders when `igdb_configured` is false and is absent when true
-- **`src/routes/_authenticated/games/add.test.tsx`** *(new or update)* — asserts IGDB search is disabled when `igdb_configured` is false
-
-All other existing tests are expected to pass without modification.
+- **`src/routes/_authenticated.test.tsx`** *(new — no existing file in the Python frontend)* — asserts IGDB banner renders when `igdb_configured` is false and is absent when true
+- **`src/routes/_authenticated/games/add.test.tsx`** *(new — no existing file in the Python frontend)* — asserts IGDB search is disabled when `igdb_configured` is false
 
 **Verification gate:** `npm run check && npm run test` with zero errors before the PR is opened.
 
