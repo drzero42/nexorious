@@ -20,7 +20,7 @@ Jobs and items are user-visible in the existing jobs/job_items UI. No new API en
 - The `jobs` table requires a non-null `user_id`. System-initiated jobs use the admin user's ID (queried at dispatch time). If no admin exists, the task skips with a warning.
 - Only one metadata refresh job may be active at a time. The dispatch task checks for an existing `pending` or `processing` job and skips if found.
 - `METADATA_REFRESH_INTERVAL` is already defined in `internal/config/config.go` with default `"24h"`. No config changes are needed.
-- `JobTypeMetadataRefresh = "metadata_refresh"` is already defined in `internal/db/models/jobs.go`. No model changes needed.
+- `JobTypeMetadataRefresh = "metadata_refresh"` and `JobSourceSystem = "system"` are already defined in `internal/db/models/jobs.go`. No model changes needed.
 
 ---
 
@@ -198,8 +198,12 @@ SELECT id, title FROM games ORDER BY last_updated ASC
 ```
 Ordering by `last_updated ASC` ensures stalest games are processed first. If the result is empty: return nil (no job created).
 
-**Step 5 — Create job.**
-Insert into `jobs`:
+**Step 5 — Create job, items, and tasks in a single transaction.**
+
+Use `db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error { ... })`. All writes below use `tx`. On any error inside the closure, return the error so `RunInTx` rolls back. If `RunInTx` itself returns an error: log and return nil.
+
+**Step 5a — Insert job.**
+Insert into `jobs` (using `tx`):
 - `id`: new UUID
 - `user_id`: admin user ID from step 2
 - `job_type`: `'metadata_refresh'`
@@ -209,12 +213,12 @@ Insert into `jobs`:
 - `total_items`: `len(games)`
 - `created_at`: `now()`
 
-**Step 6 — Create job_items and pending_tasks.**
-For each game (in `last_updated ASC` order):
+**Step 5b — Insert job_items and pending_tasks.**
+For each game (in `last_updated ASC` order), using `tx`:
 
 Insert `job_items`:
 - `id`: new UUID (saved as `itemID`)
-- `job_id`: job ID from step 5
+- `job_id`: job ID from step 5a
 - `user_id`: admin user ID
 - `item_key`: `strconv.Itoa(int(game.ID))` — IGDB integer ID as string
 - `source_title`: `game.Title`
@@ -233,16 +237,16 @@ Insert `pending_tasks`:
 - `attempts`: `0`
 - `created_at`: `now()`
 
-**Step 7 — Update job to processing.**
+**Step 5c — Update job to processing (in tx).**
 ```sql
 UPDATE jobs SET status = 'processing', started_at = now() WHERE id = ?
 ```
 
-**Step 8 — Return nil.**
+**Step 6 — Return nil.**
 
 The dispatch handler does not call `pool.Submit` for the item tasks — it inserts `pending_tasks` rows directly (same pattern as `DispatchSyncTask`). The worker pool picks them up from the DB.
 
-> **Crash safety note:** creating the job as `'pending'` before inserting items means a server crash between steps 5 and 7 leaves the job in `'pending'` rather than `'processing'`. The duplicate-run guard (step 3) still blocks future refreshes until the stuck job is cleaned up. A stale-job cleanup scheduler job (see Phase 5) handles this by failing orphaned `pending`/`processing` metadata refresh jobs that have exceeded a timeout threshold.
+> **Crash safety note:** steps 5a–5c run in a single transaction. A crash before the commit leaves no partial state — the duplicate-run guard (step 3) is unaffected and the next scheduler tick will retry normally. A crash after the commit leaves the job in `'processing'` with all items and tasks fully created; workers will process the pending tasks and the job will complete normally. A stale-job cleanup scheduler job (see Phase 5) handles the edge case where the server crashes between item task execution and the job-completion check, leaving a job stuck in `'processing'` indefinitely.
 
 ---
 
@@ -287,7 +291,7 @@ Unmarshal `task.Payload` into `metadataRefreshItemPayload`. On error: log and re
 Unmarshal `item.SourceMetadata` into `metadataRefreshSourceMeta`. On error: call `metaRefreshMarkItemFailed`, call `metaRefreshCheckJobCompletion`, return nil.
 
 **Step 4 — Load game.**
-`SELECT id, title FROM games WHERE id = ?`. On error (including not found): mark item failed, check completion, return nil.
+`SELECT id, title, cover_art_url FROM games WHERE id = ?`. On error (including not found): mark item failed, check completion, return nil.
 
 **Step 5 — IGDB guard.**
 If `!igdbClient.Configured()`: mark item failed with message `"igdb_not_configured"`, check completion, return nil. (Should not happen in practice since the dispatch task guards, but defensively handle it.)
@@ -324,19 +328,26 @@ On DB error: mark item failed with `fmt.Sprintf("update games: %v", err)`, check
 **Step 8 — Cover art (non-fatal).**
 If `md.CoverImageID == ""` (IGDB returned no cover), skip this step entirely — the existing `cover_art_url` in the database is preserved unchanged.
 
-If `md.CoverImageID != ""`:
+If `md.CoverImageID != ""`: compute the expected URL path (`"/static/cover_art/" + md.CoverImageID + ".jpg"`). If `game.CoverArtUrl` already equals that value, skip — no download or DB write needed.
+
+Otherwise:
 ```go
-localPath, err := igdbClient.DownloadCoverArt(ctx, md.CoverImageID, storagePath)
-if err != nil {
-    slog.Warn("metadata_refresh_item: cover art download failed",
-        "game_id", game.ID, "image_id", md.CoverImageID, "err", err)
-    // non-fatal — continue to mark item completed
-} else if localPath != "" {
-    _, _ = db.NewRaw(
-        `UPDATE games SET cover_art_url = ? WHERE id = ?`, localPath, game.ID,
-    ).Exec(ctx)
+expectedURLPath := "/static/cover_art/" + md.CoverImageID + ".jpg"
+if game.CoverArtUrl == nil || *game.CoverArtUrl != expectedURLPath {
+    coverURLPath, err := igdbClient.DownloadCoverArt(ctx, md.CoverImageID, storagePath)
+    if err != nil {
+        slog.Warn("metadata_refresh_item: cover art download failed",
+            "game_id", game.ID, "image_id", md.CoverImageID, "err", err)
+        // non-fatal — continue to mark item completed
+    } else if coverURLPath != "" {
+        _, _ = db.NewRaw(
+            `UPDATE games SET cover_art_url = ? WHERE id = ?`, coverURLPath, game.ID,
+        ).Exec(ctx)
+    }
 }
 ```
+
+`DownloadCoverArt` is itself idempotent (skips the HTTP download if the file already exists on disk), but the outer check avoids the unnecessary DB write on every refresh cycle when the cover hasn't changed.
 
 **Step 9 — Mark item completed.**
 
@@ -430,7 +441,8 @@ Uses `testcontainers-go` for a real PostgreSQL container (same pattern as `sync_
 | `TestMetadataRefreshDispatch_AlreadyRunning` | Pre-existing `processing` job → no duplicate; returns nil. |
 | `TestMetadataRefreshDispatch_NoGames` | No `jobs` row created; returns nil. |
 | `TestMetadataRefreshDispatch_CreatesJobAndItems` | 3 games → 1 `jobs` row (`status='processing'`), 3 `job_items`, 3 `pending_tasks` with `task_type='metadata_refresh_item'`. |
-| `TestMetadataRefreshItem_Success` | Game fields updated; `cover_art_url` set to local path; item `completed`; job `completed`. |
+| `TestMetadataRefreshItem_Success` | Game fields updated; `cover_art_url` set to URL path; item `completed`; job `completed`. |
 | `TestMetadataRefreshItem_IGDBError` | Item `failed`; job `completed` once all items terminal. |
 | `TestMetadataRefreshItem_CoverArtFailureNonFatal` | DownloadCoverArt fails; item still `completed`. |
+| `TestMetadataRefreshItem_CoverArtUnchanged` | Game already has correct `cover_art_url`; no DB write for cover; item `completed`. |
 | `TestMetadataRefreshItem_JobCompletionPartial` | Two items: first completes, job still `processing`; second completes, job `completed`. |
