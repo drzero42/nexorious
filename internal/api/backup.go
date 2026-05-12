@@ -29,7 +29,7 @@ type RestoreCallbacks struct {
 	CloseDB         func() error
 	ReconnectDB     func() (*bun.DB, error)
 	RebuildServices func(db *bun.DB) error
-	ReinitMigrator   func() error
+	ReinitMigrator   func(db *bun.DB) error
 	SetAppState      func(state string)
 	MaxMigration     string
 	RebuildBackupJob func(ctx context.Context, cron, retentionMode string, retentionValue int)

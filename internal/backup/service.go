@@ -533,7 +533,7 @@ type RestoreOpts struct {
 	CloseDB         func() error
 	ReconnectDB     func() (*bun.DB, error)
 	RebuildServices func(db *bun.DB) error
-	ReinitMigrator  func() error
+	ReinitMigrator  func(db *bun.DB) error
 	SetAppState     func(state string)
 	MaxMigration    string
 }
@@ -660,7 +660,7 @@ func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) erro
 		slog.Error("restore: rebuild services", "err", err)
 	}
 
-	if err := opts.ReinitMigrator(); err != nil {
+	if err := opts.ReinitMigrator(newDB); err != nil {
 		slog.Error("restore: reinit migrator", "err", err)
 	}
 
@@ -734,7 +734,7 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 	if err := opts.RebuildServices(newDB); err != nil {
 		slog.Error("rollback: failed to rebuild services", "err", err)
 	}
-	if err := opts.ReinitMigrator(); err != nil {
+	if err := opts.ReinitMigrator(newDB); err != nil {
 		slog.Error("rollback: failed to reinit migrator", "err", err)
 	}
 

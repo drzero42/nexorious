@@ -269,7 +269,12 @@ func main() {
 			slog.Info("workers and scheduler restarted after restore")
 			return nil
 		},
-		ReinitMigrator:  func() error { return migrator.DetermineStateForTest() },
+		ReinitMigrator: func(db *bun.DB) error {
+				if err := migrator.DetermineStateForTest(); err != nil {
+					return err
+				}
+				return migrator.InitNeedsSetup(context.Background(), db)
+			},
 		SetAppState: func(state string) {
 			if state == "db_unavailable" {
 				migrator.SetStateForTest(migrate.AppStateDBUnavailable)

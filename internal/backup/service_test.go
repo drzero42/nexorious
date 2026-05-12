@@ -194,7 +194,7 @@ func TestRestoreBackup(t *testing.T) {
 			return restoredDB, nil
 		},
 		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func() error { return nil },
+		ReinitMigrator:  func(*bun.DB) error { return nil },
 		SetAppState:     func(s string) {},
 		MaxMigration:    "99999999999999",
 	}
