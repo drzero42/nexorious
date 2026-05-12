@@ -70,6 +70,8 @@ game.IgdbPlatformIds = &s
 
 Apply the same fix for `IgdbPlatformNames`. This corrects a latent inconsistency; games imported before this fix will have comma-join format in the DB, but will be normalised to JSON on their next metadata refresh.
 
+> **Why this is safe:** `igdb_platform_ids` and `igdb_platform_names` are stored-only fields — they are not rendered anywhere in the UI and are not parsed by any Go code path outside of the write paths in `import_item.go` and `metadata_refresh.go`. The mixed comma-join/JSON format in the DB during the transition period causes no observable problem. No frontend changes are required.
+
 These are the only changes outside `internal/worker/tasks/metadata_refresh.go` and `internal/scheduler/` that are part of the core refresh logic. All existing callers of `GameMetadata` that do not touch `EstimatedPlaytimeHours` are unaffected.
 
 ---
@@ -202,8 +204,7 @@ Insert into `jobs`:
 - `user_id`: admin user ID from step 2
 - `job_type`: `'metadata_refresh'`
 - `source`: `'system'`
-- `status`: `'processing'` (all tasks queued synchronously before returning)
-- `started_at`: `now()`
+- `status`: `'pending'`
 - `priority`: `'low'`
 - `total_items`: `len(games)`
 - `created_at`: `now()`
@@ -232,9 +233,16 @@ Insert `pending_tasks`:
 - `attempts`: `0`
 - `created_at`: `now()`
 
-**Step 7 — Return nil.**
+**Step 7 — Update job to processing.**
+```sql
+UPDATE jobs SET status = 'processing', started_at = now() WHERE id = ?
+```
+
+**Step 8 — Return nil.**
 
 The dispatch handler does not call `pool.Submit` for the item tasks — it inserts `pending_tasks` rows directly (same pattern as `DispatchSyncTask`). The worker pool picks them up from the DB.
+
+> **Crash safety note:** creating the job as `'pending'` before inserting items means a server crash between steps 5 and 7 leaves the job in `'pending'` rather than `'processing'`. The duplicate-run guard (step 3) still blocks future refreshes until the stuck job is cleaned up. A stale-job cleanup scheduler job (see Phase 5) handles this by failing orphaned `pending`/`processing` metadata refresh jobs that have exceeded a timeout threshold.
 
 ---
 
