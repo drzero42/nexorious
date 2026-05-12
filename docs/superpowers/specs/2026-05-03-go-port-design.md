@@ -1447,109 +1447,12 @@ The React source lives in `ui/` inside the Go repo (Stash-style). `make frontend
 
 Implementation should proceed in phases. Each phase ends with a working, deployable binary. Start a new planning session (`/plan`) for each phase when ready to implement it.
 
-### Phase 1 — Infrastructure Skeleton
-*Goal: a working binary that starts, runs migrations in the browser, serves the React SPA, and handles auth.*
-
-- Project scaffolding: `go.mod`, directory structure, Makefile
-- CLI flags: `--help`, `--version`, `--config`, `--migrate-only` (stdlib `flag`; build-time version injection via `-ldflags`)
-- Config (`caarlos0/env`)
-- Bun DB connection + initial schema migration (`00000000000001_initial.up.sql`) — full table list including all models
-- Bun migrate + migration state machine + browser migration UI (SSE)
-- Echo HTTP server: middleware stack, route zones, SPA fallback with `embed.FS`
-- IGDB optional credentials: make `IGDB_CLIENT_ID`/`IGDB_CLIENT_SECRET` optional; validate at startup via Twitch token probe; IGDB endpoints return 503 when not configured; `GET /health` reports `igdb_configured` boolean
-- Static file route: `/static/cover_art/*` (logos are frontend assets in `ui/public/logos/` — no Go route needed)
-- JWT auth: login, refresh, logout; first-run setup flow (server-driven middleware gate, setup/admin); `needsSetup` flag cleared after first admin created
-- `GET /api/auth/me` — current user profile; required in Phase 1 because the setup page writes tokens to `localStorage` then redirects to `/`, at which point the React SPA's `AuthProvider` immediately calls this endpoint to validate the token and populate the user object. Without it the SPA breaks on first load after setup. Implementation: verify JWT, query `users` table by `user_id` claim via `db.NewRaw(...)`, return profile. Auth queries use raw Bun SQL (not model-layer ORM) to keep auth isolated from the models package.
-- Health/status endpoint
-- `internal/filter/` package: query builder + criterion handlers
-
-**Checkpoint:** binary starts, browser shows migration UI on first run, React app loads after migration, setup completes end-to-end (including SPA redirect), login works.
-
----
-
-### Phase 2 — Core Game API
-*Goal: full read/write game collection functionality via the existing React UI.*
-
-- Bun model structs (`internal/db/models/`) for all Phase 2 tables: games, user_games, user_game_platforms, platforms, storefronts, platform_storefronts, tags, user_game_tags
-- Games API (`/api/games`, `/api/games/:id`, search, IGDB import, metadata endpoints)
-- User games API (list with dynamic filtering via `internal/filter/` criteria functions, sort, CRUD, platform associations)
-- IGDB result ranking: `go-fuzzywuzzy` + `NormalizeTitle`; local list search uses `ILIKE` only
-- Platforms and tags read endpoints (JWT required; read-only — no write/admin endpoints; see static platforms spec)
-- User-games filter-options / genres / stats (`GET /api/user-games/stats`) / ids endpoints
-  - Note: `GET /api/platforms/stats` and `GET /api/platforms/storefronts/stats` are **not implemented** — cancelled per the static platforms spec
-- IGDB service (rate-limited HTTP client, cover art storage)
-- Remaining auth profile endpoints: `PUT /api/auth/me`, `PUT /api/auth/change-password`, `GET /api/auth/username/check/:username`, `PUT /api/auth/username` (`GET /api/auth/me` is Phase 1 — see above)
-
-**Checkpoint:** React frontend fully usable for browsing and managing game collection.
-
----
-
-### Phase 3 — Background Workers + Import/Export
-*Goal: data migration path from Python version, plus export/backup.*
-
-- Worker pool (database-backed task queue: `pending_tasks` table, `SELECT FOR UPDATE SKIP LOCKED`, goroutine workers with in-process notify channel for zero-latency wake-up)
-- Job tracking (jobs + job_items tables, full `/api/jobs` and `/api/job-items` endpoints including review workflow; Bun model structs for these tables)
-- gocron scheduler (cleanup jobs wired up)
-- Import handler (`POST /api/import/nexorious` — nexorious JSON format, the upgrade path from Python)
-- Export handler
-- Backup create + scheduled backup + full restore with rollback — see `2026-05-10-backup-restore-design.md` for detailed design
-- `POST /api/auth/setup/restore` — deferred from Phase 1; shares restore logic with the backup system implemented here
-- Admin backup endpoints: list, create, delete, download, restore, upload-restore, config get/put
-- Maintenance mode middleware for restore operations
-
-**Checkpoint:** existing Python users can export their data and import it into the Go version.
-
----
-
-### Phase 4 — Sync Integrations
-*Goal: automated library sync from external platforms.*
-
-- `external_games` and `user_sync_configs` sync config API handlers (see `2026-05-10-sync-api-design.md`)
-- Skip/un-skip endpoints via sync router (`GET/DELETE /api/sync/ignored`) operating on `external_games.is_skipped`
-- `services/platform_resolution.go` — raw platform name → slug mapping
-- `services/matching.go` — IGDB title matching using `FuzzyConfidence` (go-fuzzywuzzy)
-- `services/steam/` — `SteamClient` interface implementation; direct HTTP to `api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002`
-- `services/psn/` — `PSNClient` interface implementation using `github.com/sizovilya/go-psn-api`; calls `AuthWithNPSSO` then `GetProfile(ctx, "me")`
-- Steam sync (dispatch + process)
-- PSN sync
-- Metadata refresh (dispatch + process)
-- Remaining scheduler jobs (`CheckPendingSyncsTask` every 15 minutes, metadata refresh interval)
-- Epic Games Store sync is **not in scope for Phase 4**; see Epic Games Store Sync section
-
-**Checkpoint:** sync integrations work end-to-end.
-
----
-
-### Phase 5 — Polish + Production Readiness
-*Goal: production-grade deployment.*
-
-- Admin user management endpoints (JWT + admin role required): `POST /api/auth/admin/users` (create), `GET /api/auth/admin/users` (list all), `GET /api/auth/admin/users/:id`, `PUT /api/auth/admin/users/:id` (update role/enabled), `PUT /api/auth/admin/users/:id/password` (reset password), `GET /api/auth/admin/users/:id/deletion-impact`, `DELETE /api/auth/admin/users/:id` — see Admin User Management section; handlers go in `internal/api/auth.go` or a new `internal/api/admin_users.go`; route group reuses the existing `adminGroup` in `registerRoutes`
-- PostgreSQL-backed rate limiter (multi-instance support)
-- Migrate CLI surface to `cobra` subcommands (`serve`, `migrate`, `migrate status`, `version`); update Helm chart, systemd units, and any tooling that uses `--migrate-only`
-- Full test coverage (testcontainers-go, >80%)
-- Dockerfile (single-stage: React build → go build → minimal runtime image)
-- Helm chart (adapted from existing nexorious chart)
-- Documentation updates
-
-**Checkpoint:** ready to replace the Python version in production.
-
----
-
-### Phase 6 — Embedded PostgreSQL (Zero-Dependency Mode)
-*Goal: single binary that works out of the box with no external dependencies, for evaluation and personal use.*
-
-Use [`fergusstrange/embedded-postgres`](https://github.com/fergusstrange/embedded-postgres) to bundle a real PostgreSQL instance that the Go binary can start and manage itself. This is strictly opt-in — production deployments continue to use an external PostgreSQL configured via `DATABASE_URL`.
-
-**Approach:**
-- Add `POSTGRES_MODE=embedded|external` config flag (default `external`)
-- When `embedded`: binary starts its own PostgreSQL on a local port, sets `DATABASE_URL` internally, manages data directory via `EMBEDDED_POSTGRES_DATA_DIR` (default `./data`)
-- When `external`: behaviour is identical to the current design — `DATABASE_URL` is required
-- Migration UI and all other behaviour is identical in both modes
-- Embedded mode is not recommended for multi-user or production use; a startup warning makes this clear
-
-**Why last:** embedded-postgres adds meaningful binary size and download complexity (it fetches a Postgres binary at first run). It should only be added once the port is stable, well-tested, and the external-Postgres path is the proven baseline. Doing it earlier risks conflating embedded-mode bugs with port bugs.
-
-**Checkpoint:** user can download a single binary, run it, and have a working nexorious instance with no other setup.
+- [Phase 1 — Infrastructure Skeleton](2026-05-03-go-port-design-phase-1.md)
+- [Phase 2 — Core Game API](2026-05-03-go-port-design-phase-2.md)
+- [Phase 3 — Background Workers + Import/Export](2026-05-03-go-port-design-phase-3.md)
+- [Phase 4 — Sync Integrations](2026-05-03-go-port-design-phase-4.md)
+- [Phase 5 — Polish + Production Readiness](2026-05-03-go-port-design-phase-5.md)
+- [Phase 6 — Embedded PostgreSQL (Zero-Dependency Mode)](2026-05-03-go-port-design-phase-6.md)
 
 ---
 
