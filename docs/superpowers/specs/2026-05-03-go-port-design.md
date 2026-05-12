@@ -607,7 +607,45 @@ Both tables are **static reference data** — they are populated entirely by mig
 
 All users are read-only consumers of this data.
 
-**Frontend change required:** The Python frontend includes admin UI for managing platforms and storefronts (creating, editing, deleting entries, uploading logos, managing associations). These screens must be **removed entirely** when porting the frontend. Any navigation links, routes, API client methods (`src/api/platforms.ts` mutations, logo upload calls), and TypeScript types relating to platform/storefront write operations should be deleted. The read-only API calls (listing platforms, listing storefronts for a platform, fetching a single platform/storefront for display in dropdowns) are kept.
+**Frontend change required:** The Python frontend includes admin UI for managing platforms and storefronts (creating, editing, deleting entries, managing associations). These screens must be **removed entirely** when porting the frontend. The read-only API calls (listing platforms, listing storefronts for a platform, fetching a single platform/storefront for display in dropdowns) are kept.
+
+Concrete removal checklist (verified against the ported codebase):
+
+**Delete entirely:**
+- `ui/frontend/src/routes/_authenticated/admin/platforms.tsx` — 1 093-line page with full CRUD UI for platforms, storefronts, and the platform-storefront association matrix. Nothing in this file is reusable.
+
+**Edit `ui/frontend/src/api/platforms.ts`** — keep all read functions; delete:
+- `GetPlatformsParams.source` and `GetStorefrontsParams.source` fields (`'official' | 'custom'`) — filter only existed to distinguish admin-added "custom" entries from "official" ones; meaningless once all entries come from migrations
+- `PlatformCreateData`, `PlatformUpdateData`, `StorefrontCreateData`, `StorefrontUpdateData` interfaces
+- `createPlatform()`, `updatePlatform()`, `deletePlatform()` (called `POST/PUT/DELETE /platforms/…`)
+- `createStorefront()`, `updateStorefront()`, `deleteStorefront()` (called `POST/PUT/DELETE /platforms/storefronts/…`)
+- `createPlatformStorefrontAssociation()`, `deletePlatformStorefrontAssociation()` (called `POST/DELETE /platforms/:platform/storefronts/:storefront`)
+
+**Edit `ui/frontend/src/api/admin.ts`** — delete:
+- `loadSeedData()` function — calls `POST /platforms/seed`, which does not exist in the Go backend (platforms are populated by migrations, not a seed endpoint); also remove `SeedDataResult` from the imports at the top of the file
+
+**Edit `ui/frontend/src/types/admin.ts`** — delete:
+- `SeedDataResult` interface — only used by `loadSeedData()`
+
+**Edit `ui/frontend/src/components/navigation/nav-items.tsx`** — delete:
+- The Platforms nav item (`href: '/admin/platforms', label: 'Platforms'`) from `adminSection.items`
+- The `Layers` import from `lucide-react` (becomes unused)
+
+**Edit `ui/frontend/src/routes/_authenticated/admin/index.tsx`** — delete:
+- The "Platforms" quick-action `<Link to="/admin/platforms">` button and its surrounding card/section
+- Any `SeedDataResult` import or usage if present
+
+**Edit `ui/frontend/src/routes/_authenticated/admin/maintenance.tsx`** — delete:
+- The `loadSeedData` call, its associated handler function, and the seed-data UI section (button + status display); all state variables that are only used by that section
+- Keep `startMetadataRefreshJob()` — that endpoint exists in the Go backend
+
+**Edit `ui/frontend/src/api/platforms.test.ts`** — delete tests for: `createPlatform`, `updatePlatform`, `deletePlatform`, `createStorefront`, `updateStorefront`, `deleteStorefront`, `createPlatformStorefrontAssociation`, `deletePlatformStorefrontAssociation`
+
+**Edit `ui/frontend/src/api/admin.test.ts`** — delete the `loadSeedData` test
+
+**`ui/frontend/src/types/platform.ts` — `source` field:** The `source: string` field on `Platform` and `Storefront` was used in the admin page to display an "official vs custom" badge. If no remaining read-path UI displays it, remove it from the interfaces. The Go backend DB column still exists and the read endpoints return it, so leaving it in the type is harmless — but it should not be surfaced in any UI.
+
+**Backend: no changes needed.** The Go backend never implemented platform write endpoints — `router.go` only registers read-only platform handlers. The frontend mutation functions would receive 404s if called.
 
 **Frontend change required — logos and icon field:** The Python backend stores full paths in `icon_url` (e.g. `/static/logos/platforms/pc-windows/pc-windows-icon-light.svg`) served from the backend. The Go port changes this in two ways:
 
@@ -1485,6 +1523,7 @@ Implementation should proceed in phases. Each phase ends with a working, deploya
 ### Phase 5 — Polish + Production Readiness
 *Goal: production-grade deployment.*
 
+- Admin user management endpoints (JWT + admin role required): `POST /api/auth/admin/users` (create), `GET /api/auth/admin/users` (list all), `GET /api/auth/admin/users/:id`, `PUT /api/auth/admin/users/:id` (update role/enabled), `PUT /api/auth/admin/users/:id/password` (reset password), `GET /api/auth/admin/users/:id/deletion-impact`, `DELETE /api/auth/admin/users/:id` — see Admin User Management section; handlers go in `internal/api/auth.go` or a new `internal/api/admin_users.go`; route group reuses the existing `adminGroup` in `registerRoutes`
 - PostgreSQL-backed rate limiter (multi-instance support)
 - Migrate CLI surface to `cobra` subcommands (`serve`, `migrate`, `migrate status`, `version`); update Helm chart, systemd units, and any tooling that uses `--migrate-only`
 - Full test coverage (testcontainers-go, >80%)
