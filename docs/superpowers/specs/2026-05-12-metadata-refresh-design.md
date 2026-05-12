@@ -9,7 +9,7 @@ Phase 4 specified a metadata refresh job but it was deferred from the sync API i
 - A scheduler job that submits `metadata_refresh_dispatch` on a configurable interval.
 - A minor addition to `GameMetadata` to expose `CoverImageID` without URL parsing.
 
-Jobs and items are user-visible in the existing jobs/job_items UI. No new API endpoints or migrations are required.
+Jobs and items are user-visible in the existing jobs/job_items UI. No new API endpoints or migration files are required. The existing initial migration is edited to drop the unused `estimated_playtime_hours` column (see the Estimated Playtime Cleanup section).
 
 ---
 
@@ -28,15 +28,22 @@ Jobs and items are user-visible in the existing jobs/job_items UI. No new API en
 
 **File:** `internal/services/igdb/models.go`
 
-Add one field to `GameMetadata`:
+Add one field to `GameMetadata` and remove the unused `EstimatedPlaytimeHours` field:
 
 ```go
 CoverImageID string // IGDB image_id, e.g. "co1wyy". Empty when no cover.
 ```
 
+Remove:
+```go
+EstimatedPlaytimeHours *int32
+```
+
+`EstimatedPlaytimeHours` has no data source — it is never populated by `FetchFullMetadata`, `convertToGameMetadata`, or any other code path — and is not displayed anywhere in the UI. It is being removed in full (see Estimated Playtime Cleanup section).
+
 **File:** `internal/services/igdb/igdb.go`
 
-In `convertToGameMetadata`, populate both fields together:
+In `convertToGameMetadata`, populate both cover fields together:
 
 ```go
 if g.Cover != nil && g.Cover.ImageID != "" {
@@ -46,7 +53,50 @@ if g.Cover != nil && g.Cover.ImageID != "" {
 }
 ```
 
-This is the only change outside `internal/worker/tasks/` and `internal/scheduler/`. It is backward-compatible — all existing callers of `GameMetadata` are unaffected.
+**File:** `internal/worker/tasks/import_item.go`
+
+Fix `igdbMetadataToGame`: the existing code stores `igdb_platform_ids` and `igdb_platform_names` as comma-joined strings (`strings.Join`), which is inconsistent with the DB schema comment (`-- JSON array as text`). Change both to use `json.Marshal`, matching the format the refresh task uses:
+
+```go
+// Before (wrong — comma-joined):
+s := strings.Join(ids, ",")
+game.IgdbPlatformIds = &s
+
+// After (correct — JSON array):
+b, _ := json.Marshal(ids)
+s := string(b)
+game.IgdbPlatformIds = &s
+```
+
+Apply the same fix for `IgdbPlatformNames`. This corrects a latent inconsistency; games imported before this fix will have comma-join format in the DB, but will be normalised to JSON on their next metadata refresh.
+
+These are the only changes outside `internal/worker/tasks/metadata_refresh.go` and `internal/scheduler/` that are part of the core refresh logic. All existing callers of `GameMetadata` that do not touch `EstimatedPlaytimeHours` are unaffected.
+
+---
+
+## Estimated Playtime Cleanup
+
+`estimated_playtime_hours` is a dead field. It exists in the DB schema, Go models, and frontend types but has no data source and is never rendered in the UI. Remove it everywhere.
+
+**Migration:** Edit the existing initial migration (`internal/db/migrations/20260503000001_initial.up.sql`) — remove the `estimated_playtime_hours` column from the `CREATE TABLE games` statement. No new migration file is needed; drop and recreate the dev DB after the change.
+
+**File:** `internal/db/models/models.go`
+
+Remove the `EstimatedPlaytimeHours` field from `Game`.
+
+**File:** `ui/frontend/src/api/games.ts`
+
+Remove `estimated_playtime_hours?: number` from the API response type, and remove its pass-through in the game mapper function (`apiGame.estimated_playtime_hours`).
+
+**File:** `ui/frontend/src/types/game.ts`
+
+Remove `estimated_playtime_hours?: number` from the domain `Game` type.
+
+**Test fixtures**
+
+Remove `estimated_playtime_hours` from the mock game objects in:
+- `ui/frontend/src/api/games.test.ts`
+- `ui/frontend/src/hooks/use-games.test.tsx`
 
 ---
 
@@ -250,13 +300,12 @@ Update all metadata columns in a single `UPDATE games SET ... WHERE id = ?`:
 | `release_date` | parse `md.ReleaseDate` (`"YYYY-MM-DD"` → `time.Time`); nil if absent or unparseable |
 | `rating_average` | `md.RatingAverage` |
 | `rating_count` | `md.RatingCount` |
-| `estimated_playtime_hours` | `md.EstimatedPlaytimeHours` |
 | `howlongtobeat_main` | `md.HowlongtobeatMain` |
 | `howlongtobeat_extra` | `md.HowlongtobeatExtra` |
 | `howlongtobeat_completionist` | `md.HowlongtobeatCompletionist` |
 | `igdb_slug` | `md.IgdbSlug` if non-empty, else `NULL` |
-| `igdb_platform_ids` | `json.Marshal(md.PlatformIDs)` as string; nil if slice is empty |
-| `igdb_platform_names` | `json.Marshal(md.PlatformNames)` as string; nil if slice is empty |
+| `igdb_platform_ids` | `json.Marshal(md.PlatformIDs)` as string; `nil` if slice is empty. **JSON array format** — e.g. `[6,48]`. This matches the DB schema (`-- JSON array as text`). |
+| `igdb_platform_names` | `json.Marshal(md.PlatformNames)` as string; `nil` if slice is empty. **JSON array format** — e.g. `["PC","PlayStation 5"]`. |
 | `game_modes` | `md.GameModes` |
 | `themes` | `md.Themes` |
 | `player_perspectives` | `md.PlayerPerspectives` |
@@ -265,6 +314,8 @@ Update all metadata columns in a single `UPDATE games SET ... WHERE id = ?`:
 On DB error: mark item failed with `fmt.Sprintf("update games: %v", err)`, check completion, return nil.
 
 **Step 8 — Cover art (non-fatal).**
+If `md.CoverImageID == ""` (IGDB returned no cover), skip this step entirely — the existing `cover_art_url` in the database is preserved unchanged.
+
 If `md.CoverImageID != ""`:
 ```go
 localPath, err := igdbClient.DownloadCoverArt(ctx, md.CoverImageID, storagePath)
@@ -339,13 +390,7 @@ sched = scheduler.NewScheduler(db, pool, backupSvc, cfg)
 
 ## Slumber Collection
 
-Add a new `metadata-refresh/` folder in `slumber.yaml` with two requests:
-
-| Request | Method | Path |
-|---|---|---|
-| trigger dispatch (dev only) | `POST` | submit a `metadata_refresh_dispatch` pending_task directly via DB — not an HTTP endpoint |
-
-Since metadata refresh has no HTTP trigger endpoint (it is scheduler-only), no slumber requests are needed. Document this in a comment in `slumber.yaml` alongside the `jobs/` folder.
+Metadata refresh has no HTTP trigger endpoint (it is scheduler-only). No slumber requests are needed. Add a comment alongside the `jobs/` folder in `slumber.yaml` noting this.
 
 ---
 
