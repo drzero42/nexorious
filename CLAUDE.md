@@ -243,3 +243,51 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+# Task Tracking
+
+This project uses [Beads](https://github.com/steveyegge/beads) (`bd`) for persistent task tracking across sessions.
+Beads state lives in `.beads/` and survives context compaction and session restarts.
+
+## Workflow
+
+Use the full pipeline for any non-trivial feature work:
+
+```
+brainstorming -> design doc -> superpowers:writing-plans -> plan-to-epic -> epic-executor
+```
+
+For small changes (single file, few lines): implement directly without the pipeline.
+
+## Rules
+
+- **Always use `bd` for task state** — not TodoWrite, not markdown files in `docs/plans/`
+- **Always pass `--json`** to all `bd` commands for reliable parsing
+- **Always include `--description`** when creating issues — context matters across sessions
+- **Run `bd dolt push`** before ending any session where beads state was modified
+- **Do not create `docs/plans/` markdown task files** — that's what beads is for.
+  Design docs and implementation plans written by `superpowers:writing-plans` are fine;
+  do not create additional freestanding task-tracking markdown.
+
+## Resuming Work
+
+To resume an in-progress epic:
+
+```
+continue epic <epic-id>
+```
+
+The epic-executor will check `bd epic status`, find the next ready task, and continue without re-explanation.
+
+## Key Commands
+
+```bash
+bd prime                              # Inject workflow context (runs automatically on session start)
+bd ready --json                       # Show tasks with no blockers
+bd epic status <epic-id> --json       # Show epic completion %
+bd list --status open --json          # List all open issues
+bd show <task-id> --json              # Show task details
+bd update <task-id> --claim --json    # Claim a task
+bd close <task-id> --reason "..." --json  # Close a task
+bd blocked --json                     # Show what's blocked and why
+bd dolt push                          # Sync to git remote
+```
