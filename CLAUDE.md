@@ -182,7 +182,6 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 ## Known Gotchas
 
 - **`sql.ErrNoRows` vs DB errors** — always `errors.Is(err, sql.ErrNoRows)` to distinguish "not found" (→ 404/401) from real connection failures (→ 500); import `"database/sql"` for the sentinel. Bun wraps pgx errors into `sql.ErrNoRows`, so use the stdlib sentinel (not `pgx.ErrNoRows`)
-
 - **`//go:embed all:dir`** — use `all:` prefix when the directory contains dot-files (e.g. `.gitkeep`); without it, Go silently excludes them and the build fails
 - **golang-migrate driver** — use blank import `_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"` + `gmigrate.NewWithSourceInstance("iofs", src, databaseURL)`; no `pgx5driver.Open()` exists. Connection string must use `pgx5://` scheme: `"pgx5" + strings.TrimPrefix(connStr, "postgres")`
 - **Package name `migrate`** — collides with the golang-migrate import; alias it: `gmigrate "github.com/golang-migrate/migrate/v4"`
@@ -226,6 +225,21 @@ For small changes (single file, few lines): implement directly without the pipel
   Design docs and implementation plans written by `superpowers:writing-plans` are fine;
   do not create additional freestanding task-tracking markdown.
 
+### Beads File Handling
+
+The `.beads/` directory contains two kinds of files with different handling:
+
+- **Tracked by git** — commit these as part of your normal work commits when changed:
+  - `.beads/issues.jsonl` — git-visible export of issue state
+  - `.beads/interactions.jsonl` — session interaction log
+  - `.beads/config.yaml` — beads configuration
+  - `.beads/.gitignore` — beads-managed ignore rules
+
+- **Never touch** — managed entirely by Dolt, gitignored by `.beads/.gitignore`:
+  - `.beads/embeddeddolt/` — the Dolt database; never stage, commit, or mention these files
+
+Dolt state syncs independently to the remote via `bd dolt push` / `bd dolt pull` using `refs/dolt/data`.
+
 ### Resuming Work
 
 To resume an in-progress epic:
@@ -247,9 +261,9 @@ bd show <task-id> --json                      # Show task details
 bd update <task-id> --claim --json            # Claim a task
 bd close <task-id> --reason "..." --json      # Close a task
 bd blocked --json                             # Show what's blocked and why
+bd dolt push                                  # Sync Dolt state to remote
+bd dolt pull                                  # Sync Dolt state from remote
 ```
-
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 
 ## Session Completion
 
@@ -262,6 +276,7 @@ bd blocked --json                             # Show what's blocked and why
 3. **Update issue status** - Close finished work, update in-progress items
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
+   bd dolt push
    git pull --rebase
    git push
    git status  # MUST show "up to date with origin"
