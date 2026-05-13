@@ -150,7 +150,7 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 ### Branch Workflow (MANDATORY)
 - ✅ Always create a branch before starting task work
 - ✅ Use `--squash --delete-branch` when merging PRs
-- ❌ Never commit directly to main
+- ❌ Never commit directly to main unless instructed to
 - ❌ Never merge a PR on your own initiative — only when the user explicitly instructs
 
 ### Code Style
