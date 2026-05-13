@@ -1,3 +1,8 @@
+> **Parent spec:** [Nexorious Go Port — Design Spec](2026-05-03-go-port-design.md)  
+> Read the parent spec first for project goals, technology stack, architecture decisions, database schema, and the full phase roadmap.
+
+---
+
 ### Phase 3 — Background Workers + Import/Export
 *Goal: data migration path from Python version, plus export/backup.*
 

@@ -1,3 +1,8 @@
+> **Parent spec:** [Nexorious Go Port — Design Spec](2026-05-03-go-port-design.md)  
+> Read the parent spec first for project goals, technology stack, architecture decisions, database schema, and the full phase roadmap.
+
+---
+
 ### Phase 6 — Embedded PostgreSQL (Zero-Dependency Mode)
 *Goal: single binary that works out of the box with no external dependencies, for evaluation and personal use.*
 
