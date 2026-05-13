@@ -1,0 +1,14 @@
+# golangci-lint v2 configuration.
+#
+# We rely on defaults for most settings; this file exists to exclude
+# directories that contain third-party Go code we do not own.
+
+version: "2"
+
+linters:
+  exclusions:
+    # ui/frontend/node_modules is npm's dependency tree. A handful of npm
+    # packages (notably `flatted`) ship .go files for cross-language tests.
+    # Those files are not part of this module and must not be linted.
+    paths:
+      - ui/frontend/node_modules

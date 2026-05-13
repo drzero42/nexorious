@@ -101,6 +101,30 @@ func (mg *Migrator) PendingCount() (int, error) {
 	return len(ms.Unapplied()), nil
 }
 
+// Status returns the pending migration count and the name of the most-recently
+// applied migration (or "none" if no migrations have been applied yet). It is
+// intended for read-only CLI use such as `nexorious migrate status` and does
+// not mutate Migrator state.
+func (mg *Migrator) Status(ctx context.Context) (pending int, current string, err error) {
+	if mg.bunMig == nil {
+		mg.bunMig = bunmigrate.NewMigrator(mg.db, migrations.Migrations)
+		if err := mg.bunMig.Init(ctx); err != nil {
+			return 0, "", fmt.Errorf("status: init: %w", err)
+		}
+	}
+	ms, err := mg.bunMig.MigrationsWithStatus(ctx)
+	if err != nil {
+		return 0, "", fmt.Errorf("status: %w", err)
+	}
+	applied := ms.Applied()
+	current = "none"
+	if len(applied) > 0 {
+		// Applied is sorted in descending order; index 0 is the most recent.
+		current = applied[0].Name
+	}
+	return len(ms.Unapplied()), current, nil
+}
+
 func (mg *Migrator) LogCh() <-chan string {
 	mg.migrateMu.Lock()
 	defer mg.migrateMu.Unlock()
