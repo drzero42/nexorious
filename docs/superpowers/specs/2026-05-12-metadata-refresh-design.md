@@ -9,7 +9,7 @@ Phase 4 specified a metadata refresh job but it was deferred from the sync API i
 - A scheduler job that submits `metadata_refresh_dispatch` on a configurable interval.
 - A minor addition to `GameMetadata` to expose `CoverImageID` without URL parsing.
 
-Jobs and items are user-visible in the existing jobs/job_items UI. No new API endpoints or migration files are required. The existing initial migration is edited to drop the unused `estimated_playtime_hours` column (see the Estimated Playtime Cleanup section).
+Jobs and items are user-visible in the existing jobs/job_items UI. No new API endpoints or migration files are required. The existing initial migration is edited to drop two unused columns: `estimated_playtime_hours` and `game_metadata` (see the respective cleanup sections below).
 
 ---
 
@@ -72,6 +72,27 @@ Apply the same fix for `IgdbPlatformNames`. This corrects a latent inconsistency
 
 > **Why this is safe:** `igdb_platform_ids` and `igdb_platform_names` are stored-only fields — they are not rendered anywhere in the UI and are not parsed by any Go code path outside of the write paths in `import_item.go` and `metadata_refresh.go`. The mixed comma-join/JSON format in the DB during the transition period causes no observable problem. No frontend changes are required.
 
+**Also in `import_item.go`:** The cover art download block currently calls `igdbExtractImageID(*md.CoverArtURL)` to parse the image ID out of the CDN URL by string splitting. After `CoverImageID` is added to `GameMetadata` and populated by `convertToGameMetadata`, this workaround is redundant. Update the block to use `md.CoverImageID` directly and remove the `igdbExtractImageID` helper function:
+
+```go
+// Before:
+if md.CoverArtURL != nil {
+    imageID := igdbExtractImageID(*md.CoverArtURL)
+    if imageID != "" {
+        localURL, dlErr := igdbClient.DownloadCoverArt(ctx, imageID, storagePath)
+        ...
+    }
+}
+
+// After:
+if md.CoverImageID != "" {
+    localURL, dlErr := igdbClient.DownloadCoverArt(ctx, md.CoverImageID, storagePath)
+    ...
+}
+```
+
+Remove the `igdbExtractImageID` function entirely — it has no remaining callers.
+
 These are the only changes outside `internal/worker/tasks/metadata_refresh.go` and `internal/scheduler/` that are part of the core refresh logic. All existing callers of `GameMetadata` that do not touch `EstimatedPlaytimeHours` are unaffected.
 
 ---
@@ -97,6 +118,32 @@ Remove `estimated_playtime_hours?: number` from the domain `Game` type.
 **Test fixtures**
 
 Remove `estimated_playtime_hours` from the mock game objects in:
+- `ui/frontend/src/api/games.test.ts`
+- `ui/frontend/src/hooks/use-games.test.tsx`
+
+---
+
+## `game_metadata` Column Cleanup
+
+`game_metadata` is a dead field carried over from the Python backend, where it was always hardcoded to `"{}"` — a placeholder for future extensibility that was never populated with real content. In Go it exists in the model, migration, and frontend but is never written or read by any code path. Remove it everywhere.
+
+**Migration:** Edit the existing initial migration (`internal/db/migrations/20260503000001_initial.up.sql`) — remove the `game_metadata TEXT` column from the `CREATE TABLE games` statement. No new migration file is needed; drop and recreate the dev DB after the change.
+
+**File:** `internal/db/models/models.go`
+
+Remove the `GameMetadata *string` field from `Game`.
+
+**File:** `ui/frontend/src/api/games.ts`
+
+Remove `game_metadata?: string` from `GameApiResponse`, and remove the `game_metadata: apiGame.game_metadata` line from `transformGame`.
+
+**File:** `ui/frontend/src/types/game.ts`
+
+Remove `game_metadata?: string` from the domain `Game` type.
+
+**Test fixtures**
+
+Remove `game_metadata` from mock game objects in:
 - `ui/frontend/src/api/games.test.ts`
 - `ui/frontend/src/hooks/use-games.test.tsx`
 
@@ -167,12 +214,13 @@ sched = scheduler.NewScheduler(db, pool, backupSvc, cfg)
 ```go
 func NewMetadataRefreshDispatchHandler(
     db         *bun.DB,
-    pool       *worker.Pool,
     igdbClient *igdbsvc.Client,
 ) func(ctx context.Context, task *models.PendingTask) error
 ```
 
 ### Algorithm
+
+> **No payload:** the dispatch handler does not parse `task.Payload`. All inputs (admin user, game list, duplicate check) are discovered from the database at runtime. The scheduler submits this task with a `nil` payload.
 
 **Step 1 — IGDB guard.**
 If `!igdbClient.Configured()`: log `slog.Warn("metadata_refresh_dispatch: IGDB not configured, skipping")`, return nil. No job is created.
@@ -237,16 +285,21 @@ Insert `pending_tasks`:
 - `attempts`: `0`
 - `created_at`: `now()`
 
-**Step 5c — Update job to processing (in tx).**
+**Step 5c — Commit transaction.**
+
+The job is now visible as `'pending'` with all items and tasks fully created.
+
+**Step 6 — Update job to processing.**
+Outside the transaction:
 ```sql
 UPDATE jobs SET status = 'processing', started_at = now() WHERE id = ?
 ```
 
-**Step 6 — Return nil.**
+**Step 7 — Return nil.**
 
 The dispatch handler does not call `pool.Submit` for the item tasks — it inserts `pending_tasks` rows directly (same pattern as `DispatchSyncTask`). The worker pool picks them up from the DB.
 
-> **Crash safety note:** steps 5a–5c run in a single transaction. A crash before the commit leaves no partial state — the duplicate-run guard (step 3) is unaffected and the next scheduler tick will retry normally. A crash after the commit leaves the job in `'processing'` with all items and tasks fully created; workers will process the pending tasks and the job will complete normally. A stale-job cleanup scheduler job (see Phase 5) handles the edge case where the server crashes between item task execution and the job-completion check, leaving a job stuck in `'processing'` indefinitely.
+> **Crash safety note:** steps 5a–5b run in a single transaction. A crash before the commit leaves no partial state — the duplicate-run guard (step 3) is unaffected and the next scheduler tick will retry normally. A crash after the commit (steps 5c–6) leaves the job as `'pending'` with all items and tasks fully created; workers will process the pending tasks and the job will complete normally. A stale-job cleanup scheduler job (see Phase 5) handles any job stuck in `'pending'` or `'processing'` indefinitely.
 
 ---
 
@@ -390,7 +443,7 @@ These parallel the `syncMark*` helpers in `sync.go` but are separate functions. 
 
 ```go
 pool.Register("metadata_refresh_dispatch",
-    tasks.NewMetadataRefreshDispatchHandler(db, pool, igdbClient))
+    tasks.NewMetadataRefreshDispatchHandler(db, igdbClient))
 pool.Register("metadata_refresh_item",
     tasks.NewMetadataRefreshItemHandler(db, igdbClient, cfg.StoragePath))
 ```
@@ -438,7 +491,7 @@ Uses `testcontainers-go` for a real PostgreSQL container (same pattern as `sync_
 |---|---|
 | `TestMetadataRefreshDispatch_IGDBNotConfigured` | No `jobs` row created; handler returns nil. |
 | `TestMetadataRefreshDispatch_NoAdminUser` | No `jobs` row created; handler returns nil. |
-| `TestMetadataRefreshDispatch_AlreadyRunning` | Pre-existing `processing` job → no duplicate; returns nil. |
+| `TestMetadataRefreshDispatch_AlreadyRunning` | Pre-existing `processing` job → no duplicate; returns nil. Pre-existing `pending` job → same result. |
 | `TestMetadataRefreshDispatch_NoGames` | No `jobs` row created; returns nil. |
 | `TestMetadataRefreshDispatch_CreatesJobAndItems` | 3 games → 1 `jobs` row (`status='processing'`), 3 `job_items`, 3 `pending_tasks` with `task_type='metadata_refresh_item'`. |
 | `TestMetadataRefreshItem_Success` | Game fields updated; `cover_art_url` set to URL path; item `completed`; job `completed`. |
