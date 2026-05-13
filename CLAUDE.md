@@ -35,7 +35,7 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 ### Environment Validation
 ```bash
 devenv shell
-go version   # expect go 1.23+
+go version   # expect go 1.25+
 make --version
 ```
 
@@ -67,18 +67,21 @@ export DATABASE_URL="postgres://..."
 ## Project Structure
 
 - `cmd/nexorious/` — entry point, wires config/db/echo/workers
-- `internal/api/` — Echo route handlers per domain (games, user_games, auth, platforms, tags, jobs, import, export, backup, sync, status)
+- `internal/api/` — Echo route handlers per domain (games, user_games, auth, setup, platforms, tags, jobs, job_items, import, export, backup, sync, db_error)
 - `internal/db/` — database layer
   - `migrations/` — golang-migrate SQL files (`0001_initial.up.sql`, etc.)
   - `models/` — Bun model structs (hand-edited)
 - `internal/migrate/` — migration state machine + Echo handlers for `/migrate` and `/api/migrate/*`
 - `internal/worker/` — goroutine pool with buffered `chan TaskFunc`; tasks under `worker/tasks/`
 - `internal/scheduler/` — gocron v2 job definitions (scheduled maintenance)
-- `internal/services/` — IGDB client, Steam/PSN/Epic sync, cover art storage, game matching, platform resolution
+- `internal/services/` — IGDB client, Steam/PSN sync, game matching, platform resolution
 - `internal/auth/` — JWT generation/validation + Echo middleware
 - `internal/filter/` — dynamic query builder (Bun) for user-game list filtering
 - `internal/ratelimit/` — interface + local (`x/time/rate`) and PostgreSQL implementations
 - `internal/config/` — config struct via `caarlos0/env`
+- `internal/enum/` — shared enum types
+- `internal/middleware/` — Echo middleware (state gate, auth bridge, etc.)
+- `internal/backup/` — backup orchestration (invoked from scheduler)
 - `ui/` — contains `ui/frontend/` (React SPA source + build output), `ui/migrate/` (migration HTML), `ui/db-error/`, `ui/setup/`
 
 ## Architecture
@@ -119,7 +122,7 @@ FastAPI is eliminated; the Go binary serves the React SPA itself.
 - **API zone** — gated by state middleware, then JWT where required
 
 ### Workers & Scheduler
-Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task types live under `worker/tasks/`: sync, import, export, maintenance (backup, metadata refresh, cleanup). The gocron scheduler dispatches recurring tasks after `Ready`.
+Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task types live under `worker/tasks/`: `sync.go`, `import_item.go`, `export.go`, `metadata_refresh.go`. Backup logic lives in `internal/backup/` (invoked from the scheduler, not as a worker task). The gocron scheduler dispatches recurring tasks after `Ready`.
 
 ### Rate Limiting
 `ratelimit.Limiter` interface with two implementations:
