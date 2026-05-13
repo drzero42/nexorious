@@ -195,26 +195,59 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - **Service package import cycles** — if `internal/api` imports `internal/services/steam` and vice-versa, break the cycle by having each service package define its own local summary types; `router.go` bridges them with adapter structs that satisfy the handler's interface
 - **Platform/storefront `icon` field** — DB stores bare filename (e.g. `steam-icon-light.svg`); API responses must construct `icon_url` as `/logos/storefronts/<name>/<filename>` (or `platforms/`). Logos are bundled in the SPA dist and served at `/logos/...` — not `/static/logos/`.
 
-
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
-## Beads Issue Tracker
+## Task Tracking
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+This project uses **bd (beads)** for persistent issue and task tracking across sessions.
+Run `bd prime` to see full workflow context and commands.
 
-### Quick Reference
+### Workflow
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
+Use the full pipeline for any non-trivial feature work:
+
 ```
+brainstorming -> design spec -> superpowers:writing-plans -> plan-to-epic -> epic-executor
+```
+
+For small changes (single file, few lines): implement directly without the pipeline.
+
+### Skill Routing
+
+- **Never use `superpowers:brainstorming` directly.** Always use the plain `brainstorming` skill instead — it is an extended version that chains into the beads pipeline (design doc → plan → epic → execution).
 
 ### Rules
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
+- **Always pass `--json`** to all `bd` commands for reliable parsing
+- **Always include `--description`** when creating issues — context matters across sessions
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- **Do not create `docs/plans/` markdown task files** — that's what beads is for.
+  Design docs and implementation plans written by `superpowers:writing-plans` are fine;
+  do not create additional freestanding task-tracking markdown.
+
+### Resuming Work
+
+To resume an in-progress epic:
+
+```
+continue epic <epic-id>
+```
+
+The epic-executor will check `bd epic status`, find the next ready task, and continue without re-explanation.
+
+### Key Commands
+
+```bash
+bd prime                                      # Inject workflow context (runs automatically on session start)
+bd ready --json                               # Show tasks with no blockers
+bd epic status <epic-id> --json               # Show epic completion %
+bd list --status open --json                  # List all open issues
+bd show <task-id> --json                      # Show task details
+bd update <task-id> --claim --json            # Claim a task
+bd close <task-id> --reason "..." --json      # Close a task
+bd blocked --json                             # Show what's blocked and why
+```
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 
@@ -243,51 +276,3 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
-# Task Tracking
-
-This project uses [Beads](https://github.com/steveyegge/beads) (`bd`) for persistent task tracking across sessions.
-Beads state lives in `.beads/` and survives context compaction and session restarts.
-
-## Workflow
-
-Use the full pipeline for any non-trivial feature work:
-
-```
-brainstorming -> design doc -> superpowers:writing-plans -> plan-to-epic -> epic-executor
-```
-
-For small changes (single file, few lines): implement directly without the pipeline.
-
-## Rules
-
-- **Always use `bd` for task state** — not TodoWrite, not markdown files in `docs/plans/`
-- **Always pass `--json`** to all `bd` commands for reliable parsing
-- **Always include `--description`** when creating issues — context matters across sessions
-- **Run `bd dolt push`** before ending any session where beads state was modified
-- **Do not create `docs/plans/` markdown task files** — that's what beads is for.
-  Design docs and implementation plans written by `superpowers:writing-plans` are fine;
-  do not create additional freestanding task-tracking markdown.
-
-## Resuming Work
-
-To resume an in-progress epic:
-
-```
-continue epic <epic-id>
-```
-
-The epic-executor will check `bd epic status`, find the next ready task, and continue without re-explanation.
-
-## Key Commands
-
-```bash
-bd prime                              # Inject workflow context (runs automatically on session start)
-bd ready --json                       # Show tasks with no blockers
-bd epic status <epic-id> --json       # Show epic completion %
-bd list --status open --json          # List all open issues
-bd show <task-id> --json              # Show task details
-bd update <task-id> --claim --json    # Claim a task
-bd close <task-id> --reason "..." --json  # Close a task
-bd blocked --json                     # Show what's blocked and why
-bd dolt push                          # Sync to git remote
-```
