@@ -1,0 +1,24 @@
+apiVersion: v2
+name: nexorious-go
+description: Self-hosted game collection (Go port)
+type: application
+version: 0.1.0
+# appVersion drives the default image tag for the nexorious image. "latest"
+# is dev-friendly only; real deployments should override
+# controllers.nexorious.containers.main.image.tag (and the matching
+# initContainers.migrate.image.tag) to pin a specific release.
+appVersion: "latest"
+kubeVersion: ">=1.28.0-0"
+home: https://github.com/drzero42/nexorious-go
+sources:
+  - https://github.com/drzero42/nexorious-go
+maintainers:
+  - name: Nexorious
+keywords:
+  - games
+  - collection
+  - self-hosted
+dependencies:
+  - name: common
+    repository: https://bjw-s-labs.github.io/helm-charts/
+    version: 4.6.2

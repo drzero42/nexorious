@@ -1,0 +1,13 @@
+.devenv/
+.direnv/
+.git/
+.beads/
+node_modules/
+ui/frontend/node_modules/
+ui/frontend/dist/
+nexorious
+*.test
+*.out
+coverage.out
+storage/
+docs/

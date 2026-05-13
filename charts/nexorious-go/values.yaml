@@ -1,0 +1,471 @@
+# =============================================================================
+# nexorious-go Helm Chart Values
+# =============================================================================
+# Based on the bjw-s common library: https://bjw-s-labs.github.io/helm-charts/
+#
+# Default release name assumed: nexorious-go
+# Install with: helm install nexorious-go ./charts/nexorious-go
+#
+# If using a different release name, set:
+#   global.fullnameOverride: nexorious-go
+# =============================================================================
+
+# -- Global values used by the bjw-s common library.
+# fullnameOverride: set this if installing with a release name other than
+# "nexorious-go" to keep service names predictable (e.g. nexorious-go-nexorious,
+# nexorious-go-postgresql).
+global: {}
+
+# -- Custom nexorious-go configuration (not part of the common library)
+nexorious:
+  # -- JWT signing secret key. REQUIRED. Generate with: openssl rand -hex 32
+  secretKey: "change-me-in-production"
+
+  # -- IGDB API client ID. REQUIRED. nexorious-go will not function without valid IGDB credentials.
+  # -- Obtain from: https://api.igdb.com/v4/getting-started
+  igdbClientId: ""
+
+  # -- IGDB API client secret. REQUIRED.
+  igdbClientSecret: ""
+
+  # -- Database URL. Leave empty to use the in-cluster PostgreSQL controller.
+  # -- Set this when disabling the postgresql controller for an external database.
+  # -- Example: postgresql://user:pass@my-postgres:5432/nexorious
+  databaseUrl: ""
+
+  # -- External secret references (*From pattern)
+  # When *From.name and *From.key are both non-empty, the external secret is used
+  # and the corresponding inline value is ignored.
+
+  # Non-DB credentials
+  secretKeyFrom:
+    name: ""
+    key: ""
+  igdbClientIdFrom:
+    name: ""
+    key: ""
+  igdbClientSecretFrom:
+    name: ""
+    key: ""
+
+  # Database: URI mode (single key containing full DATABASE_URL)
+  # Mutually exclusive with databaseUrl and db*From.
+  databaseUrlFrom:
+    name: ""
+    key: ""
+
+  # Database: individual keys mode (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)
+  # Mutually exclusive with databaseUrl and databaseUrlFrom.
+  # No inline equivalents — individual keys always come from an external secret.
+  dbHostFrom:
+    name: ""
+    key: ""
+  dbPortFrom:
+    name: ""
+    key: ""
+  dbUserFrom:
+    name: ""
+    key: ""
+  dbPasswordFrom:
+    name: ""
+    key: ""
+  dbNameFrom:
+    name: ""
+    key: ""
+
+  postgresql:
+    # -- PostgreSQL username
+    # WARNING: this value is cosmetic. Changing it also requires updating
+    # controllers.postgresql.containers.main.env.POSTGRES_USER and the
+    # pg_isready probe commands below; otherwise the StatefulSet will
+    # reference a user that does not exist.
+    username: nexorious
+    # -- PostgreSQL password. REQUIRED. Change before deploying.
+    # -- The auto-built DATABASE_URL URL-encodes the password, so special
+    # -- characters (: @ / ? #) are safe. To skip auto-build entirely, set
+    # -- nexorious.databaseUrl explicitly.
+    password: "change-me-in-production"
+    # -- PostgreSQL database name
+    database: nexorious
+
+# =============================================================================
+# Default Pod options (applied to all controllers unless overridden)
+# =============================================================================
+
+# -- Default pod-level options for all controllers. Per-controller overrides
+# -- (e.g. controllers.postgresql.pod.securityContext) take precedence.
+defaultPodOptions:
+  securityContext:
+    # The nexorious image runs as the unprivileged 'nexorious' user pinned to
+    # UID/GID 10001. fsGroup ensures mounted PVCs are chown'd so the binary
+    # can write to /app/storage.
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    fsGroupChangePolicy: OnRootMismatch
+
+# =============================================================================
+# Controllers
+# =============================================================================
+
+controllers:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL -- in-cluster database (StatefulSet)
+  # To use an external database, disable ALL three postgresql resources and
+  # provide nexorious.databaseUrl:
+  #   controllers.postgresql.enabled: false
+  #   service.postgresql.enabled: false
+  #   persistence.postgresql-data.enabled: false
+  #   nexorious.databaseUrl: "postgresql://user:pass@host:5432/dbname"
+  # ---------------------------------------------------------------------------
+  postgresql:
+    enabled: true
+    type: statefulset
+    # The official postgres image expects to run as UID 999 (the 'postgres'
+    # user it creates). Override the default pod securityContext for this
+    # controller only.
+    pod:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+    containers:
+      main:
+        image:
+          repository: postgres
+          # -- PostgreSQL image tag. Change to use a different version.
+          tag: 18-alpine
+          pullPolicy: IfNotPresent
+        env:
+          # WARNING: must match nexorious.postgresql.username.
+          POSTGRES_USER: nexorious
+          # WARNING: must match nexorious.postgresql.database.
+          POSTGRES_DB: nexorious
+          POSTGRES_PASSWORD:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.credentialsSecretName" . }}'
+                key: POSTGRES_PASSWORD
+          PGDATA: /var/lib/postgresql/data/pgdata
+        # -- Default resources for the postgres container. Operators should
+        # -- override these for production workloads.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              exec:
+                command:
+                  - pg_isready
+                  # WARNING: must match nexorious.postgresql.username.
+                  - -U
+                  - nexorious
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              failureThreshold: 5
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              exec:
+                command:
+                  - pg_isready
+                  # WARNING: must match nexorious.postgresql.username.
+                  - -U
+                  - nexorious
+              initialDelaySeconds: 5
+              periodSeconds: 5
+              failureThreshold: 5
+          startup:
+            enabled: true
+            custom: true
+            spec:
+              exec:
+                command:
+                  - pg_isready
+                  # WARNING: must match nexorious.postgresql.username.
+                  - -U
+                  - nexorious
+              failureThreshold: 30
+              periodSeconds: 5
+
+  # ---------------------------------------------------------------------------
+  # nexorious -- Go binary (Deployment)
+  # The Go port runs API, workers, and scheduler in-process as a single binary.
+  # A 'migrate' initContainer applies pending migrations before the main
+  # container starts serving HTTP.
+  # ---------------------------------------------------------------------------
+  nexorious:
+    type: deployment
+    replicas: 1
+    initContainers:
+      migrate:
+        image:
+          repository: ghcr.io/drzero42/nexorious-go
+          tag: "{{ .Chart.AppVersion }}"
+          pullPolicy: IfNotPresent
+        command:
+          - /app/nexorious
+          - migrate
+        # -- Default resources for the migrate initContainer. Operators
+        # -- should override these for production workloads.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+        env:
+          STORAGE_PATH: /app/storage
+          BACKUP_PATH: /app/storage/backups
+          LOG_LEVEL: info
+          DEBUG: "false"
+          SECRET_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.secretKeySecretName" . }}'
+                key: '{{ include "nexorious-go.secretKeySecretKey" . }}'
+          IGDB_CLIENT_ID:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.igdbClientIdSecretName" . }}'
+                key: '{{ include "nexorious-go.igdbClientIdSecretKey" . }}'
+          IGDB_CLIENT_SECRET:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.igdbClientSecretSecretName" . }}'
+                key: '{{ include "nexorious-go.igdbClientSecretSecretKey" . }}'
+          DATABASE_URL:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.databaseUrlSecretName" . }}'
+                key: '{{ include "nexorious-go.databaseUrlSecretKey" . }}'
+                optional: true
+          DB_HOST:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.dbHostSecretName" . }}'
+                key: '{{ include "nexorious-go.dbHostSecretKey" . }}'
+                optional: true
+          DB_PORT:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.dbPortSecretName" . }}'
+                key: '{{ include "nexorious-go.dbPortSecretKey" . }}'
+                optional: true
+          DB_USER:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.dbUserSecretName" . }}'
+                key: '{{ include "nexorious-go.dbUserSecretKey" . }}'
+                optional: true
+          DB_PASSWORD:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.dbPasswordSecretName" . }}'
+                key: '{{ include "nexorious-go.dbPasswordSecretKey" . }}'
+                optional: true
+          DB_NAME:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.dbNameSecretName" . }}'
+                key: '{{ include "nexorious-go.dbNameSecretKey" . }}'
+                optional: true
+    containers:
+      main:
+        image:
+          repository: ghcr.io/drzero42/nexorious-go
+          tag: "{{ .Chart.AppVersion }}"
+          pullPolicy: IfNotPresent
+        command:
+          - /app/nexorious
+          - serve
+        # -- Default resources for the nexorious main container. Operators
+        # -- should override these for production workloads.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+        env:
+          PORT: "8000"
+          STORAGE_PATH: /app/storage
+          BACKUP_PATH: /app/storage/backups
+          LOG_LEVEL: info
+          DEBUG: "false"
+          RATE_LIMITER_BACKEND: postgres
+          SECRET_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.secretKeySecretName" . }}'
+                key: '{{ include "nexorious-go.secretKeySecretKey" . }}'
+          IGDB_CLIENT_ID:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.igdbClientIdSecretName" . }}'
+                key: '{{ include "nexorious-go.igdbClientIdSecretKey" . }}'
+          IGDB_CLIENT_SECRET:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.igdbClientSecretSecretName" . }}'
+                key: '{{ include "nexorious-go.igdbClientSecretSecretKey" . }}'
+          DATABASE_URL:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.databaseUrlSecretName" . }}'
+                key: '{{ include "nexorious-go.databaseUrlSecretKey" . }}'
+                optional: true
+          DB_HOST:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.dbHostSecretName" . }}'
+                key: '{{ include "nexorious-go.dbHostSecretKey" . }}'
+                optional: true
+          DB_PORT:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.dbPortSecretName" . }}'
+                key: '{{ include "nexorious-go.dbPortSecretKey" . }}'
+                optional: true
+          DB_USER:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.dbUserSecretName" . }}'
+                key: '{{ include "nexorious-go.dbUserSecretKey" . }}'
+                optional: true
+          DB_PASSWORD:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.dbPasswordSecretName" . }}'
+                key: '{{ include "nexorious-go.dbPasswordSecretKey" . }}'
+                optional: true
+          DB_NAME:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious-go.dbNameSecretName" . }}'
+                key: '{{ include "nexorious-go.dbNameSecretKey" . }}'
+                optional: true
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8000
+              initialDelaySeconds: 15
+              periodSeconds: 10
+              failureThreshold: 3
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8000
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              failureThreshold: 3
+          startup:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8000
+              initialDelaySeconds: 15
+              failureThreshold: 30
+              periodSeconds: 5
+
+# =============================================================================
+# Services
+# =============================================================================
+
+service:
+  nexorious:
+    controller: nexorious
+    ports:
+      http:
+        port: 8000
+
+  postgresql:
+    controller: postgresql
+    ports:
+      postgresql:
+        port: 5432
+
+# =============================================================================
+# Ingress
+# =============================================================================
+
+ingress:
+  # -- nexorious ingress (also serves the SPA at /)
+  # Enable and configure hosts to expose the app via an ingress controller.
+  # The nexorious service handles both API routes (/api) and the SPA
+  # (all other paths) since the Go binary embeds the React SPA.
+  nexorious:
+    enabled: false
+    # -- Ingress class name (e.g. nginx, traefik, etc.)
+    className: ""
+    annotations: {}
+    hosts:
+      - host: nexorious.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: nexorious
+              port: http
+    tls: []
+
+# =============================================================================
+# Persistence
+# =============================================================================
+
+persistence:
+  # -- Main storage volume for cover art, uploads, and backups.
+  # Mounted only on the nexorious controller (single deployment).
+  # By default, backups are stored under /app/storage/backups on this same PVC.
+  # To use separate storage for backups (e.g. NFS), add another persistence entry:
+  #
+  #   backups:
+  #     enabled: true
+  #     type: nfs
+  #     server: nas.local
+  #     path: /backups/nexorious
+  #     advancedMounts:
+  #       nexorious:
+  #         main:
+  #           - path: /app/storage/backups
+  storage:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    advancedMounts:
+      nexorious:
+        main:
+          - path: /app/storage
+        migrate:
+          - path: /app/storage
+
+  # -- PostgreSQL data volume
+  postgresql-data:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 8Gi
+    advancedMounts:
+      postgresql:
+        main:
+          - path: /var/lib/postgresql/data

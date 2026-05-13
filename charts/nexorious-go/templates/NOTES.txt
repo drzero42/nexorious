@@ -1,0 +1,66 @@
+nexorious-go has been installed.
+
+Service: {{ include "nexorious-go.fullname" . }}
+Image:   ghcr.io/drzero42/nexorious-go:{{ .Chart.AppVersion }}
+
+The 'migrate' initContainer ran pending migrations before the main pod started.
+To run migrations manually:
+
+  kubectl exec -it deploy/{{ include "nexorious-go.fullname" . }} -- /app/nexorious migrate status
+
+For the first run, open the URL above and create the admin account via the
+embedded setup UI.
+
+{{- if eq .Values.nexorious.secretKey "change-me-in-production" }}
+
+WARNING: nexorious.secretKey is set to the default placeholder value.
+   Set it to a secure random value:
+   --set nexorious.secretKey=$(openssl rand -hex 32)
+{{- end }}
+
+{{- if eq .Values.nexorious.igdbClientId "" }}
+
+WARNING: nexorious.igdbClientId is not set.
+   nexorious-go requires valid IGDB credentials to function.
+   Obtain credentials at: https://api.igdb.com/v4/getting-started
+   --set nexorious.igdbClientId=<your-client-id>
+{{- end }}
+
+{{- if eq .Values.nexorious.igdbClientSecret "" }}
+
+WARNING: nexorious.igdbClientSecret is not set.
+   --set nexorious.igdbClientSecret=<your-client-secret>
+{{- end }}
+
+{{- if eq .Values.nexorious.postgresql.password "change-me-in-production" }}
+
+WARNING: nexorious.postgresql.password is set to the default placeholder value.
+   Set it before deploying to production.
+{{- end }}
+
+== Access ==
+
+{{- if .Values.ingress.nexorious.enabled }}
+  App: https://{{ (first .Values.ingress.nexorious.hosts).host }}
+{{- else }}
+  App is not exposed via ingress. Use port-forward to access:
+  kubectl port-forward svc/{{ include "nexorious-go.fullname" . }}-nexorious 8000:8000
+
+  Then open: http://localhost:8000
+{{- end }}
+
+== External Database ==
+
+To use an external database instead of in-cluster PostgreSQL, disable ALL three:
+  controllers.postgresql.enabled: false
+  service.postgresql.enabled: false
+  persistence.postgresql-data.enabled: false
+  nexorious.databaseUrl: "postgresql://user:pass@host:5432/dbname"
+
+== Naming Note ==
+
+This chart was designed to be installed as:
+  helm install nexorious-go ./charts/nexorious-go
+
+If you used a different release name, update nexorious.databaseUrl OR set:
+  global.fullnameOverride: nexorious-go
