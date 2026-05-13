@@ -275,6 +275,10 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		adminBackups.POST("/:id/restore", bh.HandleRestore)
 		adminBackups.POST("/restore/upload", bh.HandleRestoreUpload)
 
+		// Admin user management routes (JWT + admin required)
+		auh := NewAdminUsersHandler(db)
+		auh.RegisterRoutes(adminGroup)
+
 		// Sync routes (all JWT-protected)
 		steamSvc := steamsvc.NewClient()
 		psnSvc := psnsvc.NewClient()

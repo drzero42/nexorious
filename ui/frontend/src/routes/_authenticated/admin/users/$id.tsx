@@ -577,6 +577,24 @@ function EditUserPage() {
                             </span>
                           </div>
                           <div className="flex justify-between">
+                            <span>Export jobs:</span>
+                            <span className="font-medium text-destructive">
+                              {deletionImpact.total_export_jobs}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Sync jobs:</span>
+                            <span className="font-medium text-destructive">
+                              {deletionImpact.total_sync_jobs}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Sync configs:</span>
+                            <span className="font-medium text-destructive">
+                              {deletionImpact.total_sync_configs}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
                             <span>Active sessions:</span>
                             <span className="font-medium text-destructive">
                               {deletionImpact.total_sessions}

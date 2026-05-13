@@ -22,6 +22,9 @@ export interface UserDeletionImpact {
   total_games: number;
   total_tags: number;
   total_import_jobs: number;
+  total_export_jobs: number;
+  total_sync_jobs: number;
+  total_sync_configs: number;
   total_sessions: number;
   warning: string;
 }

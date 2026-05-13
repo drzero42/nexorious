@@ -104,6 +104,67 @@ requests:
           data:
             file: "{{file(prompt(message='Path to backup .tar.gz file'))}}"
 
+  admin_users:
+    name: Admin Users
+    requests:
+      create_user:
+        name: Create User
+        method: POST
+        url: "{{base_url}}/api/auth/admin/users"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            username: "newuser"
+            password: "abcd1234"
+            is_admin: false
+
+      list_users:
+        name: List Users
+        method: GET
+        url: "{{base_url}}/api/auth/admin/users"
+        $ref: "#/.authenticated"
+
+      get_user:
+        name: Get User
+        method: GET
+        url: "{{base_url}}/api/auth/admin/users/{{response('list_users', trigger='no_history') | jsonpath('$[*].id', mode='array') | select()}}"
+        $ref: "#/.authenticated"
+
+      update_user:
+        name: Update User
+        method: PUT
+        url: "{{base_url}}/api/auth/admin/users/{{response('list_users', trigger='no_history') | jsonpath('$[*].id', mode='array') | select()}}"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            username: "updateduser"
+            is_active: true
+            is_admin: false
+
+      reset_password:
+        name: Reset Password
+        method: PUT
+        url: "{{base_url}}/api/auth/admin/users/{{response('list_users', trigger='no_history') | jsonpath('$[*].id', mode='array') | select()}}/password"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            new_password: "newpass1234"
+
+      deletion_impact:
+        name: Deletion Impact
+        method: GET
+        url: "{{base_url}}/api/auth/admin/users/{{response('list_users', trigger='no_history') | jsonpath('$[*].id', mode='array') | select()}}/deletion-impact"
+        $ref: "#/.authenticated"
+
+      delete_user:
+        name: Delete User
+        method: DELETE
+        url: "{{base_url}}/api/auth/admin/users/{{response('list_users', trigger='no_history') | jsonpath('$[*].id', mode='array') | select()}}"
+        $ref: "#/.authenticated"
+
   auth:
     name: Auth
     requests:

@@ -388,6 +388,9 @@ describe('admin.ts', () => {
         total_games: 10,
         total_tags: 5,
         total_import_jobs: 2,
+        total_export_jobs: 3,
+        total_sync_jobs: 7,
+        total_sync_configs: 4,
         total_sessions: 1,
         warning: 'This action cannot be undone',
       };
