@@ -21,6 +21,7 @@ type Scheduler struct {
 	pool                    *worker.Pool
 	backupSvc               *backup.Service
 	metadataRefreshInterval time.Duration
+	staleJobThreshold       time.Duration
 	scheduler               gocron.Scheduler
 	backupJob               gocron.Job
 }
@@ -32,11 +33,18 @@ func NewScheduler(db *bun.DB, pool *worker.Pool, backupSvc *backup.Service, cfg 
 			"value", cfg.MetadataRefreshInterval, "err", err)
 		interval = 24 * time.Hour
 	}
+	staleThreshold, err := time.ParseDuration(cfg.StaleJobThreshold)
+	if err != nil {
+		slog.Warn("scheduler: invalid STALE_JOB_THRESHOLD, defaulting to 4h",
+			"value", cfg.StaleJobThreshold, "err", err)
+		staleThreshold = 4 * time.Hour
+	}
 	return &Scheduler{
 		db:                      db,
 		pool:                    pool,
 		backupSvc:               backupSvc,
 		metadataRefreshInterval: interval,
+		staleJobThreshold:       staleThreshold,
 	}
 }
 
@@ -84,6 +92,14 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		gocron.CronJob("*/15 * * * *", false),
 		gocron.NewTask(func() {
 			CheckPendingSyncs(ctx, s.db, s.pool)
+		}),
+	)
+
+	// Cleanup stale metadata_refresh jobs — hourly.
+	_, _ = s.scheduler.NewJob(
+		gocron.CronJob("0 * * * *", false),
+		gocron.NewTask(func() {
+			CleanupStaleJobs(ctx, s.db, s.staleJobThreshold)
 		}),
 	)
 

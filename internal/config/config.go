@@ -88,6 +88,11 @@ type Config struct {
 	// The backup schedule is stored in the backup_config table, not here.
 	MetadataRefreshInterval string `env:"METADATA_REFRESH_INTERVAL" envDefault:"24h"`
 
+	// StaleJobThreshold is the minimum job age before CleanupStaleJobsTask marks
+	// a pending/processing metadata_refresh job as failed when it has no
+	// unfinished items. Default 4h matches the Phase 5 spec.
+	StaleJobThreshold string `env:"STALE_JOB_THRESHOLD" envDefault:"4h"`
+
 	// -------------------------------------------------------------------------
 	// Rate limiter
 	// -------------------------------------------------------------------------
