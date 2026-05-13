@@ -127,7 +127,7 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 ### Rate Limiting
 `ratelimit.Limiter` interface with two implementations:
 - `local.go` — `golang.org/x/time/rate` (single instance)
-- `postgres.go` — PostgreSQL `SELECT FOR UPDATE` (multi-instance, opt-in via config)
+- `postgres.go` — PostgreSQL `SELECT FOR UPDATE`` (multi-instance, opt-in via config)
 
 ## Testing
 
@@ -227,18 +227,13 @@ For small changes (single file, few lines): implement directly without the pipel
 
 ### Beads File Handling
 
-The `.beads/` directory contains two kinds of files with different handling:
+Beads manages its own files — do not second-guess what it stages or commits:
 
-- **Tracked by git** — commit these as part of your normal work commits when changed:
-  - `.beads/issues.jsonl` — git-visible export of issue state
-  - `.beads/interactions.jsonl` — session interaction log
-  - `.beads/config.yaml` — beads configuration
-  - `.beads/.gitignore` — beads-managed ignore rules
+- **`issues.jsonl`** — auto-exported and auto-staged by beads after every change; include it in commits alongside your code changes
+- **`interactions.jsonl`** — audit log written by beads; include it in commits alongside your code changes
+- **`embeddeddolt/`** — gitignored by beads; never touch it, it syncs via `bd dolt push` / `bd dolt pull`
 
-- **Never touch** — managed entirely by Dolt, gitignored by `.beads/.gitignore`:
-  - `.beads/embeddeddolt/` — the Dolt database; never stage, commit, or mention these files
-
-Dolt state syncs independently to the remote via `bd dolt push` / `bd dolt pull` using `refs/dolt/data`.
+When beads files appear staged, commit them. Do not unstage them.
 
 ### Resuming Work
 
