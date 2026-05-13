@@ -4,3 +4,5 @@ inputs:
     url: github:cachix/devenv-nixpkgs/rolling
   drzero42:
     url: github:drzero42/nixpkgs
+  beads:
+    url: github:gastownhall/beads

@@ -1,5 +1,23 @@
 {
   "nodes": {
+    "beads": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1778538156,
+        "narHash": "sha256-gAuUUH/JR5a/5WkPzuTtbWwfC4aPt1LdpoGBbHubT9Q=",
+        "owner": "gastownhall",
+        "repo": "beads",
+        "rev": "da73b7511ccac8069a53fcb7a8963e8c9c9433a6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "gastownhall",
+        "repo": "beads",
+        "type": "github"
+      }
+    },
     "devenv": {
       "locked": {
         "dir": "src/modules",
@@ -20,7 +38,7 @@
     "drzero42": {
       "inputs": {
         "flake-parts": "flake-parts",
-        "nixpkgs": "nixpkgs",
+        "nixpkgs": "nixpkgs_2",
         "poetry2nix": "poetry2nix"
       },
       "locked": {
@@ -100,16 +118,16 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1778443072,
-        "narHash": "sha256-zi7/fsqM/kFdNuED//4WOCUtezGtKKqRNORjMvfwjnA=",
-        "owner": "nixos",
+        "lastModified": 1777077449,
+        "narHash": "sha256-AIiMJiqvGrN4HyLEbKAoCSRRYn0rnlW5VbKNIMIYqm4=",
+        "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "da5ad661ba4e5ef59ba743f0d112cbc30e474f32",
+        "rev": "a4bf06618f0b5ee50f14ed8f0da77d34ecc19160",
         "type": "github"
       },
       "original": {
-        "owner": "nixos",
-        "ref": "nixos-unstable",
+        "owner": "NixOS",
+        "ref": "nixos-25.11",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -132,6 +150,22 @@
       }
     },
     "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1778443072,
+        "narHash": "sha256-zi7/fsqM/kFdNuED//4WOCUtezGtKKqRNORjMvfwjnA=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "da5ad661ba4e5ef59ba743f0d112cbc30e474f32",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_3": {
       "inputs": {
         "nixpkgs-src": "nixpkgs-src"
       },
@@ -177,9 +211,10 @@
     },
     "root": {
       "inputs": {
+        "beads": "beads",
         "devenv": "devenv",
         "drzero42": "drzero42",
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": "nixpkgs_3"
       }
     },
     "systems": {

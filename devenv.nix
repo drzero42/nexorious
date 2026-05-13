@@ -17,6 +17,7 @@
     golangci-lint
     nodejs_24
     uv
+    inputs.beads.packages.${system}.bd
   ];
 
   # https://devenv.sh/languages/
