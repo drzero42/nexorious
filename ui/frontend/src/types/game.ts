@@ -95,7 +95,6 @@ export interface Game {
   rating_average?: number;
   rating_count: number;
   game_metadata?: string;
-  estimated_playtime_hours?: number;
   howlongtobeat_main?: number;
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;

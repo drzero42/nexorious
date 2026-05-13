@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -122,15 +120,12 @@ func NewImportItemHandler(db *bun.DB, igdbClient *igdb.Client, storagePath strin
 				slog.Warn("import_item: IGDB fetch failed, falling back to JSON data", "igdb_id", gd.IGDBID, "err", igdbErr)
 			} else {
 				game = igdbMetadataToGame(md)
-				if md.CoverArtURL != nil {
-					imageID := igdbExtractImageID(*md.CoverArtURL)
-					if imageID != "" {
-						localURL, dlErr := igdbClient.DownloadCoverArt(ctx, imageID, storagePath)
-						if dlErr != nil {
-							slog.Warn("import_item: cover art download failed", "igdb_id", gd.IGDBID, "err", dlErr)
-						} else {
-							game.CoverArtUrl = &localURL
-						}
+				if md.CoverImageID != "" {
+					localURL, dlErr := igdbClient.DownloadCoverArt(ctx, md.CoverImageID, storagePath)
+					if dlErr != nil {
+						slog.Warn("import_item: cover art download failed", "igdb_id", gd.IGDBID, "err", dlErr)
+					} else {
+						game.CoverArtUrl = &localURL
 					}
 				}
 			}
@@ -440,27 +435,16 @@ func igdbMetadataToGame(md *igdb.GameMetadata) *models.Game {
 		}
 	}
 	if len(md.PlatformIDs) > 0 {
-		ids := make([]string, len(md.PlatformIDs))
-		for i, id := range md.PlatformIDs {
-			ids[i] = strconv.Itoa(id)
-		}
-		s := strings.Join(ids, ",")
+		b, _ := json.Marshal(md.PlatformIDs)
+		s := string(b)
 		game.IgdbPlatformIds = &s
 	}
 	if len(md.PlatformNames) > 0 {
-		s := strings.Join(md.PlatformNames, ",")
+		b, _ := json.Marshal(md.PlatformNames)
+		s := string(b)
 		game.IgdbPlatformNames = &s
 	}
 	return game
-}
-
-// igdbExtractImageID extracts the bare image ID from an IGDB cover art URL.
-func igdbExtractImageID(coverURL string) string {
-	parts := strings.Split(coverURL, "/")
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.TrimSuffix(parts[len(parts)-1], ".jpg")
 }
 
 // checkJobCompletion counts remaining pending items and updates the parent Job if done.

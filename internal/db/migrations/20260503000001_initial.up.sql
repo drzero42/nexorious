@@ -41,7 +41,6 @@ CREATE TABLE games (
     cover_art_url               TEXT,
     rating_average              NUMERIC(5,2),
     rating_count                INTEGER,
-    estimated_playtime_hours    INTEGER,
     howlongtobeat_main          NUMERIC(6,2),         -- hours (mapped from IGDB 'hastily')
     howlongtobeat_extra         NUMERIC(6,2),         -- hours (mapped from IGDB 'normally')
     howlongtobeat_completionist NUMERIC(6,2),         -- hours (mapped from IGDB 'completely')

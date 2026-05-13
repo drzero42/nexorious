@@ -11,9 +11,9 @@ type GameMetadata struct {
 	Publisher                  *string
 	ReleaseDate                *string  // ISO date string "YYYY-MM-DD"
 	CoverArtURL                *string
+	CoverImageID               string   // IGDB image_id, e.g. "co1wyy". Empty when no cover.
 	RatingAverage              *float64
 	RatingCount                *int32
-	EstimatedPlaytimeHours     *int32
 	HowlongtobeatMain         *float64
 	HowlongtobeatExtra        *float64
 	HowlongtobeatCompletionist *float64

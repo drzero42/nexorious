@@ -237,6 +237,7 @@ requests:
         url: "{{base_url}}/api/job-items/{{prompt(message='Job Item ID')}}/retry"
         $ref: "#/.authenticated"
 
+  # Note: metadata_refresh jobs are scheduler-only (no HTTP trigger).
   jobs:
     name: Jobs
     requests:

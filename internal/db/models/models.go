@@ -19,7 +19,6 @@ type Game struct {
 	CoverArtUrl                *string    `bun:"cover_art_url"                  json:"cover_art_url"`
 	RatingAverage              *float64   `bun:"rating_average"                 json:"rating_average"`
 	RatingCount                *int32     `bun:"rating_count"                   json:"rating_count"`
-	EstimatedPlaytimeHours     *int32     `bun:"estimated_playtime_hours"       json:"estimated_playtime_hours"`
 	HowlongtobeatMain          *float64   `bun:"howlongtobeat_main"             json:"howlongtobeat_main"`
 	HowlongtobeatExtra         *float64   `bun:"howlongtobeat_extra"            json:"howlongtobeat_extra"`
 	HowlongtobeatCompletionist *float64   `bun:"howlongtobeat_completionist"    json:"howlongtobeat_completionist"`

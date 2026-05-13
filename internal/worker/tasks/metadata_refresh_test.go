@@ -1,0 +1,493 @@
+package tasks_test
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/testcontainers/testcontainers-go"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
+	bunmigrate "github.com/uptrace/bun/migrate"
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/drzero42/nexorious-go/internal/config"
+	"github.com/drzero42/nexorious-go/internal/db/migrations"
+	"github.com/drzero42/nexorious-go/internal/db/models"
+	igdbsvc "github.com/drzero42/nexorious-go/internal/services/igdb"
+	"github.com/drzero42/nexorious-go/internal/worker"
+	"github.com/drzero42/nexorious-go/internal/worker/tasks"
+)
+
+// ─── DB helpers ──────────────────────────────────────────────────────────────
+
+func setupMetaRefreshDB(t *testing.T) *bun.DB {
+	t.Helper()
+	ctx := context.Background()
+
+	ctr, err := tcpostgres.Run(ctx,
+		"postgres:18-alpine",
+		tcpostgres.WithDatabase("nexorious_test"),
+		tcpostgres.WithUsername("test"),
+		tcpostgres.WithPassword("test"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2),
+		),
+	)
+	if err != nil {
+		t.Fatalf("start postgres container: %v", err)
+	}
+	t.Cleanup(func() { _ = ctr.Terminate(ctx) })
+
+	connStr, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("get connection string: %v", err)
+	}
+
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
+	db := bun.NewDB(sqldb, pgdialect.New())
+	t.Cleanup(func() { _ = db.Close() })
+
+	migrator := bunmigrate.NewMigrator(db, migrations.Migrations)
+	if err := migrator.Init(ctx); err != nil {
+		t.Fatalf("migrator init: %v", err)
+	}
+	if _, err := migrator.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	return db
+}
+
+func insertMetaRefreshAdminUser(t *testing.T, db *bun.DB) string {
+	t.Helper()
+	ctx := context.Background()
+	hash, _ := bcrypt.GenerateFromPassword([]byte("password"), 4)
+	id := uuid.NewString()
+	_, err := db.NewRaw(
+		`INSERT INTO users (id, username, password_hash, is_active, is_admin, preferences, created_at, updated_at)
+		 VALUES (?, 'admin', ?, true, true, '{}', now(), now())`, id, string(hash),
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert admin user: %v", err)
+	}
+	return id
+}
+
+func insertTestGame(t *testing.T, db *bun.DB, igdbID int32, title string, lastUpdated time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	_, err := db.NewRaw(
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, ?, now())`,
+		igdbID, title, lastUpdated,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert game %d: %v", igdbID, err)
+	}
+}
+
+func igdbTestServer(t *testing.T, gamesResponse string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth2/token":
+			_, _ = w.Write([]byte(`{"access_token":"test-token","expires_in":3600,"token_type":"bearer"}`))
+		case "/games":
+			_, _ = w.Write([]byte(gamesResponse))
+		case "/game_time_to_beats":
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func newTestIGDBClient(t *testing.T, srv *httptest.Server) *igdbsvc.Client {
+	t.Helper()
+	cfg := &config.Config{
+		IGDBClientID:          "test-client",
+		IGDBClientSecret:      "test-secret",
+		IGDBRequestsPerSecond: 100,
+		IGDBBurstCapacity:     100,
+	}
+	client := igdbsvc.NewClientWithTokenURL(cfg, srv.URL+"/oauth2/token")
+	client.SetAPIURLForTest(srv.URL)
+	return client
+}
+
+// ─── Dispatch tests ───────────────────────────────────────────────────────────
+
+func TestMetadataRefreshDispatch_IGDBNotConfigured(t *testing.T) {
+	db := setupMetaRefreshDB(t)
+	insertMetaRefreshAdminUser(t, db)
+
+	pool := worker.NewPool(db)
+	unconfigured := igdbsvc.NewClient(&config.Config{})
+
+	handler := tasks.NewMetadataRefreshDispatchHandler(db, pool, unconfigured)
+	if err := handler(context.Background(), &models.PendingTask{}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	var count int
+	_ = db.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(context.Background(), &count)
+	if count != 0 {
+		t.Errorf("expected 0 jobs, got %d", count)
+	}
+}
+
+func TestMetadataRefreshDispatch_NoAdminUser(t *testing.T) {
+	db := setupMetaRefreshDB(t)
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+
+	pool := worker.NewPool(db)
+	handler := tasks.NewMetadataRefreshDispatchHandler(db, pool, igdbClient)
+	if err := handler(context.Background(), &models.PendingTask{}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	var count int
+	_ = db.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(context.Background(), &count)
+	if count != 0 {
+		t.Errorf("expected 0 jobs, got %d", count)
+	}
+}
+
+func TestMetadataRefreshDispatch_AlreadyRunning(t *testing.T) {
+	db := setupMetaRefreshDB(t)
+	adminID := insertMetaRefreshAdminUser(t, db)
+	insertTestGame(t, db, 1001, "Game One", time.Now().Add(-24*time.Hour))
+
+	ctx := context.Background()
+	_, _ = db.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+		 VALUES (?, ?, 'metadata_refresh', 'system', 'processing', 'low', 1, now())`,
+		uuid.NewString(), adminID,
+	).Exec(ctx)
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+
+	pool := worker.NewPool(db)
+	handler := tasks.NewMetadataRefreshDispatchHandler(db, pool, igdbClient)
+	if err := handler(ctx, &models.PendingTask{}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	var count int
+	_ = db.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(ctx, &count)
+	if count != 1 {
+		t.Errorf("expected 1 job (the existing one), got %d", count)
+	}
+}
+
+func TestMetadataRefreshDispatch_NoGames(t *testing.T) {
+	db := setupMetaRefreshDB(t)
+	insertMetaRefreshAdminUser(t, db)
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+
+	pool := worker.NewPool(db)
+	handler := tasks.NewMetadataRefreshDispatchHandler(db, pool, igdbClient)
+	if err := handler(context.Background(), &models.PendingTask{}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	var count int
+	_ = db.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(context.Background(), &count)
+	if count != 0 {
+		t.Errorf("expected 0 jobs, got %d", count)
+	}
+}
+
+func TestMetadataRefreshDispatch_CreatesJobAndItems(t *testing.T) {
+	db := setupMetaRefreshDB(t)
+	insertMetaRefreshAdminUser(t, db)
+	now := time.Now().UTC()
+	insertTestGame(t, db, 1001, "Game One", now.Add(-72*time.Hour))
+	insertTestGame(t, db, 1002, "Game Two", now.Add(-48*time.Hour))
+	insertTestGame(t, db, 1003, "Game Three", now.Add(-24*time.Hour))
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+
+	pool := worker.NewPool(db)
+	handler := tasks.NewMetadataRefreshDispatchHandler(db, pool, igdbClient)
+	if err := handler(context.Background(), &models.PendingTask{}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	ctx := context.Background()
+
+	var job models.Job
+	if err := db.NewSelect().Model(&job).
+		Where("job_type = ?", models.JobTypeMetadataRefresh).
+		Scan(ctx); err != nil {
+		t.Fatalf("no job found: %v", err)
+	}
+	if job.Status != models.JobStatusProcessing {
+		t.Errorf("job status: want processing, got %s", job.Status)
+	}
+	if job.TotalItems != 3 {
+		t.Errorf("total_items: want 3, got %d", job.TotalItems)
+	}
+
+	var itemCount int
+	_ = db.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, job.ID).Scan(ctx, &itemCount)
+	if itemCount != 3 {
+		t.Errorf("job_items: want 3, got %d", itemCount)
+	}
+
+	var taskCount int
+	_ = db.NewRaw(`SELECT COUNT(*) FROM pending_tasks WHERE task_type = 'metadata_refresh_item'`).Scan(ctx, &taskCount)
+	if taskCount != 3 {
+		t.Errorf("pending_tasks: want 3, got %d", taskCount)
+	}
+}
+
+// ─── Item tests ───────────────────────────────────────────────────────────────
+
+func setupItemTest(t *testing.T, db *bun.DB, adminID string, gameID int32, title string) string {
+	t.Helper()
+	ctx := context.Background()
+
+	jobID := uuid.NewString()
+	_, _ = db.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at, started_at)
+		 VALUES (?, ?, 'metadata_refresh', 'system', 'processing', 'low', 1, now(), now())`,
+		jobID, adminID,
+	).Exec(ctx)
+
+	itemID := uuid.NewString()
+	sourceMetaBytes, _ := json.Marshal(map[string]any{"game_id": gameID})
+	sourceMeta := json.RawMessage(sourceMetaBytes)
+	_, _ = db.NewRaw(
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
+		itemID, jobID, adminID, strconv.Itoa(int(gameID)), title, sourceMeta,
+	).Exec(ctx)
+
+	return itemID
+}
+
+func TestMetadataRefreshItem_Success(t *testing.T) {
+	db := setupMetaRefreshDB(t)
+	adminID := insertMetaRefreshAdminUser(t, db)
+	insertTestGame(t, db, 2001, "Old Title", time.Now().Add(-24*time.Hour))
+	itemID := setupItemTest(t, db, adminID, 2001, "Old Title")
+
+	gamesJSON := `[{"id":2001,"name":"New Title","slug":"new-title","cover":{"image_id":"co9999"}}]`
+	srv := igdbTestServer(t, gamesJSON)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+
+	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
+	task := &models.PendingTask{Payload: payload}
+
+	handler := tasks.NewMetadataRefreshItemHandler(db, igdbClient, t.TempDir())
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	ctx := context.Background()
+
+	var title string
+	_ = db.NewRaw(`SELECT title FROM games WHERE id = 2001`).Scan(ctx, &title)
+	if title != "New Title" {
+		t.Errorf("game title: want 'New Title', got %q", title)
+	}
+
+	var item models.JobItem
+	_ = db.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
+	if item.Status != models.JobItemStatusCompleted {
+		t.Errorf("item status: want completed, got %s", item.Status)
+	}
+
+	var jobID string
+	_ = db.NewRaw(`SELECT job_id FROM job_items WHERE id = ?`, itemID).Scan(ctx, &jobID)
+	var jobStatus string
+	_ = db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
+	if jobStatus != models.JobStatusCompleted {
+		t.Errorf("job status: want completed, got %s", jobStatus)
+	}
+}
+
+func TestMetadataRefreshItem_IGDBError(t *testing.T) {
+	db := setupMetaRefreshDB(t)
+	adminID := insertMetaRefreshAdminUser(t, db)
+	insertTestGame(t, db, 2002, "Some Game", time.Now().Add(-24*time.Hour))
+	itemID := setupItemTest(t, db, adminID, 2002, "Some Game")
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+
+	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
+	handler := tasks.NewMetadataRefreshItemHandler(db, igdbClient, t.TempDir())
+	_ = handler(context.Background(), &models.PendingTask{Payload: payload})
+
+	ctx := context.Background()
+
+	var item models.JobItem
+	_ = db.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
+	if item.Status != models.JobItemStatusFailed {
+		t.Errorf("item status: want failed, got %s", item.Status)
+	}
+
+	var jobID string
+	_ = db.NewRaw(`SELECT job_id FROM job_items WHERE id = ?`, itemID).Scan(ctx, &jobID)
+	var jobStatus string
+	_ = db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
+	if jobStatus != models.JobStatusCompleted {
+		t.Errorf("job status: want completed, got %s", jobStatus)
+	}
+}
+
+func TestMetadataRefreshItem_CoverArtFailureNonFatal(t *testing.T) {
+	db := setupMetaRefreshDB(t)
+	adminID := insertMetaRefreshAdminUser(t, db)
+	insertTestGame(t, db, 2003, "Cover Game", time.Now().Add(-24*time.Hour))
+	itemID := setupItemTest(t, db, adminID, 2003, "Cover Game")
+
+	gamesJSON := `[{"id":2003,"name":"Cover Game","slug":"cover-game","cover":{"image_id":"co_fail"}}]`
+	srv := igdbTestServer(t, gamesJSON)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+
+	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
+	handler := tasks.NewMetadataRefreshItemHandler(db, igdbClient, "/dev/null")
+	_ = handler(context.Background(), &models.PendingTask{Payload: payload})
+
+	ctx := context.Background()
+	var item models.JobItem
+	_ = db.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
+	if item.Status != models.JobItemStatusCompleted {
+		t.Errorf("item status: want completed, got %s", item.Status)
+	}
+}
+
+func TestMetadataRefreshItem_CoverArtUnchanged(t *testing.T) {
+	db := setupMetaRefreshDB(t)
+	adminID := insertMetaRefreshAdminUser(t, db)
+
+	ctx := context.Background()
+	_, _ = db.NewRaw(
+		`INSERT INTO games (id, title, cover_art_url, last_updated, created_at)
+		 VALUES (2004, 'Cover Unchanged', '/static/cover_art/co_same.jpg', now() - interval '1 day', now())`,
+	).Exec(ctx)
+	itemID := setupItemTest(t, db, adminID, 2004, "Cover Unchanged")
+
+	gamesJSON := `[{"id":2004,"name":"Cover Unchanged","slug":"cover-unchanged","cover":{"image_id":"co_same"}}]`
+	srv := igdbTestServer(t, gamesJSON)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+
+	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
+	handler := tasks.NewMetadataRefreshItemHandler(db, igdbClient, t.TempDir())
+	_ = handler(context.Background(), &models.PendingTask{Payload: payload})
+
+	var item models.JobItem
+	_ = db.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
+	if item.Status != models.JobItemStatusCompleted {
+		t.Errorf("item status: want completed, got %s", item.Status)
+	}
+}
+
+func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
+	db := setupMetaRefreshDB(t)
+	adminID := insertMetaRefreshAdminUser(t, db)
+	insertTestGame(t, db, 3001, "Game A", time.Now().Add(-48*time.Hour))
+	insertTestGame(t, db, 3002, "Game B", time.Now().Add(-24*time.Hour))
+
+	ctx := context.Background()
+
+	jobID := uuid.NewString()
+	_, _ = db.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at, started_at)
+		 VALUES (?, ?, 'metadata_refresh', 'system', 'processing', 'low', 2, now(), now())`,
+		jobID, adminID,
+	).Exec(ctx)
+
+	makeItem := func(gameID int32, title string) string {
+		itemID := uuid.NewString()
+		sourceMetaBytes, _ := json.Marshal(map[string]any{"game_id": gameID})
+		sourceMeta := json.RawMessage(sourceMetaBytes)
+		_, _ = db.NewRaw(
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
+			itemID, jobID, adminID, strconv.Itoa(int(gameID)), title, sourceMeta,
+		).Exec(ctx)
+		return itemID
+	}
+
+	itemID1 := makeItem(3001, "Game A")
+	itemID2 := makeItem(3002, "Game B")
+
+	gamesResponse := func(id int, name string) string {
+		return `[{"id":` + strconv.Itoa(id) + `,"name":"` + name + `","slug":"slug"}]`
+	}
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+
+	handler := tasks.NewMetadataRefreshItemHandler(db, igdbClient, t.TempDir())
+
+	// Process first item — job should still be processing.
+	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth2/token":
+			_, _ = w.Write([]byte(`{"access_token":"t","expires_in":3600,"token_type":"bearer"}`))
+		case "/games":
+			_, _ = w.Write([]byte(gamesResponse(3001, "Game A")))
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	})
+	payload1, _ := json.Marshal(map[string]string{"job_item_id": itemID1})
+	_ = handler(ctx, &models.PendingTask{Payload: payload1})
+
+	var jobStatus string
+	_ = db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
+	if jobStatus != models.JobStatusProcessing {
+		t.Errorf("after first item: job status want processing, got %s", jobStatus)
+	}
+
+	// Process second item — job should now be completed.
+	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth2/token":
+			_, _ = w.Write([]byte(`{"access_token":"t","expires_in":3600,"token_type":"bearer"}`))
+		case "/games":
+			_, _ = w.Write([]byte(gamesResponse(3002, "Game B")))
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	})
+	payload2, _ := json.Marshal(map[string]string{"job_item_id": itemID2})
+	_ = handler(ctx, &models.PendingTask{Payload: payload2})
+
+	_ = db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
+	if jobStatus != models.JobStatusCompleted {
+		t.Errorf("after second item: job status want completed, got %s", jobStatus)
+	}
+}

@@ -78,6 +78,11 @@ func NewClientWithTokenURL(cfg *config.Config, tokenURL string) *Client {
 	return c
 }
 
+// SetAPIURLForTest overrides the IGDB API URL. For use in tests only.
+func (c *Client) SetAPIURLForTest(url string) {
+	c.apiURL = url
+}
+
 type scoredCandidate struct {
 	metadata GameMetadata
 	score    float64
@@ -419,6 +424,7 @@ func convertToGameMetadata(g igdbGameResponse) GameMetadata {
 	}
 
 	if g.Cover != nil && g.Cover.ImageID != "" {
+		md.CoverImageID = g.Cover.ImageID
 		url := igdbImageBaseURL + g.Cover.ImageID + ".jpg"
 		md.CoverArtURL = &url
 	}

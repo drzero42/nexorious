@@ -224,7 +224,10 @@ func main() {
 	pool.Register("export_csv", tasks.NewExportCSVHandler(db, cfg.StoragePath))
 	pool.Register("dispatch_sync", tasks.NewDispatchSyncHandler(db, steamsvc.NewClient(), psnsvc.NewClient()))
 	pool.Register("process_sync_item", tasks.NewProcessSyncItemHandler(db, igdbClient))
-	// pool.Register("metadata_refresh_process", metadataHandler)
+	pool.Register("metadata_refresh_dispatch",
+		tasks.NewMetadataRefreshDispatchHandler(db, pool, igdbClient))
+	pool.Register("metadata_refresh_item",
+		tasks.NewMetadataRefreshItemHandler(db, igdbClient, cfg.StoragePath))
 
 	// -------------------------------------------------------------------------
 	// HTTP server
@@ -255,10 +258,14 @@ func main() {
 			newPool.Register("export_csv", tasks.NewExportCSVHandler(newDB, cfg.StoragePath))
 			newPool.Register("dispatch_sync", tasks.NewDispatchSyncHandler(newDB, steamsvc.NewClient(), psnsvc.NewClient()))
 			newPool.Register("process_sync_item", tasks.NewProcessSyncItemHandler(newDB, igdbClient))
+			newPool.Register("metadata_refresh_dispatch",
+				tasks.NewMetadataRefreshDispatchHandler(newDB, newPool, igdbClient))
+			newPool.Register("metadata_refresh_item",
+				tasks.NewMetadataRefreshItemHandler(newDB, igdbClient, cfg.StoragePath))
 			newPool.Start(shutdownCtx, cfg.WorkerCount)
 			pool = newPool
 
-			newSched := scheduler.NewScheduler(newDB, newPool, backupSvc)
+			newSched := scheduler.NewScheduler(newDB, newPool, backupSvc, cfg)
 			sched = newSched
 			if err := newSched.Start(shutdownCtx); err != nil {
 				slog.Error("failed to restart scheduler after restore", "err", err)
@@ -302,7 +309,7 @@ func main() {
 			}
 			if migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() {
 				pool.Start(ctx, cfg.WorkerCount)
-				sched = scheduler.NewScheduler(db, pool, backupSvc)
+				sched = scheduler.NewScheduler(db, pool, backupSvc, cfg)
 				if err := sched.Start(ctx); err != nil {
 					slog.Error("failed to start scheduler", "err", err)
 				}

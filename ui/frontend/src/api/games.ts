@@ -28,7 +28,6 @@ interface GameApiResponse {
   rating_average?: number;
   rating_count: number;
   game_metadata?: string;
-  estimated_playtime_hours?: number;
   howlongtobeat_main?: number;
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;
@@ -302,7 +301,6 @@ function transformGame(apiGame: GameApiResponse): Game {
     rating_average: apiGame.rating_average,
     rating_count: apiGame.rating_count,
     game_metadata: apiGame.game_metadata,
-    estimated_playtime_hours: apiGame.estimated_playtime_hours,
     howlongtobeat_main: apiGame.howlongtobeat_main,
     howlongtobeat_extra: apiGame.howlongtobeat_extra,
     howlongtobeat_completionist: apiGame.howlongtobeat_completionist,

@@ -37,7 +37,6 @@ const mockGameApi = {
   rating_average: 8.5,
   rating_count: 100,
   game_metadata: '{}',
-  estimated_playtime_hours: 40,
   howlongtobeat_main: 35,
   howlongtobeat_extra: 50,
   howlongtobeat_completionist: 80,

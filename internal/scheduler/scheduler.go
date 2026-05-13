@@ -11,20 +11,33 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/backup"
+	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/db/models"
 	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
 type Scheduler struct {
-	db        *bun.DB
-	pool      *worker.Pool
-	backupSvc *backup.Service
-	scheduler gocron.Scheduler
-	backupJob gocron.Job
+	db                      *bun.DB
+	pool                    *worker.Pool
+	backupSvc               *backup.Service
+	metadataRefreshInterval time.Duration
+	scheduler               gocron.Scheduler
+	backupJob               gocron.Job
 }
 
-func NewScheduler(db *bun.DB, pool *worker.Pool, backupSvc *backup.Service) *Scheduler {
-	return &Scheduler{db: db, pool: pool, backupSvc: backupSvc}
+func NewScheduler(db *bun.DB, pool *worker.Pool, backupSvc *backup.Service, cfg *config.Config) *Scheduler {
+	interval, err := time.ParseDuration(cfg.MetadataRefreshInterval)
+	if err != nil {
+		slog.Warn("scheduler: invalid METADATA_REFRESH_INTERVAL, defaulting to 24h",
+			"value", cfg.MetadataRefreshInterval, "err", err)
+		interval = 24 * time.Hour
+	}
+	return &Scheduler{
+		db:                      db,
+		pool:                    pool,
+		backupSvc:               backupSvc,
+		metadataRefreshInterval: interval,
+	}
 }
 
 func (s *Scheduler) Start(ctx context.Context) error {
@@ -71,6 +84,14 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		gocron.CronJob("*/15 * * * *", false),
 		gocron.NewTask(func() {
 			CheckPendingSyncs(ctx, s.db, s.pool)
+		}),
+	)
+
+	// Metadata refresh dispatch — configurable interval.
+	_, _ = s.scheduler.NewJob(
+		gocron.DurationJob(s.metadataRefreshInterval),
+		gocron.NewTask(func() {
+			_ = s.pool.Submit(ctx, "metadata_refresh_dispatch", nil, 1)
 		}),
 	)
 
