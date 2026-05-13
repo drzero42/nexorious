@@ -254,6 +254,7 @@ bd epic status <epic-id> --json               # Show epic completion %
 bd list --status open --json                  # List all open issues
 bd show <task-id> --json                      # Show task details
 bd update <task-id> --claim --json            # Claim a task
+bd update <task-id> --status=open --json      # Unclaim a task (back to ready queue)
 bd close <task-id> --reason "..." --json      # Close a task
 bd blocked --json                             # Show what's blocked and why
 bd dolt push                                  # Sync Dolt state to remote
