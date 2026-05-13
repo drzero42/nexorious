@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "nexorious_go",
+  "project_id": "fc52298d-508a-432c-8a67-dbe0598e8b2f"
+}
