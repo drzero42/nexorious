@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -80,7 +82,8 @@ func runMigrate(cmd *cobra.Command, _ []string) error {
 	db := openBunDB(cfg.DatabaseURL)
 	defer func() { _ = db.Close() }()
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// Retry the initial connection — useful when running as a Kubernetes
 	// initContainer where the database pod may still be starting up.
@@ -132,7 +135,8 @@ func runMigrateStatus(cmd *cobra.Command, _ []string) error {
 	db := openBunDB(cfg.DatabaseURL)
 	defer func() { _ = db.Close() }()
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	if err := db.PingContext(pingCtx); err != nil {
 		cancel()

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v5"
 	"github.com/spf13/cobra"
 	"github.com/uptrace/bun"
@@ -44,26 +42,9 @@ func newServeCmd() *cobra.Command {
 // database, wires the migrator/worker/scheduler/HTTP server and blocks until
 // SIGINT/SIGTERM triggers a graceful shutdown.
 func runServe(cmd *cobra.Command, _ []string) error {
-	// -------------------------------------------------------------------------
-	// .env file loading
-	// -------------------------------------------------------------------------
-	configFile, _ := cmd.Root().PersistentFlags().GetString("config")
-	if configFile != "" {
-		if err := godotenv.Load(configFile); err != nil {
-			return fmt.Errorf("load env file %q: %w", configFile, err)
-		}
-	} else {
-		if err := godotenv.Load(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("load .env: %w", err)
-		}
-	}
-
-	// -------------------------------------------------------------------------
-	// Config
-	// -------------------------------------------------------------------------
-	cfg, err := config.Load()
+	cfg, err := loadEnvAndConfig(cmd)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
