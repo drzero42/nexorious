@@ -61,8 +61,8 @@ func TestNewMigrator_FreshDatabase(t *testing.T) {
 	db := setupTestDB(t)
 
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 
 	if m.State() != migrate.AppStateNeedsMigration {
@@ -81,8 +81,8 @@ func TestNewMigrator_FreshDatabase(t *testing.T) {
 func TestRunMigrations_TransitionsToReady(t *testing.T) {
 	db := setupTestDB(t)
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 
 	ctx := context.Background()
@@ -106,8 +106,8 @@ func TestNewMigrator_AlreadyMigrated(t *testing.T) {
 
 	// First run — apply migrations.
 	m1 := migrate.NewMigrator(db)
-	if err := m1.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m1.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	if err := m1.RunMigrations(ctx); err != nil {
 		t.Fatalf("RunMigrations first run: %v", err)
@@ -115,8 +115,8 @@ func TestNewMigrator_AlreadyMigrated(t *testing.T) {
 
 	// Second migrator on same DB — schema is current; should start Ready.
 	m2 := migrate.NewMigrator(db)
-	if err := m2.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m2.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 
 	if m2.State() != migrate.AppStateReady {
@@ -130,8 +130,8 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 	db := makeBunDB(t, connStr)
 
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	if err := m.RunMigrations(ctx); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
@@ -209,7 +209,7 @@ func TestInitNeedsSetup_NoUsers(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
+	if err := m.DetermineState(); err != nil {
 		t.Fatalf("determineState: %v", err)
 	}
 	if err := m.RunMigrations(ctx); err != nil {
@@ -228,7 +228,7 @@ func TestInitNeedsSetup_UsersExist(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
+	if err := m.DetermineState(); err != nil {
 		t.Fatalf("determineState: %v", err)
 	}
 	if err := m.RunMigrations(ctx); err != nil {
@@ -252,8 +252,8 @@ func TestInitNeedsSetup_UsersExist(t *testing.T) {
 func TestStartDBProbe_SetsUnavailableOnPingFail(t *testing.T) {
 	db := setupTestDB(t)
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	if err := m.RunMigrations(context.Background()); err != nil {
 		t.Fatalf("RunMigrations: %v", err)

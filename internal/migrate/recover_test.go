@@ -17,8 +17,8 @@ func TestStartDBProbe_RecoveryFromMigrating(t *testing.T) {
 
 	// Apply migrations so the DB is in a known good state.
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	if err := m.RunMigrations(context.Background()); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
@@ -81,8 +81,8 @@ func TestStartDBProbe_RecoveryFromReady(t *testing.T) {
 	db := setupTestDB(t)
 
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	if err := m.RunMigrations(context.Background()); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
@@ -133,12 +133,12 @@ func TestStartDBProbe_RecoveryFromReady(t *testing.T) {
 // "mg.bunMig == nil" lazy-init branch in PendingCount.
 func TestPendingCount_WithoutPriorDetermineState(t *testing.T) {
 	db := setupTestDB(t)
-	// Do NOT call DetermineStateForTest — bunMig is nil.
+	// Do NOT call DetermineState — bunMig is nil.
 	m := migrate.NewMigrator(db)
 
 	count, err := m.PendingCount()
 	if err != nil {
-		t.Fatalf("PendingCount without prior DetermineStateForTest: %v", err)
+		t.Fatalf("PendingCount without prior DetermineState: %v", err)
 	}
 	// Fresh DB has one unapplied migration.
 	if count != 1 {

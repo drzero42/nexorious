@@ -104,7 +104,7 @@ func runMigrate(cmd *cobra.Command, _ []string) error {
 	pingCancel()
 
 	migrator := migrate.NewMigrator(db)
-	if err := migrator.DetermineStateForTest(); err != nil {
+	if err := migrator.DetermineState(); err != nil {
 		return fmt.Errorf("determine state: %w", err)
 	}
 	if migrator.State() == migrate.AppStateReady {
@@ -141,7 +141,7 @@ func runMigrateStatus(cmd *cobra.Command, _ []string) error {
 	cancel()
 
 	migrator := migrate.NewMigrator(db)
-	if err := migrator.DetermineStateForTest(); err != nil {
+	if err := migrator.DetermineState(); err != nil {
 		return fmt.Errorf("determine state: %w", err)
 	}
 	pending, current, err := migrator.Status(ctx)

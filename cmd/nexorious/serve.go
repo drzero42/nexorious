@@ -105,7 +105,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// initAppState runs determineState + InitNeedsSetup.
 	// Called once at startup (if DB is reachable) and as StartDBProbe's onRecovery.
 	initAppState := func(ctx context.Context) error {
-		if err := migrator.DetermineStateForTest(); err != nil {
+		if err := migrator.DetermineState(); err != nil {
 			return fmt.Errorf("initAppState: determineState: %w", err)
 		}
 		if migrator.State() == migrate.AppStateReady {
@@ -227,7 +227,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			return nil
 		},
 		ReinitMigrator: func(db *bun.DB) error {
-			if err := migrator.DetermineStateForTest(); err != nil {
+			if err := migrator.DetermineState(); err != nil {
 				return err
 			}
 			return migrator.InitNeedsSetup(context.Background(), db)

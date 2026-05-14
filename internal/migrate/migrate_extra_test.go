@@ -65,8 +65,8 @@ func TestNewMigratorForTest(t *testing.T) {
 func TestRunMigrations_SetLogWriter(t *testing.T) {
 	db := setupTestDB(t)
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 
 	var buf bytes.Buffer
@@ -89,8 +89,8 @@ func TestRunMigrations_SetLogWriter(t *testing.T) {
 func TestRunMigrations_AlreadyMigrating(t *testing.T) {
 	db := setupTestDB(t)
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	m.SetStateForTest(migrate.AppStateMigrating)
 
@@ -124,8 +124,8 @@ func TestStatus_FreshDB(t *testing.T) {
 func TestStatus_AfterMigration(t *testing.T) {
 	db := setupTestDB(t)
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	if err := m.RunMigrations(context.Background()); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
@@ -174,8 +174,8 @@ func TestHandleMigrateUI(t *testing.T) {
 func TestHandleRun_WithDB_202(t *testing.T) {
 	db := setupTestDB(t)
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	// Pass db so HandleRun will call InitNeedsSetup after migration.
 	h := migrate.NewHandler(m, db)
@@ -207,8 +207,8 @@ func TestStartDBProbe_RecoveryFromUnavailable(t *testing.T) {
 	// Set up a good DB and run migrations so the state is Ready.
 	db := setupTestDB(t)
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	if err := m.RunMigrations(context.Background()); err != nil {
 		t.Fatalf("RunMigrations: %v", err)

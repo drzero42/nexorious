@@ -185,8 +185,8 @@ func TestMigrator_Status_ReadOnly(t *testing.T) {
 	ctx := context.Background()
 
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	if m.State() != migrate.AppStateNeedsMigration {
 		t.Fatalf("precondition: expected NeedsMigration on fresh DB, got %v", m.State())

@@ -76,7 +76,7 @@ func (mg *Migrator) determineState() error {
 	return nil
 }
 
-func (mg *Migrator) DetermineStateForTest() error {
+func (mg *Migrator) DetermineState() error {
 	return mg.determineState()
 }
 

@@ -18,8 +18,8 @@ func newTestHandler(t *testing.T) *migrate.Handler {
 	t.Helper()
 	db := setupTestDB(t)
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 	return migrate.NewHandler(m, nil)
 }
@@ -88,8 +88,8 @@ func TestHandleRun_202_ThenReady(t *testing.T) {
 func TestHandleRun_409_WhenMigrating(t *testing.T) {
 	db := setupTestDB(t)
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 
 	// Manually set state to Migrating.
@@ -112,8 +112,8 @@ func TestHandleRun_409_WhenMigrating(t *testing.T) {
 func TestHandleRun_400_WhenReady(t *testing.T) {
 	db := setupTestDB(t)
 	m := migrate.NewMigrator(db)
-	if err := m.DetermineStateForTest(); err != nil {
-		t.Fatalf("DetermineStateForTest: %v", err)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
 	}
 
 	m.SetStateForTest(migrate.AppStateReady)
