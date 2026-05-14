@@ -18,12 +18,12 @@ import (
 // ─── Export tests ────────────────────────────────────────────────────────────
 
 func TestExportJSON_NoGames(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	_, token := setupTagUser(t, db, e, "exp-nojson")
+	_, token := setupTagUser(t, testDB, e, "exp-nojson")
 
 	rec := postJSONAuth(t, e, "/api/export/json", nil, token)
 
@@ -33,19 +33,19 @@ func TestExportJSON_NoGames(t *testing.T) {
 }
 
 func TestExportJSON_Success(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	userID, token := setupTagUser(t, db, e, "exp-json-ok")
+	userID, token := setupTagUser(t, testDB, e, "exp-json-ok")
 
 	// Insert a game and user_game so the user has something to export.
 	ctx := context.Background()
-	if _, err := db.ExecContext(ctx, `INSERT INTO games (id, title) VALUES (1, 'Test Game')`); err != nil {
+	if _, err := testDB.ExecContext(ctx, `INSERT INTO games (id, title) VALUES (1, 'Test Game')`); err != nil {
 		t.Fatalf("insert game: %v", err)
 	}
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO user_games (id, user_id, game_id, is_loved) VALUES ('ug1', ?, 1, false)`,
 		userID,
 	); err != nil {
@@ -75,19 +75,19 @@ func TestExportJSON_Success(t *testing.T) {
 }
 
 func TestExportCSV_Success(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	userID, token := setupTagUser(t, db, e, "exp-csv-ok")
+	userID, token := setupTagUser(t, testDB, e, "exp-csv-ok")
 
 	// Insert a game and user_game so the user has something to export.
 	ctx := context.Background()
-	if _, err := db.ExecContext(ctx, `INSERT INTO games (id, title) VALUES (2, 'Test Game 2')`); err != nil {
+	if _, err := testDB.ExecContext(ctx, `INSERT INTO games (id, title) VALUES (2, 'Test Game 2')`); err != nil {
 		t.Fatalf("insert game: %v", err)
 	}
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO user_games (id, user_id, game_id, is_loved) VALUES ('ug2', ?, 2, false)`,
 		userID,
 	); err != nil {
@@ -119,7 +119,7 @@ func insertCompletedExportJob(t *testing.T, db *bun.DB, id, userID, jobType, fil
 	t.Helper()
 	ctx := context.Background()
 	if filePath != "" && completedAt != nil {
-		_, err := db.ExecContext(ctx,
+		_, err := testDB.ExecContext(ctx,
 			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, file_path, completed_at, created_at)
 			 VALUES (?, ?, ?, 'nexorious', ?, 'normal', ?, ?, now())`,
 			id, userID, jobType, "completed", filePath, completedAt,
@@ -128,7 +128,7 @@ func insertCompletedExportJob(t *testing.T, db *bun.DB, id, userID, jobType, fil
 			t.Fatalf("insertCompletedExportJob: %v", err)
 		}
 	} else if filePath != "" {
-		_, err := db.ExecContext(ctx,
+		_, err := testDB.ExecContext(ctx,
 			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, file_path, created_at)
 			 VALUES (?, ?, ?, 'nexorious', ?, 'normal', ?, now())`,
 			id, userID, jobType, "completed", filePath,
@@ -137,17 +137,17 @@ func insertCompletedExportJob(t *testing.T, db *bun.DB, id, userID, jobType, fil
 			t.Fatalf("insertCompletedExportJob: %v", err)
 		}
 	} else {
-		insertJob(t, db, id, userID, jobType, "nexorious", "pending")
+		insertJob(t, testDB, id, userID, jobType, "nexorious", "pending")
 	}
 }
 
 func TestDownload_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	_, token := setupTagUser(t, db, e, "dl-notfound")
+	_, token := setupTagUser(t, testDB, e, "dl-notfound")
 
 	rec := getAuth(t, e, "/api/export/nonexistent-id/download", token)
 	if rec.Code != http.StatusNotFound {
@@ -156,15 +156,15 @@ func TestDownload_NotFound(t *testing.T) {
 }
 
 func TestDownload_NotExportJob(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	userID, token := setupTagUser(t, db, e, "dl-notexport")
+	userID, token := setupTagUser(t, testDB, e, "dl-notexport")
 
 	// Insert an import job (not an export job).
-	insertJob(t, db, "dl-import-job", userID, "import", "steam", "completed")
+	insertJob(t, testDB, "dl-import-job", userID, "import", "steam", "completed")
 
 	rec := getAuth(t, e, "/api/export/dl-import-job/download", token)
 	if rec.Code != http.StatusBadRequest {
@@ -173,15 +173,15 @@ func TestDownload_NotExportJob(t *testing.T) {
 }
 
 func TestDownload_NotCompleted(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	userID, token := setupTagUser(t, db, e, "dl-notcomplete")
+	userID, token := setupTagUser(t, testDB, e, "dl-notcomplete")
 
 	// Insert a pending export job.
-	insertJob(t, db, "dl-pending-export", userID, "export", "nexorious", "pending")
+	insertJob(t, testDB, "dl-pending-export", userID, "export", "nexorious", "pending")
 
 	rec := getAuth(t, e, "/api/export/dl-pending-export/download", token)
 	if rec.Code != http.StatusBadRequest {
@@ -190,12 +190,12 @@ func TestDownload_NotCompleted(t *testing.T) {
 }
 
 func TestDownload_Success(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	userID, token := setupTagUser(t, db, e, "dl-success")
+	userID, token := setupTagUser(t, testDB, e, "dl-success")
 
 	// Create a temp dir with a real JSON file.
 	dir := t.TempDir()
@@ -205,7 +205,7 @@ func TestDownload_Success(t *testing.T) {
 	}
 
 	now := time.Now()
-	insertCompletedExportJob(t, db, "dl-success-job", userID, "export", filePath, &now)
+	insertCompletedExportJob(t, testDB, "dl-success-job", userID, "export", filePath, &now)
 
 	rec := getAuth(t, e, "/api/export/dl-success-job/download", token)
 	if rec.Code != http.StatusOK {
@@ -218,18 +218,18 @@ func TestDownload_Success(t *testing.T) {
 }
 
 func TestDownload_WrongOwner(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
 	// user2 owns the job; user1 makes the request.
 	userID2 := "u-dl-owner2"
-	insertAuthTestUser(t, db, userID2, "dlowner2", "pass123", true, false)
+	insertAuthTestUser(t, testDB, userID2, "dlowner2", "pass123", true, false)
 	now := time.Now()
-	insertCompletedExportJob(t, db, "dl-wrong-owner-job", userID2, "export", "/tmp/fake.json", &now)
+	insertCompletedExportJob(t, testDB, "dl-wrong-owner-job", userID2, "export", "/tmp/fake.json", &now)
 
-	_, token1 := setupTagUser(t, db, e, "dl-wrongowner")
+	_, token1 := setupTagUser(t, testDB, e, "dl-wrongowner")
 
 	rec := getAuth(t, e, "/api/export/dl-wrong-owner-job/download", token1)
 	if rec.Code != http.StatusNotFound {

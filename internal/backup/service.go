@@ -98,8 +98,8 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT game_id) FROM user_games").Scan(&statsGames)
 	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&statsTags)
 
-	var migrationVersion int64
-	_ = s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations").Scan(&migrationVersion)
+	var migrationVersion string
+	_ = s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(name), '') FROM bun_migrations").Scan(&migrationVersion)
 
 	dbChecksum, dbSize := checksumFile(dbSQLPath)
 	coverArtChecksum := checksumDir(coverArtDst)
@@ -108,7 +108,7 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 		Version:           ManifestVersion,
 		CreatedAt:         time.Now().UTC(),
 		AppVersion:        s.appVersion,
-		MigrationVersion:  fmt.Sprintf("%d", migrationVersion),
+		MigrationVersion:  migrationVersion,
 		BackupType:        backupType,
 		DatabaseFile:      "database.sql",
 		DatabaseSizeBytes: dbSize,

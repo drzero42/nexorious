@@ -17,12 +17,12 @@ import (
 )
 
 func TestExportJSON_Task(t *testing.T) {
-	db := setupTasksTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
 	tmpDir := t.TempDir()
 
 	userID := uuid.NewString()
-	insertTestUser(t, db, userID)
+	insertTestUser(t, testDB, userID)
 
 	// Insert a game.
 	releaseDate := time.Date(2020, 3, 15, 0, 0, 0, 0, time.UTC)
@@ -33,7 +33,7 @@ func TestExportJSON_Task(t *testing.T) {
 		LastUpdated: time.Now().UTC(),
 		CreatedAt:   time.Now().UTC(),
 	}
-	if _, err := db.NewInsert().Model(game).Exec(ctx); err != nil {
+	if _, err := testDB.NewInsert().Model(game).Exec(ctx); err != nil {
 		t.Fatalf("insert game: %v", err)
 	}
 
@@ -52,13 +52,13 @@ func TestExportJSON_Task(t *testing.T) {
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
 	}
-	if _, err := db.NewInsert().Model(ug).Exec(ctx); err != nil {
+	if _, err := testDB.NewInsert().Model(ug).Exec(ctx); err != nil {
 		t.Fatalf("insert user_game: %v", err)
 	}
 
 	// Create export job.
 	jobID := uuid.NewString()
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
 		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
 		jobID, userID,
@@ -67,7 +67,7 @@ func TestExportJSON_Task(t *testing.T) {
 	}
 
 	// Build and run the handler.
-	handler := tasks.NewExportJSONHandler(db, tmpDir)
+	handler := tasks.NewExportJSONHandler(testDB, tmpDir)
 	task := &models.PendingTask{
 		ID:       uuid.NewString(),
 		TaskType: "export_json",
@@ -79,7 +79,7 @@ func TestExportJSON_Task(t *testing.T) {
 
 	// ── Verify Job is completed ────────────────────────────────────────────
 	var job models.Job
-	if err := db.NewSelect().Model(&job).Where("id = ?", jobID).Scan(ctx); err != nil {
+	if err := testDB.NewSelect().Model(&job).Where("id = ?", jobID).Scan(ctx); err != nil {
 		t.Fatalf("load job: %v", err)
 	}
 	if job.Status != models.JobStatusCompleted {
@@ -149,12 +149,12 @@ func TestExportJSON_Task(t *testing.T) {
 }
 
 func TestExportCSV_Task(t *testing.T) {
-	db := setupTasksTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
 	tmpDir := t.TempDir()
 
 	userID := uuid.NewString()
-	insertTestUser(t, db, userID)
+	insertTestUser(t, testDB, userID)
 
 	// Insert a game.
 	game := &models.Game{
@@ -163,7 +163,7 @@ func TestExportCSV_Task(t *testing.T) {
 		LastUpdated: time.Now().UTC(),
 		CreatedAt:   time.Now().UTC(),
 	}
-	if _, err := db.NewInsert().Model(game).Exec(ctx); err != nil {
+	if _, err := testDB.NewInsert().Model(game).Exec(ctx); err != nil {
 		t.Fatalf("insert game: %v", err)
 	}
 
@@ -180,13 +180,13 @@ func TestExportCSV_Task(t *testing.T) {
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
 	}
-	if _, err := db.NewInsert().Model(ug).Exec(ctx); err != nil {
+	if _, err := testDB.NewInsert().Model(ug).Exec(ctx); err != nil {
 		t.Fatalf("insert user_game: %v", err)
 	}
 
 	// Create export job.
 	jobID := uuid.NewString()
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
 		 VALUES (?, ?, 'export', 'csv', 'pending', 'normal', 0)`,
 		jobID, userID,
@@ -195,7 +195,7 @@ func TestExportCSV_Task(t *testing.T) {
 	}
 
 	// Build and run the handler.
-	handler := tasks.NewExportCSVHandler(db, tmpDir)
+	handler := tasks.NewExportCSVHandler(testDB, tmpDir)
 	task := &models.PendingTask{
 		ID:       uuid.NewString(),
 		TaskType: "export_csv",
@@ -207,7 +207,7 @@ func TestExportCSV_Task(t *testing.T) {
 
 	// ── Verify Job is completed ────────────────────────────────────────────
 	var job models.Job
-	if err := db.NewSelect().Model(&job).Where("id = ?", jobID).Scan(ctx); err != nil {
+	if err := testDB.NewSelect().Model(&job).Where("id = ?", jobID).Scan(ctx); err != nil {
 		t.Fatalf("load job: %v", err)
 	}
 	if job.Status != models.JobStatusCompleted {
@@ -275,7 +275,7 @@ func TestExportCSV_Task(t *testing.T) {
 func TestExportJSON_MarkJobFailed_OnWriteError(t *testing.T) {
 	// Use a path that can't be written to (a file instead of a dir) to force
 	// writeJSONExport to fail and trigger markJobFailed.
-	db := setupTasksTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
 
 	// Create a file where the exports dir would be — this causes MkdirAll to fail.
@@ -286,10 +286,10 @@ func TestExportJSON_MarkJobFailed_OnWriteError(t *testing.T) {
 	}
 
 	userID := uuid.NewString()
-	insertTestUser(t, db, userID)
+	insertTestUser(t, testDB, userID)
 
 	jobID := uuid.NewString()
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
 		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
 		jobID, userID,
@@ -297,7 +297,7 @@ func TestExportJSON_MarkJobFailed_OnWriteError(t *testing.T) {
 		t.Fatalf("insert job: %v", err)
 	}
 
-	handler := tasks.NewExportJSONHandler(db, tmpDir)
+	handler := tasks.NewExportJSONHandler(testDB, tmpDir)
 	task := &models.PendingTask{
 		ID:       uuid.NewString(),
 		TaskType: "export_json",
@@ -309,7 +309,7 @@ func TestExportJSON_MarkJobFailed_OnWriteError(t *testing.T) {
 
 	// Job should be marked failed.
 	var status string
-	if err := db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
 		t.Fatalf("read job status: %v", err)
 	}
 	if status != "failed" {
@@ -319,8 +319,8 @@ func TestExportJSON_MarkJobFailed_OnWriteError(t *testing.T) {
 
 // TestExportJSON_InvalidPayload exercises the json.Unmarshal failure path.
 func TestExportJSON_InvalidPayload(t *testing.T) {
-	db := setupTasksTestDB(t)
-	handler := tasks.NewExportJSONHandler(db, t.TempDir())
+	truncateAllTables(t)
+	handler := tasks.NewExportJSONHandler(testDB, t.TempDir())
 	task := &models.PendingTask{Payload: json.RawMessage(`not-json`)}
 	if err := handler(context.Background(), task); err != nil {
 		t.Fatalf("expected nil, got %v", err)
@@ -329,8 +329,8 @@ func TestExportJSON_InvalidPayload(t *testing.T) {
 
 // TestExportCSV_InvalidPayload exercises the json.Unmarshal failure path.
 func TestExportCSV_InvalidPayload(t *testing.T) {
-	db := setupTasksTestDB(t)
-	handler := tasks.NewExportCSVHandler(db, t.TempDir())
+	truncateAllTables(t)
+	handler := tasks.NewExportCSVHandler(testDB, t.TempDir())
 	task := &models.PendingTask{Payload: json.RawMessage(`not-json`)}
 	if err := handler(context.Background(), task); err != nil {
 		t.Fatalf("expected nil, got %v", err)
@@ -339,8 +339,8 @@ func TestExportCSV_InvalidPayload(t *testing.T) {
 
 // TestExportJSON_JobNotFound exercises the "load job not found" path.
 func TestExportJSON_JobNotFound(t *testing.T) {
-	db := setupTasksTestDB(t)
-	handler := tasks.NewExportJSONHandler(db, t.TempDir())
+	truncateAllTables(t)
+	handler := tasks.NewExportJSONHandler(testDB, t.TempDir())
 	task := &models.PendingTask{Payload: mustMarshal(t, map[string]string{"job_id": "non-existent-job"})}
 	if err := handler(context.Background(), task); err != nil {
 		t.Fatalf("expected nil, got %v", err)
@@ -349,8 +349,8 @@ func TestExportJSON_JobNotFound(t *testing.T) {
 
 // TestExportCSV_JobNotFound exercises the "load job not found" path.
 func TestExportCSV_JobNotFound(t *testing.T) {
-	db := setupTasksTestDB(t)
-	handler := tasks.NewExportCSVHandler(db, t.TempDir())
+	truncateAllTables(t)
+	handler := tasks.NewExportCSVHandler(testDB, t.TempDir())
 	task := &models.PendingTask{Payload: mustMarshal(t, map[string]string{"job_id": "non-existent-job"})}
 	if err := handler(context.Background(), task); err != nil {
 		t.Fatalf("expected nil, got %v", err)
@@ -358,7 +358,7 @@ func TestExportCSV_JobNotFound(t *testing.T) {
 }
 
 func TestExportCSV_MarkJobFailed_OnWriteError(t *testing.T) {
-	db := setupTasksTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
 
 	tmpDir := t.TempDir()
@@ -368,10 +368,10 @@ func TestExportCSV_MarkJobFailed_OnWriteError(t *testing.T) {
 	}
 
 	userID := uuid.NewString()
-	insertTestUser(t, db, userID)
+	insertTestUser(t, testDB, userID)
 
 	jobID := uuid.NewString()
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
 		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
 		jobID, userID,
@@ -379,7 +379,7 @@ func TestExportCSV_MarkJobFailed_OnWriteError(t *testing.T) {
 		t.Fatalf("insert job: %v", err)
 	}
 
-	handler := tasks.NewExportCSVHandler(db, tmpDir)
+	handler := tasks.NewExportCSVHandler(testDB, tmpDir)
 	task := &models.PendingTask{
 		ID:       uuid.NewString(),
 		TaskType: "export_csv",
@@ -390,7 +390,7 @@ func TestExportCSV_MarkJobFailed_OnWriteError(t *testing.T) {
 	}
 
 	var status string
-	if err := db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
 		t.Fatalf("read job status: %v", err)
 	}
 	if status != "failed" {

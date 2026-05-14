@@ -133,7 +133,29 @@ Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task 
 
 ## Testing
 
-- **Framework**: stdlib `testing` + `testcontainers-go` (spins up real PostgreSQL containers)
+### Policy
+
+Write a test when:
+- The behaviour is security-sensitive (auth, token validation, permission checks)
+- There are multiple meaningful edge cases (missing fields, wrong types, not found, conflict)
+- The logic is non-obvious or involves a subtle invariant
+- A real bug was found — the test documents that it cannot regress
+
+Do NOT write a test when:
+- The function is a thin wrapper or a struct field accessor
+- The test only verifies that calling the function returns what it computes (tautology)
+- The only assertion is "no panic on happy path" with no behavioural verification
+- Coverage percentage is the motivation
+
+There is no coverage gate in CI. The quality gate is: does the PR touching non-trivial logic include a test that would have caught a plausible bug in that logic?
+
+### Performance
+
+Each package that needs a real database uses a shared PostgreSQL container via `TestMain`. The container starts once per `go test` invocation per package; migrations run once at startup. Each test calls `truncateAllTables(t)` at the top for isolation. Do NOT call a per-test `setupXxxDB(t)` helper that starts a new container — use the shared `testDB` package variable instead.
+
+### Running Tests
+
+- **Framework**: stdlib `testing` + `testcontainers-go`
 - Run all: `go test ./...`
 - Run single: `go test ./internal/api/... -run TestFunctionName -v`
 - Frontend: from `ui/frontend/` — `npm run test`, single file: `npm run test game-card.test.tsx`

@@ -24,13 +24,13 @@ func getAuth(t *testing.T, handler interface {
 // ─── Platform list tests ──────────────────────────────────────────────────────
 
 func TestListPlatforms(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
 	userID := "u-plat-list-1"
-	insertAuthTestUser(t, db, userID, "platlistuser", "pass123", true, false)
-	insertAuthTestSession(t, db, userID, "access-plat-list", "refresh-plat-list", 1)
+	insertAuthTestUser(t, testDB, userID, "platlistuser", "pass123", true, false)
+	insertAuthTestSession(t, testDB, userID, "access-plat-list", "refresh-plat-list", 1)
 	token := loginAndGetToken(t, e, "platlistuser", "pass123")
 
 	rec := getAuth(t, e, "/api/platforms", token)
@@ -66,25 +66,22 @@ func TestListPlatforms(t *testing.T) {
 }
 
 func TestListPlatforms_Unauthorized(t *testing.T) {
-	db := setupAuthTestDB(t)
-	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
 	req := httptest.NewRequest(http.MethodGet, "/api/platforms", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
 	}
 }
 
 func TestPlatformSimpleList(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
 
 	rec := getAuth(t, e, "/api/platforms/simple-list", token)
 	if rec.Code != http.StatusOK {
@@ -115,11 +112,11 @@ func TestPlatformSimpleList(t *testing.T) {
 // ─── Single platform tests ────────────────────────────────────────────────────
 
 func TestGetPlatform(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
 
 	t.Run("found", func(t *testing.T) {
 		rec := getAuth(t, e, "/api/platforms/pc-windows", token)
@@ -148,11 +145,11 @@ func TestGetPlatform(t *testing.T) {
 }
 
 func TestPlatformStorefronts(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
 
 	t.Run("found with storefronts", func(t *testing.T) {
 		rec := getAuth(t, e, "/api/platforms/pc-windows/storefronts", token)
@@ -188,11 +185,11 @@ func TestPlatformStorefronts(t *testing.T) {
 }
 
 func TestDefaultStorefront(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
 
 	t.Run("with default storefront", func(t *testing.T) {
 		rec := getAuth(t, e, "/api/platforms/pc-windows/default-storefront", token)
@@ -229,11 +226,11 @@ func TestDefaultStorefront(t *testing.T) {
 // ─── Storefront tests ─────────────────────────────────────────────────────────
 
 func TestListStorefronts(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
 
 	rec := getAuth(t, e, "/api/platforms/storefronts", token)
 	if rec.Code != http.StatusOK {
@@ -251,11 +248,11 @@ func TestListStorefronts(t *testing.T) {
 }
 
 func TestStorefrontSimpleList(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
 
 	rec := getAuth(t, e, "/api/platforms/storefronts/simple-list", token)
 	if rec.Code != http.StatusOK {
@@ -283,11 +280,11 @@ func TestStorefrontSimpleList(t *testing.T) {
 }
 
 func TestGetStorefront(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
 
 	t.Run("found", func(t *testing.T) {
 		rec := getAuth(t, e, "/api/platforms/storefronts/steam", token)
@@ -317,7 +314,7 @@ func TestGetStorefront(t *testing.T) {
 func setupUser(t *testing.T, db *bun.DB) string {
 	t.Helper()
 	username := "testuserplatforms"
-	insertAuthTestUser(t, db, "u-plat-helper-1", username, "pass123", true, false)
+	insertAuthTestUser(t, testDB, "u-plat-helper-1", username, "pass123", true, false)
 	return username
 }
 
@@ -345,10 +342,10 @@ func loginAndGetToken(t *testing.T, handler interface {
 }
 
 func TestListPlatforms_HasIconURL(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+	e := newTestEcho(t, testDB, cfg)
+	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
 
 	rec := getAuth(t, e, "/api/platforms", token)
 	if rec.Code != http.StatusOK {
@@ -397,10 +394,10 @@ func TestListPlatforms_HasIconURL(t *testing.T) {
 }
 
 func TestListStorefronts_HasIconURL(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	token := loginAndGetToken(t, e, setupUser(t, db), "pass123")
+	e := newTestEcho(t, testDB, cfg)
+	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
 
 	rec := getAuth(t, e, "/api/platforms/storefronts", token)
 	if rec.Code != http.StatusOK {

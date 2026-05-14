@@ -17,12 +17,12 @@ import (
 )
 
 func TestSetupAdmin_Success(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	migrator.SetNeedsSetup(true)
 
-	sh := api.NewSetupHandler(db, cfg, migrator)
+	sh := api.NewSetupHandler(testDB, cfg, migrator)
 	e := echo.New()
 	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "supersecret"})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup/admin", bytes.NewReader(body))
@@ -67,7 +67,7 @@ func TestSetupAdmin_Success(t *testing.T) {
 	}
 
 	var count int
-	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
+	if err := testDB.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
 		t.Fatalf("count users: %v", err)
 	}
 	if count != 1 {
@@ -80,17 +80,17 @@ func TestSetupAdmin_Success(t *testing.T) {
 }
 
 func TestSetupAdmin_AlreadySetup(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO users (id, username, password_hash, is_admin) VALUES ('u1','existing','hash',true)`)
 	if err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
 
-	sh := api.NewSetupHandler(db, cfg, migrator)
+	sh := api.NewSetupHandler(testDB, cfg, migrator)
 	e := echo.New()
 	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "supersecret"})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup/admin", bytes.NewReader(body))
@@ -112,10 +112,10 @@ func TestSetupAdmin_AlreadySetup(t *testing.T) {
 }
 
 func TestSetupAdmin_InvalidBody(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
-	sh := api.NewSetupHandler(db, cfg, migrator)
+	sh := api.NewSetupHandler(testDB, cfg, migrator)
 	e := echo.New()
 
 	for _, tc := range []struct {
@@ -150,11 +150,11 @@ func TestSetupAdmin_InvalidBody(t *testing.T) {
 }
 
 func TestSetupAdmin_ConcurrentRace(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	migrator.SetNeedsSetup(true)
-	sh := api.NewSetupHandler(db, cfg, migrator)
+	sh := api.NewSetupHandler(testDB, cfg, migrator)
 	e := echo.New()
 
 	var (
@@ -198,7 +198,7 @@ func TestSetupAdmin_ConcurrentRace(t *testing.T) {
 	}
 
 	var count int
-	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
+	if err := testDB.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
 		t.Fatalf("count users: %v", err)
 	}
 	if count != 1 {
@@ -207,11 +207,11 @@ func TestSetupAdmin_ConcurrentRace(t *testing.T) {
 }
 
 func TestSetupAdmin_GetMeAfterSetup(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	migrator.SetNeedsSetup(true)
-	sh := api.NewSetupHandler(db, cfg, migrator)
+	sh := api.NewSetupHandler(testDB, cfg, migrator)
 	e := echo.New()
 
 	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "supersecret"})
@@ -233,7 +233,7 @@ func TestSetupAdmin_GetMeAfterSetup(t *testing.T) {
 		t.Fatalf("decode setup response: %v", err)
 	}
 
-	ah := api.NewAuthHandler(db, cfg)
+	ah := api.NewAuthHandler(testDB, cfg)
 	meReq := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	meReq.Header.Set("Authorization", "Bearer "+setupResp.AccessToken)
 	meRec := httptest.NewRecorder()
@@ -259,10 +259,10 @@ func TestSetupAdmin_GetMeAfterSetup(t *testing.T) {
 }
 
 func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 
 	var sfCount int
-	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM storefronts").Scan(&sfCount); err != nil {
+	if err := testDB.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM storefronts").Scan(&sfCount); err != nil {
 		t.Fatalf("count storefronts: %v", err)
 	}
 	if sfCount != 14 {
@@ -270,7 +270,7 @@ func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
 	}
 
 	var pfCount int
-	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM platforms").Scan(&pfCount); err != nil {
+	if err := testDB.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM platforms").Scan(&pfCount); err != nil {
 		t.Fatalf("count platforms: %v", err)
 	}
 	if pfCount != 19 {
@@ -278,7 +278,7 @@ func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
 	}
 
 	var assocCount int
-	if err := db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM platform_storefronts").Scan(&assocCount); err != nil {
+	if err := testDB.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM platform_storefronts").Scan(&assocCount); err != nil {
 		t.Fatalf("count platform_storefronts: %v", err)
 	}
 	if assocCount != 42 {
@@ -287,7 +287,7 @@ func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
 
 	// Spot-check: pc-windows default_storefront
 	var defaultSF *string
-	if err := db.QueryRowContext(context.Background(),
+	if err := testDB.QueryRowContext(context.Background(),
 		"SELECT default_storefront FROM platforms WHERE name = 'pc-windows'").Scan(&defaultSF); err != nil {
 		t.Fatalf("query pc-windows default_storefront: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
 
 	// Spot-check: steam icon uses light-variant filename, no path prefix
 	var icon *string
-	if err := db.QueryRowContext(context.Background(),
+	if err := testDB.QueryRowContext(context.Background(),
 		"SELECT icon FROM storefronts WHERE name = 'steam'").Scan(&icon); err != nil {
 		t.Fatalf("query steam icon: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
 
 	// Spot-check: platforms with no logo have NULL icon
 	var vitaIcon *string
-	if err := db.QueryRowContext(context.Background(),
+	if err := testDB.QueryRowContext(context.Background(),
 		"SELECT icon FROM platforms WHERE name = 'playstation-vita'").Scan(&vitaIcon); err != nil {
 		t.Fatalf("query playstation-vita icon: %v", err)
 	}

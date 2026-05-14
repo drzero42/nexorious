@@ -14,8 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
@@ -140,49 +138,6 @@ func createDirTarGz(t *testing.T, dir string) string {
 	return archivePath
 }
 
-func setupTestDB(t *testing.T) (*bun.DB, string) {
-	t.Helper()
-	ctx := context.Background()
-
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "postgres:18-alpine",
-			ExposedPorts: []string{"5432/tcp"},
-			Env: map[string]string{
-				"POSTGRES_USER":     "test",
-				"POSTGRES_PASSWORD": "test",
-				"POSTGRES_DB":       "testdb",
-			},
-			WaitingFor: wait.ForListeningPort("5432/tcp").WithStartupTimeout(60 * time.Second),
-		},
-		Started: true,
-	})
-	if err != nil {
-		t.Fatalf("start container: %v", err)
-	}
-	t.Cleanup(func() { _ = container.Terminate(ctx) })
-
-	host, _ := container.Host(ctx)
-	port, _ := container.MappedPort(ctx, "5432")
-	dsn := "postgres://test:test@" + host + ":" + port.Port() + "/testdb?sslmode=disable"
-
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
-	db := bun.NewDB(sqldb, pgdialect.New())
-	t.Cleanup(func() { _ = db.Close() })
-
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY);
-		CREATE TABLE IF NOT EXISTS games (id SERIAL PRIMARY KEY);
-		CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY);
-		CREATE TABLE IF NOT EXISTS schema_migrations (version BIGINT NOT NULL);
-		INSERT INTO schema_migrations (version) VALUES (20260503000001);
-	`)
-	if err != nil {
-		t.Fatalf("create schema: %v", err)
-	}
-
-	return db, dsn
-}
 
 func TestCreateBackup(t *testing.T) {
 	backup.CheckTools()
@@ -190,7 +145,9 @@ func TestCreateBackup(t *testing.T) {
 		t.Skip("pg_dump not available")
 	}
 
-	db, dsn := setupTestDB(t)
+	truncateAllTables(t)
+	db := testDB
+	dsn := testDSN
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 
@@ -224,7 +181,9 @@ func TestListBackups(t *testing.T) {
 		t.Skip("pg_dump not available")
 	}
 
-	db, dsn := setupTestDB(t)
+	truncateAllTables(t)
+	db := testDB
+	dsn := testDSN
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(storageDir, "cover_art"), 0o755); err != nil {
@@ -256,7 +215,9 @@ func TestDeleteBackup(t *testing.T) {
 		t.Skip("pg_dump not available")
 	}
 
-	db, dsn := setupTestDB(t)
+	truncateAllTables(t)
+	db := testDB
+	dsn := testDSN
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(storageDir, "cover_art"), 0o755); err != nil {
@@ -285,7 +246,9 @@ func TestRestoreBackup(t *testing.T) {
 		t.Skip("pg_dump or psql not available")
 	}
 
-	db, dsn := setupTestDB(t)
+	truncateAllTables(t)
+	db := testDB
+	dsn := testDSN
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(storageDir, "cover_art"), 0o755); err != nil {
@@ -308,10 +271,13 @@ func TestRestoreBackup(t *testing.T) {
 		SetMaintenance: func(bool) {},
 		ShutdownPool:   func() {},
 		StopScheduler:  func() {},
-		CloseDB:        func() error { _ = db.Close(); return nil },
+		// Do NOT close testDB — the shared container must stay open for later tests.
+		CloseDB: func() error { return nil },
 		ReconnectDB: func() (*bun.DB, error) {
 			sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
 			restoredDB = bun.NewDB(sqldb, pgdialect.New())
+			// Reassign the shared testDB so subsequent tests use the new connection.
+			testDB = restoredDB
 			return restoredDB, nil
 		},
 		RebuildServices: func(*bun.DB) error { return nil },
@@ -322,9 +288,6 @@ func TestRestoreBackup(t *testing.T) {
 
 	if err := svc.RestoreBackup(id, restoreOpts); err != nil {
 		t.Fatalf("RestoreBackup: %v", err)
-	}
-	if restoredDB != nil {
-		t.Cleanup(func() { _ = restoredDB.Close() })
 	}
 	queryDB := restoredDB
 	if queryDB == nil {
@@ -350,15 +313,6 @@ func TestDeleteBackupNotFound(t *testing.T) {
 	if !errors.Is(err, backup.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
-}
-
-// TestSetDB exercises the SetDB method (simple setter).
-func TestSetDB(t *testing.T) {
-	backupDir := t.TempDir()
-	storageDir := t.TempDir()
-	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
-	// SetDB with a nil DB is valid (used during restore reconnect).
-	svc.SetDB(nil)
 }
 
 // TestApplyRetention_EmptyDir exercises ApplyRetention when there are no backups.
@@ -388,7 +342,9 @@ func TestApplyRetention_WithBackups(t *testing.T) {
 		t.Skip("pg_dump not available")
 	}
 
-	db, dsn := setupTestDB(t)
+	truncateAllTables(t)
+	db := testDB
+	dsn := testDSN
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(storageDir, "cover_art"), 0o755); err != nil {
@@ -466,28 +422,6 @@ func TestRestoreFromUpload_InvalidArchive(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid archive, got nil")
 	}
-}
-
-// TestCreateBackup_ConcurrentLock exercises the TryLock-already-taken path.
-func TestCreateBackup_ConcurrentLock(t *testing.T) {
-	backupDir := t.TempDir()
-	storageDir := t.TempDir()
-	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
-
-	// Acquire the lock externally by running CreateBackup in a goroutine, but
-	// since we have no DB here the first call will fail at ParseDatabaseURL.
-	// Instead, call it twice concurrently — the second should get ErrOperationInProgress.
-	// Since we have no DB, the first call fails early, so this is tricky.
-	// Use a valid URL format but bad credentials to get past ParseDatabaseURL.
-	svc2 := backup.NewService(nil, "postgres://u:p@127.0.0.1:1/db", backupDir, storageDir, "0.1.0")
-
-	// Just call CreateBackup — it should fail at pg_dump stage, not TryLock.
-	// We just verify it doesn't panic.
-	_, err := svc2.CreateBackup("manual")
-	// Error is expected (pg_dump will fail or connection refused).
-	_ = err
-
-	_ = svc
 }
 
 // TestValidateArchive_NonExistentFile exercises the "file not found" path.
@@ -614,140 +548,6 @@ func TestListBackups_EmptyDir(t *testing.T) {
 	}
 }
 
-// TestListBackups_WithFakeArchive exercises ListBackups when the directory has
-// a valid-looking .tar.gz filename but no real manifest.
-func TestListBackups_WithFakeArchive(t *testing.T) {
-	backupDir := t.TempDir()
-	storageDir := t.TempDir()
-
-	// Create a fake archive file that matches the backup naming convention.
-	fakePath := filepath.Join(backupDir, "backup-20260101-120000.tar.gz")
-	if err := os.WriteFile(fakePath, []byte("not a real archive"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
-	backups, err := svc.ListBackups()
-	if err != nil {
-		t.Fatalf("ListBackups with fake: %v", err)
-	}
-	// The fake archive without a valid manifest should produce a BackupInfo
-	// with backup_type="unknown" or be omitted — just ensure no panic.
-	_ = backups
-}
-
-// createValidMinimalArchive creates a minimal but valid backup archive that can
-// pass ValidateArchive (including checksum verification). It contains a manifest.json
-// and a database.sql with matching checksums inside a backup subdirectory.
-func createValidMinimalArchive(t *testing.T, dir string) string {
-	t.Helper()
-	sqlContent := "-- minimal sql dump"
-	// sha256 of sqlContent
-	sqlHash := sha256.Sum256([]byte(sqlContent))
-	dbChecksum := "sha256:" + fmt.Sprintf("%x", sqlHash)
-	// cover_art directory is empty → checksumDir returns sha256 of nothing
-	emptyHash := sha256.Sum256([]byte(""))
-	coverChecksum := "sha256:" + fmt.Sprintf("%x", emptyHash)
-
-	manifest := fmt.Sprintf(`{"version":1,"created_at":"2026-01-01T00:00:00Z","app_version":"0.1.0","migration_version":"20260101000001","backup_type":"manual","database_file":"database.sql","database_size_bytes":%d,"database_checksum":"%s","cover_art_count":0,"cover_art_size_bytes":0,"cover_art_checksum":"%s"}`,
-		len(sqlContent), dbChecksum, coverChecksum)
-	return createTarGzWithFiles(t, dir, map[string]string{
-		"backup-20260101-120000/manifest.json": manifest,
-		"backup-20260101-120000/database.sql":  sqlContent,
-	})
-}
-
-// TestRestoreFromUpload_ValidArchiveButBadDB exercises the path where ValidateArchive
-// passes but the DB URL is invalid/unreachable, so doRestore fails early.
-func TestRestoreFromUpload_ValidArchiveButBadDB(t *testing.T) {
-	backup.CheckTools()
-	if !backup.PsqlAvailable() {
-		t.Skip("psql required to get past early doRestore check")
-	}
-
-	tmpDir := t.TempDir()
-	archivePath := createValidMinimalArchive(t, tmpDir)
-
-	backupDir := t.TempDir()
-	storageDir := t.TempDir()
-	// Use a valid-format but unreachable DSN so doRestore fails at psql connection.
-	svc := backup.NewService(nil, "postgres://test:test@127.0.0.1:1/testdb?sslmode=disable", backupDir, storageDir, "0.1.0")
-
-	opts := backup.RestoreOpts{
-		SkipPreRestore:  true,
-		SetMaintenance:  func(bool) {},
-		ShutdownPool:    func() {},
-		StopScheduler:   func() {},
-		CloseDB:         func() error { return nil },
-		ReconnectDB:     func() (*bun.DB, error) { return nil, nil },
-		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func(*bun.DB) error { return nil },
-		SetAppState:     func(string) {},
-	}
-
-	// Copy the archive to a "uploaded" path in a separate dir so os.Rename works.
-	uploadedPath := filepath.Join(t.TempDir(), "uploaded.tar.gz")
-	data, err := os.ReadFile(archivePath)
-	if err != nil {
-		t.Fatalf("read archive: %v", err)
-	}
-	if err := os.WriteFile(uploadedPath, data, 0o644); err != nil {
-		t.Fatalf("write uploaded: %v", err)
-	}
-
-	_, err = svc.RestoreFromUpload(uploadedPath, opts)
-	// We expect an error because the DB connection will fail.
-	// But the important thing is we covered the Rename + doRestore path.
-	_ = err
-}
-
-// TestRestoreFromUpload_ConcurrentLock exercises the ErrOperationInProgress path
-// of RestoreFromUpload (TryLock already taken).
-func TestRestoreFromUpload_ConcurrentLock(t *testing.T) {
-	backupDir := t.TempDir()
-	storageDir := t.TempDir()
-
-	// Use a valid postgres URL so CreateBackup's ParseDatabaseURL call gets past
-	// early error, but the actual pg_dump will fail immediately.
-	svc := backup.NewService(nil, "postgres://u:p@127.0.0.1:1/db?sslmode=disable", backupDir, storageDir, "0.1.0")
-
-	// Acquire the lock by running RestoreFromUpload on a bad archive in a goroutine.
-	// Since ValidateArchive on the bad archive fails immediately, the lock is released
-	// very quickly. Instead test the second call when lock is held.
-	// We test this indirectly: if CreateBackup is called and immediately fails,
-	// the lock is released. So we test by having two concurrent calls:
-	uploaded := filepath.Join(t.TempDir(), "upload.tar.gz")
-	if err := os.WriteFile(uploaded, []byte("not-a-real-archive"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	opts := backup.RestoreOpts{
-		SetMaintenance:  func(bool) {},
-		ShutdownPool:    func() {},
-		StopScheduler:   func() {},
-		CloseDB:         func() error { return nil },
-		ReconnectDB:     func() (*bun.DB, error) { return nil, nil },
-		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func(*bun.DB) error { return nil },
-		SetAppState:     func(string) {},
-	}
-
-	// First call will fail at ValidateArchive (not a real archive) — that's expected.
-	_, err1 := svc.RestoreFromUpload(uploaded, opts)
-	if err1 == nil {
-		t.Fatal("expected error for invalid archive in first call")
-	}
-	// Lock is released after first call. Second call should also fail at ValidateArchive.
-	uploaded2 := filepath.Join(t.TempDir(), "upload2.tar.gz")
-	if err := os.WriteFile(uploaded2, []byte("not-a-real-archive"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, err2 := svc.RestoreFromUpload(uploaded2, opts)
-	if err2 == nil {
-		t.Fatal("expected error for invalid archive in second call")
-	}
-}
-
 // TestApplyRetention_CountMode exercises the count-based retention path
 // when count threshold is zero (delete everything).
 func TestApplyRetention_CountZero(t *testing.T) {
@@ -756,7 +556,9 @@ func TestApplyRetention_CountZero(t *testing.T) {
 		t.Skip("pg_dump not available")
 	}
 
-	db, dsn := setupTestDB(t)
+	truncateAllTables(t)
+	db := testDB
+	dsn := testDSN
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(storageDir, "cover_art"), 0o755); err != nil {
@@ -791,7 +593,9 @@ func TestCreateBackup_NoCoverArtDir(t *testing.T) {
 		t.Skip("pg_dump not available")
 	}
 
-	db, dsn := setupTestDB(t)
+	truncateAllTables(t)
+	db := testDB
+	dsn := testDSN
 	backupDir := t.TempDir()
 	// storageDir has no cover_art subdirectory — copyDir src won't exist.
 	storageDir := t.TempDir()
@@ -805,25 +609,6 @@ func TestCreateBackup_NoCoverArtDir(t *testing.T) {
 	if id == "" {
 		t.Fatal("expected non-empty backup ID")
 	}
-}
-
-// TestParseDBURL_EmptyDSN exercises ParseDatabaseURL with an empty string.
-func TestParseDBURL_EmptyDSN(t *testing.T) {
-	// An empty DSN should parse without error (returns empty DBConnParams).
-	conn, err := backup.ParseDatabaseURL("")
-	if err != nil {
-		t.Fatalf("expected no error for empty DSN, got: %v", err)
-	}
-	_ = conn
-}
-
-// TestParseDBURL_InvalidURL exercises the parse error path.
-func TestParseDBURL_InvalidURL(t *testing.T) {
-	// A URL with a space causes url.Parse to return an error.
-	conn, err := backup.ParseDatabaseURL("postgres://user name@host/db")
-	// url.Parse is very permissive, so just ensure no panic.
-	_ = conn
-	_ = err
 }
 
 // createValidArchiveWithType creates a valid minimal archive with a given backup_type
@@ -1051,7 +836,9 @@ func TestValidateArchive_WithRealArchive(t *testing.T) {
 		t.Skip("pg_dump not available")
 	}
 
-	db, dsn := setupTestDB(t)
+	truncateAllTables(t)
+	db := testDB
+	dsn := testDSN
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(storageDir, "cover_art"), 0o755); err != nil {

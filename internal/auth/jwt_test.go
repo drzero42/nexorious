@@ -2,24 +2,15 @@ package auth_test
 
 import (
 	"context"
-	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	bunmigrate "github.com/uptrace/bun/migrate"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v5"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/drzero42/nexorious-go/internal/auth"
-	"github.com/drzero42/nexorious-go/internal/db/migrations"
 )
 
 func TestGenerateAndParseAccessToken(t *testing.T) {
@@ -419,49 +410,9 @@ func TestJWTMiddleware_RefreshTokenRejected(t *testing.T) {
 
 // --- JWTMiddleware DB-backed tests ---
 
-func setupTestDB(t *testing.T) *bun.DB {
+func insertTestUser(t *testing.T, userID, username string, isActive, isAdmin bool) {
 	t.Helper()
-	ctx := context.Background()
-
-	ctr, err := tcpostgres.Run(ctx,
-		"postgres:18-alpine",
-		tcpostgres.WithDatabase("nexorious_test"),
-		tcpostgres.WithUsername("test"),
-		tcpostgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2),
-		),
-	)
-	if err != nil {
-		t.Fatalf("failed to start postgres container: %v", err)
-	}
-	t.Cleanup(func() { _ = ctr.Terminate(ctx) })
-
-	connStr, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("failed to get connection string: %v", err)
-	}
-
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
-	db := bun.NewDB(sqldb, pgdialect.New())
-	t.Cleanup(func() { _ = db.Close() })
-
-	// Run migrations using bun/migrate.
-	migrator := bunmigrate.NewMigrator(db, migrations.Migrations)
-	if err := migrator.Init(ctx); err != nil {
-		t.Fatalf("migrator init: %v", err)
-	}
-	if _, err := migrator.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	return db
-}
-
-func insertTestUser(t *testing.T, db *bun.DB, userID, username string, isActive, isAdmin bool) {
-	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO users (id, username, password_hash, is_active, is_admin)
 		 VALUES (?, ?, '$2a$12$dummyhashvalue000000000000000000000000000000000000000000', ?, ?)`,
 		userID, username, isActive, isAdmin,
@@ -471,9 +422,9 @@ func insertTestUser(t *testing.T, db *bun.DB, userID, username string, isActive,
 	}
 }
 
-func insertTestSession(t *testing.T, db *bun.DB, userID, tokenHash string) {
+func insertTestSession(t *testing.T, userID, tokenHash string) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
 		 VALUES (gen_random_uuid()::text, ?, ?, 'unused_refresh_hash', now() + interval '30 days')`,
 		userID, tokenHash,
@@ -484,16 +435,16 @@ func insertTestSession(t *testing.T, db *bun.DB, userID, tokenHash string) {
 }
 
 func TestJWTMiddleware_ValidSession(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	secret := "test-secret-key-at-least-32-bytes!"
 	userID := "550e8400-e29b-41d4-a716-446655440000"
 
-	insertTestUser(t, db, userID, "testuser", true, true)
+	insertTestUser(t, userID, "testuser", true, true)
 	accessToken, err := auth.GenerateAccessToken(secret, userID, 15)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
-	insertTestSession(t, db, userID, auth.HashToken(accessToken))
+	insertTestSession(t, userID, auth.HashToken(accessToken))
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -524,7 +475,7 @@ func TestJWTMiddleware_ValidSession(t *testing.T) {
 		return c.String(http.StatusOK, "ok")
 	}
 
-	mw := auth.JWTMiddleware(secret, db)(handler)
+	mw := auth.JWTMiddleware(secret, testDB)(handler)
 	if err := mw(c); err != nil {
 		t.Fatalf("middleware error: %v", err)
 	}
@@ -537,11 +488,11 @@ func TestJWTMiddleware_ValidSession(t *testing.T) {
 }
 
 func TestJWTMiddleware_RevokedSession(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	secret := "test-secret-key-at-least-32-bytes!"
 	userID := "550e8400-e29b-41d4-a716-446655440001"
 
-	insertTestUser(t, db, userID, "revokeduser", true, false)
+	insertTestUser(t, userID, "revokeduser", true, false)
 	// No session inserted — simulates a revoked/logged-out token.
 
 	accessToken, err := auth.GenerateAccessToken(secret, userID, 15)
@@ -560,7 +511,7 @@ func TestJWTMiddleware_RevokedSession(t *testing.T) {
 		return nil
 	}
 
-	mw := auth.JWTMiddleware(secret, db)(handler)
+	mw := auth.JWTMiddleware(secret, testDB)(handler)
 	if err := mw(c); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -570,16 +521,16 @@ func TestJWTMiddleware_RevokedSession(t *testing.T) {
 }
 
 func TestJWTMiddleware_InactiveUser(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	secret := "test-secret-key-at-least-32-bytes!"
 	userID := "550e8400-e29b-41d4-a716-446655440002"
 
-	insertTestUser(t, db, userID, "inactiveuser", false, false)
+	insertTestUser(t, userID, "inactiveuser", false, false)
 	accessToken, err := auth.GenerateAccessToken(secret, userID, 15)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
-	insertTestSession(t, db, userID, auth.HashToken(accessToken))
+	insertTestSession(t, userID, auth.HashToken(accessToken))
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -592,7 +543,7 @@ func TestJWTMiddleware_InactiveUser(t *testing.T) {
 		return nil
 	}
 
-	mw := auth.JWTMiddleware(secret, db)(handler)
+	mw := auth.JWTMiddleware(secret, testDB)(handler)
 	if err := mw(c); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -602,18 +553,18 @@ func TestJWTMiddleware_InactiveUser(t *testing.T) {
 }
 
 func TestJWTMiddleware_ExpiredSession(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	secret := "test-secret-key-at-least-32-bytes!"
 	userID := "550e8400-e29b-41d4-a716-446655440003"
 
-	insertTestUser(t, db, userID, "expireduser", true, false)
+	insertTestUser(t, userID, "expireduser", true, false)
 	accessToken, err := auth.GenerateAccessToken(secret, userID, 15)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken: %v", err)
 	}
 
 	// Insert session with past expires_at — simulates a force-expired session.
-	_, err = db.ExecContext(context.Background(),
+	_, err = testDB.ExecContext(context.Background(),
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
 		 VALUES (gen_random_uuid()::text, ?, ?, 'unused_refresh_hash', now() - interval '1 second')`,
 		userID, auth.HashToken(accessToken),
@@ -633,7 +584,7 @@ func TestJWTMiddleware_ExpiredSession(t *testing.T) {
 		return nil
 	}
 
-	mw := auth.JWTMiddleware(secret, db)(handler)
+	mw := auth.JWTMiddleware(secret, testDB)(handler)
 	if err := mw(c); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -58,19 +58,6 @@ func setupTestDB(t *testing.T) *bun.DB {
 	return db
 }
 
-func TestPostgres_WaitSucceeds(t *testing.T) {
-	db := setupTestDB(t)
-	// High burst so first Wait always succeeds immediately.
-	l := ratelimit.NewPostgres(db, "test-basic", 100, 10)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := l.Wait(ctx); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestPostgres_ConcurrentGoroutinesEachGetToken(t *testing.T) {
 	db := setupTestDB(t)
 	n := 5

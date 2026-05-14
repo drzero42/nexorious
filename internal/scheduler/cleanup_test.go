@@ -2,48 +2,28 @@ package scheduler_test
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/scheduler"
 	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
-// badDB returns a bun.DB connected to a non-existent host, so all queries fail.
-func badDB(t *testing.T) *bun.DB {
-	t.Helper()
-	sqldb := sql.OpenDB(pgdriver.NewConnector(
-		pgdriver.WithDSN("postgres://test:test@127.0.0.1:1/nonexistent?sslmode=disable"),
-		pgdriver.WithTimeout(0), // immediate timeout
-	))
-	db := bun.NewDB(sqldb, pgdialect.New())
-	t.Cleanup(func() { _ = db.Close() })
-	return db
-}
-
-// ---------------------------------------------------------------------------
-// CleanupExports
-// ---------------------------------------------------------------------------
-
 // ---------------------------------------------------------------------------
 // CleanupOldJobs
 // ---------------------------------------------------------------------------
 
 func TestCleanupOldJobs_DeletesExpiredJobs(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 
 	// Insert a job that is >30 days old and completed — should be deleted.
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, completed_at)
 		 VALUES ('old-job-1', ?, 'export', 'manual', 'completed', 'low', now() - interval '31 days')`,
 		userID,
@@ -53,7 +33,7 @@ func TestCleanupOldJobs_DeletesExpiredJobs(t *testing.T) {
 	}
 
 	// Insert a recent job — should remain.
-	_, err = db.NewRaw(
+	_, err = testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, completed_at)
 		 VALUES ('recent-job-1', ?, 'export', 'manual', 'completed', 'low', now() - interval '1 day')`,
 		userID,
@@ -62,11 +42,11 @@ func TestCleanupOldJobs_DeletesExpiredJobs(t *testing.T) {
 		t.Fatalf("insert recent job: %v", err)
 	}
 
-	scheduler.CleanupOldJobs(ctx, db)
+	scheduler.CleanupOldJobs(ctx, testDB)
 
 	// Old job should be gone.
 	var count int
-	if err := db.NewRaw(`SELECT COUNT(*) FROM jobs WHERE id = 'old-job-1'`).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE id = 'old-job-1'`).Scan(ctx, &count); err != nil {
 		t.Fatalf("check old job: %v", err)
 	}
 	if count != 0 {
@@ -74,7 +54,7 @@ func TestCleanupOldJobs_DeletesExpiredJobs(t *testing.T) {
 	}
 
 	// Recent job should remain.
-	if err := db.NewRaw(`SELECT COUNT(*) FROM jobs WHERE id = 'recent-job-1'`).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE id = 'recent-job-1'`).Scan(ctx, &count); err != nil {
 		t.Fatalf("check recent job: %v", err)
 	}
 	if count != 1 {
@@ -82,30 +62,17 @@ func TestCleanupOldJobs_DeletesExpiredJobs(t *testing.T) {
 	}
 }
 
-func TestCleanupOldJobs_NoOldJobs_NoPanic(t *testing.T) {
-	db := setupTestDB(t)
-	ctx := context.Background()
-	scheduler.CleanupOldJobs(ctx, db)
-}
-
-// TestCleanupOldJobs_DBError exercises the err != nil branch via a bad DB.
-func TestCleanupOldJobs_DBError(t *testing.T) {
-	db := badDB(t)
-	// Should not panic; slog.Error is called internally.
-	scheduler.CleanupOldJobs(context.Background(), db)
-}
-
 // ---------------------------------------------------------------------------
 // CleanupExpiredSessions
 // ---------------------------------------------------------------------------
 
 func TestCleanupExpiredSessions_DeletesExpiredSessions(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 
 	// Insert an expired session.
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at, created_at)
 		 VALUES (?, ?, 'abc123hash', 'abc123refresh', now() - interval '1 hour', now() - interval '2 hours')`,
 		uuid.NewString(), userID,
@@ -115,7 +82,7 @@ func TestCleanupExpiredSessions_DeletesExpiredSessions(t *testing.T) {
 	}
 
 	// Insert a valid session.
-	_, err = db.NewRaw(
+	_, err = testDB.NewRaw(
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at, created_at)
 		 VALUES (?, ?, 'def456hash', 'def456refresh', now() + interval '1 hour', now() - interval '10 minutes')`,
 		uuid.NewString(), userID,
@@ -124,17 +91,17 @@ func TestCleanupExpiredSessions_DeletesExpiredSessions(t *testing.T) {
 		t.Fatalf("insert valid session: %v", err)
 	}
 
-	scheduler.CleanupExpiredSessions(ctx, db)
+	scheduler.CleanupExpiredSessions(ctx, testDB)
 
 	var count int
-	if err := db.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE token_hash = 'abc123hash'`).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE token_hash = 'abc123hash'`).Scan(ctx, &count); err != nil {
 		t.Fatalf("check expired session: %v", err)
 	}
 	if count != 0 {
 		t.Errorf("expected expired session deleted, got count=%d", count)
 	}
 
-	if err := db.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE token_hash = 'def456hash'`).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE token_hash = 'def456hash'`).Scan(ctx, &count); err != nil {
 		t.Fatalf("check valid session: %v", err)
 	}
 	if count != 1 {
@@ -142,25 +109,14 @@ func TestCleanupExpiredSessions_DeletesExpiredSessions(t *testing.T) {
 	}
 }
 
-func TestCleanupExpiredSessions_NoSessions_NoPanic(t *testing.T) {
-	db := setupTestDB(t)
-	ctx := context.Background()
-	scheduler.CleanupExpiredSessions(ctx, db)
-}
-
-// TestCleanupExpiredSessions_DBError exercises the err != nil branch.
-func TestCleanupExpiredSessions_DBError(t *testing.T) {
-	scheduler.CleanupExpiredSessions(context.Background(), badDB(t))
-}
-
 // ---------------------------------------------------------------------------
 // CleanupExports
 // ---------------------------------------------------------------------------
 
 func TestCleanupExports_RemovesExpiredFilesAndClearsPath(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 
 	// Create a real temp file to verify it gets deleted.
 	tmpFile, err := os.CreateTemp(t.TempDir(), "export-*.json")
@@ -171,7 +127,7 @@ func TestCleanupExports_RemovesExpiredFilesAndClearsPath(t *testing.T) {
 	_ = tmpFile.Close()
 
 	// Expired export job (>24h old).
-	_, err = db.NewRaw(
+	_, err = testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, file_path, completed_at)
 		 VALUES ('job-exp-export', ?, 'export', 'manual', 'completed', 'low', ?, now() - interval '25 hours')`,
 		userID, tmpPath,
@@ -181,7 +137,7 @@ func TestCleanupExports_RemovesExpiredFilesAndClearsPath(t *testing.T) {
 	}
 
 	// Recent export job (not yet expired).
-	_, err = db.NewRaw(
+	_, err = testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, file_path, completed_at)
 		 VALUES ('job-fresh-export', ?, 'export', 'manual', 'completed', 'low', '/tmp/fresh.json', now() - interval '1 hour')`,
 		userID,
@@ -190,7 +146,7 @@ func TestCleanupExports_RemovesExpiredFilesAndClearsPath(t *testing.T) {
 		t.Fatalf("insert fresh export: %v", err)
 	}
 
-	scheduler.CleanupExports(ctx, db)
+	scheduler.CleanupExports(ctx, testDB)
 
 	// Temp file should have been removed.
 	if _, statErr := os.Stat(tmpPath); !os.IsNotExist(statErr) {
@@ -199,7 +155,7 @@ func TestCleanupExports_RemovesExpiredFilesAndClearsPath(t *testing.T) {
 
 	// file_path for expired job should be NULLed.
 	var filePath *string
-	if err := db.NewRaw(`SELECT file_path FROM jobs WHERE id = 'job-exp-export'`).Scan(ctx, &filePath); err != nil {
+	if err := testDB.NewRaw(`SELECT file_path FROM jobs WHERE id = 'job-exp-export'`).Scan(ctx, &filePath); err != nil {
 		t.Fatalf("read file_path: %v", err)
 	}
 	if filePath != nil {
@@ -207,7 +163,7 @@ func TestCleanupExports_RemovesExpiredFilesAndClearsPath(t *testing.T) {
 	}
 
 	// Recent job file_path should be unchanged.
-	if err := db.NewRaw(`SELECT file_path FROM jobs WHERE id = 'job-fresh-export'`).Scan(ctx, &filePath); err != nil {
+	if err := testDB.NewRaw(`SELECT file_path FROM jobs WHERE id = 'job-fresh-export'`).Scan(ctx, &filePath); err != nil {
 		t.Fatalf("read fresh file_path: %v", err)
 	}
 	if filePath == nil {
@@ -215,58 +171,27 @@ func TestCleanupExports_RemovesExpiredFilesAndClearsPath(t *testing.T) {
 	}
 }
 
-func TestCleanupExports_NoExpiredJobs_NothingHappens(t *testing.T) {
-	db := setupTestDB(t)
-	ctx := context.Background()
-	// No rows at all — should not error/panic.
-	scheduler.CleanupExports(ctx, db)
-}
-
-func TestCleanupExports_MissingFile_NoError(t *testing.T) {
-	db := setupTestDB(t)
-	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
-
-	// Point to a file that does not exist.
-	_, err := db.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, file_path, completed_at)
-		 VALUES ('job-missing-file', ?, 'export', 'manual', 'completed', 'low', '/tmp/does-not-exist-xyz.json', now() - interval '25 hours')`,
-		userID,
-	).Exec(ctx)
-	if err != nil {
-		t.Fatalf("insert job: %v", err)
-	}
-
-	// Should not panic; IsNotExist is handled gracefully.
-	scheduler.CleanupExports(ctx, db)
-}
-
-// TestCleanupExports_DBError exercises the err != nil query failure branch.
-func TestCleanupExports_DBError(t *testing.T) {
-	scheduler.CleanupExports(context.Background(), badDB(t))
-}
-
 // ---------------------------------------------------------------------------
 // CleanupUnreferencedGames
 // ---------------------------------------------------------------------------
 
 func TestCleanupUnreferencedGames_DeletesOrphans(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 
 	// games.id is IGDB ID (plain INTEGER, not auto-generated).
 	const orphanID = 99901
 	const referencedID = 99902
 
 	// Insert two games with explicit IDs.
-	if _, err := db.NewRaw(
+	if _, err := testDB.NewRaw(
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Orphan Game', now(), now())`,
 		orphanID,
 	).Exec(ctx); err != nil {
 		t.Fatalf("insert orphan game: %v", err)
 	}
-	if _, err := db.NewRaw(
+	if _, err := testDB.NewRaw(
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Referenced Game', now(), now())`,
 		referencedID,
 	).Exec(ctx); err != nil {
@@ -274,18 +199,18 @@ func TestCleanupUnreferencedGames_DeletesOrphans(t *testing.T) {
 	}
 
 	// Link only the second game to a user.
-	if _, err := db.NewRaw(
+	if _, err := testDB.NewRaw(
 		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at) VALUES (?, ?, ?, now(), now())`,
 		uuid.NewString(), userID, referencedID,
 	).Exec(ctx); err != nil {
 		t.Fatalf("insert user_game: %v", err)
 	}
 
-	scheduler.CleanupUnreferencedGames(ctx, db)
+	scheduler.CleanupUnreferencedGames(ctx, testDB)
 
 	// Orphan game should be gone.
 	var exists bool
-	if err := db.NewRaw(`SELECT EXISTS(SELECT 1 FROM games WHERE id = ?)`, orphanID).Scan(ctx, &exists); err != nil {
+	if err := testDB.NewRaw(`SELECT EXISTS(SELECT 1 FROM games WHERE id = ?)`, orphanID).Scan(ctx, &exists); err != nil {
 		t.Fatalf("check orphan game: %v", err)
 	}
 	if exists {
@@ -293,7 +218,7 @@ func TestCleanupUnreferencedGames_DeletesOrphans(t *testing.T) {
 	}
 
 	// Referenced game should still exist.
-	if err := db.NewRaw(`SELECT EXISTS(SELECT 1 FROM games WHERE id = ?)`, referencedID).Scan(ctx, &exists); err != nil {
+	if err := testDB.NewRaw(`SELECT EXISTS(SELECT 1 FROM games WHERE id = ?)`, referencedID).Scan(ctx, &exists); err != nil {
 		t.Fatalf("check referenced game: %v", err)
 	}
 	if !exists {
@@ -301,31 +226,19 @@ func TestCleanupUnreferencedGames_DeletesOrphans(t *testing.T) {
 	}
 }
 
-func TestCleanupUnreferencedGames_NoGames_NoPanic(t *testing.T) {
-	db := setupTestDB(t)
-	ctx := context.Background()
-	scheduler.CleanupUnreferencedGames(ctx, db)
-}
-
-// TestCleanupUnreferencedGames_DBError exercises the err != nil branch.
-func TestCleanupUnreferencedGames_DBError(t *testing.T) {
-	scheduler.CleanupUnreferencedGames(context.Background(), badDB(t))
-}
-
 // ---------------------------------------------------------------------------
 // CheckPendingSyncs
 // ---------------------------------------------------------------------------
 
-
 func TestCheckPendingSyncs_OverdueSyncDispatched(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 
 	// Insert an overdue daily sync config.
 	configID := uuid.NewString()
 	lastSynced := time.Now().UTC().Add(-2 * 24 * time.Hour) // 2 days ago
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at)
 		 VALUES (?, ?, 'steam', 'daily', false, ?)`,
 		configID, userID, lastSynced,
@@ -334,14 +247,14 @@ func TestCheckPendingSyncs_OverdueSyncDispatched(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	pool := worker.NewPool(db)
+	pool := worker.NewPool(testDB)
 	defer pool.Shutdown()
 
-	scheduler.CheckPendingSyncs(ctx, db, pool)
+	scheduler.CheckPendingSyncs(ctx, testDB, pool)
 
 	// A pending sync job should have been inserted.
 	var count int
-	if err := db.NewRaw(
+	if err := testDB.NewRaw(
 		`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = 'steam' AND status = 'pending'`,
 		userID,
 	).Scan(ctx, &count); err != nil {
@@ -353,14 +266,14 @@ func TestCheckPendingSyncs_OverdueSyncDispatched(t *testing.T) {
 }
 
 func TestCheckPendingSyncs_NotOverdue_NotDispatched(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 
 	// Synced 1 hour ago — not overdue for daily frequency.
 	configID := uuid.NewString()
 	lastSynced := time.Now().UTC().Add(-1 * time.Hour)
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at)
 		 VALUES (?, ?, 'steam', 'daily', false, ?)`,
 		configID, userID, lastSynced,
@@ -369,13 +282,13 @@ func TestCheckPendingSyncs_NotOverdue_NotDispatched(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	pool := worker.NewPool(db)
+	pool := worker.NewPool(testDB)
 	defer pool.Shutdown()
 
-	scheduler.CheckPendingSyncs(ctx, db, pool)
+	scheduler.CheckPendingSyncs(ctx, testDB, pool)
 
 	var count int
-	if err := db.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
 		t.Fatalf("count jobs: %v", err)
 	}
 	if count != 0 {
@@ -384,13 +297,13 @@ func TestCheckPendingSyncs_NotOverdue_NotDispatched(t *testing.T) {
 }
 
 func TestCheckPendingSyncs_NeverSynced_Dispatched(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 
 	// last_synced_at is NULL (never synced) — should always dispatch.
 	configID := uuid.NewString()
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add)
 		 VALUES (?, ?, 'steam', 'weekly', false)`,
 		configID, userID,
@@ -399,13 +312,13 @@ func TestCheckPendingSyncs_NeverSynced_Dispatched(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	pool := worker.NewPool(db)
+	pool := worker.NewPool(testDB)
 	defer pool.Shutdown()
 
-	scheduler.CheckPendingSyncs(ctx, db, pool)
+	scheduler.CheckPendingSyncs(ctx, testDB, pool)
 
 	var count int
-	if err := db.NewRaw(
+	if err := testDB.NewRaw(
 		`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync' AND status = 'pending'`,
 		userID,
 	).Scan(ctx, &count); err != nil {
@@ -417,13 +330,13 @@ func TestCheckPendingSyncs_NeverSynced_Dispatched(t *testing.T) {
 }
 
 func TestCheckPendingSyncs_EpicSkipped(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 
 	// Epic storefront — should always be skipped.
 	configID := uuid.NewString()
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add)
 		 VALUES (?, ?, 'epic', 'daily', false)`,
 		configID, userID,
@@ -432,13 +345,13 @@ func TestCheckPendingSyncs_EpicSkipped(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	pool := worker.NewPool(db)
+	pool := worker.NewPool(testDB)
 	defer pool.Shutdown()
 
-	scheduler.CheckPendingSyncs(ctx, db, pool)
+	scheduler.CheckPendingSyncs(ctx, testDB, pool)
 
 	var count int
-	if err := db.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
 		t.Fatalf("count jobs: %v", err)
 	}
 	if count != 0 {
@@ -447,14 +360,14 @@ func TestCheckPendingSyncs_EpicSkipped(t *testing.T) {
 }
 
 func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 
 	// Insert an overdue config.
 	configID := uuid.NewString()
 	lastSynced := time.Now().UTC().Add(-2 * 24 * time.Hour)
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at)
 		 VALUES (?, ?, 'steam', 'daily', false, ?)`,
 		configID, userID, lastSynced,
@@ -464,7 +377,7 @@ func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
 	}
 
 	// Pre-insert a processing sync job — should prevent a second dispatch.
-	_, err = db.NewRaw(
+	_, err = testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority)
 		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low')`,
 		uuid.NewString(), userID,
@@ -473,13 +386,13 @@ func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
 		t.Fatalf("insert running job: %v", err)
 	}
 
-	pool := worker.NewPool(db)
+	pool := worker.NewPool(testDB)
 	defer pool.Shutdown()
 
-	scheduler.CheckPendingSyncs(ctx, db, pool)
+	scheduler.CheckPendingSyncs(ctx, testDB, pool)
 
 	var count int
-	if err := db.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
 		t.Fatalf("count jobs: %v", err)
 	}
 	if count != 1 {
@@ -488,13 +401,13 @@ func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
 }
 
 func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 
 	// manual frequency — should never be auto-dispatched.
 	configID := uuid.NewString()
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add)
 		 VALUES (?, ?, 'steam', 'manual', false)`,
 		configID, userID,
@@ -503,13 +416,13 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	pool := worker.NewPool(db)
+	pool := worker.NewPool(testDB)
 	defer pool.Shutdown()
 
-	scheduler.CheckPendingSyncs(ctx, db, pool)
+	scheduler.CheckPendingSyncs(ctx, testDB, pool)
 
 	var count int
-	if err := db.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
 		t.Fatalf("count jobs: %v", err)
 	}
 	if count != 0 {
@@ -522,8 +435,8 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewScheduler_InvalidMetadataRefreshInterval_DefaultsTo24h(t *testing.T) {
-	db := setupTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	defer pool.Shutdown()
 
 	cfg := &config.Config{
@@ -532,15 +445,15 @@ func TestNewScheduler_InvalidMetadataRefreshInterval_DefaultsTo24h(t *testing.T)
 	}
 
 	// Should not panic; falls back to 24h.
-	sched := scheduler.NewScheduler(db, pool, nil, cfg)
+	sched := scheduler.NewScheduler(testDB, pool, nil, cfg)
 	if sched == nil {
 		t.Fatal("expected non-nil scheduler")
 	}
 }
 
 func TestNewScheduler_InvalidStaleJobThreshold_DefaultsTo4h(t *testing.T) {
-	db := setupTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	defer pool.Shutdown()
 
 	cfg := &config.Config{
@@ -548,25 +461,8 @@ func TestNewScheduler_InvalidStaleJobThreshold_DefaultsTo4h(t *testing.T) {
 		StaleJobThreshold:       "not-a-duration",
 	}
 
-	sched := scheduler.NewScheduler(db, pool, nil, cfg)
+	sched := scheduler.NewScheduler(testDB, pool, nil, cfg)
 	if sched == nil {
 		t.Fatal("expected non-nil scheduler")
 	}
 }
-
-func TestNewScheduler_ValidConfig(t *testing.T) {
-	db := setupTestDB(t)
-	pool := worker.NewPool(db)
-	defer pool.Shutdown()
-
-	cfg := &config.Config{
-		MetadataRefreshInterval: "12h",
-		StaleJobThreshold:       "2h",
-	}
-
-	sched := scheduler.NewScheduler(db, pool, nil, cfg)
-	if sched == nil {
-		t.Fatal("expected non-nil scheduler")
-	}
-}
-

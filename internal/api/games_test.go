@@ -31,7 +31,7 @@ func insertTestGame(t *testing.T, db *bun.DB, title string) int32 {
 		LastUpdated: now,
 		CreatedAt:   now,
 	}
-	_, err := db.NewInsert().Model(game).Exec(context.Background())
+	_, err := testDB.NewInsert().Model(game).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("insertTestGame: %v", err)
 	}
@@ -39,17 +39,17 @@ func insertTestGame(t *testing.T, db *bun.DB, title string) int32 {
 }
 
 func TestGamesList(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	insertAuthTestUser(t, db, "u-games-1", "gamesuser", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-games-1", "access-games-1", "refresh-games-1", 1)
+	insertAuthTestUser(t, testDB, "u-games-1", "gamesuser", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-games-1", "access-games-1", "refresh-games-1", 1)
 	token := loginAndGetToken(t, e, "gamesuser", "pass123")
 
-	insertTestGame(t, db, "The Witcher 3")
-	insertTestGame(t, db, "Elden Ring")
-	insertTestGame(t, db, "Hollow Knight")
+	insertTestGame(t, testDB, "The Witcher 3")
+	insertTestGame(t, testDB, "Elden Ring")
+	insertTestGame(t, testDB, "Hollow Knight")
 
 	rec := getAuth(t, e, "/api/games", token)
 	if rec.Code != http.StatusOK {
@@ -75,16 +75,16 @@ func TestGamesList(t *testing.T) {
 }
 
 func TestGamesList_Search(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	insertAuthTestUser(t, db, "u-games-2", "gamesuser2", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-games-2", "access-games-2", "refresh-games-2", 1)
+	insertAuthTestUser(t, testDB, "u-games-2", "gamesuser2", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-games-2", "access-games-2", "refresh-games-2", 1)
 	token := loginAndGetToken(t, e, "gamesuser2", "pass123")
 
-	insertTestGame(t, db, "The Witcher 3")
-	insertTestGame(t, db, "Elden Ring")
+	insertTestGame(t, testDB, "The Witcher 3")
+	insertTestGame(t, testDB, "Elden Ring")
 
 	rec := getAuth(t, e, "/api/games?q=witcher", token)
 	if rec.Code != http.StatusOK {
@@ -103,15 +103,15 @@ func TestGamesList_Search(t *testing.T) {
 }
 
 func TestGamesGet(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	insertAuthTestUser(t, db, "u-games-3", "gamesuser3", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-games-3", "access-games-3", "refresh-games-3", 1)
+	insertAuthTestUser(t, testDB, "u-games-3", "gamesuser3", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-games-3", "access-games-3", "refresh-games-3", 1)
 	token := loginAndGetToken(t, e, "gamesuser3", "pass123")
 
-	gameID := insertTestGame(t, db, "Hollow Knight")
+	gameID := insertTestGame(t, testDB, "Hollow Knight")
 
 	rec := getAuth(t, e, fmt.Sprintf("/api/games/%d", gameID), token)
 	if rec.Code != http.StatusOK {
@@ -128,12 +128,12 @@ func TestGamesGet(t *testing.T) {
 }
 
 func TestGamesGet_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	insertAuthTestUser(t, db, "u-games-4", "gamesuser4", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-games-4", "access-games-4", "refresh-games-4", 1)
+	insertAuthTestUser(t, testDB, "u-games-4", "gamesuser4", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-games-4", "access-games-4", "refresh-games-4", 1)
 	token := loginAndGetToken(t, e, "gamesuser4", "pass123")
 
 	rec := getAuth(t, e, "/api/games/99999", token)
@@ -143,12 +143,12 @@ func TestGamesGet_NotFound(t *testing.T) {
 }
 
 func TestGamesList_InvalidSort(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	insertAuthTestUser(t, db, "u-games-5", "gamesuser5", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-games-5", "access-games-5", "refresh-games-5", 1)
+	insertAuthTestUser(t, testDB, "u-games-5", "gamesuser5", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-games-5", "access-games-5", "refresh-games-5", 1)
 	token := loginAndGetToken(t, e, "gamesuser5", "pass123")
 
 	rec := getAuth(t, e, "/api/games?sort_by=invalid_field", token)
@@ -180,15 +180,15 @@ func newTestEchoWithIGDB(t *testing.T, db *bun.DB) interface {
 	cfg := testCfg() // no IGDB credentials
 	igdbClient := igdb.NewClient(cfg, ratelimit.NewLocal(100, 100))
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, db, "", igdbClient, nil, nil)
+	return api.New(cfg, m, testDB, "", igdbClient, nil, nil)
 }
 
 func TestSearchIGDB_NotConfigured(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEchoWithIGDB(t, db)
+	truncateAllTables(t)
+	e := newTestEchoWithIGDB(t, testDB)
 
-	insertAuthTestUser(t, db, "u-igdb-1", "igdbuser", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-igdb-1", "access-igdb-1", "refresh-igdb-1", 1)
+	insertAuthTestUser(t, testDB, "u-igdb-1", "igdbuser", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-igdb-1", "access-igdb-1", "refresh-igdb-1", 1)
 	token := loginAndGetToken(t, e, "igdbuser", "pass123")
 
 	body := `{"query": "Zelda", "limit": 10}`
@@ -199,11 +199,11 @@ func TestSearchIGDB_NotConfigured(t *testing.T) {
 }
 
 func TestGetIGDBGame_NotConfigured(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEchoWithIGDB(t, db)
+	truncateAllTables(t)
+	e := newTestEchoWithIGDB(t, testDB)
 
-	insertAuthTestUser(t, db, "u-igdb-2", "igdbuser2", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-igdb-2", "access-igdb-2", "refresh-igdb-2", 1)
+	insertAuthTestUser(t, testDB, "u-igdb-2", "igdbuser2", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-igdb-2", "access-igdb-2", "refresh-igdb-2", 1)
 	token := loginAndGetToken(t, e, "igdbuser2", "pass123")
 
 	rec := getAuth(t, e, "/api/games/igdb/12345", token)
@@ -213,11 +213,11 @@ func TestGetIGDBGame_NotConfigured(t *testing.T) {
 }
 
 func TestImportFromIGDB_NotConfigured(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEchoWithIGDB(t, db)
+	truncateAllTables(t)
+	e := newTestEchoWithIGDB(t, testDB)
 
-	insertAuthTestUser(t, db, "u-igdb-3", "igdbuser3", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-igdb-3", "access-igdb-3", "refresh-igdb-3", 1)
+	insertAuthTestUser(t, testDB, "u-igdb-3", "igdbuser3", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-igdb-3", "access-igdb-3", "refresh-igdb-3", 1)
 	token := loginAndGetToken(t, e, "igdbuser3", "pass123")
 
 	body := `{"igdb_id": 12345}`
@@ -230,11 +230,11 @@ func TestImportFromIGDB_NotConfigured(t *testing.T) {
 // ─── IGDB input validation tests ───────────────────────────────────────────
 
 func TestSearchIGDB_EmptyQuery(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEchoWithIGDB(t, db)
+	truncateAllTables(t)
+	e := newTestEchoWithIGDB(t, testDB)
 
-	insertAuthTestUser(t, db, "u-igdb-4", "igdbuser4", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-igdb-4", "access-igdb-4", "refresh-igdb-4", 1)
+	insertAuthTestUser(t, testDB, "u-igdb-4", "igdbuser4", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-igdb-4", "access-igdb-4", "refresh-igdb-4", 1)
 	token := loginAndGetToken(t, e, "igdbuser4", "pass123")
 
 	body := `{"query": "", "limit": 10}`
@@ -245,11 +245,11 @@ func TestSearchIGDB_EmptyQuery(t *testing.T) {
 }
 
 func TestGetIGDBGame_InvalidID(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEchoWithIGDB(t, db)
+	truncateAllTables(t)
+	e := newTestEchoWithIGDB(t, testDB)
 
-	insertAuthTestUser(t, db, "u-igdb-5", "igdbuser5", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-igdb-5", "access-igdb-5", "refresh-igdb-5", 1)
+	insertAuthTestUser(t, testDB, "u-igdb-5", "igdbuser5", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-igdb-5", "access-igdb-5", "refresh-igdb-5", 1)
 	token := loginAndGetToken(t, e, "igdbuser5", "pass123")
 
 	rec := getAuth(t, e, "/api/games/igdb/not-a-number", token)
@@ -259,11 +259,11 @@ func TestGetIGDBGame_InvalidID(t *testing.T) {
 }
 
 func TestImportFromIGDB_MissingIGDBID(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEchoWithIGDB(t, db)
+	truncateAllTables(t)
+	e := newTestEchoWithIGDB(t, testDB)
 
-	insertAuthTestUser(t, db, "u-igdb-6", "igdbuser6", "pass123", true, false)
-	insertAuthTestSession(t, db, "u-igdb-6", "access-igdb-6", "refresh-igdb-6", 1)
+	insertAuthTestUser(t, testDB, "u-igdb-6", "igdbuser6", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-igdb-6", "access-igdb-6", "refresh-igdb-6", 1)
 	token := loginAndGetToken(t, e, "igdbuser6", "pass123")
 
 	// Missing igdb_id (0 value) should return bad request.

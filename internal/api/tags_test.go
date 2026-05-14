@@ -48,7 +48,7 @@ func deleteAuth(t *testing.T, handler interface {
 // insertTag inserts a tag row directly and returns its ID.
 func insertTag(t *testing.T, db *bun.DB, id, userID, name string, color *string) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO tags (id, user_id, name, color)
 		 VALUES (?, ?, ?, ?)`,
 		id, userID, name, color,
@@ -61,7 +61,7 @@ func insertTag(t *testing.T, db *bun.DB, id, userID, name string, color *string)
 // insertGame inserts a minimal game row with the given id.
 func insertGame(t *testing.T, db *bun.DB, id int, title string) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO games (id, title) VALUES (?, ?)`, id, title,
 	)
 	if err != nil {
@@ -72,7 +72,7 @@ func insertGame(t *testing.T, db *bun.DB, id int, title string) {
 // insertUserGame inserts a user_game row.
 func insertUserGame(t *testing.T, db *bun.DB, id, userID string, gameID int) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO user_games (id, user_id, game_id) VALUES (?, ?, ?)`,
 		id, userID, gameID,
 	)
@@ -84,7 +84,7 @@ func insertUserGame(t *testing.T, db *bun.DB, id, userID string, gameID int) {
 // insertUserGameTag inserts a user_game_tag row.
 func insertUserGameTag(t *testing.T, db *bun.DB, id, userGameID, tagID string) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO user_game_tags (id, user_game_id, tag_id) VALUES (?, ?, ?)`,
 		id, userGameID, tagID,
 	)
@@ -100,8 +100,8 @@ func setupTagUser(t *testing.T, db *bun.DB, handler interface {
 	t.Helper()
 	userID := "u-tags-" + suffix
 	username := "taguser-" + suffix
-	insertAuthTestUser(t, db, userID, username, "pass123", true, false)
-	insertAuthTestSession(t, db, userID, "access-"+suffix, "refresh-"+suffix, 1)
+	insertAuthTestUser(t, testDB, userID, username, "pass123", true, false)
+	insertAuthTestSession(t, testDB, userID, "access-"+suffix, "refresh-"+suffix, 1)
 	token := loginAndGetToken(t, handler, username, "pass123")
 	return userID, token
 }
@@ -109,11 +109,11 @@ func setupTagUser(t *testing.T, db *bun.DB, handler interface {
 // ─── TestListTags_Empty ───────────────────────────────────────────────────────
 
 func TestListTags_Empty(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	_, token := setupTagUser(t, db, e, "empty")
+	_, token := setupTagUser(t, testDB, e, "empty")
 
 	rec := getAuth(t, e, "/api/tags", token)
 	if rec.Code != http.StatusOK {
@@ -135,14 +135,14 @@ func TestListTags_Empty(t *testing.T) {
 // ─── TestListTags_WithTags ────────────────────────────────────────────────────
 
 func TestListTags_WithTags(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	userID, token := setupTagUser(t, db, e, "withtags")
+	userID, token := setupTagUser(t, testDB, e, "withtags")
 	red := "red"
-	insertTag(t, db, "tag-wt-1", userID, "Zebra", &red)
-	insertTag(t, db, "tag-wt-2", userID, "Alpha", nil)
+	insertTag(t, testDB, "tag-wt-1", userID, "Zebra", &red)
+	insertTag(t, testDB, "tag-wt-2", userID, "Alpha", nil)
 
 	rec := getAuth(t, e, "/api/tags", token)
 	if rec.Code != http.StatusOK {
@@ -174,14 +174,14 @@ func TestListTags_WithTags(t *testing.T) {
 // ─── TestListTags_UserScoped ──────────────────────────────────────────────────
 
 func TestListTags_UserScoped(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	userID1, token1 := setupTagUser(t, db, e, "scoped1")
-	_, token2 := setupTagUser(t, db, e, "scoped2")
+	userID1, token1 := setupTagUser(t, testDB, e, "scoped1")
+	_, token2 := setupTagUser(t, testDB, e, "scoped2")
 
-	insertTag(t, db, "tag-scope-1", userID1, "User1Tag", nil)
+	insertTag(t, testDB, "tag-scope-1", userID1, "User1Tag", nil)
 
 	// user1 sees their tag
 	rec := getAuth(t, e, "/api/tags", token1)
@@ -213,10 +213,10 @@ func TestListTags_UserScoped(t *testing.T) {
 // ─── TestCreateTag ────────────────────────────────────────────────────────────
 
 func TestCreateTag(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupTagUser(t, db, e, "create")
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupTagUser(t, testDB, e, "create")
 
 	t.Run("success", func(t *testing.T) {
 		rec := postJSONAuth(t, e, "/api/tags", map[string]any{
@@ -243,7 +243,7 @@ func TestCreateTag(t *testing.T) {
 
 	t.Run("duplicate name", func(t *testing.T) {
 		// Ensure "My Tag" exists first (success subtest may have run, but be explicit).
-		_, _ = db.ExecContext(context.Background(),
+		_, _ = testDB.ExecContext(context.Background(),
 			`INSERT INTO tags (id, user_id, name) VALUES ('tag-dup-seed', ?, 'My Tag') ON CONFLICT DO NOTHING`,
 			userID,
 		)
@@ -287,13 +287,13 @@ func TestCreateTag(t *testing.T) {
 // ─── TestUpdateTag ────────────────────────────────────────────────────────────
 
 func TestUpdateTag(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	userID, token := setupTagUser(t, db, e, "update")
-	insertTag(t, db, "tag-upd-1", userID, "Original", nil)
-	insertTag(t, db, "tag-upd-2", userID, "Other", nil)
+	userID, token := setupTagUser(t, testDB, e, "update")
+	insertTag(t, testDB, "tag-upd-1", userID, "Original", nil)
+	insertTag(t, testDB, "tag-upd-2", userID, "Other", nil)
 
 	t.Run("success full update", func(t *testing.T) {
 		newColor := "#aabbcc"
@@ -342,7 +342,7 @@ func TestUpdateTag(t *testing.T) {
 	})
 
 	t.Run("wrong owner", func(t *testing.T) {
-		_, token2 := setupTagUser(t, db, e, "update-other")
+		_, token2 := setupTagUser(t, testDB, e, "update-other")
 		rec := putJSONAuth(t, e, "/api/tags/tag-upd-2", map[string]any{
 			"name": "Stolen",
 		}, token2)
@@ -365,12 +365,12 @@ func TestUpdateTag(t *testing.T) {
 // ─── TestDeleteTag ────────────────────────────────────────────────────────────
 
 func TestDeleteTag(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	userID, token := setupTagUser(t, db, e, "delete")
-	insertTag(t, db, "tag-del-1", userID, "ToDelete", nil)
+	userID, token := setupTagUser(t, testDB, e, "delete")
+	insertTag(t, testDB, "tag-del-1", userID, "ToDelete", nil)
 
 	t.Run("success", func(t *testing.T) {
 		rec := deleteAuth(t, e, "/api/tags/tag-del-1", token)
@@ -389,8 +389,8 @@ func TestDeleteTag(t *testing.T) {
 	t.Run("wrong owner", func(t *testing.T) {
 		// Insert a tag owned by a different user.
 		userID2 := "u-tags-del-other"
-		insertAuthTestUser(t, db, userID2, "taguser-del-other", "pass123", true, false)
-		insertTag(t, db, "tag-del-other", userID2, "OtherUserTag", nil)
+		insertAuthTestUser(t, testDB, userID2, "taguser-del-other", "pass123", true, false)
+		insertTag(t, testDB, "tag-del-other", userID2, "OtherUserTag", nil)
 
 		rec := deleteAuth(t, e, "/api/tags/tag-del-other", token)
 		if rec.Code != http.StatusNotFound {
@@ -402,20 +402,20 @@ func TestDeleteTag(t *testing.T) {
 // ─── TestDeleteTag_CascadesUserGameTags ───────────────────────────────────────
 
 func TestDeleteTag_CascadesUserGameTags(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
-	userID, token := setupTagUser(t, db, e, "cascade")
-	insertTag(t, db, "tag-cas-1", userID, "CascadeTag", nil)
+	userID, token := setupTagUser(t, testDB, e, "cascade")
+	insertTag(t, testDB, "tag-cas-1", userID, "CascadeTag", nil)
 
-	insertGame(t, db, 999001, "Test Game")
-	insertUserGame(t, db, "ug-cas-1", userID, 999001)
-	insertUserGameTag(t, db, "ugt-cas-1", "ug-cas-1", "tag-cas-1")
+	insertGame(t, testDB, 999001, "Test Game")
+	insertUserGame(t, testDB, "ug-cas-1", userID, 999001)
+	insertUserGameTag(t, testDB, "ugt-cas-1", "ug-cas-1", "tag-cas-1")
 
 	// Verify the user_game_tag exists before deletion.
 	var count int
-	if err := db.QueryRowContext(context.Background(),
+	if err := testDB.QueryRowContext(context.Background(),
 		"SELECT COUNT(*) FROM user_game_tags WHERE id = 'ugt-cas-1'",
 	).Scan(&count); err != nil {
 		t.Fatalf("pre-check query: %v", err)
@@ -430,7 +430,7 @@ func TestDeleteTag_CascadesUserGameTags(t *testing.T) {
 	}
 
 	// Verify the user_game_tag was cascade-deleted.
-	if err := db.QueryRowContext(context.Background(),
+	if err := testDB.QueryRowContext(context.Background(),
 		"SELECT COUNT(*) FROM user_game_tags WHERE id = 'ugt-cas-1'",
 	).Scan(&count); err != nil {
 		t.Fatalf("post-check query: %v", err)
@@ -443,9 +443,8 @@ func TestDeleteTag_CascadesUserGameTags(t *testing.T) {
 // ─── TestTags_Unauthorized ────────────────────────────────────────────────────
 
 func TestTags_Unauthorized(t *testing.T) {
-	db := setupAuthTestDB(t)
-	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
 
 	tests := []struct {
 		name   string

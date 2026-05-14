@@ -15,32 +15,6 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Configured / SetAPIURLForTest
-// ---------------------------------------------------------------------------
-
-func TestClient_Configured_True(t *testing.T) {
-	c := &Client{configured: true}
-	if !c.Configured() {
-		t.Error("expected Configured()=true")
-	}
-}
-
-func TestClient_Configured_False(t *testing.T) {
-	c := &Client{configured: false}
-	if c.Configured() {
-		t.Error("expected Configured()=false")
-	}
-}
-
-func TestClient_SetAPIURLForTest(t *testing.T) {
-	c := &Client{apiURL: defaultIGDBAPIURL}
-	c.SetAPIURLForTest("http://example.com")
-	if c.apiURL != "http://example.com" {
-		t.Errorf("expected apiURL=http://example.com, got %s", c.apiURL)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // InvalidateToken
 // ---------------------------------------------------------------------------
 
@@ -59,28 +33,6 @@ func TestAuthManager_InvalidateToken(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// namedItemNames
-// ---------------------------------------------------------------------------
-
-func TestNamedItemNames(t *testing.T) {
-	items := []igdbNamedItem{
-		{Name: "Single-player"},
-		{Name: "Multi-player"},
-	}
-	result := namedItemNames(items)
-	if result != "Single-player, Multi-player" {
-		t.Errorf("unexpected result: %q", result)
-	}
-}
-
-func TestNamedItemNames_Empty(t *testing.T) {
-	result := namedItemNames(nil)
-	if result != "" {
-		t.Errorf("expected empty string for nil slice, got %q", result)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // sortByScore
 // ---------------------------------------------------------------------------
 
@@ -93,31 +45,6 @@ func TestSortByScore_SortsDescending(t *testing.T) {
 	sortByScore(items)
 	if items[0].metadata.Title != "High" || items[1].metadata.Title != "Mid" || items[2].metadata.Title != "Low" {
 		t.Errorf("unexpected sort order: %v", items)
-	}
-}
-
-func TestSortByScore_SingleItem(t *testing.T) {
-	items := []scoredCandidate{{score: 0.9}}
-	sortByScore(items) // Should not panic
-}
-
-func TestSortByScore_Empty(t *testing.T) {
-	sortByScore(nil) // Should not panic
-}
-
-// ---------------------------------------------------------------------------
-// containsString
-// ---------------------------------------------------------------------------
-
-func TestContainsString_Found(t *testing.T) {
-	if !containsString([]string{"a", "b", "c"}, "b") {
-		t.Error("expected containsString to find 'b'")
-	}
-}
-
-func TestContainsString_NotFound(t *testing.T) {
-	if containsString([]string{"a", "b"}, "z") {
-		t.Error("expected containsString to return false for 'z'")
 	}
 }
 
@@ -255,12 +182,12 @@ func TestClient_FetchFullMetadata_Success(t *testing.T) {
 	client := &Client{
 		httpClient: srv.Client(),
 		auth: &AuthManager{
-			accessToken: "tok",
-			expiresAt:   time.Now().Add(1 * time.Hour),
-			clientID:    "cid",
+			accessToken:  "tok",
+			expiresAt:    time.Now().Add(1 * time.Hour),
+			clientID:     "cid",
 			clientSecret: "cs",
-			httpClient:  srv.Client(),
-			tokenURL:    srv.URL,
+			httpClient:   srv.Client(),
+			tokenURL:     srv.URL,
 		},
 		limiter:    rate.NewLimiter(rate.Inf, 1),
 		apiURL:     srv.URL,
@@ -370,32 +297,6 @@ func TestClient_DownloadCoverArt_AlreadyExists(t *testing.T) {
 	if url != "/static/cover_art/"+imageID+".jpg" {
 		t.Errorf("unexpected url: %q", url)
 	}
-}
-
-func TestClient_DownloadCoverArt_Downloads(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("fake-image-data"))
-	}))
-	defer srv.Close()
-
-	// Override igdbImageBaseURL by using a client whose httpClient points at our srv.
-	// We can't override the const, but DownloadCoverArt uses the real URL.
-	// So we intercept by setting the URL directly — which means we need a server
-	// at the real CDN URL. Instead, test the "non-existent file → download" path
-	// by pointing the client's httpClient at a local server, then override the
-	// imageBaseURL via a local override mechanism.
-	// Since the constant is hardcoded, just verify that a download attempt is made
-	// (it will fail with the real URL from inside tests, which is fine — the
-	// error path is still covered).
-	dir := t.TempDir()
-	c := &Client{httpClient: srv.Client()}
-
-	// This will fail because igdbImageBaseURL is the real CDN — that's OK,
-	// we just want to exercise the download code path beyond the "already exists" check.
-	// The actual download attempt covers mkdir, request construction, etc.
-	_, _ = c.DownloadCoverArt(context.Background(), "newimage999", dir)
-	// No assertion — we just want coverage of the download branch.
 }
 
 // ---------------------------------------------------------------------------
@@ -518,26 +419,5 @@ func TestFetchTimeToBeat_NonOKStatus(t *testing.T) {
 	_, err := client.fetchTimeToBeat(context.Background(), 42)
 	if err == nil {
 		t.Error("expected error for non-200 status from time-to-beat endpoint")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// NewAuthManager — guard for pre-configured token
-// ---------------------------------------------------------------------------
-
-func TestNewAuthManager_WithPreConfiguredToken(t *testing.T) {
-	am := NewAuthManager("cid", "cs", "pre-token")
-	if am.accessToken != "pre-token" {
-		t.Errorf("expected pre-token, got %q", am.accessToken)
-	}
-	if !am.expiresAt.IsZero() {
-		t.Error("expected zero expiresAt for pre-configured token")
-	}
-}
-
-func TestNewAuthManager_NoPreConfiguredToken(t *testing.T) {
-	am := NewAuthManager("cid", "cs", "")
-	if am.accessToken != "" {
-		t.Errorf("expected empty accessToken, got %q", am.accessToken)
 	}
 }

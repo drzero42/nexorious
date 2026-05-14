@@ -126,12 +126,6 @@ func TestExtractTarGz_PathTraversal(t *testing.T) {
 	}
 }
 
-func TestCheckTools_SetsAvailability(t *testing.T) {
-	CheckTools()
-	_ = PgDumpAvailable()
-	_ = PsqlAvailable()
-}
-
 // TestCopyFile_Success exercises copyFile copying a file within the same dir.
 func TestCopyFile_Success(t *testing.T) {
 	tmpDir := t.TempDir()

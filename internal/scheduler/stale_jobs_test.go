@@ -11,11 +11,11 @@ import (
 )
 
 func TestCleanupStaleJobs_StuckPendingNoItems(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 	jobID := uuid.NewString()
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
 		 VALUES (?, ?, 'metadata_refresh', 'system', 'pending', 'low', 0, now() - interval '5 hours')`,
 		jobID, userID,
@@ -24,11 +24,11 @@ func TestCleanupStaleJobs_StuckPendingNoItems(t *testing.T) {
 		t.Fatalf("insert job: %v", err)
 	}
 
-	scheduler.CleanupStaleJobs(ctx, db, 4*time.Hour)
+	scheduler.CleanupStaleJobs(ctx, testDB, 4*time.Hour)
 
 	var status string
 	var errMsg *string
-	if err := db.NewRaw(
+	if err := testDB.NewRaw(
 		`SELECT status, error_message FROM jobs WHERE id = ?`, jobID,
 	).Scan(ctx, &status, &errMsg); err != nil {
 		t.Fatalf("re-read job: %v", err)
@@ -42,11 +42,11 @@ func TestCleanupStaleJobs_StuckPendingNoItems(t *testing.T) {
 }
 
 func TestCleanupStaleJobs_StuckProcessingAllItemsTerminal(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 	jobID := uuid.NewString()
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
 		 VALUES (?, ?, 'metadata_refresh', 'system', 'processing', 'low', 2, now() - interval '5 hours')`,
 		jobID, userID,
@@ -55,7 +55,7 @@ func TestCleanupStaleJobs_StuckProcessingAllItemsTerminal(t *testing.T) {
 		t.Fatalf("insert job: %v", err)
 	}
 	for range 2 {
-		_, err := db.NewRaw(
+		_, err := testDB.NewRaw(
 			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
 			 VALUES (?, ?, ?, ?, 'x', '{}', 'completed', '{}', '[]', now() - interval '5 hours')`,
 			uuid.NewString(), jobID, userID, uuid.NewString(),
@@ -65,10 +65,10 @@ func TestCleanupStaleJobs_StuckProcessingAllItemsTerminal(t *testing.T) {
 		}
 	}
 
-	scheduler.CleanupStaleJobs(ctx, db, 4*time.Hour)
+	scheduler.CleanupStaleJobs(ctx, testDB, 4*time.Hour)
 
 	var status string
-	if err := db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
 		t.Fatalf("re-read job: %v", err)
 	}
 	if status != "failed" {
@@ -77,11 +77,11 @@ func TestCleanupStaleJobs_StuckProcessingAllItemsTerminal(t *testing.T) {
 }
 
 func TestCleanupStaleJobs_StuckProcessingWithPendingItem_LeftAlone(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 	jobID := uuid.NewString()
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
 		 VALUES (?, ?, 'metadata_refresh', 'system', 'processing', 'low', 1, now() - interval '5 hours')`,
 		jobID, userID,
@@ -89,7 +89,7 @@ func TestCleanupStaleJobs_StuckProcessingWithPendingItem_LeftAlone(t *testing.T)
 	if err != nil {
 		t.Fatalf("insert job: %v", err)
 	}
-	_, err = db.NewRaw(
+	_, err = testDB.NewRaw(
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
 		 VALUES (?, ?, ?, ?, 'x', '{}', 'pending', '{}', '[]', now())`,
 		uuid.NewString(), jobID, userID, "k",
@@ -98,10 +98,10 @@ func TestCleanupStaleJobs_StuckProcessingWithPendingItem_LeftAlone(t *testing.T)
 		t.Fatalf("insert item: %v", err)
 	}
 
-	scheduler.CleanupStaleJobs(ctx, db, 4*time.Hour)
+	scheduler.CleanupStaleJobs(ctx, testDB, 4*time.Hour)
 
 	var status string
-	if err := db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
 		t.Fatalf("re-read job: %v", err)
 	}
 	if status != "processing" {
@@ -110,11 +110,11 @@ func TestCleanupStaleJobs_StuckProcessingWithPendingItem_LeftAlone(t *testing.T)
 }
 
 func TestCleanupStaleJobs_FreshJob_LeftAlone(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 	jobID := uuid.NewString()
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
 		 VALUES (?, ?, 'metadata_refresh', 'system', 'pending', 'low', 0, now() - interval '1 hour')`,
 		jobID, userID,
@@ -123,10 +123,10 @@ func TestCleanupStaleJobs_FreshJob_LeftAlone(t *testing.T) {
 		t.Fatalf("insert job: %v", err)
 	}
 
-	scheduler.CleanupStaleJobs(ctx, db, 4*time.Hour)
+	scheduler.CleanupStaleJobs(ctx, testDB, 4*time.Hour)
 
 	var status string
-	if err := db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
 		t.Fatalf("re-read job: %v", err)
 	}
 	if status != "pending" {
@@ -135,11 +135,11 @@ func TestCleanupStaleJobs_FreshJob_LeftAlone(t *testing.T) {
 }
 
 func TestCleanupStaleJobs_NonMetadataRefresh_LeftAlone(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 	jobID := uuid.NewString()
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
 		 VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0, now() - interval '5 hours')`,
 		jobID, userID,
@@ -148,10 +148,10 @@ func TestCleanupStaleJobs_NonMetadataRefresh_LeftAlone(t *testing.T) {
 		t.Fatalf("insert job: %v", err)
 	}
 
-	scheduler.CleanupStaleJobs(ctx, db, 4*time.Hour)
+	scheduler.CleanupStaleJobs(ctx, testDB, 4*time.Hour)
 
 	var status string
-	if err := db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
 		t.Fatalf("re-read job: %v", err)
 	}
 	if status != "pending" {
@@ -160,11 +160,11 @@ func TestCleanupStaleJobs_NonMetadataRefresh_LeftAlone(t *testing.T) {
 }
 
 func TestCleanupStaleJobs_CompletedJob_LeftAlone(t *testing.T) {
-	db := setupTestDB(t)
+	truncateAllTables(t)
 	ctx := context.Background()
-	userID := insertUser(t, ctx, db)
+	userID := insertUser(t, ctx, nil)
 	jobID := uuid.NewString()
-	_, err := db.NewRaw(
+	_, err := testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at, completed_at)
 		 VALUES (?, ?, 'metadata_refresh', 'system', 'completed', 'low', 0, now() - interval '5 hours', now())`,
 		jobID, userID,
@@ -173,19 +173,13 @@ func TestCleanupStaleJobs_CompletedJob_LeftAlone(t *testing.T) {
 		t.Fatalf("insert job: %v", err)
 	}
 
-	scheduler.CleanupStaleJobs(ctx, db, 4*time.Hour)
+	scheduler.CleanupStaleJobs(ctx, testDB, 4*time.Hour)
 
 	var status string
-	if err := db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
 		t.Fatalf("re-read job: %v", err)
 	}
 	if status != "completed" {
 		t.Fatalf("completed job should not be touched, got status=%s", status)
 	}
-}
-
-// TestCleanupStaleJobs_DBError exercises the err != nil branch via a bad DB.
-func TestCleanupStaleJobs_DBError(t *testing.T) {
-	// badDB is declared in cleanup_test.go (same package).
-	scheduler.CleanupStaleJobs(context.Background(), badDB(t), 4*time.Hour)
 }

@@ -20,15 +20,15 @@ func setupUserGamesUser(t *testing.T, db *bun.DB, handler interface {
 	t.Helper()
 	userID := "u-ug-" + suffix
 	username := "uguser-" + suffix
-	insertAuthTestUser(t, db, userID, username, "pass123", true, false)
-	insertAuthTestSession(t, db, userID, "access-"+suffix, "refresh-"+suffix, 1)
+	insertAuthTestUser(t, testDB, userID, username, "pass123", true, false)
+	insertAuthTestSession(t, testDB, userID, "access-"+suffix, "refresh-"+suffix, 1)
 	token := loginAndGetToken(t, handler, username, "pass123")
 	return userID, token
 }
 
 func insertTestUserGame(t *testing.T, db *bun.DB, id, userID string, gameID int) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO user_games (id, user_id, game_id) VALUES (?, ?, ?)`,
 		id, userID, gameID,
 	)
@@ -39,7 +39,7 @@ func insertTestUserGame(t *testing.T, db *bun.DB, id, userID string, gameID int)
 
 func insertTestUserGamePlatform(t *testing.T, db *bun.DB, id, userGameID string, platform, storefront *string) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO user_game_platforms (id, user_game_id, platform, storefront) VALUES (?, ?, ?, ?)`,
 		id, userGameID, platform, storefront,
 	)
@@ -49,13 +49,13 @@ func insertTestUserGamePlatform(t *testing.T, db *bun.DB, id, userGameID string,
 }
 
 func TestCreateUserGame(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, token := setupUserGamesUser(t, db, e, "create")
+	e := newTestEcho(t, testDB, cfg)
+	_, token := setupUserGamesUser(t, testDB, e, "create")
 
 	t.Run("success with valid status", func(t *testing.T) {
-		gameID := insertTestGame(t, db, "Test Game Create")
+		gameID := insertTestGame(t, testDB, "Test Game Create")
 		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
 			"game_id":     gameID,
 			"play_status": "not_started",
@@ -73,7 +73,7 @@ func TestCreateUserGame(t *testing.T) {
 	})
 
 	t.Run("success without play_status", func(t *testing.T) {
-		gameID := insertTestGame(t, db, "Test Game No Status")
+		gameID := insertTestGame(t, testDB, "Test Game No Status")
 		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
 			"game_id": gameID,
 		}, token)
@@ -83,7 +83,7 @@ func TestCreateUserGame(t *testing.T) {
 	})
 
 	t.Run("duplicate game", func(t *testing.T) {
-		gameID := insertTestGame(t, db, "Test Game Dup")
+		gameID := insertTestGame(t, testDB, "Test Game Dup")
 		postJSONAuth(t, e, "/api/user-games", map[string]any{"game_id": gameID}, token)
 		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{"game_id": gameID}, token)
 		if rec.Code != http.StatusConflict {
@@ -101,7 +101,7 @@ func TestCreateUserGame(t *testing.T) {
 	})
 
 	t.Run("invalid play_status", func(t *testing.T) {
-		gameID := insertTestGame(t, db, "Test Game Invalid Status")
+		gameID := insertTestGame(t, testDB, "Test Game Invalid Status")
 		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
 			"game_id":     gameID,
 			"play_status": "invalid_status",
@@ -113,12 +113,12 @@ func TestCreateUserGame(t *testing.T) {
 }
 
 func TestGetUserGame(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "get")
-	gameID := insertTestGame(t, db, "Test Game Get")
-	insertTestUserGame(t, db, "ug-get-1", userID, int(gameID))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "get")
+	gameID := insertTestGame(t, testDB, "Test Game Get")
+	insertTestUserGame(t, testDB, "ug-get-1", userID, int(gameID))
 
 	t.Run("success", func(t *testing.T) {
 		rec := getAuth(t, e, "/api/user-games/ug-get-1", token)
@@ -145,7 +145,7 @@ func TestGetUserGame(t *testing.T) {
 	})
 
 	t.Run("wrong owner", func(t *testing.T) {
-		_, token2 := setupUserGamesUser(t, db, e, "get-other")
+		_, token2 := setupUserGamesUser(t, testDB, e, "get-other")
 		rec := getAuth(t, e, "/api/user-games/ug-get-1", token2)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404 for wrong owner, got %d: %s", rec.Code, rec.Body.String())
@@ -154,12 +154,12 @@ func TestGetUserGame(t *testing.T) {
 }
 
 func TestUpdateUserGame(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "update")
-	gameID := insertTestGame(t, db, "Test Game Update")
-	insertTestUserGame(t, db, "ug-upd-1", userID, int(gameID))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "update")
+	gameID := insertTestGame(t, testDB, "Test Game Update")
+	insertTestUserGame(t, testDB, "ug-upd-1", userID, int(gameID))
 
 	t.Run("success partial update", func(t *testing.T) {
 		rec := putJSONAuth(t, e, "/api/user-games/ug-upd-1", map[string]any{
@@ -223,7 +223,7 @@ func TestUpdateUserGame(t *testing.T) {
 	})
 
 	t.Run("wrong owner", func(t *testing.T) {
-		_, token2 := setupUserGamesUser(t, db, e, "update-other")
+		_, token2 := setupUserGamesUser(t, testDB, e, "update-other")
 		rec := putJSONAuth(t, e, "/api/user-games/ug-upd-1", map[string]any{"is_loved": true}, token2)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
@@ -232,12 +232,12 @@ func TestUpdateUserGame(t *testing.T) {
 }
 
 func TestDeleteUserGame(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "delete")
-	gameID := insertTestGame(t, db, "Test Game Delete")
-	insertTestUserGame(t, db, "ug-del-1", userID, int(gameID))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "delete")
+	gameID := insertTestGame(t, testDB, "Test Game Delete")
+	insertTestUserGame(t, testDB, "ug-del-1", userID, int(gameID))
 
 	t.Run("success", func(t *testing.T) {
 		rec := deleteAuth(t, e, "/api/user-games/ug-del-1", token)
@@ -254,9 +254,9 @@ func TestDeleteUserGame(t *testing.T) {
 	})
 
 	t.Run("wrong owner", func(t *testing.T) {
-		gameID2 := insertTestGame(t, db, "Test Game Del Other")
-		insertTestUserGame(t, db, "ug-del-other", userID, int(gameID2))
-		_, token2 := setupUserGamesUser(t, db, e, "delete-other")
+		gameID2 := insertTestGame(t, testDB, "Test Game Del Other")
+		insertTestUserGame(t, testDB, "ug-del-other", userID, int(gameID2))
+		_, token2 := setupUserGamesUser(t, testDB, e, "delete-other")
 		rec := deleteAuth(t, e, "/api/user-games/ug-del-other", token2)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
@@ -265,18 +265,18 @@ func TestDeleteUserGame(t *testing.T) {
 }
 
 func TestDeleteUserGame_Cascades(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "del-cascade")
-	gameID := insertTestGame(t, db, "Test Game Cascade Del")
-	insertTestUserGame(t, db, "ug-cas-del-1", userID, int(gameID))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "del-cascade")
+	gameID := insertTestGame(t, testDB, "Test Game Cascade Del")
+	insertTestUserGame(t, testDB, "ug-cas-del-1", userID, int(gameID))
 
 	pcWindows := "pc-windows"
 	steam := "steam"
-	insertTestUserGamePlatform(t, db, "ugp-cas-1", "ug-cas-del-1", &pcWindows, &steam)
-	insertTag(t, db, "tag-cas-del-1", userID, "CascadeTag", nil)
-	insertUserGameTag(t, db, "ugt-cas-del-1", "ug-cas-del-1", "tag-cas-del-1")
+	insertTestUserGamePlatform(t, testDB, "ugp-cas-1", "ug-cas-del-1", &pcWindows, &steam)
+	insertTag(t, testDB, "tag-cas-del-1", userID, "CascadeTag", nil)
+	insertUserGameTag(t, testDB, "ugt-cas-del-1", "ug-cas-del-1", "tag-cas-del-1")
 
 	rec := deleteAuth(t, e, "/api/user-games/ug-cas-del-1", token)
 	if rec.Code != http.StatusNoContent {
@@ -284,12 +284,12 @@ func TestDeleteUserGame_Cascades(t *testing.T) {
 	}
 
 	var count int
-	_ = db.QueryRowContext(context.Background(),
+	_ = testDB.QueryRowContext(context.Background(),
 		"SELECT COUNT(*) FROM user_game_platforms WHERE id = 'ugp-cas-1'").Scan(&count)
 	if count != 0 {
 		t.Fatal("expected user_game_platforms to be cascade-deleted")
 	}
-	_ = db.QueryRowContext(context.Background(),
+	_ = testDB.QueryRowContext(context.Background(),
 		"SELECT COUNT(*) FROM user_game_tags WHERE id = 'ugt-cas-del-1'").Scan(&count)
 	if count != 0 {
 		t.Fatal("expected user_game_tags to be cascade-deleted")
@@ -297,16 +297,16 @@ func TestDeleteUserGame_Cascades(t *testing.T) {
 }
 
 func TestListUserGames(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "list")
-	g1 := insertTestGame(t, db, "Alpha Game")
-	g2 := insertTestGame(t, db, "Beta Game")
-	g3 := insertTestGame(t, db, "Gamma Game")
-	insertTestUserGame(t, db, "ug-list-1", userID, int(g1))
-	insertTestUserGame(t, db, "ug-list-2", userID, int(g2))
-	insertTestUserGame(t, db, "ug-list-3", userID, int(g3))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "list")
+	g1 := insertTestGame(t, testDB, "Alpha Game")
+	g2 := insertTestGame(t, testDB, "Beta Game")
+	g3 := insertTestGame(t, testDB, "Gamma Game")
+	insertTestUserGame(t, testDB, "ug-list-1", userID, int(g1))
+	insertTestUserGame(t, testDB, "ug-list-2", userID, int(g2))
+	insertTestUserGame(t, testDB, "ug-list-3", userID, int(g3))
 
 	t.Run("basic list", func(t *testing.T) {
 		rec := getAuth(t, e, "/api/user-games", token)
@@ -381,7 +381,7 @@ func TestListUserGames(t *testing.T) {
 	})
 
 	t.Run("user scoped", func(t *testing.T) {
-		_, token2 := setupUserGamesUser(t, db, e, "list-other")
+		_, token2 := setupUserGamesUser(t, testDB, e, "list-other")
 		rec := getAuth(t, e, "/api/user-games", token2)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -403,12 +403,12 @@ func TestListUserGames(t *testing.T) {
 }
 
 func TestUpdateProgress(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "progress")
-	gameID := insertTestGame(t, db, "Test Game Progress")
-	insertTestUserGame(t, db, "ug-prog-1", userID, int(gameID))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "progress")
+	gameID := insertTestGame(t, testDB, "Test Game Progress")
+	insertTestUserGame(t, testDB, "ug-prog-1", userID, int(gameID))
 
 	t.Run("success hours only", func(t *testing.T) {
 		rec := putJSONAuth(t, e, "/api/user-games/ug-prog-1/progress", map[string]any{
@@ -456,14 +456,14 @@ func TestUpdateProgress(t *testing.T) {
 }
 
 func TestBulkUpdate(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "bulk-upd")
-	g1 := insertTestGame(t, db, "Bulk Upd 1")
-	g2 := insertTestGame(t, db, "Bulk Upd 2")
-	insertTestUserGame(t, db, "ug-bu-1", userID, int(g1))
-	insertTestUserGame(t, db, "ug-bu-2", userID, int(g2))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "bulk-upd")
+	g1 := insertTestGame(t, testDB, "Bulk Upd 1")
+	g2 := insertTestGame(t, testDB, "Bulk Upd 2")
+	insertTestUserGame(t, testDB, "ug-bu-1", userID, int(g1))
+	insertTestUserGame(t, testDB, "ug-bu-2", userID, int(g2))
 
 	t.Run("success", func(t *testing.T) {
 		rec := putJSONAuth(t, e, "/api/user-games/bulk-update", map[string]any{
@@ -505,7 +505,7 @@ func TestBulkUpdate(t *testing.T) {
 	})
 
 	t.Run("skips non-owned ids", func(t *testing.T) {
-		_, token2 := setupUserGamesUser(t, db, e, "bulk-upd-other")
+		_, token2 := setupUserGamesUser(t, testDB, e, "bulk-upd-other")
 		rec := putJSONAuth(t, e, "/api/user-games/bulk-update", map[string]any{
 			"ids":     []string{"ug-bu-1", "ug-bu-2"},
 			"updates": map[string]any{"is_loved": false},
@@ -523,14 +523,14 @@ func TestBulkUpdate(t *testing.T) {
 }
 
 func TestBulkDelete(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "bulk-del")
-	g1 := insertTestGame(t, db, "Bulk Del 1")
-	g2 := insertTestGame(t, db, "Bulk Del 2")
-	insertTestUserGame(t, db, "ug-bd-1", userID, int(g1))
-	insertTestUserGame(t, db, "ug-bd-2", userID, int(g2))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "bulk-del")
+	g1 := insertTestGame(t, testDB, "Bulk Del 1")
+	g2 := insertTestGame(t, testDB, "Bulk Del 2")
+	insertTestUserGame(t, testDB, "ug-bd-1", userID, int(g1))
+	insertTestUserGame(t, testDB, "ug-bd-2", userID, int(g2))
 
 	t.Run("success", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]any{
@@ -554,14 +554,14 @@ func TestBulkDelete(t *testing.T) {
 }
 
 func TestBulkAddPlatforms(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "bulk-plat-add")
-	g1 := insertTestGame(t, db, "Bulk Plat Add 1")
-	g2 := insertTestGame(t, db, "Bulk Plat Add 2")
-	insertTestUserGame(t, db, "ug-bpa-1", userID, int(g1))
-	insertTestUserGame(t, db, "ug-bpa-2", userID, int(g2))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "bulk-plat-add")
+	g1 := insertTestGame(t, testDB, "Bulk Plat Add 1")
+	g2 := insertTestGame(t, testDB, "Bulk Plat Add 2")
+	insertTestUserGame(t, testDB, "ug-bpa-1", userID, int(g1))
+	insertTestUserGame(t, testDB, "ug-bpa-2", userID, int(g2))
 
 	t.Run("success", func(t *testing.T) {
 		rec := postJSONAuth(t, e, "/api/user-games/bulk-add-platforms", map[string]any{
@@ -599,15 +599,15 @@ func TestBulkAddPlatforms(t *testing.T) {
 }
 
 func TestBulkRemovePlatforms(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "bulk-plat-rm")
-	g1 := insertTestGame(t, db, "Bulk Plat Rm 1")
-	insertTestUserGame(t, db, "ug-bpr-1", userID, int(g1))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "bulk-plat-rm")
+	g1 := insertTestGame(t, testDB, "Bulk Plat Rm 1")
+	insertTestUserGame(t, testDB, "ug-bpr-1", userID, int(g1))
 	pc := "pc-windows"
 	steam := "steam"
-	insertTestUserGamePlatform(t, db, "ugp-bpr-1", "ug-bpr-1", &pc, &steam)
+	insertTestUserGamePlatform(t, testDB, "ugp-bpr-1", "ug-bpr-1", &pc, &steam)
 
 	t.Run("success", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]any{
@@ -633,12 +633,12 @@ func TestBulkRemovePlatforms(t *testing.T) {
 }
 
 func TestPlatformCRUD(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "plat-crud")
-	gameID := insertTestGame(t, db, "Plat CRUD Game")
-	insertTestUserGame(t, db, "ug-plat-1", userID, int(gameID))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "plat-crud")
+	gameID := insertTestGame(t, testDB, "Plat CRUD Game")
+	insertTestUserGame(t, testDB, "ug-plat-1", userID, int(gameID))
 
 	t.Run("list empty", func(t *testing.T) {
 		rec := getAuth(t, e, "/api/user-games/ug-plat-1/platforms", token)
@@ -724,7 +724,7 @@ func TestPlatformCRUD(t *testing.T) {
 	})
 
 	t.Run("wrong owner", func(t *testing.T) {
-		_, token2 := setupUserGamesUser(t, db, e, "plat-crud-other")
+		_, token2 := setupUserGamesUser(t, testDB, e, "plat-crud-other")
 		rec := getAuth(t, e, "/api/user-games/ug-plat-1/platforms", token2)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
@@ -735,12 +735,12 @@ func TestPlatformCRUD(t *testing.T) {
 // ── TestUpdatePlatform ──────────────────────────────────────────────────
 
 func TestUpdatePlatform_InvalidOwnershipStatus(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "upd-plat-bad-own")
-	gameID := insertTestGame(t, db, "Update Plat Game")
-	insertTestUserGame(t, db, "ug-upd-plat", userID, int(gameID))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "upd-plat-bad-own")
+	gameID := insertTestGame(t, testDB, "Update Plat Game")
+	insertTestUserGame(t, testDB, "ug-upd-plat", userID, int(gameID))
 
 	// First create a platform entry.
 	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-plat/platforms", map[string]any{
@@ -763,12 +763,12 @@ func TestUpdatePlatform_InvalidOwnershipStatus(t *testing.T) {
 }
 
 func TestUpdatePlatform_InvalidPlatform(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "upd-plat-bad-plat")
-	gameID := insertTestGame(t, db, "Update Plat Invalid Game")
-	insertTestUserGame(t, db, "ug-upd-plat-b", userID, int(gameID))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "upd-plat-bad-plat")
+	gameID := insertTestGame(t, testDB, "Update Plat Invalid Game")
+	insertTestUserGame(t, testDB, "ug-upd-plat-b", userID, int(gameID))
 
 	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-plat-b/platforms", map[string]any{
 		"platform":   "pc-windows",
@@ -790,12 +790,12 @@ func TestUpdatePlatform_InvalidPlatform(t *testing.T) {
 }
 
 func TestUpdatePlatform_InvalidStorefront(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "upd-plat-bad-sf")
-	gameID := insertTestGame(t, db, "Update Storefront Game")
-	insertTestUserGame(t, db, "ug-upd-sf", userID, int(gameID))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "upd-plat-bad-sf")
+	gameID := insertTestGame(t, testDB, "Update Storefront Game")
+	insertTestUserGame(t, testDB, "ug-upd-sf", userID, int(gameID))
 
 	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-sf/platforms", map[string]any{
 		"platform":   "pc-windows",
@@ -817,12 +817,12 @@ func TestUpdatePlatform_InvalidStorefront(t *testing.T) {
 }
 
 func TestUpdatePlatform_PlatformNotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "upd-plat-notfound")
-	gameID := insertTestGame(t, db, "Update Plat NotFound Game")
-	insertTestUserGame(t, db, "ug-upd-notfound", userID, int(gameID))
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "upd-plat-notfound")
+	gameID := insertTestGame(t, testDB, "Update Plat NotFound Game")
+	insertTestUserGame(t, testDB, "ug-upd-notfound", userID, int(gameID))
 
 	// Try to update a platform that doesn't exist.
 	rec := putJSONAuth(t, e, "/api/user-games/ug-upd-notfound/platforms/nonexistent-platform-id",
@@ -836,8 +836,8 @@ func TestUpdatePlatform_PlatformNotFound(t *testing.T) {
 
 func insertTestGameWithGenre(t *testing.T, db *bun.DB, title, genre string) int32 {
 	t.Helper()
-	gameID := insertTestGame(t, db, title)
-	_, err := db.ExecContext(context.Background(),
+	gameID := insertTestGame(t, testDB, title)
+	_, err := testDB.ExecContext(context.Background(),
 		`UPDATE games SET genre = ? WHERE id = ?`, genre, gameID)
 	if err != nil {
 		t.Fatalf("insertTestGameWithGenre: %v", err)
@@ -847,8 +847,8 @@ func insertTestGameWithGenre(t *testing.T, db *bun.DB, title, genre string) int3
 
 func insertTestGameWithMetadata(t *testing.T, db *bun.DB, title, genre, gameModes, themes, playerPerspectives string) int32 {
 	t.Helper()
-	gameID := insertTestGame(t, db, title)
-	_, err := db.ExecContext(context.Background(),
+	gameID := insertTestGame(t, testDB, title)
+	_, err := testDB.ExecContext(context.Background(),
 		`UPDATE games SET genre = ?, game_modes = ?, themes = ?, player_perspectives = ? WHERE id = ?`,
 		genre, gameModes, themes, playerPerspectives, gameID)
 	if err != nil {
@@ -860,20 +860,20 @@ func insertTestGameWithMetadata(t *testing.T, db *bun.DB, title, genre, gameMode
 // ── TestListUserGameIDs ─────────────────────────────────────────────────
 
 func TestListUserGameIDs(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "ids")
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "ids")
 
-	g1 := insertTestGame(t, db, "IDs Game 1")
-	g2 := insertTestGame(t, db, "IDs Game 2")
-	g3 := insertTestGame(t, db, "IDs Game 3")
-	insertTestUserGame(t, db, "ug-ids-1", userID, int(g1))
-	insertTestUserGame(t, db, "ug-ids-2", userID, int(g2))
-	insertTestUserGame(t, db, "ug-ids-3", userID, int(g3))
+	g1 := insertTestGame(t, testDB, "IDs Game 1")
+	g2 := insertTestGame(t, testDB, "IDs Game 2")
+	g3 := insertTestGame(t, testDB, "IDs Game 3")
+	insertTestUserGame(t, testDB, "ug-ids-1", userID, int(g1))
+	insertTestUserGame(t, testDB, "ug-ids-2", userID, int(g2))
+	insertTestUserGame(t, testDB, "ug-ids-3", userID, int(g3))
 
 	// Set play_status on one for filter test
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`UPDATE user_games SET play_status = 'completed' WHERE id = 'ug-ids-1'`)
 	if err != nil {
 		t.Fatalf("update play_status: %v", err)
@@ -906,7 +906,7 @@ func TestListUserGameIDs(t *testing.T) {
 	})
 
 	t.Run("user scoped", func(t *testing.T) {
-		_, token2 := setupUserGamesUser(t, db, e, "ids-other")
+		_, token2 := setupUserGamesUser(t, testDB, e, "ids-other")
 		rec := getAuth(t, e, "/api/user-games/ids", token2)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -920,7 +920,7 @@ func TestListUserGameIDs(t *testing.T) {
 	})
 
 	t.Run("empty collection", func(t *testing.T) {
-		_, token3 := setupUserGamesUser(t, db, e, "ids-empty")
+		_, token3 := setupUserGamesUser(t, testDB, e, "ids-empty")
 		rec := getAuth(t, e, "/api/user-games/ids", token3)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -936,16 +936,16 @@ func TestListUserGameIDs(t *testing.T) {
 // ── TestListGenres ──────────────────────────────────────────────────────
 
 func TestListGenres(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "genres")
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "genres")
 
 	t.Run("basic", func(t *testing.T) {
-		g1 := insertTestGameWithGenre(t, db, "Genre Game 1", "Action, RPG")
-		g2 := insertTestGameWithGenre(t, db, "Genre Game 2", "RPG, Simulation")
-		insertTestUserGame(t, db, "ug-genre-1", userID, int(g1))
-		insertTestUserGame(t, db, "ug-genre-2", userID, int(g2))
+		g1 := insertTestGameWithGenre(t, testDB, "Genre Game 1", "Action, RPG")
+		g2 := insertTestGameWithGenre(t, testDB, "Genre Game 2", "RPG, Simulation")
+		insertTestUserGame(t, testDB, "ug-genre-1", userID, int(g1))
+		insertTestUserGame(t, testDB, "ug-genre-2", userID, int(g2))
 
 		rec := getAuth(t, e, "/api/user-games/genres", token)
 		if rec.Code != http.StatusOK {
@@ -983,7 +983,7 @@ func TestListGenres(t *testing.T) {
 	})
 
 	t.Run("empty", func(t *testing.T) {
-		_, token2 := setupUserGamesUser(t, db, e, "genres-empty")
+		_, token2 := setupUserGamesUser(t, testDB, e, "genres-empty")
 		rec := getAuth(t, e, "/api/user-games/genres", token2)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -995,10 +995,10 @@ func TestListGenres(t *testing.T) {
 	})
 
 	t.Run("null genres excluded", func(t *testing.T) {
-		_, token3 := setupUserGamesUser(t, db, e, "genres-null")
+		_, token3 := setupUserGamesUser(t, testDB, e, "genres-null")
 		userID3 := "u-ug-genres-null"
-		gNull := insertTestGame(t, db, "No Genre Game")
-		insertTestUserGame(t, db, "ug-genre-null", userID3, int(gNull))
+		gNull := insertTestGame(t, testDB, "No Genre Game")
+		insertTestUserGame(t, testDB, "ug-genre-null", userID3, int(gNull))
 
 		rec := getAuth(t, e, "/api/user-games/genres", token3)
 		if rec.Code != http.StatusOK {
@@ -1017,16 +1017,16 @@ func TestListGenres(t *testing.T) {
 // ── TestFilterOptions ───────────────────────────────────────────────────
 
 func TestFilterOptions(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	userID, token := setupUserGamesUser(t, db, e, "filteropts")
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "filteropts")
 
 	t.Run("basic", func(t *testing.T) {
-		g1 := insertTestGameWithMetadata(t, db, "Filter Game 1", "Action, RPG", "Single player", "Fantasy", "Third person")
-		g2 := insertTestGameWithMetadata(t, db, "Filter Game 2", "RPG, Strategy", "Multiplayer", "Sci-fi", "First person")
-		insertTestUserGame(t, db, "ug-fo-1", userID, int(g1))
-		insertTestUserGame(t, db, "ug-fo-2", userID, int(g2))
+		g1 := insertTestGameWithMetadata(t, testDB, "Filter Game 1", "Action, RPG", "Single player", "Fantasy", "Third person")
+		g2 := insertTestGameWithMetadata(t, testDB, "Filter Game 2", "RPG, Strategy", "Multiplayer", "Sci-fi", "First person")
+		insertTestUserGame(t, testDB, "ug-fo-1", userID, int(g1))
+		insertTestUserGame(t, testDB, "ug-fo-2", userID, int(g2))
 
 		rec := getAuth(t, e, "/api/user-games/filter-options", token)
 		if rec.Code != http.StatusOK {
@@ -1054,7 +1054,7 @@ func TestFilterOptions(t *testing.T) {
 	})
 
 	t.Run("empty", func(t *testing.T) {
-		_, token2 := setupUserGamesUser(t, db, e, "filteropts-empty")
+		_, token2 := setupUserGamesUser(t, testDB, e, "filteropts-empty")
 		rec := getAuth(t, e, "/api/user-games/filter-options", token2)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -1091,12 +1091,12 @@ func TestFilterOptions(t *testing.T) {
 // ── TestCollectionStats ─────────────────────────────────────────────────
 
 func TestCollectionStats(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
+	e := newTestEcho(t, testDB, cfg)
 
 	t.Run("empty collection", func(t *testing.T) {
-		_, token := setupUserGamesUser(t, db, e, "stats-empty")
+		_, token := setupUserGamesUser(t, testDB, e, "stats-empty")
 		rec := getAuth(t, e, "/api/user-games/stats", token)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -1118,21 +1118,21 @@ func TestCollectionStats(t *testing.T) {
 	})
 
 	t.Run("basic", func(t *testing.T) {
-		userID, token := setupUserGamesUser(t, db, e, "stats-basic")
+		userID, token := setupUserGamesUser(t, testDB, e, "stats-basic")
 
-		g1 := insertTestGameWithGenre(t, db, "Stats Game 1", "RPG")
-		g2 := insertTestGameWithGenre(t, db, "Stats Game 2", "RPG, Action")
-		g3 := insertTestGameWithGenre(t, db, "Stats Game 3", "Action")
-		insertTestUserGame(t, db, "ug-stats-1", userID, int(g1))
-		insertTestUserGame(t, db, "ug-stats-2", userID, int(g2))
-		insertTestUserGame(t, db, "ug-stats-3", userID, int(g3))
+		g1 := insertTestGameWithGenre(t, testDB, "Stats Game 1", "RPG")
+		g2 := insertTestGameWithGenre(t, testDB, "Stats Game 2", "RPG, Action")
+		g3 := insertTestGameWithGenre(t, testDB, "Stats Game 3", "Action")
+		insertTestUserGame(t, testDB, "ug-stats-1", userID, int(g1))
+		insertTestUserGame(t, testDB, "ug-stats-2", userID, int(g2))
+		insertTestUserGame(t, testDB, "ug-stats-3", userID, int(g3))
 
 		// Set statuses and ratings
-		_, _ = db.ExecContext(context.Background(),
+		_, _ = testDB.ExecContext(context.Background(),
 			`UPDATE user_games SET play_status = 'completed', personal_rating = 4 WHERE id = 'ug-stats-1'`)
-		_, _ = db.ExecContext(context.Background(),
+		_, _ = testDB.ExecContext(context.Background(),
 			`UPDATE user_games SET play_status = 'not_started', personal_rating = 3 WHERE id = 'ug-stats-2'`)
-		_, _ = db.ExecContext(context.Background(),
+		_, _ = testDB.ExecContext(context.Background(),
 			`UPDATE user_games SET play_status = 'in_progress' WHERE id = 'ug-stats-3'`)
 
 		rec := getAuth(t, e, "/api/user-games/stats", token)
@@ -1175,24 +1175,24 @@ func TestCollectionStats(t *testing.T) {
 	})
 
 	t.Run("hours fallback", func(t *testing.T) {
-		userID, token := setupUserGamesUser(t, db, e, "stats-hours")
+		userID, token := setupUserGamesUser(t, testDB, e, "stats-hours")
 
-		g1 := insertTestGame(t, db, "Hours Game 1")
-		g2 := insertTestGame(t, db, "Hours Game 2")
-		insertTestUserGame(t, db, "ug-hours-1", userID, int(g1))
-		insertTestUserGame(t, db, "ug-hours-2", userID, int(g2))
+		g1 := insertTestGame(t, testDB, "Hours Game 1")
+		g2 := insertTestGame(t, testDB, "Hours Game 2")
+		insertTestUserGame(t, testDB, "ug-hours-1", userID, int(g1))
+		insertTestUserGame(t, testDB, "ug-hours-2", userID, int(g2))
 
 		// Game 1: platform hours = 50.5
-		_, _ = db.ExecContext(context.Background(),
+		_, _ = testDB.ExecContext(context.Background(),
 			`INSERT INTO platforms (name, display_name) VALUES ('pc', 'PC') ON CONFLICT DO NOTHING`)
 		pc := "pc"
 		steam := "steam"
-		insertTestUserGamePlatform(t, db, "ugp-hours-1", "ug-hours-1", &pc, &steam)
-		_, _ = db.ExecContext(context.Background(),
+		insertTestUserGamePlatform(t, testDB, "ugp-hours-1", "ug-hours-1", &pc, &steam)
+		_, _ = testDB.ExecContext(context.Background(),
 			`UPDATE user_game_platforms SET hours_played = 50.5 WHERE id = 'ugp-hours-1'`)
 
 		// Game 2: no platform hours, legacy hours = 10.0
-		_, _ = db.ExecContext(context.Background(),
+		_, _ = testDB.ExecContext(context.Background(),
 			`UPDATE user_games SET hours_played = 10.0 WHERE id = 'ug-hours-2'`)
 
 		rec := getAuth(t, e, "/api/user-games/stats", token)

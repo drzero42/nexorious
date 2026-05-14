@@ -13,7 +13,7 @@ import (
 
 func insertJob(t *testing.T, db *bun.DB, id, userID, jobType, source, status string) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at)
 		 VALUES (?, ?, ?, ?, ?, 'high', now())`,
 		id, userID, jobType, source, status,
@@ -25,7 +25,7 @@ func insertJob(t *testing.T, db *bun.DB, id, userID, jobType, source, status str
 
 func insertJobItem(t *testing.T, db *bun.DB, id, jobID, userID, itemKey, sourceTitle, status string) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(),
+	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, status, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, now())`,
 		id, jobID, userID, itemKey, sourceTitle, status,
@@ -39,22 +39,22 @@ func newTestEchoWithPool(t *testing.T, db *bun.DB) (interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }, *worker.Pool) {
 	t.Helper()
-	pool := worker.NewPool(db)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 	return e, pool
 }
 
 // ─── TestListJobs ─────────────────────────────────────────────────────────────
 
 func TestListJobs(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
 
-	userID, token := setupTagUser(t, db, e, "jobs-list")
+	userID, token := setupTagUser(t, testDB, e, "jobs-list")
 
-	insertJob(t, db, "job-list-1", userID, "import", "steam", "completed")
-	insertJob(t, db, "job-list-2", userID, "sync", "psn", "processing")
+	insertJob(t, testDB, "job-list-1", userID, "import", "steam", "completed")
+	insertJob(t, testDB, "job-list-2", userID, "sync", "psn", "processing")
 
 	rec := getAuth(t, e, "/api/jobs", token)
 	if rec.Code != http.StatusOK {
@@ -84,12 +84,12 @@ func TestListJobs(t *testing.T) {
 // ─── TestGetJob ───────────────────────────────────────────────────────────────
 
 func TestGetJob(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
 
-	userID, token := setupTagUser(t, db, e, "jobs-get")
+	userID, token := setupTagUser(t, testDB, e, "jobs-get")
 
-	insertJob(t, db, "job-get-1", userID, "import", "steam", "completed")
+	insertJob(t, testDB, "job-get-1", userID, "import", "steam", "completed")
 
 	rec := getAuth(t, e, "/api/jobs/job-get-1", token)
 	if rec.Code != http.StatusOK {
@@ -112,14 +112,14 @@ func TestGetJob(t *testing.T) {
 // ─── TestGetJob_WrongOwner ────────────────────────────────────────────────────
 
 func TestGetJob_WrongOwner(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
 
 	userID1 := "u-jobs-owner1"
-	insertAuthTestUser(t, db, userID1, "jobowner1", "pass123", true, false)
-	insertJob(t, db, "job-wrong-owner", userID1, "import", "steam", "completed")
+	insertAuthTestUser(t, testDB, userID1, "jobowner1", "pass123", true, false)
+	insertJob(t, testDB, "job-wrong-owner", userID1, "import", "steam", "completed")
 
-	_, token2 := setupTagUser(t, db, e, "jobs-wrong")
+	_, token2 := setupTagUser(t, testDB, e, "jobs-wrong")
 
 	rec := getAuth(t, e, "/api/jobs/job-wrong-owner", token2)
 	if rec.Code != http.StatusNotFound {
@@ -130,12 +130,12 @@ func TestGetJob_WrongOwner(t *testing.T) {
 // ─── TestCancelJob ────────────────────────────────────────────────────────────
 
 func TestCancelJob(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
 
-	userID, token := setupTagUser(t, db, e, "jobs-cancel")
+	userID, token := setupTagUser(t, testDB, e, "jobs-cancel")
 
-	insertJob(t, db, "job-cancel-1", userID, "sync", "steam", "processing")
+	insertJob(t, testDB, "job-cancel-1", userID, "sync", "steam", "processing")
 
 	rec := postJSONAuth(t, e, "/api/jobs/job-cancel-1/cancel", nil, token)
 	if rec.Code != http.StatusOK {
@@ -144,7 +144,7 @@ func TestCancelJob(t *testing.T) {
 
 	// Verify status changed.
 	var status string
-	err := db.QueryRowContext(context.Background(),
+	err := testDB.QueryRowContext(context.Background(),
 		"SELECT status FROM jobs WHERE id = 'job-cancel-1'",
 	).Scan(&status)
 	if err != nil {
@@ -158,12 +158,12 @@ func TestCancelJob(t *testing.T) {
 // ─── TestCancelJob_AlreadyTerminal ────────────────────────────────────────────
 
 func TestCancelJob_AlreadyTerminal(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
 
-	userID, token := setupTagUser(t, db, e, "jobs-cancel-term")
+	userID, token := setupTagUser(t, testDB, e, "jobs-cancel-term")
 
-	insertJob(t, db, "job-cancel-term", userID, "sync", "steam", "completed")
+	insertJob(t, testDB, "job-cancel-term", userID, "sync", "steam", "completed")
 
 	rec := postJSONAuth(t, e, "/api/jobs/job-cancel-term/cancel", nil, token)
 	if rec.Code != http.StatusConflict {
@@ -174,12 +174,12 @@ func TestCancelJob_AlreadyTerminal(t *testing.T) {
 // ─── TestDeleteJob ────────────────────────────────────────────────────────────
 
 func TestDeleteJob(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
 
-	userID, token := setupTagUser(t, db, e, "jobs-delete")
+	userID, token := setupTagUser(t, testDB, e, "jobs-delete")
 
-	insertJob(t, db, "job-del-1", userID, "import", "steam", "completed")
+	insertJob(t, testDB, "job-del-1", userID, "import", "steam", "completed")
 
 	rec := deleteAuth(t, e, "/api/jobs/job-del-1", token)
 	if rec.Code != http.StatusNoContent {
@@ -188,7 +188,7 @@ func TestDeleteJob(t *testing.T) {
 
 	// Verify deleted.
 	var count int
-	err := db.QueryRowContext(context.Background(),
+	err := testDB.QueryRowContext(context.Background(),
 		"SELECT COUNT(*) FROM jobs WHERE id = 'job-del-1'",
 	).Scan(&count)
 	if err != nil {
@@ -202,12 +202,12 @@ func TestDeleteJob(t *testing.T) {
 // ─── TestDeleteJob_ActiveReturns409 ───────────────────────────────────────────
 
 func TestDeleteJob_ActiveReturns409(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
 
-	userID, token := setupTagUser(t, db, e, "jobs-del-active")
+	userID, token := setupTagUser(t, testDB, e, "jobs-del-active")
 
-	insertJob(t, db, "job-del-active", userID, "sync", "steam", "processing")
+	insertJob(t, testDB, "job-del-active", userID, "sync", "steam", "processing")
 
 	rec := deleteAuth(t, e, "/api/jobs/job-del-active", token)
 	if rec.Code != http.StatusConflict {
@@ -218,15 +218,15 @@ func TestDeleteJob_ActiveReturns409(t *testing.T) {
 // ─── TestJobsSummary ──────────────────────────────────────────────────────────
 
 func TestJobsSummary(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
 
-	userID, token := setupTagUser(t, db, e, "jobs-summary")
+	userID, token := setupTagUser(t, testDB, e, "jobs-summary")
 
-	insertJob(t, db, "job-sum-1", userID, "sync", "steam", "processing")
-	insertJob(t, db, "job-sum-2", userID, "import", "csv", "pending")
-	insertJob(t, db, "job-sum-3", userID, "sync", "psn", "failed")
-	insertJob(t, db, "job-sum-4", userID, "import", "steam", "completed")
+	insertJob(t, testDB, "job-sum-1", userID, "sync", "steam", "processing")
+	insertJob(t, testDB, "job-sum-2", userID, "import", "csv", "pending")
+	insertJob(t, testDB, "job-sum-3", userID, "sync", "psn", "failed")
+	insertJob(t, testDB, "job-sum-4", userID, "import", "steam", "completed")
 
 	rec := getAuth(t, e, "/api/jobs/summary", token)
 	if rec.Code != http.StatusOK {
@@ -252,9 +252,9 @@ func TestJobsSummary(t *testing.T) {
 // ─── TestPendingReviewCount ───────────────────────────────────────────────────
 
 func TestPendingReviewCount_Empty(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	_, token := setupTagUser(t, db, e, "jobs-prc-empty")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	_, token := setupTagUser(t, testDB, e, "jobs-prc-empty")
 
 	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
 	if rec.Code != http.StatusOK {
@@ -270,13 +270,13 @@ func TestPendingReviewCount_Empty(t *testing.T) {
 }
 
 func TestPendingReviewCount_WithItems(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-prc-items")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-prc-items")
 
-	insertJob(t, db, "job-prc-1", userID, "import", "steam", "processing")
-	insertJobItem(t, db, "ji-prc-1", "job-prc-1", userID, "key-prc-1", "Game A", "pending_review")
-	insertJobItem(t, db, "ji-prc-2", "job-prc-1", userID, "key-prc-2", "Game B", "completed")
+	insertJob(t, testDB, "job-prc-1", userID, "import", "steam", "processing")
+	insertJobItem(t, testDB, "ji-prc-1", "job-prc-1", userID, "key-prc-1", "Game A", "pending_review")
+	insertJobItem(t, testDB, "ji-prc-2", "job-prc-1", userID, "key-prc-2", "Game B", "completed")
 
 	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
 	if rec.Code != http.StatusOK {
@@ -294,9 +294,9 @@ func TestPendingReviewCount_WithItems(t *testing.T) {
 // ─── TestHandleActiveJob ──────────────────────────────────────────────────────
 
 func TestHandleActiveJob_NoJobs(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	_, token := setupTagUser(t, db, e, "jobs-active-none")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	_, token := setupTagUser(t, testDB, e, "jobs-active-none")
 
 	rec := getAuth(t, e, "/api/jobs/active/import", token)
 	if rec.Code != http.StatusOK {
@@ -305,11 +305,11 @@ func TestHandleActiveJob_NoJobs(t *testing.T) {
 }
 
 func TestHandleActiveJob_ActiveJobExists(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-active-exists")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-active-exists")
 
-	insertJob(t, db, "job-active-1", userID, "import", "steam", "processing")
+	insertJob(t, testDB, "job-active-1", userID, "import", "steam", "processing")
 
 	rec := getAuth(t, e, "/api/jobs/active/import", token)
 	if rec.Code != http.StatusOK {
@@ -325,12 +325,12 @@ func TestHandleActiveJob_ActiveJobExists(t *testing.T) {
 }
 
 func TestHandleActiveJob_FallbackToCompleted(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-active-fallback")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-active-fallback")
 
 	// No active job, but there is a completed one.
-	insertJob(t, db, "job-fallback-1", userID, "sync", "steam", "completed")
+	insertJob(t, testDB, "job-fallback-1", userID, "sync", "steam", "completed")
 
 	rec := getAuth(t, e, "/api/jobs/active/sync", token)
 	if rec.Code != http.StatusOK {
@@ -348,9 +348,9 @@ func TestHandleActiveJob_FallbackToCompleted(t *testing.T) {
 // ─── TestHandleRecentJobs ─────────────────────────────────────────────────────
 
 func TestHandleRecentJobs_Empty(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	_, token := setupTagUser(t, db, e, "jobs-recent-empty")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	_, token := setupTagUser(t, testDB, e, "jobs-recent-empty")
 
 	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
 	if rec.Code != http.StatusOK {
@@ -366,12 +366,12 @@ func TestHandleRecentJobs_Empty(t *testing.T) {
 }
 
 func TestHandleRecentJobs_WithJobs(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-recent-with")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-recent-with")
 
-	insertJob(t, db, "job-recent-1", userID, "sync", "steam", "completed")
-	insertJobItem(t, db, "ji-recent-1", "job-recent-1", userID, "key-r1", "Recent Game", "completed")
+	insertJob(t, testDB, "job-recent-1", userID, "sync", "steam", "completed")
+	insertJobItem(t, testDB, "ji-recent-1", "job-recent-1", userID, "key-r1", "Recent Game", "completed")
 
 	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
 	if rec.Code != http.StatusOK {
@@ -389,13 +389,13 @@ func TestHandleRecentJobs_WithJobs(t *testing.T) {
 // ─── TestHandleGetJobItems ────────────────────────────────────────────────────
 
 func TestHandleGetJobItems_Success(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-items-ok")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-items-ok")
 
-	insertJob(t, db, "job-items-1", userID, "import", "steam", "processing")
-	insertJobItem(t, db, "ji-items-1", "job-items-1", userID, "key-i1", "Game 1", "pending_review")
-	insertJobItem(t, db, "ji-items-2", "job-items-1", userID, "key-i2", "Game 2", "completed")
+	insertJob(t, testDB, "job-items-1", userID, "import", "steam", "processing")
+	insertJobItem(t, testDB, "ji-items-1", "job-items-1", userID, "key-i1", "Game 1", "pending_review")
+	insertJobItem(t, testDB, "ji-items-2", "job-items-1", userID, "key-i2", "Game 2", "completed")
 
 	rec := getAuth(t, e, "/api/jobs/job-items-1/items", token)
 	if rec.Code != http.StatusOK {
@@ -411,13 +411,13 @@ func TestHandleGetJobItems_Success(t *testing.T) {
 }
 
 func TestHandleGetJobItems_WithStatusFilter(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-items-filter")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-items-filter")
 
-	insertJob(t, db, "job-items-f", userID, "import", "steam", "processing")
-	insertJobItem(t, db, "ji-items-f1", "job-items-f", userID, "key-f1", "Game X", "pending_review")
-	insertJobItem(t, db, "ji-items-f2", "job-items-f", userID, "key-f2", "Game Y", "completed")
+	insertJob(t, testDB, "job-items-f", userID, "import", "steam", "processing")
+	insertJobItem(t, testDB, "ji-items-f1", "job-items-f", userID, "key-f1", "Game X", "pending_review")
+	insertJobItem(t, testDB, "ji-items-f2", "job-items-f", userID, "key-f2", "Game Y", "completed")
 
 	rec := getAuth(t, e, "/api/jobs/job-items-f/items?status=pending_review", token)
 	if rec.Code != http.StatusOK {
@@ -433,9 +433,9 @@ func TestHandleGetJobItems_WithStatusFilter(t *testing.T) {
 }
 
 func TestHandleGetJobItems_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	_, token := setupTagUser(t, db, e, "jobs-items-notfound")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	_, token := setupTagUser(t, testDB, e, "jobs-items-notfound")
 
 	rec := getAuth(t, e, "/api/jobs/nonexistent-job/items", token)
 	if rec.Code != http.StatusNotFound {
@@ -446,11 +446,11 @@ func TestHandleGetJobItems_NotFound(t *testing.T) {
 // ─── TestHandleRetryFailed ────────────────────────────────────────────────────
 
 func TestHandleRetryFailed_NoFailedItems(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-retry-nofail")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-retry-nofail")
 
-	insertJob(t, db, "job-retry-nf", userID, "import", "steam", "processing")
+	insertJob(t, testDB, "job-retry-nf", userID, "import", "steam", "processing")
 	// No failed items.
 
 	rec := postJSONAuth(t, e, "/api/jobs/job-retry-nf/retry-failed", nil, token)
@@ -467,12 +467,12 @@ func TestHandleRetryFailed_NoFailedItems(t *testing.T) {
 }
 
 func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-retry-withfail")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-retry-withfail")
 
-	insertJob(t, db, "job-retry-wf", userID, "import", "steam", "failed")
-	insertJobItem(t, db, "ji-retry-wf1", "job-retry-wf", userID, "key-rf1", "Failed Game", "failed")
+	insertJob(t, testDB, "job-retry-wf", userID, "import", "steam", "failed")
+	insertJobItem(t, testDB, "ji-retry-wf1", "job-retry-wf", userID, "key-rf1", "Failed Game", "failed")
 
 	rec := postJSONAuth(t, e, "/api/jobs/job-retry-wf/retry-failed", nil, token)
 	if rec.Code != http.StatusOK {
@@ -488,9 +488,9 @@ func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
 }
 
 func TestHandleRetryFailed_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	_, token := setupTagUser(t, db, e, "jobs-retry-notfound")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	_, token := setupTagUser(t, testDB, e, "jobs-retry-notfound")
 
 	rec := postJSONAuth(t, e, "/api/jobs/nonexistent-job/retry-failed", nil, token)
 	if rec.Code != http.StatusNotFound {
@@ -501,13 +501,13 @@ func TestHandleRetryFailed_NotFound(t *testing.T) {
 // ─── TestListJobs_WithFilters ─────────────────────────────────────────────────
 
 func TestListJobs_WithFilters(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-list-filters")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-list-filters")
 
-	insertJob(t, db, "job-filter-1", userID, "sync", "steam", "completed")
-	insertJob(t, db, "job-filter-2", userID, "import", "csv", "failed")
-	insertJob(t, db, "job-filter-3", userID, "sync", "psn", "processing")
+	insertJob(t, testDB, "job-filter-1", userID, "sync", "steam", "completed")
+	insertJob(t, testDB, "job-filter-2", userID, "import", "csv", "failed")
+	insertJob(t, testDB, "job-filter-3", userID, "sync", "psn", "processing")
 
 	t.Run("filter by job_type", func(t *testing.T) {
 		rec := getAuth(t, e, "/api/jobs?job_type=sync", token)
@@ -562,9 +562,9 @@ func TestListJobs_WithFilters(t *testing.T) {
 // ─── TestCancelJob_NotFound ───────────────────────────────────────────────────
 
 func TestCancelJob_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	_, token := setupTagUser(t, db, e, "jobs-cancel-notfound")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	_, token := setupTagUser(t, testDB, e, "jobs-cancel-notfound")
 
 	rec := postJSONAuth(t, e, "/api/jobs/nonexistent-job/cancel", nil, token)
 	if rec.Code != http.StatusNotFound {
@@ -575,9 +575,9 @@ func TestCancelJob_NotFound(t *testing.T) {
 // ─── TestDeleteJob_NotFound ───────────────────────────────────────────────────
 
 func TestDeleteJob_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	_, token := setupTagUser(t, db, e, "jobs-del-notfound")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	_, token := setupTagUser(t, testDB, e, "jobs-del-notfound")
 
 	rec := deleteAuth(t, e, "/api/jobs/nonexistent-job", token)
 	if rec.Code != http.StatusNotFound {
@@ -586,12 +586,12 @@ func TestDeleteJob_NotFound(t *testing.T) {
 }
 
 func TestHandleRetryFailed_SyncJobType(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-retry-sync")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-retry-sync")
 
-	insertJob(t, db, "job-retry-sync", userID, "sync", "steam", "failed")
-	insertJobItem(t, db, "ji-retry-sync1", "job-retry-sync", userID, "key-rs1", "Sync Game", "failed")
+	insertJob(t, testDB, "job-retry-sync", userID, "sync", "steam", "failed")
+	insertJobItem(t, testDB, "ji-retry-sync1", "job-retry-sync", userID, "key-rs1", "Sync Game", "failed")
 
 	rec := postJSONAuth(t, e, "/api/jobs/job-retry-sync/retry-failed", nil, token)
 	if rec.Code != http.StatusOK {
@@ -607,12 +607,12 @@ func TestHandleRetryFailed_SyncJobType(t *testing.T) {
 }
 
 func TestHandleRetryFailed_MetadataRefreshJobType(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e, _ := newTestEchoWithPool(t, db)
-	userID, token := setupTagUser(t, db, e, "jobs-retry-meta")
+	truncateAllTables(t)
+	e, _ := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-retry-meta")
 
-	insertJob(t, db, "job-retry-meta", userID, "metadata_refresh", "system", "failed")
-	insertJobItem(t, db, "ji-retry-meta1", "job-retry-meta", userID, "key-rm1", "Meta Game", "failed")
+	insertJob(t, testDB, "job-retry-meta", userID, "metadata_refresh", "system", "failed")
+	insertJobItem(t, testDB, "ji-retry-meta1", "job-retry-meta", userID, "key-rm1", "Meta Game", "failed")
 
 	rec := postJSONAuth(t, e, "/api/jobs/job-retry-meta/retry-failed", nil, token)
 	if rec.Code != http.StatusOK {

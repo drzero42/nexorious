@@ -23,7 +23,7 @@ func setupAdminUser(t *testing.T, db *bun.DB, handler interface {
 	t.Helper()
 	userID := "u-admin-" + suffix
 	username := "adm-" + suffix
-	insertAuthTestUser(t, db, userID, username, "password123", true, true)
+	insertAuthTestUser(t, testDB, userID, username, "password123", true, true)
 	token := loginAndGetToken(t, handler, username, "password123")
 	return userID, token
 }
@@ -35,7 +35,7 @@ func setupRegularUser(t *testing.T, db *bun.DB, handler interface {
 	t.Helper()
 	userID := "u-reg-" + suffix
 	username := "reg-" + suffix
-	insertAuthTestUser(t, db, userID, username, "password123", true, false)
+	insertAuthTestUser(t, testDB, userID, username, "password123", true, false)
 	token := loginAndGetToken(t, handler, username, "password123")
 	return userID, token
 }
@@ -43,10 +43,10 @@ func setupRegularUser(t *testing.T, db *bun.DB, handler interface {
 // ─── HandleCreate tests ──────────────────────────────────────────────────────
 
 func TestAdminCreateUser_HappyPath(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "create-hp")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "create-hp")
 
 	rec := postJSONAuth(t, e, "/api/auth/admin/users", map[string]any{
 		"username": "newbie",
@@ -79,7 +79,7 @@ func TestAdminCreateUser_HappyPath(t *testing.T) {
 
 	// Verify a real row exists with a working bcrypt hash.
 	var hash string
-	if err := db.QueryRowContext(context.Background(),
+	if err := testDB.QueryRowContext(context.Background(),
 		"SELECT password_hash FROM users WHERE username = ?", "newbie",
 	).Scan(&hash); err != nil {
 		t.Fatalf("query hash: %v", err)
@@ -90,11 +90,11 @@ func TestAdminCreateUser_HappyPath(t *testing.T) {
 }
 
 func TestAdminCreateUser_DuplicateUsername(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "create-dup")
-	insertAuthTestUser(t, db, "u-existing-dup", "taken", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "create-dup")
+	insertAuthTestUser(t, testDB, "u-existing-dup", "taken", "pw123456", true, false)
 
 	rec := postJSONAuth(t, e, "/api/auth/admin/users", map[string]any{
 		"username": "taken",
@@ -111,10 +111,10 @@ func TestAdminCreateUser_DuplicateUsername(t *testing.T) {
 }
 
 func TestAdminCreateUser_ShortUsername(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "create-shortuser")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "create-shortuser")
 
 	rec := postJSONAuth(t, e, "/api/auth/admin/users", map[string]any{
 		"username": "ab",
@@ -131,10 +131,10 @@ func TestAdminCreateUser_ShortUsername(t *testing.T) {
 }
 
 func TestAdminCreateUser_EmptyUsername(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "create-emptyuser")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "create-emptyuser")
 
 	rec := postJSONAuth(t, e, "/api/auth/admin/users", map[string]any{
 		"username": "   ",
@@ -151,10 +151,10 @@ func TestAdminCreateUser_EmptyUsername(t *testing.T) {
 }
 
 func TestAdminCreateUser_ShortPassword(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "create-shortpw")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "create-shortpw")
 
 	rec := postJSONAuth(t, e, "/api/auth/admin/users", map[string]any{
 		"username": "validuser",
@@ -171,10 +171,10 @@ func TestAdminCreateUser_ShortPassword(t *testing.T) {
 }
 
 func TestAdminCreateUser_EmptyPassword(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "create-emptypw")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "create-emptypw")
 
 	rec := postJSONAuth(t, e, "/api/auth/admin/users", map[string]any{
 		"username": "validuser",
@@ -191,10 +191,8 @@ func TestAdminCreateUser_EmptyPassword(t *testing.T) {
 }
 
 func TestAdminCreateUser_RequiresJWT(t *testing.T) {
-	db := setupAuthTestDB(t)
-	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
 	rec := postJSON(t, e, "/api/auth/admin/users", map[string]any{
 		"username": "newbie",
 		"password": "secret123",
@@ -205,10 +203,10 @@ func TestAdminCreateUser_RequiresJWT(t *testing.T) {
 }
 
 func TestAdminCreateUser_RequiresAdmin(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, regTok := setupRegularUser(t, db, e, "create-nonadm")
+	e := newTestEcho(t, testDB, cfg)
+	_, regTok := setupRegularUser(t, testDB, e, "create-nonadm")
 
 	rec := postJSONAuth(t, e, "/api/auth/admin/users", map[string]any{
 		"username": "newbie",
@@ -222,11 +220,11 @@ func TestAdminCreateUser_RequiresAdmin(t *testing.T) {
 // ─── HandleList tests ────────────────────────────────────────────────────────
 
 func TestAdminListUsers_HappyPath(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "list-hp")
-	insertAuthTestUser(t, db, "u-list-other", "bob", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "list-hp")
+	insertAuthTestUser(t, testDB, "u-list-other", "bob", "pw123456", true, false)
 
 	rec := getAuth(t, e, "/api/auth/admin/users", adminTok)
 	if rec.Code != http.StatusOK {
@@ -247,10 +245,10 @@ func TestAdminListUsers_HappyPath(t *testing.T) {
 }
 
 func TestAdminListUsers_RequiresAdmin(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, regTok := setupRegularUser(t, db, e, "list-nonadm")
+	e := newTestEcho(t, testDB, cfg)
+	_, regTok := setupRegularUser(t, testDB, e, "list-nonadm")
 
 	rec := getAuth(t, e, "/api/auth/admin/users", regTok)
 	if rec.Code != http.StatusForbidden {
@@ -259,10 +257,8 @@ func TestAdminListUsers_RequiresAdmin(t *testing.T) {
 }
 
 func TestAdminListUsers_RequiresJWT(t *testing.T) {
-	db := setupAuthTestDB(t)
-	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/admin/users", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -274,11 +270,11 @@ func TestAdminListUsers_RequiresJWT(t *testing.T) {
 // ─── HandleGet tests ─────────────────────────────────────────────────────────
 
 func TestAdminGetUser_HappyPath(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "get-hp")
-	insertAuthTestUser(t, db, "u-get-1", "targetuser", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "get-hp")
+	insertAuthTestUser(t, testDB, "u-get-1", "targetuser", "pw123456", true, false)
 
 	rec := getAuth(t, e, "/api/auth/admin/users/u-get-1", adminTok)
 	if rec.Code != http.StatusOK {
@@ -298,10 +294,10 @@ func TestAdminGetUser_HappyPath(t *testing.T) {
 }
 
 func TestAdminGetUser_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "get-nf")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "get-nf")
 
 	rec := getAuth(t, e, "/api/auth/admin/users/nonexistent-id", adminTok)
 	if rec.Code != http.StatusNotFound {
@@ -315,10 +311,10 @@ func TestAdminGetUser_NotFound(t *testing.T) {
 }
 
 func TestAdminGetUser_RequiresAdmin(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, regTok := setupRegularUser(t, db, e, "get-nonadm")
+	e := newTestEcho(t, testDB, cfg)
+	_, regTok := setupRegularUser(t, testDB, e, "get-nonadm")
 
 	rec := getAuth(t, e, "/api/auth/admin/users/any-id", regTok)
 	if rec.Code != http.StatusForbidden {
@@ -329,11 +325,11 @@ func TestAdminGetUser_RequiresAdmin(t *testing.T) {
 // ─── HandleUpdate tests ──────────────────────────────────────────────────────
 
 func TestAdminUpdateUser_ToggleAdmin(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "upd-toggle")
-	insertAuthTestUser(t, db, "u-upd-1", "targetuser", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "upd-toggle")
+	insertAuthTestUser(t, testDB, "u-upd-1", "targetuser", "pw123456", true, false)
 
 	tru := true
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/u-upd-1", map[string]any{
@@ -350,11 +346,11 @@ func TestAdminUpdateUser_ToggleAdmin(t *testing.T) {
 }
 
 func TestAdminUpdateUser_RenameUsername(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "upd-rename")
-	insertAuthTestUser(t, db, "u-upd-rn", "oldname", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "upd-rename")
+	insertAuthTestUser(t, testDB, "u-upd-rn", "oldname", "pw123456", true, false)
 
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/u-upd-rn", map[string]any{
 		"username": "newname",
@@ -370,12 +366,12 @@ func TestAdminUpdateUser_RenameUsername(t *testing.T) {
 }
 
 func TestAdminUpdateUser_DuplicateUsername(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "upd-dup")
-	insertAuthTestUser(t, db, "u-upd-a", "alice", "pw123456", true, false)
-	insertAuthTestUser(t, db, "u-upd-b", "bob", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "upd-dup")
+	insertAuthTestUser(t, testDB, "u-upd-a", "alice", "pw123456", true, false)
+	insertAuthTestUser(t, testDB, "u-upd-b", "bob", "pw123456", true, false)
 
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/u-upd-a", map[string]any{
 		"username": "bob",
@@ -391,10 +387,10 @@ func TestAdminUpdateUser_DuplicateUsername(t *testing.T) {
 }
 
 func TestAdminUpdateUser_DeactivateSelf_Rejected(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	adminID, adminTok := setupAdminUser(t, db, e, "upd-self-deact")
+	e := newTestEcho(t, testDB, cfg)
+	adminID, adminTok := setupAdminUser(t, testDB, e, "upd-self-deact")
 
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/"+adminID, map[string]any{
 		"is_active": false,
@@ -410,10 +406,10 @@ func TestAdminUpdateUser_DeactivateSelf_Rejected(t *testing.T) {
 }
 
 func TestAdminUpdateUser_DemoteSelf_Rejected(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	adminID, adminTok := setupAdminUser(t, db, e, "upd-self-demote")
+	e := newTestEcho(t, testDB, cfg)
+	adminID, adminTok := setupAdminUser(t, testDB, e, "upd-self-demote")
 
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/"+adminID, map[string]any{
 		"is_admin": false,
@@ -429,10 +425,10 @@ func TestAdminUpdateUser_DemoteSelf_Rejected(t *testing.T) {
 }
 
 func TestAdminUpdateUser_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "upd-404")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "upd-404")
 
 	tru := true
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/missing-id", map[string]any{
@@ -444,12 +440,12 @@ func TestAdminUpdateUser_NotFound(t *testing.T) {
 }
 
 func TestAdminUpdateUser_DeactivateInvalidatesSessions(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "upd-deact-sess")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "upd-deact-sess")
 
-	insertAuthTestUser(t, db, "u-upd-deact", "target", "pw123456", true, false)
+	insertAuthTestUser(t, testDB, "u-upd-deact", "target", "pw123456", true, false)
 	targetTok := loginAndGetToken(t, e, "target", "pw123456")
 
 	// Confirm target token works.
@@ -468,7 +464,7 @@ func TestAdminUpdateUser_DeactivateInvalidatesSessions(t *testing.T) {
 
 	// Sessions table should be empty for the target.
 	var count int
-	if err := db.QueryRowContext(context.Background(),
+	if err := testDB.QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM user_sessions WHERE user_id = ?`, "u-upd-deact",
 	).Scan(&count); err != nil {
 		t.Fatalf("count sessions: %v", err)
@@ -485,12 +481,12 @@ func TestAdminUpdateUser_DeactivateInvalidatesSessions(t *testing.T) {
 }
 
 func TestAdminUpdateUser_PromoteDoesNotInvalidateSessions(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "upd-promote")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "upd-promote")
 
-	insertAuthTestUser(t, db, "u-upd-promo", "promote-target", "pw123456", true, false)
+	insertAuthTestUser(t, testDB, "u-upd-promo", "promote-target", "pw123456", true, false)
 	targetTok := loginAndGetToken(t, e, "promote-target", "pw123456")
 
 	// Promote.
@@ -504,7 +500,7 @@ func TestAdminUpdateUser_PromoteDoesNotInvalidateSessions(t *testing.T) {
 
 	// Sessions for the target should still exist.
 	var count int
-	if err := db.QueryRowContext(context.Background(),
+	if err := testDB.QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM user_sessions WHERE user_id = ?`, "u-upd-promo",
 	).Scan(&count); err != nil {
 		t.Fatalf("count sessions: %v", err)
@@ -526,10 +522,10 @@ func TestAdminUpdateUser_PromoteDoesNotInvalidateSessions(t *testing.T) {
 }
 
 func TestAdminUpdateUser_RequiresAdmin(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, regTok := setupRegularUser(t, db, e, "upd-nonadm")
+	e := newTestEcho(t, testDB, cfg)
+	_, regTok := setupRegularUser(t, testDB, e, "upd-nonadm")
 
 	tru := true
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/any-id", map[string]any{
@@ -543,12 +539,12 @@ func TestAdminUpdateUser_RequiresAdmin(t *testing.T) {
 // ─── HandleResetPassword tests ───────────────────────────────────────────────
 
 func TestAdminResetPassword_HappyPath(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "rp-hp")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "rp-hp")
 
-	insertAuthTestUser(t, db, "u-rp-1", "rpuser", "oldpassword", true, false)
+	insertAuthTestUser(t, testDB, "u-rp-1", "rpuser", "oldpassword", true, false)
 	oldTok := loginAndGetToken(t, e, "rpuser", "oldpassword")
 
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/u-rp-1/password", map[string]any{
@@ -577,11 +573,11 @@ func TestAdminResetPassword_HappyPath(t *testing.T) {
 }
 
 func TestAdminResetPassword_ShortPassword(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "rp-short")
-	insertAuthTestUser(t, db, "u-rp-short", "rpshort", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "rp-short")
+	insertAuthTestUser(t, testDB, "u-rp-short", "rpshort", "pw123456", true, false)
 
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/u-rp-short/password", map[string]any{
 		"new_password": "12345",
@@ -597,11 +593,11 @@ func TestAdminResetPassword_ShortPassword(t *testing.T) {
 }
 
 func TestAdminResetPassword_EmptyPassword(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "rp-empty")
-	insertAuthTestUser(t, db, "u-rp-empty", "rpempty", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "rp-empty")
+	insertAuthTestUser(t, testDB, "u-rp-empty", "rpempty", "pw123456", true, false)
 
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/u-rp-empty/password", map[string]any{
 		"new_password": "",
@@ -617,10 +613,10 @@ func TestAdminResetPassword_EmptyPassword(t *testing.T) {
 }
 
 func TestAdminResetPassword_UnknownUser(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "rp-nf")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "rp-nf")
 
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/missing/password", map[string]any{
 		"new_password": "newpassword456",
@@ -631,10 +627,10 @@ func TestAdminResetPassword_UnknownUser(t *testing.T) {
 }
 
 func TestAdminResetPassword_AdminResetsOwnPassword(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	adminID, adminTok := setupAdminUser(t, db, e, "rp-self")
+	e := newTestEcho(t, testDB, cfg)
+	adminID, adminTok := setupAdminUser(t, testDB, e, "rp-self")
 
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/"+adminID+"/password", map[string]any{
 		"new_password": "newadminpass",
@@ -651,10 +647,10 @@ func TestAdminResetPassword_AdminResetsOwnPassword(t *testing.T) {
 }
 
 func TestAdminResetPassword_RequiresAdmin(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, regTok := setupRegularUser(t, db, e, "rp-nonadm")
+	e := newTestEcho(t, testDB, cfg)
+	_, regTok := setupRegularUser(t, testDB, e, "rp-nonadm")
 
 	rec := putJSONAuth(t, e, "/api/auth/admin/users/any-id/password", map[string]any{
 		"new_password": "newpassword456",
@@ -667,13 +663,13 @@ func TestAdminResetPassword_RequiresAdmin(t *testing.T) {
 // ─── HandleDeletionImpact tests ──────────────────────────────────────────────
 
 func TestAdminDeletionImpact_HappyPath(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "di-hp")
-	insertAuthTestUser(t, db, "u-di-1", "ditarget", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "di-hp")
+	insertAuthTestUser(t, testDB, "u-di-1", "ditarget", "pw123456", true, false)
 
-	seedDeletionImpactRows(t, db, "u-di-1")
+	seedDeletionImpactRows(t, testDB, "u-di-1")
 
 	rec := getAuth(t, e, "/api/auth/admin/users/u-di-1/deletion-impact", adminTok)
 	if rec.Code != http.StatusOK {
@@ -712,10 +708,10 @@ func TestAdminDeletionImpact_HappyPath(t *testing.T) {
 }
 
 func TestAdminDeletionImpact_Self_Rejected(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	adminID, adminTok := setupAdminUser(t, db, e, "di-self")
+	e := newTestEcho(t, testDB, cfg)
+	adminID, adminTok := setupAdminUser(t, testDB, e, "di-self")
 
 	rec := getAuth(t, e, "/api/auth/admin/users/"+adminID+"/deletion-impact", adminTok)
 	if rec.Code != http.StatusBadRequest {
@@ -729,10 +725,10 @@ func TestAdminDeletionImpact_Self_Rejected(t *testing.T) {
 }
 
 func TestAdminDeletionImpact_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "di-nf")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "di-nf")
 
 	rec := getAuth(t, e, "/api/auth/admin/users/missing-id/deletion-impact", adminTok)
 	if rec.Code != http.StatusNotFound {
@@ -741,10 +737,10 @@ func TestAdminDeletionImpact_NotFound(t *testing.T) {
 }
 
 func TestAdminDeletionImpact_RequiresAdmin(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, regTok := setupRegularUser(t, db, e, "di-nonadm")
+	e := newTestEcho(t, testDB, cfg)
+	_, regTok := setupRegularUser(t, testDB, e, "di-nonadm")
 
 	rec := getAuth(t, e, "/api/auth/admin/users/any-id/deletion-impact", regTok)
 	if rec.Code != http.StatusForbidden {
@@ -755,11 +751,11 @@ func TestAdminDeletionImpact_RequiresAdmin(t *testing.T) {
 // ─── HandleDelete tests ──────────────────────────────────────────────────────
 
 func TestAdminDeleteUser_HappyPath(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "del-hp")
-	insertAuthTestUser(t, db, "u-del-1", "deltarget", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "del-hp")
+	insertAuthTestUser(t, testDB, "u-del-1", "deltarget", "pw123456", true, false)
 
 	rec := deleteAuth(t, e, "/api/auth/admin/users/u-del-1", adminTok)
 	if rec.Code != http.StatusOK {
@@ -773,7 +769,7 @@ func TestAdminDeleteUser_HappyPath(t *testing.T) {
 
 	// Row gone.
 	var count int
-	if err := db.QueryRowContext(context.Background(),
+	if err := testDB.QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM users WHERE id = ?`, "u-del-1",
 	).Scan(&count); err != nil {
 		t.Fatalf("count: %v", err)
@@ -784,17 +780,17 @@ func TestAdminDeleteUser_HappyPath(t *testing.T) {
 }
 
 func TestAdminDeleteUser_CascadesToRelatedTables(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "del-cascade")
-	insertAuthTestUser(t, db, "u-del-cascade", "cascadetarget", "pw123456", true, false)
-	seedDeletionImpactRows(t, db, "u-del-cascade")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "del-cascade")
+	insertAuthTestUser(t, testDB, "u-del-cascade", "cascadetarget", "pw123456", true, false)
+	seedDeletionImpactRows(t, testDB, "u-del-cascade")
 
 	// Sanity-check seeding before delete.
 	for _, table := range []string{"user_games", "tags", "jobs", "user_sessions", "user_sync_configs", "external_games", "job_items"} {
 		var c int
-		if err := db.QueryRowContext(context.Background(),
+		if err := testDB.QueryRowContext(context.Background(),
 			"SELECT COUNT(*) FROM "+table+" WHERE user_id = ?", "u-del-cascade",
 		).Scan(&c); err != nil {
 			t.Fatalf("pre-count %s: %v", table, err)
@@ -812,7 +808,7 @@ func TestAdminDeleteUser_CascadesToRelatedTables(t *testing.T) {
 	// All per-user tables must be empty afterwards.
 	for _, table := range []string{"user_games", "tags", "jobs", "user_sessions", "user_sync_configs", "external_games", "job_items"} {
 		var c int
-		if err := db.QueryRowContext(context.Background(),
+		if err := testDB.QueryRowContext(context.Background(),
 			"SELECT COUNT(*) FROM "+table+" WHERE user_id = ?", "u-del-cascade",
 		).Scan(&c); err != nil {
 			t.Fatalf("post-count %s: %v", table, err)
@@ -824,10 +820,10 @@ func TestAdminDeleteUser_CascadesToRelatedTables(t *testing.T) {
 }
 
 func TestAdminDeleteUser_Self_Rejected(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	adminID, adminTok := setupAdminUser(t, db, e, "del-self")
+	e := newTestEcho(t, testDB, cfg)
+	adminID, adminTok := setupAdminUser(t, testDB, e, "del-self")
 
 	rec := deleteAuth(t, e, "/api/auth/admin/users/"+adminID, adminTok)
 	if rec.Code != http.StatusBadRequest {
@@ -841,7 +837,7 @@ func TestAdminDeleteUser_Self_Rejected(t *testing.T) {
 
 	// Self row still exists.
 	var count int
-	_ = db.QueryRowContext(context.Background(),
+	_ = testDB.QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM users WHERE id = ?`, adminID,
 	).Scan(&count)
 	if count != 1 {
@@ -850,10 +846,10 @@ func TestAdminDeleteUser_Self_Rejected(t *testing.T) {
 }
 
 func TestAdminDeleteUser_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "del-nf")
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "del-nf")
 
 	rec := deleteAuth(t, e, "/api/auth/admin/users/missing", adminTok)
 	if rec.Code != http.StatusNotFound {
@@ -862,10 +858,10 @@ func TestAdminDeleteUser_NotFound(t *testing.T) {
 }
 
 func TestAdminDeleteUser_RequiresAdmin(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, regTok := setupRegularUser(t, db, e, "del-nonadm")
+	e := newTestEcho(t, testDB, cfg)
+	_, regTok := setupRegularUser(t, testDB, e, "del-nonadm")
 
 	rec := deleteAuth(t, e, "/api/auth/admin/users/any-id", regTok)
 	if rec.Code != http.StatusForbidden {
@@ -876,11 +872,11 @@ func TestAdminDeleteUser_RequiresAdmin(t *testing.T) {
 // ─── Route ordering test ─────────────────────────────────────────────────────
 
 func TestAdminUsers_RouteOrdering_PasswordVsID(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEcho(t, db, cfg)
-	_, adminTok := setupAdminUser(t, db, e, "ro")
-	insertAuthTestUser(t, db, "u-ro-1", "rotarget", "pw123456", true, false)
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "ro")
+	insertAuthTestUser(t, testDB, "u-ro-1", "rotarget", "pw123456", true, false)
 
 	// PUT /:id/password must not collide with PUT /:id — it should still reset
 	// the password rather than running a partial-update.
@@ -927,7 +923,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	ctx := context.Background()
 
 	// Insert a game row that user_games can reference.
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO games (id, title) VALUES (10001, 'TestGame1'), (10002, 'TestGame2')
 		 ON CONFLICT DO NOTHING`,
 	); err != nil {
@@ -937,7 +933,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	// user_games (2)
 	for i, gameID := range []int{10001, 10002} {
 		ugID := userID + "-ug-" + intToStr(i)
-		if _, err := db.ExecContext(ctx,
+		if _, err := testDB.ExecContext(ctx,
 			`INSERT INTO user_games (id, user_id, game_id) VALUES (?, ?, ?)`,
 			ugID, userID, gameID,
 		); err != nil {
@@ -947,7 +943,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 
 	// tags (3)
 	for i := range 3 {
-		if _, err := db.ExecContext(ctx,
+		if _, err := testDB.ExecContext(ctx,
 			`INSERT INTO tags (id, user_id, name) VALUES (?, ?, ?)`,
 			userID+"-tag-"+intToStr(i), userID, "tag"+intToStr(i),
 		); err != nil {
@@ -957,21 +953,21 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 
 	// jobs: 1 import, 2 export, 1 sync
 	importJobID := userID + "-job-import"
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source) VALUES (?, ?, 'import', 'nexorious')`,
 		importJobID, userID,
 	); err != nil {
 		t.Fatalf("seed import job: %v", err)
 	}
 	for i := range 2 {
-		if _, err := db.ExecContext(ctx,
+		if _, err := testDB.ExecContext(ctx,
 			`INSERT INTO jobs (id, user_id, job_type, source) VALUES (?, ?, 'export', 'csv')`,
 			userID+"-job-export-"+intToStr(i), userID,
 		); err != nil {
 			t.Fatalf("seed export job: %v", err)
 		}
 	}
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source) VALUES (?, ?, 'sync', 'steam')`,
 		userID+"-job-sync", userID,
 	); err != nil {
@@ -979,7 +975,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	}
 
 	// job_items (1) attached to the import job.
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title)
 		 VALUES (?, ?, ?, 'k1', 'TestItem')`,
 		userID+"-ji-1", importJobID, userID,
@@ -988,7 +984,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	}
 
 	// user_sync_configs (1)
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO user_sync_configs (id, user_id, storefront) VALUES (?, ?, 'steam')`,
 		userID+"-cfg", userID,
 	); err != nil {
@@ -997,7 +993,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 
 	// user_sessions (1) — use a unique token hash so it doesn't collide with
 	// any token issued by setupAdminUser/loginAndGetToken in this test.
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
 		 VALUES (gen_random_uuid()::text, ?, ?, ?, now() + interval '30 days')`,
 		userID, auth.HashToken(userID+"-seed-access"), auth.HashToken(userID+"-seed-refresh"),
@@ -1006,7 +1002,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	}
 
 	// external_games (1)
-	if _, err := db.ExecContext(ctx,
+	if _, err := testDB.ExecContext(ctx,
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title)
 		 VALUES (?, ?, 'steam', 'ext-1', 'External')`,
 		userID+"-eg", userID,

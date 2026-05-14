@@ -5,7 +5,6 @@ package tasks
 
 import (
 	"testing"
-	"time"
 
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 )
@@ -168,14 +167,5 @@ func TestIgdbMetadataToGame_InvalidReleaseDate(t *testing.T) {
 	game := igdbMetadataToGame(md)
 	if game.ReleaseDate != nil {
 		t.Error("expected nil ReleaseDate for invalid date string")
-	}
-}
-
-func TestIgdbMetadataToGame_LastUpdatedSet(t *testing.T) {
-	before := time.Now().UTC().Add(-time.Second)
-	md := &igdb.GameMetadata{IgdbID: 1, Title: "Game"}
-	game := igdbMetadataToGame(md)
-	if game.LastUpdated.Before(before) {
-		t.Error("expected LastUpdated to be set to approximately now")
 	}
 }

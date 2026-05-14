@@ -81,12 +81,12 @@ func validExportJSON(t *testing.T, n int) []byte {
 // ─── Import tests ─────────────────────────────────────────────────────────────
 
 func TestImportNexorious_NoFile(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	_, token := setupTagUser(t, db, e, "imp-nofile")
+	_, token := setupTagUser(t, testDB, e, "imp-nofile")
 
 	// Post multipart without any file field.
 	var buf bytes.Buffer
@@ -104,12 +104,12 @@ func TestImportNexorious_NoFile(t *testing.T) {
 }
 
 func TestImportNexorious_InvalidJSON(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	_, token := setupTagUser(t, db, e, "imp-badjson")
+	_, token := setupTagUser(t, testDB, e, "imp-badjson")
 
 	rec := postMultipartFile(t, e, "/api/import/nexorious", "export.json", []byte("not valid json{{{"), token)
 
@@ -119,12 +119,12 @@ func TestImportNexorious_InvalidJSON(t *testing.T) {
 }
 
 func TestImportNexorious_WrongVersion(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	_, token := setupTagUser(t, db, e, "imp-wrongver")
+	_, token := setupTagUser(t, testDB, e, "imp-wrongver")
 
 	wrongVersion := map[string]any{
 		"export_version": "1.0",
@@ -149,12 +149,12 @@ func TestImportNexorious_WrongVersion(t *testing.T) {
 }
 
 func TestImportNexorious_EmptyGames(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	_, token := setupTagUser(t, db, e, "imp-empty")
+	_, token := setupTagUser(t, testDB, e, "imp-empty")
 
 	emptyGames := map[string]any{
 		"export_version": "1.2",
@@ -170,12 +170,12 @@ func TestImportNexorious_EmptyGames(t *testing.T) {
 }
 
 func TestImportNexorious_Success(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	_, token := setupTagUser(t, db, e, "imp-success")
+	_, token := setupTagUser(t, testDB, e, "imp-success")
 
 	data := validExportJSON(t, 3)
 	rec := postMultipartFile(t, e, "/api/import/nexorious", "export.json", data, token)
@@ -205,12 +205,12 @@ func TestImportNexorious_Success(t *testing.T) {
 }
 
 func TestImportNexorious_Conflict(t *testing.T) {
-	db := setupAuthTestDB(t)
-	pool := worker.NewPool(db)
+	truncateAllTables(t)
+	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, db, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg, pool)
 
-	_, token := setupTagUser(t, db, e, "imp-conflict")
+	_, token := setupTagUser(t, testDB, e, "imp-conflict")
 
 	data := validExportJSON(t, 2)
 

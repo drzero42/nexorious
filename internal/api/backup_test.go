@@ -23,7 +23,7 @@ func newTestEchoBackup(t *testing.T, db *bun.DB, svc *backup.Service) interface 
 	t.Helper()
 	cfg := testCfg()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, db, "", nil, svc, nil)
+	return api.New(cfg, m, testDB, "", nil, svc, nil)
 }
 
 // ---------------------------------------------------------------------------
@@ -31,9 +31,9 @@ func newTestEchoBackup(t *testing.T, db *bun.DB, svc *backup.Service) interface 
 // ---------------------------------------------------------------------------
 
 func TestHandleGetConfig_Success(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEcho(t, db, testCfg())
-	_, tok := setupAdminUser(t, db, e, "backup-getcfg")
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	_, tok := setupAdminUser(t, testDB, e, "backup-getcfg")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/backups/config", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -57,9 +57,9 @@ func TestHandleGetConfig_Success(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleUpdateConfig_InvalidSchedule(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEcho(t, db, testCfg())
-	_, tok := setupAdminUser(t, db, e, "backup-ucfg-sch")
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	_, tok := setupAdminUser(t, testDB, e, "backup-ucfg-sch")
 
 	body, _ := json.Marshal(map[string]any{
 		"schedule":        "biweekly",
@@ -80,9 +80,9 @@ func TestHandleUpdateConfig_InvalidSchedule(t *testing.T) {
 }
 
 func TestHandleUpdateConfig_InvalidRetentionMode(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEcho(t, db, testCfg())
-	_, tok := setupAdminUser(t, db, e, "backup-ucfg-ret")
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	_, tok := setupAdminUser(t, testDB, e, "backup-ucfg-ret")
 
 	body, _ := json.Marshal(map[string]any{
 		"schedule":        "daily",
@@ -103,9 +103,9 @@ func TestHandleUpdateConfig_InvalidRetentionMode(t *testing.T) {
 }
 
 func TestHandleUpdateConfig_InvalidRetentionValue(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEcho(t, db, testCfg())
-	_, tok := setupAdminUser(t, db, e, "backup-ucfg-retval")
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	_, tok := setupAdminUser(t, testDB, e, "backup-ucfg-retval")
 
 	body, _ := json.Marshal(map[string]any{
 		"schedule":        "daily",
@@ -126,9 +126,9 @@ func TestHandleUpdateConfig_InvalidRetentionValue(t *testing.T) {
 }
 
 func TestHandleUpdateConfig_InvalidCronTime(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEcho(t, db, testCfg())
-	_, tok := setupAdminUser(t, db, e, "backup-ucfg-cron")
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	_, tok := setupAdminUser(t, testDB, e, "backup-ucfg-cron")
 
 	body, _ := json.Marshal(map[string]any{
 		"schedule":        "weekly",
@@ -149,9 +149,9 @@ func TestHandleUpdateConfig_InvalidCronTime(t *testing.T) {
 }
 
 func TestHandleUpdateConfig_Success(t *testing.T) {
-	db := setupAuthTestDB(t)
-	e := newTestEcho(t, db, testCfg())
-	_, tok := setupAdminUser(t, db, e, "backup-ucfg-ok")
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	_, tok := setupAdminUser(t, testDB, e, "backup-ucfg-ok")
 
 	body, _ := json.Marshal(map[string]any{
 		"schedule":        "daily",
@@ -176,12 +176,12 @@ func TestHandleUpdateConfig_Success(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleListBackups_EmptyList(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
-	e := newTestEchoBackup(t, db, svc)
-	_, tok := setupAdminUser(t, db, e, "backup-list-empty")
+	e := newTestEchoBackup(t, testDB, svc)
+	_, tok := setupAdminUser(t, testDB, e, "backup-list-empty")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/backups", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -205,12 +205,12 @@ func TestHandleListBackups_EmptyList(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleDeleteBackup_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
-	e := newTestEchoBackup(t, db, svc)
-	_, tok := setupAdminUser(t, db, e, "backup-del-notfound")
+	e := newTestEchoBackup(t, testDB, svc)
+	_, tok := setupAdminUser(t, testDB, e, "backup-del-notfound")
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/admin/backups/nonexistent-backup", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -227,12 +227,12 @@ func TestHandleDeleteBackup_NotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleDownloadBackup_NotFound(t *testing.T) {
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
-	e := newTestEchoBackup(t, db, svc)
-	_, tok := setupAdminUser(t, db, e, "backup-dl-notfound")
+	e := newTestEchoBackup(t, testDB, svc)
+	_, tok := setupAdminUser(t, testDB, e, "backup-dl-notfound")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/backups/nonexistent/download", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -254,12 +254,12 @@ func TestHandleRestore_MissingConfirm(t *testing.T) {
 		t.Skip("psql not available — handler returns 503 before checking confirm")
 	}
 
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
-	e := newTestEchoBackup(t, db, svc)
-	_, tok := setupAdminUser(t, db, e, "backup-restore-noconfirm")
+	e := newTestEchoBackup(t, testDB, svc)
+	_, tok := setupAdminUser(t, testDB, e, "backup-restore-noconfirm")
 
 	body, _ := json.Marshal(map[string]any{"confirm": false})
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/backups/backup-123/restore", bytes.NewReader(body))
@@ -279,12 +279,12 @@ func TestHandleRestore_PsqlUnavailable(t *testing.T) {
 		t.Skip("psql is available — cannot test unavailable branch")
 	}
 
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
-	e := newTestEchoBackup(t, db, svc)
-	_, tok := setupAdminUser(t, db, e, "backup-restore-nopsql")
+	e := newTestEchoBackup(t, testDB, svc)
+	_, tok := setupAdminUser(t, testDB, e, "backup-restore-nopsql")
 
 	body, _ := json.Marshal(map[string]any{"confirm": true})
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/backups/backup-123/restore", bytes.NewReader(body))
@@ -308,12 +308,12 @@ func TestHandleRestoreUpload_MissingFile(t *testing.T) {
 		t.Skip("psql not available")
 	}
 
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
-	e := newTestEchoBackup(t, db, svc)
-	_, tok := setupAdminUser(t, db, e, "backup-upload-nofile")
+	e := newTestEchoBackup(t, testDB, svc)
+	_, tok := setupAdminUser(t, testDB, e, "backup-upload-nofile")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/backups/restore/upload", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -335,12 +335,12 @@ func TestHandleCreateBackup_PgDumpUnavailable(t *testing.T) {
 		t.Skip("pg_dump is available — cannot test unavailable branch")
 	}
 
-	db := setupAuthTestDB(t)
+	truncateAllTables(t)
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
-	e := newTestEchoBackup(t, db, svc)
-	_, tok := setupAdminUser(t, db, e, "backup-create-nopgdump")
+	e := newTestEchoBackup(t, testDB, svc)
+	_, tok := setupAdminUser(t, testDB, e, "backup-create-nopgdump")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/backups", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
