@@ -9,6 +9,7 @@ import (
 
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 )
 
@@ -202,7 +203,7 @@ func TestHealth_ReportsIGDBConfiguredTrue(t *testing.T) {
 	cfg := testCfg()
 	cfg.IGDBClientID = "test-id"
 	cfg.IGDBClientSecret = "test-secret"
-	igdbClient := igdb.NewClient(cfg)
+	igdbClient := igdb.NewClient(cfg, ratelimit.NewLocal(100, 100))
 	e := api.New(cfg, migrator, nil, "", igdbClient, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)

@@ -103,6 +103,19 @@ Validate required values.
   {{- fail "DB connection: at most one of databaseUrl, databaseUrlFrom, or individual db*From fields may be configured" }}
 {{- end -}}
 
+{{/* --- individual db*From: all-or-nothing check --- */}}
+{{/* modeC is true when ANY db*From.name is set. All five must be set together. */}}
+{{- $allDbIndividual := and
+  (not (empty (dig "name" "" (default dict .Values.nexorious.dbHostFrom))))
+  (not (empty (dig "name" "" (default dict .Values.nexorious.dbPortFrom))))
+  (not (empty (dig "name" "" (default dict .Values.nexorious.dbUserFrom))))
+  (not (empty (dig "name" "" (default dict .Values.nexorious.dbPasswordFrom))))
+  (not (empty (dig "name" "" (default dict .Values.nexorious.dbNameFrom))))
+-}}
+{{- if and $modeC (not $allDbIndividual) -}}
+  {{- fail "db*From individual-keys mode: all five fields (dbHostFrom, dbPortFrom, dbUserFrom, dbPasswordFrom, dbNameFrom) must be configured together" }}
+{{- end -}}
+
 {{/* --- postgresql-disabled guard --- */}}
 {{- $postgresqlEnabled := dig "postgresql" "enabled" true .Values.controllers -}}
 {{- if not $postgresqlEnabled -}}

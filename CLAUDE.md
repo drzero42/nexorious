@@ -23,10 +23,12 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 | Build backend            | `make build`                                             |
 | Build frontend           | `make frontend`                                          |
 | Build everything         | `make`                                                   |
-| Run server               | `./nexorious`                                            |
-| Run tests (Go)           | `go test -timeout 300s ./...`                            |
+| Run server               | `./nexorious` or `./nexorious serve`                     |
+| Run migrations           | `./nexorious migrate`                                    |
+| Migration status         | `./nexorious migrate status`                             |
+| Run tests (Go)           | `go test -timeout 600s ./...`                            |
 | Run single test          | `go test ./internal/api/... -run TestGamesList -v`       |
-| Run tests with coverage  | `go test -cover ./...`                                   |
+| Run tests with coverage  | `go test -timeout 600s -cover ./...`                     |
 | Type check (frontend)    | `npm run check`  (from `ui/frontend/`)                   |
 | Run frontend tests       | `npm run test`   (from `ui/frontend/`)                   |
 | Lint Go                  | `golangci-lint run`                                      |

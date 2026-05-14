@@ -16,6 +16,7 @@ import (
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/db/models"
 	"github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 )
 var gameIDCounter int32
@@ -177,7 +178,7 @@ func newTestEchoWithIGDB(t *testing.T, db *bun.DB) interface {
 } {
 	t.Helper()
 	cfg := testCfg() // no IGDB credentials
-	igdbClient := igdb.NewClient(cfg)
+	igdbClient := igdb.NewClient(cfg, ratelimit.NewLocal(100, 100))
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	return api.New(cfg, m, db, "", igdbClient, nil, nil)
 }
@@ -223,5 +224,52 @@ func TestImportFromIGDB_NotConfigured(t *testing.T) {
 	rec := postAuth(t, e, "/api/games/igdb-import", token, body)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ─── IGDB input validation tests ───────────────────────────────────────────
+
+func TestSearchIGDB_EmptyQuery(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e := newTestEchoWithIGDB(t, db)
+
+	insertAuthTestUser(t, db, "u-igdb-4", "igdbuser4", "pass123", true, false)
+	insertAuthTestSession(t, db, "u-igdb-4", "access-igdb-4", "refresh-igdb-4", 1)
+	token := loginAndGetToken(t, e, "igdbuser4", "pass123")
+
+	body := `{"query": "", "limit": 10}`
+	rec := postAuth(t, e, "/api/games/search/igdb", token, body)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty query, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGetIGDBGame_InvalidID(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e := newTestEchoWithIGDB(t, db)
+
+	insertAuthTestUser(t, db, "u-igdb-5", "igdbuser5", "pass123", true, false)
+	insertAuthTestSession(t, db, "u-igdb-5", "access-igdb-5", "refresh-igdb-5", 1)
+	token := loginAndGetToken(t, e, "igdbuser5", "pass123")
+
+	rec := getAuth(t, e, "/api/games/igdb/not-a-number", token)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid IGDB ID, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestImportFromIGDB_MissingIGDBID(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e := newTestEchoWithIGDB(t, db)
+
+	insertAuthTestUser(t, db, "u-igdb-6", "igdbuser6", "pass123", true, false)
+	insertAuthTestSession(t, db, "u-igdb-6", "access-igdb-6", "refresh-igdb-6", 1)
+	token := loginAndGetToken(t, e, "igdbuser6", "pass123")
+
+	// Missing igdb_id (0 value) should return bad request.
+	body := `{"igdb_id": 0}`
+	rec := postAuth(t, e, "/api/games/igdb-import", token, body)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing igdb_id, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

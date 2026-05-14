@@ -150,6 +150,10 @@ controllers:
                 name: '{{ include "nexorious-go.credentialsSecretName" . }}'
                 key: POSTGRES_PASSWORD
           PGDATA: /var/lib/postgresql/data/pgdata
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
         # -- Default resources for the postgres container. Operators should
         # -- override these for production workloads.
         resources:
@@ -216,6 +220,11 @@ controllers:
         command:
           - /app/nexorious
           - migrate
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         # -- Default resources for the migrate initContainer. Operators
         # -- should override these for production workloads.
         resources:
@@ -289,6 +298,11 @@ controllers:
         command:
           - /app/nexorious
           - serve
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         # -- Default resources for the nexorious main container. Operators
         # -- should override these for production workloads.
         resources:

@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/time/rate"
 
 	"github.com/drzero42/nexorious-go/internal/config"
+	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	"github.com/drzero42/nexorious-go/internal/services/matching"
 )
 
@@ -28,20 +28,17 @@ const (
 type Client struct {
 	httpClient *http.Client
 	auth       *AuthManager
-	limiter    *rate.Limiter
+	limiter    ratelimit.Limiter
 	apiURL     string
 	configured bool
 }
 
 // NewClient creates an IGDB client from config. If IGDB credentials are missing,
 // returns a client that errors with ErrIGDBNotConfigured on all calls.
-func NewClient(cfg *config.Config) *Client {
+func NewClient(cfg *config.Config, limiter ratelimit.Limiter) *Client {
 	if cfg.IGDBClientID == "" || cfg.IGDBClientSecret == "" {
 		return &Client{configured: false}
 	}
-
-	interval := time.Duration(float64(time.Second) / cfg.IGDBRequestsPerSecond)
-	limiter := rate.NewLimiter(rate.Every(interval), cfg.IGDBBurstCapacity)
 
 	return &Client{
 		httpClient: &http.Client{Timeout: 30 * time.Second},
@@ -70,8 +67,8 @@ func (c *Client) ValidateCredentials(ctx context.Context) error {
 
 // NewClientWithTokenURL creates an IGDB client with a custom Twitch token URL.
 // Used in tests to point at a local httptest server.
-func NewClientWithTokenURL(cfg *config.Config, tokenURL string) *Client {
-	c := NewClient(cfg)
+func NewClientWithTokenURL(cfg *config.Config, tokenURL string, limiter ratelimit.Limiter) *Client {
+	c := NewClient(cfg, limiter)
 	if c.auth != nil {
 		c.auth.tokenURL = tokenURL
 	}

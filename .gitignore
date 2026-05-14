@@ -23,3 +23,7 @@ storage
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Test coverage files
+coverage.out
+coverage.html

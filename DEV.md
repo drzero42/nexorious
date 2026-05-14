@@ -83,6 +83,52 @@ The proxy target defaults to `http://localhost:8000`. Override with `API_TARGET`
 API_TARGET=http://localhost:9000 npm run dev
 ```
 
+## CLI Subcommands
+
+The `nexorious` binary uses [cobra](https://github.com/spf13/cobra) subcommands:
+
+| Subcommand       | What it does                                                   |
+|------------------|----------------------------------------------------------------|
+| `serve`          | Start the HTTP server (default when no subcommand is given)    |
+| `migrate`        | Apply all pending DB migrations and exit                       |
+| `migrate status` | Print pending migrations without applying them                 |
+| `version`        | Print build version and commit SHA                             |
+
+Running `./nexorious` with no arguments is equivalent to `./nexorious serve`.
+
+A persistent `--config <file>` flag on the root command loads a `.env`-style file before parsing environment variables.
+
+## Test Coverage
+
+Run coverage across all packages:
+
+```bash
+go test -timeout 600s -cover ./...
+```
+
+Per-package detail (useful for finding gaps):
+
+```bash
+go test -timeout 600s -coverprofile=coverage.out ./internal/<pkg>/...
+go tool cover -func=coverage.out | grep -v "100.0%"
+```
+
+Known coverage status (non-trivial packages, as of Phase 5):
+
+| Package                         | Coverage |
+|---------------------------------|----------|
+| `internal/api`                  | ~67%     |
+| `internal/auth`                 | ~89%     |
+| `internal/backup`               | ~56%     |
+| `internal/migrate`              | ~58%     |
+| `internal/ratelimit`            | ~75%     |
+| `internal/scheduler`            | ~12%     |
+| `internal/services/igdb`        | ~48%     |
+| `internal/worker`               | ~86%     |
+| `internal/worker/tasks`         | ~47%     |
+
+`cmd/nexorious` (5%) is excluded — it is startup wiring with no testable logic. The scheduler package is low because the goroutine lifecycle and gocron wiring are not unit-testable.
+
 ## Container Image (Podman)
 
 The repo ships a multi-stage `Dockerfile` that builds the React SPA, compiles the Go binary, and produces a minimal `alpine:3.23` runtime image containing only the `nexorious` binary, `ca-certificates`, and `postgresql18-client` (for backup/restore). No Go or Node toolchain, source, or git is shipped in the final image.

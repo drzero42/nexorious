@@ -732,6 +732,106 @@ func TestPlatformCRUD(t *testing.T) {
 	})
 }
 
+// ── TestUpdatePlatform ──────────────────────────────────────────────────
+
+func TestUpdatePlatform_InvalidOwnershipStatus(t *testing.T) {
+	db := setupAuthTestDB(t)
+	cfg := testCfg()
+	e := newTestEcho(t, db, cfg)
+	userID, token := setupUserGamesUser(t, db, e, "upd-plat-bad-own")
+	gameID := insertTestGame(t, db, "Update Plat Game")
+	insertTestUserGame(t, db, "ug-upd-plat", userID, int(gameID))
+
+	// First create a platform entry.
+	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-plat/platforms", map[string]any{
+		"platform":   "pc-windows",
+		"storefront": "steam",
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var createResp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &createResp)
+	platformID := createResp["id"].(string)
+
+	// Update with invalid ownership_status.
+	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-plat/platforms/%s", platformID),
+		map[string]any{"ownership_status": "stolen"}, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdatePlatform_InvalidPlatform(t *testing.T) {
+	db := setupAuthTestDB(t)
+	cfg := testCfg()
+	e := newTestEcho(t, db, cfg)
+	userID, token := setupUserGamesUser(t, db, e, "upd-plat-bad-plat")
+	gameID := insertTestGame(t, db, "Update Plat Invalid Game")
+	insertTestUserGame(t, db, "ug-upd-plat-b", userID, int(gameID))
+
+	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-plat-b/platforms", map[string]any{
+		"platform":   "pc-windows",
+		"storefront": "steam",
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var createResp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &createResp)
+	platformID := createResp["id"].(string)
+
+	// Update with a non-existent platform name.
+	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-plat-b/platforms/%s", platformID),
+		map[string]any{"platform": "nonexistent-platform-xyz"}, token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdatePlatform_InvalidStorefront(t *testing.T) {
+	db := setupAuthTestDB(t)
+	cfg := testCfg()
+	e := newTestEcho(t, db, cfg)
+	userID, token := setupUserGamesUser(t, db, e, "upd-plat-bad-sf")
+	gameID := insertTestGame(t, db, "Update Storefront Game")
+	insertTestUserGame(t, db, "ug-upd-sf", userID, int(gameID))
+
+	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-sf/platforms", map[string]any{
+		"platform":   "pc-windows",
+		"storefront": "steam",
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var createResp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &createResp)
+	platformID := createResp["id"].(string)
+
+	// Update with a non-existent storefront name.
+	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-sf/platforms/%s", platformID),
+		map[string]any{"storefront": "nonexistent-storefront-xyz"}, token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdatePlatform_PlatformNotFound(t *testing.T) {
+	db := setupAuthTestDB(t)
+	cfg := testCfg()
+	e := newTestEcho(t, db, cfg)
+	userID, token := setupUserGamesUser(t, db, e, "upd-plat-notfound")
+	gameID := insertTestGame(t, db, "Update Plat NotFound Game")
+	insertTestUserGame(t, db, "ug-upd-notfound", userID, int(gameID))
+
+	// Try to update a platform that doesn't exist.
+	rec := putJSONAuth(t, e, "/api/user-games/ug-upd-notfound/platforms/nonexistent-platform-id",
+		map[string]any{"ownership_status": "owned"}, token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 // ── Utility endpoint test helpers ───────────────────────────────────────
 
 func insertTestGameWithGenre(t *testing.T, db *bun.DB, title, genre string) int32 {

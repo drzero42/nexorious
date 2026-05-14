@@ -248,3 +248,381 @@ func TestJobsSummary(t *testing.T) {
 		t.Fatalf("expected failed=1, got %v", failed)
 	}
 }
+
+// ─── TestPendingReviewCount ───────────────────────────────────────────────────
+
+func TestPendingReviewCount_Empty(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	_, token := setupTagUser(t, db, e, "jobs-prc-empty")
+
+	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["count"].(float64) != 0 {
+		t.Fatalf("expected count=0, got %v", resp["count"])
+	}
+}
+
+func TestPendingReviewCount_WithItems(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-prc-items")
+
+	insertJob(t, db, "job-prc-1", userID, "import", "steam", "processing")
+	insertJobItem(t, db, "ji-prc-1", "job-prc-1", userID, "key-prc-1", "Game A", "pending_review")
+	insertJobItem(t, db, "ji-prc-2", "job-prc-1", userID, "key-prc-2", "Game B", "completed")
+
+	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["count"].(float64) != 1 {
+		t.Fatalf("expected count=1, got %v", resp["count"])
+	}
+}
+
+// ─── TestHandleActiveJob ──────────────────────────────────────────────────────
+
+func TestHandleActiveJob_NoJobs(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	_, token := setupTagUser(t, db, e, "jobs-active-none")
+
+	rec := getAuth(t, e, "/api/jobs/active/import", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleActiveJob_ActiveJobExists(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-active-exists")
+
+	insertJob(t, db, "job-active-1", userID, "import", "steam", "processing")
+
+	rec := getAuth(t, e, "/api/jobs/active/import", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["id"] != "job-active-1" {
+		t.Fatalf("expected id=job-active-1, got %v", resp["id"])
+	}
+}
+
+func TestHandleActiveJob_FallbackToCompleted(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-active-fallback")
+
+	// No active job, but there is a completed one.
+	insertJob(t, db, "job-fallback-1", userID, "sync", "steam", "completed")
+
+	rec := getAuth(t, e, "/api/jobs/active/sync", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["id"] != "job-fallback-1" {
+		t.Fatalf("expected id=job-fallback-1, got %v", resp["id"])
+	}
+}
+
+// ─── TestHandleRecentJobs ─────────────────────────────────────────────────────
+
+func TestHandleRecentJobs_Empty(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	_, token := setupTagUser(t, db, e, "jobs-recent-empty")
+
+	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 0 {
+		t.Fatalf("expected empty list, got %d", len(resp))
+	}
+}
+
+func TestHandleRecentJobs_WithJobs(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-recent-with")
+
+	insertJob(t, db, "job-recent-1", userID, "sync", "steam", "completed")
+	insertJobItem(t, db, "ji-recent-1", "job-recent-1", userID, "key-r1", "Recent Game", "completed")
+
+	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(resp))
+	}
+}
+
+// ─── TestHandleGetJobItems ────────────────────────────────────────────────────
+
+func TestHandleGetJobItems_Success(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-items-ok")
+
+	insertJob(t, db, "job-items-1", userID, "import", "steam", "processing")
+	insertJobItem(t, db, "ji-items-1", "job-items-1", userID, "key-i1", "Game 1", "pending_review")
+	insertJobItem(t, db, "ji-items-2", "job-items-1", userID, "key-i2", "Game 2", "completed")
+
+	rec := getAuth(t, e, "/api/jobs/job-items-1/items", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["total"].(float64) != 2 {
+		t.Fatalf("expected total=2, got %v", resp["total"])
+	}
+}
+
+func TestHandleGetJobItems_WithStatusFilter(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-items-filter")
+
+	insertJob(t, db, "job-items-f", userID, "import", "steam", "processing")
+	insertJobItem(t, db, "ji-items-f1", "job-items-f", userID, "key-f1", "Game X", "pending_review")
+	insertJobItem(t, db, "ji-items-f2", "job-items-f", userID, "key-f2", "Game Y", "completed")
+
+	rec := getAuth(t, e, "/api/jobs/job-items-f/items?status=pending_review", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["total"].(float64) != 1 {
+		t.Fatalf("expected filtered total=1, got %v", resp["total"])
+	}
+}
+
+func TestHandleGetJobItems_NotFound(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	_, token := setupTagUser(t, db, e, "jobs-items-notfound")
+
+	rec := getAuth(t, e, "/api/jobs/nonexistent-job/items", token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ─── TestHandleRetryFailed ────────────────────────────────────────────────────
+
+func TestHandleRetryFailed_NoFailedItems(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-retry-nofail")
+
+	insertJob(t, db, "job-retry-nf", userID, "import", "steam", "processing")
+	// No failed items.
+
+	rec := postJSONAuth(t, e, "/api/jobs/job-retry-nf/retry-failed", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["retried"].(float64) != 0 {
+		t.Fatalf("expected retried=0, got %v", resp["retried"])
+	}
+}
+
+func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-retry-withfail")
+
+	insertJob(t, db, "job-retry-wf", userID, "import", "steam", "failed")
+	insertJobItem(t, db, "ji-retry-wf1", "job-retry-wf", userID, "key-rf1", "Failed Game", "failed")
+
+	rec := postJSONAuth(t, e, "/api/jobs/job-retry-wf/retry-failed", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["retried"].(float64) != 1 {
+		t.Fatalf("expected retried=1, got %v", resp["retried"])
+	}
+}
+
+func TestHandleRetryFailed_NotFound(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	_, token := setupTagUser(t, db, e, "jobs-retry-notfound")
+
+	rec := postJSONAuth(t, e, "/api/jobs/nonexistent-job/retry-failed", nil, token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ─── TestListJobs_WithFilters ─────────────────────────────────────────────────
+
+func TestListJobs_WithFilters(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-list-filters")
+
+	insertJob(t, db, "job-filter-1", userID, "sync", "steam", "completed")
+	insertJob(t, db, "job-filter-2", userID, "import", "csv", "failed")
+	insertJob(t, db, "job-filter-3", userID, "sync", "psn", "processing")
+
+	t.Run("filter by job_type", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/jobs?job_type=sync", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["total"].(float64) != 2 {
+			t.Fatalf("expected 2 sync jobs, got %v", resp["total"])
+		}
+	})
+
+	t.Run("filter by source", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/jobs?source=steam", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["total"].(float64) != 1 {
+			t.Fatalf("expected 1 steam job, got %v", resp["total"])
+		}
+	})
+
+	t.Run("filter by status", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/jobs?status=failed", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["total"].(float64) != 1 {
+			t.Fatalf("expected 1 failed job, got %v", resp["total"])
+		}
+	})
+
+	t.Run("sort by job_type asc", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/jobs?sort_by=job_type&sort_order=asc", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+// ─── TestCancelJob_NotFound ───────────────────────────────────────────────────
+
+func TestCancelJob_NotFound(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	_, token := setupTagUser(t, db, e, "jobs-cancel-notfound")
+
+	rec := postJSONAuth(t, e, "/api/jobs/nonexistent-job/cancel", nil, token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ─── TestDeleteJob_NotFound ───────────────────────────────────────────────────
+
+func TestDeleteJob_NotFound(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	_, token := setupTagUser(t, db, e, "jobs-del-notfound")
+
+	rec := deleteAuth(t, e, "/api/jobs/nonexistent-job", token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleRetryFailed_SyncJobType(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-retry-sync")
+
+	insertJob(t, db, "job-retry-sync", userID, "sync", "steam", "failed")
+	insertJobItem(t, db, "ji-retry-sync1", "job-retry-sync", userID, "key-rs1", "Sync Game", "failed")
+
+	rec := postJSONAuth(t, e, "/api/jobs/job-retry-sync/retry-failed", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["retried"].(float64) != 1 {
+		t.Fatalf("expected retried=1, got %v", resp["retried"])
+	}
+}
+
+func TestHandleRetryFailed_MetadataRefreshJobType(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newTestEchoWithPool(t, db)
+	userID, token := setupTagUser(t, db, e, "jobs-retry-meta")
+
+	insertJob(t, db, "job-retry-meta", userID, "metadata_refresh", "system", "failed")
+	insertJobItem(t, db, "ji-retry-meta1", "job-retry-meta", userID, "key-rm1", "Meta Game", "failed")
+
+	rec := postJSONAuth(t, e, "/api/jobs/job-retry-meta/retry-failed", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["retried"].(float64) != 1 {
+		t.Fatalf("expected retried=1, got %v", resp["retried"])
+	}
+}

@@ -271,3 +271,129 @@ func TestExportCSV_Task(t *testing.T) {
 		t.Errorf("is_loved = %q, want 'false'", row[4])
 	}
 }
+
+func TestExportJSON_MarkJobFailed_OnWriteError(t *testing.T) {
+	// Use a path that can't be written to (a file instead of a dir) to force
+	// writeJSONExport to fail and trigger markJobFailed.
+	db := setupTasksTestDB(t)
+	ctx := context.Background()
+
+	// Create a file where the exports dir would be — this causes MkdirAll to fail.
+	tmpDir := t.TempDir()
+	exportsPath := filepath.Join(tmpDir, "exports")
+	if err := os.WriteFile(exportsPath, []byte("block"), 0o444); err != nil {
+		t.Fatalf("create blocking file: %v", err)
+	}
+
+	userID := uuid.NewString()
+	insertTestUser(t, db, userID)
+
+	jobID := uuid.NewString()
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
+		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+
+	handler := tasks.NewExportJSONHandler(db, tmpDir)
+	task := &models.PendingTask{
+		ID:       uuid.NewString(),
+		TaskType: "export_json",
+		Payload:  mustMarshal(t, map[string]string{"job_id": jobID}),
+	}
+	if err := handler(ctx, task); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Job should be marked failed.
+	var status string
+	if err := db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("read job status: %v", err)
+	}
+	if status != "failed" {
+		t.Errorf("expected job status=failed when write fails, got %q", status)
+	}
+}
+
+// TestExportJSON_InvalidPayload exercises the json.Unmarshal failure path.
+func TestExportJSON_InvalidPayload(t *testing.T) {
+	db := setupTasksTestDB(t)
+	handler := tasks.NewExportJSONHandler(db, t.TempDir())
+	task := &models.PendingTask{Payload: json.RawMessage(`not-json`)}
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+// TestExportCSV_InvalidPayload exercises the json.Unmarshal failure path.
+func TestExportCSV_InvalidPayload(t *testing.T) {
+	db := setupTasksTestDB(t)
+	handler := tasks.NewExportCSVHandler(db, t.TempDir())
+	task := &models.PendingTask{Payload: json.RawMessage(`not-json`)}
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+// TestExportJSON_JobNotFound exercises the "load job not found" path.
+func TestExportJSON_JobNotFound(t *testing.T) {
+	db := setupTasksTestDB(t)
+	handler := tasks.NewExportJSONHandler(db, t.TempDir())
+	task := &models.PendingTask{Payload: mustMarshal(t, map[string]string{"job_id": "non-existent-job"})}
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+// TestExportCSV_JobNotFound exercises the "load job not found" path.
+func TestExportCSV_JobNotFound(t *testing.T) {
+	db := setupTasksTestDB(t)
+	handler := tasks.NewExportCSVHandler(db, t.TempDir())
+	task := &models.PendingTask{Payload: mustMarshal(t, map[string]string{"job_id": "non-existent-job"})}
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+func TestExportCSV_MarkJobFailed_OnWriteError(t *testing.T) {
+	db := setupTasksTestDB(t)
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	exportsPath := filepath.Join(tmpDir, "exports")
+	if err := os.WriteFile(exportsPath, []byte("block"), 0o444); err != nil {
+		t.Fatalf("create blocking file: %v", err)
+	}
+
+	userID := uuid.NewString()
+	insertTestUser(t, db, userID)
+
+	jobID := uuid.NewString()
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
+		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+
+	handler := tasks.NewExportCSVHandler(db, tmpDir)
+	task := &models.PendingTask{
+		ID:       uuid.NewString(),
+		TaskType: "export_csv",
+		Payload:  mustMarshal(t, map[string]string{"job_id": jobID}),
+	}
+	if err := handler(ctx, task); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	if err := db.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("read job status: %v", err)
+	}
+	if status != "failed" {
+		t.Errorf("expected job status=failed when write fails, got %q", status)
+	}
+}

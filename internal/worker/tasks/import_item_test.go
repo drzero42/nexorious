@@ -20,6 +20,7 @@ import (
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/db/migrations"
 	"github.com/drzero42/nexorious-go/internal/db/models"
+	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
@@ -147,7 +148,7 @@ func TestImportItem_BasicGame(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
 	task := makePendingTask(t, itemID)
 	err := handler(ctx, task)
 	if err != nil {
@@ -215,7 +216,7 @@ func TestImportItem_MissingIGDBID(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
 	task := makePendingTask(t, itemID)
 	err := handler(ctx, task)
 	if err != nil {
@@ -250,7 +251,7 @@ func TestImportItem_DuplicateGame(t *testing.T) {
 
 	// First import.
 	itemID1 := insertTestJobItem(t, db, jobID, userID, gameData)
-	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
 	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
 		t.Fatalf("first import error: %v", err)
 	}
@@ -333,7 +334,7 @@ func TestImportItem_WithPlatformsAndTags(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
 	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
@@ -404,7 +405,7 @@ func TestImportItem_PlatformsSkippedWithoutSeed(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
 	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
@@ -451,7 +452,7 @@ func TestImportItem_ReimportMergesPlatforms(t *testing.T) {
 
 	// First import — no seed, platforms stored via original name.
 	itemID1 := insertTestJobItem(t, db, jobID, userID, gameData)
-	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
 	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
 		t.Fatalf("first import: %v", err)
 	}
@@ -525,7 +526,7 @@ func TestImportItem_JobCompletion(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
 	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
@@ -563,7 +564,7 @@ func TestImportItem_PreservesTimestamps(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}), "")
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
 	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
@@ -578,5 +579,295 @@ func TestImportItem_PreservesTimestamps(t *testing.T) {
 	}
 	if !ug.UpdatedAt.Equal(updatedAt) {
 		t.Errorf("updated_at = %v, want %v", ug.UpdatedAt, updatedAt)
+	}
+}
+
+// TestImportItem_InvalidPayload exercises the json.Unmarshal failure path (line 82-85).
+func TestImportItem_InvalidPayload(t *testing.T) {
+	db := setupTasksTestDB(t)
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
+	task := &models.PendingTask{Payload: json.RawMessage(`not-json`)}
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+// TestImportItem_JobItemNotFound exercises the "item not found" path (line 89-92).
+func TestImportItem_JobItemNotFound(t *testing.T) {
+	db := setupTasksTestDB(t)
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
+	payload, _ := json.Marshal(map[string]string{"job_item_id": "non-existent-id"})
+	task := &models.PendingTask{Payload: payload}
+	if err := handler(context.Background(), task); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+// TestImportItem_BadSourceMetadata exercises the parse-source_metadata failure path (line 98-102).
+func TestImportItem_BadSourceMetadata(t *testing.T) {
+	db := setupTasksTestDB(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, db, userID)
+	insertTestJob(t, db, jobID, userID, 1)
+
+	// Insert a job_item with malformed source_metadata (not a JSON object with "data" key).
+	itemID := uuid.NewString()
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]')`,
+		itemID, jobID, userID, uuid.NewString(), "Bad Meta", json.RawMessage(`"not-an-object"`),
+	)
+	if err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
+	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
+	if err := handler(ctx, &models.PendingTask{Payload: payload}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	var item models.JobItem
+	if err := db.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx); err != nil {
+		t.Fatalf("item not found: %v", err)
+	}
+	if item.Status != models.JobItemStatusFailed {
+		t.Errorf("status = %q, want failed", item.Status)
+	}
+}
+
+// TestImportItem_PartialJobCompletion exercises the checkJobCompletion pendingCount > 0 branch.
+// Process only 1 of 2 items — job should remain processing.
+func TestImportItem_PartialJobCompletion(t *testing.T) {
+	db := setupTasksTestDB(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, db, userID)
+	insertTestJob(t, db, jobID, userID, 2) // 2 total items
+
+	gameData1 := map[string]any{
+		"igdb_id": int32(33001),
+		"title":   "Partial Job Game 1",
+	}
+	gameData2 := map[string]any{
+		"igdb_id": int32(33002),
+		"title":   "Partial Job Game 2",
+	}
+	itemID1 := insertTestJobItem(t, db, jobID, userID, gameData1)
+	// Insert item2 as pending — not processed.
+	_ = insertTestJobItem(t, db, jobID, userID, gameData2)
+
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
+	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	// Job should still be processing since item2 is still pending.
+	var jobStatus string
+	if err := db.QueryRowContext(ctx, "SELECT status FROM jobs WHERE id = ?", jobID).Scan(&jobStatus); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if jobStatus != "processing" {
+		t.Errorf("expected job still processing, got %q", jobStatus)
+	}
+}
+
+// TestImportItem_CompletedWithErrors exercises the "completed_with_errors" branch in checkJobCompletion.
+func TestImportItem_CompletedWithErrors(t *testing.T) {
+	db := setupTasksTestDB(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, db, userID)
+	insertTestJob(t, db, jobID, userID, 2) // 2 total items
+
+	// Item1: valid game data — will succeed.
+	gameData1 := map[string]any{
+		"igdb_id": int32(34001),
+		"title":   "Errors Job Game 1",
+	}
+	itemID1 := insertTestJobItem(t, db, jobID, userID, gameData1)
+
+	// Item2: pre-mark as failed so it's already "done" but failed.
+	itemID2 := uuid.NewString()
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, ?, ?, ?, 'failed', '{}', '[]')`,
+		itemID2, jobID, userID, uuid.NewString(), "Failed Game", json.RawMessage(`{"data":{"igdb_id":0}}`),
+	)
+	if err != nil {
+		t.Fatalf("insert failed item: %v", err)
+	}
+
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
+	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	// Job should be "completed_with_errors" since one item failed.
+	var jobStatus string
+	if err := db.QueryRowContext(ctx, "SELECT status FROM jobs WHERE id = ?", jobID).Scan(&jobStatus); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if jobStatus != "completed_with_errors" {
+		t.Errorf("expected completed_with_errors, got %q", jobStatus)
+	}
+}
+
+// TestImportItem_WithReleaseDate exercises the release_date parsing fallback path.
+func TestImportItem_WithReleaseDate(t *testing.T) {
+	db := setupTasksTestDB(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, db, userID)
+	insertTestJob(t, db, jobID, userID, 1)
+
+	releaseDate := time.Date(2020, 3, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	gameData := map[string]any{
+		"igdb_id":      int32(35001),
+		"title":        "Release Date Game",
+		"release_date": releaseDate,
+	}
+	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
+
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
+	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	var item models.JobItem
+	if err := db.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx); err != nil {
+		t.Fatalf("item not found: %v", err)
+	}
+	if item.Status != models.JobItemStatusCompleted {
+		t.Errorf("status = %q, want completed", item.Status)
+	}
+
+	// Verify the game was created with release_date set.
+	var releaseNull bool
+	if err := db.QueryRowContext(ctx,
+		"SELECT release_date IS NULL FROM games WHERE id = ?", int32(35001),
+	).Scan(&releaseNull); err != nil {
+		t.Fatalf("query release_date: %v", err)
+	}
+	if releaseNull {
+		t.Error("expected release_date to be set, but it was NULL")
+	}
+}
+
+// TestImportItem_TagError exercises the findOrCreateTag error path via a tag name that causes
+// the existing-tag lookup to succeed on re-import (exercising the existingTagIDs skip branch).
+func TestImportItem_ReimportTagDedup(t *testing.T) {
+	db := setupTasksTestDB(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, db, userID)
+	insertTestJob(t, db, jobID, userID, 2)
+
+	gameData := map[string]any{
+		"igdb_id": int32(36001),
+		"title":   "Tag Dedup Game",
+		"tags": []any{
+			map[string]any{"name": "indie", "color": "#aabbcc"},
+		},
+	}
+
+	// First import.
+	itemID1 := insertTestJobItem(t, db, jobID, userID, gameData)
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
+	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+
+	// Second import — tag already exists, existingTagIDs[tagID] should be true → skip.
+	itemID2 := insertTestJobItem(t, db, jobID, userID, gameData)
+	if err := handler(ctx, makePendingTask(t, itemID2)); err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+
+	// Still only one UserGameTag.
+	var ug models.UserGame
+	if err := db.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(36001)).Scan(ctx); err != nil {
+		t.Fatalf("user_game not found: %v", err)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM user_game_tags WHERE user_game_id = ?", ug.ID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count tags: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("tag count = %d, want 1 (no duplicates)", count)
+	}
+}
+
+// TestImportItem_StorefrontNotFound exercises the storefront-not-found warning path.
+func TestImportItem_StorefrontNotFound(t *testing.T) {
+	db := setupTasksTestDB(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, db, userID)
+	insertTestJob(t, db, jobID, userID, 1)
+
+	// Seed only the platform, not the storefront.
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC Windows') ON CONFLICT DO NOTHING",
+	); err != nil {
+		t.Fatalf("insert platform: %v", err)
+	}
+
+	gameData := map[string]any{
+		"igdb_id": int32(37001),
+		"title":   "Storefront Missing Game",
+		"platforms": []any{
+			map[string]any{
+				"platform_name":    "pc-windows",
+				"storefront_name":  "unknown-store", // not seeded
+				"ownership_status": "owned",
+				"is_available":     true,
+			},
+		},
+	}
+	itemID := insertTestJobItem(t, db, jobID, userID, gameData)
+
+	handler := tasks.NewImportItemHandler(db, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
+	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	var item models.JobItem
+	if err := db.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx); err != nil {
+		t.Fatalf("item not found: %v", err)
+	}
+	// Should still complete — storefront warning is non-fatal.
+	if item.Status != models.JobItemStatusCompleted {
+		t.Errorf("status = %q, want completed", item.Status)
+	}
+
+	// Platform entry should exist with NULL storefront.
+	var ug models.UserGame
+	if err := db.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(37001)).Scan(ctx); err != nil {
+		t.Fatalf("user_game not found: %v", err)
+	}
+	var sfNull bool
+	if err := db.QueryRowContext(ctx,
+		"SELECT storefront IS NULL FROM user_game_platforms WHERE user_game_id = ?", ug.ID,
+	).Scan(&sfNull); err != nil {
+		t.Fatalf("query storefront: %v", err)
+	}
+	if !sfNull {
+		t.Error("expected NULL storefront for unknown storefront")
 	}
 }

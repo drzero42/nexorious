@@ -469,3 +469,142 @@ func TestIgnored_404ForUnknown(t *testing.T) {
 		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
+
+// ─── TestHandleGetConfig ──────────────────────────────────────────────────────
+
+func TestSyncListConfig_AfterPut(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "listcfg-afterput")
+
+	// Create a steam config.
+	rec := putJSONAuth(t, e, "/api/sync/config/steam", map[string]any{
+		"frequency": "daily",
+		"auto_add":  false,
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// List configs — steam row should now exist, others default.
+	rec = getAuth(t, e, "/api/sync/config", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("LIST expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["total"].(float64) != 3 {
+		t.Fatalf("expected total=3, got %v", resp["total"])
+	}
+	configs := resp["configs"].([]any)
+	// Find steam config and verify it has frequency=daily.
+	found := false
+	for _, c := range configs {
+		cfg := c.(map[string]any)
+		if cfg["storefront"] == "steam" {
+			if cfg["frequency"] != "daily" {
+				t.Errorf("expected frequency=daily for steam, got %v", cfg["frequency"])
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("steam config not found in list")
+	}
+}
+
+func TestSyncGetConfig_NoRow_ReturnsDefault(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "getcfg-norow")
+
+	rec := getAuth(t, e, "/api/sync/config/steam", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// When no row exists the handler returns a synthetic default.
+	if resp["is_configured"].(bool) {
+		t.Error("expected is_configured=false for missing config")
+	}
+	if resp["frequency"] != "manual" {
+		t.Errorf("expected frequency=manual, got %v", resp["frequency"])
+	}
+}
+
+func TestSyncGetConfig_AfterPut(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "getcfg-afterput")
+
+	// Create a config first.
+	rec := putJSONAuth(t, e, "/api/sync/config/psn", map[string]any{
+		"frequency": "weekly",
+		"auto_add":  false,
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Now GET the same config.
+	rec = getAuth(t, e, "/api/sync/config/psn", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["frequency"] != "weekly" {
+		t.Errorf("expected frequency=weekly, got %v", resp["frequency"])
+	}
+}
+
+func TestSyncGetConfig_InvalidStorefront(t *testing.T) {
+	db := setupAuthTestDB(t)
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, db, e, "getcfg-invalid")
+
+	rec := getAuth(t, e, "/api/sync/config/gog", token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ─── TestHandleGetPSNStatus with credentials ──────────────────────────────────
+
+func TestPSNStatus_WithCredentials(t *testing.T) {
+	db := setupAuthTestDB(t)
+	stub := &stubPSNClient{
+		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456", Region: "GB"},
+	}
+	e, _ := newSyncTestApp(t, db, &stubSteamClient{}, stub)
+	_, token := setupTagUser(t, db, e, "psn-stat-cred")
+
+	// Configure PSN first to store credentials.
+	token64 := strings.Repeat("b", 64)
+	rec := postJSONAuth(t, e, "/api/sync/psn/configure", map[string]any{
+		"npsso_token": token64,
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("configure expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Now get PSN status — should return configured=true.
+	rec = getAuth(t, e, "/api/sync/psn/status", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !resp["is_configured"].(bool) {
+		t.Error("expected is_configured=true after PSN configure")
+	}
+}

@@ -183,3 +183,9 @@ func TestCleanupStaleJobs_CompletedJob_LeftAlone(t *testing.T) {
 		t.Fatalf("completed job should not be touched, got status=%s", status)
 	}
 }
+
+// TestCleanupStaleJobs_DBError exercises the err != nil branch via a bad DB.
+func TestCleanupStaleJobs_DBError(t *testing.T) {
+	// badDB is declared in cleanup_test.go (same package).
+	scheduler.CleanupStaleJobs(context.Background(), badDB(t), 4*time.Hour)
+}

@@ -20,6 +20,7 @@ import (
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/migrate"
 	maint "github.com/drzero42/nexorious-go/internal/middleware"
+	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	"github.com/drzero42/nexorious-go/internal/scheduler"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
@@ -133,7 +134,14 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// -------------------------------------------------------------------------
 	// IGDB client (optional)
 	// -------------------------------------------------------------------------
-	igdbClient := igdb.NewClient(cfg)
+	var igdbLimiter ratelimit.Limiter
+	if cfg.RateLimiterBackend == "postgres" {
+		igdbLimiter = ratelimit.NewPostgres(db, "igdb", cfg.IGDBRequestsPerSecond, float64(cfg.IGDBBurstCapacity))
+	} else {
+		igdbLimiter = ratelimit.NewLocal(cfg.IGDBRequestsPerSecond, cfg.IGDBBurstCapacity)
+	}
+
+	igdbClient := igdb.NewClient(cfg, igdbLimiter)
 
 	if !igdbClient.Configured() {
 		slog.Warn("IGDB credentials not configured — game search, import, and metadata features will be unavailable")
@@ -144,7 +152,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			if igdb.IsAuthError(err) {
 				slog.Warn("IGDB credentials are invalid — disabling IGDB features", "err", err)
-				igdbClient = igdb.NewClient(&config.Config{}) // unconfigured client
+				igdbClient = igdb.NewClient(&config.Config{}, igdbLimiter) // unconfigured client
 			} else {
 				slog.Warn("IGDB credential probe failed (network/transient) — IGDB client kept", "err", err)
 			}

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/drzero42/nexorious-go/internal/config"
+	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 )
 
@@ -34,7 +35,7 @@ func TestIsAuthError_FalseForNil(t *testing.T) {
 }
 
 func TestValidateCredentials_NotConfigured(t *testing.T) {
-	client := igdb.NewClient(&config.Config{}) // no IGDB creds
+	client := igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)) // no IGDB creds
 	err := client.ValidateCredentials(context.Background())
 	if !errors.Is(err, igdb.ErrIGDBNotConfigured) {
 		t.Errorf("expected ErrIGDBNotConfigured, got %v", err)
@@ -58,7 +59,7 @@ func TestValidateCredentials_Success(t *testing.T) {
 		IGDBRequestsPerSecond: 4.0,
 		IGDBBurstCapacity:     8,
 	}
-	client := igdb.NewClientWithTokenURL(cfg, ts.URL)
+	client := igdb.NewClientWithTokenURL(cfg, ts.URL, ratelimit.NewLocal(100, 100))
 	err := client.ValidateCredentials(context.Background())
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -77,7 +78,7 @@ func TestValidateCredentials_AuthError(t *testing.T) {
 		IGDBRequestsPerSecond: 4.0,
 		IGDBBurstCapacity:     8,
 	}
-	client := igdb.NewClientWithTokenURL(cfg, ts.URL)
+	client := igdb.NewClientWithTokenURL(cfg, ts.URL, ratelimit.NewLocal(100, 100))
 	err := client.ValidateCredentials(context.Background())
 	if err == nil {
 		t.Fatal("expected error for invalid credentials")
