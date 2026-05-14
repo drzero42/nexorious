@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/drzero42/nexorious-go/internal/api"
+	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/migrate"
 	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
@@ -198,7 +199,7 @@ func TestHealth_NeedsMigrationReturns200(t *testing.T) {
 	}
 }
 
-func TestHealth_ReportsIGDBConfiguredTrue(t *testing.T) {
+func TestHealth_ReportsIGDBStatusOk(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	cfg := testCfg()
 	cfg.IGDBClientID = "test-id"
@@ -217,18 +218,15 @@ func TestHealth_ReportsIGDBConfiguredTrue(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	igdbConfigured, ok := body["igdb_configured"]
-	if !ok {
-		t.Fatal("response missing igdb_configured field")
-	}
-	if igdbConfigured != true {
-		t.Errorf("igdb_configured = %v; want true", igdbConfigured)
+	if body["igdb_status"] != igdb.StatusOK {
+		t.Errorf("igdb_status = %v; want %q", body["igdb_status"], igdb.StatusOK)
 	}
 }
 
-func TestHealth_ReportsIGDBConfiguredFalse(t *testing.T) {
+func TestHealth_ReportsIGDBStatusNotConfigured(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testCfg(), migrator, nil, "", nil, nil, nil)
+	igdbClient := igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
+	e := api.New(testCfg(), migrator, nil, "", igdbClient, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -241,11 +239,28 @@ func TestHealth_ReportsIGDBConfiguredFalse(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	igdbConfigured, ok := body["igdb_configured"]
-	if !ok {
-		t.Fatal("response missing igdb_configured field")
+	if body["igdb_status"] != igdb.StatusNotConfigured {
+		t.Errorf("igdb_status = %v; want %q", body["igdb_status"], igdb.StatusNotConfigured)
 	}
-	if igdbConfigured != false {
-		t.Errorf("igdb_configured = %v; want false", igdbConfigured)
+}
+
+func TestHealth_ReportsIGDBStatusInvalidCredentials(t *testing.T) {
+	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
+	igdbClient := igdb.NewInvalidCredentialsClient(ratelimit.NewLocal(100, 100))
+	e := api.New(testCfg(), migrator, nil, "", igdbClient, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["igdb_status"] != igdb.StatusInvalidCredentials {
+		t.Errorf("igdb_status = %v; want %q", body["igdb_status"], igdb.StatusInvalidCredentials)
 	}
 }

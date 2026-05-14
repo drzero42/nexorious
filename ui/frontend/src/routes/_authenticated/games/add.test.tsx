@@ -24,14 +24,20 @@ describe('AddGamePage IGDB disabled state', () => {
     vi.clearAllMocks();
   });
 
-  it('disables IGDB search when igdb_configured is false', () => {
-    mockUseHealthStatus.mockReturnValue({ data: { igdb_configured: false } });
+  it('disables IGDB search when igdb_status is not_configured', () => {
+    mockUseHealthStatus.mockReturnValue({ data: { igdb_status: 'not_configured' } });
     render(<AddGamePage />);
     expect(screen.getByTestId('igdb-search')).toHaveAttribute('data-disabled', 'true');
   });
 
-  it('enables IGDB search when igdb_configured is true', () => {
-    mockUseHealthStatus.mockReturnValue({ data: { igdb_configured: true } });
+  it('disables IGDB search when igdb_status is invalid_credentials', () => {
+    mockUseHealthStatus.mockReturnValue({ data: { igdb_status: 'invalid_credentials' } });
+    render(<AddGamePage />);
+    expect(screen.getByTestId('igdb-search')).toHaveAttribute('data-disabled', 'true');
+  });
+
+  it('enables IGDB search when igdb_status is ok', () => {
+    mockUseHealthStatus.mockReturnValue({ data: { igdb_status: 'ok' } });
     render(<AddGamePage />);
     expect(screen.getByTestId('igdb-search')).toHaveAttribute('data-disabled', 'false');
   });

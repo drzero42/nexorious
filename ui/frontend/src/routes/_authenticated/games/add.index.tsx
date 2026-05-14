@@ -20,7 +20,7 @@ export const Route = createFileRoute('/_authenticated/games/add/')({
 export function AddGamePage() {
   const navigate = useNavigate();
   const { data: health } = useHealthStatus();
-  const igdbUnavailable = health?.igdb_configured === false;
+  const igdbUnavailable = health?.igdb_status !== undefined && health.igdb_status !== 'ok';
 
   const handleGameSelect = (game: IGDBGameCandidate) => {
     sessionStorage.setItem(SELECTED_GAME_STORAGE_KEY, JSON.stringify(game));

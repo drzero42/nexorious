@@ -15,7 +15,6 @@ import (
 
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/backup"
-	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/migrate"
 	maint "github.com/drzero42/nexorious-go/internal/middleware"
 	"github.com/drzero42/nexorious-go/internal/ratelimit"
@@ -133,7 +132,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			if igdb.IsAuthError(err) {
 				slog.Warn("IGDB credentials are invalid — disabling IGDB features", "err", err)
-				igdbClient = igdb.NewClient(&config.Config{}, igdbLimiter) // unconfigured client
+				igdbClient = igdb.NewInvalidCredentialsClient(igdbLimiter)
 			} else {
 				slog.Warn("IGDB credential probe failed (network/transient) — IGDB client kept", "err", err)
 			}

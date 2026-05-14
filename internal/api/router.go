@@ -122,7 +122,10 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 	e.GET("/api/migrate/progress", mh.HandleProgress)
 
 	// Health check — bypassed by all gates
-	igdbConfigured := igdbClient != nil && igdbClient.Configured()
+	igdbStatus := igdb.StatusNotConfigured
+	if igdbClient != nil {
+		igdbStatus = igdbClient.Status()
+	}
 	e.GET("/health", func(c *echo.Context) error {
 		state := migrator.State()
 		status := "ok"
@@ -131,7 +134,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		}
 		return c.JSON(http.StatusOK, map[string]any{
 			"status":           status,
-			"igdb_configured":  igdbConfigured,
+			"igdb_status":      igdbStatus,
 			"backup_available": backup.PgDumpAvailable() && backup.PsqlAvailable(),
 		})
 	})

@@ -22,6 +22,10 @@ const (
 	defaultIGDBAPIURL    = "https://api.igdb.com/v4"
 	igdbImageBaseURL     = "https://images.igdb.com/igdb/image/upload/t_cover_big/"
 	fuzzySearchThreshold = 0.6
+
+	StatusOK                 = "ok"
+	StatusNotConfigured      = "not_configured"
+	StatusInvalidCredentials = "invalid_credentials"
 )
 
 // Client provides access to the IGDB API with rate limiting and authentication.
@@ -31,13 +35,14 @@ type Client struct {
 	limiter    ratelimit.Limiter
 	apiURL     string
 	configured bool
+	status     string
 }
 
 // NewClient creates an IGDB client from config. If IGDB credentials are missing,
 // returns a client that errors with ErrIGDBNotConfigured on all calls.
 func NewClient(cfg *config.Config, limiter ratelimit.Limiter) *Client {
 	if cfg.IGDBClientID == "" || cfg.IGDBClientSecret == "" {
-		return &Client{configured: false}
+		return &Client{configured: false, status: StatusNotConfigured}
 	}
 
 	return &Client{
@@ -46,12 +51,25 @@ func NewClient(cfg *config.Config, limiter ratelimit.Limiter) *Client {
 		limiter:    limiter,
 		apiURL:     defaultIGDBAPIURL,
 		configured: true,
+		status:     StatusOK,
 	}
+}
+
+// NewInvalidCredentialsClient returns an unconfigured client that reports
+// StatusInvalidCredentials — used when credentials are present but fail auth validation.
+func NewInvalidCredentialsClient(limiter ratelimit.Limiter) *Client {
+	return &Client{configured: false, limiter: limiter, status: StatusInvalidCredentials}
 }
 
 // Configured reports whether the client has IGDB credentials.
 func (c *Client) Configured() bool {
 	return c.configured
+}
+
+// Status returns the IGDB availability status: StatusOK, StatusNotConfigured,
+// or StatusInvalidCredentials.
+func (c *Client) Status() string {
+	return c.status
 }
 
 // ValidateCredentials verifies the IGDB credentials by fetching a Twitch token.

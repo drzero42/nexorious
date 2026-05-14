@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 export interface HealthStatus {
   status: string;
-  igdb_configured: boolean;
+  igdb_status: 'ok' | 'not_configured' | 'invalid_credentials';
   backup_available: boolean;
 }
 

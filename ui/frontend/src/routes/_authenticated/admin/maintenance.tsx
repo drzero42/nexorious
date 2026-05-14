@@ -52,7 +52,7 @@ function MaintenancePage() {
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
   const { data: health } = useHealthStatus();
-  const igdbUnavailable = health?.igdb_configured === false;
+  const igdbUnavailable = health?.igdb_status !== undefined && health.igdb_status !== 'ok';
 
   // Track active maintenance job
   const { data: activeMaintenanceJob, refetch: refetchMaintenanceJob } = useActiveJob(JobType.MAINTENANCE);
