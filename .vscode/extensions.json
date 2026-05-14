@@ -3,7 +3,6 @@
         "anthropic.claude-code",
         "ezoosk.claude-context-bar",
         "mkhl.direnv",
-        "golang.go",
-        "listadev.lista-beads"
+        "golang.go"
     ]
 }
