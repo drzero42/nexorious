@@ -18,6 +18,7 @@
     nodejs_24
     uv
     inputs.beads.packages.${system}.bd
+    procps
   ];
 
   # https://devenv.sh/languages/
@@ -43,8 +44,23 @@
     "db:stop" = {
       description = "Stop PostgreSQL without wiping data (workaround for devenv not killing postgres on Ctrl+C)";
       exec = ''
-        pg_ctl stop -D "$DEVENV_STATE/postgres" -m fast
-        echo "PostgreSQL stopped."
+        PG_DATA="$DEVENV_STATE/postgres"
+        if pg_ctl stop -D "$PG_DATA" -m fast 2>/dev/null; then
+          echo "PostgreSQL stopped."
+        else
+          # Ctrl+C can leave postgres fully orphaned (no PID file, no socket).
+          # The postmaster is always the oldest (lowest PID) postgres process,
+          # since it starts before forking its workers.
+          PG_PID=$(pgrep -o postgres 2>/dev/null)
+          if [ -n "$PG_PID" ]; then
+            kill -INT "$PG_PID"
+            while kill -0 "$PG_PID" 2>/dev/null; do sleep 0.1; done
+            echo "PostgreSQL stopped (via signal)."
+          else
+            echo "Could not find postgres process." >&2
+            exit 1
+          fi
+        fi
       '';
     };
 
