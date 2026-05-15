@@ -8,7 +8,7 @@ func TestNormalizeTitle(t *testing.T) {
 		want  string
 	}{
 		// GOTY expansion
-		{"The Witcher 3 GOTY", "the witcher 3 game of the year"},
+		{"The Witcher 3 GOTY", "witcher 3 game of the year"},
 		{"goty edition", "game of the year edition"},
 		// Trademark symbols
 		{"Skyrim™", "skyrim"},
@@ -27,7 +27,12 @@ func TestNormalizeTitle(t *testing.T) {
 		// Whitespace collapse
 		{"  Hello   World  ", "hello world"},
 		// Combined
-		{"The Witcher 3: Wild Hunt - GOTY (2015)", "the witcher 3 wild hunt game of the year"},
+		{"The Witcher 3: Wild Hunt - GOTY (2015)", "witcher 3 wild hunt game of the year"},
+		// Leading "The" article stripped so "The X" and "X" compare equally
+		{"The Blackwell Deception", "blackwell deception"},
+		{"Blackwell Deception", "blackwell deception"},
+		// "the" inside words must not be affected
+		{"Thea: The Awakening", "thea the awakening"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {

@@ -568,3 +568,72 @@ func TestProcessSyncItem_WithIGDBAutoResolve(t *testing.T) {
 		t.Errorf("expected item status to advance from pending, still pending")
 	}
 }
+
+func TestProcessSyncItem_LowConfidenceIGDB_StoresMatchConfidence(t *testing.T) {
+	// IGDB returns a close-but-not-exact match (score > 0.6, < 0.85) so the item
+	// goes to pending_review. We verify that match_confidence is stored so the UI
+	// can surface it to the user.
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
+	}))
+	defer tokenSrv.Close()
+
+	// Return "Tesla Effect: A Tex Murphy Adventure" when searching for "Tesla Effect".
+	// After normalization: "tesla effect" vs "tesla effect a tex murphy adventure".
+	// PartialRatio = 100% → score = 0.80, which is > 0.6 (in candidates) but < 0.85
+	// (below auto-resolve threshold), so the item stays pending_review.
+	igdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": 261510, "name": "Tesla Effect: A Tex Murphy Adventure", "slug": "tesla-effect-a-tex-murphy-adventure"},
+		})
+	}))
+	defer igdbSrv.Close()
+
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'steam', '261510', 'Tesla Effect', false, true, false, 0)`,
+		egID, userID,
+	)
+
+	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '261510', 'Tesla Effect', ?, 'pending', '{}', '[]')`,
+		itemID, jobID, userID, string(metaJSON),
+	)
+
+	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: igdbClient}
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	var matchConfidence *float64
+	_ = testDB.NewRaw(`SELECT status, match_confidence FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status, &matchConfidence)
+	if status != "pending_review" {
+		t.Errorf("expected status=pending_review, got %q", status)
+	}
+	if matchConfidence == nil {
+		t.Error("expected match_confidence to be stored, got nil")
+	} else if *matchConfidence <= 0 || *matchConfidence >= 1 {
+		t.Errorf("expected match_confidence in (0, 1), got %f", *matchConfidence)
+	}
+}

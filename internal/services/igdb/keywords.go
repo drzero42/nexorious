@@ -3,12 +3,14 @@ package igdb
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
 var (
 	kwGOTY          = regexp.MustCompile(`(?i)\bgoty\b`)
 	kwTelltale      = regexp.MustCompile(`(?i)the telltale series`)
+	kwTrademark     = regexp.MustCompile(`™`)
 	kwRegistered    = regexp.MustCompile(`®`)
 	kwClassic       = regexp.MustCompile(`(?i)\(classic\)`)
 	kwColon         = regexp.MustCompile(`:`)
@@ -26,6 +28,7 @@ type keywordRule struct {
 var keywordRules = []keywordRule{
 	{kwGOTY, "Game of the Year", nil},
 	{kwTelltale, "", nil},
+	{kwTrademark, "", nil},
 	{kwRegistered, "", nil},
 	{kwClassic, "", nil},
 	{kwColon, " ", nil},
@@ -74,10 +77,5 @@ func collapseWhitespace(s string) string {
 }
 
 func containsString(slice []string, s string) bool {
-	for _, v := range slice {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, s)
 }

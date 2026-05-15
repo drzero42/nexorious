@@ -101,8 +101,10 @@ func TestExpandQueries(t *testing.T) {
 		{"Halo: Reach", 2, "halo reach"},
 		// Year in parens
 		{"Doom (2016)", 2, "doom"},
-		// Trademark
+		// Trademark ® (registered)
 		{"FIFA®", 2, "fifa"},
+		// Trademark ™ must also be stripped so IGDB search doesn't include the symbol
+		{"Batman™: Arkham Knight", 2, "batman arkham knight"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {

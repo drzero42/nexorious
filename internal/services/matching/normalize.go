@@ -34,5 +34,7 @@ func NormalizeTitle(s string) string {
 	s = reMultiWhitespace.ReplaceAllString(s, " ")
 	// 8. Lowercase and trim
 	s = strings.ToLower(strings.TrimSpace(s))
+	// 9. Strip leading "the " so "The X" and "X" compare equally
+	s = strings.TrimPrefix(s, "the ")
 	return s
 }

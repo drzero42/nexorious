@@ -369,6 +369,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 				// Store candidates and wait for manual review.
 				candidatesJSON, _ := json.Marshal(candidates)
 				item.IGDBCandidates = candidatesJSON
+				item.MatchConfidence = &bestScore
 				syncMarkItemPendingReview(ctx, w.DB, &item)
 				syncCheckJobCompletion(ctx, w.DB, item.JobID)
 				return nil
@@ -524,7 +525,7 @@ func syncMarkItemSkipped(ctx context.Context, db *bun.DB, item *models.JobItem) 
 func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.JobItem) {
 	item.Status = models.JobItemStatusPendingReview
 	_, err := db.NewUpdate().Model(item).
-		Column("status", "igdb_candidates").
+		Column("status", "igdb_candidates", "match_confidence").
 		Where("id = ?", item.ID).
 		Exec(ctx)
 	if err != nil {
