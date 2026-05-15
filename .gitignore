@@ -18,12 +18,6 @@ ui/frontend/src/routeTree.gen.ts
 
 storage
 
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
-.beads/proxieddb/
-
 # Test coverage files
 coverage.out
 coverage.html

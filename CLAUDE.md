@@ -203,6 +203,30 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
 - Run `slumber collection` to verify the collection loads without errors after any change
 
+### Non-Interactive Shell Commands
+
+**ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
+
+Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interactive) mode on some systems, causing the agent to hang indefinitely waiting for y/n input.
+
+**Use these forms instead:**
+```bash
+# Force overwrite without prompting
+cp -f source dest           # NOT: cp source dest
+mv -f source dest           # NOT: mv source dest
+rm -f file                  # NOT: rm file
+
+# For recursive operations
+rm -rf directory            # NOT: rm -r directory
+cp -rf source dest          # NOT: cp -r source dest
+```
+
+**Other commands that may prompt:**
+- `scp` - use `-o BatchMode=yes` for non-interactive
+- `ssh` - use `-o BatchMode=yes` to fail instead of prompting
+- `apt-get` - use `-y` flag
+- `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
+
 ## Known Gotchas
 
 - **`sql.ErrNoRows` vs DB errors** — always `errors.Is(err, sql.ErrNoRows)` to distinguish "not found" (→ 404/401) from real connection failures (→ 500); import `"database/sql"` for the sentinel. Bun wraps pgx errors into `sql.ErrNoRows`, so use the stdlib sentinel (not `pgx.ErrNoRows`)
@@ -218,96 +242,3 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - **Service package import cycles** — if `internal/api` imports `internal/services/steam` and vice-versa, break the cycle by having each service package define its own local summary types; `router.go` bridges them with adapter structs that satisfy the handler's interface
 - **Platform/storefront `icon` field** — DB stores bare filename (e.g. `steam-icon-light.svg`); API responses must construct `icon_url` as `/logos/storefronts/<name>/<filename>` (or `platforms/`). Logos are bundled in the SPA dist and served at `/logos/...` — not `/static/logos/`.
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
-## Task Tracking
-
-This project uses **bd (beads)** for persistent issue and task tracking across sessions.
-Run `bd prime` to see full workflow context and commands.
-
-### Workflow
-
-Use the full pipeline for any non-trivial feature work:
-
-```
-brainstorming -> design spec -> superpowers:writing-plans -> plan-to-epic -> epic-executor
-```
-
-For small changes (single file, few lines): implement directly without the pipeline.
-
-### Skill Routing
-
-- **Never use `superpowers:brainstorming` directly.** Always use the plain `brainstorming` skill instead — it is an extended version that chains into the beads pipeline (design doc → plan → epic → execution).
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- **Always pass `--json`** to all `bd` commands for reliable parsing
-- **Always include `--description`** when creating issues — context matters across sessions
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-- **Do not create `docs/plans/` markdown task files** — that's what beads is for.
-  Design docs and implementation plans written by `superpowers:writing-plans` are fine;
-  do not create additional freestanding task-tracking markdown.
-
-### Beads File Handling
-
-Beads manages its own files — do not second-guess what it stages or commits:
-
-- **`issues.jsonl`** — auto-exported and auto-staged by beads after every change; include it in commits alongside your code changes
-- **`interactions.jsonl`** — audit log written by beads; include it in commits alongside your code changes
-- **`embeddeddolt/`** — gitignored by beads; never touch it, it syncs via `bd dolt push` / `bd dolt pull`
-
-When beads files appear staged, commit them. Do not unstage them.
-
-### Resuming Work
-
-To resume an in-progress epic:
-
-```
-continue epic <epic-id>
-```
-
-The epic-executor will check `bd epic status`, find the next ready task, and continue without re-explanation.
-
-### Key Commands
-
-```bash
-bd prime                                      # Inject workflow context (runs automatically on session start)
-bd ready --json                               # Show tasks with no blockers
-bd epic status <epic-id> --json               # Show epic completion %
-bd list --status open --json                  # List all open issues
-bd show <task-id> --json                      # Show task details
-bd update <task-id> --claim --json            # Claim a task
-bd update <task-id> --status=open --json      # Unclaim a task (back to ready queue)
-bd close <task-id> --reason "..." --json      # Close a task
-bd blocked --json                             # Show what's blocked and why
-bd dolt push                                  # Sync Dolt state to remote
-bd dolt pull                                  # Sync Dolt state from remote
-```
-
-## Session Completion
-
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   bd dolt push
-   git pull --rebase
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
