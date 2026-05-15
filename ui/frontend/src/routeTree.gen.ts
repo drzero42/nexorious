@@ -26,7 +26,6 @@ import { Route as AuthenticatedSyncPlatformRouteImport } from './routes/_authent
 import { Route as AuthenticatedJobsIdRouteImport } from './routes/_authenticated/jobs/$id'
 import { Route as AuthenticatedGamesAddRouteImport } from './routes/_authenticated/games/add'
 import { Route as AuthenticatedGamesIdRouteImport } from './routes/_authenticated/games/$id'
-import { Route as AuthenticatedAdminPlatformsRouteImport } from './routes/_authenticated/admin/platforms'
 import { Route as AuthenticatedAdminMaintenanceRouteImport } from './routes/_authenticated/admin/maintenance'
 import { Route as AuthenticatedAdminBackupsRouteImport } from './routes/_authenticated/admin/backups'
 import { Route as AuthenticatedGamesAddIndexRouteImport } from './routes/_authenticated/games/add.index'
@@ -122,12 +121,6 @@ const AuthenticatedGamesIdRoute = AuthenticatedGamesIdRouteImport.update({
   path: '/games/$id',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedAdminPlatformsRoute =
-  AuthenticatedAdminPlatformsRouteImport.update({
-    id: '/admin/platforms',
-    path: '/admin/platforms',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedAdminMaintenanceRoute =
   AuthenticatedAdminMaintenanceRouteImport.update({
     id: '/admin/maintenance',
@@ -193,7 +186,6 @@ export interface FileRoutesByFullPath {
   '/login': typeof PublicLoginRoute
   '/admin/backups': typeof AuthenticatedAdminBackupsRoute
   '/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
-  '/admin/platforms': typeof AuthenticatedAdminPlatformsRoute
   '/games/$id': typeof AuthenticatedGamesIdRouteWithChildren
   '/games/add': typeof AuthenticatedGamesAddRouteWithChildren
   '/jobs/$id': typeof AuthenticatedJobsIdRoute
@@ -220,7 +212,6 @@ export interface FileRoutesByTo {
   '/login': typeof PublicLoginRoute
   '/admin/backups': typeof AuthenticatedAdminBackupsRoute
   '/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
-  '/admin/platforms': typeof AuthenticatedAdminPlatformsRoute
   '/jobs/$id': typeof AuthenticatedJobsIdRoute
   '/sync/$platform': typeof AuthenticatedSyncPlatformRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
@@ -248,7 +239,6 @@ export interface FileRoutesById {
   '/_public/login': typeof PublicLoginRoute
   '/_authenticated/admin/backups': typeof AuthenticatedAdminBackupsRoute
   '/_authenticated/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
-  '/_authenticated/admin/platforms': typeof AuthenticatedAdminPlatformsRoute
   '/_authenticated/games/$id': typeof AuthenticatedGamesIdRouteWithChildren
   '/_authenticated/games/add': typeof AuthenticatedGamesAddRouteWithChildren
   '/_authenticated/jobs/$id': typeof AuthenticatedJobsIdRoute
@@ -277,7 +267,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/admin/backups'
     | '/admin/maintenance'
-    | '/admin/platforms'
     | '/games/$id'
     | '/games/add'
     | '/jobs/$id'
@@ -304,7 +293,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/admin/backups'
     | '/admin/maintenance'
-    | '/admin/platforms'
     | '/jobs/$id'
     | '/sync/$platform'
     | '/admin'
@@ -331,7 +319,6 @@ export interface FileRouteTypes {
     | '/_public/login'
     | '/_authenticated/admin/backups'
     | '/_authenticated/admin/maintenance'
-    | '/_authenticated/admin/platforms'
     | '/_authenticated/games/$id'
     | '/_authenticated/games/add'
     | '/_authenticated/jobs/$id'
@@ -476,13 +463,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedGamesIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/admin/platforms': {
-      id: '/_authenticated/admin/platforms'
-      path: '/admin/platforms'
-      fullPath: '/admin/platforms'
-      preLoaderRoute: typeof AuthenticatedAdminPlatformsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/admin/maintenance': {
       id: '/_authenticated/admin/maintenance'
       path: '/admin/maintenance'
@@ -585,7 +565,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedTagsRoute: typeof AuthenticatedTagsRoute
   AuthenticatedAdminBackupsRoute: typeof AuthenticatedAdminBackupsRoute
   AuthenticatedAdminMaintenanceRoute: typeof AuthenticatedAdminMaintenanceRoute
-  AuthenticatedAdminPlatformsRoute: typeof AuthenticatedAdminPlatformsRoute
   AuthenticatedGamesIdRoute: typeof AuthenticatedGamesIdRouteWithChildren
   AuthenticatedGamesAddRoute: typeof AuthenticatedGamesAddRouteWithChildren
   AuthenticatedJobsIdRoute: typeof AuthenticatedJobsIdRoute
@@ -607,7 +586,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedTagsRoute: AuthenticatedTagsRoute,
   AuthenticatedAdminBackupsRoute: AuthenticatedAdminBackupsRoute,
   AuthenticatedAdminMaintenanceRoute: AuthenticatedAdminMaintenanceRoute,
-  AuthenticatedAdminPlatformsRoute: AuthenticatedAdminPlatformsRoute,
   AuthenticatedGamesIdRoute: AuthenticatedGamesIdRouteWithChildren,
   AuthenticatedGamesAddRoute: AuthenticatedGamesAddRouteWithChildren,
   AuthenticatedJobsIdRoute: AuthenticatedJobsIdRoute,
