@@ -261,8 +261,11 @@ func TestPendingReviewCount_Empty(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["count"].(float64) != 0 {
-		t.Fatalf("expected count=0, got %v", resp["count"])
+	if resp["pending_review_count"].(float64) != 0 {
+		t.Fatalf("expected pending_review_count=0, got %v", resp["pending_review_count"])
+	}
+	if _, ok := resp["counts_by_source"]; !ok {
+		t.Fatal("expected counts_by_source key in response")
 	}
 }
 
@@ -283,8 +286,15 @@ func TestPendingReviewCount_WithItems(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["count"].(float64) != 1 {
-		t.Fatalf("expected count=1, got %v", resp["count"])
+	if resp["pending_review_count"].(float64) != 1 {
+		t.Fatalf("expected pending_review_count=1, got %v", resp["pending_review_count"])
+	}
+	bySource, ok := resp["counts_by_source"].(map[string]any)
+	if !ok {
+		t.Fatal("expected counts_by_source to be an object")
+	}
+	if bySource["steam"].(float64) != 1 {
+		t.Fatalf("expected counts_by_source.steam=1, got %v", bySource["steam"])
 	}
 }
 

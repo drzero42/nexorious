@@ -52,7 +52,7 @@ function SyncServiceCardWithStatus({
   const { isPending: isUpdating } = useUpdateSyncConfig();
   const { isPending: isSyncing } = useTriggerSync();
 
-  const pendingReviewCount = reviewData?.countsBySource[config.platform] ?? 0;
+  const pendingReviewCount = reviewData?.countsBySource?.[config.platform] ?? 0;
 
   const handleUpdate = async (data: SyncConfigUpdateData) => {
     await onUpdate(config.platform, data);

@@ -224,17 +224,35 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 
-	var count int
+	type sourceCount struct {
+		Source string `bun:"source"`
+		Count  int    `bun:"count"`
+	}
+
+	var rows []sourceCount
 	err := h.db.NewRaw(`
-		SELECT COUNT(*) FROM job_items
-		WHERE user_id = ? AND status = ?`,
+		SELECT j.source, COUNT(*) AS count
+		FROM job_items ji
+		JOIN jobs j ON ji.job_id = j.id
+		WHERE ji.user_id = ? AND ji.status = ?
+		GROUP BY j.source`,
 		userID, models.JobItemStatusPendingReview,
-	).Scan(context.Background(), &count)
+	).Scan(context.Background(), &rows)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count pending reviews")
 	}
 
-	return c.JSON(http.StatusOK, map[string]int{"count": count})
+	countsBySource := make(map[string]int)
+	total := 0
+	for _, row := range rows {
+		countsBySource[row.Source] = row.Count
+		total += row.Count
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"pending_review_count": total,
+		"counts_by_source":     countsBySource,
+	})
 }
 
 // HandleActiveJob handles GET /api/jobs/active/:job_type.
