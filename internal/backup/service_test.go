@@ -631,7 +631,7 @@ func createValidArchiveWithType(t *testing.T, backupDir, name, backupType string
 		coverChecksum,
 	)
 
-	archiveName := "backup-" + name
+	archiveName := "nexorious-backup-" + name
 	archivePath := filepath.Join(backupDir, archiveName+".tar.gz")
 	f, err := os.Create(archivePath)
 	if err != nil {

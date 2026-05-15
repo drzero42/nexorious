@@ -67,7 +67,7 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 		return "", fmt.Errorf("create backup: %w", err)
 	}
 
-	id := fmt.Sprintf("backup-%s", time.Now().UTC().Format("20060102-150405"))
+	id := fmt.Sprintf("nexorious-backup-%s", time.Now().UTC().Format("20060102-150405"))
 
 	tmpDir, err := os.MkdirTemp("", "nexorious-backup-*")
 	if err != nil {
@@ -142,7 +142,7 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 
 // ListBackups returns all backups sorted by created_at descending.
 func (s *Service) ListBackups() ([]BackupInfo, error) {
-	pattern := filepath.Join(s.backupPath, "backup-*.tar.gz")
+	pattern := filepath.Join(s.backupPath, "nexorious-backup-*.tar.gz")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("glob backups: %w", err)
@@ -562,7 +562,7 @@ func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (stri
 		return "", fmt.Errorf("validate uploaded archive: %w", err)
 	}
 
-	id := fmt.Sprintf("backup-%s", time.Now().UTC().Format("20060102-150405"))
+	id := fmt.Sprintf("nexorious-backup-%s", time.Now().UTC().Format("20060102-150405"))
 	destPath := filepath.Join(s.backupPath, id+".tar.gz")
 	if err := os.MkdirAll(s.backupPath, 0o755); err != nil {
 		return "", fmt.Errorf("create backup dir: %w", err)
