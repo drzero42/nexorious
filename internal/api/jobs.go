@@ -258,11 +258,12 @@ func (h *JobsHandler) HandleActiveJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get active job")
 	}
 
-	// Fall back to most recent completed/failed/cancelled job.
+	// Fall back to most recent terminal job — order by completed_at so the
+	// result is deterministic even for old rows that have zero created_at.
 	if errors.Is(err, sql.ErrNoRows) {
 		err = h.db.NewSelect().Model(&job).
 			Where("user_id = ? AND job_type = ?", userID, jobType).
-			OrderExpr("created_at DESC").
+			OrderExpr("completed_at DESC NULLS LAST, created_at DESC NULLS LAST").
 			Limit(1).
 			Scan(ctx)
 		if err != nil {
@@ -475,12 +476,13 @@ func (h *JobsHandler) HandleCancelJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel job")
 	}
 
-	// Cancel any queued River jobs for this nexorious job.
+	// Cancel any queued River jobs for this nexorious job. ImportItemArgs serialises
+	// as {"job_item_id": "..."}, so match against the job_items table.
 	_, _ = h.db.NewRaw(`
 		UPDATE river_job
 		SET state = 'cancelled', finalized_at = NOW()
 		WHERE state IN ('available', 'scheduled', 'retryable', 'pending')
-		  AND args->>'job_id' = ?`,
+		  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE job_id = ?)`,
 		jobID,
 	).Exec(context.Background())
 

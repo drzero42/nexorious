@@ -31,11 +31,12 @@ const (
 
 // Job status constants.
 const (
-	JobStatusPending    = "pending"
-	JobStatusProcessing = "processing"
-	JobStatusCompleted  = "completed"
-	JobStatusFailed     = "failed"
-	JobStatusCancelled  = "cancelled"
+	JobStatusPending             = "pending"
+	JobStatusProcessing          = "processing"
+	JobStatusCompleted           = "completed"
+	JobStatusFailed              = "failed"
+	JobStatusCancelled           = "cancelled"
+	JobStatusCompletedWithErrors = "completed_with_errors"
 )
 
 // Job priority constants.
@@ -68,9 +69,12 @@ func (j *Job) IsActive() bool {
 	return j.Status == JobStatusPending || j.Status == JobStatusProcessing
 }
 
-// IsTerminal returns true if the job is completed, failed, or cancelled.
+// IsTerminal returns true if the job has reached a terminal state.
 func (j *Job) IsTerminal() bool {
-	return j.Status == JobStatusCompleted || j.Status == JobStatusFailed || j.Status == JobStatusCancelled
+	return j.Status == JobStatusCompleted ||
+		j.Status == JobStatusFailed ||
+		j.Status == JobStatusCancelled ||
+		j.Status == JobStatusCompletedWithErrors
 }
 
 // DurationSeconds returns elapsed seconds from StartedAt to CompletedAt

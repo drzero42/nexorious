@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -105,6 +106,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	}
 
 	// Create the Job record.
+	now := time.Now().UTC()
 	job := &models.Job{
 		ID:         uuid.NewString(),
 		UserID:     userID,
@@ -113,6 +115,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		Status:     models.JobStatusPending,
 		Priority:   models.JobPriorityHigh,
 		TotalItems: len(export.Games),
+		CreatedAt:  now,
 	}
 	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")

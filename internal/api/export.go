@@ -65,6 +65,7 @@ func (h *ExportHandler) handleExport(c *echo.Context, source string, taskType st
 		Status:     models.JobStatusPending,
 		Priority:   models.JobPriorityNormal,
 		TotalItems: count,
+		CreatedAt:  time.Now().UTC(),
 	}
 	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create export job")
