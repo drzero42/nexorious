@@ -74,8 +74,8 @@ export DATABASE_URL="postgres://..."
   - `migrations/` — golang-migrate SQL files (`0001_initial.up.sql`, etc.)
   - `models/` — Bun model structs (hand-edited)
 - `internal/migrate/` — migration state machine + Echo handlers for `/migrate` and `/api/migrate/*`
-- `internal/worker/` — goroutine pool with buffered `chan TaskFunc`; tasks under `worker/tasks/`
-- `internal/scheduler/` — gocron v2 job definitions (scheduled maintenance)
+- `internal/worker/` — River job worker implementations; `tasks/` contains workers for sync, import, export, and metadata refresh
+- `internal/scheduler/` — River worker implementations for periodic maintenance jobs (cleanup, backup polling, stale job pruning); `BuildPeriodicJobs()` registers cron-scheduled River `PeriodicJob` entries
 - `internal/services/` — IGDB client, Steam/PSN sync, game matching, platform resolution
 - `internal/auth/` — JWT generation/validation + Echo middleware
 - `internal/filter/` — dynamic query builder (Bun) for user-game list filtering
@@ -92,7 +92,7 @@ export DATABASE_URL="postgres://..."
 ```
 NeedsMigration → Migrating → Ready
 ```
-Echo middleware blocks all non-migration routes until state is `Ready`. Workers and the gocron scheduler start only after migrations complete. Graceful shutdown drains the worker queue on `SIGTERM`/`SIGINT`.
+Echo middleware blocks all non-migration routes until state is `Ready`. River workers and the cron-based periodic job scheduler start only after migrations complete. Graceful shutdown waits for in-flight River jobs on `SIGTERM`/`SIGINT`.
 
 ### Database Layer
 - **ORM**: Bun (`uptrace/bun`) with model structs in `internal/db/models/`. Queries use Bun's query builder.
@@ -124,7 +124,7 @@ FastAPI is eliminated; the Go binary serves the React SPA itself.
 - **API zone** — gated by state middleware, then JWT where required
 
 ### Workers & Scheduler
-Workers are goroutines reading from a buffered channel (`worker/pool.go`). Task types live under `worker/tasks/`: `sync.go`, `import_item.go`, `export.go`, `metadata_refresh.go`. Backup logic lives in `internal/backup/` (invoked from the scheduler, not as a worker task). The gocron scheduler dispatches recurring tasks after `Ready`.
+River (`riverqueue/river`) is the job queue. Worker structs live under `worker/tasks/` (sync, import, export, metadata refresh) and `internal/scheduler/` (cleanup jobs, backup polling). Periodic schedules are registered in `scheduler.BuildPeriodicJobs()` using `robfig/cron/v3` expressions and River `PeriodicJob`. Backup orchestration still lives in `internal/backup/` and is invoked by the `CheckScheduledBackupWorker`.
 
 ### Rate Limiting
 `ratelimit.Limiter` interface with two implementations:
