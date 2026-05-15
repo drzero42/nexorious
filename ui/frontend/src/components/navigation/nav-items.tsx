@@ -6,7 +6,6 @@ import {
   RefreshCw,
   Tag,
   Users,
-  Layers,
   Shield,
   Wrench,
   DatabaseBackup,
@@ -60,11 +59,6 @@ export function useNavItems() {
         href: '/admin/users',
         label: 'User Management',
         icon: <Users className="h-4 w-4" />,
-      },
-      {
-        href: '/admin/platforms',
-        label: 'Platforms',
-        icon: <Layers className="h-4 w-4" />,
       },
       {
         href: '/admin/maintenance',

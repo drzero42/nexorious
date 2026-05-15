@@ -16,7 +16,6 @@ import {
   AlertCircle,
   Loader2,
   Package,
-  Settings,
 } from 'lucide-react';
 import * as adminApi from '@/api/admin';
 import type { AdminStatistics, SeedDataResult } from '@/types';
@@ -297,12 +296,6 @@ function AdminDashboardPage() {
                   <Link to="/admin/users">
                     <Users className="mr-2 h-4 w-4" />
                     Manage Users
-                  </Link>
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link to="/admin/platforms">
-                    <Settings className="mr-2 h-4 w-4" />
-                    Manage Platforms
                   </Link>
                 </Button>
                 <Button
