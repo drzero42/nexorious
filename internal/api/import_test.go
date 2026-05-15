@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
 // ─── Import test helpers ──────────────────────────────────────────────────────
@@ -82,9 +81,8 @@ func validExportJSON(t *testing.T, n int) []byte {
 
 func TestImportNexorious_NoFile(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	_, token := setupTagUser(t, testDB, e, "imp-nofile")
 
@@ -105,9 +103,8 @@ func TestImportNexorious_NoFile(t *testing.T) {
 
 func TestImportNexorious_InvalidJSON(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	_, token := setupTagUser(t, testDB, e, "imp-badjson")
 
@@ -120,9 +117,8 @@ func TestImportNexorious_InvalidJSON(t *testing.T) {
 
 func TestImportNexorious_WrongVersion(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	_, token := setupTagUser(t, testDB, e, "imp-wrongver")
 
@@ -150,9 +146,8 @@ func TestImportNexorious_WrongVersion(t *testing.T) {
 
 func TestImportNexorious_EmptyGames(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	_, token := setupTagUser(t, testDB, e, "imp-empty")
 
@@ -171,9 +166,8 @@ func TestImportNexorious_EmptyGames(t *testing.T) {
 
 func TestImportNexorious_Success(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	_, token := setupTagUser(t, testDB, e, "imp-success")
 
@@ -206,9 +200,8 @@ func TestImportNexorious_Success(t *testing.T) {
 
 func TestImportNexorious_Conflict(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	_, token := setupTagUser(t, testDB, e, "imp-conflict")
 

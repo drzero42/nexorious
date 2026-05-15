@@ -6,169 +6,243 @@ import (
 	"os"
 	"time"
 
-	"github.com/go-co-op/gocron/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
+	"github.com/robfig/cron/v3"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/backup"
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/worker"
+	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
 
-type Scheduler struct {
-	db                      *bun.DB
-	pool                    *worker.Pool
-	backupSvc               *backup.Service
-	metadataRefreshInterval time.Duration
-	staleJobThreshold       time.Duration
-	scheduler               gocron.Scheduler
-	backupJob               gocron.Job
+// ── CleanupOldJobs ─────────────────────────────────────────────────────────────
+
+type CleanupOldJobsArgs struct{}
+
+func (CleanupOldJobsArgs) Kind() string { return "cleanup_old_jobs" }
+
+type CleanupOldJobsWorker struct {
+	river.WorkerDefaults[CleanupOldJobsArgs]
+	DB *bun.DB
 }
 
-func NewScheduler(db *bun.DB, pool *worker.Pool, backupSvc *backup.Service, cfg *config.Config) *Scheduler {
+func (w *CleanupOldJobsWorker) Work(ctx context.Context, _ *river.Job[CleanupOldJobsArgs]) error {
+	CleanupOldJobs(ctx, w.DB)
+	return nil
+}
+
+// ── CleanupExports ─────────────────────────────────────────────────────────────
+
+type CleanupExportsArgs struct{}
+
+func (CleanupExportsArgs) Kind() string { return "cleanup_exports" }
+
+type CleanupExportsWorker struct {
+	river.WorkerDefaults[CleanupExportsArgs]
+	DB *bun.DB
+}
+
+func (w *CleanupExportsWorker) Work(ctx context.Context, _ *river.Job[CleanupExportsArgs]) error {
+	CleanupExports(ctx, w.DB)
+	return nil
+}
+
+// ── CleanupUnreferencedGames ──────────────────────────────────────────────────
+
+type CleanupUnreferencedGamesArgs struct{}
+
+func (CleanupUnreferencedGamesArgs) Kind() string { return "cleanup_unreferenced_games" }
+
+type CleanupUnreferencedGamesWorker struct {
+	river.WorkerDefaults[CleanupUnreferencedGamesArgs]
+	DB *bun.DB
+}
+
+func (w *CleanupUnreferencedGamesWorker) Work(ctx context.Context, _ *river.Job[CleanupUnreferencedGamesArgs]) error {
+	CleanupUnreferencedGames(ctx, w.DB)
+	return nil
+}
+
+// ── CleanupExpiredSessions ────────────────────────────────────────────────────
+
+type CleanupExpiredSessionsArgs struct{}
+
+func (CleanupExpiredSessionsArgs) Kind() string { return "cleanup_expired_sessions" }
+
+type CleanupExpiredSessionsWorker struct {
+	river.WorkerDefaults[CleanupExpiredSessionsArgs]
+	DB *bun.DB
+}
+
+func (w *CleanupExpiredSessionsWorker) Work(ctx context.Context, _ *river.Job[CleanupExpiredSessionsArgs]) error {
+	CleanupExpiredSessions(ctx, w.DB)
+	return nil
+}
+
+// ── CleanupStaleJobs ──────────────────────────────────────────────────────────
+
+type CleanupStaleJobsArgs struct {
+	Threshold string `json:"threshold"`
+}
+
+func (CleanupStaleJobsArgs) Kind() string { return "cleanup_stale_jobs" }
+
+type CleanupStaleJobsWorker struct {
+	river.WorkerDefaults[CleanupStaleJobsArgs]
+	DB *bun.DB
+}
+
+func (w *CleanupStaleJobsWorker) Work(ctx context.Context, job *river.Job[CleanupStaleJobsArgs]) error {
+	d, err := time.ParseDuration(job.Args.Threshold)
+	if err != nil {
+		slog.Warn("cleanup_stale_jobs: invalid threshold, defaulting to 4h", "threshold", job.Args.Threshold, "err", err)
+		d = 4 * time.Hour
+	}
+	CleanupStaleJobs(ctx, w.DB, d)
+	return nil
+}
+
+// ── CheckPendingSyncs ─────────────────────────────────────────────────────────
+
+type CheckPendingSyncsArgs struct{}
+
+func (CheckPendingSyncsArgs) Kind() string { return "check_pending_syncs" }
+
+type CheckPendingSyncsWorker struct {
+	river.WorkerDefaults[CheckPendingSyncsArgs]
+	DB          *bun.DB
+	RiverClient *river.Client[pgx.Tx]
+}
+
+func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPendingSyncsArgs]) error {
+	var configs []models.UserSyncConfig
+	if err := w.DB.NewSelect().Model(&configs).Where("frequency != 'manual'").Scan(ctx); err != nil {
+		slog.Error("CheckPendingSyncs: query configs", "err", err)
+		return nil
+	}
+
+	now := time.Now().UTC()
+	intervals := map[string]float64{
+		"hourly": 3600,
+		"daily":  86400,
+		"weekly": 604800,
+	}
+
+	for _, cfg := range configs {
+		if cfg.Storefront == "epic" {
+			continue
+		}
+
+		needsSync := false
+		if cfg.LastSyncedAt == nil {
+			needsSync = true
+		} else if threshold, ok := intervals[cfg.Frequency]; ok {
+			needsSync = now.Sub(*cfg.LastSyncedAt).Seconds() >= threshold
+		}
+
+		if !needsSync {
+			continue
+		}
+
+		var existingID string
+		err := w.DB.NewRaw(
+			`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
+			cfg.UserID, cfg.Storefront,
+		).Scan(ctx, &existingID)
+		if err == nil {
+			continue // already running
+		}
+
+		jobID := uuid.NewString()
+		_, err = w.DB.NewRaw(
+			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at) VALUES (?, ?, 'sync', ?, 'pending', 'low', now())`,
+			jobID, cfg.UserID, cfg.Storefront,
+		).Exec(ctx)
+		if err != nil {
+			slog.Error("CheckPendingSyncs: insert job", "err", err)
+			continue
+		}
+
+		_, _ = w.RiverClient.Insert(ctx, tasks.DispatchSyncArgs{
+			JobID:      jobID,
+			UserID:     cfg.UserID,
+			Storefront: cfg.Storefront,
+		}, nil)
+	}
+	return nil
+}
+
+// ── BuildPeriodicJobs ─────────────────────────────────────────────────────────
+
+// mustCron parses a standard cron expression and panics on error.
+// Used only at startup with hard-coded expressions.
+func mustCron(expr string) cron.Schedule {
+	s, err := cron.ParseStandard(expr)
+	if err != nil {
+		panic("scheduler: invalid cron expression " + expr + ": " + err.Error())
+	}
+	return s
+}
+
+// BuildPeriodicJobs returns the list of River periodic jobs for the scheduler.
+// staleThreshold is passed from config (already parsed).
+func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*river.PeriodicJob {
 	interval, err := time.ParseDuration(cfg.MetadataRefreshInterval)
 	if err != nil {
 		slog.Warn("scheduler: invalid METADATA_REFRESH_INTERVAL, defaulting to 24h",
 			"value", cfg.MetadataRefreshInterval, "err", err)
 		interval = 24 * time.Hour
 	}
-	staleThreshold, err := time.ParseDuration(cfg.StaleJobThreshold)
-	if err != nil {
-		slog.Warn("scheduler: invalid STALE_JOB_THRESHOLD, defaulting to 4h",
-			"value", cfg.StaleJobThreshold, "err", err)
-		staleThreshold = 4 * time.Hour
-	}
-	return &Scheduler{
-		db:                      db,
-		pool:                    pool,
-		backupSvc:               backupSvc,
-		metadataRefreshInterval: interval,
-		staleJobThreshold:       staleThreshold,
-	}
-}
 
-func (s *Scheduler) Start(ctx context.Context) error {
-	sched, err := gocron.NewScheduler()
-	if err != nil {
-		return err
-	}
-	s.scheduler = sched
-
-	// Cleanup old job results — daily at 3:00 AM UTC.
-	_, _ = s.scheduler.NewJob(
-		gocron.CronJob("0 3 * * *", false),
-		gocron.NewTask(func() {
-			CleanupOldJobs(ctx, s.db)
-		}),
-	)
-
-	// Cleanup exports — daily at 4:00 AM UTC.
-	_, _ = s.scheduler.NewJob(
-		gocron.CronJob("0 4 * * *", false),
-		gocron.NewTask(func() {
-			CleanupExports(ctx, s.db)
-		}),
-	)
-
-	// Cleanup unreferenced games — daily at 5:00 AM UTC.
-	_, _ = s.scheduler.NewJob(
-		gocron.CronJob("0 5 * * *", false),
-		gocron.NewTask(func() {
-			CleanupUnreferencedGames(ctx, s.db)
-		}),
-	)
-
-	// Cleanup expired sessions — every 30 minutes.
-	_, _ = s.scheduler.NewJob(
-		gocron.CronJob("*/30 * * * *", false),
-		gocron.NewTask(func() {
-			CleanupExpiredSessions(ctx, s.db)
-		}),
-	)
-
-	// Check pending syncs — every 15 minutes.
-	_, _ = s.scheduler.NewJob(
-		gocron.CronJob("*/15 * * * *", false),
-		gocron.NewTask(func() {
-			CheckPendingSyncs(ctx, s.db, s.pool)
-		}),
-	)
-
-	// Cleanup stale metadata_refresh jobs — hourly.
-	_, _ = s.scheduler.NewJob(
-		gocron.CronJob("0 * * * *", false),
-		gocron.NewTask(func() {
-			CleanupStaleJobs(ctx, s.db, s.staleJobThreshold)
-		}),
-	)
-
-	// Metadata refresh dispatch — configurable interval.
-	_, _ = s.scheduler.NewJob(
-		gocron.DurationJob(s.metadataRefreshInterval),
-		gocron.NewTask(func() {
-			_ = s.pool.Submit(ctx, "metadata_refresh_dispatch", nil, 1)
-		}),
-	)
-
-	// Scheduled backup job — reads config from DB.
-	if s.backupSvc != nil && backup.PgDumpAvailable() {
-		var cfg models.BackupConfig
-		if err := s.db.NewSelect().Model(&cfg).Where("id = 1").Scan(ctx); err != nil {
-			slog.Warn("scheduler: could not read backup_config", "err", err)
-		} else if cfg.ScheduleCron != "" {
-			s.registerBackupJob(ctx, cfg.ScheduleCron, cfg.RetentionMode, cfg.RetentionValue)
-		}
-	} else if s.backupSvc != nil {
-		slog.Warn("scheduler: pg_dump not available — skipping scheduled backup job")
-	}
-
-	s.scheduler.Start()
-	slog.Info("scheduler started")
-	return nil
-}
-
-func (s *Scheduler) registerBackupJob(_ context.Context, cron, retentionMode string, retentionValue int) {
-	job, err := s.scheduler.NewJob(
-		gocron.CronJob(cron, false),
-		gocron.NewTask(func() {
-			id, err := s.backupSvc.CreateBackup("scheduled")
-			if err != nil {
-				slog.Error("scheduled backup failed", "err", err)
-				return
-			}
-			slog.Info("scheduled backup created", "id", id)
-			if err := s.backupSvc.ApplyRetention(retentionMode, retentionValue); err != nil {
-				slog.Warn("scheduled backup retention cleanup failed", "err", err)
-			}
-		}),
-	)
-	if err != nil {
-		slog.Error("scheduler: failed to register backup job", "err", err)
-		return
-	}
-	s.backupJob = job
-	slog.Info("scheduler: backup job registered", "cron", cron)
-}
-
-// RebuildBackupJob removes the existing backup job and registers a new one with updated config.
-// Call this after the backup config is updated via the API.
-func (s *Scheduler) RebuildBackupJob(ctx context.Context, cron, retentionMode string, retentionValue int) {
-	if s.backupJob != nil {
-		_ = s.scheduler.RemoveJob(s.backupJob.ID())
-		s.backupJob = nil
-	}
-	if cron != "" && backup.PgDumpAvailable() {
-		s.registerBackupJob(ctx, cron, retentionMode, retentionValue)
+	return []*river.PeriodicJob{
+		river.NewPeriodicJob(
+			mustCron("0 3 * * *"),
+			func() (river.JobArgs, *river.InsertOpts) { return CleanupOldJobsArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			mustCron("0 4 * * *"),
+			func() (river.JobArgs, *river.InsertOpts) { return CleanupExportsArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			mustCron("0 5 * * *"),
+			func() (river.JobArgs, *river.InsertOpts) { return CleanupUnreferencedGamesArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			mustCron("*/30 * * * *"),
+			func() (river.JobArgs, *river.InsertOpts) { return CleanupExpiredSessionsArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			mustCron("0 * * * *"),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return CleanupStaleJobsArgs{Threshold: staleThreshold.String()}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			mustCron("*/15 * * * *"),
+			func() (river.JobArgs, *river.InsertOpts) { return CheckPendingSyncsArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			river.PeriodicInterval(interval),
+			func() (river.JobArgs, *river.InsertOpts) { return tasks.MetadataRefreshDispatchArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			river.PeriodicInterval(time.Minute),
+			func() (river.JobArgs, *river.InsertOpts) { return CheckScheduledBackupArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
 	}
 }
 
-func (s *Scheduler) Stop() {
-	if s.scheduler != nil {
-		_ = s.scheduler.Shutdown()
-		slog.Info("scheduler stopped")
-	}
-}
+// ── Standalone worker functions ────────────────────────────────────────────────
 
 // CleanupOldJobs deletes terminal jobs older than 30 days and their items (CASCADE).
 func CleanupOldJobs(ctx context.Context, db *bun.DB) {
@@ -238,62 +312,6 @@ func CleanupUnreferencedGames(ctx context.Context, db *bun.DB) {
 	rows, _ := result.RowsAffected()
 	if rows > 0 {
 		slog.Info("cleanup: deleted unreferenced games", "count", rows)
-	}
-}
-
-// CheckPendingSyncs dispatches sync jobs for overdue non-manual sync configs.
-func CheckPendingSyncs(ctx context.Context, db *bun.DB, pool *worker.Pool) {
-	var configs []models.UserSyncConfig
-	if err := db.NewSelect().Model(&configs).Where("frequency != 'manual'").Scan(ctx); err != nil {
-		slog.Error("CheckPendingSyncs: query configs", "err", err)
-		return
-	}
-
-	now := time.Now().UTC()
-	intervals := map[string]float64{
-		"hourly": 3600,
-		"daily":  86400,
-		"weekly": 604800,
-	}
-
-	for _, cfg := range configs {
-		if cfg.Storefront == "epic" {
-			continue
-		}
-
-		needsSync := false
-		if cfg.LastSyncedAt == nil {
-			needsSync = true
-		} else if threshold, ok := intervals[cfg.Frequency]; ok {
-			needsSync = now.Sub(*cfg.LastSyncedAt).Seconds() >= threshold
-		}
-
-		if !needsSync {
-			continue
-		}
-
-		var existingID string
-		err := db.NewRaw(
-			`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
-			cfg.UserID, cfg.Storefront,
-		).Scan(ctx, &existingID)
-		if err == nil {
-			continue // already running
-		}
-
-		jobID := uuid.NewString()
-		_, err = db.NewRaw(
-			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at) VALUES (?, ?, 'sync', ?, 'pending', 'low', now())`,
-			jobID, cfg.UserID, cfg.Storefront,
-		).Exec(ctx)
-		if err != nil {
-			slog.Error("CheckPendingSyncs: insert job", "err", err)
-			continue
-		}
-
-		_ = pool.Submit(ctx, "dispatch_sync", map[string]string{
-			"job_id": jobID, "user_id": cfg.UserID, "storefront": cfg.Storefront,
-		}, 1)
 	}
 }
 

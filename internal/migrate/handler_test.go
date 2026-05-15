@@ -49,8 +49,8 @@ func TestHandleStatus_NeedsMigration(t *testing.T) {
 	if body.State != "needs_migration" {
 		t.Errorf("expected state=needs_migration, got %q", body.State)
 	}
-	if body.PendingCount != 1 {
-		t.Errorf("expected pending_count=1, got %d", body.PendingCount)
+	if body.PendingCount != 7 {
+		t.Errorf("expected pending_count=7, got %d", body.PendingCount)
 	}
 }
 

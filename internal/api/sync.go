@@ -13,9 +13,12 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
+
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/worker"
+	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
 
 // SteamClient abstracts the Steam Web API call used during credential verification.
@@ -120,14 +123,14 @@ type psnStatusResponse struct {
 // SyncHandler handles sync configuration, trigger, and status endpoints.
 type SyncHandler struct {
 	db          *bun.DB
-	pool        *worker.Pool
+	riverClient *river.Client[pgx.Tx]
 	steamClient SteamClient
 	psnClient   PSNClient
 }
 
 // NewSyncHandler constructs a SyncHandler.
-func NewSyncHandler(db *bun.DB, pool *worker.Pool, steam SteamClient, psn PSNClient) *SyncHandler {
-	return &SyncHandler{db: db, pool: pool, steamClient: steam, psnClient: psn}
+func NewSyncHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient) *SyncHandler {
+	return &SyncHandler{db: db, riverClient: riverClient, steamClient: steam, psnClient: psn}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
@@ -323,10 +326,10 @@ func (h *SyncHandler) HandleTriggerSync(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job")
 	}
 
-	if h.pool != nil {
-		_ = h.pool.Submit(ctx, "dispatch_sync", map[string]string{
-			"job_id": jobID, "user_id": userID, "storefront": sf,
-		}, 10)
+	if h.riverClient != nil {
+		_, _ = h.riverClient.Insert(ctx, tasks.DispatchSyncArgs{
+			JobID: jobID, UserID: userID, Storefront: sf,
+		}, nil)
 	}
 
 	return c.JSON(http.StatusOK, manualSyncTriggerResponse{

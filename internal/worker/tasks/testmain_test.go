@@ -14,15 +14,20 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
+	"github.com/riverqueue/river/rivermigrate"
+	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 	bunmigrate "github.com/uptrace/bun/migrate"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/drzero42/nexorious-go/internal/db/migrations"
-	"github.com/drzero42/nexorious-go/internal/db/models"
 )
 
 // testDB is the shared database connection for all external package tests.
 var testDB *bun.DB
+
+// testConnStr is the DSN of the shared test container, exposed for tests that
+// need a pgxpool (e.g. to create a non-started River client).
+var testConnStr string
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
@@ -47,6 +52,8 @@ func TestMain(m *testing.M) {
 		panic("get connection string: " + err.Error())
 	}
 
+	testConnStr = connStr
+
 	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
 	testDB = bun.NewDB(sqldb, pgdialect.New())
 
@@ -60,6 +67,18 @@ func TestMain(m *testing.M) {
 		_ = testDB.Close()
 		_ = ctr.Terminate(ctx)
 		panic("migrate: " + err.Error())
+	}
+
+	riverMig, err := rivermigrate.New(riverdatabasesql.New(testDB.DB), nil)
+	if err != nil {
+		_ = testDB.Close()
+		_ = ctr.Terminate(ctx)
+		panic("river migrator init: " + err.Error())
+	}
+	if _, err := riverMig.Migrate(ctx, rivermigrate.DirectionUp, nil); err != nil {
+		_ = testDB.Close()
+		_ = ctr.Terminate(ctx)
+		panic("river migrate: " + err.Error())
 	}
 
 	code := m.Run()
@@ -77,7 +96,7 @@ func truncateAllTables(t *testing.T) {
 			users, user_sessions, games, external_games,
 			platforms, storefronts, platform_storefronts,
 			tags, user_games, user_game_tags, user_game_platforms,
-			jobs, job_items, pending_tasks, backup_config,
+			jobs, job_items, river_job, backup_config,
 			user_sync_configs, rate_limiter_tokens
 		RESTART IDENTITY CASCADE
 	`)
@@ -139,11 +158,3 @@ func mustMarshal(t *testing.T, v any) json.RawMessage {
 	return b
 }
 
-func makePendingTask(t *testing.T, itemID string) *models.PendingTask {
-	t.Helper()
-	return &models.PendingTask{
-		ID:       uuid.NewString(),
-		TaskType: "import_item",
-		Payload:  mustMarshal(t, map[string]string{"job_item_id": itemID}),
-	}
-}

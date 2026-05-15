@@ -12,16 +12,14 @@ import (
 
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
 // ─── Export tests ────────────────────────────────────────────────────────────
 
 func TestExportJSON_NoGames(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	_, token := setupTagUser(t, testDB, e, "exp-nojson")
 
@@ -34,9 +32,8 @@ func TestExportJSON_NoGames(t *testing.T) {
 
 func TestExportJSON_Success(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	userID, token := setupTagUser(t, testDB, e, "exp-json-ok")
 
@@ -76,9 +73,8 @@ func TestExportJSON_Success(t *testing.T) {
 
 func TestExportCSV_Success(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	userID, token := setupTagUser(t, testDB, e, "exp-csv-ok")
 
@@ -143,9 +139,8 @@ func insertCompletedExportJob(t *testing.T, db *bun.DB, id, userID, jobType, fil
 
 func TestDownload_NotFound(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	_, token := setupTagUser(t, testDB, e, "dl-notfound")
 
@@ -157,9 +152,8 @@ func TestDownload_NotFound(t *testing.T) {
 
 func TestDownload_NotExportJob(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	userID, token := setupTagUser(t, testDB, e, "dl-notexport")
 
@@ -174,9 +168,8 @@ func TestDownload_NotExportJob(t *testing.T) {
 
 func TestDownload_NotCompleted(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	userID, token := setupTagUser(t, testDB, e, "dl-notcomplete")
 
@@ -191,9 +184,8 @@ func TestDownload_NotCompleted(t *testing.T) {
 
 func TestDownload_Success(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	userID, token := setupTagUser(t, testDB, e, "dl-success")
 
@@ -219,9 +211,8 @@ func TestDownload_Success(t *testing.T) {
 
 func TestDownload_WrongOwner(t *testing.T) {
 	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
+	e := newTestEchoPool(t, testDB, cfg)
 
 	// user2 owns the job; user1 makes the request.
 	userID2 := "u-dl-owner2"

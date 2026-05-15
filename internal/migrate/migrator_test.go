@@ -73,8 +73,8 @@ func TestNewMigrator_FreshDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PendingCount: %v", err)
 	}
-	if count != 1 {
-		t.Errorf("expected 1 pending migration, got %d", count)
+	if count != 7 {
+		t.Errorf("expected 7 pending migrations (1 Bun + 6 River), got %d", count)
 	}
 }
 
@@ -152,7 +152,11 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"user_sync_configs",
 		"jobs",
 		"job_items",
-		"pending_tasks",
+		"river_queue",
+		"river_job",
+		"river_leader",
+		"river_client",
+		"river_client_queue",
 		"backup_config",
 		"rate_limiter_tokens",
 	}

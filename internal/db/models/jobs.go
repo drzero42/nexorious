@@ -7,23 +7,6 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// ─── PendingTask ─────────────────────────────────────────────────────────────
-
-type PendingTask struct {
-	bun.BaseModel `bun:"table:pending_tasks"`
-
-	ID        string          `bun:"id,pk"                 json:"id"`
-	TaskType  string          `bun:"task_type,notnull"      json:"task_type"`
-	Payload   json.RawMessage `bun:"payload,notnull"        json:"payload"`
-	Priority  int             `bun:"priority,notnull"       json:"priority"`
-	Status    string          `bun:"status,notnull"         json:"status"`
-	Attempts  int             `bun:"attempts,notnull"       json:"attempts"`
-	LastError *string         `bun:"last_error"             json:"last_error"`
-	CreatedAt time.Time       `bun:"created_at,notnull"     json:"created_at"`
-	ClaimedAt *time.Time      `bun:"claimed_at"             json:"claimed_at"`
-	DoneAt    *time.Time      `bun:"done_at"                json:"done_at"`
-}
-
 // ─── Job ─────────────────────────────────────────────────────────────────────
 
 // Job type constants.

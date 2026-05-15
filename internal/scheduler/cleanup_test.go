@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/scheduler"
-	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
 // ---------------------------------------------------------------------------
@@ -247,10 +247,8 @@ func TestCheckPendingSyncs_OverdueSyncDispatched(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	pool := worker.NewPool(testDB)
-	defer pool.Shutdown()
-
-	scheduler.CheckPendingSyncs(ctx, testDB, pool)
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	// A pending sync job should have been inserted.
 	var count int
@@ -282,10 +280,8 @@ func TestCheckPendingSyncs_NotOverdue_NotDispatched(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	pool := worker.NewPool(testDB)
-	defer pool.Shutdown()
-
-	scheduler.CheckPendingSyncs(ctx, testDB, pool)
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	var count int
 	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
@@ -312,10 +308,8 @@ func TestCheckPendingSyncs_NeverSynced_Dispatched(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	pool := worker.NewPool(testDB)
-	defer pool.Shutdown()
-
-	scheduler.CheckPendingSyncs(ctx, testDB, pool)
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	var count int
 	if err := testDB.NewRaw(
@@ -345,10 +339,8 @@ func TestCheckPendingSyncs_EpicSkipped(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	pool := worker.NewPool(testDB)
-	defer pool.Shutdown()
-
-	scheduler.CheckPendingSyncs(ctx, testDB, pool)
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	var count int
 	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
@@ -386,10 +378,8 @@ func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
 		t.Fatalf("insert running job: %v", err)
 	}
 
-	pool := worker.NewPool(testDB)
-	defer pool.Shutdown()
-
-	scheduler.CheckPendingSyncs(ctx, testDB, pool)
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	var count int
 	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
@@ -416,10 +406,8 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 		t.Fatalf("insert sync config: %v", err)
 	}
 
-	pool := worker.NewPool(testDB)
-	defer pool.Shutdown()
-
-	scheduler.CheckPendingSyncs(ctx, testDB, pool)
+	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
+	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
 
 	var count int
 	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
@@ -431,38 +419,28 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// NewScheduler — guard branches for invalid config durations
+// BuildPeriodicJobs — guard branches for invalid config durations
 // ---------------------------------------------------------------------------
 
-func TestNewScheduler_InvalidMetadataRefreshInterval_DefaultsTo24h(t *testing.T) {
-	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
-	defer pool.Shutdown()
-
+func TestBuildPeriodicJobs_InvalidMetadataRefreshInterval_DefaultsTo24h(t *testing.T) {
 	cfg := &config.Config{
 		MetadataRefreshInterval: "not-a-duration",
 		StaleJobThreshold:       "4h",
 	}
-
 	// Should not panic; falls back to 24h.
-	sched := scheduler.NewScheduler(testDB, pool, nil, cfg)
-	if sched == nil {
-		t.Fatal("expected non-nil scheduler")
+	jobs := scheduler.BuildPeriodicJobs(cfg, 4*time.Hour)
+	if len(jobs) == 0 {
+		t.Fatal("expected non-empty periodic jobs slice")
 	}
 }
 
-func TestNewScheduler_InvalidStaleJobThreshold_DefaultsTo4h(t *testing.T) {
-	truncateAllTables(t)
-	pool := worker.NewPool(testDB)
-	defer pool.Shutdown()
-
+func TestBuildPeriodicJobs_InvalidStaleJobThreshold_DefaultsTo4h(t *testing.T) {
 	cfg := &config.Config{
 		MetadataRefreshInterval: "24h",
 		StaleJobThreshold:       "not-a-duration",
 	}
-
-	sched := scheduler.NewScheduler(testDB, pool, nil, cfg)
-	if sched == nil {
-		t.Fatal("expected non-nil scheduler")
+	jobs := scheduler.BuildPeriodicJobs(cfg, 4*time.Hour)
+	if len(jobs) == 0 {
+		t.Fatal("expected non-empty periodic jobs slice")
 	}
 }

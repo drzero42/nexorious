@@ -12,7 +12,6 @@ import (
 
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/auth"
-	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
 type stubSteamClient struct {
@@ -33,26 +32,25 @@ func (s *stubPSNClient) GetAccountInfo(_ context.Context, _ string) (*api.PSNAcc
 	return s.info, s.err
 }
 
-func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient) (interface {
+func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
-}, *worker.Pool) {
+} {
 	t.Helper()
 	cfg := testCfg()
-	pool := worker.NewPool(testDB)
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, pool, steam, psn)
+	synch := api.NewSyncHandler(db, nil, steam, psn)
 	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 	synch.RegisterRoutes(g)
-	return e, pool
+	return e
 }
 
 // ─── Sync config tests ────────────────────────────────────────────────────────
 
 func TestSyncConfig_ListDefaults(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "cfg-list-1")
 
 	rec := getAuth(t, e, "/api/sync/config", token)
@@ -80,7 +78,7 @@ func TestSyncConfig_ListDefaults(t *testing.T) {
 
 func TestSyncConfig_Put_CreatesRow(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "cfg-put-1")
 
 	rec := putJSONAuth(t, e, "/api/sync/config/steam", map[string]any{
@@ -104,7 +102,7 @@ func TestSyncConfig_Put_CreatesRow(t *testing.T) {
 
 func TestSyncConfig_Put_InvalidStorefront(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "cfg-invalid-1")
 
 	rec := putJSONAuth(t, e, "/api/sync/config/gog", map[string]any{"frequency": "daily"}, token)
@@ -115,7 +113,7 @@ func TestSyncConfig_Put_InvalidStorefront(t *testing.T) {
 
 func TestSyncConfig_Put_EpicAllowed(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "cfg-epic-1")
 
 	rec := putJSONAuth(t, e, "/api/sync/config/epic", map[string]any{"frequency": "weekly"}, token)
@@ -128,7 +126,7 @@ func TestSyncConfig_Put_EpicAllowed(t *testing.T) {
 
 func TestSyncTrigger_CreatesJob(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "trig-1")
 
 	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
@@ -152,7 +150,7 @@ func TestSyncTrigger_CreatesJob(t *testing.T) {
 
 func TestSyncTrigger_EpicReturns400(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "trig-epic-1")
 
 	rec := postJSONAuth(t, e, "/api/sync/epic", nil, token)
@@ -163,7 +161,7 @@ func TestSyncTrigger_EpicReturns400(t *testing.T) {
 
 func TestSyncTrigger_DuplicateReturns409(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "trig-dup-1")
 
 	postJSONAuth(t, e, "/api/sync/steam", nil, token)
@@ -175,7 +173,7 @@ func TestSyncTrigger_DuplicateReturns409(t *testing.T) {
 
 func TestSyncStatus_ReflectsActiveJob(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "stat-1")
 
 	rec := getAuth(t, e, "/api/sync/steam/status", token)
@@ -206,7 +204,7 @@ func TestSyncStatus_ReflectsActiveJob(t *testing.T) {
 
 func TestSteamVerify_BadSteamID(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "sv-bad-id")
 
 	rec := postJSONAuth(t, e, "/api/sync/steam/verify", map[string]any{
@@ -230,7 +228,7 @@ func TestSteamVerify_BadSteamID(t *testing.T) {
 
 func TestSteamVerify_BadAPIKey(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "sv-bad-key")
 
 	rec := postJSONAuth(t, e, "/api/sync/steam/verify", map[string]any{
@@ -254,7 +252,7 @@ func TestSteamVerify_StubSuccess(t *testing.T) {
 	stub := &stubSteamClient{
 		summary: &api.SteamPlayerSummary{PersonaName: "Frostbyte", CommunityVisibilityState: 3},
 	}
-	e, _ := newSyncTestApp(t, testDB, stub, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, stub, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "sv-ok")
 
 	rec := postJSONAuth(t, e, "/api/sync/steam/verify", map[string]any{
@@ -288,7 +286,7 @@ func TestSteamVerify_StubSuccess(t *testing.T) {
 
 func TestSteamDisconnect_Idempotent(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "sd-1")
 
 	rec := deleteAuth(t, e, "/api/sync/steam/connection", token)
@@ -301,7 +299,7 @@ func TestSteamDisconnect_Idempotent(t *testing.T) {
 
 func TestPSNConfigure_ShortToken(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-short")
 
 	rec := postJSONAuth(t, e, "/api/sync/psn/configure", map[string]any{
@@ -317,7 +315,7 @@ func TestPSNConfigure_StubSuccess(t *testing.T) {
 	stub := &stubPSNClient{
 		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456", Region: "GB"},
 	}
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-ok")
 
 	token64 := strings.Repeat("a", 64)
@@ -350,7 +348,7 @@ func TestPSNConfigure_StubSuccess(t *testing.T) {
 
 func TestPSNStatus_NoRow(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-stat-empty")
 
 	rec := getAuth(t, e, "/api/sync/psn/status", token)
@@ -374,7 +372,7 @@ func TestPSNStatus_NoRow(t *testing.T) {
 
 func TestPSNDisconnect_Idempotent(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-disc-1")
 
 	rec := deleteAuth(t, e, "/api/sync/psn/disconnect", token)
@@ -399,7 +397,7 @@ func insertExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID,
 
 func TestIgnored_EmptyList(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "ign-empty")
 
 	rec := getAuth(t, e, "/api/sync/ignored", token)
@@ -417,7 +415,7 @@ func TestIgnored_EmptyList(t *testing.T) {
 
 func TestIgnored_SkipAndUnskip(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "ign-roundtrip")
 	insertExternalGame(t, testDB, "eg-1", userID, "steam", "730", "CS2")
 
@@ -456,7 +454,7 @@ func TestIgnored_SkipAndUnskip(t *testing.T) {
 
 func TestIgnored_404ForUnknown(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "ign-404")
 
 	rec := postJSONAuth(t, e, "/api/sync/ignored/nonexistent", nil, token)
@@ -469,7 +467,7 @@ func TestIgnored_404ForUnknown(t *testing.T) {
 
 func TestSyncListConfig_AfterPut(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "listcfg-afterput")
 
 	// Create a steam config.
@@ -512,7 +510,7 @@ func TestSyncListConfig_AfterPut(t *testing.T) {
 
 func TestSyncGetConfig_NoRow_ReturnsDefault(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "getcfg-norow")
 
 	rec := getAuth(t, e, "/api/sync/config/steam", token)
@@ -534,7 +532,7 @@ func TestSyncGetConfig_NoRow_ReturnsDefault(t *testing.T) {
 
 func TestSyncGetConfig_AfterPut(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "getcfg-afterput")
 
 	// Create a config first.
@@ -562,7 +560,7 @@ func TestSyncGetConfig_AfterPut(t *testing.T) {
 
 func TestSyncGetConfig_InvalidStorefront(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "getcfg-invalid")
 
 	rec := getAuth(t, e, "/api/sync/config/gog", token)
@@ -578,7 +576,7 @@ func TestPSNStatus_WithCredentials(t *testing.T) {
 	stub := &stubPSNClient{
 		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456", Region: "GB"},
 	}
-	e, _ := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "psn-stat-cred")
 
 	// Configure PSN first to store credentials.

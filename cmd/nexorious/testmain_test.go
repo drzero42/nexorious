@@ -13,6 +13,8 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
+	"github.com/riverqueue/river/rivermigrate"
+	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 	bunmigrate "github.com/uptrace/bun/migrate"
 
 	"github.com/drzero42/nexorious-go/internal/db/migrations"
@@ -63,6 +65,16 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	riverMig, err := rivermigrate.New(riverdatabasesql.New(testDB.DB), nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "river migrator init: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := riverMig.Migrate(ctx, rivermigrate.DirectionUp, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "river migrate: %v\n", err)
+		os.Exit(1)
+	}
+
 	os.Exit(m.Run())
 }
 
@@ -85,7 +97,7 @@ func truncateAllTables(t *testing.T) {
 		"user_game_platforms",
 		"jobs",
 		"job_items",
-		"pending_tasks",
+		"river_job",
 		"backup_config",
 		"user_sync_configs",
 		"rate_limiter_tokens",

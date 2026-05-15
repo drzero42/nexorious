@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	"github.com/riverqueue/river"
+	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/spf13/cobra"
 	"github.com/uptrace/bun"
 
@@ -22,7 +24,6 @@ import (
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
-	"github.com/drzero42/nexorious-go/internal/worker"
 	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
 
@@ -32,13 +33,13 @@ func newServeCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
 		Short: "Start the HTTP server (default action)",
-		Long:  "Start the Echo HTTP server, worker pool, and scheduler. This is the default action when no subcommand is supplied.",
+		Long:  "Start the Echo HTTP server, River worker client, and scheduler. This is the default action when no subcommand is supplied.",
 		RunE:  runServe,
 	}
 }
 
 // runServe contains the historical main() body. It loads .env, opens the
-// database, wires the migrator/worker/scheduler/HTTP server and blocks until
+// database, wires the migrator/River client/HTTP server and blocks until
 // SIGINT/SIGTERM triggers a graceful shutdown.
 func runServe(cmd *cobra.Command, _ []string) error {
 	cfg, err := loadEnvAndConfig(cmd)
@@ -142,68 +143,137 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	// -------------------------------------------------------------------------
-	// Worker pool — created early so the Echo server can reference it.
+	// pgxPool for River
 	// -------------------------------------------------------------------------
-	pool := worker.NewPool(db)
-	pool.Register("import_item", tasks.NewImportItemHandler(db, igdbClient, cfg.StoragePath))
-	pool.Register("export_json", tasks.NewExportJSONHandler(db, cfg.StoragePath))
-	pool.Register("export_csv", tasks.NewExportCSVHandler(db, cfg.StoragePath))
-	pool.Register("dispatch_sync", tasks.NewDispatchSyncHandler(db, steamsvc.NewClient(), psnsvc.NewClient()))
-	pool.Register("process_sync_item", tasks.NewProcessSyncItemHandler(db, igdbClient))
-	pool.Register("metadata_refresh_dispatch",
-		tasks.NewMetadataRefreshDispatchHandler(db, pool, igdbClient))
-	pool.Register("metadata_refresh_item",
-		tasks.NewMetadataRefreshItemHandler(db, igdbClient, cfg.StoragePath))
+	pgxPool, err := openPgxPool(ctx, resolvedDatabaseURL)
+	if err != nil {
+		return fmt.Errorf("pgxpool: %w", err)
+	}
+	defer pgxPool.Close()
+
+	// -------------------------------------------------------------------------
+	// River workers
+	// -------------------------------------------------------------------------
+	staleThreshold, err := time.ParseDuration(cfg.StaleJobThreshold)
+	if err != nil {
+		slog.Warn("invalid STALE_JOB_THRESHOLD, defaulting to 4h", "value", cfg.StaleJobThreshold)
+		staleThreshold = 4 * time.Hour
+	}
+
+	dispatchSyncWorker := &tasks.DispatchSyncWorker{
+		DB:    db,
+		Steam: steamsvc.NewClient(),
+		PSN:   psnsvc.NewClient(),
+	}
+	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
+		DB:         db,
+		IGDBClient: igdbClient,
+	}
+	checkPendingSyncsWorker := &scheduler.CheckPendingSyncsWorker{DB: db}
+
+	workers := river.NewWorkers()
+	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, &tasks.ExportJSONWorker{DB: db, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, &tasks.ExportCSVWorker{DB: db, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, dispatchSyncWorker)
+	river.AddWorker(workers, &tasks.ProcessSyncItemWorker{DB: db, IGDBClient: igdbClient})
+	river.AddWorker(workers, metaDispatchWorker)
+	river.AddWorker(workers, &tasks.MetadataRefreshItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, &scheduler.CleanupOldJobsWorker{DB: db})
+	river.AddWorker(workers, &scheduler.CleanupExportsWorker{DB: db})
+	river.AddWorker(workers, &scheduler.CleanupUnreferencedGamesWorker{DB: db})
+	river.AddWorker(workers, &scheduler.CleanupExpiredSessionsWorker{DB: db})
+	river.AddWorker(workers, &scheduler.CleanupStaleJobsWorker{DB: db})
+	river.AddWorker(workers, checkPendingSyncsWorker)
+	river.AddWorker(workers, &scheduler.CheckScheduledBackupWorker{DB: db, BackupSvc: backupSvc})
+
+	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
+		Workers: workers,
+		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
+		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
+	})
+	if err != nil {
+		return fmt.Errorf("river.NewClient: %w", err)
+	}
+
+	// Wire River client into workers that submit sub-jobs.
+	dispatchSyncWorker.RiverClient = riverClient
+	metaDispatchWorker.RiverClient = riverClient
+	checkPendingSyncsWorker.RiverClient = riverClient
 
 	// -------------------------------------------------------------------------
 	// HTTP server
 	// -------------------------------------------------------------------------
-	var sched *scheduler.Scheduler
-
 	shutdownCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	restoreCallbacks := &api.RestoreCallbacks{
 		SetMaintenance: maint.SetMaintenanceMode,
-		ShutdownPool:   func() { pool.Shutdown() },
-		StopScheduler: func() {
-			if sched != nil {
-				sched.Stop()
-			}
-		},
+		ShutdownPool:   func() {},
+		StopScheduler:  func() {},
 		CloseDB: func() error {
-			// psql terminates PostgreSQL connections via pg_terminate_backend before restore;
-			// keeping *bun.DB open lets all handlers auto-reconnect after restore completes.
 			return nil
 		},
 		ReconnectDB: func() (*bun.DB, error) {
-			// Existing *bun.DB auto-reconnects; no need to create a new instance.
 			backupSvc.SetDB(db)
 			return db, nil
 		},
 		RebuildServices: func(newDB *bun.DB) error {
-			newPool := worker.NewPool(newDB)
-			newPool.Register("import_item", tasks.NewImportItemHandler(newDB, igdbClient, cfg.StoragePath))
-			newPool.Register("export_json", tasks.NewExportJSONHandler(newDB, cfg.StoragePath))
-			newPool.Register("export_csv", tasks.NewExportCSVHandler(newDB, cfg.StoragePath))
-			newPool.Register("dispatch_sync", tasks.NewDispatchSyncHandler(newDB, steamsvc.NewClient(), psnsvc.NewClient()))
-			newPool.Register("process_sync_item", tasks.NewProcessSyncItemHandler(newDB, igdbClient))
-			newPool.Register("metadata_refresh_dispatch",
-				tasks.NewMetadataRefreshDispatchHandler(newDB, newPool, igdbClient))
-			newPool.Register("metadata_refresh_item",
-				tasks.NewMetadataRefreshItemHandler(newDB, igdbClient, cfg.StoragePath))
-			newPool.Start(shutdownCtx, cfg.WorkerCount)
-			pool = newPool
+			_ = riverClient.Stop(context.Background())
+			pgxPool.Close()
 
-			newSched := scheduler.NewScheduler(newDB, newPool, backupSvc, cfg)
-			sched = newSched
-			if err := newSched.Start(shutdownCtx); err != nil {
-				slog.Error("failed to restart scheduler after restore", "err", err)
-				slog.Info("worker pool restarted after restore; scheduler did not start")
-				return fmt.Errorf("restart scheduler after restore: %w", err)
+			newPgxPool, err := openPgxPool(context.Background(), resolvedDatabaseURL)
+			if err != nil {
+				return fmt.Errorf("RebuildServices: pgxpool: %w", err)
 			}
 
-			slog.Info("workers and scheduler restarted after restore")
+			newDispatchSync := &tasks.DispatchSyncWorker{
+				DB:    newDB,
+				Steam: steamsvc.NewClient(),
+				PSN:   psnsvc.NewClient(),
+			}
+			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
+				DB:         newDB,
+				IGDBClient: igdbClient,
+			}
+			newCheckSyncs := &scheduler.CheckPendingSyncsWorker{DB: newDB}
+
+			newWorkers := river.NewWorkers()
+			river.AddWorker(newWorkers, &tasks.ImportItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+			river.AddWorker(newWorkers, &tasks.ExportJSONWorker{DB: newDB, StoragePath: cfg.StoragePath})
+			river.AddWorker(newWorkers, &tasks.ExportCSVWorker{DB: newDB, StoragePath: cfg.StoragePath})
+			river.AddWorker(newWorkers, newDispatchSync)
+			river.AddWorker(newWorkers, &tasks.ProcessSyncItemWorker{DB: newDB, IGDBClient: igdbClient})
+			river.AddWorker(newWorkers, newMetaDispatch)
+			river.AddWorker(newWorkers, &tasks.MetadataRefreshItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+			river.AddWorker(newWorkers, &scheduler.CleanupOldJobsWorker{DB: newDB})
+			river.AddWorker(newWorkers, &scheduler.CleanupExportsWorker{DB: newDB})
+			river.AddWorker(newWorkers, &scheduler.CleanupUnreferencedGamesWorker{DB: newDB})
+			river.AddWorker(newWorkers, &scheduler.CleanupExpiredSessionsWorker{DB: newDB})
+			river.AddWorker(newWorkers, &scheduler.CleanupStaleJobsWorker{DB: newDB})
+			river.AddWorker(newWorkers, newCheckSyncs)
+			river.AddWorker(newWorkers, &scheduler.CheckScheduledBackupWorker{DB: newDB, BackupSvc: backupSvc})
+
+			newClient, err := river.NewClient(riverpgxv5.New(newPgxPool), &river.Config{
+				Workers: newWorkers,
+				Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
+				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
+			})
+			if err != nil {
+				return fmt.Errorf("RebuildServices: river.NewClient: %w", err)
+			}
+
+			newDispatchSync.RiverClient = newClient
+			newMetaDispatch.RiverClient = newClient
+			newCheckSyncs.RiverClient = newClient
+
+			if err := newClient.Start(shutdownCtx); err != nil {
+				return fmt.Errorf("RebuildServices: River start: %w", err)
+			}
+
+			riverClient = newClient
+			pgxPool = newPgxPool
+			slog.Info("services rebuilt after restore")
 			return nil
 		},
 		ReinitMigrator: func(db *bun.DB) error {
@@ -217,19 +287,15 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				migrator.SetStateForTest(migrate.AppStateDBUnavailable)
 			}
 		},
-		RebuildBackupJob: func(ctx context.Context, cron, retentionMode string, retentionValue int) {
-			if sched != nil {
-				sched.RebuildBackupJob(ctx, cron, retentionMode, retentionValue)
-			}
-		},
+		RebuildBackupJob: func(_ context.Context, _, _ string, _ int) {},
 	}
 
-	e := api.New(cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, pool)
+	e := api.New(cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, riverClient)
 
 	// StartDBProbe — polls every 5s, calls initAppState on recovery.
 	migrator.StartDBProbe(shutdownCtx, db, initAppState)
 
-	// Worker/scheduler gate — starts after Ready && !NeedsSetup.
+	// River start gate — waits for Ready && !NeedsSetup.
 	go func(ctx context.Context) {
 		for {
 			select {
@@ -238,12 +304,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			default:
 			}
 			if migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() {
-				pool.Start(ctx, cfg.WorkerCount)
-				sched = scheduler.NewScheduler(db, pool, backupSvc, cfg)
-				if err := sched.Start(ctx); err != nil {
-					slog.Error("failed to start scheduler", "err", err)
+				if err := riverClient.Start(ctx); err != nil {
+					slog.Error("failed to start River client", "err", err)
 				}
-				slog.Info("app ready — workers and scheduler started")
+				slog.Info("app ready — River client started")
 				return
 			}
 			time.Sleep(2 * time.Second)
@@ -264,10 +328,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Graceful shutdown sequence.
-	if sched != nil {
-		sched.Stop()
+	if err := riverClient.Stop(shutdownCtx); err != nil {
+		slog.Warn("River client stop", "err", err)
 	}
-	pool.Shutdown()
 
 	slog.Info("shutdown complete")
 	return nil

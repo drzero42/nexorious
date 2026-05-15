@@ -8,7 +8,6 @@ import (
 
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
 func insertJob(t *testing.T, db *bun.DB, id, userID, jobType, source, status string) {
@@ -35,21 +34,19 @@ func insertJobItem(t *testing.T, db *bun.DB, id, jobID, userID, itemKey, sourceT
 	}
 }
 
-func newTestEchoWithPool(t *testing.T, db *bun.DB) (interface {
+func newTestEchoWithPool(t *testing.T, db *bun.DB) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
-}, *worker.Pool) {
+} {
 	t.Helper()
-	pool := worker.NewPool(testDB)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg, pool)
-	return e, pool
+	return newTestEchoPool(t, testDB, cfg)
 }
 
 // ─── TestListJobs ─────────────────────────────────────────────────────────────
 
 func TestListJobs(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "jobs-list")
 
@@ -85,7 +82,7 @@ func TestListJobs(t *testing.T) {
 
 func TestGetJob(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "jobs-get")
 
@@ -113,7 +110,7 @@ func TestGetJob(t *testing.T) {
 
 func TestGetJob_WrongOwner(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID1 := "u-jobs-owner1"
 	insertAuthTestUser(t, testDB, userID1, "jobowner1", "pass123", true, false)
@@ -131,7 +128,7 @@ func TestGetJob_WrongOwner(t *testing.T) {
 
 func TestCancelJob(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "jobs-cancel")
 
@@ -159,7 +156,7 @@ func TestCancelJob(t *testing.T) {
 
 func TestCancelJob_AlreadyTerminal(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "jobs-cancel-term")
 
@@ -175,7 +172,7 @@ func TestCancelJob_AlreadyTerminal(t *testing.T) {
 
 func TestDeleteJob(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "jobs-delete")
 
@@ -203,7 +200,7 @@ func TestDeleteJob(t *testing.T) {
 
 func TestDeleteJob_ActiveReturns409(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "jobs-del-active")
 
@@ -219,7 +216,7 @@ func TestDeleteJob_ActiveReturns409(t *testing.T) {
 
 func TestJobsSummary(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "jobs-summary")
 
@@ -253,7 +250,7 @@ func TestJobsSummary(t *testing.T) {
 
 func TestPendingReviewCount_Empty(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	_, token := setupTagUser(t, testDB, e, "jobs-prc-empty")
 
 	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
@@ -271,7 +268,7 @@ func TestPendingReviewCount_Empty(t *testing.T) {
 
 func TestPendingReviewCount_WithItems(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-prc-items")
 
 	insertJob(t, testDB, "job-prc-1", userID, "import", "steam", "processing")
@@ -295,7 +292,7 @@ func TestPendingReviewCount_WithItems(t *testing.T) {
 
 func TestHandleActiveJob_NoJobs(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	_, token := setupTagUser(t, testDB, e, "jobs-active-none")
 
 	rec := getAuth(t, e, "/api/jobs/active/import", token)
@@ -306,7 +303,7 @@ func TestHandleActiveJob_NoJobs(t *testing.T) {
 
 func TestHandleActiveJob_ActiveJobExists(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-active-exists")
 
 	insertJob(t, testDB, "job-active-1", userID, "import", "steam", "processing")
@@ -326,7 +323,7 @@ func TestHandleActiveJob_ActiveJobExists(t *testing.T) {
 
 func TestHandleActiveJob_FallbackToCompleted(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-active-fallback")
 
 	// No active job, but there is a completed one.
@@ -349,7 +346,7 @@ func TestHandleActiveJob_FallbackToCompleted(t *testing.T) {
 
 func TestHandleRecentJobs_Empty(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	_, token := setupTagUser(t, testDB, e, "jobs-recent-empty")
 
 	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
@@ -367,7 +364,7 @@ func TestHandleRecentJobs_Empty(t *testing.T) {
 
 func TestHandleRecentJobs_WithJobs(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-recent-with")
 
 	insertJob(t, testDB, "job-recent-1", userID, "sync", "steam", "completed")
@@ -390,7 +387,7 @@ func TestHandleRecentJobs_WithJobs(t *testing.T) {
 
 func TestHandleGetJobItems_Success(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-items-ok")
 
 	insertJob(t, testDB, "job-items-1", userID, "import", "steam", "processing")
@@ -412,7 +409,7 @@ func TestHandleGetJobItems_Success(t *testing.T) {
 
 func TestHandleGetJobItems_WithStatusFilter(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-items-filter")
 
 	insertJob(t, testDB, "job-items-f", userID, "import", "steam", "processing")
@@ -434,7 +431,7 @@ func TestHandleGetJobItems_WithStatusFilter(t *testing.T) {
 
 func TestHandleGetJobItems_NotFound(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	_, token := setupTagUser(t, testDB, e, "jobs-items-notfound")
 
 	rec := getAuth(t, e, "/api/jobs/nonexistent-job/items", token)
@@ -447,7 +444,7 @@ func TestHandleGetJobItems_NotFound(t *testing.T) {
 
 func TestHandleRetryFailed_NoFailedItems(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-retry-nofail")
 
 	insertJob(t, testDB, "job-retry-nf", userID, "import", "steam", "processing")
@@ -468,7 +465,7 @@ func TestHandleRetryFailed_NoFailedItems(t *testing.T) {
 
 func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-retry-withfail")
 
 	insertJob(t, testDB, "job-retry-wf", userID, "import", "steam", "failed")
@@ -489,7 +486,7 @@ func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
 
 func TestHandleRetryFailed_NotFound(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	_, token := setupTagUser(t, testDB, e, "jobs-retry-notfound")
 
 	rec := postJSONAuth(t, e, "/api/jobs/nonexistent-job/retry-failed", nil, token)
@@ -502,7 +499,7 @@ func TestHandleRetryFailed_NotFound(t *testing.T) {
 
 func TestListJobs_WithFilters(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-list-filters")
 
 	insertJob(t, testDB, "job-filter-1", userID, "sync", "steam", "completed")
@@ -563,7 +560,7 @@ func TestListJobs_WithFilters(t *testing.T) {
 
 func TestCancelJob_NotFound(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	_, token := setupTagUser(t, testDB, e, "jobs-cancel-notfound")
 
 	rec := postJSONAuth(t, e, "/api/jobs/nonexistent-job/cancel", nil, token)
@@ -576,7 +573,7 @@ func TestCancelJob_NotFound(t *testing.T) {
 
 func TestDeleteJob_NotFound(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	_, token := setupTagUser(t, testDB, e, "jobs-del-notfound")
 
 	rec := deleteAuth(t, e, "/api/jobs/nonexistent-job", token)
@@ -587,7 +584,7 @@ func TestDeleteJob_NotFound(t *testing.T) {
 
 func TestHandleRetryFailed_SyncJobType(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-retry-sync")
 
 	insertJob(t, testDB, "job-retry-sync", userID, "sync", "steam", "failed")
@@ -608,7 +605,7 @@ func TestHandleRetryFailed_SyncJobType(t *testing.T) {
 
 func TestHandleRetryFailed_MetadataRefreshJobType(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "jobs-retry-meta")
 
 	insertJob(t, testDB, "job-retry-meta", userID, "metadata_refresh", "system", "failed")

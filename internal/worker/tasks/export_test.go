@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious-go/internal/db/models"
 	"github.com/drzero42/nexorious-go/internal/worker/tasks"
@@ -66,15 +67,10 @@ func TestExportJSON_Task(t *testing.T) {
 		t.Fatalf("insert export job: %v", err)
 	}
 
-	// Build and run the handler.
-	handler := tasks.NewExportJSONHandler(testDB, tmpDir)
-	task := &models.PendingTask{
-		ID:       uuid.NewString(),
-		TaskType: "export_json",
-		Payload:  mustMarshal(t, map[string]string{"job_id": jobID}),
-	}
-	if err := handler(ctx, task); err != nil {
-		t.Fatalf("handler returned error: %v", err)
+	// Build and run the worker.
+	w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: tmpDir}
+	if err := w.Work(ctx, &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: jobID}}); err != nil {
+		t.Fatalf("worker returned error: %v", err)
 	}
 
 	// ── Verify Job is completed ────────────────────────────────────────────
@@ -194,15 +190,10 @@ func TestExportCSV_Task(t *testing.T) {
 		t.Fatalf("insert export job: %v", err)
 	}
 
-	// Build and run the handler.
-	handler := tasks.NewExportCSVHandler(testDB, tmpDir)
-	task := &models.PendingTask{
-		ID:       uuid.NewString(),
-		TaskType: "export_csv",
-		Payload:  mustMarshal(t, map[string]string{"job_id": jobID}),
-	}
-	if err := handler(ctx, task); err != nil {
-		t.Fatalf("handler returned error: %v", err)
+	// Build and run the worker.
+	w := &tasks.ExportCSVWorker{DB: testDB, StoragePath: tmpDir}
+	if err := w.Work(ctx, &river.Job[tasks.ExportCSVArgs]{Args: tasks.ExportCSVArgs{JobID: jobID}}); err != nil {
+		t.Fatalf("worker returned error: %v", err)
 	}
 
 	// ── Verify Job is completed ────────────────────────────────────────────
@@ -297,13 +288,8 @@ func TestExportJSON_MarkJobFailed_OnWriteError(t *testing.T) {
 		t.Fatalf("insert job: %v", err)
 	}
 
-	handler := tasks.NewExportJSONHandler(testDB, tmpDir)
-	task := &models.PendingTask{
-		ID:       uuid.NewString(),
-		TaskType: "export_json",
-		Payload:  mustMarshal(t, map[string]string{"job_id": jobID}),
-	}
-	if err := handler(ctx, task); err != nil {
+	w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: tmpDir}
+	if err := w.Work(ctx, &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: jobID}}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -317,32 +303,11 @@ func TestExportJSON_MarkJobFailed_OnWriteError(t *testing.T) {
 	}
 }
 
-// TestExportJSON_InvalidPayload exercises the json.Unmarshal failure path.
-func TestExportJSON_InvalidPayload(t *testing.T) {
-	truncateAllTables(t)
-	handler := tasks.NewExportJSONHandler(testDB, t.TempDir())
-	task := &models.PendingTask{Payload: json.RawMessage(`not-json`)}
-	if err := handler(context.Background(), task); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-}
-
-// TestExportCSV_InvalidPayload exercises the json.Unmarshal failure path.
-func TestExportCSV_InvalidPayload(t *testing.T) {
-	truncateAllTables(t)
-	handler := tasks.NewExportCSVHandler(testDB, t.TempDir())
-	task := &models.PendingTask{Payload: json.RawMessage(`not-json`)}
-	if err := handler(context.Background(), task); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-}
-
 // TestExportJSON_JobNotFound exercises the "load job not found" path.
 func TestExportJSON_JobNotFound(t *testing.T) {
 	truncateAllTables(t)
-	handler := tasks.NewExportJSONHandler(testDB, t.TempDir())
-	task := &models.PendingTask{Payload: mustMarshal(t, map[string]string{"job_id": "non-existent-job"})}
-	if err := handler(context.Background(), task); err != nil {
+	w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: "non-existent-job"}}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
@@ -350,9 +315,8 @@ func TestExportJSON_JobNotFound(t *testing.T) {
 // TestExportCSV_JobNotFound exercises the "load job not found" path.
 func TestExportCSV_JobNotFound(t *testing.T) {
 	truncateAllTables(t)
-	handler := tasks.NewExportCSVHandler(testDB, t.TempDir())
-	task := &models.PendingTask{Payload: mustMarshal(t, map[string]string{"job_id": "non-existent-job"})}
-	if err := handler(context.Background(), task); err != nil {
+	w := &tasks.ExportCSVWorker{DB: testDB, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), &river.Job[tasks.ExportCSVArgs]{Args: tasks.ExportCSVArgs{JobID: "non-existent-job"}}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
@@ -379,13 +343,8 @@ func TestExportCSV_MarkJobFailed_OnWriteError(t *testing.T) {
 		t.Fatalf("insert job: %v", err)
 	}
 
-	handler := tasks.NewExportCSVHandler(testDB, tmpDir)
-	task := &models.PendingTask{
-		ID:       uuid.NewString(),
-		TaskType: "export_csv",
-		Payload:  mustMarshal(t, map[string]string{"job_id": jobID}),
-	}
-	if err := handler(ctx, task); err != nil {
+	w := &tasks.ExportCSVWorker{DB: testDB, StoragePath: tmpDir}
+	if err := w.Work(ctx, &river.Job[tasks.ExportCSVArgs]{Args: tasks.ExportCSVArgs{JobID: jobID}}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

@@ -7,28 +7,31 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
+	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/worker"
+	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
 
 const maxImportBodyBytes = 50 * 1024 * 1024 // 50 MB
 
 // ImportHandler handles import-related endpoints.
 type ImportHandler struct {
-	db   *bun.DB
-	pool *worker.Pool
+	db          *bun.DB
+	riverClient *river.Client[pgx.Tx]
 }
 
 // NewImportHandler returns a new ImportHandler.
-func NewImportHandler(db *bun.DB, pool *worker.Pool) *ImportHandler {
-	return &ImportHandler{db: db, pool: pool}
+func NewImportHandler(db *bun.DB, riverClient *river.Client[pgx.Tx]) *ImportHandler {
+	return &ImportHandler{db: db, riverClient: riverClient}
 }
 
 // nexoriousExport is the expected structure of a nexorious export file.
@@ -161,9 +164,9 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		}
 
 		// Enqueue the task.
-		if h.pool != nil {
-			if err := h.pool.Submit(ctx, "import_item", map[string]string{"job_item_id": item.ID}, 5); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue import task")
+		if h.riverClient != nil {
+			if _, err := h.riverClient.Insert(ctx, tasks.ImportItemArgs{JobItemID: item.ID}, nil); err != nil {
+				slog.Error("import: submit task", "item_id", item.ID, "err", err)
 			}
 		}
 	}

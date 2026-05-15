@@ -12,84 +12,86 @@ import (
 	"strings"
 	"time"
 
+	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/db/models"
 )
 
-// exportPayload is the PendingTask.Payload shape for export tasks.
-type exportPayload struct {
+// ── JSON export ───────────────────────────────────────────────────────────────
+
+type ExportJSONArgs struct {
 	JobID string `json:"job_id"`
 }
 
-// ── JSON export ──────────────────────────────────────────────────────────────
+func (ExportJSONArgs) Kind() string { return "export_json" }
 
-// NewExportJSONHandler returns a TaskHandler that exports a user's game library
-// to the nexorious v1.2 JSON format.
-func NewExportJSONHandler(db *bun.DB, storagePath string) func(ctx context.Context, task *models.PendingTask) error {
-	return func(ctx context.Context, task *models.PendingTask) error {
-		var payload exportPayload
-		if err := json.Unmarshal(task.Payload, &payload); err != nil {
-			slog.Error("export_json: unmarshal payload", "err", err)
-			return nil
-		}
-
-		job, err := loadAndStartJob(ctx, db, payload.JobID)
-		if err != nil {
-			slog.Error("export_json: load job", "job_id", payload.JobID, "err", err)
-			return nil
-		}
-
-		userGames, err := loadUserGamesWithRelations(ctx, db, job.UserID)
-		if err != nil {
-			markJobFailed(ctx, db, job, fmt.Sprintf("load user games: %v", err))
-			return nil
-		}
-
-		outPath, err := writeJSONExport(storagePath, job.UserID, userGames)
-		if err != nil {
-			markJobFailed(ctx, db, job, fmt.Sprintf("write JSON: %v", err))
-			return nil
-		}
-
-		markJobCompleted(ctx, db, job, outPath)
-		return nil
-	}
+func (ExportJSONArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 1, Priority: 3}
 }
 
-// ── CSV export ───────────────────────────────────────────────────────────────
+type ExportJSONWorker struct {
+	river.WorkerDefaults[ExportJSONArgs]
+	DB          *bun.DB
+	StoragePath string
+}
 
-// NewExportCSVHandler returns a TaskHandler that exports a user's game library
-// to a flat CSV file.
-func NewExportCSVHandler(db *bun.DB, storagePath string) func(ctx context.Context, task *models.PendingTask) error {
-	return func(ctx context.Context, task *models.PendingTask) error {
-		var payload exportPayload
-		if err := json.Unmarshal(task.Payload, &payload); err != nil {
-			slog.Error("export_csv: unmarshal payload", "err", err)
-			return nil
-		}
-
-		job, err := loadAndStartJob(ctx, db, payload.JobID)
-		if err != nil {
-			slog.Error("export_csv: load job", "job_id", payload.JobID, "err", err)
-			return nil
-		}
-
-		userGames, err := loadUserGamesWithRelations(ctx, db, job.UserID)
-		if err != nil {
-			markJobFailed(ctx, db, job, fmt.Sprintf("load user games: %v", err))
-			return nil
-		}
-
-		outPath, err := writeCSVExport(storagePath, job.UserID, userGames)
-		if err != nil {
-			markJobFailed(ctx, db, job, fmt.Sprintf("write CSV: %v", err))
-			return nil
-		}
-
-		markJobCompleted(ctx, db, job, outPath)
+func (w *ExportJSONWorker) Work(ctx context.Context, job *river.Job[ExportJSONArgs]) error {
+	j, err := loadAndStartJob(ctx, w.DB, job.Args.JobID)
+	if err != nil {
+		slog.Error("export_json: load job", "job_id", job.Args.JobID, "err", err)
 		return nil
 	}
+	userGames, err := loadUserGamesWithRelations(ctx, w.DB, j.UserID)
+	if err != nil {
+		markJobFailed(ctx, w.DB, j, fmt.Sprintf("load user games: %v", err))
+		return nil
+	}
+	outPath, err := writeJSONExport(w.StoragePath, j.UserID, userGames)
+	if err != nil {
+		markJobFailed(ctx, w.DB, j, fmt.Sprintf("write JSON: %v", err))
+		return nil
+	}
+	markJobCompleted(ctx, w.DB, j, outPath)
+	return nil
+}
+
+// ── CSV export ────────────────────────────────────────────────────────────────
+
+type ExportCSVArgs struct {
+	JobID string `json:"job_id"`
+}
+
+func (ExportCSVArgs) Kind() string { return "export_csv" }
+
+func (ExportCSVArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 1, Priority: 3}
+}
+
+type ExportCSVWorker struct {
+	river.WorkerDefaults[ExportCSVArgs]
+	DB          *bun.DB
+	StoragePath string
+}
+
+func (w *ExportCSVWorker) Work(ctx context.Context, job *river.Job[ExportCSVArgs]) error {
+	j, err := loadAndStartJob(ctx, w.DB, job.Args.JobID)
+	if err != nil {
+		slog.Error("export_csv: load job", "job_id", job.Args.JobID, "err", err)
+		return nil
+	}
+	userGames, err := loadUserGamesWithRelations(ctx, w.DB, j.UserID)
+	if err != nil {
+		markJobFailed(ctx, w.DB, j, fmt.Sprintf("load user games: %v", err))
+		return nil
+	}
+	outPath, err := writeCSVExport(w.StoragePath, j.UserID, userGames)
+	if err != nil {
+		markJobFailed(ctx, w.DB, j, fmt.Sprintf("write CSV: %v", err))
+		return nil
+	}
+	markJobCompleted(ctx, w.DB, j, outPath)
+	return nil
 }
 
 // ── Shared helpers ───────────────────────────────────────────────────────────

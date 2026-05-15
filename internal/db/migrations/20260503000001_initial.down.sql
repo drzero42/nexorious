@@ -2,7 +2,7 @@
 
 DROP TABLE IF EXISTS rate_limiter_tokens;
 DROP TABLE IF EXISTS backup_config;
-DROP TABLE IF EXISTS pending_tasks;
+-- River tables (river_job, river_leader, etc.) are managed by rivermigrate, not this file.
 DROP TABLE IF EXISTS job_items;
 DROP TABLE IF EXISTS jobs;
 DROP TABLE IF EXISTS user_sync_configs;

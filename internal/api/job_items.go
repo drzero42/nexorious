@@ -7,21 +7,22 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
+	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
 type JobItemsHandler struct {
-	db   *bun.DB
-	pool *worker.Pool
+	db          *bun.DB
+	riverClient *river.Client[pgx.Tx]
 }
 
-func NewJobItemsHandler(db *bun.DB, pool *worker.Pool) *JobItemsHandler {
-	return &JobItemsHandler{db: db, pool: pool}
+func NewJobItemsHandler(db *bun.DB, riverClient *river.Client[pgx.Tx]) *JobItemsHandler {
+	return &JobItemsHandler{db: db, riverClient: riverClient}
 }
 
 // HandleGetJobItem handles GET /api/job-items/:id.
@@ -95,12 +96,7 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get parent job")
 	}
 
-	taskType := retryTaskType(job.JobType)
-	payload := map[string]string{
-		"job_id":      item.JobID,
-		"job_item_id": itemID,
-	}
-	_ = h.pool.Submit(context.Background(), taskType, payload, 5)
+	retryInsert(context.Background(), h.riverClient, job.JobType, itemID)
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -185,12 +181,7 @@ func (h *JobItemsHandler) HandleRetryItem(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get parent job")
 	}
 
-	taskType := retryTaskType(job.JobType)
-	payload := map[string]string{
-		"job_id":      item.JobID,
-		"job_item_id": itemID,
-	}
-	_ = h.pool.Submit(context.Background(), taskType, payload, 5)
+	retryInsert(context.Background(), h.riverClient, job.JobType, itemID)
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }

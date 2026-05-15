@@ -21,7 +21,6 @@ import (
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/migrate"
-	"github.com/drzero42/nexorious-go/internal/worker"
 )
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -69,13 +68,13 @@ func newTestEcho(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 	return api.New(cfg, m, testDB, "", nil, nil, nil)
 }
 
-// newTestEchoPool returns an Echo instance wired with a real db, ready migrator, and worker pool.
-func newTestEchoPool(t *testing.T, db *bun.DB, cfg *config.Config, pool *worker.Pool) interface {
+// newTestEchoPool returns an Echo instance wired with a real db and ready migrator.
+func newTestEchoPool(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, testDB, "", nil, nil, nil, pool)
+	return api.New(cfg, m, testDB, "", nil, nil, nil)
 }
 
 // testCfg returns a minimal config suitable for api_test tests.

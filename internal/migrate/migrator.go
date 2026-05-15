@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/riverqueue/river/rivermigrate"
+	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 	"github.com/uptrace/bun"
 	bunmigrate "github.com/uptrace/bun/migrate"
 
@@ -70,10 +72,32 @@ func (mg *Migrator) determineState() error {
 	}
 	if len(ms.Unapplied()) > 0 {
 		mg.state.Store(int32(AppStateNeedsMigration))
-	} else {
-		mg.state.Store(int32(AppStateReady))
+		return nil
 	}
+
+	riverPending, err := mg.riverPendingCount(context.Background())
+	if err != nil {
+		return fmt.Errorf("determine state: river: %w", err)
+	}
+	if riverPending > 0 {
+		mg.state.Store(int32(AppStateNeedsMigration))
+		return nil
+	}
+
+	mg.state.Store(int32(AppStateReady))
 	return nil
+}
+
+func (mg *Migrator) riverPendingCount(ctx context.Context) (int, error) {
+	riverMig, err := rivermigrate.New(riverdatabasesql.New(mg.db.DB), nil)
+	if err != nil {
+		return 0, err
+	}
+	existing, err := riverMig.ExistingVersions(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return len(riverMig.AllVersions()) - len(existing), nil
 }
 
 func (mg *Migrator) DetermineState() error {
@@ -98,7 +122,11 @@ func (mg *Migrator) PendingCount() (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("pending count: %w", err)
 	}
-	return len(ms.Unapplied()), nil
+	riverPending, err := mg.riverPendingCount(context.Background())
+	if err != nil {
+		return 0, fmt.Errorf("pending count: river: %w", err)
+	}
+	return len(ms.Unapplied()) + riverPending, nil
 }
 
 // Status returns the pending migration count and the name of the most-recently
@@ -165,6 +193,28 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 		mg.sendLog(ch, "No new migrations to run\n")
 	} else {
 		mg.sendLog(ch, fmt.Sprintf("Migrated to group %s\n", group))
+	}
+
+	riverMig, err := rivermigrate.New(riverdatabasesql.New(mg.db.DB), nil)
+	if err != nil {
+		mg.sendLog(ch, fmt.Sprintf("River migration setup failed: %v\n", err))
+		mg.state.Store(int32(AppStateNeedsMigration))
+		close(ch)
+		return fmt.Errorf("migrate: River migrator: %w", err)
+	}
+	riverRes, err := riverMig.Migrate(ctx, rivermigrate.DirectionUp, nil)
+	if err != nil {
+		mg.sendLog(ch, fmt.Sprintf("River migration failed: %v\n", err))
+		mg.state.Store(int32(AppStateNeedsMigration))
+		close(ch)
+		return fmt.Errorf("migrate: River: %w", err)
+	}
+	if len(riverRes.Versions) == 0 {
+		mg.sendLog(ch, "No new River migrations to run\n")
+	} else {
+		for _, v := range riverRes.Versions {
+			mg.sendLog(ch, fmt.Sprintf("River migrated version %d\n", v.Version))
+		}
 	}
 	close(ch)
 	return nil

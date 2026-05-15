@@ -10,15 +10,30 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/db/models"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 )
 
-// importPayload is the PendingTask.Payload shape for "import_item".
-type importPayload struct {
+// ImportItemArgs is the River job args type for "import_item".
+type ImportItemArgs struct {
 	JobItemID string `json:"job_item_id"`
+}
+
+func (ImportItemArgs) Kind() string { return "import_item" }
+
+func (ImportItemArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 1, Priority: 3}
+}
+
+// ImportItemWorker processes a single import job item.
+type ImportItemWorker struct {
+	river.WorkerDefaults[ImportItemArgs]
+	DB          *bun.DB
+	IGDBClient  *igdb.Client
+	StoragePath string
 }
 
 // importGameData is the parsed shape inside JobItem.SourceMetadata.data.
@@ -73,277 +88,268 @@ type importTagData struct {
 	Color *string `json:"color"`
 }
 
-// NewImportItemHandler returns a TaskHandler that processes a single import job item.
-// It never returns an error — failures are recorded on the JobItem itself.
-func NewImportItemHandler(db *bun.DB, igdbClient *igdb.Client, storagePath string) func(ctx context.Context, task *models.PendingTask) error {
-	return func(ctx context.Context, task *models.PendingTask) error {
-		// ── 1. Parse payload ──────────────────────────────────────────────────
-		var payload importPayload
-		if err := json.Unmarshal(task.Payload, &payload); err != nil {
-			slog.Error("import_item: unmarshal payload", "err", err)
-			return nil
-		}
-
-		// ── 2. Load JobItem ───────────────────────────────────────────────────
-		var item models.JobItem
-		if err := db.NewSelect().Model(&item).Where("id = ?", payload.JobItemID).Scan(ctx); err != nil {
-			slog.Error("import_item: load job_item", "id", payload.JobItemID, "err", err)
-			return nil
-		}
-
-		// ── 3. Parse game data from source_metadata ───────────────────────────
-		var wrapper struct {
-			Data importGameData `json:"data"`
-		}
-		if err := json.Unmarshal(item.SourceMetadata, &wrapper); err != nil {
-			markItemFailed(ctx, db, &item, fmt.Sprintf("parse source_metadata: %v", err))
-			checkJobCompletion(ctx, db, item.JobID)
-			return nil
-		}
-		gd := wrapper.Data
-
-		// ── 4. Validate igdb_id ───────────────────────────────────────────────
-		if gd.IGDBID == 0 {
-			markItemFailed(ctx, db, &item, "missing igdb_id")
-			checkJobCompletion(ctx, db, item.JobID)
-			return nil
-		}
-
-		// ── 5. Upsert Game — fetch from IGDB if not already in DB ────────────
-		var existingGame models.Game
-		gameExists := db.NewSelect().Model(&existingGame).Where("id = ?", gd.IGDBID).Scan(ctx) == nil
-
-		var game *models.Game
-		if !gameExists && igdbClient.Configured() {
-			md, igdbErr := igdbClient.FetchFullMetadata(ctx, int(gd.IGDBID))
-			if igdbErr != nil {
-				slog.Warn("import_item: IGDB fetch failed, falling back to JSON data", "igdb_id", gd.IGDBID, "err", igdbErr)
-			} else {
-				game = igdbMetadataToGame(md)
-				if md.CoverImageID != "" {
-					localURL, dlErr := igdbClient.DownloadCoverArt(ctx, md.CoverImageID, storagePath)
-					if dlErr != nil {
-						slog.Warn("import_item: cover art download failed", "igdb_id", gd.IGDBID, "err", dlErr)
-					} else {
-						game.CoverArtUrl = &localURL
-					}
-				}
-			}
-		}
-
-		if game == nil {
-			// Fall back to JSON export data (IGDB unconfigured or fetch failed)
-			now := time.Now().UTC()
-			game = &models.Game{
-				ID:            gd.IGDBID,
-				Title:         gd.Title,
-				Description:   gd.Description,
-				Genre:         gd.Genre,
-				Developer:     gd.Developer,
-				Publisher:     gd.Publisher,
-				CoverArtUrl:   gd.CoverArtUrl,
-				RatingAverage: gd.RatingAverage,
-				LastUpdated:   now,
-				CreatedAt:     now,
-			}
-			if gd.ReleaseDate != nil {
-				if t, err := time.Parse(time.RFC3339, *gd.ReleaseDate); err == nil {
-					game.ReleaseDate = &t
-				}
-			}
-		}
-
-		var err error
-		if !gameExists {
-			_, err = db.NewInsert().Model(game).Exec(ctx)
-			if err != nil {
-				markItemFailed(ctx, db, &item, fmt.Sprintf("insert game: %v", err))
-				checkJobCompletion(ctx, db, item.JobID)
-				return nil
-			}
-		}
-
-		// ── 6. Check for existing UserGame ────────────────────────────────────
-		var existingUG models.UserGame
-		err = db.NewSelect().Model(&existingUG).
-			Where("user_id = ? AND game_id = ?", item.UserID, gd.IGDBID).
-			Scan(ctx)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			markItemFailed(ctx, db, &item, fmt.Sprintf("check existing user_game: %v", err))
-			checkJobCompletion(ctx, db, item.JobID)
-			return nil
-		}
-		alreadyExists := err == nil
-
-		// ── 7. Build and insert UserGame (skip if already exists) ────────────
-		now := time.Now().UTC()
-		var ug *models.UserGame
-		if alreadyExists {
-			ug = &existingUG
-		} else {
-			createdAt := now
-			updatedAt := now
-			if gd.CreatedAt != nil {
-				if t, err := time.Parse(time.RFC3339, *gd.CreatedAt); err == nil {
-					createdAt = t.UTC()
-				}
-			}
-			if gd.UpdatedAt != nil {
-				if t, err := time.Parse(time.RFC3339, *gd.UpdatedAt); err == nil {
-					updatedAt = t.UTC()
-				}
-			}
-
-			var personalRating *int32
-			if gd.PersonalRating != nil {
-				r := int32(*gd.PersonalRating)
-				personalRating = &r
-			}
-
-			ug = &models.UserGame{
-				ID:             uuid.NewString(),
-				UserID:         item.UserID,
-				GameID:         gd.IGDBID,
-				PlayStatus:     gd.PlayStatus,
-				PersonalRating: personalRating,
-				IsLoved:        gd.IsLoved,
-				HoursPlayed:    gd.HoursPlayed,
-				PersonalNotes:  gd.PersonalNotes,
-				CreatedAt:      createdAt,
-				UpdatedAt:      updatedAt,
-			}
-			_, err = db.NewInsert().Model(ug).Exec(ctx)
-			if err != nil {
-				markItemFailed(ctx, db, &item, fmt.Sprintf("insert user_game: %v", err))
-				checkJobCompletion(ctx, db, item.JobID)
-				return nil
-			}
-		}
-
-		// ── 8. Platforms ──────────────────────────────────────────────────────
-		// Build a set of existing (platform, storefront) pairs to avoid duplicates
-		// when merging into an existing UserGame.
-		type platformKey struct{ platform, storefront string }
-		existingPlatforms := map[platformKey]bool{}
-		if alreadyExists {
-			var existingUGPs []models.UserGamePlatform
-			if err := db.NewSelect().Model(&existingUGPs).
-				Where("user_game_id = ?", ug.ID).Scan(ctx); err == nil {
-				for _, ugp := range existingUGPs {
-					p := ""
-					if ugp.Platform != nil {
-						p = *ugp.Platform
-					}
-					s := ""
-					if ugp.Storefront != nil {
-						s = *ugp.Storefront
-					}
-					existingPlatforms[platformKey{p, s}] = true
-				}
-			}
-		}
-
-		for _, pd := range gd.Platforms {
-			if pd.PlatformID == "" {
-				continue
-			}
-
-			// Verify platform exists (must be seeded via seed data or migration).
-			var platformName string
-			if err := db.QueryRowContext(ctx,
-				"SELECT name FROM platforms WHERE name = ?", pd.PlatformID,
-			).Scan(&platformName); err != nil {
-				slog.Warn("import_item: platform not found, skipping (load seed data first)", "platform", pd.PlatformID)
-				continue
-			}
-
-			// Verify storefront exists (nullable — store NULL if blank or not yet seeded).
-			var storefrontPtr *string
-			if pd.StorefrontID != "" {
-				var storefrontName string
-				if err := db.QueryRowContext(ctx,
-					"SELECT name FROM storefronts WHERE name = ?", pd.StorefrontID,
-				).Scan(&storefrontName); err == nil {
-					storefrontPtr = &storefrontName
-				} else {
-					slog.Warn("import_item: storefront not found, recording platform without storefront (load seed data first)", "storefront", pd.StorefrontID)
-				}
-			}
-
-			// Skip if this (platform, storefront) pair is already recorded.
-			sStr := ""
-			if storefrontPtr != nil {
-				sStr = *storefrontPtr
-			}
-			if existingPlatforms[platformKey{platformName, sStr}] {
-				continue
-			}
-
-			ugp := &models.UserGamePlatform{
-				ID:              uuid.NewString(),
-				UserGameID:      ug.ID,
-				Platform:        &platformName,
-				Storefront:      storefrontPtr,
-				StoreGameID:     pd.StoreGameID,
-				StoreUrl:        pd.StoreUrl,
-				IsAvailable:     pd.IsAvailable,
-				HoursPlayed:     pd.HoursPlayed,
-				OwnershipStatus: pd.OwnershipStatus,
-				AcquiredDate:    parseFlexibleDate(pd.AcquiredDate),
-				CreatedAt:       now,
-				UpdatedAt:       now,
-			}
-			if _, err := db.NewInsert().Model(ugp).Exec(ctx); err != nil {
-				slog.Error("import_item: insert user_game_platform", "err", err)
-			}
-		}
-
-		// ── 9. Tags ───────────────────────────────────────────────────────────
-		// Build existing tag set to avoid duplicates when merging.
-		existingTagIDs := map[string]bool{}
-		if alreadyExists {
-			var existingUGTs []models.UserGameTag
-			if err := db.NewSelect().Model(&existingUGTs).
-				Where("user_game_id = ?", ug.ID).Scan(ctx); err == nil {
-				for _, ugt := range existingUGTs {
-					existingTagIDs[ugt.TagID] = true
-				}
-			}
-		}
-
-		for _, td := range gd.Tags {
-			tagID, err := findOrCreateTag(ctx, db, item.UserID, td.Name, td.Color)
-			if err != nil {
-				markItemFailed(ctx, db, &item, fmt.Sprintf("find/create tag %q: %v", td.Name, err))
-				checkJobCompletion(ctx, db, item.JobID)
-				return nil
-			}
-			if existingTagIDs[tagID] {
-				continue
-			}
-
-			ugt := &models.UserGameTag{
-				ID:         uuid.NewString(),
-				UserGameID: ug.ID,
-				TagID:      tagID,
-				CreatedAt:  now,
-			}
-			if _, err := db.NewInsert().Model(ugt).Exec(ctx); err != nil {
-				slog.Error("import_item: insert user_game_tag", "err", err)
-			}
-		}
-
-		// ── 10. Mark item completed ───────────────────────────────────────────
-		result := map[string]any{
-			"game_id":         gd.IGDBID,
-			"user_game_id":    ug.ID,
-			"is_new_addition": !alreadyExists,
-			"already_exists":  alreadyExists,
-		}
-		markItemCompleted(ctx, db, &item, result)
-		checkJobCompletion(ctx, db, item.JobID)
+// Work processes a single import job item. It never returns an error —
+// failures are recorded on the JobItem itself.
+func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemArgs]) error {
+	// ── 1. Load JobItem ───────────────────────────────────────────────────
+	var item models.JobItem
+	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
+		slog.Error("import_item: load job_item", "id", job.Args.JobItemID, "err", err)
 		return nil
 	}
+
+	// ── 2. Parse game data from source_metadata ───────────────────────────
+	var wrapper struct {
+		Data importGameData `json:"data"`
+	}
+	if err := json.Unmarshal(item.SourceMetadata, &wrapper); err != nil {
+		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err))
+		checkJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+	gd := wrapper.Data
+
+	// ── 3. Validate igdb_id ───────────────────────────────────────────────
+	if gd.IGDBID == 0 {
+		markItemFailed(ctx, w.DB, &item, "missing igdb_id")
+		checkJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+
+	// ── 4. Upsert Game — fetch from IGDB if not already in DB ────────────
+	var existingGame models.Game
+	gameExists := w.DB.NewSelect().Model(&existingGame).Where("id = ?", gd.IGDBID).Scan(ctx) == nil
+
+	var game *models.Game
+	if !gameExists && w.IGDBClient.Configured() {
+		md, igdbErr := w.IGDBClient.FetchFullMetadata(ctx, int(gd.IGDBID))
+		if igdbErr != nil {
+			slog.Warn("import_item: IGDB fetch failed, falling back to JSON data", "igdb_id", gd.IGDBID, "err", igdbErr)
+		} else {
+			game = igdbMetadataToGame(md)
+			if md.CoverImageID != "" {
+				localURL, dlErr := w.IGDBClient.DownloadCoverArt(ctx, md.CoverImageID, w.StoragePath)
+				if dlErr != nil {
+					slog.Warn("import_item: cover art download failed", "igdb_id", gd.IGDBID, "err", dlErr)
+				} else {
+					game.CoverArtUrl = &localURL
+				}
+			}
+		}
+	}
+
+	if game == nil {
+		// Fall back to JSON export data (IGDB unconfigured or fetch failed)
+		now := time.Now().UTC()
+		game = &models.Game{
+			ID:            gd.IGDBID,
+			Title:         gd.Title,
+			Description:   gd.Description,
+			Genre:         gd.Genre,
+			Developer:     gd.Developer,
+			Publisher:     gd.Publisher,
+			CoverArtUrl:   gd.CoverArtUrl,
+			RatingAverage: gd.RatingAverage,
+			LastUpdated:   now,
+			CreatedAt:     now,
+		}
+		if gd.ReleaseDate != nil {
+			if t, err := time.Parse(time.RFC3339, *gd.ReleaseDate); err == nil {
+				game.ReleaseDate = &t
+			}
+		}
+	}
+
+	var err error
+	if !gameExists {
+		_, err = w.DB.NewInsert().Model(game).Exec(ctx)
+		if err != nil {
+			markItemFailed(ctx, w.DB, &item, fmt.Sprintf("insert game: %v", err))
+			checkJobCompletion(ctx, w.DB, item.JobID)
+			return nil
+		}
+	}
+
+	// ── 5. Check for existing UserGame ────────────────────────────────────
+	var existingUG models.UserGame
+	err = w.DB.NewSelect().Model(&existingUG).
+		Where("user_id = ? AND game_id = ?", item.UserID, gd.IGDBID).
+		Scan(ctx)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("check existing user_game: %v", err))
+		checkJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+	alreadyExists := err == nil
+
+	// ── 6. Build and insert UserGame (skip if already exists) ────────────
+	now := time.Now().UTC()
+	var ug *models.UserGame
+	if alreadyExists {
+		ug = &existingUG
+	} else {
+		createdAt := now
+		updatedAt := now
+		if gd.CreatedAt != nil {
+			if t, err := time.Parse(time.RFC3339, *gd.CreatedAt); err == nil {
+				createdAt = t.UTC()
+			}
+		}
+		if gd.UpdatedAt != nil {
+			if t, err := time.Parse(time.RFC3339, *gd.UpdatedAt); err == nil {
+				updatedAt = t.UTC()
+			}
+		}
+
+		var personalRating *int32
+		if gd.PersonalRating != nil {
+			r := int32(*gd.PersonalRating)
+			personalRating = &r
+		}
+
+		ug = &models.UserGame{
+			ID:             uuid.NewString(),
+			UserID:         item.UserID,
+			GameID:         gd.IGDBID,
+			PlayStatus:     gd.PlayStatus,
+			PersonalRating: personalRating,
+			IsLoved:        gd.IsLoved,
+			HoursPlayed:    gd.HoursPlayed,
+			PersonalNotes:  gd.PersonalNotes,
+			CreatedAt:      createdAt,
+			UpdatedAt:      updatedAt,
+		}
+		_, err = w.DB.NewInsert().Model(ug).Exec(ctx)
+		if err != nil {
+			markItemFailed(ctx, w.DB, &item, fmt.Sprintf("insert user_game: %v", err))
+			checkJobCompletion(ctx, w.DB, item.JobID)
+			return nil
+		}
+	}
+
+	// ── 7. Platforms ──────────────────────────────────────────────────────
+	// Build a set of existing (platform, storefront) pairs to avoid duplicates
+	// when merging into an existing UserGame.
+	type platformKey struct{ platform, storefront string }
+	existingPlatforms := map[platformKey]bool{}
+	if alreadyExists {
+		var existingUGPs []models.UserGamePlatform
+		if err := w.DB.NewSelect().Model(&existingUGPs).
+			Where("user_game_id = ?", ug.ID).Scan(ctx); err == nil {
+			for _, ugp := range existingUGPs {
+				p := ""
+				if ugp.Platform != nil {
+					p = *ugp.Platform
+				}
+				s := ""
+				if ugp.Storefront != nil {
+					s = *ugp.Storefront
+				}
+				existingPlatforms[platformKey{p, s}] = true
+			}
+		}
+	}
+
+	for _, pd := range gd.Platforms {
+		if pd.PlatformID == "" {
+			continue
+		}
+
+		// Verify platform exists (must be seeded via seed data or migration).
+		var platformName string
+		if err := w.DB.QueryRowContext(ctx,
+			"SELECT name FROM platforms WHERE name = ?", pd.PlatformID,
+		).Scan(&platformName); err != nil {
+			slog.Warn("import_item: platform not found, skipping (load seed data first)", "platform", pd.PlatformID)
+			continue
+		}
+
+		// Verify storefront exists (nullable — store NULL if blank or not yet seeded).
+		var storefrontPtr *string
+		if pd.StorefrontID != "" {
+			var storefrontName string
+			if err := w.DB.QueryRowContext(ctx,
+				"SELECT name FROM storefronts WHERE name = ?", pd.StorefrontID,
+			).Scan(&storefrontName); err == nil {
+				storefrontPtr = &storefrontName
+			} else {
+				slog.Warn("import_item: storefront not found, recording platform without storefront (load seed data first)", "storefront", pd.StorefrontID)
+			}
+		}
+
+		// Skip if this (platform, storefront) pair is already recorded.
+		sStr := ""
+		if storefrontPtr != nil {
+			sStr = *storefrontPtr
+		}
+		if existingPlatforms[platformKey{platformName, sStr}] {
+			continue
+		}
+
+		ugp := &models.UserGamePlatform{
+			ID:              uuid.NewString(),
+			UserGameID:      ug.ID,
+			Platform:        &platformName,
+			Storefront:      storefrontPtr,
+			StoreGameID:     pd.StoreGameID,
+			StoreUrl:        pd.StoreUrl,
+			IsAvailable:     pd.IsAvailable,
+			HoursPlayed:     pd.HoursPlayed,
+			OwnershipStatus: pd.OwnershipStatus,
+			AcquiredDate:    parseFlexibleDate(pd.AcquiredDate),
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}
+		if _, err := w.DB.NewInsert().Model(ugp).Exec(ctx); err != nil {
+			slog.Error("import_item: insert user_game_platform", "err", err)
+		}
+	}
+
+	// ── 8. Tags ───────────────────────────────────────────────────────────
+	// Build existing tag set to avoid duplicates when merging.
+	existingTagIDs := map[string]bool{}
+	if alreadyExists {
+		var existingUGTs []models.UserGameTag
+		if err := w.DB.NewSelect().Model(&existingUGTs).
+			Where("user_game_id = ?", ug.ID).Scan(ctx); err == nil {
+			for _, ugt := range existingUGTs {
+				existingTagIDs[ugt.TagID] = true
+			}
+		}
+	}
+
+	for _, td := range gd.Tags {
+		tagID, err := findOrCreateTag(ctx, w.DB, item.UserID, td.Name, td.Color)
+		if err != nil {
+			markItemFailed(ctx, w.DB, &item, fmt.Sprintf("find/create tag %q: %v", td.Name, err))
+			checkJobCompletion(ctx, w.DB, item.JobID)
+			return nil
+		}
+		if existingTagIDs[tagID] {
+			continue
+		}
+
+		ugt := &models.UserGameTag{
+			ID:         uuid.NewString(),
+			UserGameID: ug.ID,
+			TagID:      tagID,
+			CreatedAt:  now,
+		}
+		if _, err := w.DB.NewInsert().Model(ugt).Exec(ctx); err != nil {
+			slog.Error("import_item: insert user_game_tag", "err", err)
+		}
+	}
+
+	// ── 9. Mark item completed ───────────────────────────────────────────
+	result := map[string]any{
+		"game_id":         gd.IGDBID,
+		"user_game_id":    ug.ID,
+		"is_new_addition": !alreadyExists,
+		"already_exists":  alreadyExists,
+	}
+	markItemCompleted(ctx, w.DB, &item, result)
+	checkJobCompletion(ctx, w.DB, item.JobID)
+	return nil
 }
 
 // findOrCreateTag finds a tag by name (case-insensitive) for the user, or creates it.

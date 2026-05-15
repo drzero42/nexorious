@@ -10,23 +10,25 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
+	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/worker"
+	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
 
 // JobsHandler handles job-related endpoints.
 type JobsHandler struct {
-	db   *bun.DB
-	pool *worker.Pool
+	db          *bun.DB
+	riverClient *river.Client[pgx.Tx]
 }
 
 // NewJobsHandler returns a new JobsHandler.
-func NewJobsHandler(db *bun.DB, pool *worker.Pool) *JobsHandler {
-	return &JobsHandler{db: db, pool: pool}
+func NewJobsHandler(db *bun.DB, riverClient *river.Client[pgx.Tx]) *JobsHandler {
+	return &JobsHandler{db: db, riverClient: riverClient}
 }
 
 // jobItemCounts fetches aggregated item status counts for a job and returns a
@@ -473,10 +475,12 @@ func (h *JobsHandler) HandleCancelJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel job")
 	}
 
-	// Delete associated pending tasks.
+	// Cancel any queued River jobs for this nexorious job.
 	_, _ = h.db.NewRaw(`
-		DELETE FROM pending_tasks
-		WHERE payload->>'job_id' = ?`,
+		UPDATE river_job
+		SET state = 'cancelled', finalized_at = NOW()
+		WHERE state IN ('available', 'scheduled', 'retryable', 'pending')
+		  AND args->>'job_id' = ?`,
 		jobID,
 	).Exec(context.Background())
 
@@ -566,27 +570,23 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 	).Exec(context.Background())
 
 	// Submit tasks for each reset item.
-	taskType := retryTaskType(job.JobType)
 	for _, item := range failedItems {
-		payload := map[string]string{
-			"job_id":      jobID,
-			"job_item_id": item.ID,
-		}
-		_ = h.pool.Submit(context.Background(), taskType, payload, 5)
+		retryInsert(context.Background(), h.riverClient, job.JobType, item.ID)
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{"retried": len(failedItems)})
 }
 
-func retryTaskType(jobType string) string {
+func retryInsert(ctx context.Context, rc *river.Client[pgx.Tx], jobType, jobItemID string) {
+	if rc == nil {
+		return
+	}
 	switch jobType {
 	case models.JobTypeSync:
-		return "process_sync_item"
+		_, _ = rc.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: jobItemID}, nil)
 	case models.JobTypeImport:
-		return "import_item"
+		_, _ = rc.Insert(ctx, tasks.ImportItemArgs{JobItemID: jobItemID}, nil)
 	case models.JobTypeMetadataRefresh:
-		return "metadata_refresh_process"
-	default:
-		return "import_item"
+		_, _ = rc.Insert(ctx, tasks.MetadataRefreshItemArgs{JobItemID: jobItemID}, nil)
 	}
 }

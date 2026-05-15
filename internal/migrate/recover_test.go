@@ -140,9 +140,9 @@ func TestPendingCount_WithoutPriorDetermineState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PendingCount without prior DetermineState: %v", err)
 	}
-	// Fresh DB has one unapplied migration.
-	if count != 1 {
-		t.Errorf("expected 1 pending migration, got %d", count)
+	// Fresh DB has 1 Bun migration + 6 River migrations pending.
+	if count != 7 {
+		t.Errorf("expected 7 pending migrations (1 Bun + 6 River), got %d", count)
 	}
 }
 

@@ -12,25 +12,27 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
+	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/worker"
+	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
 
 // ExportHandler handles export-related endpoints.
 type ExportHandler struct {
-	db   *bun.DB
-	pool *worker.Pool
-	cfg  *config.Config
+	db           *bun.DB
+	riverClient  *river.Client[pgx.Tx]
+	cfg          *config.Config
 }
 
 // NewExportHandler returns a new ExportHandler.
-func NewExportHandler(db *bun.DB, pool *worker.Pool, cfg *config.Config) *ExportHandler {
-	return &ExportHandler{db: db, pool: pool, cfg: cfg}
+func NewExportHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], cfg *config.Config) *ExportHandler {
+	return &ExportHandler{db: db, riverClient: riverClient, cfg: cfg}
 }
 
 // handleExport is the shared logic for JSON and CSV export initiation.
@@ -68,10 +70,16 @@ func (h *ExportHandler) handleExport(c *echo.Context, source string, taskType st
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create export job")
 	}
 
-	// Submit the task to the worker pool.
-	if h.pool != nil {
-		if err := h.pool.Submit(ctx, taskType, map[string]string{"job_id": job.ID}, 3); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue export task")
+	// Submit the task via River.
+	if h.riverClient != nil {
+		var err error
+		if taskType == "export_json" {
+			_, err = h.riverClient.Insert(ctx, tasks.ExportJSONArgs{JobID: job.ID}, nil)
+		} else {
+			_, err = h.riverClient.Insert(ctx, tasks.ExportCSVArgs{JobID: job.ID}, nil)
+		}
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to submit export task")
 		}
 	}
 

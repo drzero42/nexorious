@@ -11,7 +11,7 @@ import (
 
 func TestGetJobItem(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "ji-get")
 
@@ -43,7 +43,7 @@ func TestGetJobItem(t *testing.T) {
 
 func TestGetJobItem_WrongOwner(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	ownerID := "u-ji-owner"
 	insertAuthTestUser(t, testDB, ownerID, "jiowner", "pass123", true, false)
@@ -63,7 +63,7 @@ func TestGetJobItem_WrongOwner(t *testing.T) {
 
 func TestResolveItem(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "ji-resolve")
 
@@ -97,7 +97,7 @@ func TestResolveItem(t *testing.T) {
 
 func TestResolveItem_NotPendingReview(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "ji-resolve-409")
 
@@ -115,7 +115,7 @@ func TestResolveItem_NotPendingReview(t *testing.T) {
 
 func TestSkipItem(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "ji-skip")
 
@@ -144,7 +144,7 @@ func TestSkipItem(t *testing.T) {
 
 func TestRetryItem(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "ji-retry")
 
@@ -173,7 +173,7 @@ func TestRetryItem(t *testing.T) {
 
 func TestRetryItem_NotFailed(t *testing.T) {
 	truncateAllTables(t)
-	e, _ := newTestEchoWithPool(t, testDB)
+	e := newTestEchoWithPool(t, testDB)
 
 	userID, token := setupTagUser(t, testDB, e, "ji-retry-409")
 

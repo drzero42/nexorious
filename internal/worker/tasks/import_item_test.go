@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/db/models"
@@ -35,9 +36,8 @@ func TestImportItem_BasicGame(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	task := makePendingTask(t, itemID)
-	err := handler(ctx, task)
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -103,9 +103,8 @@ func TestImportItem_MissingIGDBID(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	task := makePendingTask(t, itemID)
-	err := handler(ctx, task)
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}})
 	if err != nil {
 		t.Fatalf("handler should not return error: %v", err)
 	}
@@ -138,14 +137,14 @@ func TestImportItem_DuplicateGame(t *testing.T) {
 
 	// First import.
 	itemID1 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
 		t.Fatalf("first import error: %v", err)
 	}
 
 	// Second import of same game for same user.
 	itemID2 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	if err := handler(ctx, makePendingTask(t, itemID2)); err != nil {
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID2}}); err != nil {
 		t.Fatalf("second import error: %v", err)
 	}
 
@@ -221,8 +220,8 @@ func TestImportItem_WithPlatformsAndTags(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -292,8 +291,8 @@ func TestImportItem_PlatformsSkippedWithoutSeed(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -339,8 +338,8 @@ func TestImportItem_ReimportMergesPlatforms(t *testing.T) {
 
 	// First import — no seed, platforms stored via original name.
 	itemID1 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
 		t.Fatalf("first import: %v", err)
 	}
 
@@ -358,7 +357,7 @@ func TestImportItem_ReimportMergesPlatforms(t *testing.T) {
 
 	// Second import of same game — should not duplicate platforms.
 	itemID2 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	if err := handler(ctx, makePendingTask(t, itemID2)); err != nil {
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID2}}); err != nil {
 		t.Fatalf("second import: %v", err)
 	}
 
@@ -413,8 +412,8 @@ func TestImportItem_JobCompletion(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -451,8 +450,8 @@ func TestImportItem_PreservesTimestamps(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -469,23 +468,11 @@ func TestImportItem_PreservesTimestamps(t *testing.T) {
 	}
 }
 
-// TestImportItem_InvalidPayload exercises the json.Unmarshal failure path (line 82-85).
-func TestImportItem_InvalidPayload(t *testing.T) {
-	truncateAllTables(t)
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	task := &models.PendingTask{Payload: json.RawMessage(`not-json`)}
-	if err := handler(context.Background(), task); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-}
-
-// TestImportItem_JobItemNotFound exercises the "item not found" path (line 89-92).
+// TestImportItem_JobItemNotFound exercises the "item not found" path.
 func TestImportItem_JobItemNotFound(t *testing.T) {
 	truncateAllTables(t)
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	payload, _ := json.Marshal(map[string]string{"job_item_id": "non-existent-id"})
-	task := &models.PendingTask{Payload: payload}
-	if err := handler(context.Background(), task); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(context.Background(), &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: "non-existent-id"}}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
@@ -511,9 +498,8 @@ func TestImportItem_BadSourceMetadata(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	if err := handler(ctx, &models.PendingTask{Payload: payload}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -549,8 +535,8 @@ func TestImportItem_PartialJobCompletion(t *testing.T) {
 	// Insert item2 as pending — not processed.
 	_ = insertTestJobItem(t, testDB, jobID, userID, gameData2)
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -592,8 +578,8 @@ func TestImportItem_CompletedWithErrors(t *testing.T) {
 		t.Fatalf("insert failed item: %v", err)
 	}
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -625,8 +611,8 @@ func TestImportItem_WithReleaseDate(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -671,14 +657,14 @@ func TestImportItem_ReimportTagDedup(t *testing.T) {
 
 	// First import.
 	itemID1 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID1)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
 		t.Fatalf("first import: %v", err)
 	}
 
 	// Second import — tag already exists, existingTagIDs[tagID] should be true → skip.
 	itemID2 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	if err := handler(ctx, makePendingTask(t, itemID2)); err != nil {
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID2}}); err != nil {
 		t.Fatalf("second import: %v", err)
 	}
 
@@ -729,8 +715,8 @@ func TestImportItem_StorefrontNotFound(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	handler := tasks.NewImportItemHandler(testDB, igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), "")
-	if err := handler(ctx, makePendingTask(t, itemID)); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 

@@ -10,13 +10,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	pgx "github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
+	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/db/models"
 	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	igdbsvc "github.com/drzero42/nexorious-go/internal/services/igdb"
-	"github.com/drzero42/nexorious-go/internal/worker"
 	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
 
@@ -79,17 +82,33 @@ func newTestIGDBClient(t *testing.T, srv *httptest.Server) *igdbsvc.Client {
 	return client
 }
 
+// newTestMetadataRiverClient creates a non-started River client backed by the
+// shared test container, suitable for tests that call Insert without a running
+// worker loop.
+func newTestMetadataRiverClient(t *testing.T) *river.Client[pgx.Tx] {
+	t.Helper()
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testConnStr)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatalf("river.NewClient: %v", err)
+	}
+	return rc
+}
+
 // ─── Dispatch tests ───────────────────────────────────────────────────────────
 
 func TestMetadataRefreshDispatch_IGDBNotConfigured(t *testing.T) {
 	truncateAllTables(t)
 	insertMetaRefreshAdminUser(t)
 
-	pool := worker.NewPool(testDB)
 	unconfigured := igdbsvc.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
-
-	handler := tasks.NewMetadataRefreshDispatchHandler(testDB, pool, unconfigured)
-	if err := handler(context.Background(), &models.PendingTask{}); err != nil {
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: unconfigured, RiverClient: nil}
+	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -107,9 +126,8 @@ func TestMetadataRefreshDispatch_NoAdminUser(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	pool := worker.NewPool(testDB)
-	handler := tasks.NewMetadataRefreshDispatchHandler(testDB, pool, igdbClient)
-	if err := handler(context.Background(), &models.PendingTask{}); err != nil {
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
+	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -136,9 +154,8 @@ func TestMetadataRefreshDispatch_AlreadyRunning(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	pool := worker.NewPool(testDB)
-	handler := tasks.NewMetadataRefreshDispatchHandler(testDB, pool, igdbClient)
-	if err := handler(ctx, &models.PendingTask{}); err != nil {
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -157,9 +174,8 @@ func TestMetadataRefreshDispatch_NoGames(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	pool := worker.NewPool(testDB)
-	handler := tasks.NewMetadataRefreshDispatchHandler(testDB, pool, igdbClient)
-	if err := handler(context.Background(), &models.PendingTask{}); err != nil {
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
+	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -182,9 +198,9 @@ func TestMetadataRefreshDispatch_CreatesJobAndItems(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	pool := worker.NewPool(testDB)
-	handler := tasks.NewMetadataRefreshDispatchHandler(testDB, pool, igdbClient)
-	if err := handler(context.Background(), &models.PendingTask{}); err != nil {
+	rc := newTestMetadataRiverClient(t)
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
+	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -209,10 +225,10 @@ func TestMetadataRefreshDispatch_CreatesJobAndItems(t *testing.T) {
 		t.Errorf("job_items: want 3, got %d", itemCount)
 	}
 
-	var taskCount int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM pending_tasks WHERE task_type = 'metadata_refresh_item'`).Scan(ctx, &taskCount)
-	if taskCount != 3 {
-		t.Errorf("pending_tasks: want 3, got %d", taskCount)
+	var riverJobCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM river_job WHERE kind = 'metadata_refresh_item'`).Scan(ctx, &riverJobCount)
+	if riverJobCount != 3 {
+		t.Errorf("river_job (metadata_refresh_item): want 3, got %d", riverJobCount)
 	}
 }
 
@@ -252,11 +268,10 @@ func TestMetadataRefreshItem_Success(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	task := &models.PendingTask{Payload: payload}
-
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, igdbClient, t.TempDir())
-	if err := handler(context.Background(), task); err != nil {
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
+	}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -293,9 +308,10 @@ func TestMetadataRefreshItem_IGDBError(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, igdbClient, t.TempDir())
-	_ = handler(context.Background(), &models.PendingTask{Payload: payload})
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	_ = w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
+	})
 
 	ctx := context.Background()
 
@@ -325,9 +341,10 @@ func TestMetadataRefreshItem_CoverArtFailureNonFatal(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, igdbClient, "/dev/null")
-	_ = handler(context.Background(), &models.PendingTask{Payload: payload})
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: "/dev/null"}
+	_ = w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
+	})
 
 	ctx := context.Background()
 	var item models.JobItem
@@ -353,28 +370,15 @@ func TestMetadataRefreshItem_CoverArtUnchanged(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, igdbClient, t.TempDir())
-	_ = handler(context.Background(), &models.PendingTask{Payload: payload})
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	_ = w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
+	})
 
 	var item models.JobItem
 	_ = testDB.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
 	if item.Status != models.JobItemStatusCompleted {
 		t.Errorf("item status: want completed, got %s", item.Status)
-	}
-}
-
-// TestMetadataRefreshItem_InvalidPayload exercises the "unmarshal payload" error path.
-func TestMetadataRefreshItem_InvalidPayload(t *testing.T) {
-	truncateAllTables(t)
-	srv := igdbTestServer(t, `[]`)
-	defer srv.Close()
-	igdbClient := newTestIGDBClient(t, srv)
-
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, igdbClient, t.TempDir())
-	task := &models.PendingTask{Payload: json.RawMessage(`not-json`)}
-	if err := handler(context.Background(), task); err != nil {
-		t.Fatalf("expected nil, got %v", err)
 	}
 }
 
@@ -385,16 +389,16 @@ func TestMetadataRefreshItem_JobItemNotFound(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, igdbClient, t.TempDir())
-	payload, _ := json.Marshal(map[string]string{"job_item_id": "non-existent-item"})
-	task := &models.PendingTask{Payload: payload}
-	if err := handler(context.Background(), task); err != nil {
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: "non-existent-item"},
+	}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
 
 // TestMetadataRefreshItem_IGDBNotConfiguredAtItemLevel exercises the per-item
-// "igdb_not_configured" defensive guard (step 5 in the item handler).
+// "igdb_not_configured" defensive guard.
 func TestMetadataRefreshItem_IGDBNotConfiguredAtItemLevel(t *testing.T) {
 	truncateAllTables(t)
 	adminID := insertMetaRefreshAdminUser(t)
@@ -404,9 +408,10 @@ func TestMetadataRefreshItem_IGDBNotConfiguredAtItemLevel(t *testing.T) {
 	// Use an unconfigured IGDB client — triggers the per-item guard.
 	unconfigured := igdbsvc.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
 
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, unconfigured, t.TempDir())
-	if err := handler(context.Background(), &models.PendingTask{Payload: payload}); err != nil {
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: unconfigured, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
+	}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -443,9 +448,10 @@ func TestMetadataRefreshItem_BadSourceMetadata(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, igdbClient, t.TempDir())
-	if err := handler(ctx, &models.PendingTask{Payload: payload}); err != nil {
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
+	}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -467,9 +473,10 @@ func TestMetadataRefreshItem_GameNotFound(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, igdbClient, t.TempDir())
-	if err := handler(context.Background(), &models.PendingTask{Payload: payload}); err != nil {
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
+	}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -517,9 +524,10 @@ func TestMetadataRefreshItem_CoverArtUpdated(t *testing.T) {
 	igdbClient := igdbsvc.NewClientWithTokenURL(cfg, srv.URL+"/oauth2/token", ratelimit.NewLocal(100, 100))
 	igdbClient.SetAPIURLForTest(srv.URL)
 
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, igdbClient, t.TempDir())
-	if err := handler(context.Background(), &models.PendingTask{Payload: payload}); err != nil {
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
+	}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -569,22 +577,23 @@ func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
 	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 
-	handler := tasks.NewMetadataRefreshItemHandler(testDB, igdbClient, t.TempDir())
+	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
 
 	// Process first item — job should still be processing.
-	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+	srv.Config.Handler = http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/oauth2/token":
-			_, _ = w.Write([]byte(`{"access_token":"t","expires_in":3600,"token_type":"bearer"}`))
+			_, _ = rw.Write([]byte(`{"access_token":"t","expires_in":3600,"token_type":"bearer"}`))
 		case "/games":
-			_, _ = w.Write([]byte(gamesResponse(3001, "Game A")))
+			_, _ = rw.Write([]byte(gamesResponse(3001, "Game A")))
 		default:
-			_, _ = w.Write([]byte(`[]`))
+			_, _ = rw.Write([]byte(`[]`))
 		}
 	})
-	payload1, _ := json.Marshal(map[string]string{"job_item_id": itemID1})
-	_ = handler(ctx, &models.PendingTask{Payload: payload1})
+	_ = w.Work(ctx, &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID1},
+	})
 
 	var jobStatus string
 	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
@@ -593,19 +602,20 @@ func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
 	}
 
 	// Process second item — job should now be completed.
-	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+	srv.Config.Handler = http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/oauth2/token":
-			_, _ = w.Write([]byte(`{"access_token":"t","expires_in":3600,"token_type":"bearer"}`))
+			_, _ = rw.Write([]byte(`{"access_token":"t","expires_in":3600,"token_type":"bearer"}`))
 		case "/games":
-			_, _ = w.Write([]byte(gamesResponse(3002, "Game B")))
+			_, _ = rw.Write([]byte(gamesResponse(3002, "Game B")))
 		default:
-			_, _ = w.Write([]byte(`[]`))
+			_, _ = rw.Write([]byte(`[]`))
 		}
 	})
-	payload2, _ := json.Marshal(map[string]string{"job_item_id": itemID2})
-	_ = handler(ctx, &models.PendingTask{Payload: payload2})
+	_ = w.Work(ctx, &river.Job[tasks.MetadataRefreshItemArgs]{
+		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID2},
+	})
 
 	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
 	if jobStatus != models.JobStatusCompleted {

@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"github.com/uptrace/bun"
@@ -48,6 +50,26 @@ func newMigrateCmd() *cobra.Command {
 func openBunDB(dsn string) *bun.DB {
 	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
 	return bun.NewDB(sqldb, pgdialect.New())
+}
+
+// openPgxPool builds a *pgxpool.Pool from a postgres:// DSN.
+// pgx treats a host beginning with '/' as a Unix socket directory and appends
+// /.s.PGSQL.<port> itself. Bun's pgdriver (and libpq) accept the full socket
+// file path in the host, so DATABASE_URL may already contain the filename. We
+// strip it before handing the DSN to pgxpool to avoid a doubled path like
+// /run/…/postgres/.s.PGSQL.5432/.s.PGSQL.5432.
+// TCP hosts are unaffected (they don't start with '/').
+func openPgxPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("pgxpool.ParseConfig: %w", err)
+	}
+	host := cfg.ConnConfig.Host
+	socketFile := fmt.Sprintf("/.s.PGSQL.%d", cfg.ConnConfig.Port)
+	if strings.HasPrefix(host, "/") && strings.HasSuffix(host, socketFile) {
+		cfg.ConnConfig.Host = strings.TrimSuffix(host, socketFile)
+	}
+	return pgxpool.NewWithConfig(ctx, cfg)
 }
 
 // loadEnvAndConfig resolves --config / .env, loads it into the process env,

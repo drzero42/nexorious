@@ -14,6 +14,9 @@ import (
 	"github.com/labstack/echo/v5/middleware"
 	"github.com/uptrace/bun"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
+
 	"github.com/drzero42/nexorious-go/internal/auth"
 	"github.com/drzero42/nexorious-go/internal/backup"
 	"github.com/drzero42/nexorious-go/internal/config"
@@ -22,18 +25,17 @@ import (
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
-	"github.com/drzero42/nexorious-go/internal/worker"
 	"github.com/drzero42/nexorious-go/ui"
 )
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, pool ...*worker.Pool) *echo.Echo {
+func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
 	e := echo.New()
 
-	var wp *worker.Pool
-	if len(pool) > 0 {
-		wp = pool[0]
+	var rc *river.Client[pgx.Tx]
+	if len(riverClient) > 0 {
+		rc = riverClient[0]
 	}
 
 	e.Use(middleware.Recover())
@@ -109,12 +111,12 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 	}
 
 	mh := migrate.NewHandler(migrator, db)
-	registerRoutes(e, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, wp)
+	registerRoutes(e, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, rc)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, pool *worker.Pool) {
+func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, riverClient *river.Client[pgx.Tx]) {
 	// Migration routes (bypass gate 2 via prefix)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
@@ -233,7 +235,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		userGamesGroup.DELETE("/:id/platforms/:platform_id", ugh.HandleDeletePlatform)
 
 		// Jobs routes (all JWT-protected)
-		jh := NewJobsHandler(db, pool)
+		jh := NewJobsHandler(db, riverClient)
 		jobsGroup := e.Group("/api/jobs", auth.JWTMiddleware(cfg.SecretKey, db))
 		jobsGroup.GET("", jh.HandleListJobs)
 		jobsGroup.GET("/summary", jh.HandleJobsSummary)
@@ -247,7 +249,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		jobsGroup.POST("/:id/retry-failed", jh.HandleRetryFailed)
 
 		// Job Items routes (all JWT-protected)
-		jih := NewJobItemsHandler(db, pool)
+		jih := NewJobItemsHandler(db, riverClient)
 		jobItemsGroup := e.Group("/api/job-items", auth.JWTMiddleware(cfg.SecretKey, db))
 		jobItemsGroup.GET("/:id", jih.HandleGetJobItem)
 		jobItemsGroup.POST("/:id/resolve", jih.HandleResolveItem)
@@ -255,12 +257,12 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
 
 		// Import routes (all JWT-protected)
-		imh := NewImportHandler(db, pool)
+		imh := NewImportHandler(db, riverClient)
 		importGroup := e.Group("/api/import", auth.JWTMiddleware(cfg.SecretKey, db))
 		importGroup.POST("/nexorious", imh.HandleImportNexorious)
 
 		// Export routes (all JWT-protected)
-		exh := NewExportHandler(db, pool, cfg)
+		exh := NewExportHandler(db, riverClient, cfg)
 		exportGroup := e.Group("/api/export", auth.JWTMiddleware(cfg.SecretKey, db))
 		exportGroup.POST("/json", exh.HandleExportJSON)
 		exportGroup.POST("/csv", exh.HandleExportCSV)
@@ -285,7 +287,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		// Sync routes (all JWT-protected)
 		steamSvc := steamsvc.NewClient()
 		psnSvc := psnsvc.NewClient()
-		synch := NewSyncHandler(db, pool, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc})
+		synch := NewSyncHandler(db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc})
 		syncGroup := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 		synch.RegisterRoutes(syncGroup)
 	}

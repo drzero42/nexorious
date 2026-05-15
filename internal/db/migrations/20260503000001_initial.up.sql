@@ -257,30 +257,13 @@ CREATE INDEX job_items_job_id_idx ON job_items (job_id);
 CREATE INDEX job_items_user_id_idx ON job_items (user_id);
 CREATE INDEX job_items_status_idx ON job_items (status);
 
--- Pending tasks (database-backed worker queue)
-CREATE TABLE pending_tasks (
-    id         TEXT PRIMARY KEY,                   -- UUID v4
-    task_type  TEXT NOT NULL,                      -- e.g. "sync", "import_item", "export", "metadata_refresh"
-    payload    JSONB NOT NULL DEFAULT '{}',
-    priority   INTEGER NOT NULL DEFAULT 0,         -- higher = more urgent
-    status     TEXT NOT NULL DEFAULT 'pending',    -- 'pending' | 'running' | 'done' | 'failed'
-    attempts   INTEGER NOT NULL DEFAULT 0,
-    last_error TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    claimed_at TIMESTAMPTZ,
-    done_at    TIMESTAMPTZ
-);
-
--- Partial index on pending only: covers the worker claim query efficiently
-CREATE INDEX pending_tasks_claim_idx ON pending_tasks (status, priority DESC, created_at)
-    WHERE status = 'pending';
-
 -- Backup config (singleton table — always id=1)
 CREATE TABLE backup_config (
     id              INTEGER PRIMARY KEY CHECK (id = 1),
     schedule_cron   TEXT NOT NULL DEFAULT '',      -- standard 5-field cron; empty = disabled
     retention_mode  TEXT NOT NULL DEFAULT 'days',  -- 'days' | 'count'
     retention_value INTEGER NOT NULL DEFAULT 30,
+    last_backup_at  TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );

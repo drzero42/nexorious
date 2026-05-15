@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	pgx "github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
+	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/drzero42/nexorious-go/internal/config"
-	"github.com/drzero42/nexorious-go/internal/db/models"
 	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
@@ -19,7 +22,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// NewDispatchSyncHandler — DB-backed tests using testcontainers
+// DispatchSyncWorker — DB-backed tests using testcontainers
 // ---------------------------------------------------------------------------
 
 // fakeSteamAdapter implements SteamLibraryAdapter for testing.
@@ -32,18 +35,35 @@ func (f *fakeSteamAdapter) GetOwnedGames(_ context.Context, _, _ string) ([]stea
 	return f.games, f.err
 }
 
+// newTestRiverClient creates a non-started River client backed by the shared
+// test container. It is suitable for tests that call Insert but do not need a
+// running worker loop.
+func newTestRiverClient(t *testing.T) *river.Client[pgx.Tx] {
+	t.Helper()
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testConnStr)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatalf("river.NewClient: %v", err)
+	}
+	return rc
+}
+
 func TestDispatchSync_InvalidPayload(t *testing.T) {
 	truncateAllTables(t)
-	handler := tasks.NewDispatchSyncHandler(testDB, &fakeSteamAdapter{}, nil)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: &fakeSteamAdapter{}, RiverClient: nil}
 
-	task := &models.PendingTask{
-		ID:       uuid.NewString(),
-		TaskType: "dispatch_sync",
-		Payload:  []byte("not-json"),
+	// With River, args are already typed — test that a job with empty args
+	// (no matching sync config) returns nil without panicking.
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{},
 	}
-	// Should not error — logs and returns nil.
-	if err := handler(context.Background(), task); err != nil {
-		t.Fatalf("expected nil error for invalid payload, got %v", err)
+	if err := w.Work(context.Background(), job); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
 	}
 }
 
@@ -59,14 +79,13 @@ func TestDispatchSync_NoSyncConfig(t *testing.T) {
 		jobID, userID,
 	)
 
-	handler := tasks.NewDispatchSyncHandler(testDB, &fakeSteamAdapter{}, nil)
-	payload, _ := json.Marshal(map[string]string{"job_id": jobID, "user_id": userID, "storefront": "steam"})
-	task := &models.PendingTask{
-		ID: uuid.NewString(), TaskType: "dispatch_sync", Payload: payload,
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: &fakeSteamAdapter{}, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
 
 	// No sync_config row → fails with "no sync config found".
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -95,11 +114,12 @@ func TestDispatchSync_NoCredentials(t *testing.T) {
 		configID, userID,
 	).Exec(ctx)
 
-	handler := tasks.NewDispatchSyncHandler(testDB, &fakeSteamAdapter{}, nil)
-	payload, _ := json.Marshal(map[string]string{"job_id": jobID, "user_id": userID, "storefront": "steam"})
-	task := &models.PendingTask{ID: uuid.NewString(), TaskType: "dispatch_sync", Payload: payload}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: &fakeSteamAdapter{}, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
 
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	var status string
@@ -127,11 +147,12 @@ func TestDispatchSync_UnknownStorefront(t *testing.T) {
 		configID, userID, creds,
 	).Exec(ctx)
 
-	handler := tasks.NewDispatchSyncHandler(testDB, &fakeSteamAdapter{}, nil)
-	payload, _ := json.Marshal(map[string]string{"job_id": jobID, "user_id": userID, "storefront": "bogus"})
-	task := &models.PendingTask{ID: uuid.NewString(), TaskType: "dispatch_sync", Payload: payload}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: &fakeSteamAdapter{}, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "bogus"},
+	}
 
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	var status string
@@ -159,11 +180,12 @@ func TestDispatchSync_SteamInvalidCredentials(t *testing.T) {
 		configID, userID, "not-valid-json",
 	).Exec(ctx)
 
-	handler := tasks.NewDispatchSyncHandler(testDB, &fakeSteamAdapter{}, nil)
-	payload, _ := json.Marshal(map[string]string{"job_id": jobID, "user_id": userID, "storefront": "steam"})
-	task := &models.PendingTask{ID: uuid.NewString(), TaskType: "dispatch_sync", Payload: payload}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: &fakeSteamAdapter{}, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
 
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	var status string
@@ -192,11 +214,12 @@ func TestDispatchSync_SteamFetchError(t *testing.T) {
 	).Exec(ctx)
 
 	adapter := &fakeSteamAdapter{err: errSteamFetch}
-	handler := tasks.NewDispatchSyncHandler(testDB, adapter, nil)
-	payload, _ := json.Marshal(map[string]string{"job_id": jobID, "user_id": userID, "storefront": "steam"})
-	task := &models.PendingTask{ID: uuid.NewString(), TaskType: "dispatch_sync", Payload: payload}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
 
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	var status string
@@ -235,11 +258,13 @@ func TestDispatchSync_SteamSuccess(t *testing.T) {
 			{ExternalID: "730", Title: "Counter-Strike 2", RawPlatform: "PC", PlaytimeHours: 100, OwnershipStatus: "owned"},
 		},
 	}
-	handler := tasks.NewDispatchSyncHandler(testDB, adapter, nil)
-	payload, _ := json.Marshal(map[string]string{"job_id": jobID, "user_id": userID, "storefront": "steam"})
-	task := &models.PendingTask{ID: uuid.NewString(), TaskType: "dispatch_sync", Payload: payload}
+	rc := newTestRiverClient(t)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
 
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -259,7 +284,7 @@ func TestDispatchSync_SteamSuccess(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// NewProcessSyncItemHandler — basic cases
+// ProcessSyncItemWorker — basic cases
 // ---------------------------------------------------------------------------
 
 func newIGDBClientForTests(t *testing.T, tokenURL, apiURL string) *igdb.Client {
@@ -273,27 +298,14 @@ func newIGDBClientForTests(t *testing.T, tokenURL, apiURL string) *igdb.Client {
 	return c
 }
 
-func TestProcessSyncItem_InvalidPayload(t *testing.T) {
-	truncateAllTables(t)
-	handler := tasks.NewProcessSyncItemHandler(testDB, nil)
-
-	task := &models.PendingTask{
-		ID: uuid.NewString(), TaskType: "process_sync_item", Payload: []byte("bad"),
-	}
-	if err := handler(context.Background(), task); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-}
-
 func TestProcessSyncItem_ItemNotFound(t *testing.T) {
 	truncateAllTables(t)
-	handler := tasks.NewProcessSyncItemHandler(testDB, nil)
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
 
-	payload, _ := json.Marshal(map[string]string{"job_item_id": uuid.NewString()})
-	task := &models.PendingTask{
-		ID: uuid.NewString(), TaskType: "process_sync_item", Payload: payload,
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: uuid.NewString()},
 	}
-	if err := handler(context.Background(), task); err != nil {
+	if err := w.Work(context.Background(), job); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
@@ -326,11 +338,12 @@ func TestProcessSyncItem_SkippedExternalGame(t *testing.T) {
 		itemID, jobID, userID, string(metaJSON),
 	)
 
-	handler := tasks.NewProcessSyncItemHandler(testDB, nil)
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	task := &models.PendingTask{ID: uuid.NewString(), TaskType: "process_sync_item", Payload: payload}
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
 
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -370,11 +383,12 @@ func TestProcessSyncItem_NoIGDBID_PendingReview(t *testing.T) {
 	)
 
 	// Pass nil igdbClient so IGDB search is skipped → pending_review.
-	handler := tasks.NewProcessSyncItemHandler(testDB, nil)
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	task := &models.PendingTask{ID: uuid.NewString(), TaskType: "process_sync_item", Payload: payload}
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
 
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -426,11 +440,12 @@ func TestProcessSyncItem_WithResolvedIGDBID_Completed(t *testing.T) {
 		itemID, jobID, userID, string(metaJSON),
 	)
 
-	handler := tasks.NewProcessSyncItemHandler(testDB, nil)
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	task := &models.PendingTask{ID: uuid.NewString(), TaskType: "process_sync_item", Payload: payload}
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
 
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -482,11 +497,12 @@ func TestProcessSyncItem_UnresolvedPlatform_Failed(t *testing.T) {
 		itemID, jobID, userID, string(metaJSON),
 	)
 
-	handler := tasks.NewProcessSyncItemHandler(testDB, nil)
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	task := &models.PendingTask{ID: uuid.NewString(), TaskType: "process_sync_item", Payload: payload}
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
 
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	var status string
@@ -537,11 +553,12 @@ func TestProcessSyncItem_WithIGDBAutoResolve(t *testing.T) {
 	)
 
 	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
-	handler := tasks.NewProcessSyncItemHandler(testDB, igdbClient)
-	payload, _ := json.Marshal(map[string]string{"job_item_id": itemID})
-	task := &models.PendingTask{ID: uuid.NewString(), TaskType: "process_sync_item", Payload: payload}
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: igdbClient}
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
 
-	if err := handler(ctx, task); err != nil {
+	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Item was resolved or pending_review — just check it's not still pending.
