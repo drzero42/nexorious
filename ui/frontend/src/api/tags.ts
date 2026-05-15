@@ -16,14 +16,6 @@ interface TagApiResponse {
   game_count?: number;
 }
 
-interface TagListApiResponse {
-  tags: TagApiResponse[];
-  total: number;
-  page: number;
-  per_page: number;
-  total_pages: number;
-}
-
 interface TagCreateOrGetApiResponse {
   tag: TagApiResponse;
   created: boolean;
@@ -129,16 +121,16 @@ export async function getTags(params?: GetTagsParams): Promise<TagsListResponse>
     queryParams.include_game_count = params.includeGameCount;
   }
 
-  const response = await api.get<TagListApiResponse>('/tags/', {
+  const response = await api.get<TagApiResponse[]>('/tags', {
     params: queryParams,
   });
 
   return {
-    tags: response.tags.map(transformTag),
-    total: response.total,
-    page: response.page,
-    perPage: response.per_page,
-    totalPages: response.total_pages,
+    tags: response.map(transformTag),
+    total: response.length,
+    page: 1,
+    perPage: response.length,
+    totalPages: 1,
   };
 }
 
@@ -146,18 +138,8 @@ export async function getTags(params?: GetTagsParams): Promise<TagsListResponse>
  * Get all tags (paginate through all pages).
  */
 export async function getAllTags(): Promise<Tag[]> {
-  const allTags: Tag[] = [];
-  let page = 1;
-  let hasMore = true;
-
-  while (hasMore) {
-    const response = await getTags({ page, perPage: 100, includeGameCount: true });
-    allTags.push(...response.tags);
-    hasMore = page < response.totalPages;
-    page++;
-  }
-
-  return allTags;
+  const response = await api.get<TagApiResponse[]>('/tags');
+  return response.map(transformTag);
 }
 
 /**
@@ -172,7 +154,7 @@ export async function getTag(id: string): Promise<Tag> {
  * Create a new tag.
  */
 export async function createTag(data: TagCreateData): Promise<Tag> {
-  const response = await api.post<TagApiResponse>('/tags/', {
+  const response = await api.post<TagApiResponse>('/tags', {
     name: data.name,
     color: data.color,
     description: data.description,
