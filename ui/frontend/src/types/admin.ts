@@ -51,11 +51,3 @@ export interface AdminStatistics {
   totalGames: number;
   recentUsers: AdminUser[];
 }
-
-export interface SeedDataResult {
-  platformsAdded: number;
-  storefrontsAdded: number;
-  mappingsCreated: number;
-  totalChanges: number;
-  message: string;
-}

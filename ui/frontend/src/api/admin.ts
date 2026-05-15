@@ -7,7 +7,6 @@ import type {
   UpdateUserRequest,
   ResetPasswordRequest,
   AdminStatistics,
-  SeedDataResult,
 } from '@/types';
 
 function mapBackendUserToFrontend(backendUser: AdminUserBackend): AdminUser {
@@ -95,27 +94,6 @@ export async function getAdminStatistics(): Promise<AdminStatistics> {
     totalAdmins,
     totalGames: 0, // Would need a separate endpoint
     recentUsers,
-  };
-}
-
-/**
- * Load seed data for platforms and storefronts (admin only)
- */
-export async function loadSeedData(version?: string): Promise<SeedDataResult> {
-  const response = await api.post<{
-    platforms_added: number;
-    storefronts_added: number;
-    mappings_created: number;
-    total_changes: number;
-    message: string;
-  }>('/platforms/seed', { version: version ?? '1.0.0' });
-
-  return {
-    platformsAdded: response.platforms_added,
-    storefrontsAdded: response.storefronts_added,
-    mappingsCreated: response.mappings_created,
-    totalChanges: response.total_changes,
-    message: response.message,
   };
 }
 

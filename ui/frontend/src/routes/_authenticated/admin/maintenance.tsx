@@ -6,14 +6,11 @@ import { JobType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/jobs';
 import { toast } from 'sonner';
 import {
-  Package,
   RefreshCw,
   Loader2,
-  CheckCircle,
   RotateCcw,
 } from 'lucide-react';
 import {
@@ -24,7 +21,6 @@ import {
 } from '@/components/ui/tooltip';
 import { useHealthStatus } from '@/hooks/use-health-status';
 import * as adminApi from '@/api/admin';
-import type { SeedDataResult } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/admin/maintenance')({
   component: MaintenancePage,
@@ -46,8 +42,6 @@ function MaintenancePageSkeleton() {
 function MaintenancePage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
-  const [isSeedLoading, setIsSeedLoading] = useState(false);
-  const [seedResult, setSeedResult] = useState<SeedDataResult | null>(null);
   const [isRefreshLoading, setIsRefreshLoading] = useState(false);
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
@@ -72,20 +66,6 @@ function MaintenancePage() {
       navigate({ to: '/dashboard', replace: true });
     }
   }, [currentUser, navigate]);
-
-  const handleLoadSeedData = async () => {
-    try {
-      setIsSeedLoading(true);
-      const result = await adminApi.loadSeedData();
-      setSeedResult(result);
-      toast.success('Seed data loaded successfully');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load seed data';
-      toast.error(message);
-    } finally {
-      setIsSeedLoading(false);
-    }
-  };
 
   const handleStartMetadataRefresh = async () => {
     try {
@@ -150,54 +130,6 @@ function MaintenancePage() {
           Administrative tools for database maintenance and data management
         </p>
       </div>
-
-      {/* Seed Data Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            Seed Data
-          </CardTitle>
-          <CardDescription>
-            Load official platforms, storefronts, and default mappings
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {seedResult && (
-            <Alert className="border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
-              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-              <AlertTitle>Success</AlertTitle>
-              <AlertDescription>
-                {seedResult.message}
-                {seedResult.totalChanges > 0 && (
-                  <ul className="mt-2 list-inside list-disc text-sm">
-                    <li>{seedResult.platformsAdded} platforms</li>
-                    <li>{seedResult.storefrontsAdded} storefronts</li>
-                    <li>{seedResult.mappingsCreated} mappings</li>
-                  </ul>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-          <p className="text-sm text-muted-foreground">
-            This operation is idempotent and safe to run multiple times. Existing data will be
-            preserved.
-          </p>
-          <Button onClick={handleLoadSeedData} disabled={isSeedLoading} className="w-full">
-            {isSeedLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading...
-              </>
-            ) : (
-              <>
-                <Package className="mr-2 h-4 w-4" />
-                Load Seed Data
-              </>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
 
       {/* Active Job Progress View */}
       {showJobProgress && activeJob && (

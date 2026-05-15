@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { toast } from 'sonner';
 import {
   Users,
   UserPlus,
@@ -14,11 +13,9 @@ import {
   Gamepad2,
   CheckCircle,
   AlertCircle,
-  Loader2,
-  Package,
 } from 'lucide-react';
 import * as adminApi from '@/api/admin';
-import type { AdminStatistics, SeedDataResult } from '@/types';
+import type { AdminStatistics } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/admin/')({
   component: AdminDashboardPage,
@@ -56,9 +53,7 @@ function AdminDashboardPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const [statistics, setStatistics] = useState<AdminStatistics | null>(null);
-  const [seedDataResult, setSeedDataResult] = useState<SeedDataResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSeedDataLoading, setIsSeedDataLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Check admin access
@@ -89,27 +84,6 @@ function AdminDashboardPage() {
     }
   }, [currentUser]);
 
-  const handleLoadSeedData = async () => {
-    const confirmed = window.confirm(
-      'This will load official platforms, storefronts, and their default mappings into the database. ' +
-        'Existing data will be preserved. Continue?'
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setIsSeedDataLoading(true);
-      const result = await adminApi.loadSeedData();
-      setSeedDataResult(result);
-      toast.success('Seed data loaded successfully');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load seed data';
-      toast.error(errorMessage);
-    } finally {
-      setIsSeedDataLoading(false);
-    }
-  };
-
   // Show nothing while checking auth
   if (!currentUser?.isAdmin) {
     return null;
@@ -135,32 +109,6 @@ function AdminDashboardPage() {
           <AlertDescription className="flex items-center justify-between">
             <span>{error}</span>
             <Button variant="outline" size="sm" onClick={() => setError(null)}>
-              Dismiss
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Seed Data Result */}
-      {seedDataResult && (
-        <Alert className="border-green-200 bg-green-50 text-green-800">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertTitle>Seed Data Loading Complete</AlertTitle>
-          <AlertDescription>
-            <p>{seedDataResult.message}</p>
-            {seedDataResult.totalChanges > 0 && (
-              <ul className="mt-2 list-inside list-disc">
-                <li>{seedDataResult.platformsAdded} platforms added/updated</li>
-                <li>{seedDataResult.storefrontsAdded} storefronts added/updated</li>
-                <li>{seedDataResult.mappingsCreated} default mappings created</li>
-              </ul>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-2"
-              onClick={() => setSeedDataResult(null)}
-            >
               Dismiss
             </Button>
           </AlertDescription>
@@ -297,18 +245,6 @@ function AdminDashboardPage() {
                     <Users className="mr-2 h-4 w-4" />
                     Manage Users
                   </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleLoadSeedData}
-                  disabled={isSeedDataLoading}
-                >
-                  {isSeedDataLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Package className="mr-2 h-4 w-4" />
-                  )}
-                  {isSeedDataLoading ? 'Loading...' : 'Load Seed Data'}
                 </Button>
               </div>
             </CardContent>
