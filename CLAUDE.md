@@ -71,7 +71,7 @@ export DATABASE_URL="postgres://..."
 - `cmd/nexorious/` — entry point, wires config/db/echo/workers
 - `internal/api/` — Echo route handlers per domain (games, user_games, auth, setup, platforms, tags, jobs, job_items, import, export, backup, sync, db_error)
 - `internal/db/` — database layer
-  - `migrations/` — golang-migrate SQL files (`0001_initial.up.sql`, etc.)
+  - `migrations/` — Bun migrate SQL files with timestamp-prefix naming (`20260503000001_name.up.sql` / `.down.sql`); auto-discovered via `//go:embed *.sql` in `migrations.go`
   - `models/` — Bun model structs (hand-edited)
 - `internal/migrate/` — migration state machine + Echo handlers for `/migrate` and `/api/migrate/*`
 - `internal/worker/` — River job worker implementations; `tasks/` contains workers for sync, import, export, and metadata refresh
@@ -99,7 +99,7 @@ Echo middleware blocks all non-migration routes until state is `Ready`. River wo
 - **Exception**: `internal/auth` uses raw `db.NewRaw`/`db.QueryRow` directly (not Bun models) to keep auth isolated.
 - **Dynamic filter queries**: Bun query builder used in `internal/filter/` for user-game list filtering.
 - **Driver**: `pgx/v5` via Bun's `pgdriver` adapter (`bunpgx`).
-- **Migrations**: `golang-migrate/v4`; migration SQL lives in `internal/db/migrations/`.
+- **Migrations**: Bun migrate (`uptrace/bun/migrate`); SQL files live in `internal/db/migrations/` with timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); discovered automatically via `Migrations.Discover(FS)` in `migrations.go`.
 
 ### Frontend Embedding (Stash pattern)
 `ui/ui.go` exposes two `embed.FS` vars:
@@ -167,7 +167,7 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 ### Essential Workflow
 1. **Planning**: Read `docs/superpowers/specs/` for design context
 2. **Branching**: Create a feature branch before starting any task
-3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/`; never hand-edit generated code
+3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
 4. **Testing**: Run `go test ./...` after any Go changes; `npm run check && npm run test` after any frontend changes
 5. **Plan files**: `docs/superpowers/plans/` is tracked — always commit the plan file on the feature branch
 
@@ -231,9 +231,7 @@ cp -rf source dest          # NOT: cp -r source dest
 
 - **`sql.ErrNoRows` vs DB errors** — always `errors.Is(err, sql.ErrNoRows)` to distinguish "not found" (→ 404/401) from real connection failures (→ 500); import `"database/sql"` for the sentinel. Bun wraps pgx errors into `sql.ErrNoRows`, so use the stdlib sentinel (not `pgx.ErrNoRows`)
 - **`//go:embed all:dir`** — use `all:` prefix when the directory contains dot-files (e.g. `.gitkeep`); without it, Go silently excludes them and the build fails
-- **golang-migrate driver** — use blank import `_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"` + `gmigrate.NewWithSourceInstance("iofs", src, databaseURL)`; no `pgx5driver.Open()` exists. Connection string must use `pgx5://` scheme: `"pgx5" + strings.TrimPrefix(connStr, "postgres")`
-- **Package name `migrate`** — collides with the golang-migrate import; alias it: `gmigrate "github.com/golang-migrate/migrate/v4"`
-- **`iofs.Source.Next(ver)`** — returns `(uint, error)`, not 3 values
+- **Package name `migrate`** — `internal/migrate` uses package name `migrate`; when importing `uptrace/bun/migrate` inside that package, alias it: `bunmigrate "github.com/uptrace/bun/migrate"` to avoid the collision
 - **`os.Exit` skips deferred calls** — call `pool.Close()` explicitly before any `os.Exit` in main; deferred `pool.Close()` will not run
 - **Background goroutines** — use `context.Background()`, not `c.Request().Context()`, for work that outlives an HTTP handler
 - **`errcheck` linter and `resp.Body`** — always `defer func() { _ = resp.Body.Close() }()`; bare `defer resp.Body.Close()` is flagged by errcheck
@@ -244,6 +242,6 @@ cp -rf source dest          # NOT: cp -r source dest
 - **River queue is independent of `job_items`** — `UPDATE job_items SET status='pending'` does NOT re-enqueue the item. River only processes rows in `river_job`. Always use `POST /api/jobs/{id}/retry-failed` or `POST /api/job-items/{id}/retry` which call `retryInsert` and write both tables. A direct DB reset leaves the item permanently stuck.
 - **`ui/frontend/src/api/index.ts` barrel file** — new functions in `api/*.ts` are not automatically importable as `@/api`. Add them explicitly to the matching `export { ... } from './jobs'` block in `index.ts`.
 - **bun raw scan struct tags** — when scanning raw SQL into a struct, bun maps columns by snake_casing the field name. If the column alias doesn't match exactly (e.g. `is_new_addition` → field `IsNewAdd` → bun expects `is_new_add`), the scan silently returns nil rows. Use explicit `bun:"column_name"` tags on all fields in raw-query result structs.
-- **psql dev connection** — `psql "postgresql://abo@/nexorious?host=/run/user/1000/devenv-1324d96/postgres&sslmode=disable"` — `host` is the *directory* containing the socket file, not the full socket path.
+- **psql dev connection** — `psql "${DATABASE_URL/\/.s.PGSQL.5432/}"` — `DATABASE_URL` includes the full socket path; this substitution strips the socket filename so psql gets just the directory as `host`.
 - **`pending_review` is settled, not active** — in `syncCheckJobCompletion` and similar job-completion checks, only `pending` and `processing` count as active remaining work. `pending_review` items wait indefinitely for user action and must not block auto-retry or job termination logic.
 
