@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/uptrace/bun"
-
 )
 
 func insertJob(t *testing.T, db *bun.DB, id, userID, jobType, source, status string) {
@@ -631,5 +631,128 @@ func TestHandleRetryFailed_MetadataRefreshJobType(t *testing.T) {
 	}
 	if resp["retried"].(float64) != 1 {
 		t.Fatalf("expected retried=1, got %v", resp["retried"])
+	}
+}
+
+func TestJobProgress_IncludesIGDBFailed(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "igdb-failed-progress")
+
+	jobID := uuid.NewString()
+	insertJob(t, testDB, jobID, userID, "sync", "steam", "processing")
+	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k1", "Game A", "completed")
+	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k2", "Game B", "igdb_failed")
+
+	rec := getAuth(t, e, "/api/jobs/"+jobID, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	progress, ok := resp["progress"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected progress map, got %T", resp["progress"])
+	}
+	if igdbFailed, ok := progress["igdb_failed"].(float64); !ok || igdbFailed != 1 {
+		t.Errorf("expected igdb_failed=1 in progress, got %v", progress["igdb_failed"])
+	}
+}
+
+func TestRetryFailed_IncludesIGDBFailed(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "retry-igdb-failed")
+
+	jobID := uuid.NewString()
+	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed_with_errors")
+
+	item1ID := uuid.NewString()
+	insertJobItem(t, testDB, item1ID, jobID, userID, "k1", "Game A", "igdb_failed")
+	item2ID := uuid.NewString()
+	insertJobItem(t, testDB, item2ID, jobID, userID, "k2", "Game B", "failed")
+	item3ID := uuid.NewString()
+	insertJobItem(t, testDB, item3ID, jobID, userID, "k3", "Game C", "completed")
+
+	rec := postAuth(t, e, "/api/jobs/"+jobID+"/retry-failed", token, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if retried, ok := resp["retried"].(float64); !ok || retried != 2 {
+		t.Errorf("expected retried=2 (1 igdb_failed + 1 failed), got %v", resp["retried"])
+	}
+
+	var s1, s2 string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, item1ID).Scan(context.Background(), &s1)
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, item2ID).Scan(context.Background(), &s2)
+	if s1 != "pending" {
+		t.Errorf("expected igdb_failed item reset to pending, got %q", s1)
+	}
+	if s2 != "pending" {
+		t.Errorf("expected failed item reset to pending, got %q", s2)
+	}
+}
+
+func TestRecentJobs_IncludesCompletedWithErrors(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "recent-cwe")
+
+	jobID := uuid.NewString()
+	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed_with_errors")
+
+	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var jobs []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &jobs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Errorf("expected 1 job, got %d", len(jobs))
+	}
+}
+
+func TestRecentJobs_ReturnsSplitItemArrays(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "recent-split")
+
+	jobID := uuid.NewString()
+	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed_with_errors")
+	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k1", "Game A", "completed")
+	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k2", "Game B", "igdb_failed")
+	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k3", "Game C", "skipped")
+
+	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var jobs []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &jobs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	job := jobs[0]
+	completedItems, _ := job["completed_items"].([]any)
+	skippedItems, _ := job["skipped_items"].([]any)
+	igdbFailedItems, _ := job["igdb_failed_items"].([]any)
+	if len(completedItems) != 1 {
+		t.Errorf("expected 1 completed_item, got %d", len(completedItems))
+	}
+	if len(skippedItems) != 1 {
+		t.Errorf("expected 1 skipped_item, got %d", len(skippedItems))
+	}
+	if len(igdbFailedItems) != 1 {
+		t.Errorf("expected 1 igdb_failed_item, got %d", len(igdbFailedItems))
 	}
 }

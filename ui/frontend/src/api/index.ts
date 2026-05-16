@@ -112,7 +112,7 @@ export {
 } from './import-export';
 
 // Re-export jobs API functions
-export { getJobs, getJob, cancelJob, deleteJob, getJobsSummary, getJobItems, getActiveJob, getPendingReviewCount, resolveJobItem, skipJobItem } from './jobs';
+export { getJobs, getJob, cancelJob, deleteJob, getJobsSummary, getJobItems, getActiveJob, getPendingReviewCount, resolveJobItem, skipJobItem, retryFailedItems, retryJobItem, getRecentJobs } from './jobs';
 
 // Re-export backup API functions
 export {

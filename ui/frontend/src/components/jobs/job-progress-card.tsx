@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Loader2, XCircle } from 'lucide-react';
+import { Loader2, XCircle, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import type { Job } from '@/types';
 import {
@@ -28,9 +28,11 @@ interface JobProgressCardProps {
   job: Job;
   onCancel: () => Promise<void>;
   isCancelling?: boolean;
+  onRetry?: () => Promise<void>;
+  isRetrying?: boolean;
 }
 
-export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCardProps) {
+export function JobProgressCard({ job, onCancel, isCancelling, onRetry, isRetrying }: JobProgressCardProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const showProgress = isJobInProgress(job);
 
@@ -68,7 +70,7 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
           )}
 
           {job.progress && (
-            <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+            <div className={`grid grid-cols-2 gap-4 text-sm ${job.progress.igdbFailed > 0 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
               <div>
                 <div className="text-muted-foreground">Completed</div>
                 <div className="text-lg font-semibold text-green-600">{job.progress.completed}</div>
@@ -85,6 +87,12 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
                 <div className="text-muted-foreground">Pending</div>
                 <div className="text-lg font-semibold">{job.progress.pending}</div>
               </div>
+              {job.progress.igdbFailed > 0 && (
+                <div>
+                  <div className="text-muted-foreground">IGDB Error</div>
+                  <div className="text-lg font-semibold text-orange-500">{job.progress.igdbFailed}</div>
+                </div>
+              )}
             </div>
           )}
 
@@ -95,7 +103,23 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
           )}
 
           {!job.isTerminal && (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {onRetry && job.progress && job.progress.igdbFailed > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onRetry}
+                  disabled={isRetrying}
+                  className="text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                >
+                  {isRetrying ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Retry {job.progress.igdbFailed} IGDB {job.progress.igdbFailed === 1 ? 'error' : 'errors'}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"

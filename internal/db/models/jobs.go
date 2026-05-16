@@ -101,6 +101,7 @@ const (
 	JobItemStatusPendingReview = "pending_review"
 	JobItemStatusSkipped       = "skipped"
 	JobItemStatusFailed        = "failed"
+	JobItemStatusIGDBFailed    = "igdb_failed"
 )
 
 type JobItem struct {

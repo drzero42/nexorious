@@ -637,3 +637,138 @@ func TestProcessSyncItem_LowConfidenceIGDB_StoresMatchConfidence(t *testing.T) {
 		t.Errorf("expected match_confidence in (0, 1), got %f", *matchConfidence)
 	}
 }
+
+func TestProcessSyncItem_IGDBError_MarksItemIGDBFailed(t *testing.T) {
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
+	}))
+	defer tokenSrv.Close()
+
+	igdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer igdbSrv.Close()
+
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	// auto_retry_done=true so the item stays igdb_failed (no reset) and job becomes completed_with_errors.
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, auto_retry_done) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1, true)`,
+		jobID, userID,
+	)
+
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'steam', '123', 'Some Game', false, true, false, 0)`,
+		egID, userID,
+	)
+
+	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '123', 'Some Game', ?, 'pending', '{}', '[]')`,
+		itemID, jobID, userID, string(metaJSON),
+	)
+
+	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: igdbClient}
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)
+	if status != "igdb_failed" {
+		t.Errorf("expected item status=igdb_failed, got %q", status)
+	}
+}
+
+func TestProcessSyncItem_IGDBError_ThenAutoRetry_CompletesWithErrors(t *testing.T) {
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
+	}))
+	defer tokenSrv.Close()
+
+	igdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer igdbSrv.Close()
+
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, auto_retry_done)
+		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1, false)`,
+		jobID, userID,
+	)
+
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'steam', '999', 'Retry Game', false, true, false, 0)`,
+		egID, userID,
+	)
+
+	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '999', 'Retry Game', ?, 'pending', '{}', '[]')`,
+		itemID, jobID, userID, string(metaJSON),
+	)
+
+	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
+	rc := newTestRiverClient(t)
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
+	riverJob := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
+
+	// First run: item → igdb_failed, auto_retry triggers (resets to pending, sets auto_retry_done=true).
+	if err := w.Work(ctx, riverJob); err != nil {
+		t.Fatalf("unexpected error on first run: %v", err)
+	}
+
+	var itemStatus string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &itemStatus)
+
+	var autoRetryDone bool
+	_ = testDB.NewRaw(`SELECT auto_retry_done FROM jobs WHERE id = ?`, jobID).Scan(ctx, &autoRetryDone)
+
+	if itemStatus != "pending" {
+		t.Errorf("expected item reset to pending after auto-retry, got %q", itemStatus)
+	}
+	if !autoRetryDone {
+		t.Error("expected auto_retry_done=true after first completion check")
+	}
+
+	var jobStatus string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
+	if jobStatus != "processing" {
+		t.Errorf("expected job still processing after auto-retry, got %q", jobStatus)
+	}
+
+	// Second run: item → igdb_failed again, auto_retry_done=true → job completed_with_errors.
+	if err := w.Work(ctx, riverJob); err != nil {
+		t.Fatalf("unexpected error on second run: %v", err)
+	}
+
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
+	if jobStatus != "completed_with_errors" {
+		t.Errorf("expected job completed_with_errors after retry exhausted, got %q", jobStatus)
+	}
+}

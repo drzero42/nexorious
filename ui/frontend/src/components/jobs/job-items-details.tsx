@@ -49,6 +49,7 @@ interface JobItemsDetailsProps {
     pendingReview: number;
     skipped: number;
     failed: number;
+    igdbFailed: number;
   };
   isTerminal: boolean;
 }
@@ -339,8 +340,12 @@ function StatusSection({
 
   // Determine section behavior
   const isFailedSection = status === JobItemStatus.FAILED;
+  const isIGDBFailedSection = status === JobItemStatus.IGDB_FAILED;
   const isPendingReviewSection = status === JobItemStatus.PENDING_REVIEW;
-  const canRetry = isFailedSection && isTerminal;
+  // Retry all: only for terminal jobs (active jobs use the progress card button)
+  const canRetryAll = (isFailedSection || isIGDBFailedSection) && isTerminal;
+  // Individual retry: always available for igdb_failed; only terminal for regular failed
+  const canRetryItem = (isFailedSection && isTerminal) || isIGDBFailedSection;
 
   const handleRetryAll = async () => {
     try {
@@ -365,7 +370,7 @@ function StatusSection({
   // ensuring the count badge stays in sync with the displayed items
   const displayCount = isOpen && data ? data.total : count;
 
-  if (count === 0 && !isOpen) return null;
+  if (count === 0) return null;
 
   const iconMap: Record<JobItemStatus, React.ReactNode> = {
     [JobItemStatus.PENDING]: <Clock className="h-4 w-4 text-muted-foreground" />,
@@ -378,6 +383,7 @@ function StatusSection({
     ),
     [JobItemStatus.SKIPPED]: <Clock className="h-4 w-4 text-muted-foreground" />,
     [JobItemStatus.FAILED]: <AlertCircle className="h-4 w-4 text-red-600" />,
+    [JobItemStatus.IGDB_FAILED]: <AlertCircle className="h-4 w-4 text-orange-500" />,
   };
 
   return (
@@ -397,7 +403,7 @@ function StatusSection({
             <span>{getJobItemStatusLabel(status)}</span>
           </div>
           <div className="flex items-center gap-2">
-            {canRetry && (
+            {canRetryAll && (
               <Button
                 variant="outline"
                 size="sm"
@@ -457,18 +463,19 @@ function StatusSection({
                         <div className="font-medium truncate">{item.resultGameTitle || item.sourceTitle}</div>
                       )}
                       {item.errorMessage && (
-                        <div className="text-red-600 text-xs mt-1">
+                        <div className={`text-xs mt-1 ${isIGDBFailedSection ? 'text-orange-600' : 'text-red-600'}`}>
                           {item.errorMessage}
                         </div>
                       )}
                     </div>
-                    {canRetry && (
+                    {canRetryItem && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleRetryItem(item.id)}
                         disabled={retryItemMutation.isPending}
                         className="ml-2 h-8"
+                        title="Retry"
                       >
                         {retryItemMutation.isPending ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
@@ -512,12 +519,17 @@ function StatusSection({
 }
 
 export function JobItemsDetails({ jobId, progress, isTerminal }: JobItemsDetailsProps) {
-  // Order sections: needs review first (action required), then failed, then others
+  // Order sections: needs review first (action required), then igdb_failed, then failed, then others
   const sections = [
     {
       status: JobItemStatus.PENDING_REVIEW,
       count: progress.pendingReview,
-      defaultOpen: progress.pendingReview > 0,  // Auto-expand when items need review
+      defaultOpen: progress.pendingReview > 0,
+    },
+    {
+      status: JobItemStatus.IGDB_FAILED,
+      count: progress.igdbFailed,
+      defaultOpen: progress.igdbFailed > 0,
     },
     { status: JobItemStatus.FAILED, count: progress.failed, defaultOpen: progress.failed > 0 },
     { status: JobItemStatus.PROCESSING, count: progress.processing, defaultOpen: false },

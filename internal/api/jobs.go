@@ -49,7 +49,7 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) map[strin
 
 	m := map[string]int{
 		"pending": 0, "processing": 0, "completed": 0,
-		"pending_review": 0, "skipped": 0, "failed": 0,
+		"pending_review": 0, "skipped": 0, "failed": 0, "igdb_failed": 0,
 	}
 	for _, sc := range counts {
 		m[sc.Status] = sc.Count
@@ -66,6 +66,7 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) map[strin
 		"pending": m["pending"], "processing": m["processing"],
 		"completed": m["completed"], "pending_review": m["pending_review"],
 		"skipped": m["skipped"], "failed": m["failed"],
+		"igdb_failed": m["igdb_failed"],
 		"total": total, "percent": percent,
 	}
 }
@@ -174,7 +175,7 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 
 	emptyProgress := map[string]any{
 		"pending": 0, "processing": 0, "completed": 0,
-		"pending_review": 0, "skipped": 0, "failed": 0,
+		"pending_review": 0, "skipped": 0, "failed": 0, "igdb_failed": 0,
 		"total": 0, "percent": 0,
 	}
 	jobDTOs := make([]map[string]any, 0, len(jobs))
@@ -298,11 +299,11 @@ func (h *JobsHandler) HandleActiveJob(c *echo.Context) error {
 
 // recentJobItem is a summary of a job item for the recent jobs endpoint.
 type recentJobItem struct {
-	SourceTitle  string  `json:"source_title"`
-	Status       string  `json:"status"`
-	GameTitle    *string `json:"game_title"`
-	IsNewAdd     *bool   `json:"is_new_addition"`
-	UserGameID   *string `json:"user_game_id"`
+	SourceTitle string  `bun:"source_title" json:"source_title"`
+	Status      string  `bun:"status" json:"status"`
+	GameTitle   *string `bun:"game_title" json:"game_title"`
+	IsNewAdd    *bool   `bun:"is_new_addition" json:"is_new_addition"`
+	UserGameID  *string `bun:"user_game_id" json:"user_game_id"`
 }
 
 // HandleRecentJobs handles GET /api/jobs/recent/:source.
@@ -324,7 +325,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	var jobs []models.Job
 	err := h.db.NewRaw(`
 		SELECT * FROM jobs
-		WHERE user_id = ? AND source = ? AND status IN ('completed', 'failed')
+		WHERE user_id = ? AND source = ? AND status IN ('completed', 'failed', 'completed_with_errors')
 		ORDER BY created_at DESC
 		LIMIT ?`,
 		userID, source, limit,
@@ -338,12 +339,15 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 
 	type jobWithItems struct {
 		models.Job
-		Items []recentJobItem `json:"items"`
+		CompletedItems  []recentJobItem `json:"completed_items"`
+		SkippedItems    []recentJobItem `json:"skipped_items"`
+		FailedItems     []recentJobItem `json:"failed_items"`
+		IGDBFailedItems []recentJobItem `json:"igdb_failed_items"`
 	}
 
 	result := make([]jobWithItems, 0, len(jobs))
 	for _, j := range jobs {
-		var items []recentJobItem
+		var allItems []recentJobItem
 		err := h.db.NewRaw(`
 			SELECT source_title, status,
 			       result->>'game_title' AS game_title,
@@ -353,14 +357,34 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			WHERE job_id = ?
 			ORDER BY created_at`,
 			j.ID,
-		).Scan(context.Background(), &items)
+		).Scan(context.Background(), &allItems)
 		if err != nil {
-			items = []recentJobItem{}
+			allItems = nil
 		}
-		if items == nil {
-			items = []recentJobItem{}
+
+		completedItems := []recentJobItem{}
+		skippedItems := []recentJobItem{}
+		failedItems := []recentJobItem{}
+		igdbFailedItems := []recentJobItem{}
+		for _, item := range allItems {
+			switch item.Status {
+			case models.JobItemStatusCompleted:
+				completedItems = append(completedItems, item)
+			case models.JobItemStatusSkipped:
+				skippedItems = append(skippedItems, item)
+			case models.JobItemStatusFailed:
+				failedItems = append(failedItems, item)
+			case models.JobItemStatusIGDBFailed:
+				igdbFailedItems = append(igdbFailedItems, item)
+			}
 		}
-		result = append(result, jobWithItems{Job: j, Items: items})
+		result = append(result, jobWithItems{
+			Job:             j,
+			CompletedItems:  completedItems,
+			SkippedItems:    skippedItems,
+			FailedItems:     failedItems,
+			IGDBFailedItems: igdbFailedItems,
+		})
 	}
 
 	return c.JSON(http.StatusOK, result)
@@ -557,12 +581,12 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job")
 	}
 
-	// Get failed items.
+	// Get failed and igdb_failed items.
 	var failedItems []models.JobItem
 	err = h.db.NewRaw(`
 		SELECT * FROM job_items
-		WHERE job_id = ? AND status = ?`,
-		jobID, models.JobItemStatusFailed,
+		WHERE job_id = ? AND status IN (?, ?)`,
+		jobID, models.JobItemStatusFailed, models.JobItemStatusIGDBFailed,
 	).Scan(context.Background(), &failedItems)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get failed items")
@@ -572,12 +596,12 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{"retried": 0})
 	}
 
-	// Reset failed items to pending.
+	// Reset failed + igdb_failed items to pending.
 	_, err = h.db.NewRaw(`
 		UPDATE job_items
 		SET status = ?, error_message = NULL, processed_at = NULL
-		WHERE job_id = ? AND status = ?`,
-		models.JobItemStatusPending, jobID, models.JobItemStatusFailed,
+		WHERE job_id = ? AND status IN (?, ?)`,
+		models.JobItemStatusPending, jobID, models.JobItemStatusFailed, models.JobItemStatusIGDBFailed,
 	).Exec(context.Background())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to reset items")

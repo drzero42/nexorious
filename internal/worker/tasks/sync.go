@@ -298,8 +298,9 @@ func (ProcessSyncItemArgs) InsertOpts() river.InsertOpts {
 // find-or-create with ownership-rank guard → marks the item completed.
 type ProcessSyncItemWorker struct {
 	river.WorkerDefaults[ProcessSyncItemArgs]
-	DB         *bun.DB
-	IGDBClient *igdbsvc.Client
+	DB          *bun.DB
+	IGDBClient  *igdbsvc.Client
+	RiverClient *river.Client[pgx.Tx]
 }
 
 func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[ProcessSyncItemArgs]) error {
@@ -319,7 +320,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	}
 	if err := json.Unmarshal(item.SourceMetadata, &meta); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err))
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
@@ -327,14 +328,14 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	var eg models.ExternalGame
 	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", meta.ExternalGameID).Scan(ctx); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, "external game not found")
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
 	// ── 4. Skipped games ──────────────────────────────────────────────────
 	if eg.IsSkipped {
 		syncMarkItemSkipped(ctx, w.DB, &item)
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
@@ -342,45 +343,47 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	if eg.ResolvedIGDBID == nil && w.IGDBClient != nil && w.IGDBClient.Configured() {
 		candidates, err := w.IGDBClient.SearchGames(ctx, eg.Title, 10)
 		if err != nil {
-			slog.Warn("process_sync_item: igdb search failed", "title", eg.Title, "err", err)
+			msg := fmt.Sprintf("igdb search failed: %v", err)
+			syncMarkItemIGDBFailed(ctx, w.DB, &item, msg)
+			syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+			return nil
+		}
+		normalizedQuery := matching.NormalizeTitle(eg.Title)
+		var bestScore float64
+		var bestID int32
+		for _, candidate := range candidates {
+			score := matching.FuzzyConfidence(normalizedQuery, matching.NormalizeTitle(candidate.Title))
+			if score > bestScore {
+				bestScore = score
+				bestID = int32(candidate.IgdbID)
+			}
+		}
+		if bestScore >= 0.85 {
+			// Auto-resolve: persist on external_game and ensure games row exists.
+			eg.ResolvedIGDBID = &bestID
+			_, _ = w.DB.NewRaw(
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+				bestID, eg.ID,
+			).Exec(ctx)
+			_, _ = w.DB.NewRaw(
+				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+				bestID, eg.Title,
+			).Exec(ctx)
 		} else {
-			normalizedQuery := matching.NormalizeTitle(eg.Title)
-			var bestScore float64
-			var bestID int32
-			for _, candidate := range candidates {
-				score := matching.FuzzyConfidence(normalizedQuery, matching.NormalizeTitle(candidate.Title))
-				if score > bestScore {
-					bestScore = score
-					bestID = int32(candidate.IgdbID)
-				}
-			}
-			if bestScore >= 0.85 {
-				// Auto-resolve: persist on external_game and ensure games row exists.
-				eg.ResolvedIGDBID = &bestID
-				_, _ = w.DB.NewRaw(
-					`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
-					bestID, eg.ID,
-				).Exec(ctx)
-				_, _ = w.DB.NewRaw(
-					`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
-					bestID, eg.Title,
-				).Exec(ctx)
-			} else {
-				// Store candidates and wait for manual review.
-				candidatesJSON, _ := json.Marshal(candidates)
-				item.IGDBCandidates = candidatesJSON
-				item.MatchConfidence = &bestScore
-				syncMarkItemPendingReview(ctx, w.DB, &item)
-				syncCheckJobCompletion(ctx, w.DB, item.JobID)
-				return nil
-			}
+			// Store candidates and wait for manual review.
+			candidatesJSON, _ := json.Marshal(candidates)
+			item.IGDBCandidates = candidatesJSON
+			item.MatchConfidence = &bestScore
+			syncMarkItemPendingReview(ctx, w.DB, &item)
+			syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+			return nil
 		}
 	}
 
 	// ── 6. Still no IGDB ID → pending_review ─────────────────────────────
 	if eg.ResolvedIGDBID == nil {
 		syncMarkItemPendingReview(ctx, w.DB, &item)
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
@@ -389,7 +392,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	storefrontSlug, storefrontOK := platformresolution.StorefrontToCollectionSlug(eg.Storefront)
 	if !platformOK || !storefrontOK {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("unresolved platform=%s storefront=%s", meta.RawPlatform, eg.Storefront))
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
@@ -415,7 +418,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 			item.UserID, *eg.ResolvedIGDBID,
 		).Scan(ctx, &ugID); ferr != nil {
 			syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("find/create user_game: %v", ferr))
-			syncCheckJobCompletion(ctx, w.DB, item.JobID)
+			syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 			return nil
 		}
 	}
@@ -474,7 +477,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 
 	// ── 10. Mark item completed ───────────────────────────────────────────
 	syncMarkItemCompleted(ctx, w.DB, &item)
-	syncCheckJobCompletion(ctx, w.DB, item.JobID)
+	syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 	return nil
 }
 
@@ -490,6 +493,21 @@ func syncMarkItemFailed(ctx context.Context, db *bun.DB, item *models.JobItem, m
 		Exec(ctx)
 	if err != nil {
 		slog.Error("process_sync_item: syncMarkItemFailed", "id", item.ID, "err", err)
+	}
+}
+
+// syncMarkItemIGDBFailed sets a job_item to igdb_failed for IGDB API errors.
+func syncMarkItemIGDBFailed(ctx context.Context, db *bun.DB, item *models.JobItem, msg string) {
+	now := time.Now().UTC()
+	item.Status = models.JobItemStatusIGDBFailed
+	item.ErrorMessage = &msg
+	item.ProcessedAt = &now
+	_, err := db.NewUpdate().Model(item).
+		Column("status", "error_message", "processed_at").
+		Where("id = ?", item.ID).
+		Exec(ctx)
+	if err != nil {
+		slog.Error("process_sync_item: syncMarkItemIGDBFailed", "id", item.ID, "err", err)
 	}
 }
 
@@ -533,20 +551,94 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 	}
 }
 
-// syncCheckJobCompletion counts job_items still in a non-terminal state for the job.
-// If none remain (pending_review blocks completion), it marks the job completed.
-func syncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
-	var remaining int
+// syncCheckJobCompletion checks whether active processing of job_items is complete and
+// drives the job to its terminal state.
+//
+// "Active" means pending or processing — pending_review items require user action and
+// do not block this check (they sit in the review queue indefinitely until resolved).
+//
+// Once no active items remain it checks for igdb_failed items:
+//   - auto_retry_done=false: resets them to pending, re-enqueues, sets auto_retry_done=true.
+//   - auto_retry_done=true: marks job completed_with_errors.
+//
+// If no igdb_failed items remain:
+//   - pending_review items still exist: job stays processing (user must review).
+//   - No pending_review items: marks job completed.
+func syncCheckJobCompletion(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], jobID string) {
+	var activeRemaining int
 	if err := db.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status IN ('pending', 'processing', 'pending_review')`,
+		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status IN ('pending', 'processing')`,
 		jobID,
-	).Scan(ctx, &remaining); err != nil {
+	).Scan(ctx, &activeRemaining); err != nil {
 		slog.Error("process_sync_item: syncCheckJobCompletion count", "job_id", jobID, "err", err)
 		return
 	}
-	if remaining > 0 {
+	if activeRemaining > 0 {
 		return
 	}
+
+	var igdbFailedCount int
+	if err := db.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'igdb_failed'`,
+		jobID,
+	).Scan(ctx, &igdbFailedCount); err != nil {
+		slog.Error("process_sync_item: syncCheckJobCompletion igdb_failed count", "job_id", jobID, "err", err)
+		return
+	}
+
+	if igdbFailedCount > 0 {
+		var autoRetryDone bool
+		if err := db.NewRaw(`SELECT auto_retry_done FROM jobs WHERE id = ?`, jobID).
+			Scan(ctx, &autoRetryDone); err != nil {
+			slog.Error("process_sync_item: syncCheckJobCompletion auto_retry_done", "job_id", jobID, "err", err)
+			return
+		}
+
+		if !autoRetryDone {
+			type itemRow struct{ ID string `bun:"id"` }
+			var resetItems []itemRow
+			if err := db.NewRaw(
+				`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL
+				 WHERE job_id = ? AND status = 'igdb_failed'
+				 RETURNING id`,
+				jobID,
+			).Scan(ctx, &resetItems); err != nil {
+				slog.Error("process_sync_item: syncCheckJobCompletion reset igdb_failed", "job_id", jobID, "err", err)
+				return
+			}
+
+			_, _ = db.NewRaw(`UPDATE jobs SET auto_retry_done = true WHERE id = ?`, jobID).Exec(ctx)
+
+			if rc != nil {
+				for _, item := range resetItems {
+					_, _ = rc.Insert(ctx, ProcessSyncItemArgs{JobItemID: item.ID}, nil)
+				}
+			}
+			return
+		}
+
+		now := time.Now().UTC()
+		_, _ = db.NewRaw(
+			`UPDATE jobs SET status = 'completed_with_errors', completed_at = ? WHERE id = ?`,
+			now, jobID,
+		).Exec(ctx)
+		return
+	}
+
+	// No igdb_failed items. If pending_review items still exist the job stays
+	// processing — user must resolve them via the review queue.
+	var pendingReviewCount int
+	if err := db.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'pending_review'`,
+		jobID,
+	).Scan(ctx, &pendingReviewCount); err != nil {
+		slog.Error("process_sync_item: syncCheckJobCompletion pending_review count", "job_id", jobID, "err", err)
+		return
+	}
+	if pendingReviewCount > 0 {
+		return
+	}
+
 	now := time.Now().UTC()
 	_, _ = db.NewRaw(
 		`UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ?`,

@@ -33,6 +33,7 @@ interface JobProgressApiResponse {
   pending_review: number;
   skipped: number;
   failed: number;
+  igdb_failed: number;
   total: number;
   percent: number;
 }
@@ -136,12 +137,10 @@ interface RecentJobDetailApiResponse {
   created_at: string;
   completed_at: string | null;
   total_items: number;
-  completed_count: number;
-  skipped_count: number;
-  failed_count: number;
   completed_items: JobItemSummaryApiResponse[];
   skipped_items: JobItemSummaryApiResponse[];
   failed_items: JobItemSummaryApiResponse[];
+  igdb_failed_items: JobItemSummaryApiResponse[];
 }
 
 interface RecentJobsApiResponse {
@@ -160,6 +159,7 @@ function transformProgress(apiProgress: JobProgressApiResponse): JobProgress {
     pendingReview: apiProgress.pending_review,
     skipped: apiProgress.skipped,
     failed: apiProgress.failed,
+    igdbFailed: apiProgress.igdb_failed ?? 0,
     total: apiProgress.total,
     percent: apiProgress.percent,
   };
@@ -225,17 +225,23 @@ function transformJobItemSummary(api: JobItemSummaryApiResponse): JobItemSummary
 }
 
 function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
+  const completedItems = (api.completed_items ?? []).map(transformJobItemSummary);
+  const skippedItems = (api.skipped_items ?? []).map(transformJobItemSummary);
+  const failedItems = (api.failed_items ?? []).map(transformJobItemSummary);
+  const igdbFailedItems = (api.igdb_failed_items ?? []).map(transformJobItemSummary);
   return {
     id: api.id,
     createdAt: api.created_at,
     completedAt: api.completed_at,
     totalItems: api.total_items,
-    completedCount: api.completed_count,
-    skippedCount: api.skipped_count,
-    failedCount: api.failed_count,
-    completedItems: api.completed_items.map(transformJobItemSummary),
-    skippedItems: api.skipped_items.map(transformJobItemSummary),
-    failedItems: api.failed_items.map(transformJobItemSummary),
+    completedCount: completedItems.length,
+    skippedCount: skippedItems.length,
+    failedCount: failedItems.length,
+    igdbFailedCount: igdbFailedItems.length,
+    completedItems,
+    skippedItems,
+    failedItems,
+    igdbFailedItems,
   };
 }
 

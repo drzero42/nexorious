@@ -159,7 +159,7 @@ func (h *JobItemsHandler) HandleRetryItem(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job item")
 	}
 
-	if item.Status != models.JobItemStatusFailed {
+	if item.Status != models.JobItemStatusFailed && item.Status != models.JobItemStatusIGDBFailed {
 		return echo.NewHTTPError(http.StatusConflict, "item is not failed")
 	}
 
