@@ -56,7 +56,7 @@ make frontend    # builds React SPA into ui/frontend/dist/
 make build       # compiles the Go binary
 ```
 
-`ui/frontend/dist/` is gitignored and must be populated by `make frontend` before `go build`. The Go binary embeds `ui/frontend/dist` and `ui/migrate` via `//go:embed`.
+`ui/frontend/dist/` is gitignored and must be populated by `make frontend` before `go build`. The Go binary embeds four UI dirs via `//go:embed`: `all:frontend/dist`, `all:migrate`, `db-error`, and `setup` (see `ui/ui.go`).
 
 ### Initial Setup
 ```bash
@@ -90,7 +90,7 @@ export DATABASE_URL="postgres://..."
 
 ### Startup & App State Machine
 ```
-NeedsMigration → Migrating → Ready
+DBUnavailable ↔ NeedsMigration → Migrating → Ready
 ```
 Echo middleware blocks all non-migration routes until state is `Ready`. River workers and the cron-based periodic job scheduler start only after migrations complete. Graceful shutdown waits for in-flight River jobs on `SIGTERM`/`SIGINT`.
 
@@ -98,17 +98,23 @@ Echo middleware blocks all non-migration routes until state is `Ready`. River wo
 - **ORM**: Bun (`uptrace/bun`) with model structs in `internal/db/models/`. Queries use Bun's query builder.
 - **Exception**: `internal/auth` uses raw `db.NewRaw`/`db.QueryRow` directly (not Bun models) to keep auth isolated.
 - **Dynamic filter queries**: Bun query builder used in `internal/filter/` for user-game list filtering.
-- **Driver**: `pgx/v5` via Bun's `pgdriver` adapter (`bunpgx`).
+- **Driver**: `pgx/v5` via Bun's own `pgdriver` (`uptrace/bun/driver/pgdriver`).
 - **Migrations**: Bun migrate (`uptrace/bun/migrate`); SQL files live in `internal/db/migrations/` with timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); discovered automatically via `Migrations.Discover(FS)` in `migrations.go`.
 
 ### Frontend Embedding (Stash pattern)
-`ui/ui.go` exposes two `embed.FS` vars:
+`ui/ui.go` exposes four `embed.FS` vars:
 ```go
-//go:embed frontend/dist
+//go:embed all:frontend/dist
 var UIBox embed.FS      // main React SPA
 
-//go:embed migrate
+//go:embed all:migrate
 var MigrateBox embed.FS // standalone migration UI
+
+//go:embed db-error
+var DBErrorBox embed.FS
+
+//go:embed setup
+var SetupBox embed.FS
 ```
 FastAPI is eliminated; the Go binary serves the React SPA itself.
 
@@ -202,30 +208,6 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - If it's a new domain with no existing folder, add new domain folders in alphabetical order; `bootstrap/` always stays first as the workflow anchor
 - Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
 - Run `slumber collection` to verify the collection loads without errors after any change
-
-### Non-Interactive Shell Commands
-
-**ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
-
-Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interactive) mode on some systems, causing the agent to hang indefinitely waiting for y/n input.
-
-**Use these forms instead:**
-```bash
-# Force overwrite without prompting
-cp -f source dest           # NOT: cp source dest
-mv -f source dest           # NOT: mv source dest
-rm -f file                  # NOT: rm file
-
-# For recursive operations
-rm -rf directory            # NOT: rm -r directory
-cp -rf source dest          # NOT: cp -r source dest
-```
-
-**Other commands that may prompt:**
-- `scp` - use `-o BatchMode=yes` for non-interactive
-- `ssh` - use `-o BatchMode=yes` to fail instead of prompting
-- `apt-get` - use `-y` flag
-- `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
 ## Known Gotchas
 
