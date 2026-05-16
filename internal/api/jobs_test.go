@@ -298,6 +298,32 @@ func TestPendingReviewCount_WithItems(t *testing.T) {
 	}
 }
 
+func TestPendingReviewCount_ExcludesCancelledJobs(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-prc-cancelled")
+
+	// cancelled job — its pending_review items must NOT inflate the badge
+	insertJob(t, testDB, "job-prc-cancelled", userID, "import", "steam", "cancelled")
+	insertJobItem(t, testDB, "ji-prc-c1", "job-prc-cancelled", userID, "key-c1", "Game C", "pending_review")
+
+	// active job — its pending_review item SHOULD be counted
+	insertJob(t, testDB, "job-prc-active", userID, "import", "steam", "processing")
+	insertJobItem(t, testDB, "ji-prc-a1", "job-prc-active", userID, "key-a1", "Game A", "pending_review")
+
+	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["pending_review_count"].(float64) != 1 {
+		t.Fatalf("expected pending_review_count=1 (cancelled job excluded), got %v", resp["pending_review_count"])
+	}
+}
+
 // ─── TestHandleActiveJob ──────────────────────────────────────────────────────
 
 func TestHandleActiveJob_NoJobs(t *testing.T) {
