@@ -20,7 +20,7 @@ func TestNormalizeTitle(t *testing.T) {
 		{"Halo: Reach", "halo reach"},
 		// Standalone dashes (preserve in-word hyphens)
 		{"Spider-Man - Miles Morales", "spider-man miles morales"},
-		{"God of War - Ragnarök", "god of war ragnarök"},
+		{"God of War - Ragnarök", "god of war ragnarok"},
 		// Year in parentheses
 		{"Doom (2016)", "doom"},
 		{"Resident Evil 4 (2023)", "resident evil 4"},
@@ -33,6 +33,14 @@ func TestNormalizeTitle(t *testing.T) {
 		{"Blackwell Deception", "blackwell deception"},
 		// "the" inside words must not be affected
 		{"Thea: The Awakening", "thea the awakening"},
+		// (Classic) stripped so "Mafia II (Classic)" scores 1.0 vs "Mafia II"
+		{"Mafia II (Classic)", "mafia ii"},
+		// (Classic, YYYY) compound form also stripped
+		{"Star Wars: Battlefront 2 (Classic, 2005)", "star wars battlefront 2"},
+		// Unicode diacritics folded to ASCII
+		{"ABZÛ", "abzu"},
+		{"Ōkami HD", "okami hd"},
+		{"God of War - Ragnarök", "god of war ragnarok"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
@@ -51,14 +59,17 @@ func TestFuzzyConfidence(t *testing.T) {
 		minScore float64
 		maxScore float64
 	}{
-		// Exact match → high score
-		{"the witcher 3", "the witcher 3", 0.95, 1.0},
-		// Close match → medium-high
-		{"witcher 3", "the witcher 3 wild hunt", 0.5, 0.9},
+		// Exact match → 1.0
+		{"the witcher 3", "the witcher 3", 1.0, 1.0},
+		// Substring match — "witcher 3" appears verbatim in the longer title,
+		// so partial=100%×0.88=0.88; this is intentionally allowed to score high.
+		{"witcher 3", "the witcher 3 wild hunt", 0.5, 0.95},
 		// Completely different → low
 		{"doom", "animal crossing new horizons", 0.0, 0.3},
-		// Partial match
+		// Partial match — Steam title is prefix of IGDB title (partial * 0.88)
 		{"spider-man", "marvels spider-man remastered", 0.5, 0.95},
+		// Near-identical titles (ratio ~ 0.94) should now reach 0.85+ with ratio*1.0
+		{"batman arkham city game of the year", "batman arkham city game of the year edition", 0.85, 1.0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.query+"_vs_"+tt.title, func(t *testing.T) {

@@ -103,6 +103,11 @@ type scoredCandidate struct {
 	score    float64
 }
 
+const (
+	// igdbGameFields is the common field list for all /games queries.
+	igdbGameFields = `name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name`
+)
+
 // SearchGames implements the full IGDB search pipeline.
 func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]GameMetadata, error) {
 	if !c.configured {
@@ -112,19 +117,22 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 	queries := expandQueries(query)
 	original := queries[0]
 
-	// Step 1: Concurrent search for original query (fuzzy + exact)
+	// Step 1: Concurrent search for original query (fuzzy + exact).
+	// No category filter — IGDB leaves category null on many legitimate games,
+	// so an allowlist would silently exclude them. DLC pollution is handled by
+	// post-ranking: exact name matches score 1.0 and beat DLC skins at 0.88.
 	var fuzzyResults, exactResults []igdbGameResponse
 	g, gctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
 		var err error
-		fuzzyResults, err = c.searchIGDB(gctx, fmt.Sprintf(`search "%s"; fields name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name; limit %d;`, escapeIGDB(original), limit))
+		fuzzyResults, err = c.searchIGDB(gctx, fmt.Sprintf(`search "%s"; fields %s; limit %d;`, escapeIGDB(original), igdbGameFields, limit))
 		return err
 	})
 
 	g.Go(func() error {
 		var err error
-		exactResults, err = c.searchIGDB(gctx, fmt.Sprintf(`fields name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name; where name = "%s"; limit %d;`, escapeIGDB(original), limit))
+		exactResults, err = c.searchIGDB(gctx, fmt.Sprintf(`fields %s; where name = "%s"; limit %d;`, igdbGameFields, escapeIGDB(original), limit))
 		return err
 	})
 
@@ -132,7 +140,7 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 		return nil, err
 	}
 
-	// Merge: exact first, then fuzzy, deduplicate
+	// Merge: exact first (highest precision), then fuzzy, deduplicate
 	seen := make(map[int]bool)
 	var merged []igdbGameResponse
 
@@ -149,16 +157,27 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 		}
 	}
 
-	// Step 2: Sequential expanded-query searches
+	// Step 2: For each expanded query run exact search first, then fuzzy.
+	// Exact search is critical here: e.g. "Batman™: Arkham Knight" expands to
+	// "Batman: Arkham Knight", whose exact search finds the base game (score 1.0)
+	// and beats DLC skins (score 0.88) in post-ranking.
 	for _, expandedQuery := range queries[1:] {
-		results, err := c.searchIGDB(ctx, fmt.Sprintf(`search "%s"; fields name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name; limit %d;`, escapeIGDB(expandedQuery), limit))
-		if err != nil {
-			continue // Non-fatal
+		exactExp, err := c.searchIGDB(ctx, fmt.Sprintf(`fields %s; where name = "%s"; limit %d;`, igdbGameFields, escapeIGDB(expandedQuery), limit))
+		if err == nil {
+			for _, game := range exactExp {
+				if !seen[game.ID] {
+					seen[game.ID] = true
+					merged = append(merged, game)
+				}
+			}
 		}
-		for _, game := range results {
-			if !seen[game.ID] {
-				seen[game.ID] = true
-				merged = append(merged, game)
+		fuzzyExp, err := c.searchIGDB(ctx, fmt.Sprintf(`search "%s"; fields %s; limit %d;`, escapeIGDB(expandedQuery), igdbGameFields, limit))
+		if err == nil {
+			for _, game := range fuzzyExp {
+				if !seen[game.ID] {
+					seen[game.ID] = true
+					merged = append(merged, game)
+				}
 			}
 		}
 	}

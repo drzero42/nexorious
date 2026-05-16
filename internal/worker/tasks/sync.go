@@ -332,6 +332,23 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 		return nil
 	}
 
+	// ── 3.5. Apply manual IGDB resolution ────────────────────────────────
+	// HandleResolveItem stores the user's chosen IGDB ID on job_items but does
+	// not update external_games (it doesn't know the game title). Apply it here
+	// so the IGDB search step below is skipped on re-processing.
+	if eg.ResolvedIGDBID == nil && item.ResolvedIGDBID != nil {
+		igdbID := int32(*item.ResolvedIGDBID)
+		eg.ResolvedIGDBID = &igdbID
+		_, _ = w.DB.NewRaw(
+			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+			igdbID, eg.Title,
+		).Exec(ctx)
+		_, _ = w.DB.NewRaw(
+			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+			igdbID, eg.ID,
+		).Exec(ctx)
+	}
+
 	// ── 4. Skipped games ──────────────────────────────────────────────────
 	if eg.IsSkipped {
 		syncMarkItemSkipped(ctx, w.DB, &item)
@@ -349,25 +366,33 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 			return nil
 		}
 		normalizedQuery := matching.NormalizeTitle(eg.Title)
-		var bestScore float64
+		var bestScore, secondBestScore float64
 		var bestID int32
 		for _, candidate := range candidates {
 			score := matching.FuzzyConfidence(normalizedQuery, matching.NormalizeTitle(candidate.Title))
 			if score > bestScore {
+				secondBestScore = bestScore
 				bestScore = score
 				bestID = int32(candidate.IgdbID)
+			} else if score > secondBestScore {
+				secondBestScore = score
 			}
 		}
-		if bestScore >= 0.85 {
-			// Auto-resolve: persist on external_game and ensure games row exists.
+		// Require a clear winner: if two candidates score within 0.01 of each
+		// other the match is ambiguous and manual review is safer.
+		const autoResolveThreshold = 0.85
+		const tieEpsilon = 0.01
+		if bestScore >= autoResolveThreshold && (bestScore-secondBestScore) > tieEpsilon {
+			// Auto-resolve: insert the games row first (FK constraint on
+			// external_games.resolved_igdb_id references games.id), then link.
 			eg.ResolvedIGDBID = &bestID
-			_, _ = w.DB.NewRaw(
-				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
-				bestID, eg.ID,
-			).Exec(ctx)
 			_, _ = w.DB.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 				bestID, eg.Title,
+			).Exec(ctx)
+			_, _ = w.DB.NewRaw(
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+				bestID, eg.ID,
 			).Exec(ctx)
 		} else {
 			// Store candidates and wait for manual review.
