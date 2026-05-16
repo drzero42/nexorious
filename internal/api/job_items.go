@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -135,6 +136,18 @@ func (h *JobItemsHandler) HandleSkipItem(c *echo.Context) error {
 	).Exec(context.Background())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip item")
+	}
+
+	// For sync items, mark the external game as skipped so it won't be
+	// re-queued on the next sync run.
+	var meta struct {
+		ExternalGameID string `json:"external_game_id"`
+	}
+	if json.Unmarshal(item.SourceMetadata, &meta) == nil && meta.ExternalGameID != "" {
+		_, _ = h.db.NewRaw(
+			`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ? AND user_id = ?`,
+			meta.ExternalGameID, userID,
+		).Exec(context.Background())
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "skipped"})
