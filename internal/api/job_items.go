@@ -89,6 +89,54 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve item")
 	}
 
+	// Propagate the resolution to external_games and to same-title sibling SKUs.
+	var meta struct {
+		ExternalGameID string `json:"external_game_id"`
+	}
+	if json.Unmarshal(item.SourceMetadata, &meta) == nil && meta.ExternalGameID != "" {
+		var eg models.ExternalGame
+		if egErr := h.db.NewSelect().Model(&eg).Where("id = ?", meta.ExternalGameID).Scan(context.Background()); egErr == nil {
+			// Ensure the games row exists (FK on external_games.resolved_igdb_id).
+			_, _ = h.db.NewRaw(
+				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+				body.IGDBID, eg.Title,
+			).Exec(context.Background())
+			// Resolve the matched external_game immediately so step 3.6 can find it.
+			_, _ = h.db.NewRaw(
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+				body.IGDBID, eg.ID,
+			).Exec(context.Background())
+			// Find sibling external_games (same user/storefront/title, different SKU, still unresolved).
+			var siblings []models.ExternalGame
+			_ = h.db.NewSelect().Model(&siblings).
+				Where("user_id = ? AND storefront = ? AND title = ? AND id != ? AND resolved_igdb_id IS NULL",
+					eg.UserID, eg.Storefront, eg.Title, eg.ID).
+				Scan(context.Background())
+			for _, sib := range siblings {
+				// Resolve the sibling external_game so step 3.6 in the worker skips IGDB search.
+				_, _ = h.db.NewRaw(
+					`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+					body.IGDBID, sib.ID,
+				).Exec(context.Background())
+				// Re-queue any pending_review job_items for this sibling.
+				var sibItems []models.JobItem
+				_ = h.db.NewRaw(
+					`SELECT * FROM job_items WHERE user_id = ? AND status = 'pending_review' AND source_metadata->>'external_game_id' = ?`,
+					eg.UserID, sib.ID,
+				).Scan(context.Background(), &sibItems)
+				for _, si := range sibItems {
+					_, _ = h.db.NewRaw(
+						`UPDATE job_items SET status = 'pending' WHERE id = ?`, si.ID,
+					).Exec(context.Background())
+					var sibJob models.Job
+					if jErr := h.db.NewRaw(`SELECT * FROM jobs WHERE id = ?`, si.JobID).Scan(context.Background(), &sibJob); jErr == nil {
+						retryInsert(context.Background(), h.riverClient, sibJob.JobType, si.ID)
+					}
+				}
+			}
+		}
+	}
+
 	// Get job type to determine task type.
 	var job models.Job
 	err = h.db.NewRaw(`SELECT * FROM jobs WHERE id = ?`, item.JobID).

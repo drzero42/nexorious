@@ -388,6 +388,30 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 		).Exec(ctx)
 	}
 
+	// ── 3.6. Cross-SKU IGDB resolution ───────────────────────────────────
+	// The same game can appear under multiple SKUs (e.g. CUSA/PS4 and PPSA/PS5).
+	// If a sibling external_games row for the same user/storefront/title is
+	// already resolved, inherit that IGDB ID so the new SKU skips IGDB search.
+	if eg.ResolvedIGDBID == nil {
+		var sibling models.ExternalGame
+		if err := w.DB.NewSelect().Model(&sibling).
+			Where("user_id = ? AND storefront = ? AND title = ? AND id != ? AND resolved_igdb_id IS NOT NULL",
+				eg.UserID, eg.Storefront, eg.Title, eg.ID).
+			Limit(1).
+			Scan(ctx); err == nil && sibling.ResolvedIGDBID != nil {
+			igdbID := *sibling.ResolvedIGDBID
+			eg.ResolvedIGDBID = &igdbID
+			_, _ = w.DB.NewRaw(
+				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+				igdbID, eg.Title,
+			).Exec(ctx)
+			_, _ = w.DB.NewRaw(
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+				igdbID, eg.ID,
+			).Exec(ctx)
+		}
+	}
+
 	// ── 4. Skipped games ──────────────────────────────────────────────────
 	if eg.IsSkipped {
 		syncMarkItemSkipped(ctx, w.DB, &item)

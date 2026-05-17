@@ -794,6 +794,90 @@ func TestProcessSyncItem_ManualResolution_DoesNotRevertToPendingReview(t *testin
 	}
 }
 
+func TestProcessSyncItem_CrossSKU_InheritsResolutionFromSibling(t *testing.T) {
+	// When a PSN sync returns a new SKU (e.g. PPSA/PS5) for a game that was
+	// already resolved under a different SKU (e.g. CUSA/PS4), the worker must
+	// inherit the resolved_igdb_id from the sibling external_games row instead
+	// of running IGDB search and landing in pending_review.
+	// The IGDB mock returns an ambiguous tie to prove IGDB search is not called.
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
+	}))
+	defer tokenSrv.Close()
+
+	igdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Unrelated candidates → all score well below 0.85 → pending_review if called.
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": 9999, "name": "Counter-Strike 2", "slug": "counter-strike-2"},
+			{"id": 9998, "name": "Minecraft", "slug": "minecraft"},
+		})
+	}))
+	defer igdbSrv.Close()
+
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+
+	// games row must exist before external_games.resolved_igdb_id FK is satisfied.
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (141544, 'Evil Dead: The Game', now(), now()) ON CONFLICT (id) DO NOTHING`,
+	)
+
+	// PS4 SKU — already resolved from a previous sync.
+	egPS4ID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, resolved_igdb_id, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'psn', 'CUSA27708_00', 'Evil Dead: The Game', 141544, false, true, false, 0)`,
+		egPS4ID, userID,
+	)
+
+	// PS5 SKU — new entry, not yet resolved.
+	egPS5ID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'psn', 'PPSA03521_00', 'Evil Dead: The Game', false, true, false, 0)`,
+		egPS5ID, userID,
+	)
+
+	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egPS5ID, "raw_platform": "playstation-5"})
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'PPSA03521_00', 'Evil Dead: The Game', ?, 'pending', '{}', '[]')`,
+		itemID, jobID, userID, string(metaJSON),
+	)
+
+	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: igdbClient}
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The PS4 sibling's resolution must have been applied to the PS5 external_game.
+	var resolvedID *int
+	_ = testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = ?`, egPS5ID).Scan(ctx, &resolvedID)
+	if resolvedID == nil || *resolvedID != 141544 {
+		t.Errorf("expected resolved_igdb_id=141544 on PS5 external_game after cross-SKU inherit, got %v", resolvedID)
+	}
+
+	var ps5ItemStatus string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &ps5ItemStatus)
+	if ps5ItemStatus == "pending_review" {
+		t.Error("PS5 SKU item landed in pending_review despite sibling PS4 SKU already being resolved")
+	}
+}
+
 func TestProcessSyncItem_IGDBError_MarksItemIGDBFailed(t *testing.T) {
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
