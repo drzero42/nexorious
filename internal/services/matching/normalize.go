@@ -12,7 +12,7 @@ import (
 
 var (
 	reGOTY            = regexp.MustCompile(`(?i)\bgoty\b`)
-	reTrademark       = regexp.MustCompile(`[™®]`)
+	ReTrademark       = regexp.MustCompile(`[™®]`)
 	reApostrophes     = regexp.MustCompile(`[''']`)
 	reColons          = regexp.MustCompile(`:`)
 	reStandaloneDash  = regexp.MustCompile(`\s-\s`)
@@ -31,7 +31,7 @@ func NormalizeTitle(s string) string {
 	// 1. Expand GOTY
 	s = reGOTY.ReplaceAllString(s, "Game of the Year")
 	// 2. Replace trademark symbols with a space so "Velocity®2X" → "Velocity 2X"
-	s = reTrademark.ReplaceAllString(s, " ")
+	s = ReTrademark.ReplaceAllString(s, " ")
 	// 3. Remove apostrophes
 	s = reApostrophes.ReplaceAllString(s, "")
 	// 4. Remove colons

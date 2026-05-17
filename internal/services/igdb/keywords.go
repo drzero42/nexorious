@@ -5,13 +5,13 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/drzero42/nexorious-go/internal/services/matching"
 )
 
 var (
 	kwGOTY          = regexp.MustCompile(`(?i)\bgoty\b`)
 	kwTelltale      = regexp.MustCompile(`(?i)the telltale series`)
-	kwTrademark     = regexp.MustCompile(`™`)
-	kwRegistered    = regexp.MustCompile(`®`)
 	kwClassic       = regexp.MustCompile(`(?i)\(classic\)`)
 	kwColon         = regexp.MustCompile(`:`)
 	kwYearInParens  = regexp.MustCompile(`\(\d{4}\)`)
@@ -28,8 +28,6 @@ type keywordRule struct {
 var keywordRules = []keywordRule{
 	{kwGOTY, "Game of the Year", nil},
 	{kwTelltale, "", nil},
-	{kwTrademark, " ", nil},
-	{kwRegistered, " ", nil},
 	{kwClassic, "", nil},
 	{kwColon, " ", nil},
 	{kwYearInParens, "", nil},
@@ -39,10 +37,10 @@ var keywordRules = []keywordRule{
 }
 
 // expandQueries generates variant queries based on keyword detection.
-// Returns at least the original (trimmed) query. If keywords are
-// detected, additional variants are appended.
+// Returns at least the original (trimmed, symbol-sanitized) query. If keywords
+// are detected, additional variants are appended.
 func expandQueries(query string) []string {
-	original := strings.TrimSpace(query)
+	original := collapseWhitespace(matching.ReTrademark.ReplaceAllString(strings.TrimSpace(query), " "))
 	results := []string{original}
 
 	fullTransformed := original
