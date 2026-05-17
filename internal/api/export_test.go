@@ -115,7 +115,7 @@ func insertCompletedExportJob(t *testing.T, db *bun.DB, id, userID, jobType, fil
 	t.Helper()
 	ctx := context.Background()
 	if filePath != "" && completedAt != nil {
-		_, err := testDB.ExecContext(ctx,
+		_, err := db.ExecContext(ctx,
 			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, file_path, completed_at, created_at)
 			 VALUES (?, ?, ?, 'nexorious', ?, 'normal', ?, ?, now())`,
 			id, userID, jobType, "completed", filePath, completedAt,
@@ -124,7 +124,7 @@ func insertCompletedExportJob(t *testing.T, db *bun.DB, id, userID, jobType, fil
 			t.Fatalf("insertCompletedExportJob: %v", err)
 		}
 	} else if filePath != "" {
-		_, err := testDB.ExecContext(ctx,
+		_, err := db.ExecContext(ctx,
 			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, file_path, created_at)
 			 VALUES (?, ?, ?, 'nexorious', ?, 'normal', ?, now())`,
 			id, userID, jobType, "completed", filePath,
@@ -133,7 +133,7 @@ func insertCompletedExportJob(t *testing.T, db *bun.DB, id, userID, jobType, fil
 			t.Fatalf("insertCompletedExportJob: %v", err)
 		}
 	} else {
-		insertJob(t, testDB, id, userID, jobType, "nexorious", "pending")
+		insertJob(t, db, id, userID, jobType, "nexorious", "pending")
 	}
 }
 

@@ -12,6 +12,7 @@ import type {
   EpicAuthCheckResponse,
   PSNConfigureResponse,
   PSNStatusResponse,
+  ExternalGame,
 } from '@/types';
 
 // ============================================================================
@@ -332,4 +333,32 @@ export async function getPSNStatus(): Promise<PSNStatusResponse> {
  */
 export async function disconnectPSN(): Promise<void> {
   await api.delete('/sync/psn/disconnect');
+}
+
+// ============================================================================
+// External Games
+// ============================================================================
+
+export async function getExternalGames(platform: SyncPlatform): Promise<ExternalGame[]> {
+  const response = await api.get<ExternalGame[]>(`/sync/${platform}/external-games`);
+  return response;
+}
+
+export async function skipExternalGame(id: string): Promise<void> {
+  await api.post(`/sync/ignored/${id}`);
+}
+
+export async function unskipExternalGame(id: string): Promise<void> {
+  await api.delete(`/sync/ignored/${id}`);
+}
+
+export async function rematchExternalGame(
+  id: string,
+  igdbId: number,
+  orphanAction?: 'keep' | 'remove',
+): Promise<void> {
+  await api.post(`/sync/external-games/${id}/rematch`, {
+    igdb_id: igdbId,
+    orphan_action: orphanAction ?? '',
+  });
 }

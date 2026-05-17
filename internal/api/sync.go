@@ -98,6 +98,22 @@ type syncStatusResponse struct {
 	ActiveJobID  *string    `json:"active_job_id"`
 }
 
+type externalGameResponse struct {
+	ID                         string  `bun:"id"                             json:"id"`
+	Storefront                 string  `bun:"storefront"                     json:"storefront"`
+	ExternalID                 string  `bun:"external_id"                    json:"external_id"`
+	Title                      string  `bun:"title"                          json:"title"`
+	ResolvedIGDBID             *int32  `bun:"resolved_igdb_id"               json:"resolved_igdb_id"`
+	IsSkipped                  bool    `bun:"is_skipped"                     json:"is_skipped"`
+	IsAvailable                bool    `bun:"is_available"                   json:"is_available"`
+	IsSubscription             bool    `bun:"is_subscription"                json:"is_subscription"`
+	PlaytimeHours              int     `bun:"playtime_hours"                 json:"playtime_hours"`
+	HasUserGame                bool    `bun:"has_user_game"                  json:"has_user_game"`
+	UserGameID                 *string `bun:"user_game_id"                   json:"user_game_id"`
+	IGDBTitle                  *string `bun:"igdb_title"                     json:"igdb_title"`
+	UserGameOtherPlatformCount int     `bun:"user_game_other_platform_count" json:"user_game_other_platform_count"`
+}
+
 type steamVerifyResponse struct {
 	Valid         bool    `json:"valid"`
 	SteamUsername *string `json:"steam_username"`
@@ -144,11 +160,15 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("/ignored", h.HandleListIgnored)
 	g.POST("/ignored/:id", h.HandleSkipGame)
 	g.DELETE("/ignored/:id", h.HandleUnskipGame)
+	// "external-games" is a static prefix — must be registered before /:storefront (POST)
+	// per Echo v5 route ordering rules.
+	g.POST("/external-games/:id/rematch", h.HandleRematchExternalGame) // implemented in Task 4
 	g.GET("/config", h.HandleListConfig)
 	g.GET("/config/:storefront", h.HandleGetConfig)
 	g.PUT("/config/:storefront", h.HandleUpdateConfig)
 	g.POST("/:storefront", h.HandleTriggerSync)
 	g.GET("/:storefront/status", h.HandleGetSyncStatus)
+	g.GET("/:storefront/external-games", h.HandleListExternalGames)
 }
 
 func (h *SyncHandler) HandleListConfig(c *echo.Context) error {
@@ -593,9 +613,9 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 	id := c.Param("id")
 	ctx := context.Background()
 
-	var ownerID string
-	err := h.db.NewRaw(`SELECT user_id FROM external_games WHERE id = ?`, id).Scan(ctx, &ownerID)
-	if errors.Is(err, sql.ErrNoRows) || ownerID != userID {
+	var eg models.ExternalGame
+	err := h.db.NewSelect().Model(&eg).Where("id = ? AND user_id = ?", id, userID).Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
 	}
 	if err != nil {
@@ -605,5 +625,177 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 	_, _ = h.db.NewRaw(
 		`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE id = ?`, id,
 	).Exec(ctx)
+
+	// Enqueue immediate re-processing. Failure here is non-fatal — the game
+	// will be picked up on the next full sync.
+	jobID := uuid.NewString()
+	now := time.Now().UTC()
+	_, jerr := h.db.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+		 VALUES (?, ?, 'sync', ?, 'processing', 'high', 1, ?)`,
+		jobID, userID, eg.Storefront, now,
+	).Exec(ctx)
+	if jerr == nil {
+		meta, _ := json.Marshal(map[string]string{
+			"external_game_id": eg.ID,
+			"raw_platform":     eg.RawPlatform,
+		})
+		itemID := uuid.NewString()
+		_, _ = h.db.NewRaw(
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
+			itemID, jobID, userID, eg.ExternalID, eg.Title, string(meta),
+		).Exec(ctx)
+		if h.riverClient != nil {
+			_, _ = h.riverClient.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: itemID}, nil)
+		}
+	}
+
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	sf := c.Param("storefront")
+	if !validTriggerStorefronts[sf] {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	}
+	ctx := context.Background()
+
+	var games []externalGameResponse
+	err := h.db.NewRaw(`
+		SELECT
+			eg.id,
+			eg.storefront,
+			eg.external_id,
+			eg.title,
+			eg.resolved_igdb_id,
+			eg.is_skipped,
+			eg.is_available,
+			eg.is_subscription,
+			eg.playtime_hours,
+			(ugp.user_game_id IS NOT NULL) AS has_user_game,
+			ugp.user_game_id,
+			g.title AS igdb_title,
+			COALESCE(
+				(SELECT COUNT(*) FROM user_game_platforms o
+				 WHERE o.user_game_id = ugp.user_game_id AND o.id != ugp.id),
+				0
+			) AS user_game_other_platform_count
+		FROM external_games eg
+		LEFT JOIN user_game_platforms ugp ON ugp.external_game_id = eg.id
+		LEFT JOIN games g ON g.id = eg.resolved_igdb_id
+		WHERE eg.user_id = ? AND eg.storefront = ?
+		ORDER BY eg.title ASC`,
+		userID, sf,
+	).Scan(ctx, &games)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list external games")
+	}
+	if games == nil {
+		games = []externalGameResponse{}
+	}
+	return c.JSON(http.StatusOK, games)
+}
+
+func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	id := c.Param("id")
+	ctx := context.Background()
+
+	var body struct {
+		IGDBID       int    `json:"igdb_id"`
+		OrphanAction string `json:"orphan_action"`
+	}
+	if err := c.Bind(&body); err != nil || body.IGDBID == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "igdb_id is required")
+	}
+
+	// Verify ownership.
+	var eg models.ExternalGame
+	err := h.db.NewSelect().Model(&eg).Where("id = ? AND user_id = ?", id, userID).Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load external game")
+	}
+
+	// Find the existing user_game_platform linked to this external game.
+	var ugpID, ugID string
+	err = h.db.NewRaw(
+		`SELECT id, user_game_id FROM user_game_platforms WHERE external_game_id = ? LIMIT 1`, id,
+	).Scan(ctx, &ugpID, &ugID)
+	platformFound := err == nil
+
+	if platformFound {
+		// Count other platforms on the same user_game.
+		var otherCount int
+		_ = h.db.NewRaw(
+			`SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = ? AND id != ?`, ugID, ugpID,
+		).Scan(ctx, &otherCount)
+
+		// Require orphan_action when this is the last platform.
+		if otherCount == 0 && body.OrphanAction == "" {
+			return echo.NewHTTPError(http.StatusConflict, "orphan_action required: game would lose its only storefront link")
+		}
+
+		// Delete the platform link.
+		_, _ = h.db.NewRaw(`DELETE FROM user_game_platforms WHERE id = ?`, ugpID).Exec(ctx)
+
+		// Apply orphan decision.
+		if otherCount == 0 && body.OrphanAction == "remove" {
+			_, _ = h.db.NewRaw(`DELETE FROM user_games WHERE id = ?`, ugID).Exec(ctx)
+		}
+	}
+
+	// Ensure the games row exists (FK on external_games.resolved_igdb_id).
+	_, _ = h.db.NewRaw(
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+		body.IGDBID, eg.Title,
+	).Exec(ctx)
+
+	// Update external_game.
+	_, _ = h.db.NewRaw(
+		`UPDATE external_games SET resolved_igdb_id = ?, is_skipped = false, updated_at = now() WHERE id = ?`,
+		body.IGDBID, id,
+	).Exec(ctx)
+
+	// Create a mini-job and job_item, then enqueue ProcessSyncItem.
+	jobID := uuid.NewString()
+	now := time.Now().UTC()
+	_, err = h.db.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+		 VALUES (?, ?, 'sync', ?, 'processing', 'high', 1, ?)`,
+		jobID, userID, eg.Storefront, now,
+	).Exec(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job")
+	}
+
+	meta, _ := json.Marshal(map[string]string{
+		"external_game_id": eg.ID,
+		"raw_platform":     eg.RawPlatform,
+	})
+	itemID := uuid.NewString()
+	_, err = h.db.NewRaw(
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
+		itemID, jobID, userID, eg.ExternalID, eg.Title, string(meta),
+	).Exec(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
+	}
+
+	if h.riverClient != nil {
+		_, _ = h.riverClient.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: itemID}, nil)
+	}
+
 	return c.NoContent(http.StatusNoContent)
 }

@@ -32,7 +32,7 @@ func insertAuthTestUser(t *testing.T, db *bun.DB, id, username, password string,
 	if err != nil {
 		t.Fatalf("bcrypt: %v", err)
 	}
-	_, err = testDB.ExecContext(context.Background(),
+	_, err = db.ExecContext(context.Background(),
 		"INSERT INTO users (id, username, password_hash, is_active, is_admin) VALUES (?, ?, ?, ?, ?)",
 		id, username, string(hash), isActive, isAdmin,
 	)
@@ -49,7 +49,7 @@ func insertAuthTestSession(t *testing.T, db *bun.DB, userID, accessToken, refres
 	if expiredDays < 0 {
 		expiresExpr = "now() - interval '1 second'"
 	}
-	_, err := testDB.ExecContext(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
 		 VALUES (gen_random_uuid()::text, ?, ?, ?, `+expiresExpr+`)`,
 		userID, auth.HashToken(accessToken), auth.HashToken(refreshToken),
@@ -65,7 +65,7 @@ func newTestEcho(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, testDB, "", nil, nil, nil)
+	return api.New(cfg, m, db, "", nil, nil, nil)
 }
 
 // newTestEchoPool returns an Echo instance wired with a real db and ready migrator.
@@ -74,7 +74,7 @@ func newTestEchoPool(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, testDB, "", nil, nil, nil)
+	return api.New(cfg, m, db, "", nil, nil, nil)
 }
 
 // testCfg returns a minimal config suitable for api_test tests.

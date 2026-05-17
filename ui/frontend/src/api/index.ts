@@ -97,6 +97,10 @@ export {
   updateSyncConfig,
   triggerSync,
   getSyncStatus,
+  getExternalGames,
+  skipExternalGame,
+  unskipExternalGame,
+  rematchExternalGame,
 } from './sync';
 
 // Re-export sync API types

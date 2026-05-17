@@ -48,7 +48,7 @@ func deleteAuth(t *testing.T, handler interface {
 // insertTag inserts a tag row directly and returns its ID.
 func insertTag(t *testing.T, db *bun.DB, id, userID, name string, color *string) {
 	t.Helper()
-	_, err := testDB.ExecContext(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO tags (id, user_id, name, color)
 		 VALUES (?, ?, ?, ?)`,
 		id, userID, name, color,
@@ -61,7 +61,7 @@ func insertTag(t *testing.T, db *bun.DB, id, userID, name string, color *string)
 // insertGame inserts a minimal game row with the given id.
 func insertGame(t *testing.T, db *bun.DB, id int, title string) {
 	t.Helper()
-	_, err := testDB.ExecContext(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO games (id, title) VALUES (?, ?)`, id, title,
 	)
 	if err != nil {
@@ -72,7 +72,7 @@ func insertGame(t *testing.T, db *bun.DB, id int, title string) {
 // insertUserGame inserts a user_game row.
 func insertUserGame(t *testing.T, db *bun.DB, id, userID string, gameID int) {
 	t.Helper()
-	_, err := testDB.ExecContext(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO user_games (id, user_id, game_id) VALUES (?, ?, ?)`,
 		id, userID, gameID,
 	)
@@ -84,7 +84,7 @@ func insertUserGame(t *testing.T, db *bun.DB, id, userID string, gameID int) {
 // insertUserGameTag inserts a user_game_tag row.
 func insertUserGameTag(t *testing.T, db *bun.DB, id, userGameID, tagID string) {
 	t.Helper()
-	_, err := testDB.ExecContext(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO user_game_tags (id, user_game_id, tag_id) VALUES (?, ?, ?)`,
 		id, userGameID, tagID,
 	)
@@ -100,8 +100,8 @@ func setupTagUser(t *testing.T, db *bun.DB, handler interface {
 	t.Helper()
 	userID := "u-tags-" + suffix
 	username := "taguser-" + suffix
-	insertAuthTestUser(t, testDB, userID, username, "pass123", true, false)
-	insertAuthTestSession(t, testDB, userID, "access-"+suffix, "refresh-"+suffix, 1)
+	insertAuthTestUser(t, db, userID, username, "pass123", true, false)
+	insertAuthTestSession(t, db, userID, "access-"+suffix, "refresh-"+suffix, 1)
 	token := loginAndGetToken(t, handler, username, "pass123")
 	return userID, token
 }

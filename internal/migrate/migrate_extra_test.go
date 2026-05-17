@@ -113,8 +113,8 @@ func TestStatus_FreshDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	if pending != 1 {
-		t.Errorf("expected 1 pending, got %d", pending)
+	if pending != 2 {
+		t.Errorf("expected 2 pending, got %d", pending)
 	}
 	if current != "none" {
 		t.Errorf("expected current=none, got %q", current)
@@ -217,7 +217,7 @@ func TestStartDBProbe_RecoveryFromUnavailable(t *testing.T) {
 	m.SetProbeIntervalForTest(30 * time.Millisecond)
 
 	onRecoveryCalled := false
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Probe with the good DB — the probe should detect recovery.

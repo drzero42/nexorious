@@ -3,3 +3,5 @@ export { SteamConnectionCard } from './steam-connection-card';
 export { EpicConnectionCard } from './epic-connection-card';
 export { PSNConnectionCard } from './psn-connection-card';
 export { RecentActivity } from './recent-activity';
+export { IGDBMatchDialog } from './igdb-match-dialog';
+export { ExternalGamesSection } from './external-games-section';

@@ -29,6 +29,8 @@ export interface IGDBSearchProps {
   className?: string;
   /** Auto-focus the input on mount */
   autoFocus?: boolean;
+  /** Pre-fill the search field with this query */
+  initialQuery?: string;
 }
 
 // ============================================================================
@@ -130,8 +132,9 @@ export function IGDBSearch({
   placeholder = 'Search for a game...',
   className,
   autoFocus = false,
+  initialQuery = '',
 }: IGDBSearchProps) {
-  const [query, setQuery] = React.useState('');
+  const [query, setQuery] = React.useState(initialQuery);
   const debouncedQuery = useDebounce(query, 300);
 
   const { data: results, isLoading, isFetching, error } = useSearchIGDB(debouncedQuery);

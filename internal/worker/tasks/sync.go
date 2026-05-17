@@ -189,11 +189,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			IsSubscription:  e.IsSubscription,
 			PlaytimeHours:   e.PlaytimeHours,
 			OwnershipStatus: &ownership,
+			RawPlatform:     e.RawPlatform,
 			CreatedAt:       upsertNow,
 			UpdatedAt:       upsertNow,
 		}
 		_, _ = w.DB.NewInsert().Model(row).
-			On("CONFLICT (user_id, storefront, external_id) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
+			On("CONFLICT (user_id, storefront, external_id) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, raw_platform = EXCLUDED.raw_platform, is_available = true, updated_at = now()").
 			Exec(ctx)
 	}
 

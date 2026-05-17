@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -385,7 +386,7 @@ func TestPSNDisconnect_Idempotent(t *testing.T) {
 
 func insertExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID, title string) {
 	t.Helper()
-	_, err := testDB.ExecContext(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, false, true, false, 0, now(), now())`,
 		id, userID, storefront, extID, title,
@@ -599,5 +600,273 @@ func TestPSNStatus_WithCredentials(t *testing.T) {
 	}
 	if !resp["is_configured"].(bool) {
 		t.Error("expected is_configured=true after PSN configure")
+	}
+}
+
+// ─── TestListExternalGames ────────────────────────────────────────────────────
+
+func TestListExternalGames_EmptyList(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, testDB, e, "eg-empty")
+
+	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 0 {
+		t.Fatalf("expected empty list, got %d items", len(resp))
+	}
+}
+
+func TestListExternalGames_InvalidStorefront(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, testDB, e, "eg-bad-sf")
+
+	rec := getAuth(t, e, "/api/sync/notaplatform/external-games", token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestListExternalGames_IsolatedByUser(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userA, tokenA := setupTagUser(t, testDB, e, "eg-user-a")
+	_, tokenB := setupTagUser(t, testDB, e, "eg-user-b")
+	insertExternalGame(t, testDB, "eg-a1", userA, "steam", "730", "CS2")
+
+	rec := getAuth(t, e, "/api/sync/steam/external-games", tokenA)
+	var respA []map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &respA)
+	if len(respA) != 1 {
+		t.Fatalf("user A should see 1 game, got %d", len(respA))
+	}
+
+	rec2 := getAuth(t, e, "/api/sync/steam/external-games", tokenB)
+	var respB []map[string]any
+	_ = json.Unmarshal(rec2.Body.Bytes(), &respB)
+	if len(respB) != 0 {
+		t.Fatalf("user B should see 0 games, got %d", len(respB))
+	}
+}
+
+// ─── TestRematchExternalGame ──────────────────────────────────────────────────
+
+func insertUserGameAndPlatform(t *testing.T, db *bun.DB, ugID, userID, gameIDInt, ugpID, externalGameID string) {
+	t.Helper()
+	gameID := 0
+	_, _ = fmt.Sscanf(gameIDInt, "%d", &gameID)
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Test Game', now(), now()) ON CONFLICT DO NOTHING`,
+		gameID)
+	if err != nil {
+		t.Fatalf("insert game: %v", err)
+	}
+	_, err = db.ExecContext(context.Background(),
+		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at) VALUES (?, ?, ?, now(), now()) ON CONFLICT DO NOTHING`,
+		ugID, userID, gameID)
+	if err != nil {
+		t.Fatalf("insert user_game: %v", err)
+	}
+	_, err = db.ExecContext(context.Background(),
+		`INSERT INTO user_game_platforms (id, user_game_id, external_game_id, platform, storefront, sync_from_source, is_available, created_at, updated_at)
+		 VALUES (?, ?, ?, 'pc-windows', 'steam', true, true, now(), now())`,
+		ugpID, ugID, externalGameID)
+	if err != nil {
+		t.Fatalf("insert user_game_platform: %v", err)
+	}
+}
+
+func TestRematchExternalGame_NotFound(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, testDB, e, "rm-404")
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/nonexistent/rematch",
+		map[string]any{"igdb_id": 1234}, token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestRematchExternalGame_OtherUsersGame(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userA, _ := setupTagUser(t, testDB, e, "rm-userA")
+	_, tokenB := setupTagUser(t, testDB, e, "rm-userB")
+	insertExternalGame(t, testDB, "eg-rm-a", userA, "steam", "42", "Some Game")
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-rm-a/rematch",
+		map[string]any{"igdb_id": 1234}, tokenB)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for other user's game, got %d", rec.Code)
+	}
+}
+
+func TestRematchExternalGame_OrphanRequiresAction(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-orphan")
+	insertExternalGame(t, testDB, "eg-rm-1", userID, "steam", "1", "Game")
+	// Link to a user_game that has only this one platform
+	insertUserGameAndPlatform(t, testDB, "ug-rm-1", userID, "1111", "ugp-rm-1", "eg-rm-1")
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-rm-1/rematch",
+		map[string]any{"igdb_id": 9999}, token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when orphan_action missing, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRematchExternalGame_KeepOrphan(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-keep")
+	insertExternalGame(t, testDB, "eg-rm-2", userID, "steam", "2", "Game Two")
+	insertUserGameAndPlatform(t, testDB, "ug-rm-2", userID, "2222", "ugp-rm-2", "eg-rm-2")
+
+	// Insert the target games row so FK is satisfied
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (8888, 'New IGDB Game', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-rm-2/rematch",
+		map[string]any{"igdb_id": 8888, "orphan_action": "keep"}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// user_game_platform should be gone
+	var ugpCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM user_game_platforms WHERE id = 'ugp-rm-2'`).Scan(context.Background(), &ugpCount)
+	if ugpCount != 0 {
+		t.Fatal("expected user_game_platform to be deleted")
+	}
+	// user_game should still exist
+	var ugCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM user_games WHERE id = 'ug-rm-2'`).Scan(context.Background(), &ugCount)
+	if ugCount != 1 {
+		t.Fatal("expected user_game to be kept with orphan_action=keep")
+	}
+	// external_game resolved_igdb_id updated
+	var resolvedID int32
+	_ = testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-rm-2'`).Scan(context.Background(), &resolvedID)
+	if resolvedID != 8888 {
+		t.Fatalf("expected resolved_igdb_id=8888, got %d", resolvedID)
+	}
+}
+
+func TestRematchExternalGame_RemoveOrphan(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-remove")
+	insertExternalGame(t, testDB, "eg-rm-3", userID, "steam", "3", "Game Three")
+	insertUserGameAndPlatform(t, testDB, "ug-rm-3", userID, "3333", "ugp-rm-3", "eg-rm-3")
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (7777, 'Another Game', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-rm-3/rematch",
+		map[string]any{"igdb_id": 7777, "orphan_action": "remove"}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var ugCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM user_games WHERE id = 'ug-rm-3'`).Scan(context.Background(), &ugCount)
+	if ugCount != 0 {
+		t.Fatal("expected user_game to be deleted with orphan_action=remove")
+	}
+}
+
+// ─── TestUnskipGame_EnqueuesJobItem ───────────────────────────────────────────
+
+func TestUnskipGame_EnqueuesJobItem(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "unskip-enqueue")
+	insertExternalGame(t, testDB, "eg-unskip", userID, "steam", "42", "Half-Life 3")
+
+	// Skip first
+	postJSONAuth(t, e, "/api/sync/ignored/eg-unskip", nil, token)
+
+	// Unskip
+	rec := deleteAuth(t, e, "/api/sync/ignored/eg-unskip", token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// is_skipped should be false
+	var isSkipped bool
+	_ = testDB.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-unskip'`).
+		Scan(context.Background(), &isSkipped)
+	if isSkipped {
+		t.Fatal("expected is_skipped=false after unskip")
+	}
+
+	// A job and job_item should exist
+	var jobCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = 'steam'`, userID,
+	).Scan(context.Background(), &jobCount)
+	if jobCount != 1 {
+		t.Fatalf("expected 1 sync job created by unskip, got %d", jobCount)
+	}
+
+	var itemCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE item_key = '42' AND user_id = ?`, userID,
+	).Scan(context.Background(), &itemCount)
+	if itemCount != 1 {
+		t.Fatalf("expected 1 job_item with item_key='42', got %d", itemCount)
+	}
+}
+
+func TestListExternalGames_AllStates(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "eg-states")
+	insertExternalGame(t, testDB, "eg-matched", userID, "steam", "1", "Matched Game")
+	insertExternalGame(t, testDB, "eg-unmatched", userID, "steam", "2", "Unmatched Game")
+	insertExternalGame(t, testDB, "eg-skipped", userID, "steam", "3", "Skipped Game")
+
+	// Mark skipped
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE external_games SET is_skipped = true WHERE id = 'eg-skipped'`)
+
+	// Set resolved IGDB ID (insert games row first to satisfy FK)
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (9999, 'IGDB Title', now(), now()) ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE external_games SET resolved_igdb_id = 9999 WHERE id = 'eg-matched'`)
+
+	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 3 {
+		t.Fatalf("expected 3 games, got %d", len(resp))
+	}
+	byID := make(map[string]map[string]any)
+	for _, g := range resp {
+		byID[g["id"].(string)] = g
+	}
+	if byID["eg-matched"]["igdb_title"] != "IGDB Title" {
+		t.Errorf("expected igdb_title='IGDB Title', got %v", byID["eg-matched"]["igdb_title"])
+	}
+	if byID["eg-unmatched"]["igdb_title"] != nil {
+		t.Errorf("expected igdb_title=nil for unmatched, got %v", byID["eg-unmatched"]["igdb_title"])
+	}
+	if byID["eg-skipped"]["is_skipped"] != true {
+		t.Errorf("expected is_skipped=true for skipped game")
 	}
 }

@@ -32,7 +32,7 @@ func TestStartDBProbe_RecoveryFromMigrating(t *testing.T) {
 	m.SetStateForTest(migrate.AppStateMigrating)
 	m.SetProbeIntervalForTest(30 * time.Millisecond)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Probe with a bad DB first to store prevState=Migrating, then we'll
@@ -56,7 +56,7 @@ func TestStartDBProbe_RecoveryFromMigrating(t *testing.T) {
 
 	// Now start a second probe with the good DB so recovery executes
 	// the Migrating branch (re-determines state from DB).
-	ctx2, cancel2 := context.WithCancel(context.Background())
+	ctx2, cancel2 := context.WithCancel(t.Context())
 	defer cancel2()
 	m.SetProbeIntervalForTest(30 * time.Millisecond)
 	m.StartDBProbe(ctx2, db, func(_ context.Context) error { return nil })
@@ -90,7 +90,7 @@ func TestStartDBProbe_RecoveryFromReady(t *testing.T) {
 	m.SetStateForTest(migrate.AppStateReady)
 	m.SetProbeIntervalForTest(30 * time.Millisecond)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	badDB := badBunDB(t)
@@ -111,7 +111,7 @@ func TestStartDBProbe_RecoveryFromReady(t *testing.T) {
 	cancel() // stop bad-DB probe
 
 	// Now probe with good DB → default branch in recoverFromUnavailable.
-	ctx2, cancel2 := context.WithCancel(context.Background())
+	ctx2, cancel2 := context.WithCancel(t.Context())
 	defer cancel2()
 	m.SetProbeIntervalForTest(30 * time.Millisecond)
 	m.StartDBProbe(ctx2, db, func(_ context.Context) error { return nil })
@@ -140,9 +140,9 @@ func TestPendingCount_WithoutPriorDetermineState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PendingCount without prior DetermineState: %v", err)
 	}
-	// Fresh DB has 1 Bun migration + 6 River migrations pending.
-	if count != 7 {
-		t.Errorf("expected 7 pending migrations (1 Bun + 6 River), got %d", count)
+	// Fresh DB has 2 Bun migrations + 6 River migrations pending.
+	if count != 8 {
+		t.Errorf("expected 8 pending migrations (2 Bun + 6 River), got %d", count)
 	}
 }
 

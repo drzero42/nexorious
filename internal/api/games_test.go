@@ -31,7 +31,7 @@ func insertTestGame(t *testing.T, db *bun.DB, title string) int32 {
 		LastUpdated: now,
 		CreatedAt:   now,
 	}
-	_, err := testDB.NewInsert().Model(game).Exec(context.Background())
+	_, err := db.NewInsert().Model(game).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("insertTestGame: %v", err)
 	}
@@ -180,7 +180,7 @@ func newTestEchoWithIGDB(t *testing.T, db *bun.DB) interface {
 	cfg := testCfg() // no IGDB credentials
 	igdbClient := igdb.NewClient(cfg, ratelimit.NewLocal(100, 100))
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, testDB, "", igdbClient, nil, nil)
+	return api.New(cfg, m, db, "", igdbClient, nil, nil)
 }
 
 func TestSearchIGDB_NotConfigured(t *testing.T) {

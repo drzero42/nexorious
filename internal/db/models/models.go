@@ -168,6 +168,7 @@ type ExternalGame struct {
 	IsSubscription  bool      `bun:"is_subscription,notnull" json:"is_subscription"`
 	PlaytimeHours   int       `bun:"playtime_hours,notnull"  json:"playtime_hours"`
 	OwnershipStatus *string   `bun:"ownership_status"        json:"ownership_status"`
+	RawPlatform     string    `bun:"raw_platform,notnull"    json:"raw_platform"`
 	CreatedAt       time.Time `bun:"created_at,notnull"      json:"created_at"`
 	UpdatedAt       time.Time `bun:"updated_at,notnull"      json:"updated_at"`
 }

@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import * as syncApi from '@/api/sync';
 import { SyncPlatform } from '@/types';
 import type {
@@ -26,6 +27,7 @@ export const syncKeys = {
   status: (platform: SyncPlatform) => [...syncKeys.statuses(), platform] as const,
   epicAuth: () => [...syncKeys.all, 'epicAuth'] as const,
   psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
+  externalGames: (platform: SyncPlatform) => [...syncKeys.all, 'external-games', platform] as const,
 };
 
 // ============================================================================
@@ -286,6 +288,79 @@ export function useDisconnectPSN() {
     },
     onError: (error) => {
       console.error('Failed to disconnect PSN:', error);
+    },
+  });
+}
+
+// ============================================================================
+// External Games Hooks
+// ============================================================================
+
+/**
+ * Hook to fetch external games for a specific platform.
+ */
+export function useExternalGames(platform: SyncPlatform) {
+  return useQuery({
+    queryKey: syncKeys.externalGames(platform),
+    queryFn: () => syncApi.getExternalGames(platform),
+  });
+}
+
+/**
+ * Hook to skip an external game.
+ * Invalidates all sync queries on success.
+ */
+export function useSkipExternalGame() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => syncApi.skipExternalGame(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.all });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message ?? 'Failed to skip game');
+    },
+  });
+}
+
+/**
+ * Hook to unskip an external game.
+ * Invalidates all sync queries on success.
+ */
+export function useUnskipExternalGame() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => syncApi.unskipExternalGame(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.all });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message ?? 'Failed to unskip game');
+    },
+  });
+}
+
+/**
+ * Hook to rematch an external game to a different IGDB entry.
+ * Invalidates all sync queries on success.
+ */
+export function useRematchExternalGame() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      igdbId,
+      orphanAction,
+    }: {
+      id: string;
+      igdbId: number;
+      orphanAction?: 'keep' | 'remove';
+    }) => syncApi.rematchExternalGame(id, igdbId, orphanAction),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.all });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message ?? 'Failed to rematch game');
     },
   });
 }

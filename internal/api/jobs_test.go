@@ -12,7 +12,7 @@ import (
 
 func insertJob(t *testing.T, db *bun.DB, id, userID, jobType, source, status string) {
 	t.Helper()
-	_, err := testDB.ExecContext(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at)
 		 VALUES (?, ?, ?, ?, ?, 'high', now())`,
 		id, userID, jobType, source, status,
@@ -24,7 +24,7 @@ func insertJob(t *testing.T, db *bun.DB, id, userID, jobType, source, status str
 
 func insertJobItem(t *testing.T, db *bun.DB, id, jobID, userID, itemKey, sourceTitle, status string) {
 	t.Helper()
-	_, err := testDB.ExecContext(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, status, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, now())`,
 		id, jobID, userID, itemKey, sourceTitle, status,
@@ -39,7 +39,7 @@ func newTestEchoWithPool(t *testing.T, db *bun.DB) interface {
 } {
 	t.Helper()
 	cfg := testCfg()
-	return newTestEchoPool(t, testDB, cfg)
+	return newTestEchoPool(t, db, cfg)
 }
 
 // ─── TestListJobs ─────────────────────────────────────────────────────────────

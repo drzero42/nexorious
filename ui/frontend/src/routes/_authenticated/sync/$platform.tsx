@@ -15,7 +15,7 @@ import {
 } from '@/hooks';
 import { retryFailedItems } from '@/api';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
-import { SteamConnectionCard, EpicConnectionCard, PSNConnectionCard, RecentActivity } from '@/components/sync';
+import { SteamConnectionCard, EpicConnectionCard, PSNConnectionCard, RecentActivity, ExternalGamesSection } from '@/components/sync';
 import {
   SyncPlatform,
   SyncFrequency,
@@ -454,6 +454,9 @@ function SyncDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* External Games Library */}
+      <ExternalGamesSection platform={platform} />
 
       {/* Recent Sync Activity */}
       <RecentActivity platform={platform} />

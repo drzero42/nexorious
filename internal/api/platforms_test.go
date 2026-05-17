@@ -314,7 +314,7 @@ func TestGetStorefront(t *testing.T) {
 func setupUser(t *testing.T, db *bun.DB) string {
 	t.Helper()
 	username := "testuserplatforms"
-	insertAuthTestUser(t, testDB, "u-plat-helper-1", username, "pass123", true, false)
+	insertAuthTestUser(t, db, "u-plat-helper-1", username, "pass123", true, false)
 	return username
 }
 

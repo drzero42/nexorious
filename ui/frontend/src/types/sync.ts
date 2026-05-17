@@ -195,3 +195,19 @@ export const PSN_CONFIG_ERROR_MESSAGES: Record<string, string> = {
   network_error: 'Could not connect to PlayStation Network. Please try again.',
   rate_limited: 'PSN API rate limit reached. Please try again in a few minutes.',
 };
+
+export interface ExternalGame {
+  id: string;
+  storefront: string;
+  external_id: string;
+  title: string;
+  resolved_igdb_id: number | null;
+  is_skipped: boolean;
+  is_available: boolean;
+  is_subscription: boolean;
+  playtime_hours: number;
+  has_user_game: boolean;
+  user_game_id: string | null;
+  igdb_title: string | null;
+  user_game_other_platform_count: number;
+}

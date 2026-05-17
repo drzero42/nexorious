@@ -23,7 +23,7 @@ func setupAdminUser(t *testing.T, db *bun.DB, handler interface {
 	t.Helper()
 	userID := "u-admin-" + suffix
 	username := "adm-" + suffix
-	insertAuthTestUser(t, testDB, userID, username, "password123", true, true)
+	insertAuthTestUser(t, db, userID, username, "password123", true, true)
 	token := loginAndGetToken(t, handler, username, "password123")
 	return userID, token
 }
@@ -35,7 +35,7 @@ func setupRegularUser(t *testing.T, db *bun.DB, handler interface {
 	t.Helper()
 	userID := "u-reg-" + suffix
 	username := "reg-" + suffix
-	insertAuthTestUser(t, testDB, userID, username, "password123", true, false)
+	insertAuthTestUser(t, db, userID, username, "password123", true, false)
 	token := loginAndGetToken(t, handler, username, "password123")
 	return userID, token
 }
@@ -923,7 +923,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	ctx := context.Background()
 
 	// Insert a game row that user_games can reference.
-	if _, err := testDB.ExecContext(ctx,
+	if _, err := db.ExecContext(ctx,
 		`INSERT INTO games (id, title) VALUES (10001, 'TestGame1'), (10002, 'TestGame2')
 		 ON CONFLICT DO NOTHING`,
 	); err != nil {
@@ -933,7 +933,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	// user_games (2)
 	for i, gameID := range []int{10001, 10002} {
 		ugID := userID + "-ug-" + intToStr(i)
-		if _, err := testDB.ExecContext(ctx,
+		if _, err := db.ExecContext(ctx,
 			`INSERT INTO user_games (id, user_id, game_id) VALUES (?, ?, ?)`,
 			ugID, userID, gameID,
 		); err != nil {
@@ -943,7 +943,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 
 	// tags (3)
 	for i := range 3 {
-		if _, err := testDB.ExecContext(ctx,
+		if _, err := db.ExecContext(ctx,
 			`INSERT INTO tags (id, user_id, name) VALUES (?, ?, ?)`,
 			userID+"-tag-"+intToStr(i), userID, "tag"+intToStr(i),
 		); err != nil {
@@ -953,21 +953,21 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 
 	// jobs: 1 import, 2 export, 1 sync
 	importJobID := userID + "-job-import"
-	if _, err := testDB.ExecContext(ctx,
+	if _, err := db.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source) VALUES (?, ?, 'import', 'nexorious')`,
 		importJobID, userID,
 	); err != nil {
 		t.Fatalf("seed import job: %v", err)
 	}
 	for i := range 2 {
-		if _, err := testDB.ExecContext(ctx,
+		if _, err := db.ExecContext(ctx,
 			`INSERT INTO jobs (id, user_id, job_type, source) VALUES (?, ?, 'export', 'csv')`,
 			userID+"-job-export-"+intToStr(i), userID,
 		); err != nil {
 			t.Fatalf("seed export job: %v", err)
 		}
 	}
-	if _, err := testDB.ExecContext(ctx,
+	if _, err := db.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source) VALUES (?, ?, 'sync', 'steam')`,
 		userID+"-job-sync", userID,
 	); err != nil {
@@ -975,7 +975,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	}
 
 	// job_items (1) attached to the import job.
-	if _, err := testDB.ExecContext(ctx,
+	if _, err := db.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title)
 		 VALUES (?, ?, ?, 'k1', 'TestItem')`,
 		userID+"-ji-1", importJobID, userID,
@@ -984,7 +984,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	}
 
 	// user_sync_configs (1)
-	if _, err := testDB.ExecContext(ctx,
+	if _, err := db.ExecContext(ctx,
 		`INSERT INTO user_sync_configs (id, user_id, storefront) VALUES (?, ?, 'steam')`,
 		userID+"-cfg", userID,
 	); err != nil {
@@ -993,7 +993,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 
 	// user_sessions (1) — use a unique token hash so it doesn't collide with
 	// any token issued by setupAdminUser/loginAndGetToken in this test.
-	if _, err := testDB.ExecContext(ctx,
+	if _, err := db.ExecContext(ctx,
 		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
 		 VALUES (gen_random_uuid()::text, ?, ?, ?, now() + interval '30 days')`,
 		userID, auth.HashToken(userID+"-seed-access"), auth.HashToken(userID+"-seed-refresh"),
@@ -1002,7 +1002,7 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 	}
 
 	// external_games (1)
-	if _, err := testDB.ExecContext(ctx,
+	if _, err := db.ExecContext(ctx,
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title)
 		 VALUES (?, ?, 'steam', 'ext-1', 'External')`,
 		userID+"-eg", userID,

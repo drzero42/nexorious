@@ -538,6 +538,35 @@ requests:
         url: "{{base_url}}/api/sync/steam/connection"
         $ref: "#/.authenticated"
 
+      external_game_rematch:
+        name: Rematch External Game
+        method: POST
+        url: "{{base_url}}/api/sync/external-games/{{external_game_id}}/rematch"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            igdb_id: 1234
+            orphan_action: "keep"
+
+      external_game_skip:
+        name: Skip External Game
+        method: POST
+        url: "{{base_url}}/api/sync/ignored/{{external_game_id}}"
+        $ref: "#/.authenticated"
+
+      external_game_unskip:
+        name: Unskip External Game
+        method: DELETE
+        url: "{{base_url}}/api/sync/ignored/{{external_game_id}}"
+        $ref: "#/.authenticated"
+
+      external_games_list:
+        name: List External Games
+        method: GET
+        url: "{{base_url}}/api/sync/steam/external-games"
+        $ref: "#/.authenticated"
+
       psn_configure:
         name: PSN Configure
         method: POST

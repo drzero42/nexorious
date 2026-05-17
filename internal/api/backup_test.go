@@ -23,7 +23,7 @@ func newTestEchoBackup(t *testing.T, db *bun.DB, svc *backup.Service) interface 
 	t.Helper()
 	cfg := testCfg()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, testDB, "", nil, svc, nil)
+	return api.New(cfg, m, db, "", nil, svc, nil)
 }
 
 // ---------------------------------------------------------------------------

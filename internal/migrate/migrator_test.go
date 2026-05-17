@@ -73,8 +73,8 @@ func TestNewMigrator_FreshDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PendingCount: %v", err)
 	}
-	if count != 7 {
-		t.Errorf("expected 7 pending migrations (1 Bun + 6 River), got %d", count)
+	if count != 8 {
+		t.Errorf("expected 8 pending migrations (2 Bun + 6 River), got %d", count)
 	}
 }
 
@@ -265,7 +265,7 @@ func TestStartDBProbe_SetsUnavailableOnPingFail(t *testing.T) {
 	m.SetStateForTest(migrate.AppStateReady)
 	m.SetProbeIntervalForTest(50 * time.Millisecond)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	badDB := badBunDB(t)
@@ -289,7 +289,7 @@ func TestStartDBProbe_RespectsContext(t *testing.T) {
 	m := migrate.NewMigrator(db2)
 	m.SetProbeIntervalForTest(50 * time.Millisecond)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	m.StartDBProbe(ctx, badDB, func(_ context.Context) error { return nil })
 
 	cancel() // should cause goroutine to exit cleanly

@@ -20,15 +20,15 @@ func setupUserGamesUser(t *testing.T, db *bun.DB, handler interface {
 	t.Helper()
 	userID := "u-ug-" + suffix
 	username := "uguser-" + suffix
-	insertAuthTestUser(t, testDB, userID, username, "pass123", true, false)
-	insertAuthTestSession(t, testDB, userID, "access-"+suffix, "refresh-"+suffix, 1)
+	insertAuthTestUser(t, db, userID, username, "pass123", true, false)
+	insertAuthTestSession(t, db, userID, "access-"+suffix, "refresh-"+suffix, 1)
 	token := loginAndGetToken(t, handler, username, "pass123")
 	return userID, token
 }
 
 func insertTestUserGame(t *testing.T, db *bun.DB, id, userID string, gameID int) {
 	t.Helper()
-	_, err := testDB.ExecContext(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO user_games (id, user_id, game_id) VALUES (?, ?, ?)`,
 		id, userID, gameID,
 	)
@@ -39,7 +39,7 @@ func insertTestUserGame(t *testing.T, db *bun.DB, id, userID string, gameID int)
 
 func insertTestUserGamePlatform(t *testing.T, db *bun.DB, id, userGameID string, platform, storefront *string) {
 	t.Helper()
-	_, err := testDB.ExecContext(context.Background(),
+	_, err := db.ExecContext(context.Background(),
 		`INSERT INTO user_game_platforms (id, user_game_id, platform, storefront) VALUES (?, ?, ?, ?)`,
 		id, userGameID, platform, storefront,
 	)
@@ -836,8 +836,8 @@ func TestUpdatePlatform_PlatformNotFound(t *testing.T) {
 
 func insertTestGameWithGenre(t *testing.T, db *bun.DB, title, genre string) int32 {
 	t.Helper()
-	gameID := insertTestGame(t, testDB, title)
-	_, err := testDB.ExecContext(context.Background(),
+	gameID := insertTestGame(t, db, title)
+	_, err := db.ExecContext(context.Background(),
 		`UPDATE games SET genre = ? WHERE id = ?`, genre, gameID)
 	if err != nil {
 		t.Fatalf("insertTestGameWithGenre: %v", err)
@@ -847,8 +847,8 @@ func insertTestGameWithGenre(t *testing.T, db *bun.DB, title, genre string) int3
 
 func insertTestGameWithMetadata(t *testing.T, db *bun.DB, title, genre, gameModes, themes, playerPerspectives string) int32 {
 	t.Helper()
-	gameID := insertTestGame(t, testDB, title)
-	_, err := testDB.ExecContext(context.Background(),
+	gameID := insertTestGame(t, db, title)
+	_, err := db.ExecContext(context.Background(),
 		`UPDATE games SET genre = ?, game_modes = ?, themes = ?, player_perspectives = ? WHERE id = ?`,
 		genre, gameModes, themes, playerPerspectives, gameID)
 	if err != nil {

@@ -19,7 +19,7 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 
 | Task                     | Command                                                  |
 |--------------------------|----------------------------------------------------------|
-| Enter dev shell          | `devenv shell`                                           |
+| Run cmd in dev shell     | `devenv shell -- <command>` (only if truly necessary)    |
 | Build backend            | `make build`                                             |
 | Build frontend           | `make frontend`                                          |
 | Build everything         | `make`                                                   |
@@ -36,7 +36,6 @@ Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash
 
 ### Environment Validation
 ```bash
-devenv shell
 go version   # expect go 1.25+
 make --version
 ```
@@ -44,10 +43,9 @@ make --version
 ## Setup & Development
 
 ### Development Environment
-Uses devenv for a reproducible shell (Go 1.25, golangci-lint, make, Node 24, TypeScript):
-```bash
-devenv shell
-```
+Uses devenv for a reproducible shell (Go 1.25, golangci-lint, make, Node 24, TypeScript).
+
+> **Run commands directly** — `go`, `make`, `npm`, etc. are all on PATH in the devenv-activated shell. Only use `devenv shell -- <command>` when a tool is genuinely not available in the current environment. Never use `devenv shell --command`; the correct separator is `--`.
 
 ### Build
 ```bash
