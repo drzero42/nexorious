@@ -166,6 +166,10 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.GET("/config", h.HandleListConfig)
 	g.GET("/config/:storefront", h.HandleGetConfig)
 	g.PUT("/config/:storefront", h.HandleUpdateConfig)
+	// "/:storefront/data" must be registered before "/:storefront" (POST) per Echo v5
+	// static-before-parameterised ordering; the leading DELETE /ignored/:id registration
+	// means "ignored" resolves as a storefront slug rather than "data" as an ignored-item ID.
+	g.DELETE("/:storefront/data", h.HandleResetSyncData)
 	g.POST("/:storefront", h.HandleTriggerSync)
 	g.GET("/:storefront/status", h.HandleGetSyncStatus)
 	g.GET("/:storefront/external-games", h.HandleListExternalGames)
@@ -699,6 +703,69 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 		games = []externalGameResponse{}
 	}
 	return c.JSON(http.StatusOK, games)
+}
+
+// HandleResetSyncData handles DELETE /api/sync/:storefront/data.
+// It cancels any active sync job for the storefront, then deletes all
+// external_games and user_game_platforms rows for the user+storefront,
+// and resets last_synced_at. Credentials are not affected.
+func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	sf := c.Param("storefront")
+	if !validConfigStorefronts[sf] {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	}
+	ctx := context.Background()
+
+	// Cancel any active sync job for this user+storefront.
+	var activeJob models.Job
+	if err := h.db.NewRaw(
+		`SELECT * FROM jobs WHERE user_id = ? AND source = ? AND job_type = 'sync' AND status IN ('pending', 'processing') LIMIT 1`,
+		userID, sf,
+	).Scan(ctx, &activeJob); err == nil {
+		now := time.Now().UTC()
+		_, _ = h.db.NewRaw(
+			`UPDATE jobs SET status = ?, completed_at = ? WHERE id = ?`,
+			models.JobStatusCancelled, now, activeJob.ID,
+		).Exec(ctx)
+		_, _ = h.db.NewRaw(`
+			UPDATE river_job
+			SET state = 'cancelled', finalized_at = NOW()
+			WHERE state IN ('available', 'scheduled', 'retryable', 'pending')
+			  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE job_id = ?)`,
+			activeJob.ID,
+		).Exec(ctx)
+	}
+
+	if err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		// storefront = ? intentionally excludes NULL-storefront rows (manually-added entries); sync-created rows always carry an explicit storefront.
+		if _, err := tx.NewRaw(
+			`DELETE FROM user_game_platforms
+			 WHERE storefront = ? AND user_game_id IN (SELECT id FROM user_games WHERE user_id = ?)`,
+			sf, userID,
+		).Exec(ctx); err != nil {
+			return err
+		}
+		if _, err := tx.NewRaw(
+			`DELETE FROM external_games WHERE user_id = ? AND storefront = ?`,
+			userID, sf,
+		).Exec(ctx); err != nil {
+			return err
+		}
+		_, err := tx.NewRaw(
+			`UPDATE user_sync_configs SET last_synced_at = NULL, updated_at = now()
+			 WHERE user_id = ? AND storefront = ?`,
+			userID, sf,
+		).Exec(ctx)
+		return err
+	}); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to reset sync data")
+	}
+
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {

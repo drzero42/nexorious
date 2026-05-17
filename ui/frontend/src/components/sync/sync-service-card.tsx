@@ -4,6 +4,17 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Loader2, RefreshCw, History } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { config as envConfig } from '@/lib/env';
@@ -16,8 +27,10 @@ interface SyncServiceCardProps {
   pendingReviewCount?: number;
   onUpdate: (data: SyncConfigUpdateData) => Promise<void>;
   onTriggerSync: () => Promise<void>;
+  onReset?: () => Promise<void>;
   isUpdating?: boolean;
   isSyncing?: boolean;
+  isResetting?: boolean;
 }
 
 function formatLastSync(dateStr: string | null): string {
@@ -42,8 +55,10 @@ export function SyncServiceCard({
   pendingReviewCount,
   onUpdate,
   onTriggerSync,
+  onReset,
   isUpdating = false,
   isSyncing = false,
+  isResetting = false,
 }: SyncServiceCardProps) {
   const [localFrequency, setLocalFrequency] = useState(config.frequency);
   const [localAutoAdd, setLocalAutoAdd] = useState(config.autoAdd);
@@ -146,23 +161,51 @@ export function SyncServiceCard({
           <History className="h-4 w-4" />
           View details
         </Link>
-        <Button
-          onClick={onTriggerSync}
-          disabled={isCurrentlySyncing || !config.isConfigured}
-          size="sm"
-        >
-          {isCurrentlySyncing ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Syncing...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Sync Now
-            </>
+        <div className="flex items-center gap-2">
+          {onReset && config.isConfigured && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isResetting}
+                >
+                  {isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reset'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset sync data?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will remove all imported games and match history for {platformInfo.name}.
+                    Your game library entries will not be deleted. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={onReset}>Reset</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
-        </Button>
+          <Button
+            onClick={onTriggerSync}
+            disabled={isCurrentlySyncing || !config.isConfigured}
+            size="sm"
+          >
+            {isCurrentlySyncing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Sync Now
+              </>
+            )}
+          </Button>
+        </div>
       </CardFooter>
     </Card>
   );

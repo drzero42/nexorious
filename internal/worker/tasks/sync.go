@@ -713,7 +713,7 @@ func syncCheckJobCompletion(ctx context.Context, db *bun.DB, rc *river.Client[pg
 
 		now := time.Now().UTC()
 		_, _ = db.NewRaw(
-			`UPDATE jobs SET status = 'completed_with_errors', completed_at = ? WHERE id = ?`,
+			`UPDATE jobs SET status = 'completed_with_errors', completed_at = ? WHERE id = ? AND status IN ('pending', 'processing')`,
 			now, jobID,
 		).Exec(ctx)
 		return
@@ -735,7 +735,7 @@ func syncCheckJobCompletion(ctx context.Context, db *bun.DB, rc *river.Client[pg
 
 	now := time.Now().UTC()
 	_, _ = db.NewRaw(
-		`UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ?`,
+		`UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ? AND status IN ('pending', 'processing')`,
 		now, jobID,
 	).Exec(ctx)
 }

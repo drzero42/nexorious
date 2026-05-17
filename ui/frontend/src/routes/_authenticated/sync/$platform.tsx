@@ -8,6 +8,7 @@ import {
   useSyncStatus,
   useUpdateSyncConfig,
   useTriggerSync,
+  useResetSyncData,
   useJob,
   useCancelJob,
   usePSNStatus,
@@ -38,6 +39,17 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { RefreshCw, Loader2, AlertCircle, Settings, Clock } from 'lucide-react';
 import { config as envConfig } from '@/lib/env';
 
@@ -159,6 +171,7 @@ function SyncDetailPage() {
   // Mutations
   const { mutateAsync: updateConfig, isPending: isUpdating } = useUpdateSyncConfig();
   const { mutateAsync: triggerSync, isPending: isTriggeringSyncPending } = useTriggerSync();
+  const { mutateAsync: resetSync, isPending: isResetting } = useResetSyncData();
   const { mutateAsync: cancelJob, isPending: isCancelling } = useCancelJob();
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -200,6 +213,17 @@ function SyncDetailPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start sync';
       toast.error(message);
+    }
+  };
+
+  const handleReset = async () => {
+    try {
+      await resetSync(platform);
+      toast.success(`${platformInfo.name} sync data reset`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to reset sync data';
+      toast.error(message);
+      throw err;
     }
   };
 
@@ -289,19 +313,43 @@ function SyncDetailPage() {
           <span className="text-foreground">{platformInfo.name}</span>
         </nav>
 
-        <Button onClick={handleTriggerSync} disabled={isSyncing || !config.isConfigured}>
-          {isSyncing ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Syncing...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Sync Now
-            </>
+        <div className="flex items-center gap-2">
+          {config.isConfigured && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" disabled={isResetting}>
+                  {isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reset'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset sync data?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will remove all imported games and match history for {platformInfo.name}.
+                    Your game library entries will not be deleted. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleReset}>Reset</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
-        </Button>
+          <Button onClick={handleTriggerSync} disabled={isSyncing || !config.isConfigured}>
+            {isSyncing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Sync Now
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Platform Header */}

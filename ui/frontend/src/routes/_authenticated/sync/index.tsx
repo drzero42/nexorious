@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus, usePendingReviewCount } from '@/hooks';
+import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus, usePendingReviewCount, useResetSyncData } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -51,6 +51,7 @@ function SyncServiceCardWithStatus({
   const { data: reviewData } = usePendingReviewCount();
   const { isPending: isUpdating } = useUpdateSyncConfig();
   const { isPending: isSyncing } = useTriggerSync();
+  const { mutateAsync: resetSync, isPending: isResetting } = useResetSyncData();
 
   const pendingReviewCount = reviewData?.countsBySource?.[config.platform] ?? 0;
 
@@ -62,6 +63,17 @@ function SyncServiceCardWithStatus({
     await onTriggerSync(config.platform);
   };
 
+  const handleReset = async () => {
+    try {
+      await resetSync(config.platform);
+      toast.success(`${config.platform} sync data reset successfully`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to reset sync data';
+      toast.error(message);
+      throw err;
+    }
+  };
+
   return (
     <SyncServiceCard
       config={config}
@@ -69,8 +81,10 @@ function SyncServiceCardWithStatus({
       pendingReviewCount={pendingReviewCount}
       onUpdate={handleUpdate}
       onTriggerSync={handleTriggerSync}
+      onReset={handleReset}
       isUpdating={isUpdating}
       isSyncing={isSyncing}
+      isResetting={isResetting}
     />
   );
 }

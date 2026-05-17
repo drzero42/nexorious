@@ -22,7 +22,7 @@ import type {
 interface SyncConfigApiResponse {
   id: string;
   user_id: string;
-  platform: string;
+  storefront: string;
   frequency: string;
   auto_add: boolean;
   last_synced_at: string | null;
@@ -67,7 +67,7 @@ function transformSyncConfig(apiConfig: SyncConfigApiResponse): SyncConfig {
   return {
     id: apiConfig.id,
     userId: apiConfig.user_id,
-    platform: apiConfig.platform as SyncPlatform,
+    platform: apiConfig.storefront as SyncPlatform,
     frequency: apiConfig.frequency as SyncFrequency,
     autoAdd: apiConfig.auto_add,
     lastSyncedAt: apiConfig.last_synced_at,
@@ -361,4 +361,8 @@ export async function rematchExternalGame(
     igdb_id: igdbId,
     orphan_action: orphanAction ?? '',
   });
+}
+
+export async function resetSyncData(platform: SyncPlatform): Promise<void> {
+  await api.delete(`/sync/${platform}/data`);
 }

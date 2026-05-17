@@ -1392,3 +1392,42 @@ func TestProcessSyncItem_PlaytimeHoursWrittenToUserGame(t *testing.T) {
 		t.Errorf("expected user_games.hours_played=47.0, got %f", *hoursPlayed)
 	}
 }
+
+func TestProcessSyncItem_CancelledJobNotOverwritten(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	// Job is already cancelled — simulates a reset having run.
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
+		 VALUES (?, ?, 'sync', 'steam', 'cancelled', 'low', 1)`,
+		jobID, userID,
+	)
+
+	// The external_game was deleted by the reset; job_item still references it.
+	egID := uuid.NewString()
+	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '730', 'CS2', ?, 'pending', '{}', '[]')`,
+		itemID, jobID, userID, string(metaJSON),
+	)
+
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+	if status != "cancelled" {
+		t.Errorf("expected job status=cancelled after mid-flight worker, got %q", status)
+	}
+}

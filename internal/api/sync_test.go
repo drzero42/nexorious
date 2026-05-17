@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
@@ -824,6 +826,107 @@ func TestUnskipGame_EnqueuesJobItem(t *testing.T) {
 	).Scan(context.Background(), &itemCount)
 	if itemCount != 1 {
 		t.Fatalf("expected 1 job_item with item_key='42', got %d", itemCount)
+	}
+}
+
+// ── TestResetSyncData ─────────────────────────────────────────────────────────
+
+func TestResetSyncData_DeletesDataAndResetsTimestamp(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "reset-data")
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at, created_at, updated_at)
+		 VALUES (gen_random_uuid(), ?, 'steam', 'manual', false, now(), now(), now())`,
+		userID,
+	)
+	insertExternalGame(t, testDB, "eg-reset-1", userID, "steam", "730", "CS2")
+	insertUserGameAndPlatform(t, testDB, "ug-reset-1", userID, "12345", "ugp-reset-1", "eg-reset-1")
+
+	rec := deleteAuth(t, e, "/api/sync/steam/data", token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	var egCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'steam'`, userID).Scan(ctx, &egCount)
+	if egCount != 0 {
+		t.Errorf("expected 0 external_games, got %d", egCount)
+	}
+
+	var ugpCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM user_game_platforms WHERE id = 'ugp-reset-1'`).Scan(ctx, &ugpCount)
+	if ugpCount != 0 {
+		t.Errorf("expected 0 user_game_platforms, got %d", ugpCount)
+	}
+
+	// user_games must survive the reset.
+	var ugCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM user_games WHERE id = 'ug-reset-1'`).Scan(ctx, &ugCount)
+	if ugCount != 1 {
+		t.Errorf("expected user_game to survive reset, got %d rows", ugCount)
+	}
+
+	var lastSyncedAt *time.Time
+	_ = testDB.NewRaw(`SELECT last_synced_at FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`, userID).Scan(ctx, &lastSyncedAt)
+	if lastSyncedAt != nil {
+		t.Errorf("expected last_synced_at=NULL after reset, got %v", lastSyncedAt)
+	}
+}
+
+func TestResetSyncData_CancelsActiveJob(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "reset-cancel")
+
+	insertJob(t, testDB, "job-reset-active", userID, "sync", "steam", "processing")
+
+	rec := deleteAuth(t, e, "/api/sync/steam/data", token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = 'job-reset-active'`).Scan(context.Background(), &status)
+	if status != "cancelled" {
+		t.Errorf("expected active job to be cancelled, got %q", status)
+	}
+}
+
+func TestResetSyncData_InvalidStorefront(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, testDB, e, "reset-invalid")
+
+	rec := deleteAuth(t, e, "/api/sync/fakefront/data", token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestResetSyncData_Unauthorized(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/sync/steam/data", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestResetSyncData_EmptyState(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, testDB, e, "reset-empty")
+
+	rec := deleteAuth(t, e, "/api/sync/steam/data", token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on empty reset (idempotent), got %d", rec.Code)
 	}
 }
 

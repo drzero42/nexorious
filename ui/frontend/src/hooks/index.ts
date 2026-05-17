@@ -66,6 +66,7 @@ export {
   useConfigurePSN,
   usePSNStatus,
   useDisconnectPSN,
+  useResetSyncData,
 } from './use-sync';
 
 // Import/Export hooks

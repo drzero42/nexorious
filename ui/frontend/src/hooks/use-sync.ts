@@ -165,6 +165,19 @@ export function useDisconnectSteam() {
   });
 }
 
+export function useResetSyncData() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, SyncPlatform>({
+    mutationFn: (platform) => syncApi.resetSyncData(platform),
+    onSuccess: (_, platform) => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(platform) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.status(platform) });
+    },
+  });
+}
+
 // ============================================================================
 // Epic Auth Hooks
 // ============================================================================
