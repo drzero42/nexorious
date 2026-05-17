@@ -3,6 +3,7 @@ package tasks_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
+	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
 	"github.com/drzero42/nexorious-go/internal/worker/tasks"
 )
@@ -33,6 +35,24 @@ type fakeSteamAdapter struct {
 
 func (f *fakeSteamAdapter) GetOwnedGames(_ context.Context, _, _ string) ([]steamsvc.ExternalLibraryEntry, error) {
 	return f.games, f.err
+}
+
+// fakePSNAdapter implements PSNLibraryAdapter for testing.
+type fakePSNAdapter struct {
+	pages [][]psnsvc.ExternalLibraryEntry // each inner slice is one batch/page
+	err   error                            // if non-nil, returned by GetLibrary
+}
+
+func (f *fakePSNAdapter) GetLibrary(_ context.Context, _ string, _ int, onBatch func([]psnsvc.ExternalLibraryEntry) error) error {
+	if f.err != nil {
+		return f.err
+	}
+	for _, page := range f.pages {
+		if err := onBatch(page); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // newTestRiverClient creates a non-started River client backed by the shared
@@ -906,5 +926,272 @@ func TestProcessSyncItem_IGDBError_ThenAutoRetry_CompletesWithErrors(t *testing.
 	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
 	if jobStatus != "completed_with_errors" {
 		t.Errorf("expected job completed_with_errors after retry exhausted, got %q", jobStatus)
+	}
+}
+
+func TestDispatchSync_PSNInvalidCredentials(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
+		jobID, userID,
+	).Exec(ctx)
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
+		configID, userID, "not-valid-json",
+	).Exec(ctx)
+
+	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: &fakePSNAdapter{}, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+	if status != "failed" {
+		t.Errorf("expected job status=failed (invalid psn credentials), got %q", status)
+	}
+}
+
+func TestDispatchSync_PSNTokenNotVerified(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
+		jobID, userID,
+	).Exec(ctx)
+	creds := `{"npsso_token":"abc123","is_verified":false}`
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
+		configID, userID, creds,
+	).Exec(ctx)
+
+	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: &fakePSNAdapter{}, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+	if status != "failed" {
+		t.Errorf("expected job status=failed (token not verified), got %q", status)
+	}
+}
+
+func TestDispatchSync_PSNAuthError_MarksTokenExpired(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
+		jobID, userID,
+	).Exec(ctx)
+	creds := `{"npsso_token":"validtoken","is_verified":true}`
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
+		configID, userID, creds,
+	).Exec(ctx)
+
+	// ErrInvalidNPSSOToken signals that the npsso token is bad → token must be marked expired.
+	adapter := &fakePSNAdapter{err: psnsvc.ErrInvalidNPSSOToken}
+	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: adapter, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+	if status != "failed" {
+		t.Errorf("expected job status=failed (auth error), got %q", status)
+	}
+
+	// Token must be marked as expired in user_sync_configs.
+	var rawCreds string
+	_ = testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &rawCreds)
+	var parsedCreds struct {
+		IsVerified bool `json:"is_verified"`
+	}
+	_ = json.Unmarshal([]byte(rawCreds), &parsedCreds)
+	if parsedCreds.IsVerified {
+		t.Error("expected is_verified=false after auth error, token still marked verified")
+	}
+}
+
+func TestDispatchSync_PSNServiceError_PreservesToken(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
+		jobID, userID,
+	).Exec(ctx)
+	creds := `{"npsso_token":"validtoken","is_verified":true}`
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
+		configID, userID, creds,
+	).Exec(ctx)
+
+	// A generic (non-auth) error — e.g. 503 from Sony's API — must NOT mark the token expired.
+	adapter := &fakePSNAdapter{err: errors.New("request failed with status 503: service unavailable")}
+	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: adapter, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+	if status != "failed" {
+		t.Errorf("expected job status=failed (service error), got %q", status)
+	}
+
+	// Token must NOT be marked expired — the token is valid, the service was unavailable.
+	var rawCreds string
+	_ = testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &rawCreds)
+	var parsedCreds struct {
+		IsVerified bool `json:"is_verified"`
+	}
+	_ = json.Unmarshal([]byte(rawCreds), &parsedCreds)
+	if !parsedCreds.IsVerified {
+		t.Error("expected is_verified=true after service error (token not expired), but token was marked expired")
+	}
+}
+
+func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'pending', 'low', 0)`,
+		jobID, userID,
+	).Exec(ctx)
+	creds := `{"npsso_token":"validtoken","is_verified":true}`
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
+		configID, userID, creds,
+	).Exec(ctx)
+
+	// Two pages of games — verifies that both pages are processed.
+	page1 := []psnsvc.ExternalLibraryEntry{
+		{ExternalID: "NPWR00001_00", Title: "God of War", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
+		{ExternalID: "NPWR00002_00", Title: "Spider-Man", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
+	}
+	page2 := []psnsvc.ExternalLibraryEntry{
+		{ExternalID: "NPWR00003_00", Title: "Horizon", RawPlatform: "playstation-5", OwnershipStatus: "owned"},
+	}
+	adapter := &fakePSNAdapter{pages: [][]psnsvc.ExternalLibraryEntry{page1, page2}}
+	rc := newTestRiverClient(t)
+	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: adapter, RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// All 3 games upserted as external_games.
+	var egCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'psn'`, userID).Scan(ctx, &egCount)
+	if egCount != 3 {
+		t.Errorf("expected 3 external_games, got %d", egCount)
+	}
+
+	// 3 job_items created (none pre-skipped).
+	var itemCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
+	if itemCount != 3 {
+		t.Errorf("expected 3 job_items, got %d", itemCount)
+	}
+
+	// last_synced_at updated.
+	var lastSynced *time.Time
+	_ = testDB.NewRaw(`SELECT last_synced_at FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &lastSynced)
+	if lastSynced == nil {
+		t.Error("expected last_synced_at to be set after successful psn sync")
+	}
+}
+
+func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'pending', 'low', 0)`,
+		jobID, userID,
+	).Exec(ctx)
+	creds := `{"npsso_token":"validtoken","is_verified":true}`
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
+		configID, userID, creds,
+	).Exec(ctx)
+
+	// Pre-insert God of War as skipped. The ON CONFLICT upsert does not touch
+	// is_skipped, so it remains true even when the batch includes this game.
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'psn', 'NPWR00001_00', 'God of War', true, true, false, 0)`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	page1 := []psnsvc.ExternalLibraryEntry{
+		{ExternalID: "NPWR00001_00", Title: "God of War", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
+		{ExternalID: "NPWR00002_00", Title: "Spider-Man", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
+	}
+	adapter := &fakePSNAdapter{pages: [][]psnsvc.ExternalLibraryEntry{page1}}
+	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: adapter, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only 1 job_item (Spider-Man); God of War is skipped.
+	var itemCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
+	if itemCount != 1 {
+		t.Errorf("expected 1 job_item (skipped game excluded), got %d", itemCount)
+	}
+
+	// Confirm no job_item for God of War.
+	var gow int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND item_key = 'NPWR00001_00'`, jobID).Scan(ctx, &gow)
+	if gow != 0 {
+		t.Error("expected no job_item for skipped God of War")
 	}
 }

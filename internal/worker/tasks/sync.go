@@ -22,16 +22,6 @@ import (
 	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
 )
 
-// syncLibraryEntry is the tasks-package normalised game entry.
-// Avoids depending on service-package internal types in task logic.
-type syncLibraryEntry struct {
-	ExternalID      string
-	Title           string
-	RawPlatform     string
-	PlaytimeHours   int
-	OwnershipStatus string
-	IsSubscription  bool
-}
 
 // SteamLibraryAdapter fetches the Steam game library.
 type SteamLibraryAdapter interface {
@@ -40,8 +30,10 @@ type SteamLibraryAdapter interface {
 
 // PSNLibraryAdapter fetches the PSN game library.
 type PSNLibraryAdapter interface {
-	GetLibrary(ctx context.Context, npssoToken string) ([]psnsvc.ExternalLibraryEntry, error)
+	GetLibrary(ctx context.Context, npssoToken string, batchSize int, onBatch func([]psnsvc.ExternalLibraryEntry) error) error
 }
+
+const psnLibraryBatchSize = 10
 
 // ── DispatchSync ──────────────────────────────────────────────────────────────
 
@@ -97,8 +89,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		return nil
 	}
 
-	// ── 3. Fetch library ──────────────────────────────────────────────────
-	var entries []syncLibraryEntry
+	// fetchedIDs accumulates all external IDs seen in the fetch; used by step 5.
+	fetchedIDs := make(map[string]struct{})
+
+	// ── 3+4+6. Fetch library, upsert external_games, dispatch items ───────
 	switch p.Storefront {
 	case "steam":
 		var creds struct {
@@ -114,88 +108,164 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("fetch steam library: %v", err))
 			return nil
 		}
+
+		rawPlatformByExtID := make(map[string]string, len(raw))
 		for _, e := range raw {
-			entries = append(entries, syncLibraryEntry{
+			fetchedIDs[e.ExternalID] = struct{}{}
+			rawPlatformByExtID[e.ExternalID] = e.RawPlatform
+			ownership := e.OwnershipStatus
+			upsertNow := time.Now().UTC()
+			row := &models.ExternalGame{
+				ID:              uuid.NewString(),
+				UserID:          p.UserID,
+				Storefront:      p.Storefront,
 				ExternalID:      e.ExternalID,
 				Title:           e.Title,
-				RawPlatform:     e.RawPlatform,
-				PlaytimeHours:   e.PlaytimeHours,
-				OwnershipStatus: e.OwnershipStatus,
+				IsAvailable:     true,
 				IsSubscription:  e.IsSubscription,
-			})
+				PlaytimeHours:   e.PlaytimeHours,
+				OwnershipStatus: &ownership,
+				RawPlatform:     e.RawPlatform,
+				CreatedAt:       upsertNow,
+				UpdatedAt:       upsertNow,
+			}
+			_, _ = w.DB.NewInsert().Model(row).
+				On("CONFLICT (user_id, storefront, external_id) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, raw_platform = EXCLUDED.raw_platform, is_available = true, updated_at = now()").
+				Exec(ctx)
+		}
+
+		var toProcess []models.ExternalGame
+		_ = w.DB.NewSelect().Model(&toProcess).
+			Where("user_id = ? AND storefront = ? AND is_available = true AND is_skipped = false", p.UserID, p.Storefront).
+			Scan(ctx)
+		for _, eg := range toProcess {
+			meta := map[string]string{
+				"external_game_id": eg.ID,
+				"raw_platform":     rawPlatformByExtID[eg.ExternalID],
+			}
+			metaJSON, _ := json.Marshal(meta)
+			itemID := uuid.NewString()
+			_, _ = w.DB.NewRaw(
+				`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+				 ON CONFLICT (job_id, item_key) DO NOTHING`,
+				itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
+			).Exec(ctx)
+			if w.RiverClient != nil {
+				_, _ = w.RiverClient.Insert(ctx, ProcessSyncItemArgs{JobItemID: itemID}, nil)
+			}
 		}
 
 	case "psn":
-		var creds struct {
+		var psnCreds struct {
 			NpssoToken string `json:"npsso_token"`
 			IsVerified bool   `json:"is_verified"`
 		}
-		if err := json.Unmarshal([]byte(*cfg.StorefrontCredentials), &creds); err != nil {
+		if err := json.Unmarshal([]byte(*cfg.StorefrontCredentials), &psnCreds); err != nil {
 			failSyncJob(ctx, w.DB, p.JobID, "invalid psn credentials")
 			return nil
 		}
-		if !creds.IsVerified {
+		if !psnCreds.IsVerified {
 			failSyncJob(ctx, w.DB, p.JobID, "psn_token_expired")
 			return nil
 		}
-		raw, err := w.PSN.GetLibrary(ctx, creds.NpssoToken)
-		if err != nil {
-			// Mark token as expired in user_sync_configs before failing the job.
-			expiredAt := time.Now().UTC()
-			newCreds := map[string]any{
-				"npsso_token":      creds.NpssoToken,
-				"is_verified":      false,
-				"token_expired_at": expiredAt,
+
+		slog.Info("dispatch_sync: starting psn library fetch", "job_id", p.JobID, "user_id", p.UserID)
+		if err := w.PSN.GetLibrary(ctx, psnCreds.NpssoToken, psnLibraryBatchSize,
+			func(batch []psnsvc.ExternalLibraryEntry) error {
+				if len(batch) == 0 {
+					return nil
+				}
+				slog.Info("dispatch_sync: psn batch received", "job_id", p.JobID, "batch_size", len(batch))
+				rawPlatformByExtID := make(map[string]string, len(batch))
+				batchExtIDs := make([]string, 0, len(batch))
+				for _, e := range batch {
+					fetchedIDs[e.ExternalID] = struct{}{}
+					batchExtIDs = append(batchExtIDs, e.ExternalID)
+					rawPlatformByExtID[e.ExternalID] = e.RawPlatform
+					ownership := e.OwnershipStatus
+					upsertNow := time.Now().UTC()
+					row := &models.ExternalGame{
+						ID:              uuid.NewString(),
+						UserID:          p.UserID,
+						Storefront:      p.Storefront,
+						ExternalID:      e.ExternalID,
+						Title:           e.Title,
+						IsAvailable:     true,
+						IsSubscription:  e.IsSubscription,
+						PlaytimeHours:   e.PlaytimeHours,
+						OwnershipStatus: &ownership,
+						RawPlatform:     e.RawPlatform,
+						CreatedAt:       upsertNow,
+						UpdatedAt:       upsertNow,
+					}
+					if _, err := w.DB.NewInsert().Model(row).
+						On("CONFLICT (user_id, storefront, external_id) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, raw_platform = EXCLUDED.raw_platform, is_available = true, updated_at = now()").
+						Exec(ctx); err != nil {
+						slog.Error("dispatch_sync: psn upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
+					}
+				}
+
+				// Re-query only this batch to get DB state (is_skipped, id).
+				// is_skipped is preserved by the ON CONFLICT clause above.
+				var toProcess []models.ExternalGame
+				if err := w.DB.NewSelect().Model(&toProcess).
+					Where("user_id = ? AND storefront = ? AND is_available = true AND is_skipped = false AND external_id IN (?)",
+						p.UserID, p.Storefront, bun.List(batchExtIDs)).
+					Scan(ctx); err != nil {
+					slog.Error("dispatch_sync: psn re-query batch failed", "job_id", p.JobID, "err", err)
+				}
+				slog.Info("dispatch_sync: psn batch to dispatch", "job_id", p.JobID, "to_process", len(toProcess), "batch_size", len(batch))
+
+				for _, eg := range toProcess {
+					meta := map[string]string{
+						"external_game_id": eg.ID,
+						"raw_platform":     rawPlatformByExtID[eg.ExternalID],
+					}
+					metaJSON, _ := json.Marshal(meta)
+					itemID := uuid.NewString()
+					if _, err := w.DB.NewRaw(
+						`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+						 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+						 ON CONFLICT (job_id, item_key) DO NOTHING`,
+						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
+					).Exec(ctx); err != nil {
+						slog.Error("dispatch_sync: psn insert job_item failed", "job_id", p.JobID, "external_id", eg.ExternalID, "err", err)
+					}
+					if w.RiverClient != nil {
+						if _, err := w.RiverClient.Insert(ctx, ProcessSyncItemArgs{JobItemID: itemID}, nil); err != nil {
+							slog.Error("dispatch_sync: psn river insert failed", "job_id", p.JobID, "item_id", itemID, "err", err)
+						}
+					}
+				}
+				return nil
+			},
+		); err != nil {
+			if errors.Is(err, psnsvc.ErrInvalidNPSSOToken) {
+				expiredAt := time.Now().UTC()
+				newCreds := map[string]any{
+					"npsso_token":      psnCreds.NpssoToken,
+					"is_verified":      false,
+					"token_expired_at": expiredAt,
+				}
+				if b, merr := json.Marshal(newCreds); merr == nil {
+					s := string(b)
+					_, _ = w.DB.NewRaw(
+						`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'psn'`,
+						s, p.UserID,
+					).Exec(context.Background())
+				}
+				failSyncJob(ctx, w.DB, p.JobID, "psn_token_expired")
+			} else {
+				slog.Error("dispatch_sync: psn library fetch failed", "job_id", p.JobID, "err", err)
+				failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("psn_fetch_error: %v", err))
 			}
-			if b, merr := json.Marshal(newCreds); merr == nil {
-				s := string(b)
-				_, _ = w.DB.NewRaw(
-					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'psn'`,
-					s, p.UserID,
-				).Exec(context.Background())
-			}
-			failSyncJob(ctx, w.DB, p.JobID, "psn_token_expired")
 			return nil
-		}
-		for _, e := range raw {
-			entries = append(entries, syncLibraryEntry{
-				ExternalID:      e.ExternalID,
-				Title:           e.Title,
-				RawPlatform:     e.RawPlatform,
-				PlaytimeHours:   e.PlaytimeHours,
-				OwnershipStatus: e.OwnershipStatus,
-				IsSubscription:  e.IsSubscription,
-			})
 		}
 
 	default:
 		failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("unknown storefront: %s", p.Storefront))
 		return nil
-	}
-
-	// ── 4. Upsert external_games ──────────────────────────────────────────
-	fetchedIDs := make(map[string]struct{}, len(entries))
-	for _, e := range entries {
-		fetchedIDs[e.ExternalID] = struct{}{}
-		ownership := e.OwnershipStatus
-		upsertNow := time.Now().UTC()
-		row := &models.ExternalGame{
-			ID:              uuid.NewString(),
-			UserID:          p.UserID,
-			Storefront:      p.Storefront,
-			ExternalID:      e.ExternalID,
-			Title:           e.Title,
-			IsAvailable:     true,
-			IsSubscription:  e.IsSubscription,
-			PlaytimeHours:   e.PlaytimeHours,
-			OwnershipStatus: &ownership,
-			RawPlatform:     e.RawPlatform,
-			CreatedAt:       upsertNow,
-			UpdatedAt:       upsertNow,
-		}
-		_, _ = w.DB.NewInsert().Model(row).
-			On("CONFLICT (user_id, storefront, external_id) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, raw_platform = EXCLUDED.raw_platform, is_available = true, updated_at = now()").
-			Exec(ctx)
 	}
 
 	// ── 5. Mark removed games as unavailable ──────────────────────────────
@@ -210,39 +280,6 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				eg.ID,
 			).Exec(ctx)
 		}
-	}
-
-	// ── 6. Dispatch ProcessSyncItem jobs for non-skipped games ────────────
-	rawPlatformByExtID := make(map[string]string, len(entries))
-	for _, e := range entries {
-		rawPlatformByExtID[e.ExternalID] = e.RawPlatform
-	}
-
-	var toProcess []models.ExternalGame
-	_ = w.DB.NewSelect().Model(&toProcess).
-		Where("user_id = ? AND storefront = ? AND is_available = true AND is_skipped = false", p.UserID, p.Storefront).
-		Scan(ctx)
-
-	for _, eg := range toProcess {
-		rawPlatform := rawPlatformByExtID[eg.ExternalID]
-		meta := map[string]string{
-			"external_game_id": eg.ID,
-			"raw_platform":     rawPlatform,
-		}
-		metaJSON, _ := json.Marshal(meta)
-
-		itemID := uuid.NewString()
-
-		// Insert job_item — columns match job_items schema exactly.
-		_, _ = w.DB.NewRaw(
-			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
-			 ON CONFLICT (job_id, item_key) DO NOTHING`,
-			itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
-		).Exec(ctx)
-
-		// Enqueue River job for ProcessSyncItem.
-		_, _ = w.RiverClient.Insert(ctx, ProcessSyncItemArgs{JobItemID: itemID}, nil)
 	}
 
 	// ── 7. Update last_synced_at ──────────────────────────────────────────

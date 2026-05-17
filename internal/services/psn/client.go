@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -125,54 +126,76 @@ type ExternalLibraryEntry struct {
 }
 
 // GetLibrary fetches the PSN trophy title list as a proxy for the user's game library.
-// The go-psn-api library does not expose a direct "owned games" endpoint;
-// trophy titles are used as the closest available approximation.
-// Maps PS4/PS3/PSVITA titles to their platform slugs; PS5 titles are identified
-// by NpCommunicationID prefix conventions where possible.
-// TODO: implement proper game library fetching when a suitable PSN API is available.
-func (c *Client) GetLibrary(ctx context.Context, npssoToken string) ([]ExternalLibraryEntry, error) {
+// Auth is performed once; pages of batchSize titles are fetched in a loop.
+// onBatch is called for each page and may return an error to abort the loop.
+// GetTrophyTitles failures after auth succeed return nil (same behaviour as before).
+func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize int, onBatch func([]ExternalLibraryEntry) error) error {
 	psnClient, err := psnsdk.NewClient(&psnsdk.Options{
 		Lang:   "en",
 		Region: "us",
 		Npsso:  npssoToken,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("psn: failed to create client: %w", err)
+		slog.Error("psn: failed to create client", "err", err)
+		return fmt.Errorf("psn: failed to create client: %w", err)
 	}
 
 	if err := psnClient.AuthWithNPSSO(ctx, npssoToken); err != nil {
-		return nil, ErrInvalidNPSSOToken
+		slog.Error("psn: auth failed", "err", err)
+		return ErrInvalidNPSSOToken
 	}
-
-	// Fetch trophy titles as a library proxy; limit=100 for a reasonable first page.
-	// The "comparedUser" parameter requires the user's onlineID — use "me" as alias.
-	resp, err := psnClient.GetTrophyTitles(ctx, "me", 100, 0)
-	if err != nil {
-		// Trophy titles may not be accessible; return empty rather than blocking.
-		return []ExternalLibraryEntry{}, nil
-	}
+	slog.Info("psn: auth succeeded")
 
 	platformMap := map[string]string{
-		"PS3":   "playstation-3",
-		"PS4":   "playstation-4",
-		"PS5":   "playstation-5",
+		"PS3":    "playstation-3",
+		"PS4":    "playstation-4",
+		"PS5":    "playstation-5",
 		"PSVITA": "ps-vita",
 	}
 
-	entries := make([]ExternalLibraryEntry, 0, len(resp.TrophyTitles))
-	for _, t := range resp.TrophyTitles {
-		rawPlatform := platformMap[t.TrophyTitlePlatfrom]
-		if rawPlatform == "" {
-			rawPlatform = "playstation-4" // sensible default
+	total := 0
+	for offset := 0; ; offset += batchSize {
+		resp, err := psnClient.GetTrophyTitles(ctx, "me", batchSize, offset)
+		if err != nil {
+			slog.Error("psn: GetTrophyTitles failed", "offset", offset, "err", err)
+			if offset == 0 {
+				// No data fetched yet — propagate so the worker can fail the job cleanly.
+				return fmt.Errorf("psn: GetTrophyTitles: %w", err)
+			}
+			// Partial fetch: surface what we already dispatched.
+			return nil
 		}
-		entries = append(entries, ExternalLibraryEntry{
-			ExternalID:      t.NpCommunicationID,
-			Title:           t.TrophyTitleName,
-			RawPlatform:     rawPlatform,
-			PlaytimeHours:   0,
-			OwnershipStatus: "owned",
-			IsSubscription:  false,
-		})
+		slog.Info("psn: fetched trophy titles page", "offset", offset, "count", len(resp.TrophyTitles), "total_results", resp.TotalResults)
+		if len(resp.TrophyTitles) == 0 {
+			break
+		}
+
+		entries := make([]ExternalLibraryEntry, 0, len(resp.TrophyTitles))
+		for _, t := range resp.TrophyTitles {
+			rawPlatform := platformMap[t.TrophyTitlePlatfrom]
+			if rawPlatform == "" {
+				rawPlatform = "playstation-4"
+			}
+			entries = append(entries, ExternalLibraryEntry{
+				ExternalID:      t.NpCommunicationID,
+				Title:           t.TrophyTitleName,
+				RawPlatform:     rawPlatform,
+				PlaytimeHours:   0,
+				OwnershipStatus: "owned",
+				IsSubscription:  false,
+			})
+		}
+
+		if err := onBatch(entries); err != nil {
+			return err
+		}
+		total += len(entries)
+
+		if len(resp.TrophyTitles) < batchSize {
+			break
+		}
 	}
-	return entries, nil
+	slog.Info("psn: library fetch complete", "total_titles", total)
+
+	return nil
 }
