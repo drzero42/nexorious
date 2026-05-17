@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	psnsdk "github.com/sizovilya/go-psn-api"
@@ -22,11 +24,30 @@ type PSNAccountInfo struct {
 // ErrInvalidNPSSOToken is returned when authentication with the NPSSO token fails.
 var ErrInvalidNPSSOToken = errors.New("invalid npsso token")
 
-// Client wraps the go-psn-api library.
-type Client struct{}
+// ErrPSNGraphQLSchemaChanged is returned when the GraphQL purchases endpoint
+// response is missing data.purchasedTitlesRetrieve, indicating the persisted
+// query hash is no longer valid and requires a code update.
+var ErrPSNGraphQLSchemaChanged = errors.New("psn graphql schema changed")
 
-// NewClient creates a new PSN client.
-func NewClient() *Client { return &Client{} }
+// Client wraps the go-psn-api library.
+type Client struct {
+	httpClient      *http.Client
+	gamelistURL     string
+	graphqlURL      string
+	graphqlPageSize int
+	// authFn overrides psnsdk authentication; used in tests only.
+	authFn func(ctx context.Context, npssoToken string) (string, error)
+}
+
+// NewClient creates a new PSN client with production defaults.
+func NewClient() *Client {
+	return &Client{
+		httpClient:      http.DefaultClient,
+		gamelistURL:     "https://m.np.playstation.com",
+		graphqlURL:      "https://web.np.playstation.com",
+		graphqlPageSize: 200,
+	}
+}
 
 // GetAccountInfo authenticates with PSN using the given NPSSO token and returns
 // account information for the authenticated user.
@@ -115,6 +136,177 @@ func fetchMyProfile(ctx context.Context, accessToken string) (*struct {
 	}, nil
 }
 
+type playHistoryResponse struct {
+	Titles []struct {
+		TitleID      string `json:"titleId"`
+		Name         string `json:"name"`
+		Category     string `json:"category"`
+		Service      string `json:"service"`
+		PlayDuration string `json:"playDuration"`
+	} `json:"titles"`
+	NextOffset     int `json:"nextOffset"`
+	TotalItemCount int `json:"totalItemCount"`
+}
+
+func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[string]ExternalLibraryEntry, error) {
+	const limit = 200
+	result := make(map[string]ExternalLibraryEntry)
+
+	for offset := 0; ; offset += limit {
+		u := fmt.Sprintf(
+			"%s/api/gamelist/v2/users/me/titles?categories=ps4_game,ps5_native_game&limit=%d&offset=%d",
+			c.gamelistURL, limit, offset,
+		)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, fmt.Errorf("psn: gamelist request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("psn: gamelist fetch: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("psn: gamelist HTTP %d", resp.StatusCode)
+		}
+
+		var body playHistoryResponse
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			return nil, fmt.Errorf("psn: gamelist decode: %w", err)
+		}
+
+		for _, t := range body.Titles {
+			var rawPlatform string
+			switch t.Category {
+			case "ps4_game":
+				rawPlatform = "playstation-4"
+			case "ps5_native_game":
+				rawPlatform = "playstation-5"
+			default:
+				continue
+			}
+
+			ownership := "owned"
+			isSub := false
+			if strings.HasPrefix(t.Service, "ps_plus") {
+				ownership = "subscription"
+				isSub = true
+			}
+
+			result[t.TitleID] = ExternalLibraryEntry{
+				ExternalID:      t.TitleID,
+				Title:           t.Name,
+				RawPlatform:     rawPlatform,
+				PlaytimeHours:   parseDurationHours(t.PlayDuration),
+				OwnershipStatus: ownership,
+				IsSubscription:  isSub,
+			}
+		}
+
+		if offset+limit >= body.TotalItemCount {
+			break
+		}
+	}
+
+	return result, nil
+}
+
+type purchasedGamesResponse struct {
+	Data struct {
+		PurchasedTitlesRetrieve *struct {
+			Games []struct {
+				TitleID             string `json:"titleId"`
+				Name                string `json:"name"`
+				Platform            string `json:"platform"`
+				SubscriptionService string `json:"subscriptionService"`
+			} `json:"games"`
+		} `json:"purchasedTitlesRetrieve"`
+	} `json:"data"`
+}
+
+const graphqlHash = "827a423f6a8ddca4107ac01395af2ec0eafd8396fc7fa204aaf9b7ed2eefa168"
+
+func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (map[string]ExternalLibraryEntry, error) {
+	size := c.graphqlPageSize
+	result := make(map[string]ExternalLibraryEntry)
+
+	for start := 0; ; start += size {
+		variables := fmt.Sprintf(`{"platform":["ps4","ps5"],"size":%d,"start":%d,"sortBy":"ACTIVE_DATE","sortDirection":"desc"}`, size, start)
+		extensions := fmt.Sprintf(`{"persistedQuery":{"version":1,"sha256Hash":"%s"}}`, graphqlHash)
+
+		u := fmt.Sprintf(
+			"%s/api/graphql/v1/op?operationName=getPurchasedGameList&variables=%s&extensions=%s",
+			c.graphqlURL,
+			url.QueryEscape(variables),
+			url.QueryEscape(extensions),
+		)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, fmt.Errorf("psn: graphql request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		req.Header.Set("Apollo-Require-Preflight", "true")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("psn: graphql fetch: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			slog.Error("psn: graphql non-200", "status", resp.StatusCode, "body", string(body))
+			return nil, fmt.Errorf("psn: graphql HTTP %d", resp.StatusCode)
+		}
+
+		var body purchasedGamesResponse
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			return nil, fmt.Errorf("psn: graphql decode: %w", err)
+		}
+
+		if body.Data.PurchasedTitlesRetrieve == nil {
+			return nil, ErrPSNGraphQLSchemaChanged
+		}
+
+		games := body.Data.PurchasedTitlesRetrieve.Games
+		for _, g := range games {
+			var rawPlatform string
+			switch g.Platform {
+			case "PS4":
+				rawPlatform = "playstation-4"
+			case "PS5":
+				rawPlatform = "playstation-5"
+			default:
+				continue
+			}
+
+			isSub := g.SubscriptionService == "PS_PLUS"
+			ownership := "owned"
+			if isSub {
+				ownership = "subscription"
+			}
+
+			result[g.TitleID] = ExternalLibraryEntry{
+				ExternalID:      g.TitleID,
+				Title:           g.Name,
+				RawPlatform:     rawPlatform,
+				PlaytimeHours:   0,
+				OwnershipStatus: ownership,
+				IsSubscription:  isSub,
+			}
+		}
+
+		if len(games) < size {
+			break
+		}
+	}
+
+	return result, nil
+}
+
 // ExternalLibraryEntry is a normalised game entry from PSN.
 type ExternalLibraryEntry struct {
 	ExternalID      string
@@ -125,77 +317,85 @@ type ExternalLibraryEntry struct {
 	IsSubscription  bool
 }
 
-// GetLibrary fetches the PSN trophy title list as a proxy for the user's game library.
-// Auth is performed once; pages of batchSize titles are fetched in a loop.
-// onBatch is called for each page and may return an error to abort the loop.
-// GetTrophyTitles failures after auth succeed return nil (same behaviour as before).
-func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize int, onBatch func([]ExternalLibraryEntry) error) error {
-	psnClient, err := psnsdk.NewClient(&psnsdk.Options{
-		Lang:   "en",
-		Region: "us",
-		Npsso:  npssoToken,
-	})
-	if err != nil {
-		slog.Error("psn: failed to create client", "err", err)
-		return fmt.Errorf("psn: failed to create client: %w", err)
+func mergePlayedPurchased(played, purchased map[string]ExternalLibraryEntry) []ExternalLibraryEntry {
+	merged := make(map[string]ExternalLibraryEntry, len(played)+len(purchased))
+	for id, e := range played {
+		merged[id] = e
 	}
+	for id, e := range purchased {
+		if existing, ok := merged[id]; ok {
+			if e.IsSubscription {
+				existing.IsSubscription = true
+				existing.OwnershipStatus = "subscription"
+			}
+			merged[id] = existing
+		} else {
+			merged[id] = e
+		}
+	}
+	all := make([]ExternalLibraryEntry, 0, len(merged))
+	for _, e := range merged {
+		all = append(all, e)
+	}
+	return all
+}
 
-	if err := psnClient.AuthWithNPSSO(ctx, npssoToken); err != nil {
-		slog.Error("psn: auth failed", "err", err)
-		return ErrInvalidNPSSOToken
+// GetLibrary fetches the user's PSN game library by merging play history
+// (gamelist/v2) and purchased games (GraphQL) into a unified set.
+// onBatch is called for each page of batchSize entries and may return an error to abort.
+func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize int, onBatch func([]ExternalLibraryEntry) error) error {
+	// ── Auth ─────────────────────────────────────────────────────────────
+	var accessToken string
+	if c.authFn != nil {
+		var err error
+		accessToken, err = c.authFn(ctx, npssoToken)
+		if err != nil {
+			return ErrInvalidNPSSOToken
+		}
+	} else {
+		psnClient, err := psnsdk.NewClient(&psnsdk.Options{
+			Lang:   "en",
+			Region: "us",
+			Npsso:  npssoToken,
+		})
+		if err != nil {
+			return fmt.Errorf("psn: failed to create client: %w", err)
+		}
+		if err := psnClient.AuthWithNPSSO(ctx, npssoToken); err != nil {
+			slog.Error("psn: auth failed", "err", err)
+			return ErrInvalidNPSSOToken
+		}
+		accessToken, _ = psnClient.AccessToken()
 	}
 	slog.Info("psn: auth succeeded")
 
-	platformMap := map[string]string{
-		"PS3":    "playstation-3",
-		"PS4":    "playstation-4",
-		"PS5":    "playstation-5",
-		"PSVITA": "ps-vita",
+	// ── Fetch play history ────────────────────────────────────────────────
+	played, err := c.fetchPlayHistory(ctx, accessToken)
+	if err != nil {
+		return fmt.Errorf("psn: play history: %w", err)
 	}
+	slog.Info("psn: play history fetched", "count", len(played))
 
-	total := 0
-	for offset := 0; ; offset += batchSize {
-		resp, err := psnClient.GetTrophyTitles(ctx, "me", batchSize, offset)
-		if err != nil {
-			slog.Error("psn: GetTrophyTitles failed", "offset", offset, "err", err)
-			if offset == 0 {
-				// No data fetched yet — propagate so the worker can fail the job cleanly.
-				return fmt.Errorf("psn: GetTrophyTitles: %w", err)
-			}
-			// Partial fetch: surface what we already dispatched.
-			return nil
-		}
-		slog.Info("psn: fetched trophy titles page", "offset", offset, "count", len(resp.TrophyTitles), "total_results", resp.TotalResults)
-		if len(resp.TrophyTitles) == 0 {
-			break
-		}
+	// ── Fetch purchased games ─────────────────────────────────────────────
+	purchased, err := c.fetchPurchasedGames(ctx, accessToken)
+	if err != nil {
+		return err // preserve ErrPSNGraphQLSchemaChanged unwrapped
+	}
+	slog.Info("psn: purchased games fetched", "count", len(purchased))
 
-		entries := make([]ExternalLibraryEntry, 0, len(resp.TrophyTitles))
-		for _, t := range resp.TrophyTitles {
-			rawPlatform := platformMap[t.TrophyTitlePlatfrom]
-			if rawPlatform == "" {
-				rawPlatform = "playstation-4"
-			}
-			entries = append(entries, ExternalLibraryEntry{
-				ExternalID:      t.NpCommunicationID,
-				Title:           t.TrophyTitleName,
-				RawPlatform:     rawPlatform,
-				PlaytimeHours:   0,
-				OwnershipStatus: "owned",
-				IsSubscription:  false,
-			})
-		}
+	// ── Merge ─────────────────────────────────────────────────────────────
+	all := mergePlayedPurchased(played, purchased)
+	slog.Info("psn: library fetch complete", "total_titles", len(all))
 
-		if err := onBatch(entries); err != nil {
+	// ── Dispatch in batches ───────────────────────────────────────────────
+	for i := 0; i < len(all); i += batchSize {
+		end := i + batchSize
+		if end > len(all) {
+			end = len(all)
+		}
+		if err := onBatch(all[i:end]); err != nil {
 			return err
 		}
-		total += len(entries)
-
-		if len(resp.TrophyTitles) < batchSize {
-			break
-		}
 	}
-	slog.Info("psn: library fetch complete", "total_titles", total)
-
 	return nil
 }

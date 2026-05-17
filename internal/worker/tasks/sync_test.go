@@ -1195,3 +1195,116 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 		t.Error("expected no job_item for skipped God of War")
 	}
 }
+
+func TestDispatchSync_PSNGraphQLSchemaChanged_PreservesToken(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
+		jobID, userID,
+	).Exec(ctx)
+	creds := `{"npsso_token":"validtoken","is_verified":true}`
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
+		configID, userID, creds,
+	).Exec(ctx)
+
+	adapter := &fakePSNAdapter{err: psnsvc.ErrPSNGraphQLSchemaChanged}
+	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: adapter, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+	if status != "failed" {
+		t.Errorf("expected job status=failed, got %q", status)
+	}
+
+	// Token must NOT be marked expired — schema change is not an auth error.
+	var rawCreds string
+	_ = testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &rawCreds)
+	var parsedCreds struct {
+		IsVerified bool `json:"is_verified"`
+	}
+	_ = json.Unmarshal([]byte(rawCreds), &parsedCreds)
+	if !parsedCreds.IsVerified {
+		t.Error("expected is_verified=true after schema-changed error (token not expired)")
+	}
+}
+
+func TestProcessSyncItem_PlaytimeHoursWrittenToUserGame(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+
+	const igdbID = int32(9999)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Test Game', now(), now()) ON CONFLICT (id) DO NOTHING`,
+		igdbID,
+	)
+
+	egID := uuid.NewString()
+	igdbIDVal := igdbID
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours, resolved_igdb_id)
+		 VALUES (?, ?, 'psn', 'PPSA09999_00', 'Test Game', false, true, false, 47, ?)`,
+		egID, userID, igdbIDVal,
+	)
+
+	// source_metadata includes playtime_hours=47
+	metaJSON, _ := json.Marshal(map[string]any{
+		"external_game_id": egID,
+		"raw_platform":     "playstation-4",
+		"playtime_hours":   47,
+	})
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'PPSA09999_00', 'Test Game', ?, 'pending', '{}', '[]')`,
+		itemID, jobID, userID, string(metaJSON),
+	)
+
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
+	job := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var itemStatus string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &itemStatus)
+	if itemStatus != "completed" {
+		t.Errorf("expected item completed, got %q", itemStatus)
+	}
+
+	// user_games.hours_played should be set from meta.PlaytimeHours
+	var hoursPlayed *float64
+	_ = testDB.NewRaw(
+		`SELECT hours_played FROM user_games WHERE user_id = ? AND game_id = ?`,
+		userID, igdbID,
+	).Scan(ctx, &hoursPlayed)
+	if hoursPlayed == nil {
+		t.Fatal("expected user_games.hours_played to be set, got nil")
+	}
+	if *hoursPlayed != 47.0 {
+		t.Errorf("expected user_games.hours_played=47.0, got %f", *hoursPlayed)
+	}
+}

@@ -139,11 +139,11 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			Where("user_id = ? AND storefront = ? AND is_available = true AND is_skipped = false", p.UserID, p.Storefront).
 			Scan(ctx)
 		for _, eg := range toProcess {
-			meta := map[string]string{
+			metaJSON, _ := json.Marshal(map[string]any{
 				"external_game_id": eg.ID,
 				"raw_platform":     rawPlatformByExtID[eg.ExternalID],
-			}
-			metaJSON, _ := json.Marshal(meta)
+				"playtime_hours":   eg.PlaytimeHours,
+			})
 			itemID := uuid.NewString()
 			_, _ = w.DB.NewRaw(
 				`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
@@ -218,11 +218,11 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				slog.Info("dispatch_sync: psn batch to dispatch", "job_id", p.JobID, "to_process", len(toProcess), "batch_size", len(batch))
 
 				for _, eg := range toProcess {
-					meta := map[string]string{
+					metaJSON, _ := json.Marshal(map[string]any{
 						"external_game_id": eg.ID,
 						"raw_platform":     rawPlatformByExtID[eg.ExternalID],
-					}
-					metaJSON, _ := json.Marshal(meta)
+						"playtime_hours":   eg.PlaytimeHours,
+					})
 					itemID := uuid.NewString()
 					if _, err := w.DB.NewRaw(
 						`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
@@ -355,6 +355,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	var meta struct {
 		ExternalGameID string `json:"external_game_id"`
 		RawPlatform    string `json:"raw_platform"`
+		PlaytimeHours  int    `json:"playtime_hours"`
 	}
 	if err := json.Unmarshal(item.SourceMetadata, &meta); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err))
@@ -470,10 +471,10 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 		ugID = uuid.NewString()
 		now := time.Now().UTC()
 		_, _ = w.DB.NewRaw(
-			`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?)
+			`INSERT INTO user_games (id, user_id, game_id, hours_played, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?)
 			 ON CONFLICT (user_id, game_id) DO NOTHING`,
-			ugID, item.UserID, *eg.ResolvedIGDBID, now, now,
+			ugID, item.UserID, *eg.ResolvedIGDBID, float64(meta.PlaytimeHours), now, now,
 		).Exec(ctx)
 		// Re-fetch to get the winning row ID in case of race.
 		if ferr := w.DB.NewRaw(
@@ -484,6 +485,12 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 			syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 			return nil
 		}
+	}
+	if meta.PlaytimeHours > 0 {
+		_, _ = w.DB.NewRaw(
+			`UPDATE user_games SET hours_played = ?, updated_at = now() WHERE id = ? AND (hours_played IS NULL OR hours_played < ?)`,
+			float64(meta.PlaytimeHours), ugID, float64(meta.PlaytimeHours),
+		).Exec(ctx)
 	}
 
 	// ── 9. Find or create user_game_platform ─────────────────────────────
