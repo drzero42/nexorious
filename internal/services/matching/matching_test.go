@@ -10,9 +10,10 @@ func TestNormalizeTitle(t *testing.T) {
 		// GOTY expansion
 		{"The Witcher 3 GOTY", "witcher 3 game of the year"},
 		{"goty edition", "game of the year edition"},
-		// Trademark symbols
+		// Trademark symbols replaced with space (not removed), so "Velocity®2X" → "velocity 2x"
 		{"Skyrim™", "skyrim"},
 		{"FIFA®", "fifa"},
+		{"Velocity®2X", "velocity 2x"},
 		// Apostrophes (straight and curly)
 		{"Assassin's Creed", "assassins creed"},
 		{"It's a game", "its a game"},

@@ -28,8 +28,8 @@ type keywordRule struct {
 var keywordRules = []keywordRule{
 	{kwGOTY, "Game of the Year", nil},
 	{kwTelltale, "", nil},
-	{kwTrademark, "", nil},
-	{kwRegistered, "", nil},
+	{kwTrademark, " ", nil},
+	{kwRegistered, " ", nil},
 	{kwClassic, "", nil},
 	{kwColon, " ", nil},
 	{kwYearInParens, "", nil},
