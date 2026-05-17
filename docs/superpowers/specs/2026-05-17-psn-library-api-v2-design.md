@@ -189,7 +189,7 @@ The `ProcessSyncItemWorker` creates or updates a `user_games` row when a sync it
 To propagate playtime, `source_metadata` must also carry `playtime_hours`. `ProcessSyncItemWorker` will read it and write it to `user_games.playtime_hours` when creating or updating the row. This requires:
 - Dispatch (in `sync.go`): add `"playtime_hours"` key to the `meta` map.
 - `ProcessSyncItemWorker`: read `playtime_hours` from metadata and write to `user_games`.
-- Migration: `user_games.playtime_hours` column must exist. **Check whether this column already exists before including a migration in the plan.**
+- No migration needed: `user_games.playtime_hours INTEGER NOT NULL DEFAULT 0` already exists in the initial schema (`20260503000001_initial.up.sql:180`).
 
 ## Out of scope
 
