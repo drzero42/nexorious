@@ -19,6 +19,7 @@
     uv
     inputs.beads.packages.${system}.bd
     procps
+    legendary-gl
   ];
 
   # https://devenv.sh/languages/
