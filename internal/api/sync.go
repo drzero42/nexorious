@@ -155,7 +155,7 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/steam/verify", h.HandleSteamVerify)
 	g.DELETE("/steam/connection", h.HandleSteamDisconnect)
 	g.POST("/psn/configure", h.HandlePSNConfigure)
-	g.GET("/psn/status", h.HandleGetPSNStatus)
+	g.GET("/psn/connection", h.HandleGetPSNStatus)
 	g.DELETE("/psn/disconnect", h.HandlePSNDisconnect)
 	g.GET("/ignored", h.HandleListIgnored)
 	g.POST("/ignored/:id", h.HandleSkipGame)

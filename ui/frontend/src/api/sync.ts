@@ -318,7 +318,7 @@ export async function configurePSN(npssoToken: string): Promise<PSNConfigureResp
  * Get PSN connection status.
  */
 export async function getPSNStatus(): Promise<PSNStatusResponse> {
-  const response = await api.get<PSNStatusApiResponse>('/sync/psn/status');
+  const response = await api.get<PSNStatusApiResponse>('/sync/psn/connection');
 
   return {
     configured: response.is_configured,

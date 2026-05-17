@@ -98,7 +98,7 @@ describe('PSN API', () => {
 
       const result = await getPSNStatus();
 
-      expect(api.get).toHaveBeenCalledWith('/sync/psn/status');
+      expect(api.get).toHaveBeenCalledWith('/sync/psn/connection');
       expect(result).toEqual({
         configured: true,
         accountId: 'psn-account-123',

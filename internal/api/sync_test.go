@@ -352,7 +352,7 @@ func TestPSNStatus_NoRow(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-stat-empty")
 
-	rec := getAuth(t, e, "/api/sync/psn/status", token)
+	rec := getAuth(t, e, "/api/sync/psn/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
@@ -590,7 +590,7 @@ func TestPSNStatus_WithCredentials(t *testing.T) {
 	}
 
 	// Now get PSN status — should return configured=true.
-	rec = getAuth(t, e, "/api/sync/psn/status", token)
+	rec = getAuth(t, e, "/api/sync/psn/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}

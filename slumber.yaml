@@ -580,7 +580,7 @@ requests:
       psn_status:
         name: PSN Status
         method: GET
-        url: "{{base_url}}/api/sync/psn/status"
+        url: "{{base_url}}/api/sync/psn/connection"
         $ref: "#/.authenticated"
 
       psn_disconnect:
