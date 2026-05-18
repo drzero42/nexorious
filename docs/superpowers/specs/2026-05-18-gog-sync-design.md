@@ -7,7 +7,7 @@
 
 ## Summary
 
-Add GOG.com as a third game library sync source alongside Steam and PSN (with Epic in progress). Implementation uses a native Go HTTP client — no subprocess, no Python runtime — mirroring the Steam/PSN service package shape.
+Add GOG.com as a fourth game library sync source alongside Steam, PSN, and Epic. Implementation uses a native Go HTTP client — no subprocess, no Python runtime — mirroring the Steam/PSN service package shape.
 
 ## Decisions
 
