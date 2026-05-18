@@ -6,6 +6,8 @@
 
 A self-hostable web application for managing personal video game collections with comprehensive IGDB integration for tracking, organizing, and discovering games across multiple platforms and storefronts.
 
+Nexorious was inspired by [Darkadia](https://darkadia.com) (RIP), a beloved game collection tracker that is no longer operating.
+
 ## Features
 
 - **IGDB-Only Game Database**: All games sourced from the Internet Game Database (IGDB) with comprehensive metadata, cover art, ratings, and completion time estimates
