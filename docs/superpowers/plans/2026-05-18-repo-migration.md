@@ -58,6 +58,8 @@ gh repo view drzero42/nexorious --json defaultBranchRef --jq '.defaultBranchRef.
 
 Expected output: `python`
 
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
+
 ---
 
 ## Task 2: Update Go module path
@@ -102,6 +104,8 @@ Expected: `nexorious` binary produced, no errors.
 git add -u
 git commit -m "chore: rename Go module path to github.com/drzero42/nexorious"
 ```
+
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
 
 ---
 
@@ -163,6 +167,8 @@ git add deploy/helm/
 git rm -r charts/
 git commit -m "chore: move Helm chart from charts/nexorious-go to deploy/helm and rename to nexorious"
 ```
+
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
 
 ---
 
@@ -231,6 +237,8 @@ volumes:
 git add deploy/docker/docker-compose.yml
 git commit -m "chore: add deploy/docker/docker-compose.yml for simple container deployment"
 ```
+
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
 
 ---
 
@@ -375,6 +383,8 @@ git add .github/workflows/test.yaml
 git commit -m "ci: add Go test workflow"
 ```
 
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
+
 ---
 
 ## Task 6: Create .github/workflows/build-push.yaml
@@ -510,6 +520,8 @@ jobs:
 git add .github/workflows/build-push.yaml
 git commit -m "ci: add build-and-push workflow for container image and Helm chart"
 ```
+
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
 
 ---
 
@@ -778,6 +790,8 @@ git add README.md
 git commit -m "docs: rewrite README for Go version"
 ```
 
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
+
 ---
 
 ## Task 8: Add renovate.json and .env.example
@@ -830,6 +844,8 @@ POSTGRES_PASSWORD=yourpassword
 git add renovate.json .env.example
 git commit -m "chore: add renovate.json and .env.example"
 ```
+
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
 
 ---
 
@@ -900,6 +916,8 @@ git add docs/igdb-setup.md
 git commit -m "docs: port igdb-setup.md from Python repo, update for Go"
 ```
 
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
+
 ---
 
 ## Task 10: Update CLAUDE.md and DEV.md
@@ -940,6 +958,8 @@ Expected: all occurrences now say `nexorious:local`.
 git add CLAUDE.md DEV.md
 git commit -m "chore: update nexorious-go references in CLAUDE.md and DEV.md"
 ```
+
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
 
 ---
 
@@ -983,6 +1003,8 @@ grep -r "github.com/drzero42/nexorious-go" --include="*.go" .
 
 Expected: no output.
 
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
+
 ---
 
 ## Task 12: Phase 3 — Push to nexorious and restore default branch
@@ -1024,6 +1046,8 @@ gh repo view drzero42/nexorious --json defaultBranchRef --jq '.defaultBranchRef.
 ```
 
 Expected: `main`
+
+> **STOP** — verify the changes above, then tell me to proceed to the next task.
 
 ---
 
@@ -1092,3 +1116,5 @@ gh issue list --repo drzero42/nexorious-go --state open
 ```
 
 Expected: no open issues.
+
+> **STOP** — verify all issues have been transferred, then the migration is complete.
