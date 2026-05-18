@@ -100,8 +100,8 @@ interface JobItemListApiResponse {
   items: JobItemApiResponse[];
   total: number;
   page: number;
-  page_size: number;
-  pages: number;
+  per_page: number;
+  total_pages: number;
 }
 
 interface PendingReviewCountApiResponse {
@@ -332,7 +332,7 @@ export async function getJobItems(
   page: number = 1,
   pageSize: number = 50
 ): Promise<JobItemListResponse> {
-  const params: Record<string, string | number> = { page, page_size: pageSize };
+  const params: Record<string, string | number> = { page, per_page: pageSize };
   if (status) params.status = status;
 
   const response = await api.get<JobItemListApiResponse>(
@@ -344,8 +344,8 @@ export async function getJobItems(
     items: response.items.map(transformJobItem),
     total: response.total,
     page: response.page,
-    pageSize: response.page_size,
-    pages: response.pages,
+    pageSize: response.per_page,
+    pages: response.total_pages,
   };
 }
 

@@ -782,3 +782,37 @@ func TestRecentJobs_ReturnsSplitItemArrays(t *testing.T) {
 		t.Errorf("expected 1 igdb_failed_item, got %d", len(igdbFailedItems))
 	}
 }
+
+func TestHandleGetJobItems_SortsPendingReviewAlphabetically(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "items-sort")
+
+	insertJob(t, testDB, "job-sort", userID, "import", "steam", "processing")
+	// Insert in reverse alphabetical order to prove sorting isn't by insertion order.
+	insertJobItem(t, testDB, "ji-sort-z", "job-sort", userID, "key-z", "Zebra Game", "pending_review")
+	insertJobItem(t, testDB, "ji-sort-a", "job-sort", userID, "key-a", "Apple Game", "pending_review")
+	insertJobItem(t, testDB, "ji-sort-m", "job-sort", userID, "key-m", "Mango Game", "pending_review")
+
+	rec := getAuth(t, e, "/api/jobs/job-sort/items?status=pending_review", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	items := resp["items"].([]any)
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(items))
+	}
+	want := []string{"Apple Game", "Mango Game", "Zebra Game"}
+	for i, title := range want {
+		got := items[i].(map[string]any)["source_title"].(string)
+		if got != title {
+			t.Errorf("position %d: got %q, want %q", i, got, title)
+		}
+	}
+}

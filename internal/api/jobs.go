@@ -466,7 +466,11 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 
 	offset := (page - 1) * perPage
 	var items []models.JobItem
-	err = q.OrderExpr("created_at ASC").Limit(perPage).Offset(offset).
+	sortExpr := "created_at ASC"
+	if c.QueryParam("status") == "pending_review" {
+		sortExpr = "source_title ASC"
+	}
+	err = q.OrderExpr(sortExpr).Limit(perPage).Offset(offset).
 		Scan(context.Background(), &items)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
