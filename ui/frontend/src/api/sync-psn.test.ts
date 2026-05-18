@@ -176,7 +176,7 @@ describe('PSN API', () => {
 
       await disconnectPSN();
 
-      expect(api.delete).toHaveBeenCalledWith('/sync/psn/disconnect');
+      expect(api.delete).toHaveBeenCalledWith('/sync/psn/connection');
     });
   });
 });

@@ -391,7 +391,7 @@ func TestPSNDisconnect_Idempotent(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-disc-1")
 
-	rec := deleteAuth(t, e, "/api/sync/psn/disconnect", token)
+	rec := deleteAuth(t, e, "/api/sync/psn/connection", token)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", rec.Code)
 	}
@@ -1147,7 +1147,7 @@ func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 		t.Fatalf("seed user_sync_configs: %v", err)
 	}
 
-	rec := deleteAuth(t, e, "/api/sync/epic/disconnect", token)
+	rec := deleteAuth(t, e, "/api/sync/epic/connection", token)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}

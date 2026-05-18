@@ -586,7 +586,7 @@ requests:
       psn_disconnect:
         name: PSN Disconnect
         method: DELETE
-        url: "{{base_url}}/api/sync/psn/disconnect"
+        url: "{{base_url}}/api/sync/psn/connection"
         $ref: "#/.authenticated"
 
       epic_connect:
@@ -608,7 +608,7 @@ requests:
       epic_disconnect:
         name: Epic Disconnect
         method: DELETE
-        url: "{{base_url}}/api/sync/epic/disconnect"
+        url: "{{base_url}}/api/sync/epic/connection"
         $ref: "#/.authenticated"
 
       trigger_epic:

@@ -259,7 +259,7 @@ export async function getEpicConnection(): Promise<EpicConnectionResponse> {
  * Disconnect Epic Games Store. Clears legendary state and per-user working dir.
  */
 export async function disconnectEpic(): Promise<void> {
-  await api.delete('/sync/epic/disconnect');
+  await api.delete('/sync/epic/connection');
 }
 
 // ============================================================================
@@ -324,7 +324,7 @@ export async function getPSNStatus(): Promise<PSNStatusResponse> {
  * Disconnect PSN integration.
  */
 export async function disconnectPSN(): Promise<void> {
-  await api.delete('/sync/psn/disconnect');
+  await api.delete('/sync/psn/connection');
 }
 
 // ============================================================================

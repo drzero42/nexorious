@@ -209,12 +209,12 @@ describe('syncApi', () => {
       });
     });
 
-    it('should disconnect Epic via DELETE /epic/disconnect', async () => {
+    it('should disconnect Epic via DELETE /epic/connection', async () => {
       vi.mocked(api.delete).mockResolvedValueOnce(undefined);
 
       await disconnectEpic();
 
-      expect(api.delete).toHaveBeenCalledWith('/sync/epic/disconnect');
+      expect(api.delete).toHaveBeenCalledWith('/sync/epic/connection');
     });
   });
 });
