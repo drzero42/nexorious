@@ -1,6 +1,6 @@
-# nexorious-go Helm chart
+# nexorious Helm chart
 
-Helm chart for [nexorious-go](https://github.com/drzero42/nexorious-go), the
+Helm chart for [nexorious](https://github.com/drzero42/nexorious), the
 Go port of nexorious (self-hosted game collection).
 
 Built on the [bjw-s common library](https://bjw-s-labs.github.io/helm-charts/)
@@ -12,7 +12,7 @@ single Deployment running the Go binary in two phases:
 2. `main` container — runs `/app/nexorious serve`; the Go binary embeds the
    React SPA and runs the API, workers, and scheduler in one process.
 
-Image: `ghcr.io/drzero42/nexorious-go:<appVersion>`.
+Image: `ghcr.io/drzero42/nexorious:<appVersion>`.
 
 ## Requirements
 
@@ -36,8 +36,8 @@ default `change-me-in-production` — the chart will warn if you forget).
 ## Install
 
 ```sh
-helm dependency update charts/nexorious-go
-helm install nexorious-go ./charts/nexorious-go \
+helm dependency update charts/nexorious
+helm install nexorious ./charts/nexorious \
   --set nexorious.secretKey="$(openssl rand -hex 32)" \
   --set nexorious.igdbClientId="..." \
   --set nexorious.igdbClientSecret="..." \
@@ -47,7 +47,7 @@ helm install nexorious-go ./charts/nexorious-go \
 Upgrade:
 
 ```sh
-helm upgrade nexorious-go ./charts/nexorious-go -f my-values.yaml
+helm upgrade nexorious ./charts/nexorious -f my-values.yaml
 ```
 
 ### Pinning the image tag

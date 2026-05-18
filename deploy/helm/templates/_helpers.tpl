@@ -1,21 +1,21 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "nexorious-go.name" -}}
+{{- define "nexorious.name" -}}
 {{- include "bjw-s.common.lib.chart.names.name" . }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
 */}}
-{{- define "nexorious-go.fullname" -}}
+{{- define "nexorious.fullname" -}}
 {{- include "bjw-s.common.lib.chart.names.fullname" . }}
 {{- end }}
 
 {{/*
 Name of the credentials secret.
 */}}
-{{- define "nexorious-go.credentialsSecretName" -}}
+{{- define "nexorious.credentialsSecretName" -}}
 {{- include "bjw-s.common.lib.chart.names.fullname" . }}-credentials
 {{- end }}
 
@@ -25,7 +25,7 @@ Input dict: .label (string), .from (object with .name and .key fields).
 Returns an error string if invalid, empty string if valid.
 Nil-safe: a nil .from is treated as an empty object.
 */}}
-{{- define "nexorious-go._validateFrom" -}}
+{{- define "nexorious._validateFrom" -}}
 {{- $from := default dict .from -}}
 {{- $name := dig "name" "" $from -}}
 {{- $key := dig "key" "" $from -}}
@@ -39,7 +39,7 @@ Nil-safe: a nil .from is treated as an empty object.
 {{/*
 Validate required values.
 */}}
-{{- define "nexorious-go.validateValues" -}}
+{{- define "nexorious.validateValues" -}}
 
 {{/* --- *From completeness checks --- */}}
 {{- $fromFields := list
@@ -54,7 +54,7 @@ Validate required values.
   (dict "label" "dbNameFrom"           "from" .Values.nexorious.dbNameFrom)
 -}}
 {{- range $fromFields -}}
-  {{- $err := include "nexorious-go._validateFrom" . -}}
+  {{- $err := include "nexorious._validateFrom" . -}}
   {{- if not (empty $err) -}}
     {{- fail $err -}}
   {{- end -}}
@@ -71,14 +71,14 @@ Validate required values.
 {{- $igdbClientIdFromConfigured := not (empty (dig "name" "" (default dict .Values.nexorious.igdbClientIdFrom))) -}}
 {{- if not $igdbClientIdFromConfigured -}}
   {{- if empty .Values.nexorious.igdbClientId }}
-    {{- fail "nexorious.igdbClientId is required. nexorious-go will not function without valid IGDB credentials." }}
+    {{- fail "nexorious.igdbClientId is required. nexorious will not function without valid IGDB credentials." }}
   {{- end }}
 {{- end }}
 
 {{- $igdbClientSecretFromConfigured := not (empty (dig "name" "" (default dict .Values.nexorious.igdbClientSecretFrom))) -}}
 {{- if not $igdbClientSecretFromConfigured -}}
   {{- if empty .Values.nexorious.igdbClientSecret }}
-    {{- fail "nexorious.igdbClientSecret is required. nexorious-go will not function without valid IGDB credentials." }}
+    {{- fail "nexorious.igdbClientSecret is required. nexorious will not function without valid IGDB credentials." }}
   {{- end }}
 {{- end }}
 
@@ -141,11 +141,11 @@ Uses nexorious.databaseUrl if set; otherwise builds in-cluster URL.
 The auto-built URL URL-encodes the password so special characters
 (: @ / ? # etc.) are safe.
 */}}
-{{- define "nexorious-go.databaseUrl" -}}
+{{- define "nexorious.databaseUrl" -}}
 {{- if .Values.nexorious.databaseUrl -}}
 {{- .Values.nexorious.databaseUrl -}}
 {{- else -}}
-postgresql://{{ .Values.nexorious.postgresql.username }}:{{ .Values.nexorious.postgresql.password | urlquery }}@{{ include "nexorious-go.fullname" . }}-postgresql:5432/{{ .Values.nexorious.postgresql.database }}
+postgresql://{{ .Values.nexorious.postgresql.username }}:{{ .Values.nexorious.postgresql.password | urlquery }}@{{ include "nexorious.fullname" . }}-postgresql:5432/{{ .Values.nexorious.postgresql.database }}
 {{- end -}}
 {{- end }}
 
@@ -156,15 +156,15 @@ When *From.name is non-empty, the external secret is used.
 Otherwise, falls back to the managed credentials secret.
 */}}
 
-{{- define "nexorious-go.secretKeySecretName" -}}
+{{- define "nexorious.secretKeySecretName" -}}
 {{- if and .Values.nexorious.secretKeyFrom .Values.nexorious.secretKeyFrom.name -}}
 {{- .Values.nexorious.secretKeyFrom.name -}}
 {{- else -}}
-{{- include "nexorious-go.fullname" . }}-credentials
+{{- include "nexorious.fullname" . }}-credentials
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.secretKeySecretKey" -}}
+{{- define "nexorious.secretKeySecretKey" -}}
 {{- if and .Values.nexorious.secretKeyFrom .Values.nexorious.secretKeyFrom.key -}}
 {{- .Values.nexorious.secretKeyFrom.key -}}
 {{- else -}}
@@ -172,15 +172,15 @@ SECRET_KEY
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.igdbClientIdSecretName" -}}
+{{- define "nexorious.igdbClientIdSecretName" -}}
 {{- if and .Values.nexorious.igdbClientIdFrom .Values.nexorious.igdbClientIdFrom.name -}}
 {{- .Values.nexorious.igdbClientIdFrom.name -}}
 {{- else -}}
-{{- include "nexorious-go.fullname" . }}-credentials
+{{- include "nexorious.fullname" . }}-credentials
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.igdbClientIdSecretKey" -}}
+{{- define "nexorious.igdbClientIdSecretKey" -}}
 {{- if and .Values.nexorious.igdbClientIdFrom .Values.nexorious.igdbClientIdFrom.key -}}
 {{- .Values.nexorious.igdbClientIdFrom.key -}}
 {{- else -}}
@@ -188,15 +188,15 @@ IGDB_CLIENT_ID
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.igdbClientSecretSecretName" -}}
+{{- define "nexorious.igdbClientSecretSecretName" -}}
 {{- if and .Values.nexorious.igdbClientSecretFrom .Values.nexorious.igdbClientSecretFrom.name -}}
 {{- .Values.nexorious.igdbClientSecretFrom.name -}}
 {{- else -}}
-{{- include "nexorious-go.fullname" . }}-credentials
+{{- include "nexorious.fullname" . }}-credentials
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.igdbClientSecretSecretKey" -}}
+{{- define "nexorious.igdbClientSecretSecretKey" -}}
 {{- if and .Values.nexorious.igdbClientSecretFrom .Values.nexorious.igdbClientSecretFrom.key -}}
 {{- .Values.nexorious.igdbClientSecretFrom.key -}}
 {{- else -}}
@@ -204,15 +204,15 @@ IGDB_CLIENT_SECRET
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.databaseUrlSecretName" -}}
+{{- define "nexorious.databaseUrlSecretName" -}}
 {{- if and .Values.nexorious.databaseUrlFrom .Values.nexorious.databaseUrlFrom.name -}}
 {{- .Values.nexorious.databaseUrlFrom.name -}}
 {{- else -}}
-{{- include "nexorious-go.fullname" . }}-credentials
+{{- include "nexorious.fullname" . }}-credentials
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.databaseUrlSecretKey" -}}
+{{- define "nexorious.databaseUrlSecretKey" -}}
 {{- if and .Values.nexorious.databaseUrlFrom .Values.nexorious.databaseUrlFrom.key -}}
 {{- .Values.nexorious.databaseUrlFrom.key -}}
 {{- else -}}
@@ -220,15 +220,15 @@ DATABASE_URL
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.dbHostSecretName" -}}
+{{- define "nexorious.dbHostSecretName" -}}
 {{- if and .Values.nexorious.dbHostFrom .Values.nexorious.dbHostFrom.name -}}
 {{- .Values.nexorious.dbHostFrom.name -}}
 {{- else -}}
-{{- include "nexorious-go.fullname" . }}-credentials
+{{- include "nexorious.fullname" . }}-credentials
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.dbHostSecretKey" -}}
+{{- define "nexorious.dbHostSecretKey" -}}
 {{- if and .Values.nexorious.dbHostFrom .Values.nexorious.dbHostFrom.key -}}
 {{- .Values.nexorious.dbHostFrom.key -}}
 {{- else -}}
@@ -236,15 +236,15 @@ _nexorious_unused
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.dbPortSecretName" -}}
+{{- define "nexorious.dbPortSecretName" -}}
 {{- if and .Values.nexorious.dbPortFrom .Values.nexorious.dbPortFrom.name -}}
 {{- .Values.nexorious.dbPortFrom.name -}}
 {{- else -}}
-{{- include "nexorious-go.fullname" . }}-credentials
+{{- include "nexorious.fullname" . }}-credentials
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.dbPortSecretKey" -}}
+{{- define "nexorious.dbPortSecretKey" -}}
 {{- if and .Values.nexorious.dbPortFrom .Values.nexorious.dbPortFrom.key -}}
 {{- .Values.nexorious.dbPortFrom.key -}}
 {{- else -}}
@@ -252,15 +252,15 @@ _nexorious_unused
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.dbUserSecretName" -}}
+{{- define "nexorious.dbUserSecretName" -}}
 {{- if and .Values.nexorious.dbUserFrom .Values.nexorious.dbUserFrom.name -}}
 {{- .Values.nexorious.dbUserFrom.name -}}
 {{- else -}}
-{{- include "nexorious-go.fullname" . }}-credentials
+{{- include "nexorious.fullname" . }}-credentials
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.dbUserSecretKey" -}}
+{{- define "nexorious.dbUserSecretKey" -}}
 {{- if and .Values.nexorious.dbUserFrom .Values.nexorious.dbUserFrom.key -}}
 {{- .Values.nexorious.dbUserFrom.key -}}
 {{- else -}}
@@ -268,15 +268,15 @@ _nexorious_unused
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.dbPasswordSecretName" -}}
+{{- define "nexorious.dbPasswordSecretName" -}}
 {{- if and .Values.nexorious.dbPasswordFrom .Values.nexorious.dbPasswordFrom.name -}}
 {{- .Values.nexorious.dbPasswordFrom.name -}}
 {{- else -}}
-{{- include "nexorious-go.fullname" . }}-credentials
+{{- include "nexorious.fullname" . }}-credentials
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.dbPasswordSecretKey" -}}
+{{- define "nexorious.dbPasswordSecretKey" -}}
 {{- if and .Values.nexorious.dbPasswordFrom .Values.nexorious.dbPasswordFrom.key -}}
 {{- .Values.nexorious.dbPasswordFrom.key -}}
 {{- else -}}
@@ -284,15 +284,15 @@ _nexorious_unused
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.dbNameSecretName" -}}
+{{- define "nexorious.dbNameSecretName" -}}
 {{- if and .Values.nexorious.dbNameFrom .Values.nexorious.dbNameFrom.name -}}
 {{- .Values.nexorious.dbNameFrom.name -}}
 {{- else -}}
-{{- include "nexorious-go.fullname" . }}-credentials
+{{- include "nexorious.fullname" . }}-credentials
 {{- end -}}
 {{- end }}
 
-{{- define "nexorious-go.dbNameSecretKey" -}}
+{{- define "nexorious.dbNameSecretKey" -}}
 {{- if and .Values.nexorious.dbNameFrom .Values.nexorious.dbNameFrom.key -}}
 {{- .Values.nexorious.dbNameFrom.key -}}
 {{- else -}}

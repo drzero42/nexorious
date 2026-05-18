@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "nexorious-go Helm Chart Values",
+  "title": "nexorious Helm Chart Values",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -19,11 +19,11 @@
         },
         "igdbClientId": {
           "type": "string",
-          "description": "IGDB API client ID. Required — nexorious-go will not function without valid IGDB credentials."
+          "description": "IGDB API client ID. Required — nexorious will not function without valid IGDB credentials."
         },
         "igdbClientSecret": {
           "type": "string",
-          "description": "IGDB API client secret. Required — nexorious-go will not function without valid IGDB credentials."
+          "description": "IGDB API client secret. Required — nexorious will not function without valid IGDB credentials."
         },
         "databaseUrl": {
           "type": "string",

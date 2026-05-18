@@ -1,27 +1,27 @@
 # =============================================================================
-# nexorious-go Helm Chart Values
+# nexorious Helm Chart Values
 # =============================================================================
 # Based on the bjw-s common library: https://bjw-s-labs.github.io/helm-charts/
 #
-# Default release name assumed: nexorious-go
-# Install with: helm install nexorious-go ./charts/nexorious-go
+# Default release name assumed: nexorious
+# Install with: helm install nexorious ./charts/nexorious
 #
 # If using a different release name, set:
-#   global.fullnameOverride: nexorious-go
+#   global.fullnameOverride: nexorious
 # =============================================================================
 
 # -- Global values used by the bjw-s common library.
 # fullnameOverride: set this if installing with a release name other than
-# "nexorious-go" to keep service names predictable (e.g. nexorious-go-nexorious,
-# nexorious-go-postgresql).
+# "nexorious" to keep service names predictable (e.g. nexorious-nexorious,
+# nexorious-postgresql).
 global: {}
 
-# -- Custom nexorious-go configuration (not part of the common library)
+# -- Custom nexorious configuration (not part of the common library)
 nexorious:
   # -- JWT signing secret key. REQUIRED. Generate with: openssl rand -hex 32
   secretKey: "change-me-in-production"
 
-  # -- IGDB API client ID. REQUIRED. nexorious-go will not function without valid IGDB credentials.
+  # -- IGDB API client ID. REQUIRED. nexorious will not function without valid IGDB credentials.
   # -- Obtain from: https://api.igdb.com/v4/getting-started
   igdbClientId: ""
 
@@ -147,7 +147,7 @@ controllers:
           POSTGRES_PASSWORD:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.credentialsSecretName" . }}'
+                name: '{{ include "nexorious.credentialsSecretName" . }}'
                 key: POSTGRES_PASSWORD
           PGDATA: /var/lib/postgresql/data/pgdata
         securityContext:
@@ -214,7 +214,7 @@ controllers:
     initContainers:
       migrate:
         image:
-          repository: ghcr.io/drzero42/nexorious-go
+          repository: ghcr.io/drzero42/nexorious
           tag: "{{ .Chart.AppVersion }}"
           pullPolicy: IfNotPresent
         command:
@@ -241,58 +241,58 @@ controllers:
           SECRET_KEY:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.secretKeySecretName" . }}'
-                key: '{{ include "nexorious-go.secretKeySecretKey" . }}'
+                name: '{{ include "nexorious.secretKeySecretName" . }}'
+                key: '{{ include "nexorious.secretKeySecretKey" . }}'
           IGDB_CLIENT_ID:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.igdbClientIdSecretName" . }}'
-                key: '{{ include "nexorious-go.igdbClientIdSecretKey" . }}'
+                name: '{{ include "nexorious.igdbClientIdSecretName" . }}'
+                key: '{{ include "nexorious.igdbClientIdSecretKey" . }}'
           IGDB_CLIENT_SECRET:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.igdbClientSecretSecretName" . }}'
-                key: '{{ include "nexorious-go.igdbClientSecretSecretKey" . }}'
+                name: '{{ include "nexorious.igdbClientSecretSecretName" . }}'
+                key: '{{ include "nexorious.igdbClientSecretSecretKey" . }}'
           DATABASE_URL:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.databaseUrlSecretName" . }}'
-                key: '{{ include "nexorious-go.databaseUrlSecretKey" . }}'
+                name: '{{ include "nexorious.databaseUrlSecretName" . }}'
+                key: '{{ include "nexorious.databaseUrlSecretKey" . }}'
                 optional: true
           DB_HOST:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.dbHostSecretName" . }}'
-                key: '{{ include "nexorious-go.dbHostSecretKey" . }}'
+                name: '{{ include "nexorious.dbHostSecretName" . }}'
+                key: '{{ include "nexorious.dbHostSecretKey" . }}'
                 optional: true
           DB_PORT:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.dbPortSecretName" . }}'
-                key: '{{ include "nexorious-go.dbPortSecretKey" . }}'
+                name: '{{ include "nexorious.dbPortSecretName" . }}'
+                key: '{{ include "nexorious.dbPortSecretKey" . }}'
                 optional: true
           DB_USER:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.dbUserSecretName" . }}'
-                key: '{{ include "nexorious-go.dbUserSecretKey" . }}'
+                name: '{{ include "nexorious.dbUserSecretName" . }}'
+                key: '{{ include "nexorious.dbUserSecretKey" . }}'
                 optional: true
           DB_PASSWORD:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.dbPasswordSecretName" . }}'
-                key: '{{ include "nexorious-go.dbPasswordSecretKey" . }}'
+                name: '{{ include "nexorious.dbPasswordSecretName" . }}'
+                key: '{{ include "nexorious.dbPasswordSecretKey" . }}'
                 optional: true
           DB_NAME:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.dbNameSecretName" . }}'
-                key: '{{ include "nexorious-go.dbNameSecretKey" . }}'
+                name: '{{ include "nexorious.dbNameSecretName" . }}'
+                key: '{{ include "nexorious.dbNameSecretKey" . }}'
                 optional: true
     containers:
       main:
         image:
-          repository: ghcr.io/drzero42/nexorious-go
+          repository: ghcr.io/drzero42/nexorious
           tag: "{{ .Chart.AppVersion }}"
           pullPolicy: IfNotPresent
         command:
@@ -321,53 +321,53 @@ controllers:
           SECRET_KEY:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.secretKeySecretName" . }}'
-                key: '{{ include "nexorious-go.secretKeySecretKey" . }}'
+                name: '{{ include "nexorious.secretKeySecretName" . }}'
+                key: '{{ include "nexorious.secretKeySecretKey" . }}'
           IGDB_CLIENT_ID:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.igdbClientIdSecretName" . }}'
-                key: '{{ include "nexorious-go.igdbClientIdSecretKey" . }}'
+                name: '{{ include "nexorious.igdbClientIdSecretName" . }}'
+                key: '{{ include "nexorious.igdbClientIdSecretKey" . }}'
           IGDB_CLIENT_SECRET:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.igdbClientSecretSecretName" . }}'
-                key: '{{ include "nexorious-go.igdbClientSecretSecretKey" . }}'
+                name: '{{ include "nexorious.igdbClientSecretSecretName" . }}'
+                key: '{{ include "nexorious.igdbClientSecretSecretKey" . }}'
           DATABASE_URL:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.databaseUrlSecretName" . }}'
-                key: '{{ include "nexorious-go.databaseUrlSecretKey" . }}'
+                name: '{{ include "nexorious.databaseUrlSecretName" . }}'
+                key: '{{ include "nexorious.databaseUrlSecretKey" . }}'
                 optional: true
           DB_HOST:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.dbHostSecretName" . }}'
-                key: '{{ include "nexorious-go.dbHostSecretKey" . }}'
+                name: '{{ include "nexorious.dbHostSecretName" . }}'
+                key: '{{ include "nexorious.dbHostSecretKey" . }}'
                 optional: true
           DB_PORT:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.dbPortSecretName" . }}'
-                key: '{{ include "nexorious-go.dbPortSecretKey" . }}'
+                name: '{{ include "nexorious.dbPortSecretName" . }}'
+                key: '{{ include "nexorious.dbPortSecretKey" . }}'
                 optional: true
           DB_USER:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.dbUserSecretName" . }}'
-                key: '{{ include "nexorious-go.dbUserSecretKey" . }}'
+                name: '{{ include "nexorious.dbUserSecretName" . }}'
+                key: '{{ include "nexorious.dbUserSecretKey" . }}'
                 optional: true
           DB_PASSWORD:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.dbPasswordSecretName" . }}'
-                key: '{{ include "nexorious-go.dbPasswordSecretKey" . }}'
+                name: '{{ include "nexorious.dbPasswordSecretName" . }}'
+                key: '{{ include "nexorious.dbPasswordSecretKey" . }}'
                 optional: true
           DB_NAME:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious-go.dbNameSecretName" . }}'
-                key: '{{ include "nexorious-go.dbNameSecretKey" . }}'
+                name: '{{ include "nexorious.dbNameSecretName" . }}'
+                key: '{{ include "nexorious.dbNameSecretKey" . }}'
                 optional: true
         probes:
           liveness:

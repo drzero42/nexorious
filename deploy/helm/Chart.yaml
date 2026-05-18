@@ -1,5 +1,5 @@
 apiVersion: v2
-name: nexorious-go
+name: nexorious
 description: Self-hosted game collection (Go port)
 type: application
 version: 0.1.0
@@ -9,9 +9,9 @@ version: 0.1.0
 # initContainers.migrate.image.tag) to pin a specific release.
 appVersion: "latest"
 kubeVersion: ">=1.28.0-0"
-home: https://github.com/drzero42/nexorious-go
+home: https://github.com/drzero42/nexorious
 sources:
-  - https://github.com/drzero42/nexorious-go
+  - https://github.com/drzero42/nexorious
 maintainers:
   - name: Nexorious
 keywords:
