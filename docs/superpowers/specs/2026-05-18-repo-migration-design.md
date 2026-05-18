@@ -105,7 +105,7 @@ Renovate's existing branches on nexorious will be closed and cleaned up automati
 
 ## Phase 4: Issues migration
 
-Transfer 9 open issues from `drzero42/nexorious-go` to `drzero42/nexorious`:
+Transfer 8 open issues from `drzero42/nexorious-go` to `drzero42/nexorious`:
 
 | # | Title | Labels |
 |---|-------|--------|
@@ -117,7 +117,6 @@ Transfer 9 open issues from `drzero42/nexorious-go` to `drzero42/nexorious`:
 | 33 | Use knip to declutter frontend | — |
 | 31 | Replace containsString with slices.Contains in igdb/keywords.go | — |
 | 25 | Add MCP support | enhancement |
-| 24 | Epic Games Store sync | enhancement |
 
 For each issue:
 1. Check if the label exists on nexorious; create it if not
