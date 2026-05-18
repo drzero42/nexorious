@@ -22,6 +22,7 @@ import (
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/scheduler"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
+	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
@@ -166,6 +167,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Steam: steamsvc.NewClient(),
 		PSN:   psnsvc.NewClient(),
 		Epic:  &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: db},
+		GOG:   gogsvc.NewClient(),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
@@ -234,6 +236,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				Steam: steamsvc.NewClient(),
 				PSN:   psnsvc.NewClient(),
 				Epic:  &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: newDB},
+				GOG:   gogsvc.NewClient(),
 			}
 			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
 				DB:         newDB,
