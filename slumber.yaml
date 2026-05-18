@@ -589,6 +589,40 @@ requests:
         url: "{{base_url}}/api/sync/psn/disconnect"
         $ref: "#/.authenticated"
 
+      epic_connect:
+        name: Epic Connect
+        method: POST
+        url: "{{base_url}}/api/sync/epic/connect"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            auth_code: "{{prompt(message='Epic Auth Code', sensitive=true)}}"
+
+      epic_connection:
+        name: Epic Connection Status
+        method: GET
+        url: "{{base_url}}/api/sync/epic/connection"
+        $ref: "#/.authenticated"
+
+      epic_disconnect:
+        name: Epic Disconnect
+        method: DELETE
+        url: "{{base_url}}/api/sync/epic/disconnect"
+        $ref: "#/.authenticated"
+
+      trigger_epic:
+        name: Trigger Epic Sync
+        method: POST
+        url: "{{base_url}}/api/sync/epic"
+        $ref: "#/.authenticated"
+
+      epic_sync_status:
+        name: Epic Sync Status
+        method: GET
+        url: "{{base_url}}/api/sync/epic/status"
+        $ref: "#/.authenticated"
+
       trigger_steam:
         name: Trigger Steam Sync
         method: POST

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -177,13 +178,14 @@ type ExternalGame struct {
 type UserSyncConfig struct {
 	bun.BaseModel `bun:"table:user_sync_configs"`
 
-	ID                    string     `bun:"id,pk"                  json:"id"`
-	UserID                string     `bun:"user_id,notnull"         json:"user_id"`
-	Storefront            string     `bun:"storefront,notnull"      json:"storefront"`
-	Frequency             string     `bun:"frequency,notnull"       json:"frequency"`
-	AutoAdd               bool       `bun:"auto_add,notnull"        json:"auto_add"`
-	StorefrontCredentials *string    `bun:"storefront_credentials"  json:"-"`
-	LastSyncedAt          *time.Time `bun:"last_synced_at"          json:"last_synced_at"`
-	CreatedAt             time.Time  `bun:"created_at,notnull"      json:"created_at"`
-	UpdatedAt             time.Time  `bun:"updated_at,notnull"      json:"updated_at"`
+	ID                    string          `bun:"id,pk"                  json:"id"`
+	UserID                string          `bun:"user_id,notnull"         json:"user_id"`
+	Storefront            string          `bun:"storefront,notnull"      json:"storefront"`
+	Frequency             string          `bun:"frequency,notnull"       json:"frequency"`
+	AutoAdd               bool            `bun:"auto_add,notnull"        json:"auto_add"`
+	StorefrontCredentials *string         `bun:"storefront_credentials"          json:"-"`
+	EpicLegendaryState    json.RawMessage `bun:"epic_legendary_state,type:jsonb" json:"-"`
+	LastSyncedAt          *time.Time      `bun:"last_synced_at"                  json:"last_synced_at"`
+	CreatedAt             time.Time       `bun:"created_at,notnull"      json:"created_at"`
+	UpdatedAt             time.Time       `bun:"updated_at,notnull"      json:"updated_at"`
 }

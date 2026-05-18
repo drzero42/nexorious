@@ -17,10 +17,11 @@ import (
 
 	"github.com/drzero42/nexorious-go/internal/api"
 	"github.com/drzero42/nexorious-go/internal/backup"
-	"github.com/drzero42/nexorious-go/internal/migrate"
 	maint "github.com/drzero42/nexorious-go/internal/middleware"
+	"github.com/drzero42/nexorious-go/internal/migrate"
 	"github.com/drzero42/nexorious-go/internal/ratelimit"
 	"github.com/drzero42/nexorious-go/internal/scheduler"
+	epicsvc "github.com/drzero42/nexorious-go/internal/services/epic"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
@@ -164,6 +165,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		DB:    db,
 		Steam: steamsvc.NewClient(),
 		PSN:   psnsvc.NewClient(),
+		Epic:  &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: db},
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
@@ -188,8 +190,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, &scheduler.CheckScheduledBackupWorker{DB: db, BackupSvc: backupSvc})
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
-		Workers: workers,
-		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
+		Workers:      workers,
+		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
 	})
 	if err != nil {
@@ -231,6 +233,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				DB:    newDB,
 				Steam: steamsvc.NewClient(),
 				PSN:   psnsvc.NewClient(),
+				Epic:  &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: newDB},
 			}
 			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
 				DB:         newDB,
@@ -255,8 +258,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			river.AddWorker(newWorkers, &scheduler.CheckScheduledBackupWorker{DB: newDB, BackupSvc: backupSvc})
 
 			newClient, err := river.NewClient(riverpgxv5.New(newPgxPool), &river.Config{
-				Workers: newWorkers,
-				Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
+				Workers:      newWorkers,
+				Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
 			})
 			if err != nil {

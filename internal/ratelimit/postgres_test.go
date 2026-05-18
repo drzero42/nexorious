@@ -24,7 +24,7 @@ func setupTestDB(t *testing.T) *bun.DB {
 	ctx := context.Background()
 
 	ctr, err := tcpostgres.Run(ctx,
-		"postgres:17-alpine",
+		"postgres:18-alpine",
 		tcpostgres.WithDatabase("nexorious_test"),
 		tcpostgres.WithUsername("test"),
 		tcpostgres.WithPassword("test"),

@@ -139,14 +139,6 @@ function SyncDetailPage() {
     username?: string;
   } | undefined;
 
-  // Extract Epic credentials from user preferences
-  const epicPrefs = currentUser?.preferences?.epic as
-    | {
-        display_name?: string;
-        account_id?: string;
-      }
-    | undefined;
-
   // Extract PSN credentials from user preferences
   const psnPrefs = currentUser?.preferences?.psn as
     | {
@@ -434,8 +426,6 @@ function SyncDetailPage() {
       {platform === SyncPlatform.EPIC && (
         <EpicConnectionCard
           isConfigured={config.isConfigured}
-          displayName={epicPrefs?.display_name}
-          accountId={epicPrefs?.account_id}
           onConnectionChange={() => {
             queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
             queryClient.invalidateQueries({ queryKey: authKeys.me() });

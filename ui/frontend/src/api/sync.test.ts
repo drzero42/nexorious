@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as syncApi from './sync';
 import {
-  startEpicAuth,
-  completeEpicAuth,
-  checkEpicAuth,
+  connectEpic,
+  getEpicConnection,
   disconnectEpic,
 } from './sync';
 import { api } from './client';
@@ -149,101 +148,73 @@ describe('syncApi', () => {
   });
 
   describe('Epic Auth API', () => {
-    it('should start Epic auth and return URL', async () => {
+    it('should connect Epic with auth code and return account info', async () => {
       const mockResponse = {
-        auth_url: 'https://www.epicgames.com/id/api/redirect',
-        instructions: 'Please visit the URL and login',
-      };
-
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
-
-      const result = await startEpicAuth();
-
-      expect(api.post).toHaveBeenCalledWith('/sync/epic/auth/start');
-      expect(result).toEqual({
-        authUrl: 'https://www.epicgames.com/id/api/redirect',
-        instructions: 'Please visit the URL and login',
-      });
-    });
-
-    it('should complete Epic auth with valid code', async () => {
-      const mockResponse = {
-        valid: true,
         display_name: 'EpicUser123',
-        error: null,
+        account_id: 'acct-abc',
       };
 
       vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
 
-      const result = await completeEpicAuth('TESTCODE123');
+      const result = await connectEpic('TESTCODE123');
 
-      expect(api.post).toHaveBeenCalledWith('/sync/epic/auth/complete', {
-        code: 'TESTCODE123',
+      expect(api.post).toHaveBeenCalledWith('/sync/epic/connect', {
+        auth_code: 'TESTCODE123',
       });
       expect(result).toEqual({
-        valid: true,
         displayName: 'EpicUser123',
-        error: null,
+        accountId: 'acct-abc',
       });
     });
 
-    it('should handle invalid auth code', async () => {
+    it('should get Epic connection status when connected', async () => {
       const mockResponse = {
-        valid: false,
-        display_name: null,
-        error: 'invalid_code',
-      };
-
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
-
-      const result = await completeEpicAuth('BADCODE');
-
-      expect(result).toEqual({
-        valid: false,
-        displayName: null,
-        error: 'invalid_code',
-      });
-    });
-
-    it('should check Epic auth status', async () => {
-      const mockResponse = {
-        is_authenticated: true,
+        connected: true,
+        disabled: false,
         display_name: 'EpicUser123',
+        account_id: 'acct-abc',
       };
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await checkEpicAuth();
+      const result = await getEpicConnection();
 
-      expect(api.get).toHaveBeenCalledWith('/sync/epic/auth/check');
+      expect(api.get).toHaveBeenCalledWith('/sync/epic/connection');
       expect(result).toEqual({
-        isAuthenticated: true,
+        connected: true,
+        disabled: false,
         displayName: 'EpicUser123',
+        accountId: 'acct-abc',
+        reason: undefined,
       });
     });
 
-    it('should disconnect Epic', async () => {
+    it('should get Epic connection status when disabled', async () => {
+      const mockResponse = {
+        connected: false,
+        disabled: true,
+        reason: 'legendary_not_configured',
+      };
+
+      vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
+
+      const result = await getEpicConnection();
+
+      expect(result).toEqual({
+        connected: false,
+        disabled: true,
+        displayName: undefined,
+        accountId: undefined,
+        reason: 'legendary_not_configured',
+      });
+    });
+
+    it('should disconnect Epic via DELETE /epic/disconnect', async () => {
       vi.mocked(api.delete).mockResolvedValueOnce(undefined);
 
       await disconnectEpic();
 
-      expect(api.delete).toHaveBeenCalledWith('/sync/epic/connection');
-    });
-
-    it('should transform snake_case to camelCase correctly', async () => {
-      const mockResponse = {
-        auth_url: 'https://example.com',
-        instructions: 'test',
-      };
-
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
-
-      const result = await startEpicAuth();
-
-      // Verify transformed keys
-      expect(result).toHaveProperty('authUrl');
-      expect(result).toHaveProperty('instructions');
-      expect(result).not.toHaveProperty('auth_url');
+      expect(api.delete).toHaveBeenCalledWith('/sync/epic/disconnect');
     });
   });
 });

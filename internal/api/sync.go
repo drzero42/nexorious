@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
@@ -44,6 +46,21 @@ type PSNAccountInfo struct {
 	Region    string
 }
 
+// EpicClient abstracts legendary CLI calls used during Epic account connection.
+type EpicClient interface {
+	// Authenticate runs legendary auth, returns account info and the resulting
+	// state snapshot. The caller stores the snapshot in the DB.
+	Authenticate(ctx context.Context, userID, authCode string) (*EpicAccountInfo, map[string]string, error)
+	Cleanup(ctx context.Context, userID string) error
+	Configured() bool
+}
+
+// EpicAccountInfo holds the Epic account details.
+type EpicAccountInfo struct {
+	DisplayName string
+	AccountID   string
+}
+
 var (
 	ErrInvalidNPSSOToken = errors.New("invalid npsso token")
 	ErrSteamRateLimited  = errors.New("steam rate limited")
@@ -52,7 +69,7 @@ var (
 
 var (
 	validConfigStorefronts  = map[string]bool{"steam": true, "psn": true, "epic": true}
-	validTriggerStorefronts = map[string]bool{"steam": true, "psn": true}
+	validTriggerStorefronts = map[string]bool{"steam": true, "psn": true, "epic": true}
 	supportedStorefronts    = []string{"steam", "psn", "epic"}
 )
 
@@ -142,11 +159,12 @@ type SyncHandler struct {
 	riverClient *river.Client[pgx.Tx]
 	steamClient SteamClient
 	psnClient   PSNClient
+	epicClient  EpicClient
 }
 
 // NewSyncHandler constructs a SyncHandler.
-func NewSyncHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient) *SyncHandler {
-	return &SyncHandler{db: db, riverClient: riverClient, steamClient: steam, psnClient: psn}
+func NewSyncHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient, epic EpicClient) *SyncHandler {
+	return &SyncHandler{db: db, riverClient: riverClient, steamClient: steam, psnClient: psn, epicClient: epic}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
@@ -157,6 +175,9 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/psn/configure", h.HandlePSNConfigure)
 	g.GET("/psn/connection", h.HandleGetPSNStatus)
 	g.DELETE("/psn/disconnect", h.HandlePSNDisconnect)
+	g.POST("/epic/connect", h.HandleEpicConnect)
+	g.DELETE("/epic/disconnect", h.HandleEpicDisconnect)
+	g.GET("/epic/connection", h.HandleGetEpicConnection)
 	g.GET("/ignored", h.HandleListIgnored)
 	g.POST("/ignored/:id", h.HandleSkipGame)
 	g.DELETE("/ignored/:id", h.HandleUnskipGame)
@@ -250,7 +271,7 @@ func (h *SyncHandler) HandleGetConfig(c *echo.Context) error {
 		Frequency: row.Frequency, AutoAdd: row.AutoAdd,
 		LastSyncedAt: row.LastSyncedAt,
 		IsConfigured: row.StorefrontCredentials != nil,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		CreatedAt:    row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	})
 }
 
@@ -311,7 +332,7 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 		Frequency: row.Frequency, AutoAdd: row.AutoAdd,
 		LastSyncedAt: row.LastSyncedAt,
 		IsConfigured: row.StorefrontCredentials != nil,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		CreatedAt:    row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	})
 }
 
@@ -506,9 +527,12 @@ func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
 		Frequency: "manual", StorefrontCredentials: &credsStr,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	_, _ = h.db.NewInsert().Model(row).
+	if _, err := h.db.NewInsert().Model(row).
 		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, updated_at = EXCLUDED.updated_at").
-		Exec(context.Background())
+		Exec(context.Background()); err != nil {
+		slog.Error("psn: persist storefront credentials failed", "user_id", userID, "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist PSN connection")
+	}
 
 	return c.JSON(http.StatusOK, psnConfigureResponse{
 		Success:   true,
@@ -565,6 +589,126 @@ func (h *SyncHandler) HandlePSNDisconnect(c *echo.Context) error {
 		userID,
 	).Exec(context.Background())
 	return c.NoContent(http.StatusNoContent)
+}
+
+// HandleEpicConnect exchanges an Epic auth code via legendary and stores the
+// resulting legendary state snapshot in the DB.
+func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	if h.epicClient == nil || !h.epicClient.Configured() {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "Epic sync not configured (LEGENDARY_WORK_DIR unset)")
+	}
+
+	var body struct {
+		AuthCode string `json:"auth_code"`
+	}
+	if err := c.Bind(&body); err != nil || body.AuthCode == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "auth_code is required")
+	}
+
+	info, snapshot, err := h.epicClient.Authenticate(c.Request().Context(), userID, body.AuthCode)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("epic auth failed: %v", err))
+	}
+	if info == nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "epic: user.json missing after auth")
+	}
+
+	snapshotJSON, _ := json.Marshal(snapshot)
+	creds := map[string]string{
+		"display_name": info.DisplayName,
+		"account_id":   info.AccountID,
+	}
+	credsJSON, _ := json.Marshal(creds)
+	credsStr := string(credsJSON)
+	now := time.Now().UTC()
+
+	row := &models.UserSyncConfig{
+		ID:                    uuid.NewString(),
+		UserID:                userID,
+		Storefront:            "epic",
+		Frequency:             "manual",
+		StorefrontCredentials: &credsStr,
+		EpicLegendaryState:    snapshotJSON,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	if _, err := h.db.NewInsert().Model(row).
+		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, epic_legendary_state = EXCLUDED.epic_legendary_state, updated_at = EXCLUDED.updated_at").
+		Exec(context.Background()); err != nil {
+		slog.Error("epic: persist storefront credentials failed", "user_id", userID, "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Epic connection")
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"display_name": info.DisplayName,
+		"account_id":   info.AccountID,
+	})
+}
+
+// HandleEpicDisconnect clears the user's Epic credentials and snapshot, and
+// removes the legendary working directory.
+func (h *SyncHandler) HandleEpicDisconnect(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	ctx := context.Background()
+	_, _ = h.db.NewRaw(
+		`UPDATE user_sync_configs SET storefront_credentials = NULL, epic_legendary_state = NULL, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
+		userID,
+	).Exec(ctx)
+	if h.epicClient != nil {
+		_ = h.epicClient.Cleanup(ctx, userID)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// HandleGetEpicConnection returns the current Epic connection status for the
+// authenticated user.
+func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	if h.epicClient == nil || !h.epicClient.Configured() {
+		return c.JSON(http.StatusOK, map[string]any{
+			"connected": false,
+			"disabled":  true,
+			"reason":    "legendary_not_configured",
+		})
+	}
+
+	var row models.UserSyncConfig
+	err := h.db.NewSelect().Model(&row).
+		Where("user_id = ? AND storefront = 'epic'", userID).
+		Scan(context.Background())
+	if errors.Is(err, sql.ErrNoRows) {
+		return c.JSON(http.StatusOK, map[string]any{"connected": false, "disabled": false})
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get epic config")
+	}
+	if row.StorefrontCredentials == nil {
+		return c.JSON(http.StatusOK, map[string]any{"connected": false, "disabled": false})
+	}
+
+	var creds struct {
+		DisplayName string `json:"display_name"`
+		AccountID   string `json:"account_id"`
+	}
+	_ = json.Unmarshal([]byte(*row.StorefrontCredentials), &creds)
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"connected":    true,
+		"disabled":     false,
+		"display_name": creds.DisplayName,
+		"account_id":   creds.AccountID,
+	})
 }
 
 func (h *SyncHandler) HandleListIgnored(c *echo.Context) error {

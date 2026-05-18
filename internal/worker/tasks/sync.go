@@ -15,13 +15,13 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious-go/internal/db/models"
+	epicsvc "github.com/drzero42/nexorious-go/internal/services/epic"
 	igdbsvc "github.com/drzero42/nexorious-go/internal/services/igdb"
 	"github.com/drzero42/nexorious-go/internal/services/matching"
 	"github.com/drzero42/nexorious-go/internal/services/platformresolution"
 	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
 )
-
 
 // SteamLibraryAdapter fetches the Steam game library.
 type SteamLibraryAdapter interface {
@@ -34,6 +34,76 @@ type PSNLibraryAdapter interface {
 }
 
 const psnLibraryBatchSize = 10
+
+// EpicLibraryAdapter fetches the Epic Games Store library via Legendary.
+type EpicLibraryAdapter interface {
+	GetLibrary(
+		ctx context.Context,
+		userID string,
+		onBatch func([]epicsvc.ExternalLibraryEntry) error,
+	) error
+}
+
+// epicSubprocessClient is the subset of *epicsvc.Client that EpicClientAdapter
+// depends on. Declared as an interface so tests can substitute a fake without
+// invoking the real legendary subprocess.
+type epicSubprocessClient interface {
+	Configured() bool
+	RestoreSnapshot(userID string, snapshot map[string]string) error
+	GetLibrary(ctx context.Context, userID string, onBatch func([]epicsvc.ExternalLibraryEntry) error) error
+	CaptureSnapshot(userID string) (map[string]string, error)
+}
+
+// EpicClientAdapter implements EpicLibraryAdapter.
+// It loads the legendary state snapshot from the DB, restores it to disk,
+// calls the epic.Client, then captures and persists the updated snapshot.
+type EpicClientAdapter struct {
+	Client epicSubprocessClient
+	DB     *bun.DB
+}
+
+func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBatch func([]epicsvc.ExternalLibraryEntry) error) error {
+	if !a.Client.Configured() {
+		return fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
+	}
+
+	// 1. Load snapshot from DB.
+	var snapshotJSON []byte
+	if err := a.DB.NewRaw(
+		`SELECT epic_legendary_state FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		userID,
+	).Scan(ctx, &snapshotJSON); err != nil || len(snapshotJSON) == 0 {
+		return fmt.Errorf("epic: no legendary state found for user (not connected)")
+	}
+	var snapshot map[string]string
+	if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
+		return fmt.Errorf("epic: unmarshal legendary state: %w", err)
+	}
+
+	// 2. Restore snapshot to disk.
+	if err := a.Client.RestoreSnapshot(userID, snapshot); err != nil {
+		return fmt.Errorf("epic: restore snapshot: %w", err)
+	}
+
+	// 3. Fetch library.
+	fetchErr := a.Client.GetLibrary(ctx, userID, onBatch)
+
+	// 4. Capture updated snapshot regardless of fetch error.
+	newSnapshot, captureErr := a.Client.CaptureSnapshot(userID)
+	if captureErr != nil {
+		slog.Error("epic: capture snapshot after GetLibrary failed", "user_id", userID, "err", captureErr)
+	} else if len(newSnapshot) > 0 {
+		newJSON, _ := json.Marshal(newSnapshot)
+		if _, err := a.DB.NewRaw(
+			`UPDATE user_sync_configs SET epic_legendary_state = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
+			string(newJSON), userID,
+		).Exec(context.Background()); err != nil {
+			slog.Error("epic: persist updated snapshot failed", "user_id", userID, "err", err)
+		}
+	}
+
+	return fetchErr
+}
 
 // ── DispatchSync ──────────────────────────────────────────────────────────────
 
@@ -63,6 +133,7 @@ type DispatchSyncWorker struct {
 	DB          *bun.DB
 	Steam       SteamLibraryAdapter
 	PSN         PSNLibraryAdapter
+	Epic        EpicLibraryAdapter
 	RiverClient *river.Client[pgx.Tx]
 }
 
@@ -84,7 +155,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		failSyncJob(ctx, w.DB, p.JobID, "no sync config found")
 		return nil
 	}
-	if cfg.StorefrontCredentials == nil {
+	if cfg.StorefrontCredentials == nil && p.Storefront != "epic" {
 		failSyncJob(ctx, w.DB, p.JobID, "credentials not configured")
 		return nil
 	}
@@ -260,6 +331,81 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				slog.Error("dispatch_sync: psn library fetch failed", "job_id", p.JobID, "err", err)
 				failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("psn_fetch_error: %v", err))
 			}
+			return nil
+		}
+
+	case "epic":
+		if w.Epic == nil {
+			failSyncJob(ctx, w.DB, p.JobID, "Epic sync not configured (LEGENDARY_WORK_DIR unset)")
+			return nil
+		}
+		slog.Info("dispatch_sync: starting epic library fetch", "job_id", p.JobID, "user_id", p.UserID)
+		if err := w.Epic.GetLibrary(ctx, p.UserID,
+			func(batch []epicsvc.ExternalLibraryEntry) error {
+				if len(batch) == 0 {
+					return nil
+				}
+				slog.Info("dispatch_sync: epic batch received", "job_id", p.JobID, "batch_size", len(batch))
+				batchExtIDs := make([]string, 0, len(batch))
+				for _, e := range batch {
+					fetchedIDs[e.ExternalID] = struct{}{}
+					batchExtIDs = append(batchExtIDs, e.ExternalID)
+					ownership := e.OwnershipStatus
+					upsertNow := time.Now().UTC()
+					row := &models.ExternalGame{
+						ID:              uuid.NewString(),
+						UserID:          p.UserID,
+						Storefront:      p.Storefront,
+						ExternalID:      e.ExternalID,
+						Title:           e.Title,
+						IsAvailable:     true,
+						IsSubscription:  false,
+						OwnershipStatus: &ownership,
+						RawPlatform:     "pc-windows",
+						CreatedAt:       upsertNow,
+						UpdatedAt:       upsertNow,
+					}
+					if _, err := w.DB.NewInsert().Model(row).
+						On("CONFLICT (user_id, storefront, external_id) DO UPDATE SET title = EXCLUDED.title, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, raw_platform = EXCLUDED.raw_platform, is_available = true, updated_at = now()").
+						Exec(ctx); err != nil {
+						slog.Error("dispatch_sync: epic upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
+					}
+				}
+
+				var toProcess []models.ExternalGame
+				if err := w.DB.NewSelect().Model(&toProcess).
+					Where("user_id = ? AND storefront = ? AND is_available = true AND is_skipped = false AND external_id IN (?)",
+						p.UserID, p.Storefront, bun.List(batchExtIDs)).
+					Scan(ctx); err != nil {
+					slog.Error("dispatch_sync: epic re-query batch failed", "job_id", p.JobID, "err", err)
+				}
+				slog.Info("dispatch_sync: epic batch to dispatch", "job_id", p.JobID, "to_process", len(toProcess), "batch_size", len(batch))
+
+				for _, eg := range toProcess {
+					metaJSON, _ := json.Marshal(map[string]any{
+						"external_game_id": eg.ID,
+						"raw_platform":     "pc-windows",
+					})
+					itemID := uuid.NewString()
+					if _, err := w.DB.NewRaw(
+						`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+						 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+						 ON CONFLICT (job_id, item_key) DO NOTHING`,
+						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
+					).Exec(ctx); err != nil {
+						slog.Error("dispatch_sync: epic insert job_item failed", "job_id", p.JobID, "external_id", eg.ExternalID, "err", err)
+					}
+					if w.RiverClient != nil {
+						if _, err := w.RiverClient.Insert(ctx, ProcessSyncItemArgs{JobItemID: itemID}, nil); err != nil {
+							slog.Error("dispatch_sync: epic river insert failed", "job_id", p.JobID, "item_id", itemID, "err", err)
+						}
+					}
+				}
+				return nil
+			},
+		); err != nil {
+			slog.Error("dispatch_sync: epic library fetch failed", "job_id", p.JobID, "err", err)
+			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("epic_fetch_error: %v", err))
 			return nil
 		}
 
@@ -689,7 +835,9 @@ func syncCheckJobCompletion(ctx context.Context, db *bun.DB, rc *river.Client[pg
 		}
 
 		if !autoRetryDone {
-			type itemRow struct{ ID string `bun:"id"` }
+			type itemRow struct {
+				ID string `bun:"id"`
+			}
 			var resetItems []itemRow
 			if err := db.NewRaw(
 				`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL

@@ -43,7 +43,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSN
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, nil, steam, psn)
+	synch := api.NewSyncHandler(db, nil, steam, psn, (api.EpicClient)(nil))
 	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 	synch.RegisterRoutes(g)
 	return e
@@ -151,14 +151,27 @@ func TestSyncTrigger_CreatesJob(t *testing.T) {
 	}
 }
 
-func TestSyncTrigger_EpicReturns400(t *testing.T) {
+func TestSyncTrigger_EpicCreatesJob(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "trig-epic-1")
 
 	rec := postJSONAuth(t, e, "/api/sync/epic", nil, token)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for epic trigger, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for epic trigger, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["storefront"] != "epic" {
+		t.Fatalf("expected storefront=epic, got %v", resp["storefront"])
+	}
+	if resp["status"] != "queued" {
+		t.Fatalf("expected status=queued, got %v", resp["status"])
+	}
+	if resp["job_id"] == nil {
+		t.Fatal("expected job_id")
 	}
 }
 
@@ -977,5 +990,250 @@ func TestListExternalGames_AllStates(t *testing.T) {
 	}
 	if byID["eg-skipped"]["is_skipped"] != true {
 		t.Errorf("expected is_skipped=true for skipped game")
+	}
+}
+
+// ─── Epic connection-handler tests ────────────────────────────────────────────
+
+type stubEpicClient struct {
+	info       *api.EpicAccountInfo
+	snapshot   map[string]string
+	authErr    error
+	cleanupErr error
+	configured bool
+
+	authCalled    bool
+	cleanupCalled bool
+	cleanupUserID string
+}
+
+func (s *stubEpicClient) Authenticate(_ context.Context, _, _ string) (*api.EpicAccountInfo, map[string]string, error) {
+	s.authCalled = true
+	return s.info, s.snapshot, s.authErr
+}
+
+func (s *stubEpicClient) Cleanup(_ context.Context, userID string) error {
+	s.cleanupCalled = true
+	s.cleanupUserID = userID
+	return s.cleanupErr
+}
+
+func (s *stubEpicClient) Configured() bool {
+	return s.configured
+}
+
+// newSyncTestAppWithEpic builds the sync app with a custom EpicClient. Used by
+// the Epic connection tests; other tests use newSyncTestApp which passes nil.
+func newSyncTestAppWithEpic(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient, epic api.EpicClient) interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+} {
+	t.Helper()
+	cfg := testCfg()
+	e := echo.New()
+	ah := api.NewAuthHandler(testDB, cfg)
+	e.POST("/api/auth/login", ah.HandleLogin)
+	synch := api.NewSyncHandler(db, nil, steam, psn, epic)
+	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	synch.RegisterRoutes(g)
+	return e
+}
+
+func TestHandleEpicConnect_503WhenNotConfigured(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubEpicClient{configured: false}
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, e, "epic-conn-503")
+
+	rec := postJSONAuth(t, e, "/api/sync/epic/connect", map[string]any{"auth_code": "abc"}, token)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if stub.authCalled {
+		t.Error("Authenticate must not be called when not configured")
+	}
+}
+
+func TestHandleEpicConnect_400OnMissingAuthCode(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubEpicClient{configured: true}
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, e, "epic-conn-400")
+
+	rec := postJSONAuth(t, e, "/api/sync/epic/connect", map[string]any{}, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if stub.authCalled {
+		t.Error("Authenticate must not be called when auth_code missing")
+	}
+}
+
+func TestHandleEpicConnect_400OnAuthError(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubEpicClient{configured: true, authErr: fmt.Errorf("legendary: invalid code")}
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, e, "epic-conn-auth-fail")
+
+	rec := postJSONAuth(t, e, "/api/sync/epic/connect", map[string]any{"auth_code": "bad"}, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleEpicConnect_500OnNilInfo(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubEpicClient{configured: true, info: nil, snapshot: map[string]string{"user.json": "{}"}}
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, e, "epic-conn-nil")
+
+	rec := postJSONAuth(t, e, "/api/sync/epic/connect", map[string]any{"auth_code": "ok"}, token)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestHandleEpicConnect_HappyPathPersistsConfig(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubEpicClient{
+		configured: true,
+		info:       &api.EpicAccountInfo{DisplayName: "EpicTester", AccountID: "acct-123"},
+		snapshot:   map[string]string{"user.json": `{"displayName":"EpicTester","account_id":"acct-123"}`},
+	}
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	userID, token := setupTagUser(t, testDB, e, "epic-conn-ok")
+
+	rec := postJSONAuth(t, e, "/api/sync/epic/connect", map[string]any{"auth_code": "ok"}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["display_name"] != "EpicTester" || resp["account_id"] != "acct-123" {
+		t.Errorf("unexpected response body: %v", resp)
+	}
+
+	var credsRaw string
+	var snapshotRaw string
+	err := testDB.NewRaw(
+		`SELECT storefront_credentials, epic_legendary_state::text FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		userID,
+	).Scan(context.Background(), &credsRaw, &snapshotRaw)
+	if err != nil {
+		t.Fatalf("scan user_sync_configs: %v", err)
+	}
+	if !strings.Contains(credsRaw, "EpicTester") || !strings.Contains(credsRaw, "acct-123") {
+		t.Errorf("storefront_credentials missing fields: %s", credsRaw)
+	}
+	if !strings.Contains(snapshotRaw, "user.json") {
+		t.Errorf("epic_legendary_state did not persist snapshot: %s", snapshotRaw)
+	}
+}
+
+func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubEpicClient{configured: true}
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	userID, token := setupTagUser(t, testDB, e, "epic-disc")
+
+	// Pre-populate a connected Epic row.
+	creds := `{"display_name":"X","account_id":"y"}`
+	snap := `{"user.json":"{}"}`
+	_, err := testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, epic_legendary_state, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?, ?::jsonb, now(), now())`,
+		"cfg-epic-disc", userID, creds, snap,
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("seed user_sync_configs: %v", err)
+	}
+
+	rec := deleteAuth(t, e, "/api/sync/epic/disconnect", token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !stub.cleanupCalled || stub.cleanupUserID != userID {
+		t.Errorf("expected Cleanup(%q) to be called, got called=%v user=%q", userID, stub.cleanupCalled, stub.cleanupUserID)
+	}
+
+	var credsAfter, snapAfter *string
+	err = testDB.NewRaw(
+		`SELECT storefront_credentials, epic_legendary_state::text FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		userID,
+	).Scan(context.Background(), &credsAfter, &snapAfter)
+	if err != nil {
+		t.Fatalf("scan after disconnect: %v", err)
+	}
+	if credsAfter != nil {
+		t.Errorf("expected storefront_credentials cleared, got %v", *credsAfter)
+	}
+	if snapAfter != nil {
+		t.Errorf("expected epic_legendary_state cleared, got %v", *snapAfter)
+	}
+}
+
+func TestHandleGetEpicConnection_DisabledWhenNotConfigured(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubEpicClient{configured: false}
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, e, "epic-status-disabled")
+
+	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["connected"] != false || resp["disabled"] != true || resp["reason"] != "legendary_not_configured" {
+		t.Errorf("unexpected response: %v", resp)
+	}
+}
+
+func TestHandleGetEpicConnection_NotConnectedWhenNoRow(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubEpicClient{configured: true}
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, e, "epic-status-noconn")
+
+	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["connected"] != false || resp["disabled"] != false {
+		t.Errorf("unexpected response: %v", resp)
+	}
+	if _, hasReason := resp["reason"]; hasReason {
+		t.Errorf("response should not include reason when not disabled, got: %v", resp)
+	}
+}
+
+func TestHandleGetEpicConnection_ConnectedReturnsAccountInfo(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubEpicClient{configured: true}
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	userID, token := setupTagUser(t, testDB, e, "epic-status-conn")
+
+	creds := `{"display_name":"PlayerOne","account_id":"acct-xyz"}`
+	_, err := testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?, now(), now())`,
+		"cfg-epic-conn", userID, creds,
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("seed user_sync_configs: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["connected"] != true || resp["disabled"] != false {
+		t.Errorf("expected connected=true disabled=false, got: %v", resp)
+	}
+	if resp["display_name"] != "PlayerOne" || resp["account_id"] != "acct-xyz" {
+		t.Errorf("expected display_name/account_id from creds, got: %v", resp)
 	}
 }

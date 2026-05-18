@@ -22,6 +22,7 @@ import (
 	"github.com/drzero42/nexorious-go/internal/config"
 	maint "github.com/drzero42/nexorious-go/internal/middleware"
 	migrate "github.com/drzero42/nexorious-go/internal/migrate"
+	epicsvc "github.com/drzero42/nexorious-go/internal/services/epic"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
@@ -287,7 +288,8 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		// Sync routes (all JWT-protected)
 		steamSvc := steamsvc.NewClient()
 		psnSvc := psnsvc.NewClient()
-		synch := NewSyncHandler(db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc})
+		epicSvc := epicsvc.NewClient(cfg.LegendaryWorkDir)
+		synch := NewSyncHandler(db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc})
 		syncGroup := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 		synch.RegisterRoutes(syncGroup)
 	}
@@ -335,6 +337,26 @@ func (a *psnClientAdapter) GetAccountInfo(ctx context.Context, npssoToken string
 		AccountID: info.AccountID,
 		Region:    info.Region,
 	}, nil
+}
+
+// epicClientAdapter bridges epicsvc.Client to the EpicClient interface
+// without creating an import cycle between internal/api and internal/services/epic.
+type epicClientAdapter struct{ c *epicsvc.Client }
+
+func (a *epicClientAdapter) Authenticate(ctx context.Context, userID, authCode string) (*EpicAccountInfo, map[string]string, error) {
+	info, snapshot, err := a.c.Authenticate(ctx, userID, authCode)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &EpicAccountInfo{DisplayName: info.DisplayName, AccountID: info.AccountID}, snapshot, nil
+}
+
+func (a *epicClientAdapter) Cleanup(ctx context.Context, userID string) error {
+	return a.c.Cleanup(ctx, userID)
+}
+
+func (a *epicClientAdapter) Configured() bool {
+	return a.c.Configured()
 }
 
 func spaHandler() echo.HandlerFunc {

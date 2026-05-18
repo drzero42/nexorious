@@ -8,9 +8,8 @@ import type {
   SyncStatus,
   ManualSyncResponse,
   SteamVerifyResponse,
-  EpicAuthStartResponse,
-  EpicAuthCompleteResponse,
-  EpicAuthCheckResponse,
+  EpicConnectResponse,
+  EpicConnectionResponse,
   PSNConfigureResponse,
   PSNStatusResponse,
 } from '@/types';
@@ -25,7 +24,7 @@ export const syncKeys = {
   config: (platform: SyncPlatform) => [...syncKeys.configs(), platform] as const,
   statuses: () => [...syncKeys.all, 'statuses'] as const,
   status: (platform: SyncPlatform) => [...syncKeys.statuses(), platform] as const,
-  epicAuth: () => [...syncKeys.all, 'epicAuth'] as const,
+  epicConnection: () => [...syncKeys.all, 'epicConnection'] as const,
   psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
   externalGames: (platform: SyncPlatform) => [...syncKeys.all, 'external-games', platform] as const,
 };
@@ -184,50 +183,38 @@ export function useResetSyncData() {
 // ============================================================================
 
 /**
- * Hook to start Epic authentication flow.
- * Returns auth URL for user to visit.
+ * Hook to fetch the current Epic Games Store connection status.
+ * Tells the UI whether Epic sync is disabled (LEGENDARY_WORK_DIR unset on
+ * the backend), connected, or simply not configured.
  */
-export function useStartEpicAuth() {
-  return useMutation<EpicAuthStartResponse, Error>({
-    mutationFn: syncApi.startEpicAuth,
-    onError: (error) => {
-      console.error('Failed to start Epic auth:', error);
-    },
-  });
-}
-
-/**
- * Hook to complete Epic authentication with code.
- * Invalidates sync configs on success.
- */
-export function useCompleteEpicAuth() {
-  const queryClient = useQueryClient();
-
-  return useMutation<EpicAuthCompleteResponse, Error, string>({
-    mutationFn: (code: string) => syncApi.completeEpicAuth(code),
-    onSuccess: () => {
-      // Invalidate sync configs to refresh connection status
-      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.EPIC) });
-    },
-  });
-}
-
-/**
- * Hook to check current Epic authentication status.
- * Cached for 5 minutes.
- */
-export function useCheckEpicAuth() {
-  return useQuery<EpicAuthCheckResponse, Error>({
-    queryKey: syncKeys.epicAuth(),
-    queryFn: syncApi.checkEpicAuth,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+export function useEpicConnection() {
+  return useQuery<EpicConnectionResponse, Error>({
+    queryKey: syncKeys.epicConnection(),
+    queryFn: syncApi.getEpicConnection,
+    staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
   });
 }
 
 /**
- * Hook to disconnect Epic integration.
+ * Hook to connect Epic Games Store by exchanging the legendary auth code.
+ * On success, refreshes connection status and the user's sync configs.
+ */
+export function useConnectEpic() {
+  const queryClient = useQueryClient();
+
+  return useMutation<EpicConnectResponse, Error, string>({
+    mutationFn: (authCode: string) => syncApi.connectEpic(authCode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.EPIC) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.epicConnection() });
+    },
+  });
+}
+
+/**
+ * Hook to disconnect Epic Games Store.
  * Invalidates all Epic-related queries on success.
  */
 export function useDisconnectEpic() {
@@ -236,10 +223,9 @@ export function useDisconnectEpic() {
   return useMutation<void, Error>({
     mutationFn: syncApi.disconnectEpic,
     onSuccess: () => {
-      // Invalidate all Epic-related queries
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
       queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.EPIC) });
-      queryClient.invalidateQueries({ queryKey: syncKeys.epicAuth() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.epicConnection() });
     },
     onError: (error) => {
       console.error('Failed to disconnect Epic:', error);

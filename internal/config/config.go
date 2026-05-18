@@ -99,6 +99,14 @@ type Config struct {
 
 	// RateLimiterBackend selects the rate limiter implementation: "local" or "postgres".
 	RateLimiterBackend string `env:"RATE_LIMITER_BACKEND" envDefault:"local"`
+
+	// -------------------------------------------------------------------------
+	// Epic / Legendary
+	// -------------------------------------------------------------------------
+
+	// LegendaryWorkDir is the base directory for per-user Legendary config dirs.
+	// When empty, Epic sync is disabled.
+	LegendaryWorkDir string `env:"LEGENDARY_WORK_DIR"`
 }
 
 // Load parses Config from environment variables and assembles DatabaseURL

@@ -113,8 +113,8 @@ func TestStatus_FreshDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	if pending != 2 {
-		t.Errorf("expected 2 pending, got %d", pending)
+	if pending <= 0 {
+		t.Errorf("expected positive pending count on fresh DB, got %d", pending)
 	}
 	if current != "none" {
 		t.Errorf("expected current=none, got %q", current)

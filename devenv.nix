@@ -84,14 +84,10 @@
     };
   };
 
-  # Podman socket for testcontainers-go integration tests.
-  # Ryuk doesn't work with rootless Podman; tests use defer container.Terminate() instead.
   enterShell = ''
-    export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
-    export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="/run/user/$(id -u)/podman/podman.sock"
-    export TESTCONTAINERS_RYUK_DISABLED="true"
     # Bun pgdriver doesn't inherit PGHOST/PGUSER like libpq — build the full DSN at shell time.
     export DATABASE_URL="postgresql://$USER@/nexorious?host=$PGHOST/.s.PGSQL.5432&sslmode=disable"
+    export LEGENDARY_WORK_DIR="$DEVENV_ROOT/.legendary-work"
   '';
 
   # See full reference at https://devenv.sh/reference/options/

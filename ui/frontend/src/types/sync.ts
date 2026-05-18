@@ -129,38 +129,32 @@ export const STEAM_VERIFY_ERROR_MESSAGES: Record<string, string> = {
 };
 
 // Epic Auth Types
-export interface EpicAuthStartResponse {
-  authUrl: string;
-  instructions: string;
+
+/**
+ * Legendary CLI's hardcoded OAuth URL. Users visit this in a browser, log in
+ * to Epic, and receive a short-lived authorization code which the backend
+ * exchanges via `legendary auth --code <code>`.
+ */
+export const EPIC_AUTH_URL =
+  'https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code';
+
+export interface EpicConnectRequest {
+  authCode: string;
 }
 
-export interface EpicAuthCompleteRequest {
-  code: string;
+export interface EpicConnectResponse {
+  displayName: string;
+  accountId: string;
 }
 
-export interface EpicAuthCompleteResponse {
-  valid: boolean;
-  displayName: string | null;
-  error: string | null;
+export interface EpicConnectionResponse {
+  connected: boolean;
+  disabled: boolean;
+  displayName?: string;
+  accountId?: string;
+  /** "legendary_not_configured" when disabled=true (LEGENDARY_WORK_DIR unset). */
+  reason?: string;
 }
-
-export interface EpicAuthCheckResponse {
-  isAuthenticated: boolean;
-  displayName: string | null;
-}
-
-export interface EpicConnectionInfo {
-  configured: boolean;
-  displayName: string | null;
-  accountId: string | null;
-}
-
-// Error message mapping for Epic auth
-export const EPIC_AUTH_ERROR_MESSAGES: Record<string, string> = {
-  invalid_code: 'Invalid authorization code. Please try again.',
-  network_error: 'Could not connect to Epic Games. Please try again.',
-  expired_code: 'Authorization code expired. Please request a new one.',
-};
 
 // PSN Auth Types
 export interface PSNConfigureRequest {

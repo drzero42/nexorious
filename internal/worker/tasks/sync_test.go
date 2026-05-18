@@ -17,6 +17,7 @@ import (
 
 	"github.com/drzero42/nexorious-go/internal/config"
 	"github.com/drzero42/nexorious-go/internal/ratelimit"
+	epicsvc "github.com/drzero42/nexorious-go/internal/services/epic"
 	"github.com/drzero42/nexorious-go/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
@@ -40,7 +41,7 @@ func (f *fakeSteamAdapter) GetOwnedGames(_ context.Context, _, _ string) ([]stea
 // fakePSNAdapter implements PSNLibraryAdapter for testing.
 type fakePSNAdapter struct {
 	pages [][]psnsvc.ExternalLibraryEntry // each inner slice is one batch/page
-	err   error                            // if non-nil, returned by GetLibrary
+	err   error                           // if non-nil, returned by GetLibrary
 }
 
 func (f *fakePSNAdapter) GetLibrary(_ context.Context, _ string, _ int, onBatch func([]psnsvc.ExternalLibraryEntry) error) error {
@@ -49,6 +50,24 @@ func (f *fakePSNAdapter) GetLibrary(_ context.Context, _ string, _ int, onBatch 
 	}
 	for _, page := range f.pages {
 		if err := onBatch(page); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// fakeEpicAdapter implements EpicLibraryAdapter for testing.
+type fakeEpicAdapter struct {
+	batches [][]epicsvc.ExternalLibraryEntry
+	err     error
+}
+
+func (f *fakeEpicAdapter) GetLibrary(_ context.Context, _ string, onBatch func([]epicsvc.ExternalLibraryEntry) error) error {
+	if f.err != nil {
+		return f.err
+	}
+	for _, batch := range f.batches {
+		if err := onBatch(batch); err != nil {
 			return err
 		}
 	}
@@ -1393,6 +1412,110 @@ func TestProcessSyncItem_PlaytimeHoursWrittenToUserGame(t *testing.T) {
 	}
 }
 
+func TestDispatchSync_Epic_HappyPath(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'epic', 'pending', 'high')`,
+		jobID, userID,
+	)
+	// Epic uses epic_legendary_state not storefront_credentials — insert row with NULL creds.
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic', 'manual')`,
+		configID, userID,
+	).Exec(ctx)
+
+	epicGames := []epicsvc.ExternalLibraryEntry{
+		{ExternalID: "Fortnite", Title: "Fortnite", OwnershipStatus: "owned"},
+		{ExternalID: "RocketLeague", Title: "Rocket League", OwnershipStatus: "owned"},
+	}
+
+	w := &tasks.DispatchSyncWorker{
+		DB:          testDB,
+		Steam:       &fakeSteamAdapter{},
+		PSN:         &fakePSNAdapter{},
+		Epic:        &fakeEpicAdapter{batches: [][]epicsvc.ExternalLibraryEntry{epicGames}},
+		RiverClient: nil,
+	}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify external_games rows were created.
+	var count int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'epic'`,
+		userID,
+	).Scan(ctx, &count)
+	if count != 2 {
+		t.Errorf("expected 2 external_games rows, got %d", count)
+	}
+
+	// Verify raw_platform is pc-windows.
+	var rawPlatform string
+	_ = testDB.NewRaw(
+		`SELECT raw_platform FROM external_games WHERE user_id = ? AND storefront = 'epic' AND external_id = 'Fortnite'`,
+		userID,
+	).Scan(ctx, &rawPlatform)
+	if rawPlatform != "pc-windows" {
+		t.Errorf("expected raw_platform=pc-windows, got %q", rawPlatform)
+	}
+
+	// Verify job is not failed.
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+	if status == "failed" {
+		t.Errorf("expected job not to be failed, got status=%q", status)
+	}
+}
+
+func TestDispatchSync_Epic_NilAdapter(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'epic', 'pending', 'high')`,
+		jobID, userID,
+	)
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic', 'manual')`,
+		configID, userID,
+	).Exec(ctx)
+
+	w := &tasks.DispatchSyncWorker{
+		DB:    testDB,
+		Steam: &fakeSteamAdapter{},
+		PSN:   &fakePSNAdapter{},
+		Epic:  nil, // not configured
+	}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+	if status != "failed" {
+		t.Errorf("expected job status=failed when Epic adapter is nil, got %q", status)
+	}
+}
+
 func TestProcessSyncItem_CancelledJobNotOverwritten(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
@@ -1429,5 +1552,234 @@ func TestProcessSyncItem_CancelledJobNotOverwritten(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
 	if status != "cancelled" {
 		t.Errorf("expected job status=cancelled after mid-flight worker, got %q", status)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// EpicClientAdapter — DB↔disk snapshot round-trip
+// ---------------------------------------------------------------------------
+
+// fakeEpicSubprocessClient satisfies the unexported epicSubprocessClient
+// interface that EpicClientAdapter depends on. It records calls and returns
+// canned values so the adapter can be tested without invoking legendary.
+type fakeEpicSubprocessClient struct {
+	configured       bool
+	restoreErr       error
+	getLibraryErr    error
+	captureSnapshot  map[string]string
+	captureErr       error
+	libraryBatches   [][]epicsvc.ExternalLibraryEntry
+	restoredSnapshot map[string]string
+
+	restoreCalled    bool
+	getLibraryCalled bool
+	captureCalled    bool
+}
+
+func (f *fakeEpicSubprocessClient) Configured() bool { return f.configured }
+
+func (f *fakeEpicSubprocessClient) RestoreSnapshot(_ string, snapshot map[string]string) error {
+	f.restoreCalled = true
+	f.restoredSnapshot = snapshot
+	return f.restoreErr
+}
+
+func (f *fakeEpicSubprocessClient) GetLibrary(_ context.Context, _ string, onBatch func([]epicsvc.ExternalLibraryEntry) error) error {
+	f.getLibraryCalled = true
+	if f.getLibraryErr != nil {
+		return f.getLibraryErr
+	}
+	for _, batch := range f.libraryBatches {
+		if err := onBatch(batch); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *fakeEpicSubprocessClient) CaptureSnapshot(_ string) (map[string]string, error) {
+	f.captureCalled = true
+	return f.captureSnapshot, f.captureErr
+}
+
+func seedEpicConfig(t *testing.T, userID string, snapshot map[string]string) {
+	t.Helper()
+	snapJSON, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	_, err = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, epic_legendary_state, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?::jsonb, now(), now())`,
+		uuid.NewString(), userID, string(snapJSON),
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("seed user_sync_configs: %v", err)
+	}
+}
+
+func readEpicSnapshot(t *testing.T, userID string) map[string]string {
+	t.Helper()
+	var snapJSON []byte
+	err := testDB.NewRaw(
+		`SELECT epic_legendary_state FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		userID,
+	).Scan(context.Background(), &snapJSON)
+	if err != nil {
+		t.Fatalf("read epic_legendary_state: %v", err)
+	}
+	if len(snapJSON) == 0 {
+		return nil
+	}
+	var out map[string]string
+	if err := json.Unmarshal(snapJSON, &out); err != nil {
+		t.Fatalf("unmarshal snapshot: %v", err)
+	}
+	return out
+}
+
+func TestEpicClientAdapter_NotConfigured_ReturnsErrorWithoutTouchingDB(t *testing.T) {
+	truncateAllTables(t)
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	fake := &fakeEpicSubprocessClient{configured: false}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+
+	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
+	if err == nil {
+		t.Fatal("expected error when not configured, got nil")
+	}
+	if fake.restoreCalled || fake.getLibraryCalled || fake.captureCalled {
+		t.Errorf("no Client methods should be invoked when not configured, got restore=%v getLib=%v capture=%v",
+			fake.restoreCalled, fake.getLibraryCalled, fake.captureCalled)
+	}
+}
+
+func TestEpicClientAdapter_NoSnapshotInDB_ReturnsError(t *testing.T) {
+	truncateAllTables(t)
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	fake := &fakeEpicSubprocessClient{configured: true}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+
+	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
+	if err == nil {
+		t.Fatal("expected error when no snapshot in DB, got nil")
+	}
+	if fake.restoreCalled || fake.getLibraryCalled {
+		t.Errorf("should not restore/fetch when DB has no snapshot, got restore=%v getLib=%v",
+			fake.restoreCalled, fake.getLibraryCalled)
+	}
+}
+
+func TestEpicClientAdapter_RestoresSnapshotFromDB(t *testing.T) {
+	truncateAllTables(t)
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	original := map[string]string{
+		"user.json":           `{"displayName":"Tester","account_id":"abc"}`,
+		"metadata/Game1.json": `{"title":"Game 1"}`,
+	}
+	seedEpicConfig(t, userID, original)
+
+	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: original}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+
+	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !fake.restoreCalled {
+		t.Fatal("expected RestoreSnapshot to be called")
+	}
+	if len(fake.restoredSnapshot) != len(original) {
+		t.Errorf("restored snapshot size mismatch: got %d, want %d", len(fake.restoredSnapshot), len(original))
+	}
+	for k, v := range original {
+		if fake.restoredSnapshot[k] != v {
+			t.Errorf("restored snapshot %q: got %q, want %q", k, fake.restoredSnapshot[k], v)
+		}
+	}
+}
+
+func TestEpicClientAdapter_PersistsNewSnapshotAfterSuccess(t *testing.T) {
+	truncateAllTables(t)
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	original := map[string]string{"user.json": `{"v":1}`}
+	updated := map[string]string{"user.json": `{"v":2}`, "metadata/NewGame.json": `{"title":"New"}`}
+	seedEpicConfig(t, userID, original)
+
+	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: updated}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+
+	if err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil }); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := readEpicSnapshot(t, userID)
+	if len(got) != len(updated) {
+		t.Errorf("persisted snapshot size mismatch: got %d, want %d", len(got), len(updated))
+	}
+	for k, v := range updated {
+		if got[k] != v {
+			t.Errorf("persisted %q: got %q, want %q", k, got[k], v)
+		}
+	}
+}
+
+func TestEpicClientAdapter_PersistsSnapshotEvenOnFetchError(t *testing.T) {
+	truncateAllTables(t)
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	original := map[string]string{"user.json": `{"v":1}`}
+	updatedAfterFailedFetch := map[string]string{"user.json": `{"v":2,"refreshed_token":"x"}`}
+	seedEpicConfig(t, userID, original)
+
+	fetchErr := errors.New("legendary list failed: connection reset")
+	fake := &fakeEpicSubprocessClient{
+		configured:      true,
+		getLibraryErr:   fetchErr,
+		captureSnapshot: updatedAfterFailedFetch,
+	}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+
+	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
+	if err == nil || err.Error() != fetchErr.Error() {
+		t.Fatalf("expected fetch error to propagate, got %v", err)
+	}
+	if !fake.captureCalled {
+		t.Error("expected CaptureSnapshot to run even after fetch failure (refreshed tokens must survive)")
+	}
+
+	got := readEpicSnapshot(t, userID)
+	if got["user.json"] != `{"v":2,"refreshed_token":"x"}` {
+		t.Errorf("snapshot was not persisted after fetch failure: got %v", got)
+	}
+}
+
+func TestEpicClientAdapter_SkipsPersistWhenSnapshotEmpty(t *testing.T) {
+	truncateAllTables(t)
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	original := map[string]string{"user.json": `{"v":1}`}
+	seedEpicConfig(t, userID, original)
+
+	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: map[string]string{}}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+
+	if err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil }); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := readEpicSnapshot(t, userID)
+	if got["user.json"] != `{"v":1}` {
+		t.Errorf("snapshot should be unchanged when CaptureSnapshot returns empty, got %v", got)
 	}
 }

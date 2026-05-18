@@ -23,6 +23,8 @@ func StorefrontToCollectionSlug(storefront string) (string, bool) {
 		return "steam", true
 	case "psn":
 		return "playstation-store", true
+	case "epic":
+		return "epic-games-store", true
 	default:
 		return "", false
 	}

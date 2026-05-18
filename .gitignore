@@ -21,3 +21,6 @@ storage
 # Test coverage files
 coverage.out
 coverage.html
+
+# Legendary per-user working directories
+.legendary-work/

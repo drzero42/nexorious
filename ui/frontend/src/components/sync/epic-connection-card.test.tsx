@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { EpicConnectionCard } from './epic-connection-card';
 import * as hooks from '@/hooks';
 
-// Mock toast
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
@@ -27,163 +26,167 @@ const createWrapper = () => {
   return Wrapper;
 };
 
+function stubEpicConnection(data: Partial<ReturnType<typeof hooks.useEpicConnection>['data']>) {
+  vi.spyOn(hooks, 'useEpicConnection').mockReturnValue({
+    data: { connected: false, disabled: false, ...data },
+  } as ReturnType<typeof hooks.useEpicConnection>);
+}
+
+function stubConnectEpic(mutateAsync = vi.fn().mockResolvedValue({ displayName: 'X', accountId: 'y' })) {
+  vi.spyOn(hooks, 'useConnectEpic').mockReturnValue({
+    mutateAsync,
+    isPending: false,
+  } as Partial<ReturnType<typeof hooks.useConnectEpic>> as ReturnType<typeof hooks.useConnectEpic>);
+  return mutateAsync;
+}
+
+function stubDisconnectEpic(mutateAsync = vi.fn().mockResolvedValue(undefined)) {
+  vi.spyOn(hooks, 'useDisconnectEpic').mockReturnValue({
+    mutateAsync,
+    isPending: false,
+  } as Partial<ReturnType<typeof hooks.useDisconnectEpic>> as ReturnType<typeof hooks.useDisconnectEpic>);
+  return mutateAsync;
+}
+
 describe('EpicConnectionCard', () => {
   const mockOnConnectionChange = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Mock useSyncStatus to return no auth expiration by default
-    vi.spyOn(hooks, 'useSyncStatus').mockReturnValue({
-      data: {
-        platform: 'epic',
-        isSyncing: false,
-        lastSyncedAt: null,
-        activeJobId: null,
-      },
-    } as ReturnType<typeof hooks.useSyncStatus>);
-    // Mock useDisconnectEpic to return a mutation object
-    vi.spyOn(hooks, 'useDisconnectEpic').mockReturnValue({
-      mutateAsync: vi.fn().mockResolvedValue(undefined),
-      isPending: false,
-    } as Partial<ReturnType<typeof hooks.useDisconnectEpic>> as ReturnType<typeof hooks.useDisconnectEpic>);
+    stubEpicConnection({ connected: false, disabled: false });
+    stubConnectEpic();
+    stubDisconnectEpic();
   });
 
-  it('should render not configured state', () => {
+  it('renders not-configured state with inline auth-code form', () => {
     render(
-      <EpicConnectionCard
-        isConfigured={false}
-        onConnectionChange={mockOnConnectionChange}
-      />,
-      { wrapper: createWrapper() }
+      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      { wrapper: createWrapper() },
     );
 
-    expect(screen.getByText('Epic Games Store')).toBeInTheDocument();
-    expect(screen.getByText('Connect Epic Games Store')).toBeInTheDocument();
+    expect(screen.getByText('Epic Games Store Connection')).toBeInTheDocument();
     expect(screen.getByText('Not Configured')).toBeInTheDocument();
+    expect(screen.getByLabelText('Authorization Code')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect Epic Games Store' })).toBeInTheDocument();
   });
 
-  it('should render connected state', () => {
+  it('renders disabled state when backend reports LEGENDARY_WORK_DIR unset', () => {
+    stubEpicConnection({ connected: false, disabled: true, reason: 'legendary_not_configured' });
+
     render(
-      <EpicConnectionCard
-        isConfigured={true}
-        displayName="EpicUser123"
-        accountId="epic-account-id"
-        onConnectionChange={mockOnConnectionChange}
-      />,
-      { wrapper: createWrapper() }
+      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      { wrapper: createWrapper() },
     );
 
-    expect(screen.getByText('EpicUser123')).toBeInTheDocument();
+    expect(screen.getByText('Disabled')).toBeInTheDocument();
+    expect(screen.getByText(/LEGENDARY_WORK_DIR/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Authorization Code')).not.toBeInTheDocument();
+  });
+
+  it('renders connected state with display name and account id from connection hook', () => {
+    stubEpicConnection({
+      connected: true,
+      disabled: false,
+      displayName: 'EpicUser123',
+      accountId: 'epic-account-id',
+    });
+
+    render(
+      <EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    expect(screen.getByText(/Connected as EpicUser123/)).toBeInTheDocument();
     expect(screen.getByText('epic-account-id')).toBeInTheDocument();
     expect(screen.getByText('Connected')).toBeInTheDocument();
-    expect(screen.getByText('Disconnect')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
   });
 
-  it('should show disconnect confirmation', async () => {
+  it('calls connectEpic with the entered auth code', async () => {
     const user = userEvent.setup();
+    const connect = stubConnectEpic();
 
     render(
-      <EpicConnectionCard
-        isConfigured={true}
-        displayName="EpicUser123"
-        onConnectionChange={mockOnConnectionChange}
-      />,
-      { wrapper: createWrapper() }
+      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      { wrapper: createWrapper() },
     );
 
-    await user.click(screen.getByText('Disconnect'));
+    await user.type(screen.getByLabelText('Authorization Code'), '  abc123  ');
+    await user.click(screen.getByRole('button', { name: 'Connect Epic Games Store' }));
+
+    await waitFor(() => {
+      expect(connect).toHaveBeenCalledWith('abc123');
+      expect(mockOnConnectionChange).toHaveBeenCalled();
+    });
+  });
+
+  it('shows a validation error when auth code is blank', async () => {
+    const user = userEvent.setup();
+    const connect = stubConnectEpic();
+
+    render(
+      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Connect Epic Games Store' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Authorization code is required')).toBeInTheDocument();
+    });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('opens a confirmation dialog before disconnecting', async () => {
+    const user = userEvent.setup();
+    stubEpicConnection({ connected: true, disabled: false, displayName: 'X', accountId: 'y' });
+
+    render(
+      <EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }));
 
     await waitFor(() => {
       expect(screen.getByText('Disconnect Epic Games Store?')).toBeInTheDocument();
     });
   });
 
-  it('should call disconnectEpic on confirm', async () => {
+  it('calls disconnectEpic when the confirmation is accepted', async () => {
     const user = userEvent.setup();
-    const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
-
-    vi.spyOn(hooks, 'useDisconnectEpic').mockReturnValue({
-      mutateAsync: mockMutateAsync,
-      isPending: false,
-    } as Partial<ReturnType<typeof hooks.useDisconnectEpic>> as ReturnType<typeof hooks.useDisconnectEpic>);
+    const disconnect = stubDisconnectEpic();
+    stubEpicConnection({ connected: true, disabled: false, displayName: 'X', accountId: 'y' });
 
     render(
-      <EpicConnectionCard
-        isConfigured={true}
-        displayName="EpicUser123"
-        onConnectionChange={mockOnConnectionChange}
-      />,
-      { wrapper: createWrapper() }
+      <EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />,
+      { wrapper: createWrapper() },
     );
 
-    await user.click(screen.getByText('Disconnect'));
-    await waitFor(() => screen.getByRole('button', { name: /Disconnect$/i }));
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await waitFor(() => screen.getByText('Disconnect Epic Games Store?'));
 
-    const confirmButton = screen.getAllByRole('button', { name: /Disconnect$/i }).find(
-      btn => btn.closest('[role="alertdialog"]')
-    );
-    if (confirmButton) {
-      await user.click(confirmButton);
-    }
+    const confirmButton = screen
+      .getAllByRole('button', { name: /Disconnect$/i })
+      .find((btn) => btn.closest('[role="alertdialog"]'));
+    if (!confirmButton) throw new Error('confirm Disconnect button not found inside alert dialog');
+    await user.click(confirmButton);
 
     await waitFor(() => {
-      expect(mockMutateAsync).toHaveBeenCalled();
+      expect(disconnect).toHaveBeenCalled();
       expect(mockOnConnectionChange).toHaveBeenCalled();
     });
   });
 
-  it('should render auth expired state', () => {
-    vi.spyOn(hooks, 'useSyncStatus').mockReturnValue({
-      data: {
-        platform: 'epic',
-        isSyncing: false,
-        lastSyncedAt: null,
-        activeJobId: null,
-        authExpired: true,
-      },
-    } as ReturnType<typeof hooks.useSyncStatus>);
-
-    render(
-      <EpicConnectionCard
-        isConfigured={true}
-        displayName="EpicUser123"
-        onConnectionChange={mockOnConnectionChange}
-      />,
-      { wrapper: createWrapper() }
+  it('shows the playtime limitation note both before and after connecting', () => {
+    const { rerender } = render(
+      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      { wrapper: createWrapper() },
     );
-
-    expect(screen.getByText('Auth Expired')).toBeInTheDocument();
-    expect(screen.getByText('Reconnect')).toBeInTheDocument();
-  });
-
-  it('should show playtime limitation note', () => {
-    render(
-      <EpicConnectionCard
-        isConfigured={false}
-        onConnectionChange={mockOnConnectionChange}
-      />,
-      { wrapper: createWrapper() }
-    );
-
     expect(screen.getByText(/Epic Games Store does not provide playtime data/i)).toBeInTheDocument();
-  });
 
-  it('should open auth dialog on connect click', async () => {
-    const user = userEvent.setup();
-
-    render(
-      <EpicConnectionCard
-        isConfigured={false}
-        onConnectionChange={mockOnConnectionChange}
-      />,
-      { wrapper: createWrapper() }
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Connect Epic Games Store' }));
-
-    // Dialog should open (check for "Start Authentication" button which only appears in dialog)
-    await waitFor(() => {
-      expect(screen.getByText('Start Authentication')).toBeInTheDocument();
-    });
+    stubEpicConnection({ connected: true, disabled: false, displayName: 'X', accountId: 'y' });
+    rerender(<EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />);
+    expect(screen.getByText(/Epic Games Store does not provide playtime data/i)).toBeInTheDocument();
   });
 });

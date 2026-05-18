@@ -2,17 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Code Exploration Policy
-
-Always use jCodemunch-MCP tools — never fall back to Read, Grep, Glob, or Bash for code exploration.
-- Before reading a file: use `get_file_outline` or `get_file_content`
-- Before searching: use `search_symbols` or `search_text`
-- Before exploring structure: use `get_file_tree` or `get_repo_outline`
-- **Session start**: Always run `mcp__jcodemunch__index_folder` on the project root at the start of every session before searching — the index can be stale if code changed since the last session. Use `incremental: true` (the default) so it's fast.
-- Call `list_repos` first; if the project is not indexed, call `index_folder` with the current directory.
-- **Scope**: jCodemunch is for code only (Go, TypeScript, etc.). For markdown and documentation files, use jdocmunch MCP (`local/docs` repo; call `mcp__jdocmunch__list_repos` first to verify it's indexed — if not, run `mcp__jdocmunch__index_local` on `docs/`).
-- **Session start**: Always run `mcp__jdocmunch__index_local` on `docs/` at the start of every session before searching — the index can be stale if docs changed since the last session. Use `incremental: true` (the default) so it's fast.
-
 ## Quick Reference
 
 ### Common Commands

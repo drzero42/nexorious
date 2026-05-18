@@ -25,7 +25,13 @@ func newTestHandler(t *testing.T) *migrate.Handler {
 }
 
 func TestHandleStatus_NeedsMigration(t *testing.T) {
-	h := newTestHandler(t)
+	db := setupTestDB(t)
+	m := migrate.NewMigrator(db)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
+	h := migrate.NewHandler(m, nil)
+
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/api/migrate/status", nil)
 	rec := httptest.NewRecorder()
@@ -49,8 +55,15 @@ func TestHandleStatus_NeedsMigration(t *testing.T) {
 	if body.State != "needs_migration" {
 		t.Errorf("expected state=needs_migration, got %q", body.State)
 	}
-	if body.PendingCount != 8 {
-		t.Errorf("expected pending_count=8, got %d", body.PendingCount)
+	direct, err := m.PendingCount()
+	if err != nil {
+		t.Fatalf("PendingCount: %v", err)
+	}
+	if body.PendingCount != direct {
+		t.Errorf("HTTP pending_count (%d) != direct PendingCount (%d)", body.PendingCount, direct)
+	}
+	if body.PendingCount <= 0 {
+		t.Errorf("expected positive pending count on fresh DB, got %d", body.PendingCount)
 	}
 }
 

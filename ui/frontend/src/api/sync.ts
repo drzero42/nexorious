@@ -7,9 +7,8 @@ import type {
   SyncPlatform,
   SyncFrequency,
   SteamVerifyResponse,
-  EpicAuthStartResponse,
-  EpicAuthCompleteResponse,
-  EpicAuthCheckResponse,
+  EpicConnectResponse,
+  EpicConnectionResponse,
   PSNConfigureResponse,
   PSNStatusResponse,
   ExternalGame,
@@ -176,20 +175,21 @@ interface SteamVerifyApiResponse {
 // Epic Auth API Types
 // ============================================================================
 
-interface EpicAuthStartApiResponse {
-  auth_url: string;
-  instructions: string;
+interface EpicConnectApiRequest {
+  auth_code: string;
 }
 
-interface EpicAuthCompleteApiResponse {
-  valid: boolean;
-  display_name: string | null;
-  error: string | null;
+interface EpicConnectApiResponse {
+  display_name: string;
+  account_id: string;
 }
 
-interface EpicAuthCheckApiResponse {
-  is_authenticated: boolean;
-  display_name: string | null;
+interface EpicConnectionApiResponse {
+  connected: boolean;
+  disabled: boolean;
+  display_name?: string;
+  account_id?: string;
+  reason?: string;
 }
 
 // ============================================================================
@@ -227,47 +227,39 @@ export async function disconnectSteam(): Promise<void> {
 // ============================================================================
 
 /**
- * Start Epic authentication flow.
- * Returns auth URL for user to visit.
+ * Connect Epic Games Store by exchanging the legendary auth code for an
+ * access/refresh token. Backend runs `legendary auth --code <code>` and
+ * persists the resulting state snapshot.
  */
-export async function startEpicAuth(): Promise<EpicAuthStartResponse> {
-  const response = await api.post<EpicAuthStartApiResponse>('/sync/epic/auth/start');
+export async function connectEpic(authCode: string): Promise<EpicConnectResponse> {
+  const response = await api.post<EpicConnectApiResponse>('/sync/epic/connect', {
+    auth_code: authCode,
+  } as EpicConnectApiRequest);
   return {
-    authUrl: response.auth_url,
-    instructions: response.instructions,
-  };
-}
-
-/**
- * Complete Epic authentication with authorization code.
- */
-export async function completeEpicAuth(code: string): Promise<EpicAuthCompleteResponse> {
-  const response = await api.post<EpicAuthCompleteApiResponse>('/sync/epic/auth/complete', {
-    code,
-  });
-  return {
-    valid: response.valid,
     displayName: response.display_name,
-    error: response.error,
+    accountId: response.account_id,
   };
 }
 
 /**
- * Check current Epic authentication status.
+ * Get current Epic Games Store connection status.
  */
-export async function checkEpicAuth(): Promise<EpicAuthCheckResponse> {
-  const response = await api.get<EpicAuthCheckApiResponse>('/sync/epic/auth/check');
+export async function getEpicConnection(): Promise<EpicConnectionResponse> {
+  const response = await api.get<EpicConnectionApiResponse>('/sync/epic/connection');
   return {
-    isAuthenticated: response.is_authenticated,
+    connected: response.connected,
+    disabled: response.disabled,
     displayName: response.display_name,
+    accountId: response.account_id,
+    reason: response.reason,
   };
 }
 
 /**
- * Disconnect Epic integration.
+ * Disconnect Epic Games Store. Clears legendary state and per-user working dir.
  */
 export async function disconnectEpic(): Promise<void> {
-  await api.delete('/sync/epic/connection');
+  await api.delete('/sync/epic/disconnect');
 }
 
 // ============================================================================

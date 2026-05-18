@@ -10,9 +10,8 @@ import {
   useSyncStatus,
   useUpdateSyncConfig,
   useTriggerSync,
-  useStartEpicAuth,
-  useCompleteEpicAuth,
-  useCheckEpicAuth,
+  useConnectEpic,
+  useEpicConnection,
   useDisconnectEpic,
   syncKeys,
 } from './use-sync';
@@ -355,34 +354,14 @@ describe('use-sync hooks', () => {
   });
 
   describe('Epic Auth Hooks', () => {
-    it('should call startEpicAuth mutation', async () => {
-      const mockStartEpicAuth = vi.spyOn(syncApi, 'startEpicAuth');
-      mockStartEpicAuth.mockResolvedValue({
-        authUrl: 'https://epicgames.com/activate',
-        instructions: 'Please login',
-      });
-
-      const { result } = renderHook(() => useStartEpicAuth(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        await result.current.mutateAsync();
-      });
-
-      expect(mockStartEpicAuth).toHaveBeenCalled();
-      mockStartEpicAuth.mockRestore();
-    });
-
-    it('should invalidate queries on successful Epic auth', async () => {
-      const mockCompleteEpicAuth = vi.spyOn(syncApi, 'completeEpicAuth');
-      mockCompleteEpicAuth.mockResolvedValue({
-        valid: true,
+    it('should call connectEpic with the auth code', async () => {
+      const mockConnectEpic = vi.spyOn(syncApi, 'connectEpic');
+      mockConnectEpic.mockResolvedValue({
         displayName: 'EpicUser',
-        error: null,
+        accountId: 'acct-abc',
       });
 
-      const { result } = renderHook(() => useCompleteEpicAuth(), {
+      const { result } = renderHook(() => useConnectEpic(), {
         wrapper: QueryWrapper,
       });
 
@@ -390,20 +369,20 @@ describe('use-sync hooks', () => {
         await result.current.mutateAsync('TESTCODE');
       });
 
-      expect(mockCompleteEpicAuth).toHaveBeenCalledWith('TESTCODE');
-
-      // Query invalidation happens automatically via TanStack Query
-      mockCompleteEpicAuth.mockRestore();
+      expect(mockConnectEpic).toHaveBeenCalledWith('TESTCODE');
+      mockConnectEpic.mockRestore();
     });
 
-    it('should cache Epic auth status', async () => {
-      const mockCheckEpicAuth = vi.spyOn(syncApi, 'checkEpicAuth');
-      mockCheckEpicAuth.mockResolvedValue({
-        isAuthenticated: true,
+    it('should fetch Epic connection status', async () => {
+      const mockGetEpicConnection = vi.spyOn(syncApi, 'getEpicConnection');
+      mockGetEpicConnection.mockResolvedValue({
+        connected: true,
+        disabled: false,
         displayName: 'EpicUser',
+        accountId: 'acct-abc',
       });
 
-      const { result } = renderHook(() => useCheckEpicAuth(), {
+      const { result } = renderHook(() => useEpicConnection(), {
         wrapper: QueryWrapper,
       });
 
@@ -412,14 +391,16 @@ describe('use-sync hooks', () => {
       });
 
       expect(result.current.data).toEqual({
-        isAuthenticated: true,
+        connected: true,
+        disabled: false,
         displayName: 'EpicUser',
+        accountId: 'acct-abc',
       });
 
-      mockCheckEpicAuth.mockRestore();
+      mockGetEpicConnection.mockRestore();
     });
 
-    it('should invalidate all Epic queries on disconnect', async () => {
+    it('should invalidate Epic queries on disconnect', async () => {
       const mockDisconnectEpic = vi.spyOn(syncApi, 'disconnectEpic');
       mockDisconnectEpic.mockResolvedValue(undefined);
 

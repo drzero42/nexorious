@@ -1,10 +1,20 @@
 
-import { useState, useEffect, useRef } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,209 +24,238 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { EpicAuthDialog } from './epic-auth-dialog';
-import { useSyncStatus, useDisconnectEpic } from '@/hooks';
-import { SyncPlatform } from '@/types';
-import { Info, AlertCircle, Unplug } from 'lucide-react';
+import { Loader2, Check, ExternalLink, Info } from 'lucide-react';
+import { useConnectEpic, useDisconnectEpic, useEpicConnection } from '@/hooks';
+import { EPIC_AUTH_URL } from '@/types';
+
+const epicAuthCodeSchema = z.object({
+  authCode: z.string().trim().min(1, 'Authorization code is required'),
+});
+
+type EpicAuthCodeForm = z.infer<typeof epicAuthCodeSchema>;
 
 interface EpicConnectionCardProps {
   isConfigured: boolean;
-  displayName?: string;
-  accountId?: string;
   onConnectionChange: () => void;
 }
 
 export function EpicConnectionCard({
   isConfigured,
-  displayName,
-  accountId,
   onConnectionChange,
 }: EpicConnectionCardProps) {
-  const [showAuthDialog, setShowAuthDialog] = useState(false);
-  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
-  const authExpiredToastShownRef = useRef(false);
+  const { data: connection } = useEpicConnection();
+  const connectMutation = useConnectEpic();
   const disconnectMutation = useDisconnectEpic();
 
-  // Poll for sync status to detect auth expiration
-  const { data: syncStatus } = useSyncStatus(SyncPlatform.EPIC);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    setError,
+    reset,
+  } = useForm<EpicAuthCodeForm>({
+    resolver: zodResolver(epicAuthCodeSchema),
+  });
 
-  const authExpired =
-    isConfigured &&
-    syncStatus?.authExpired === true;
+  const isConnecting = connectMutation.isPending;
+  const isDisconnecting = disconnectMutation.isPending;
+  const isDisabled = connection?.disabled === true;
+  const displayName = connection?.displayName;
+  const accountId = connection?.accountId;
 
-  // Show toast notification when auth expires
-  useEffect(() => {
-    if (authExpired && !authExpiredToastShownRef.current) {
-      toast.error('Epic Games Store Authentication Expired', {
-        description: 'Please reconnect to continue syncing.',
-        action: {
-          label: 'Reconnect',
-          onClick: () => setShowAuthDialog(true),
-        },
-      });
-      authExpiredToastShownRef.current = true;
+  const onSubmit = async (data: EpicAuthCodeForm) => {
+    try {
+      const result = await connectMutation.mutateAsync(data.authCode);
+      toast.success(`Epic Games connected as ${result.displayName}`);
+      reset();
+      onConnectionChange();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to connect Epic Games Store';
+      setError('authCode', { message });
+      toast.error(message);
     }
-
-    // Reset the flag when auth is restored
-    if (!authExpired && authExpiredToastShownRef.current) {
-      authExpiredToastShownRef.current = false;
-    }
-  }, [authExpired]);
+  };
 
   const handleDisconnect = async () => {
     try {
       await disconnectMutation.mutateAsync();
-      toast.success('Epic Games Store account has been disconnected.');
+      toast.success('Epic Games Store disconnected');
       onConnectionChange();
-      setShowDisconnectDialog(false);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to disconnect');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to disconnect Epic Games Store');
     }
   };
 
-  const getStatusBadge = () => {
+  const getBadgeState = () => {
+    if (isDisabled) {
+      return {
+        label: 'Disabled',
+        className: 'bg-muted text-muted-foreground',
+      };
+    }
     if (!isConfigured) {
-      return <Badge variant="secondary">Not Configured</Badge>;
+      return { label: 'Not Configured', className: 'bg-muted text-muted-foreground' };
     }
-    if (authExpired) {
-      return <Badge variant="destructive">Auth Expired</Badge>;
-    }
-    return <Badge variant="default">Connected</Badge>;
+    return {
+      label: 'Connected',
+      className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    };
   };
+
+  const badgeState = getBadgeState();
 
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Epic Games Store</CardTitle>
-              <CardDescription>
-                Sync your Epic Games Store library
-              </CardDescription>
-            </div>
-            {getStatusBadge()}
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Epic Games Store Connection</CardTitle>
+            <CardDescription>
+              {isConfigured
+                ? 'Your Epic Games Store account is connected'
+                : 'Connect your Epic Games Store account to sync your game library'}
+            </CardDescription>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Connection Status */}
-          {!isConfigured && (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Connect your Epic Games Store account to automatically sync your game library.
-              </p>
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>Note:</strong> Epic Games Store does not provide playtime data.
-                </AlertDescription>
-              </Alert>
-              <Button onClick={() => setShowAuthDialog(true)}>
-                Connect Epic Games Store
-              </Button>
-            </div>
-          )}
-
-          {isConfigured && !authExpired && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Account Name</span>
-                  <span className="text-sm text-muted-foreground">{displayName}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Account ID</span>
-                  <span className="text-sm text-muted-foreground font-mono text-xs">
-                    {accountId}
-                  </span>
-                </div>
+          <Badge variant="outline" className={badgeState.className}>
+            {badgeState.label}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isDisabled ? (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Epic Games Store sync is disabled on this server. The administrator must set the
+              <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">LEGENDARY_WORK_DIR</code>
+              environment variable to enable it.
+            </AlertDescription>
+          </Alert>
+        ) : isConfigured ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-4">
+              <Check className="h-5 w-5 text-green-600" />
+              <div>
+                <p className="font-medium">Connected as {displayName}</p>
+                {accountId && (
+                  <p className="text-sm text-muted-foreground font-mono">{accountId}</p>
+                )}
               </div>
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>Note:</strong> Epic Games Store does not provide playtime data.
-                </AlertDescription>
-              </Alert>
-              <Button
-                variant="destructive"
-                onClick={() => setShowDisconnectDialog(true)}
-              >
-                <Unplug className="mr-2 h-4 w-4" />
-                Disconnect
-              </Button>
             </div>
-          )}
 
-          {isConfigured && authExpired && (
-            <div className="space-y-4">
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Your Epic Games Store authentication has expired. Please reconnect to
-                  continue syncing.
-                </AlertDescription>
-              </Alert>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Account Name</span>
-                  <span className="text-sm text-muted-foreground">{displayName}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Account ID</span>
-                  <span className="text-sm text-muted-foreground font-mono text-xs">
-                    {accountId}
-                  </span>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={() => setShowAuthDialog(true)}>
-                  Reconnect
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Note:</strong> Epic Games Store does not provide playtime data.
+              </AlertDescription>
+            </Alert>
+
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" disabled={isDisconnecting}>
+                  {isDisconnecting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Disconnecting...
+                    </>
+                  ) : (
+                    'Disconnect'
+                  )}
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowDisconnectDialog(true)}
-                >
-                  <Unplug className="mr-2 h-4 w-4" />
-                  Disconnect
-                </Button>
-              </div>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Disconnect Epic Games Store?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Your sync settings will be preserved but syncing will stop until you reconnect.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDisconnect}>Disconnect</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Note:</strong> Epic Games Store does not provide playtime data.
+              </AlertDescription>
+            </Alert>
+
+            <div className="space-y-2">
+              <Label htmlFor="authCode">Authorization Code</Label>
+              <Input
+                id="authCode"
+                type="text"
+                placeholder="Paste the authorization code from Epic Games"
+                autoComplete="off"
+                {...register('authCode')}
+                disabled={isConnecting}
+              />
+              {errors.authCode && (
+                <p className="text-sm text-destructive">{errors.authCode.message}</p>
+              )}
+
+              <Accordion type="single" collapsible className="w-full">
+                <AccordionItem value="epic-code-help" className="border-none">
+                  <AccordionTrigger className="py-2 text-sm text-muted-foreground hover:no-underline">
+                    How do I get an authorization code?
+                  </AccordionTrigger>
+                  <AccordionContent className="text-sm text-muted-foreground">
+                    <div className="space-y-2 rounded-lg bg-muted/50 p-3">
+                      <p className="font-medium text-foreground">
+                        Epic Games requires you to log in once to issue a short-lived
+                        authorization code.
+                      </p>
+                      <ol className="list-inside list-decimal space-y-1">
+                        <li>
+                          <a
+                            href={EPIC_AUTH_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            Open the Epic Games login page{' '}
+                            <ExternalLink className="inline h-3 w-3" />
+                          </a>{' '}
+                          in a new tab
+                        </li>
+                        <li>Sign in with your Epic Games account if prompted</li>
+                        <li>
+                          The page will display a JSON response containing an{' '}
+                          <code>authorizationCode</code> value
+                        </li>
+                        <li>Copy the code and paste it into the field above</li>
+                      </ol>
+                      <div className="mt-2 rounded border border-yellow-200 bg-yellow-50 p-2 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
+                        <strong>Note:</strong> The authorization code is single-use and expires
+                        within a few minutes. Paste it as soon as you copy it.
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
-          )}
-        </CardContent>
-      </Card>
 
-      {/* Auth Dialog */}
-      <EpicAuthDialog
-        open={showAuthDialog}
-        onOpenChange={setShowAuthDialog}
-        onSuccess={() => {
-          setShowAuthDialog(false);
-          onConnectionChange();
-        }}
-      />
-
-      {/* Disconnect Confirmation Dialog */}
-      <AlertDialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect Epic Games Store?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will remove your Epic Games Store connection and stop syncing your
-              library. Games already imported will remain in your collection.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDisconnect}
-              disabled={disconnectMutation.isPending}
-            >
-              {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+            <Button type="submit" disabled={isConnecting} className="w-full">
+              {isConnecting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                'Connect Epic Games Store'
+              )}
+            </Button>
+          </form>
+        )}
+      </CardContent>
+    </Card>
   );
 }

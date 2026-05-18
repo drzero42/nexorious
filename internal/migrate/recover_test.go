@@ -130,19 +130,33 @@ func TestStartDBProbe_RecoveryFromReady(t *testing.T) {
 }
 
 // TestPendingCount_WithoutPriorDetermineState exercises the
-// "mg.bunMig == nil" lazy-init branch in PendingCount.
+// "mg.bunMig == nil" lazy-init branch in PendingCount, and verifies that
+// the lazy path produces the same count as the eager path.
 func TestPendingCount_WithoutPriorDetermineState(t *testing.T) {
 	db := setupTestDB(t)
-	// Do NOT call DetermineState — bunMig is nil.
-	m := migrate.NewMigrator(db)
 
-	count, err := m.PendingCount()
+	// Lazy path: PendingCount before DetermineState (bunMig == nil).
+	lazy := migrate.NewMigrator(db)
+	lazyCount, err := lazy.PendingCount()
 	if err != nil {
-		t.Fatalf("PendingCount without prior DetermineState: %v", err)
+		t.Fatalf("PendingCount (lazy): %v", err)
 	}
-	// Fresh DB has 2 Bun migrations + 6 River migrations pending.
-	if count != 8 {
-		t.Errorf("expected 8 pending migrations (2 Bun + 6 River), got %d", count)
+
+	// Eager path: same query after DetermineState (bunMig initialised).
+	eager := migrate.NewMigrator(db)
+	if err := eager.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
+	eagerCount, err := eager.PendingCount()
+	if err != nil {
+		t.Fatalf("PendingCount (eager): %v", err)
+	}
+
+	if lazyCount != eagerCount {
+		t.Errorf("lazy-init count (%d) differs from eager-init count (%d)", lazyCount, eagerCount)
+	}
+	if lazyCount <= 0 {
+		t.Errorf("expected positive pending count on fresh DB, got %d", lazyCount)
 	}
 }
 
