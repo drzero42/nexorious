@@ -61,6 +61,20 @@ type EpicAccountInfo struct {
 	AccountID   string
 }
 
+// GOGClient abstracts the GOG OAuth calls used during account connection.
+type GOGClient interface {
+	BuildAuthURL() string
+	ExchangeCode(ctx context.Context, code string) (*GOGTokenResponse, error)
+}
+
+// GOGTokenResponse holds the tokens and identity returned by GOG auth.
+type GOGTokenResponse struct {
+	AccessToken  string
+	RefreshToken string
+	UserID       string
+	Username     string
+}
+
 var (
 	ErrInvalidNPSSOToken = errors.New("invalid npsso token")
 	ErrSteamRateLimited  = errors.New("steam rate limited")
@@ -68,9 +82,9 @@ var (
 )
 
 var (
-	validConfigStorefronts  = map[string]bool{"steam": true, "psn": true, "epic": true}
-	validTriggerStorefronts = map[string]bool{"steam": true, "psn": true, "epic": true}
-	supportedStorefronts    = []string{"steam", "psn", "epic"}
+	validConfigStorefronts  = map[string]bool{"steam": true, "psn": true, "epic": true, "gog": true}
+	validTriggerStorefronts = map[string]bool{"steam": true, "psn": true, "epic": true, "gog": true}
+	supportedStorefronts    = []string{"steam", "psn", "epic", "gog"}
 )
 
 var (
@@ -160,11 +174,12 @@ type SyncHandler struct {
 	steamClient SteamClient
 	psnClient   PSNClient
 	epicClient  EpicClient
+	gogClient   GOGClient
 }
 
 // NewSyncHandler constructs a SyncHandler.
-func NewSyncHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient, epic EpicClient) *SyncHandler {
-	return &SyncHandler{db: db, riverClient: riverClient, steamClient: steam, psnClient: psn, epicClient: epic}
+func NewSyncHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient, epic EpicClient, gog GOGClient) *SyncHandler {
+	return &SyncHandler{db: db, riverClient: riverClient, steamClient: steam, psnClient: psn, epicClient: epic, gogClient: gog}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
@@ -178,6 +193,9 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/epic/connect", h.HandleEpicConnect)
 	g.DELETE("/epic/connection", h.HandleEpicDisconnect)
 	g.GET("/epic/connection", h.HandleGetEpicConnection)
+	g.POST("/gog/connect", h.HandleGOGConnect)
+	g.GET("/gog/connection", h.HandleGetGOGConnection)
+	g.DELETE("/gog/connection", h.HandleGOGDisconnect)
 	g.GET("/ignored", h.HandleListIgnored)
 	g.POST("/ignored/:id", h.HandleSkipGame)
 	g.DELETE("/ignored/:id", h.HandleUnskipGame)
@@ -239,7 +257,7 @@ func (h *SyncHandler) HandleListConfig(c *echo.Context) error {
 			})
 		}
 	}
-	return c.JSON(http.StatusOK, map[string]any{"configs": configs, "total": 3})
+	return c.JSON(http.StatusOK, map[string]any{"configs": configs, "total": len(configs)})
 }
 
 func (h *SyncHandler) HandleGetConfig(c *echo.Context) error {
@@ -1008,4 +1026,105 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	var body struct {
+		AuthCode string `json:"auth_code"`
+	}
+	if err := c.Bind(&body); err != nil || body.AuthCode == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "auth_code is required")
+	}
+
+	tok, err := h.gogClient.ExchangeCode(c.Request().Context(), body.AuthCode)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("gog auth failed: %v", err))
+	}
+
+	creds := map[string]string{
+		"access_token":  tok.AccessToken,
+		"refresh_token": tok.RefreshToken,
+		"user_id":       tok.UserID,
+		"username":      tok.Username,
+	}
+	credsJSON, _ := json.Marshal(creds)
+	credsStr := string(credsJSON)
+	now := time.Now().UTC()
+
+	row := &models.UserSyncConfig{
+		ID:                    uuid.NewString(),
+		UserID:                userID,
+		Storefront:            "gog",
+		Frequency:             "manual",
+		StorefrontCredentials: &credsStr,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	if _, err := h.db.NewInsert().Model(row).
+		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, updated_at = EXCLUDED.updated_at").
+		Exec(context.Background()); err != nil {
+		slog.Error("gog: persist credentials failed", "user_id", userID, "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist GOG connection")
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"username": tok.Username,
+		"user_id":  tok.UserID,
+	})
+}
+
+func (h *SyncHandler) HandleGOGDisconnect(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	_, _ = h.db.NewRaw(
+		`UPDATE user_sync_configs SET storefront_credentials = NULL, updated_at = now() WHERE user_id = ? AND storefront = 'gog'`,
+		userID,
+	).Exec(context.Background())
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	authURL := ""
+	if h.gogClient != nil {
+		authURL = h.gogClient.BuildAuthURL()
+	}
+
+	var row models.UserSyncConfig
+	err := h.db.NewSelect().Model(&row).
+		Where("user_id = ? AND storefront = 'gog'", userID).
+		Scan(context.Background())
+	if errors.Is(err, sql.ErrNoRows) {
+		return c.JSON(http.StatusOK, map[string]any{"connected": false, "auth_url": authURL})
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get gog config")
+	}
+	if row.StorefrontCredentials == nil {
+		return c.JSON(http.StatusOK, map[string]any{"connected": false, "auth_url": authURL})
+	}
+
+	var creds struct {
+		Username string `json:"username"`
+		UserID   string `json:"user_id"`
+	}
+	_ = json.Unmarshal([]byte(*row.StorefrontCredentials), &creds)
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"connected": true,
+		"username":  creds.Username,
+		"user_id":   creds.UserID,
+		"auth_url":  authURL,
+	})
 }

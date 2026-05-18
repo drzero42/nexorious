@@ -289,7 +289,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		steamSvc := steamsvc.NewClient()
 		psnSvc := psnsvc.NewClient()
 		epicSvc := epicsvc.NewClient(cfg.LegendaryWorkDir)
-		synch := NewSyncHandler(db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc})
+		synch := NewSyncHandler(db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc}, nil)
 		syncGroup := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 		synch.RegisterRoutes(syncGroup)
 	}
