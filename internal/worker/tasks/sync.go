@@ -16,6 +16,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/db/models"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
+	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/matching"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
@@ -42,6 +43,13 @@ type EpicLibraryAdapter interface {
 		userID string,
 		onBatch func([]epicsvc.ExternalLibraryEntry) error,
 	) error
+}
+
+// GOGLibraryAdapter fetches the GOG game library.
+type GOGLibraryAdapter interface {
+	GetLibrary(ctx context.Context, accessToken string, batchSize int,
+		onBatch func([]gogsvc.ExternalLibraryEntry) error) error
+	RefreshToken(ctx context.Context, refreshToken string) (*gogsvc.TokenResponse, error)
 }
 
 // epicSubprocessClient is the subset of *epicsvc.Client that EpicClientAdapter
@@ -134,6 +142,7 @@ type DispatchSyncWorker struct {
 	Steam       SteamLibraryAdapter
 	PSN         PSNLibraryAdapter
 	Epic        EpicLibraryAdapter
+	GOG         GOGLibraryAdapter
 	RiverClient *river.Client[pgx.Tx]
 }
 
@@ -406,6 +415,121 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		); err != nil {
 			slog.Error("dispatch_sync: epic library fetch failed", "job_id", p.JobID, "err", err)
 			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("epic_fetch_error: %v", err))
+			return nil
+		}
+
+	case "gog":
+		if w.GOG == nil {
+			failSyncJob(ctx, w.DB, p.JobID, "GOG sync not available")
+			return nil
+		}
+
+		var creds struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+			UserID       string `json:"user_id"`
+			Username     string `json:"username"`
+		}
+		if err := json.Unmarshal([]byte(*cfg.StorefrontCredentials), &creds); err != nil {
+			failSyncJob(ctx, w.DB, p.JobID, "invalid gog credentials")
+			return nil
+		}
+
+		// Refresh the access token upfront; GOG tokens expire in ~1h.
+		// Always persist the new tokens — refresh tokens may rotate.
+		newTok, err := w.GOG.RefreshToken(ctx, creds.RefreshToken)
+		if err != nil {
+			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("gog token refresh failed: %v", err))
+			return nil
+		}
+		creds.AccessToken = newTok.AccessToken
+		creds.RefreshToken = newTok.RefreshToken
+		if newCredsJSON, merr := json.Marshal(creds); merr == nil {
+			_, _ = w.DB.NewRaw(
+				`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'gog'`,
+				string(newCredsJSON), p.UserID,
+			).Exec(context.Background())
+		}
+
+		slog.Info("dispatch_sync: starting gog library fetch", "job_id", p.JobID, "user_id", p.UserID)
+		const gogBatchSize = 50
+		if err := w.GOG.GetLibrary(ctx, creds.AccessToken, gogBatchSize,
+			func(batch []gogsvc.ExternalLibraryEntry) error {
+				if len(batch) == 0 {
+					return nil
+				}
+				slog.Info("dispatch_sync: gog batch received", "job_id", p.JobID, "batch_size", len(batch))
+
+				batchExtIDs := make([]string, 0, len(batch))
+				seen := make(map[string]struct{})
+				for _, e := range batch {
+					fetchedIDs[e.ExternalID] = struct{}{}
+					if _, ok := seen[e.ExternalID]; !ok {
+						batchExtIDs = append(batchExtIDs, e.ExternalID)
+						seen[e.ExternalID] = struct{}{}
+					}
+
+					ownership := e.OwnershipStatus
+					upsertNow := time.Now().UTC()
+					row := &models.ExternalGame{
+						ID:              uuid.NewString(),
+						UserID:          p.UserID,
+						Storefront:      p.Storefront,
+						ExternalID:      e.ExternalID,
+						Title:           e.Title,
+						IsAvailable:     true,
+						IsSubscription:  e.IsSubscription,
+						PlaytimeHours:   e.PlaytimeHours,
+						OwnershipStatus: &ownership,
+						RawPlatform:     e.RawPlatform,
+						CreatedAt:       upsertNow,
+						UpdatedAt:       upsertNow,
+					}
+					if _, err := w.DB.NewInsert().Model(row).
+						On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
+						Exec(ctx); err != nil {
+						slog.Error("dispatch_sync: gog upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
+					}
+				}
+
+				var toProcess []models.ExternalGame
+				if err := w.DB.NewSelect().Model(&toProcess).
+					Where("user_id = ? AND storefront = ? AND is_available = true AND is_skipped = false AND external_id IN (?)",
+						p.UserID, p.Storefront, bun.List(batchExtIDs)).
+					Scan(ctx); err != nil {
+					slog.Error("dispatch_sync: gog re-query batch failed", "job_id", p.JobID, "err", err)
+				}
+				slog.Info("dispatch_sync: gog batch to dispatch", "job_id", p.JobID, "to_process", len(toProcess))
+
+				for _, eg := range toProcess {
+					// item_key includes raw_platform to ensure uniqueness for
+					// dual-platform games (same ExternalID, different platform).
+					itemKey := eg.ExternalID + ":" + eg.RawPlatform
+					metaJSON, _ := json.Marshal(map[string]any{
+						"external_game_id": eg.ID,
+						"raw_platform":     eg.RawPlatform,
+						"playtime_hours":   eg.PlaytimeHours,
+					})
+					itemID := uuid.NewString()
+					if _, err := w.DB.NewRaw(
+						`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+						 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+						 ON CONFLICT (job_id, item_key) DO NOTHING`,
+						itemID, p.JobID, p.UserID, itemKey, eg.Title, string(metaJSON),
+					).Exec(ctx); err != nil {
+						slog.Error("dispatch_sync: gog insert job_item failed", "job_id", p.JobID, "external_id", eg.ExternalID, "err", err)
+					}
+					if w.RiverClient != nil {
+						if _, err := w.RiverClient.Insert(ctx, ProcessSyncItemArgs{JobItemID: itemID}, nil); err != nil {
+							slog.Error("dispatch_sync: gog river insert failed", "job_id", p.JobID, "item_id", itemID, "err", err)
+						}
+					}
+				}
+				return nil
+			},
+		); err != nil {
+			slog.Error("dispatch_sync: gog library fetch failed", "job_id", p.JobID, "err", err)
+			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("gog_fetch_error: %v", err))
 			return nil
 		}
 
