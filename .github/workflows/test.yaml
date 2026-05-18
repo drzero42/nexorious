@@ -1,0 +1,118 @@
+---
+name: Test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_call:
+
+jobs:
+  go-tests:
+    name: Go Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run Go tests
+        env:
+          # Tests use testcontainers to spin up their own PostgreSQL container.
+          # Point testcontainers at the Docker daemon available on GitHub-hosted runners.
+          DOCKER_HOST: unix:///var/run/docker.sock
+        run: go test -timeout 600s ./...
+
+  go-lint:
+    name: Go Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: ui/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: cd ui/frontend && npm ci
+
+      - name: Run frontend tests
+        run: cd ui/frontend && npm run test
+
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: ui/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: cd ui/frontend && npm ci
+
+      - name: Build (generates routeTree.gen.ts) and type check
+        # `npm run build` runs `vite build && tsc --noEmit`. The vite build step triggers
+        # the TanStack Router plugin to generate src/routeTree.gen.ts (gitignored),
+        # which tsc requires. Running `npm run check` alone would fail without it.
+        run: cd ui/frontend && npm run build
+
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Add bjw-s Helm repo
+        run: helm repo add bjw-s https://bjw-s-labs.github.io/helm-charts/
+
+      - name: Build Helm dependencies
+        run: helm dependency build deploy/helm/
+
+      - name: Lint Helm chart
+        run: |
+          helm lint --strict deploy/helm/ \
+            --set nexorious.secretKey=x \
+            --set nexorious.postgresql.password=x \
+            --set nexorious.igdbClientId=x \
+            --set nexorious.igdbClientSecret=x
