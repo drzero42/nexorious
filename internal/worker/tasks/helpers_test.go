@@ -6,7 +6,7 @@ package tasks
 import (
 	"testing"
 
-	"github.com/drzero42/nexorious-go/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/services/igdb"
 )
 
 // ---------------------------------------------------------------------------

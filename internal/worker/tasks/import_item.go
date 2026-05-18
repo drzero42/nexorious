@@ -13,8 +13,8 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/services/igdb"
 )
 
 // ImportItemArgs is the River job args type for "import_item".

@@ -14,13 +14,13 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/db/models"
-	epicsvc "github.com/drzero42/nexorious-go/internal/services/epic"
-	igdbsvc "github.com/drzero42/nexorious-go/internal/services/igdb"
-	"github.com/drzero42/nexorious-go/internal/services/matching"
-	"github.com/drzero42/nexorious-go/internal/services/platformresolution"
-	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
-	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
+	"github.com/drzero42/nexorious/internal/db/models"
+	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
+	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/services/matching"
+	"github.com/drzero42/nexorious/internal/services/platformresolution"
+	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
+	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
 )
 
 // SteamLibraryAdapter fetches the Steam game library.

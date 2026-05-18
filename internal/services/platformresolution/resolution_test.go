@@ -3,7 +3,7 @@ package platformresolution_test
 import (
 	"testing"
 
-	"github.com/drzero42/nexorious-go/internal/services/platformresolution"
+	"github.com/drzero42/nexorious/internal/services/platformresolution"
 )
 
 func TestStorefrontToCollectionSlug_Epic(t *testing.T) {

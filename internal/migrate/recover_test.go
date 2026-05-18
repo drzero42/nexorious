@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	migrate "github.com/drzero42/nexorious-go/internal/migrate"
+	migrate "github.com/drzero42/nexorious/internal/migrate"
 )
 
 // TestStartDBProbe_RecoveryFromMigrating exercises the AppStateMigrating

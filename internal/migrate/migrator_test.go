@@ -13,7 +13,7 @@ import (
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
 
-	migrate "github.com/drzero42/nexorious-go/internal/migrate"
+	migrate "github.com/drzero42/nexorious/internal/migrate"
 )
 
 // setupTestContainer starts a postgres container and returns the postgres:// connection string.

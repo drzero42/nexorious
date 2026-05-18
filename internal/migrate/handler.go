@@ -9,7 +9,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/ui"
+	"github.com/drzero42/nexorious/ui"
 )
 
 type Handler struct {

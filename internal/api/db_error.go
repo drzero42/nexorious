@@ -9,8 +9,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/drzero42/nexorious-go/internal/migrate"
-	"github.com/drzero42/nexorious-go/ui"
+	"github.com/drzero42/nexorious/internal/migrate"
+	"github.com/drzero42/nexorious/ui"
 )
 
 // DBErrorHandler serves the database-unavailable error page.

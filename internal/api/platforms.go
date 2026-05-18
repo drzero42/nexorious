@@ -10,7 +10,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/db/models"
+	"github.com/drzero42/nexorious/internal/db/models"
 )
 
 // PlatformsHandler handles platform and storefront endpoints.

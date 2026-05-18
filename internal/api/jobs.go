@@ -15,9 +15,9 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/auth"
-	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/worker/tasks"
+	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // JobsHandler handles job-related endpoints.

@@ -14,8 +14,8 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/drzero42/nexorious-go/internal/config"
-	"github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/migrate"
 )
 
 // SetupHandler handles the one-time admin setup endpoint.

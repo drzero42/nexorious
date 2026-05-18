@@ -17,8 +17,8 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/backup"
-	"github.com/drzero42/nexorious-go/internal/db/models"
+	"github.com/drzero42/nexorious/internal/backup"
+	"github.com/drzero42/nexorious/internal/db/models"
 )
 
 // RestoreCallbacks holds the callbacks needed for restore orchestration.

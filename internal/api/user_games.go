@@ -17,11 +17,11 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/auth"
-	"github.com/drzero42/nexorious-go/internal/config"
-	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/enum"
-	"github.com/drzero42/nexorious-go/internal/filter"
+	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/enum"
+	"github.com/drzero42/nexorious/internal/filter"
 )
 
 // UserGamesHandler handles /api/user-games endpoints.

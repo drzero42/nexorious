@@ -17,10 +17,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 
-	"github.com/drzero42/nexorious-go/internal/api"
-	"github.com/drzero42/nexorious-go/internal/auth"
-	"github.com/drzero42/nexorious-go/internal/config"
-	"github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious/internal/api"
+	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/migrate"
 )
 
 // ─── Test helpers ────────────────────────────────────────────────────────────

@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/riverqueue/river"
 
-	"github.com/drzero42/nexorious-go/internal/config"
-	"github.com/drzero42/nexorious-go/internal/scheduler"
+	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/scheduler"
 )
 
 // ---------------------------------------------------------------------------

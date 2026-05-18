@@ -15,8 +15,8 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 	bunmigrate "github.com/uptrace/bun/migrate"
 
-	"github.com/drzero42/nexorious-go/internal/db/migrations"
-	"github.com/drzero42/nexorious-go/internal/ratelimit"
+	"github.com/drzero42/nexorious/internal/db/migrations"
+	"github.com/drzero42/nexorious/internal/ratelimit"
 )
 
 func setupTestDB(t *testing.T) *bun.DB {

@@ -15,17 +15,17 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/api"
-	"github.com/drzero42/nexorious-go/internal/backup"
-	maint "github.com/drzero42/nexorious-go/internal/middleware"
-	"github.com/drzero42/nexorious-go/internal/migrate"
-	"github.com/drzero42/nexorious-go/internal/ratelimit"
-	"github.com/drzero42/nexorious-go/internal/scheduler"
-	epicsvc "github.com/drzero42/nexorious-go/internal/services/epic"
-	"github.com/drzero42/nexorious-go/internal/services/igdb"
-	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
-	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
-	"github.com/drzero42/nexorious-go/internal/worker/tasks"
+	"github.com/drzero42/nexorious/internal/api"
+	"github.com/drzero42/nexorious/internal/backup"
+	maint "github.com/drzero42/nexorious/internal/middleware"
+	"github.com/drzero42/nexorious/internal/migrate"
+	"github.com/drzero42/nexorious/internal/ratelimit"
+	"github.com/drzero42/nexorious/internal/scheduler"
+	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
+	"github.com/drzero42/nexorious/internal/services/igdb"
+	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
+	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // newServeCmd returns the `serve` subcommand. Bare `./nexorious` also routes

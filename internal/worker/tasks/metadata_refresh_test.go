@@ -16,11 +16,11 @@ import (
 	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/drzero42/nexorious-go/internal/config"
-	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/ratelimit"
-	igdbsvc "github.com/drzero42/nexorious-go/internal/services/igdb"
-	"github.com/drzero42/nexorious-go/internal/worker/tasks"
+	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/ratelimit"
+	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // ─── DB helpers ──────────────────────────────────────────────────────────────

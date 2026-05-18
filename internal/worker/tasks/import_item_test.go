@@ -9,11 +9,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/riverqueue/river"
 
-	"github.com/drzero42/nexorious-go/internal/config"
-	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/ratelimit"
-	"github.com/drzero42/nexorious-go/internal/services/igdb"
-	"github.com/drzero42/nexorious-go/internal/worker/tasks"
+	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/ratelimit"
+	"github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

@@ -13,8 +13,8 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/auth"
-	"github.com/drzero42/nexorious-go/internal/db/models"
+	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/db/models"
 )
 
 type JobItemsHandler struct {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious/internal/migrate"
 )
 
 // fnName returns the fully-qualified name of the function pointed at by v.

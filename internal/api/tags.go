@@ -13,7 +13,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/auth"
+	"github.com/drzero42/nexorious/internal/auth"
 )
 
 // TagsHandler handles tag CRUD endpoints.

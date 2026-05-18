@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/drzero42/nexorious-go/internal/scheduler"
+	"github.com/drzero42/nexorious/internal/scheduler"
 )
 
 func TestCleanupOldJobs(t *testing.T) {

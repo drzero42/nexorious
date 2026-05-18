@@ -15,13 +15,13 @@ import (
 	"github.com/riverqueue/river"
 	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 
-	"github.com/drzero42/nexorious-go/internal/config"
-	"github.com/drzero42/nexorious-go/internal/ratelimit"
-	epicsvc "github.com/drzero42/nexorious-go/internal/services/epic"
-	"github.com/drzero42/nexorious-go/internal/services/igdb"
-	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
-	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
-	"github.com/drzero42/nexorious-go/internal/worker/tasks"
+	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/ratelimit"
+	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
+	"github.com/drzero42/nexorious/internal/services/igdb"
+	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
+	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // ---------------------------------------------------------------------------

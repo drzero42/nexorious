@@ -13,9 +13,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/drzero42/nexorious-go/internal/config"
-	"github.com/drzero42/nexorious-go/internal/ratelimit"
-	"github.com/drzero42/nexorious-go/internal/services/matching"
+	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/ratelimit"
+	"github.com/drzero42/nexorious/internal/services/matching"
 )
 
 const (

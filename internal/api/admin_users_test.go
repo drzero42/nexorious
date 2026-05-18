@@ -10,7 +10,7 @@ import (
 	"github.com/uptrace/bun"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/drzero42/nexorious-go/internal/auth"
+	"github.com/drzero42/nexorious/internal/auth"
 )
 
 // ─── Admin users test helpers ────────────────────────────────────────────────

@@ -10,7 +10,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	migrate "github.com/drzero42/nexorious-go/internal/migrate"
+	migrate "github.com/drzero42/nexorious/internal/migrate"
 )
 
 // ---------------------------------------------------------------------------

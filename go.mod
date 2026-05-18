@@ -1,4 +1,4 @@
-module github.com/drzero42/nexorious-go
+module github.com/drzero42/nexorious
 
 go 1.25.9
 

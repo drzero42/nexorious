@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/drzero42/nexorious-go/internal/db/models"
+	"github.com/drzero42/nexorious/internal/db/models"
 )
 
 // ---------------------------------------------------------------------------

@@ -12,9 +12,9 @@ import (
 	"github.com/robfig/cron/v3"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/config"
-	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/worker/tasks"
+	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // ── CleanupOldJobs ─────────────────────────────────────────────────────────────

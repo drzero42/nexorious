@@ -14,7 +14,7 @@ import (
 	"github.com/uptrace/bun"
 	bunmigrate "github.com/uptrace/bun/migrate"
 
-	"github.com/drzero42/nexorious-go/internal/db/migrations"
+	"github.com/drzero42/nexorious/internal/db/migrations"
 )
 
 type AppState int32

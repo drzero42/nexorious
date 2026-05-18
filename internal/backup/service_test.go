@@ -18,7 +18,7 @@ import (
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
 
-	"github.com/drzero42/nexorious-go/internal/backup"
+	"github.com/drzero42/nexorious/internal/backup"
 )
 
 // createTarGzWithFiles creates a .tar.gz archive with the given file name→content map.

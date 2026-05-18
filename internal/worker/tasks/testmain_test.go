@@ -19,7 +19,7 @@ import (
 	bunmigrate "github.com/uptrace/bun/migrate"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/drzero42/nexorious-go/internal/db/migrations"
+	"github.com/drzero42/nexorious/internal/db/migrations"
 )
 
 // testDB is the shared database connection for all external package tests.

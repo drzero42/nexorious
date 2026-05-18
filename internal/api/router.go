@@ -17,16 +17,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
-	"github.com/drzero42/nexorious-go/internal/auth"
-	"github.com/drzero42/nexorious-go/internal/backup"
-	"github.com/drzero42/nexorious-go/internal/config"
-	maint "github.com/drzero42/nexorious-go/internal/middleware"
-	migrate "github.com/drzero42/nexorious-go/internal/migrate"
-	epicsvc "github.com/drzero42/nexorious-go/internal/services/epic"
-	"github.com/drzero42/nexorious-go/internal/services/igdb"
-	psnsvc "github.com/drzero42/nexorious-go/internal/services/psn"
-	steamsvc "github.com/drzero42/nexorious-go/internal/services/steam"
-	"github.com/drzero42/nexorious-go/ui"
+	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/backup"
+	"github.com/drzero42/nexorious/internal/config"
+	maint "github.com/drzero42/nexorious/internal/middleware"
+	migrate "github.com/drzero42/nexorious/internal/migrate"
+	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
+	"github.com/drzero42/nexorious/internal/services/igdb"
+	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
+	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
+	"github.com/drzero42/nexorious/ui"
 )
 
 // New creates and configures the Echo instance with all middleware and routes.

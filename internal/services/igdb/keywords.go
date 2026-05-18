@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/drzero42/nexorious-go/internal/services/matching"
+	"github.com/drzero42/nexorious/internal/services/matching"
 )
 
 var (

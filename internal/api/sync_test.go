@@ -13,8 +13,8 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/api"
-	"github.com/drzero42/nexorious-go/internal/auth"
+	"github.com/drzero42/nexorious/internal/api"
+	"github.com/drzero42/nexorious/internal/auth"
 )
 
 type stubSteamClient struct {

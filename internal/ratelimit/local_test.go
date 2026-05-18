@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/drzero42/nexorious-go/internal/ratelimit"
+	"github.com/drzero42/nexorious/internal/ratelimit"
 )
 
 func TestLocal_RespectsContextCancellation(t *testing.T) {

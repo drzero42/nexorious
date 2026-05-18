@@ -11,9 +11,9 @@ import (
 
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/api"
-	"github.com/drzero42/nexorious-go/internal/backup"
-	"github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious/internal/api"
+	"github.com/drzero42/nexorious/internal/backup"
+	"github.com/drzero42/nexorious/internal/migrate"
 )
 
 // newTestEchoBackup creates an Echo instance with a real backup service.

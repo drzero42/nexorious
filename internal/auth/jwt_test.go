@@ -10,7 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v5"
 
-	"github.com/drzero42/nexorious-go/internal/auth"
+	"github.com/drzero42/nexorious/internal/auth"
 )
 
 func TestGenerateAndParseAccessToken(t *testing.T) {

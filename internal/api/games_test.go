@@ -13,11 +13,11 @@ import (
 
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious-go/internal/api"
-	"github.com/drzero42/nexorious-go/internal/db/models"
-	"github.com/drzero42/nexorious-go/internal/migrate"
-	"github.com/drzero42/nexorious-go/internal/ratelimit"
-	"github.com/drzero42/nexorious-go/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/api"
+	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/migrate"
+	"github.com/drzero42/nexorious/internal/ratelimit"
+	"github.com/drzero42/nexorious/internal/services/igdb"
 )
 var gameIDCounter int32
 

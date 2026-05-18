@@ -12,8 +12,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/drzero42/nexorious-go/internal/api"
-	"github.com/drzero42/nexorious-go/internal/migrate"
+	"github.com/drzero42/nexorious/internal/api"
+	"github.com/drzero42/nexorious/internal/migrate"
 )
 
 func TestSetupAdmin_Success(t *testing.T) {

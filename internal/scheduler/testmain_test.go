@@ -22,7 +22,7 @@ import (
 	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 	bunmigrate "github.com/uptrace/bun/migrate"
 
-	"github.com/drzero42/nexorious-go/internal/db/migrations"
+	"github.com/drzero42/nexorious/internal/db/migrations"
 )
 
 var (

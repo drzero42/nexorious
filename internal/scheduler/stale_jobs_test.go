@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/drzero42/nexorious-go/internal/scheduler"
+	"github.com/drzero42/nexorious/internal/scheduler"
 )
 
 func TestCleanupStaleJobs_StuckPendingNoItems(t *testing.T) {

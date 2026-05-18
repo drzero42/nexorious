@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/drzero42/nexorious-go/internal/config"
+	"github.com/drzero42/nexorious/internal/config"
 )
 
 func TestLoad_DatabaseURLFromIndividualVars(t *testing.T) {
