@@ -62,7 +62,7 @@ func expandQueries(query string) []string {
 	// If multiple keywords matched, add the fully-transformed variant
 	if anyMatch {
 		fullTransformed = collapseWhitespace(fullTransformed)
-		if fullTransformed != original && !containsString(results, fullTransformed) {
+		if fullTransformed != original && !slices.Contains(results, fullTransformed) {
 			results = append(results, fullTransformed)
 		}
 	}
@@ -74,6 +74,3 @@ func collapseWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-func containsString(slice []string, s string) bool {
-	return slices.Contains(slice, s)
-}
