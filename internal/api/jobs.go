@@ -232,7 +232,7 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 
 	var rows []sourceCount
 	err := h.db.NewRaw(`
-		SELECT j.source, COUNT(*) AS count
+		SELECT j.source, COUNT(DISTINCT ji.source_title) AS count
 		FROM job_items ji
 		JOIN jobs j ON ji.job_id = j.id
 		WHERE ji.user_id = ? AND ji.status = ?
@@ -451,29 +451,45 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 		perPage = 100
 	}
 
+	statusParam := c.QueryParam("status")
+
 	q := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID)
 	countQ := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID)
 
-	if st := c.QueryParam("status"); st != "" {
-		q = q.Where("status = ?", st)
-		countQ = countQ.Where("status = ?", st)
+	if statusParam != "" && statusParam != "pending_review" {
+		q = q.Where("status = ?", statusParam)
+		countQ = countQ.Where("status = ?", statusParam)
 	}
 
-	total, err := countQ.Count(context.Background())
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count job items")
+	var total int
+	if statusParam == "pending_review" {
+		if err := h.db.NewRaw(
+			`SELECT COUNT(DISTINCT source_title) FROM job_items WHERE job_id = ? AND status = 'pending_review'`,
+			jobID,
+		).Scan(context.Background(), &total); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count job items")
+		}
+	} else {
+		var err error
+		total, err = countQ.Count(context.Background())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count job items")
+		}
 	}
 
 	offset := (page - 1) * perPage
 	var items []models.JobItem
-	sortExpr := "created_at ASC"
-	if c.QueryParam("status") == "pending_review" {
-		sortExpr = "source_title ASC"
-	}
-	err = q.OrderExpr(sortExpr).Limit(perPage).Offset(offset).
-		Scan(context.Background(), &items)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
+	if statusParam == "pending_review" {
+		if err := h.db.NewRaw(
+			`SELECT DISTINCT ON (source_title) * FROM job_items WHERE job_id = ? AND status = 'pending_review' ORDER BY source_title ASC LIMIT ? OFFSET ?`,
+			jobID, perPage, offset,
+		).Scan(context.Background(), &items); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
+		}
+	} else {
+		if err := q.OrderExpr("created_at ASC").Limit(perPage).Offset(offset).Scan(context.Background(), &items); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
+		}
 	}
 	if items == nil {
 		items = []models.JobItem{}

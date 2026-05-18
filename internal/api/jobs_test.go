@@ -324,6 +324,33 @@ func TestPendingReviewCount_ExcludesCancelledJobs(t *testing.T) {
 	}
 }
 
+func TestPendingReviewCount_Deduplicates(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "prc-dedup")
+
+	insertJob(t, testDB, "job-prc-dedup", userID, "sync", "psn", "processing")
+	// Same source_title, different item_key (PS4 and PS5 SKUs of the same game).
+	insertJobItem(t, testDB, "ji-prc-dedup-1", "job-prc-dedup", userID, "CUSA12345_00", "Call of Duty", "pending_review")
+	insertJobItem(t, testDB, "ji-prc-dedup-2", "job-prc-dedup", userID, "PPSA07890_00", "Call of Duty", "pending_review")
+
+	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["pending_review_count"].(float64) != 1 {
+		t.Fatalf("expected pending_review_count=1 (deduplicated), got %v", resp["pending_review_count"])
+	}
+	bySource := resp["counts_by_source"].(map[string]any)
+	if bySource["psn"].(float64) != 1 {
+		t.Fatalf("expected counts_by_source.psn=1 (deduplicated), got %v", bySource["psn"])
+	}
+}
+
 // ─── TestHandleActiveJob ──────────────────────────────────────────────────────
 
 func TestHandleActiveJob_NoJobs(t *testing.T) {
@@ -814,5 +841,42 @@ func TestHandleGetJobItems_SortsPendingReviewAlphabetically(t *testing.T) {
 		if got != title {
 			t.Errorf("position %d: got %q, want %q", i, got, title)
 		}
+	}
+}
+
+func TestHandleGetJobItems_DeduplicatesPendingReview(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "items-dedup")
+
+	insertJob(t, testDB, "job-dedup", userID, "sync", "psn", "processing")
+	// Same source_title, different item_key (PS4 and PS5 SKUs of the same game).
+	insertJobItem(t, testDB, "ji-dedup-ps4", "job-dedup", userID, "CUSA12345_00", "Call of Duty", "pending_review")
+	insertJobItem(t, testDB, "ji-dedup-ps5", "job-dedup", userID, "PPSA07890_00", "Call of Duty", "pending_review")
+	// A distinct title to verify other items still appear.
+	insertJobItem(t, testDB, "ji-dedup-other", "job-dedup", userID, "CUSA99999_00", "Other Game", "pending_review")
+
+	rec := getAuth(t, e, "/api/jobs/job-dedup/items?status=pending_review", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["total"].(float64) != 2 {
+		t.Fatalf("expected total=2 (deduplicated), got %v", resp["total"])
+	}
+	items := resp["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items (deduplicated), got %d", len(items))
+	}
+	// Items must be sorted alphabetically.
+	titles := []string{
+		items[0].(map[string]any)["source_title"].(string),
+		items[1].(map[string]any)["source_title"].(string),
+	}
+	if titles[0] != "Call of Duty" || titles[1] != "Other Game" {
+		t.Errorf("expected [Call of Duty, Other Game], got %v", titles)
 	}
 }
