@@ -23,6 +23,7 @@ import (
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	migrate "github.com/drzero42/nexorious/internal/migrate"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
+	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
@@ -289,7 +290,8 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		steamSvc := steamsvc.NewClient()
 		psnSvc := psnsvc.NewClient()
 		epicSvc := epicsvc.NewClient(cfg.LegendaryWorkDir)
-		synch := NewSyncHandler(db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc}, nil)
+		gogSvc := gogsvc.NewClient()
+		synch := NewSyncHandler(db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc})
 		syncGroup := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 		synch.RegisterRoutes(syncGroup)
 	}
@@ -357,6 +359,27 @@ func (a *epicClientAdapter) Cleanup(ctx context.Context, userID string) error {
 
 func (a *epicClientAdapter) Configured() bool {
 	return a.c.Configured()
+}
+
+// gogClientAdapter bridges gogsvc.Client to the GOGClient interface
+// without creating an import cycle between internal/api and internal/services/gog.
+type gogClientAdapter struct{ c *gogsvc.Client }
+
+func (a *gogClientAdapter) BuildAuthURL() string {
+	return a.c.BuildAuthURL()
+}
+
+func (a *gogClientAdapter) ExchangeCode(ctx context.Context, code string) (*GOGTokenResponse, error) {
+	tok, err := a.c.ExchangeCode(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	return &GOGTokenResponse{
+		AccessToken:  tok.AccessToken,
+		RefreshToken: tok.RefreshToken,
+		UserID:       tok.UserID,
+		Username:     tok.Username,
+	}, nil
 }
 
 func spaHandler() echo.HandlerFunc {
