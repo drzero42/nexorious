@@ -101,6 +101,9 @@ export {
   skipExternalGame,
   unskipExternalGame,
   rematchExternalGame,
+  connectGOG,
+  getGOGConnection,
+  disconnectGOG,
 } from './sync';
 
 // Re-export sync API types

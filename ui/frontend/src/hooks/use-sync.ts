@@ -10,6 +10,8 @@ import type {
   SteamVerifyResponse,
   EpicConnectResponse,
   EpicConnectionResponse,
+  GOGConnectResponse,
+  GOGConnectionResponse,
   PSNConfigureResponse,
   PSNStatusResponse,
 } from '@/types';
@@ -25,6 +27,7 @@ export const syncKeys = {
   statuses: () => [...syncKeys.all, 'statuses'] as const,
   status: (platform: SyncPlatform) => [...syncKeys.statuses(), platform] as const,
   epicConnection: () => [...syncKeys.all, 'epicConnection'] as const,
+  gogConnection: () => [...syncKeys.all, 'gogConnection'] as const,
   psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
   externalGames: (platform: SyncPlatform) => [...syncKeys.all, 'external-games', platform] as const,
 };
@@ -229,6 +232,48 @@ export function useDisconnectEpic() {
     },
     onError: (error) => {
       console.error('Failed to disconnect Epic:', error);
+    },
+  });
+}
+
+// ============================================================================
+// GOG Auth Hooks
+// ============================================================================
+
+export function useGOGConnection() {
+  return useQuery<GOGConnectionResponse, Error>({
+    queryKey: syncKeys.gogConnection(),
+    queryFn: syncApi.getGOGConnection,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useConnectGOG() {
+  const queryClient = useQueryClient();
+
+  return useMutation<GOGConnectResponse, Error, string>({
+    mutationFn: (authCode: string) => syncApi.connectGOG(authCode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.GOG) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.gogConnection() });
+    },
+  });
+}
+
+export function useDisconnectGOG() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error>({
+    mutationFn: syncApi.disconnectGOG,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.GOG) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.gogConnection() });
+    },
+    onError: (error) => {
+      console.error('Failed to disconnect GOG:', error);
     },
   });
 }
