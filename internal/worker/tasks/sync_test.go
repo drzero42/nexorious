@@ -1265,9 +1265,12 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 
 	// Pre-insert God of War as skipped. The ON CONFLICT upsert does not touch
 	// is_skipped, so it remains true even when the batch includes this game.
+	// raw_platform must match the value in the sync batch so the upsert hits
+	// the correct row under the (user_id, storefront, external_id, raw_platform)
+	// unique constraint.
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'psn', 'NPWR00001_00', 'God of War', true, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, raw_platform, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'psn', 'NPWR00001_00', 'God of War', 'playstation-4', true, true, false, 0)`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
 

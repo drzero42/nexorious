@@ -201,7 +201,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				UpdatedAt:       upsertNow,
 			}
 			_, _ = w.DB.NewInsert().Model(row).
-				On("CONFLICT (user_id, storefront, external_id) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, raw_platform = EXCLUDED.raw_platform, is_available = true, updated_at = now()").
+				On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
 				Exec(ctx)
 		}
 
@@ -271,7 +271,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 						UpdatedAt:       upsertNow,
 					}
 					if _, err := w.DB.NewInsert().Model(row).
-						On("CONFLICT (user_id, storefront, external_id) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, raw_platform = EXCLUDED.raw_platform, is_available = true, updated_at = now()").
+						On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
 						Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: psn upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
 					}
@@ -366,7 +366,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 						UpdatedAt:       upsertNow,
 					}
 					if _, err := w.DB.NewInsert().Model(row).
-						On("CONFLICT (user_id, storefront, external_id) DO UPDATE SET title = EXCLUDED.title, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, raw_platform = EXCLUDED.raw_platform, is_available = true, updated_at = now()").
+						On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
 						Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: epic upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
 					}
