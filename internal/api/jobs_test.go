@@ -34,6 +34,34 @@ func insertJobItem(t *testing.T, db *bun.DB, id, jobID, userID, itemKey, sourceT
 	}
 }
 
+// insertRiverJob inserts a minimal river_job row with the given state, whose
+// args reference the provided job_item ID. Returns the generated bigserial id.
+func insertRiverJob(t *testing.T, db *bun.DB, kind, state, jobItemID string) int64 {
+	t.Helper()
+	var id int64
+	err := db.NewRaw(
+		`INSERT INTO river_job (kind, max_attempts, state, args)
+		 VALUES (?, 25, ?::river_job_state, jsonb_build_object('job_item_id', ?::text))
+		 RETURNING id`,
+		kind, state, jobItemID,
+	).Scan(context.Background(), &id)
+	if err != nil {
+		t.Fatalf("insertRiverJob: %v", err)
+	}
+	return id
+}
+
+// riverJobState reads the current state of a river_job row by id.
+func riverJobState(t *testing.T, db *bun.DB, id int64) string {
+	t.Helper()
+	var state string
+	if err := db.NewRaw(`SELECT state::text FROM river_job WHERE id = ?`, id).
+		Scan(context.Background(), &state); err != nil {
+		t.Fatalf("riverJobState: %v", err)
+	}
+	return state
+}
+
 func newTestEchoWithPool(t *testing.T, db *bun.DB) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
@@ -133,6 +161,8 @@ func TestCancelJob(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "jobs-cancel")
 
 	insertJob(t, testDB, "job-cancel-1", userID, "sync", "steam", "processing")
+	insertJobItem(t, testDB, "ji-cancel-1", "job-cancel-1", userID, "key-1", "Game 1", "pending")
+	riverID := insertRiverJob(t, testDB, "import_item", "available", "ji-cancel-1")
 
 	rec := postJSONAuth(t, e, "/api/jobs/job-cancel-1/cancel", nil, token)
 	if rec.Code != http.StatusOK {
@@ -149,6 +179,11 @@ func TestCancelJob(t *testing.T) {
 	}
 	if status != "cancelled" {
 		t.Fatalf("expected status=cancelled, got %s", status)
+	}
+
+	// Verify the queued river_job was cancelled too.
+	if state := riverJobState(t, testDB, riverID); state != "cancelled" {
+		t.Errorf("expected river_job state=cancelled, got %q", state)
 	}
 }
 

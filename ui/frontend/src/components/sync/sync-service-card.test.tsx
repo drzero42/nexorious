@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@/test/test-utils';
+import { render, screen, within } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
 import { SyncServiceCard } from './sync-service-card';
 import { SyncPlatform, SyncFrequency } from '@/types';
@@ -532,6 +532,81 @@ describe('SyncServiceCard', () => {
           />
         )
       ).not.toThrow();
+    });
+  });
+
+  describe('reset dialog', () => {
+    it('does not render the Reset button when onReset is omitted', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.queryByRole('button', { name: /^reset$/i })).not.toBeInTheDocument();
+    });
+
+    it('does not render the Reset button when not configured', () => {
+      const config = createMockConfig({ isConfigured: false });
+      const onReset = vi.fn();
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+          onReset={onReset}
+        />
+      );
+
+      expect(screen.queryByRole('button', { name: /^reset$/i })).not.toBeInTheDocument();
+    });
+
+    it('opens the confirmation dialog when the Reset button is clicked', async () => {
+      const user = userEvent.setup({ delay: null });
+      const config = createMockConfig();
+      const onReset = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+          onReset={onReset}
+        />
+      );
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /^reset$/i }));
+
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+      expect(screen.getByText(/reset sync data\?/i)).toBeInTheDocument();
+      expect(onReset).not.toHaveBeenCalled();
+    });
+
+    it('calls onReset when the dialog Reset button is clicked', async () => {
+      const user = userEvent.setup({ delay: null });
+      const config = createMockConfig();
+      const onReset = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <SyncServiceCard
+          config={config}
+          onUpdate={mockOnUpdate}
+          onTriggerSync={mockOnTriggerSync}
+          onReset={onReset}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: /^reset$/i }));
+
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: /^reset$/i }));
+
+      expect(onReset).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -37,7 +37,7 @@ interface SyncConfigListApiResponse {
 }
 
 interface SyncStatusApiResponse {
-  platform: string;
+  storefront: string;
   is_syncing: boolean;
   last_synced_at: string | null;
   active_job_id: string | null;
@@ -46,7 +46,7 @@ interface SyncStatusApiResponse {
 interface ManualSyncApiResponse {
   message: string;
   job_id: string;
-  platform: string;
+  storefront: string;
   status: string;
 }
 
@@ -79,7 +79,7 @@ function transformSyncConfig(apiConfig: SyncConfigApiResponse): SyncConfig {
 
 function transformSyncStatus(apiStatus: SyncStatusApiResponse): SyncStatus {
   return {
-    platform: apiStatus.platform as SyncPlatform,
+    platform: apiStatus.storefront as SyncPlatform,
     isSyncing: apiStatus.is_syncing,
     lastSyncedAt: apiStatus.last_synced_at,
     activeJobId: apiStatus.active_job_id,
@@ -90,7 +90,7 @@ function transformManualSyncResponse(apiResponse: ManualSyncApiResponse): Manual
   return {
     message: apiResponse.message,
     jobId: apiResponse.job_id,
-    platform: apiResponse.platform,
+    platform: apiResponse.storefront,
     status: apiResponse.status,
   };
 }

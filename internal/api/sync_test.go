@@ -883,6 +883,8 @@ func TestResetSyncData_CancelsActiveJob(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "reset-cancel")
 
 	insertJob(t, testDB, "job-reset-active", userID, "sync", "steam", "processing")
+	insertJobItem(t, testDB, "ji-reset-active", "job-reset-active", userID, "key-1", "Game 1", "pending")
+	riverID := insertRiverJob(t, testDB, "import_item", "available", "ji-reset-active")
 
 	rec := deleteAuth(t, e, "/api/sync/steam/data", token)
 	if rec.Code != http.StatusNoContent {
@@ -893,6 +895,10 @@ func TestResetSyncData_CancelsActiveJob(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = 'job-reset-active'`).Scan(context.Background(), &status)
 	if status != "cancelled" {
 		t.Errorf("expected active job to be cancelled, got %q", status)
+	}
+
+	if state := riverJobState(t, testDB, riverID); state != "cancelled" {
+		t.Errorf("expected river_job state=cancelled, got %q", state)
 	}
 }
 

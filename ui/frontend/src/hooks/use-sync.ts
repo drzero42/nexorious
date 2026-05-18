@@ -172,6 +172,7 @@ export function useResetSyncData() {
     mutationFn: (platform) => syncApi.resetSyncData(platform),
     onSuccess: (_, platform) => {
       queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(platform) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
       queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
       queryClient.invalidateQueries({ queryKey: syncKeys.status(platform) });
     },

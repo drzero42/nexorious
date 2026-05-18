@@ -30,7 +30,7 @@ describe('syncApi', () => {
           {
             id: '1',
             user_id: 'user-1',
-            platform: 'steam',
+            storefront: 'steam',
             frequency: 'daily',
             auto_add: true,
             last_synced_at: '2025-01-01T00:00:00Z',
@@ -59,7 +59,7 @@ describe('syncApi', () => {
       const mockResponse = {
         id: '1',
         user_id: 'user-1',
-        platform: 'steam',
+        storefront: 'steam',
         frequency: 'daily',
         auto_add: true,
         last_synced_at: '2025-01-01T00:00:00Z',
@@ -85,7 +85,7 @@ describe('syncApi', () => {
       const mockResponse = {
         id: '1',
         user_id: 'user-1',
-        platform: 'steam',
+        storefront: 'steam',
         frequency: 'weekly',
         auto_add: false,
         last_synced_at: null,
@@ -115,7 +115,7 @@ describe('syncApi', () => {
       const mockResponse = {
         message: 'Sync started',
         job_id: 'job-123',
-        platform: 'steam',
+        storefront: 'steam',
         status: 'queued',
       };
 
@@ -132,7 +132,7 @@ describe('syncApi', () => {
   describe('getSyncStatus', () => {
     it('should fetch and transform sync status', async () => {
       const mockResponse = {
-        platform: 'steam',
+        storefront: 'steam',
         is_syncing: true,
         last_synced_at: '2025-01-01T00:00:00Z',
         active_job_id: 'job-123',

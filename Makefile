@@ -1,4 +1,4 @@
-.PHONY: all frontend build test coverage
+.PHONY: all frontend build test test-backend test-frontend coverage
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -13,8 +13,13 @@ frontend:
 build:
 	go build $(LDFLAGS) -o nexorious ./cmd/nexorious
 
-test:
+test: test-backend test-frontend
+
+test-backend:
 	go test ./...
+
+test-frontend:
+	cd ui/frontend && npm run test
 
 coverage:
 	go test -coverprofile=coverage.out ./...

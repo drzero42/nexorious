@@ -61,16 +61,10 @@ describe('tags.ts', () => {
   });
 
   describe('getTags', () => {
-    it('returns paginated tags list', async () => {
+    it('returns tags list', async () => {
       server.use(
-        http.get(`${API_URL}/tags/`, () => {
-          return HttpResponse.json({
-            tags: [mockTagApi, mockTag2Api],
-            total: 2,
-            page: 1,
-            per_page: 100,
-            total_pages: 1,
-          });
+        http.get(`${API_URL}/tags`, () => {
+          return HttpResponse.json([mockTagApi, mockTag2Api]);
         })
       );
 
@@ -79,7 +73,7 @@ describe('tags.ts', () => {
       expect(result.tags).toHaveLength(2);
       expect(result.total).toBe(2);
       expect(result.page).toBe(1);
-      expect(result.perPage).toBe(100);
+      expect(result.perPage).toBe(2);
       expect(result.totalPages).toBe(1);
 
       // Verify tag transformation
@@ -97,19 +91,13 @@ describe('tags.ts', () => {
 
     it('passes custom parameters', async () => {
       server.use(
-        http.get(`${API_URL}/tags/`, ({ request }) => {
+        http.get(`${API_URL}/tags`, ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get('page')).toBe('2');
           expect(url.searchParams.get('per_page')).toBe('50');
           expect(url.searchParams.get('include_game_count')).toBe('true');
 
-          return HttpResponse.json({
-            tags: [],
-            total: 0,
-            page: 2,
-            per_page: 50,
-            total_pages: 0,
-          });
+          return HttpResponse.json([]);
         })
       );
 
@@ -127,32 +115,13 @@ describe('tags.ts', () => {
   });
 
   describe('getAllTags', () => {
-    it('returns all tags by paginating through all pages', async () => {
+    it('returns all tags in a single call', async () => {
       let callCount = 0;
 
       server.use(
-        http.get(`${API_URL}/tags/`, ({ request }) => {
+        http.get(`${API_URL}/tags`, () => {
           callCount++;
-          const url = new URL(request.url);
-          const page = parseInt(url.searchParams.get('page') || '1');
-
-          if (page === 1) {
-            return HttpResponse.json({
-              tags: [mockTagApi],
-              total: 2,
-              page: 1,
-              per_page: 100,
-              total_pages: 2,
-            });
-          }
-
-          return HttpResponse.json({
-            tags: [mockTag2Api],
-            total: 2,
-            page: 2,
-            per_page: 100,
-            total_pages: 2,
-          });
+          return HttpResponse.json([mockTagApi, mockTag2Api]);
         })
       );
 
@@ -161,19 +130,13 @@ describe('tags.ts', () => {
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe('tag-1');
       expect(result[1].id).toBe('tag-2');
-      expect(callCount).toBe(2);
+      expect(callCount).toBe(1);
     });
 
     it('returns empty array when no tags exist', async () => {
       server.use(
-        http.get(`${API_URL}/tags/`, () => {
-          return HttpResponse.json({
-            tags: [],
-            total: 0,
-            page: 1,
-            per_page: 100,
-            total_pages: 0,
-          });
+        http.get(`${API_URL}/tags`, () => {
+          return HttpResponse.json([]);
         })
       );
 
@@ -215,7 +178,7 @@ describe('tags.ts', () => {
   describe('createTag', () => {
     it('creates a new tag', async () => {
       server.use(
-        http.post(`${API_URL}/tags/`, async ({ request }) => {
+        http.post(`${API_URL}/tags`, async ({ request }) => {
           const body = (await request.json()) as {
             name: string;
             color?: string;
@@ -249,7 +212,7 @@ describe('tags.ts', () => {
 
     it('creates tag with minimal data', async () => {
       server.use(
-        http.post(`${API_URL}/tags/`, async ({ request }) => {
+        http.post(`${API_URL}/tags`, async ({ request }) => {
           const body = (await request.json()) as { name: string };
           expect(body.name).toBe('Simple Tag');
 
@@ -271,7 +234,7 @@ describe('tags.ts', () => {
 
     it('throws error for duplicate tag name', async () => {
       server.use(
-        http.post(`${API_URL}/tags/`, () => {
+        http.post(`${API_URL}/tags`, () => {
           return HttpResponse.json({ detail: 'Tag with this name already exists' }, { status: 409 });
         })
       );

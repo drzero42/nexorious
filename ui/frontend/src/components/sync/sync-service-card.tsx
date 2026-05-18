@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -62,6 +62,23 @@ export function SyncServiceCard({
 }: SyncServiceCardProps) {
   const [localFrequency, setLocalFrequency] = useState(config.frequency);
   const [localAutoAdd, setLocalAutoAdd] = useState(config.autoAdd);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const wasResettingRef = useRef(false);
+
+  // Close the confirmation dialog once the reset mutation has settled.
+  useEffect(() => {
+    if (wasResettingRef.current && !isResetting) {
+      setResetDialogOpen(false);
+    }
+    wasResettingRef.current = isResetting;
+  }, [isResetting]);
+
+  const handleResetClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    // Prevent Radix from auto-closing the dialog — useEffect closes it
+    // after the mutation settles instead.
+    event.preventDefault();
+    void onReset?.();
+  };
 
   const platformInfo = getPlatformDisplayInfo(config.platform);
   const isCurrentlySyncing = isSyncing || status?.isSyncing;
@@ -163,14 +180,21 @@ export function SyncServiceCard({
         </Link>
         <div className="flex items-center gap-2">
           {onReset && config.isConfigured && (
-            <AlertDialog>
+            <AlertDialog
+              open={resetDialogOpen}
+              onOpenChange={(open) => {
+                // Block external close attempts (overlay click, Esc) while resetting.
+                if (!open && isResetting) return;
+                setResetDialogOpen(open);
+              }}
+            >
               <AlertDialogTrigger asChild>
                 <Button
                   variant="ghost"
                   size="sm"
                   disabled={isResetting}
                 >
-                  {isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reset'}
+                  Reset
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -182,8 +206,20 @@ export function SyncServiceCard({
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={onReset}>Reset</AlertDialogAction>
+                  <AlertDialogCancel disabled={isResetting}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleResetClick}
+                    disabled={isResetting}
+                  >
+                    {isResetting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Resetting...
+                      </>
+                    ) : (
+                      'Reset'
+                    )}
+                  </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>

@@ -726,14 +726,13 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 		`SELECT * FROM jobs WHERE user_id = ? AND source = ? AND job_type = 'sync' AND status IN ('pending', 'processing') LIMIT 1`,
 		userID, sf,
 	).Scan(ctx, &activeJob); err == nil {
-		now := time.Now().UTC()
 		_, _ = h.db.NewRaw(
-			`UPDATE jobs SET status = ?, completed_at = ? WHERE id = ?`,
-			models.JobStatusCancelled, now, activeJob.ID,
+			`UPDATE jobs SET status = ?, completed_at = now() WHERE id = ?`,
+			models.JobStatusCancelled, activeJob.ID,
 		).Exec(ctx)
 		_, _ = h.db.NewRaw(`
 			UPDATE river_job
-			SET state = 'cancelled', finalized_at = NOW()
+			SET state = 'cancelled', finalized_at = now()
 			WHERE state IN ('available', 'scheduled', 'retryable', 'pending')
 			  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE job_id = ?)`,
 			activeJob.ID,

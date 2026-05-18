@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -174,6 +174,16 @@ function SyncDetailPage() {
   const { mutateAsync: resetSync, isPending: isResetting } = useResetSyncData();
   const { mutateAsync: cancelJob, isPending: isCancelling } = useCancelJob();
   const [isRetrying, setIsRetrying] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const wasResettingRef = useRef(false);
+
+  // Close the confirmation dialog once the reset mutation has settled.
+  useEffect(() => {
+    if (wasResettingRef.current && !isResetting) {
+      setResetDialogOpen(false);
+    }
+    wasResettingRef.current = isResetting;
+  }, [isResetting]);
 
   const platformInfo = getPlatformDisplayInfo(platform);
   const isLoading = configLoading || statusLoading;
@@ -216,14 +226,16 @@ function SyncDetailPage() {
     }
   };
 
-  const handleReset = async () => {
+  const handleReset = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    // Prevent Radix from auto-closing the dialog — the useEffect above
+    // closes it after the mutation settles.
+    event.preventDefault();
     try {
       await resetSync(platform);
       toast.success(`${platformInfo.name} sync data reset`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to reset sync data';
       toast.error(message);
-      throw err;
     }
   };
 
@@ -315,10 +327,16 @@ function SyncDetailPage() {
 
         <div className="flex items-center gap-2">
           {config.isConfigured && (
-            <AlertDialog>
+            <AlertDialog
+              open={resetDialogOpen}
+              onOpenChange={(open) => {
+                if (!open && isResetting) return;
+                setResetDialogOpen(open);
+              }}
+            >
               <AlertDialogTrigger asChild>
                 <Button variant="ghost" disabled={isResetting}>
-                  {isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reset'}
+                  Reset
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -330,8 +348,17 @@ function SyncDetailPage() {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleReset}>Reset</AlertDialogAction>
+                  <AlertDialogCancel disabled={isResetting}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleReset} disabled={isResetting}>
+                    {isResetting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Resetting...
+                      </>
+                    ) : (
+                      'Reset'
+                    )}
+                  </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>

@@ -25,7 +25,7 @@ const API_URL = '/api';
 const mockSyncConfigApi = {
   id: '1',
   user_id: 'user-1',
-  platform: 'steam',
+  storefront: 'steam',
   frequency: 'daily',
   auto_add: true,
   last_synced_at: null,
@@ -35,7 +35,7 @@ const mockSyncConfigApi = {
 };
 
 const mockSyncStatusApi = {
-  platform: 'steam',
+  storefront: 'steam',
   is_syncing: false,
   last_synced_at: '2025-01-01T12:00:00Z',
   active_job_id: null,
@@ -300,7 +300,7 @@ describe('use-sync hooks', () => {
           return HttpResponse.json({
             message: 'Sync started',
             job_id: 'job-123',
-            platform: 'steam',
+            storefront: 'steam',
             status: 'queued',
           });
         })
