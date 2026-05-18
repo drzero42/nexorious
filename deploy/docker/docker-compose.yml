@@ -1,0 +1,43 @@
+# Simple deployment using the published container image.
+#
+# Services:
+#   db    — PostgreSQL 18 database
+#   app   — Nexorious binary (embeds frontend, runs migrations on startup)
+#
+# Usage:
+#   docker compose up -d        # Start all services
+#   docker compose down         # Stop (keeps volumes)
+#   docker compose down -v      # Stop and remove volumes (fresh DB)
+#
+# Configuration: copy .env.example to .env at the repo root and fill in values.
+
+services:
+  db:
+    image: docker.io/postgres:18-alpine
+    environment:
+      POSTGRES_USER: nexorious
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: nexorious
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexorious"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: ghcr.io/drzero42/nexorious:dev
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://nexorious:${POSTGRES_PASSWORD}@db:5432/nexorious?sslmode=disable
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:?IGDB_CLIENT_ID is required}
+      IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:?IGDB_CLIENT_SECRET is required}
+
+volumes:
+  postgres_data:
