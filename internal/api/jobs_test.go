@@ -556,8 +556,11 @@ func TestHandleRetryFailed_NoFailedItems(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["retried"].(float64) != 0 {
-		t.Fatalf("expected retried=0, got %v", resp["retried"])
+	if resp["retried_count"].(float64) != 0 {
+		t.Fatalf("expected retried_count=0, got %v", resp["retried_count"])
+	}
+	if resp["success"] != true {
+		t.Fatalf("expected success=true, got %v", resp["success"])
 	}
 }
 
@@ -577,8 +580,8 @@ func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["retried"].(float64) != 1 {
-		t.Fatalf("expected retried=1, got %v", resp["retried"])
+	if resp["retried_count"].(float64) != 1 {
+		t.Fatalf("expected retried=1, got %v", resp["retried_count"])
 	}
 }
 
@@ -696,8 +699,8 @@ func TestHandleRetryFailed_SyncJobType(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["retried"].(float64) != 1 {
-		t.Fatalf("expected retried=1, got %v", resp["retried"])
+	if resp["retried_count"].(float64) != 1 {
+		t.Fatalf("expected retried=1, got %v", resp["retried_count"])
 	}
 }
 
@@ -717,8 +720,8 @@ func TestHandleRetryFailed_MetadataRefreshJobType(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["retried"].(float64) != 1 {
-		t.Fatalf("expected retried=1, got %v", resp["retried"])
+	if resp["retried_count"].(float64) != 1 {
+		t.Fatalf("expected retried=1, got %v", resp["retried_count"])
 	}
 }
 
@@ -772,8 +775,8 @@ func TestRetryFailed_IncludesIGDBFailed(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if retried, ok := resp["retried"].(float64); !ok || retried != 2 {
-		t.Errorf("expected retried=2 (1 igdb_failed + 1 failed), got %v", resp["retried"])
+	if retried, ok := resp["retried_count"].(float64); !ok || retried != 2 {
+		t.Errorf("expected retried=2 (1 igdb_failed + 1 failed), got %v", resp["retried_count"])
 	}
 
 	var s1, s2 string
