@@ -81,6 +81,23 @@ func (w *CleanupExpiredSessionsWorker) Work(ctx context.Context, _ *river.Job[Cl
 	return nil
 }
 
+// ── RescueOrphanedPendingItems ────────────────────────────────────────────────
+
+type RescueOrphanedPendingItemsArgs struct{}
+
+func (RescueOrphanedPendingItemsArgs) Kind() string { return "rescue_orphaned_pending_items" }
+
+type RescueOrphanedPendingItemsWorker struct {
+	river.WorkerDefaults[RescueOrphanedPendingItemsArgs]
+	DB          *bun.DB
+	RiverClient *river.Client[pgx.Tx]
+}
+
+func (w *RescueOrphanedPendingItemsWorker) Work(ctx context.Context, _ *river.Job[RescueOrphanedPendingItemsArgs]) error {
+	RescueOrphanedPendingItems(ctx, w.DB, w.RiverClient, time.Hour)
+	return nil
+}
+
 // ── CleanupStaleJobs ──────────────────────────────────────────────────────────
 
 type CleanupStaleJobsArgs struct {
@@ -227,6 +244,11 @@ func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*rive
 		river.NewPeriodicJob(
 			mustCron("*/15 * * * *"),
 			func() (river.JobArgs, *river.InsertOpts) { return CheckPendingSyncsArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			mustCron("*/30 * * * *"),
+			func() (river.JobArgs, *river.InsertOpts) { return RescueOrphanedPendingItemsArgs{}, nil },
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 		river.NewPeriodicJob(
