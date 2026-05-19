@@ -629,16 +629,16 @@ EOF
 
 ## Task 3: Refactor the migrate template
 
-Strip the inline `<style>` block from `ui/migrate/migrate.html`, link the shared CSS, and convert the markup to use the new class names. All existing JavaScript (status polling, EventSource log streaming, redirect on `complete`) stays intact except for two class-name swaps in the status-text DOM updates (`.status.error` → `.meta--error`, `.status.success` → `.meta--success`).
+Strip the inline `<style>` block from `ui/migrate/index.html`, link the shared CSS, and convert the markup to use the new class names. All existing JavaScript (status polling, EventSource log streaming, redirect on `complete`) stays intact except for two class-name swaps in the status-text DOM updates (`.status.error` → `.meta--error`, `.status.success` → `.meta--success`).
 
 **Files:**
-- Modify: `ui/migrate/migrate.html`
+- Modify: `ui/migrate/index.html`
 
 ---
 
 - [ ] **Step 1: Replace the entire file**
 
-Overwrite `ui/migrate/migrate.html` with:
+Overwrite `ui/migrate/index.html` with:
 
 ```html
 <!DOCTYPE html>
@@ -748,7 +748,7 @@ Expected: builds successfully. The embed picks up the modified file.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add ui/migrate/migrate.html
+git add ui/migrate/index.html
 git commit -m "$(cat <<'EOF'
 feat(ui): restyle /migrate to use the shared stylesheet
 

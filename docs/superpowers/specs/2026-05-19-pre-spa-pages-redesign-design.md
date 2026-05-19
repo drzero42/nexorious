@@ -31,7 +31,7 @@ ui/
 ├── shared/
 │   └── app.css        # new — shared stylesheet
 ├── migrate/
-│   └── migrate.html   # refactored — drops inline <style>
+│   └── index.html     # refactored — drops inline <style>
 ├── db-error/
 │   └── index.html     # refactored — drops inline <style>
 ├── setup/
@@ -117,7 +117,7 @@ Plus `--font-sans: ui-sans-serif, system-ui, sans-serif;` and `--font-mono: ui-m
 
 ### Per-page changes
 
-#### `ui/migrate/migrate.html`
+#### `ui/migrate/index.html`
 
 - Drop the inline `<style>` block.
 - Add `<link rel="stylesheet" href="/static/app.css">` in `<head>`.
@@ -178,7 +178,7 @@ Plus `--font-sans: ui-sans-serif, system-ui, sans-serif;` and `--font-mono: ui-m
 - `ui/shared/app.css` — **new**, ~200 lines.
 - `ui/ui.go` — add `//go:embed all:shared` and `SharedBox` var.
 - `internal/api/router.go` — register `GET /static/app.css`, add `/static/app.css` to Gate 1/2/3 allow-lists, verify Gate 4 behaviour.
-- `ui/migrate/migrate.html` — drop inline `<style>`, link `/static/app.css`, convert to class-based markup, rename `.status.error`/`.success` to `.meta--error`/`.meta--success` in JS.
+- `ui/migrate/index.html` (renamed from `migrate.html` mid-implementation for consistency with `db-error/` and `setup/`) — drop inline `<style>`, link `/static/app.css`, convert to class-based markup, rename `.status.error`/`.success` to `.meta--error`/`.meta--success` in JS.
 - `ui/db-error/index.html` — drop inline `<style>`, link `/static/app.css`, convert to class-based markup.
 - `ui/setup/index.html` — drop inline `<style>`, link `/static/app.css`, convert to class-based markup; reuse existing JS.
 
