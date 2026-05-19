@@ -435,13 +435,11 @@ function ImportExportPage() {
       </Alert>
 
       {/* Recent Activity - shows completed jobs from last 7 days */}
-      {!showJobProgress && (
-        <section className="mb-6">
-          <RecentActivity
-            excludeJobIds={excludeJobIds}
-          />
-        </section>
-      )}
+      <section className="mb-6">
+        <RecentActivity
+          excludeJobIds={excludeJobIds}
+        />
+      </section>
 
     </div>
   );
