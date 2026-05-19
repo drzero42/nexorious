@@ -19,6 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Run single test          | `go test ./internal/api/... -run TestGamesList -v`       |
 | Run tests with coverage  | `go test -timeout 600s -cover ./...`                     |
 | Type check (frontend)    | `npm run check`  (from `ui/frontend/`)                   |
+| Dead-code check (frontend)| `npm run knip`   (from `ui/frontend/`)                   |
 | Run frontend tests       | `npm run test`   (from `ui/frontend/`)                   |
 | Lint Go                  | `golangci-lint run`                                      |
 | Run API client           | `slumber`                                                |
@@ -164,7 +165,7 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 1. **Planning**: Read `docs/superpowers/specs/` for design context
 2. **Branching**: Create a feature branch before starting any task
 3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
-4. **Testing**: Run `go test ./...` after any Go changes; `npm run check && npm run test` after any frontend changes
+4. **Testing**: Run `go test ./...` after any Go changes; `npm run check && npm run knip && npm run test` after any frontend changes
 5. **Plan files**: `docs/superpowers/plans/` is tracked — always commit the plan file on the feature branch
 
 ### Branch Workflow (MANDATORY)
@@ -188,7 +189,7 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 
 ### Quality Gates
 - Zero Go build errors and zero `golangci-lint` errors before committing
-- Zero TypeScript errors (`npm run check`) before committing
+- Zero TypeScript/lint errors (`npm run check`) and zero knip findings (`npm run knip`) before committing
 - All tests must pass before committing
 
 ### Slumber Collection Maintenance
