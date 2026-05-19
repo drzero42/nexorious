@@ -384,7 +384,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, result)
+	return c.JSON(http.StatusOK, map[string]any{"jobs": result})
 }
 
 // HandleGetJob handles GET /api/jobs/:id.

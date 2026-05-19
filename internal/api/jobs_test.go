@@ -501,12 +501,13 @@ func TestHandleRecentJobs_Empty(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var resp []any
+	var resp map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(resp) != 0 {
-		t.Fatalf("expected empty list, got %d", len(resp))
+	jobs, _ := resp["jobs"].([]any)
+	if len(jobs) != 0 {
+		t.Fatalf("expected empty list, got %d", len(jobs))
 	}
 }
 
@@ -522,12 +523,13 @@ func TestHandleRecentJobs_WithJobs(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var resp []any
+	var resp map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(resp) != 1 {
-		t.Fatalf("expected 1 job, got %d", len(resp))
+	jobs, _ := resp["jobs"].([]any)
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
 	}
 }
 
@@ -852,10 +854,11 @@ func TestRecentJobs_IncludesCompletedWithErrors(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var jobs []map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &jobs); err != nil {
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+	jobs, _ := resp["jobs"].([]any)
 	if len(jobs) != 1 {
 		t.Errorf("expected 1 job, got %d", len(jobs))
 	}
@@ -876,14 +879,15 @@ func TestRecentJobs_ReturnsSplitItemArrays(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var jobs []map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &jobs); err != nil {
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(jobs) != 1 {
-		t.Fatalf("expected 1 job, got %d", len(jobs))
+	rawJobs, _ := resp["jobs"].([]any)
+	if len(rawJobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(rawJobs))
 	}
-	job := jobs[0]
+	job, _ := rawJobs[0].(map[string]any)
 	completedItems, _ := job["completed_items"].([]any)
 	skippedItems, _ := job["skipped_items"].([]any)
 	igdbFailedItems, _ := job["igdb_failed_items"].([]any)
