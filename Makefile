@@ -1,4 +1,4 @@
-.PHONY: all frontend build test test-backend test-frontend coverage
+.PHONY: all frontend build docker test test-backend test-frontend coverage
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -12,6 +12,9 @@ frontend:
 
 build:
 	go build $(LDFLAGS) -o nexorious ./cmd/nexorious
+
+docker:
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t nexorious:local .
 
 test: test-backend test-frontend
 

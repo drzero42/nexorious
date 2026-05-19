@@ -29,6 +29,10 @@
           "type": "string",
           "description": "External database URL. Leave empty to use in-cluster PostgreSQL."
         },
+        "legendaryWorkDir": {
+          "type": "string",
+          "description": "Absolute path for the Legendary work directory. When non-empty, the chart injects LEGENDARY_WORK_DIR on the main container and mounts an emptyDir volume at this path. Leave empty to disable Epic Games Store sync."
+        },
         "postgresql": {
           "type": "object",
           "additionalProperties": false,
