@@ -174,6 +174,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		IGDBClient: igdbClient,
 	}
 	checkPendingSyncsWorker := &scheduler.CheckPendingSyncsWorker{DB: db}
+	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -189,6 +190,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, &scheduler.CleanupExpiredSessionsWorker{DB: db})
 	river.AddWorker(workers, &scheduler.CleanupStaleJobsWorker{DB: db})
 	river.AddWorker(workers, checkPendingSyncsWorker)
+	river.AddWorker(workers, rescueOrphanedWorker)
 	river.AddWorker(workers, &scheduler.CheckScheduledBackupWorker{DB: db, BackupSvc: backupSvc})
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
@@ -204,6 +206,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	dispatchSyncWorker.RiverClient = riverClient
 	metaDispatchWorker.RiverClient = riverClient
 	checkPendingSyncsWorker.RiverClient = riverClient
+	rescueOrphanedWorker.RiverClient = riverClient
 
 	// -------------------------------------------------------------------------
 	// HTTP server
@@ -243,6 +246,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				IGDBClient: igdbClient,
 			}
 			newCheckSyncs := &scheduler.CheckPendingSyncsWorker{DB: newDB}
+			newRescueOrphaned := &scheduler.RescueOrphanedPendingItemsWorker{DB: newDB}
 
 			newWorkers := river.NewWorkers()
 			river.AddWorker(newWorkers, &tasks.ImportItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -258,6 +262,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			river.AddWorker(newWorkers, &scheduler.CleanupExpiredSessionsWorker{DB: newDB})
 			river.AddWorker(newWorkers, &scheduler.CleanupStaleJobsWorker{DB: newDB})
 			river.AddWorker(newWorkers, newCheckSyncs)
+			river.AddWorker(newWorkers, newRescueOrphaned)
 			river.AddWorker(newWorkers, &scheduler.CheckScheduledBackupWorker{DB: newDB, BackupSvc: backupSvc})
 
 			newClient, err := river.NewClient(riverpgxv5.New(newPgxPool), &river.Config{
@@ -272,6 +277,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newDispatchSync.RiverClient = newClient
 			newMetaDispatch.RiverClient = newClient
 			newCheckSyncs.RiverClient = newClient
+			newRescueOrphaned.RiverClient = newClient
 
 			if err := newClient.Start(shutdownCtx); err != nil {
 				return fmt.Errorf("RebuildServices: River start: %w", err)
