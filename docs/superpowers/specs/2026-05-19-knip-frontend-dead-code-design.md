@@ -1,0 +1,90 @@
+# Knip for frontend dead-code detection
+
+GitHub issue: [#516](https://github.com/drzero42/nexorious/issues/516) — "Use knip to declutter frontend".
+
+## Goal
+
+Adopt [Knip](https://knip.dev/) as the dead-code gate for the frontend so that unused files, exports, dependencies, and similar cruft cannot accumulate.
+
+## Non-goals
+
+- Detecting dead code in Go (golangci-lint already covers `unused`).
+- Replacing ESLint or `tsc`. Knip is additive.
+- Changing TanStack Router or build tooling beyond what is required to enable Knip.
+
+## Out-of-scope but bundled
+
+While reshaping the frontend CI gates, two related issues are fixed in the same PR because the design hinges on them:
+
+1. **`routeTree.gen.ts` is gitignored**, contrary to the TanStack Router FAQ ("Should I commit my routeTree.gen.ts file into git?" → yes; it is runtime code, not a build artifact). The gitignore is the reason CI runs `npm run build` to regenerate the file before type-checking.
+2. **ESLint is never run in CI.** The `type-check` job runs `tsc --noEmit` (via `npm run build`) but not `eslint`, leaving lint enforcement to local discipline only.
+
+Both are corrected here so the CI flow can be `npm run check && npm run knip` without a preceding vite build.
+
+## Design
+
+### 1. Commit `routeTree.gen.ts`
+
+- Remove `ui/frontend/src/routeTree.gen.ts` from the repo-root `.gitignore`.
+- Commit the current contents of the file as source.
+- The TanStack Router Vite plugin already regenerates it on `vite dev` and `vite build`, so the working copy stays in sync during development. Developers commit changes to it the same way they commit any other source file.
+
+### 2. Add Knip
+
+- Add `knip` to `ui/frontend/package.json` `devDependencies` with a pinned version (latest stable at implementation time; record the exact version chosen during execution).
+- Add an npm script: `"knip": "knip"`. Run via `npm run knip` — never `npx`.
+- Add a `ui/frontend/knip.json` config file with:
+  - `$schema` pointing at Knip's published schema.
+  - No custom `entry` / `project` arrays unless Knip's built-in plugins (Vite, Vitest, TanStack Router, ESLint, PostCSS, Tailwind, MSW) fail to detect something correctly.
+  - `ignore` entries restricted to files Knip genuinely cannot analyse, e.g. `src/routeTree.gen.ts` (generated; not for manual editing).
+  - No carve-out for `src/components/ui/**` — shadcn components are pruned the same as everything else.
+
+### 3. Cleanup pass
+
+Run `npm run knip` once and resolve every finding before the gate is enabled:
+
+- **Unused files** → delete.
+- **Unused exports / exported types** → delete, or drop the `export` keyword when used only within the file.
+- **Unused dependencies / devDependencies** → remove from `package.json` (and `package-lock.json`).
+- **Unused enum members / class members / duplicate exports** → handled case by case.
+
+The cleanup is split into one commit per category on the feature branch for review clarity, but ships in a single PR. Acceptance criterion: `npm run knip` exits 0 with no findings on the final commit.
+
+### 4. CI integration
+
+In `.github/workflows/test.yaml`:
+
+- Rename the `type-check` job to `frontend-checks` (it now covers more than type-checking).
+- Replace the build-then-tsc step with two steps:
+  1. `npm run check` — runs `tsc --noEmit && eslint .`. This now works directly because `routeTree.gen.ts` is committed.
+  2. `npm run knip` — fails the build on any finding.
+- Remove the explanatory comment about routeTree.gen.ts (no longer relevant).
+
+No vite build runs in CI for this job. The `build-push.yaml` workflow that produces the deployable artifact is unaffected.
+
+### 5. Documentation updates
+
+- Remove the bullet `` `routeTree.gen.ts` is gitignored — run `npm run build` once in a fresh worktree before type-checking `` from `CLAUDE.md` (currently under the "TypeScript (Frontend)" code-style section). It is the only mention of the old behaviour outside historical plans/specs.
+- No changes to the historical specs/plans under `docs/superpowers/` that mention the old gitignore behaviour; those describe state at a point in time and should not be retroactively edited.
+
+## Architecture impact
+
+None. Knip is a development-time tool; it does not run in production, does not affect the binary the Go server embeds, and does not change any runtime behaviour. The only runtime-adjacent change is that `routeTree.gen.ts` now lives in git; it was already imported at runtime via `main.tsx`, so its presence on disk is identical to today.
+
+## Testing & validation
+
+Before opening the PR, run from `ui/frontend/`:
+
+- `npm run check` — must pass (tsc + eslint clean).
+- `npm run knip` — must exit 0 with no findings.
+- `npm run test` — vitest must still pass (cleanup may have touched files referenced by tests).
+
+From the repo root:
+
+- `make` — confirm the Go binary still builds with the trimmed frontend (verifies that no `//go:embed`-included asset was removed by accident).
+
+## Risks
+
+- **Dynamic imports / runtime-only references.** If anything in the frontend is reachable only via dynamic `import()` with a runtime-computed path, Knip may flag it as unused. Mitigation: built-in plugins for our stack cover the common cases; anything left over is added to `knip.json`'s `ignore` with a comment explaining why.
+- **Forgetting to commit `routeTree.gen.ts` changes.** When a route is added or moved, the TanStack plugin updates the file on the next `vite dev`/`vite build`, and it shows up in `git status` like any modified source file. CI will fail if the committed version drifts from what routes imply, because `tsc --noEmit` and Knip both read the committed file. This is the same risk every TanStack Router project carries when it commits the file — i.e. minimal.
+- **Bundle-size reduction** is the desired outcome, not a risk.
