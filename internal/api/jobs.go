@@ -173,14 +173,10 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 
 	totalPages := int(math.Ceil(float64(total) / float64(perPage)))
 
-	emptyProgress := map[string]any{
-		"pending": 0, "processing": 0, "completed": 0,
-		"pending_review": 0, "skipped": 0, "failed": 0, "igdb_failed": 0,
-		"total": 0, "percent": 0,
-	}
 	jobDTOs := make([]map[string]any, 0, len(jobs))
 	for i := range jobs {
-		jobDTOs = append(jobDTOs, toJobResponse(&jobs[i], emptyProgress))
+		progress := h.jobItemCounts(context.Background(), jobs[i].ID)
+		jobDTOs = append(jobDTOs, toJobResponse(&jobs[i], progress))
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
