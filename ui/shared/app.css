@@ -1,1 +1,315 @@
-/* Shared stylesheet for /migrate, /db-error, /setup. See spec 2026-05-19-pre-spa-pages-redesign-design.md */
+/* Shared stylesheet for /migrate, /db-error, /setup.
+   Tokens mirror the light theme in ui/frontend/src/styles/globals.css (:root).
+   Spec: docs/superpowers/specs/2026-05-19-pre-spa-pages-redesign-design.md */
+
+:root {
+  /* Light theme OKLCH tokens, mirrored from ui/frontend/src/styles/globals.css */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.141 0.005 285.823);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.141 0.005 285.823);
+  --primary: oklch(0.21 0.006 285.885);
+  --primary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.967 0.001 286.375);
+  --muted-foreground: oklch(0.552 0.016 285.938);
+  --accent: oklch(0.967 0.001 286.375);
+  --accent-foreground: oklch(0.21 0.006 285.885);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.92 0.004 286.32);
+  --input: oklch(0.92 0.004 286.32);
+  --ring: oklch(0.705 0.015 286.067);
+  --radius: 0.625rem;
+
+  /* Log accent — readable green on the muted background (no equivalent token in the SPA) */
+  --log-text: oklch(0.5 0.13 145);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", "Fira Code", monospace;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Card — the centered panel used by all three pages */
+.card {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 28rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.card--wide {
+  max-width: 40rem;
+}
+
+.card-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+  letter-spacing: -0.01em;
+}
+
+.card-description {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  margin-bottom: 1rem;
+}
+
+/* Vertical rhythm utility */
+.stack > * + * {
+  margin-top: 1rem;
+}
+
+/* Form primitives */
+.label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  color: var(--foreground);
+}
+
+.input {
+  width: 100%;
+  background: var(--background);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: var(--radius);
+  padding: 0.625rem 1rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  width: 100%;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  font-size: 0.875rem;
+  padding: 0;
+  cursor: pointer;
+}
+
+.btn-link:hover:not(:disabled) {
+  color: var(--foreground);
+}
+
+/* Alert (destructive) — hidden by default, shown when JS sets text */
+.alert-destructive {
+  background: color-mix(in oklch, var(--destructive) 12%, var(--background));
+  border: 1px solid color-mix(in oklch, var(--destructive) 30%, var(--background));
+  color: var(--destructive);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+  display: none;
+}
+
+.alert-destructive.visible {
+  display: block;
+}
+
+/* Code block — used for the redacted DSN and last-failed timestamp on db-error */
+.code {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--foreground);
+  overflow-x: auto;
+  word-break: break-all;
+  white-space: pre-wrap;
+  margin-bottom: 0.5rem;
+}
+
+/* Log stream — used by migrate page for the live EventSource output */
+.log {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--log-text);
+  height: 18rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-bottom: 1rem;
+  display: none;
+}
+
+.log.visible {
+  display: block;
+}
+
+/* Status / meta text under buttons and at page footers */
+.meta {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  margin-top: 0.75rem;
+}
+
+.meta--error {
+  color: var(--destructive);
+}
+
+.meta--success {
+  color: var(--log-text);
+}
+
+.meta--center {
+  text-align: center;
+}
+
+/* Setup page file picker */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  transition: border-color 0.15s, background-color 0.15s;
+  margin-bottom: 1rem;
+}
+
+.drop-zone:hover {
+  border-color: var(--muted-foreground);
+  background: var(--muted);
+}
+
+.drop-zone-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.drop-zone strong {
+  display: block;
+  color: var(--foreground);
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.file-info {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.file-info-text {
+  min-width: 0;
+}
+
+.file-info-name {
+  font-size: 0.875rem;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.file-info-size {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  display: block;
+}
+
+.clear-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-size: 1.125rem;
+  line-height: 1;
+  padding: 0 0.25rem;
+  flex-shrink: 0;
+}
+
+.clear-btn:hover {
+  color: var(--foreground);
+}
+
+/* Footer link area (setup page toggle row) */
+.footer-row {
+  margin-top: 1rem;
+  text-align: center;
+}
