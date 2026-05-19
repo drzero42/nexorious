@@ -235,7 +235,7 @@ function ImportExportPage() {
   const showJobProgress = activeJob != null;
   const hasActiveJob = activeJob != null && !activeJob.isTerminal;
   // Exclude IDs for recent activity
-  const excludeJobIds = activeJob ? [activeJob.id] : [];
+  const excludeJobIds = activeJob && !activeJob.isTerminal ? [activeJob.id] : [];
   // Check if the currently displayed job is a completed export (for download button)
   const isActiveJobCompletedExport = activeJob?.isTerminal &&
     activeJob?.status === JobStatus.COMPLETED &&
