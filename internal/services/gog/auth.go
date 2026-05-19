@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 )
 
 const (
@@ -77,12 +76,12 @@ func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*TokenR
 }
 
 func (c *Client) postToken(ctx context.Context, form url.Values) (*TokenResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.tokenBase+"/token", strings.NewReader(form.Encode()))
+	// GOG's token endpoint uses GET with query parameters, not POST with form body.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.tokenBase+"/token?"+form.Encode(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("gog: build token request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
