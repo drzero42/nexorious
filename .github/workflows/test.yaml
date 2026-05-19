@@ -78,8 +78,8 @@ jobs:
       - name: Run frontend tests
         run: cd ui/frontend && npm run test
 
-  type-check:
-    name: Type Check
+  frontend-checks:
+    name: Frontend Checks
     runs-on: ubuntu-latest
 
     steps:
@@ -96,11 +96,11 @@ jobs:
       - name: Install dependencies
         run: cd ui/frontend && npm ci
 
-      - name: Build (generates routeTree.gen.ts) and type check
-        # `npm run build` runs `vite build && tsc --noEmit`. The vite build step triggers
-        # the TanStack Router plugin to generate src/routeTree.gen.ts (gitignored),
-        # which tsc requires. Running `npm run check` alone would fail without it.
-        run: cd ui/frontend && npm run build
+      - name: Type check and lint
+        run: cd ui/frontend && npm run check
+
+      - name: Knip (dead code)
+        run: cd ui/frontend && npm run knip
 
   helm-lint:
     name: Helm Lint

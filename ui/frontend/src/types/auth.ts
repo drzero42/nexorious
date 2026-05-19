@@ -6,18 +6,6 @@ export interface User {
   preferences?: Record<string, unknown>;
 }
 
-export interface AuthState {
-  user: User | null;
-  accessToken: string | null;
-  refreshToken: string | null;
-  isLoading: boolean;
-  error: string | null;
-}
-
-export interface LoginRequest {
-  username: string;
-  password: string;
-}
 
 export interface LoginResponse {
   access_token: string;

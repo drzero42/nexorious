@@ -55,7 +55,7 @@ interface ManualSyncApiResponse {
 // Response Types
 // ============================================================================
 
-export interface SyncConfigsResponse {
+interface SyncConfigsResponse {
   configs: SyncConfig[];
   total: number;
 }

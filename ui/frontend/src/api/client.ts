@@ -1,10 +1,5 @@
 import { config } from '@/lib/env';
 
-export interface ApiError {
-  message: string;
-  status: number;
-  details?: unknown;
-}
 
 export class ApiErrorException extends Error {
   constructor(

@@ -44,7 +44,6 @@ export enum JobItemStatus {
 
 export enum JobPriority {
   HIGH = 'high',
-  LOW = 'low',
 }
 
 // ============================================================================
@@ -194,13 +193,6 @@ export interface RecentJobsResponse {
 // ============================================================================
 
 /**
- * Check if a job status is terminal (completed, failed, or cancelled).
- */
-export function isTerminalStatus(status: JobStatus): boolean {
-  return [JobStatus.COMPLETED, JobStatus.COMPLETED_WITH_ERRORS, JobStatus.FAILED, JobStatus.CANCELLED].includes(status);
-}
-
-/**
  * Get a human-readable label for a job type.
  */
 export function getJobTypeLabel(type: JobType): string {
@@ -325,13 +317,6 @@ export function canCancelJob(job: Job): boolean {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function canDeleteJob(_job: Job): boolean {
   return true;
-}
-
-/**
- * Check if an import job has items pending review.
- */
-export function hasPendingReview(job: Job): boolean {
-  return job.jobType === JobType.IMPORT && job.progress.pendingReview > 0;
 }
 
 /**

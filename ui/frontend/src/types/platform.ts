@@ -21,10 +21,3 @@ export interface Storefront {
   updated_at: string;
 }
 
-export interface PlatformsResponse {
-  platforms: Platform[];
-}
-
-export interface StorefrontsResponse {
-  storefronts: Storefront[];
-}

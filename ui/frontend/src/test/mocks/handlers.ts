@@ -7,26 +7,26 @@ import type { User, LoginResponse } from "@/types";
 const API_URL = "/api";
 
 // Mock data
-export const mockUser: User = {
+const mockUser: User = {
   id: "test-user-id",
   username: "testuser",
   isAdmin: false,
 };
 
-export const mockAdminUser: User = {
+const mockAdminUser: User = {
   id: "admin-user-id",
   username: "admin",
   isAdmin: true,
 };
 
-export const mockTokens = {
+const mockTokens = {
   access_token: "mock-access-token",
   refresh_token: "mock-refresh-token",
   token_type: "bearer",
   expires_in: 3600,
 };
 
-export const mockPlatforms = [
+const mockPlatforms = [
   {
     name: 'pc',
     display_name: 'PC',
@@ -62,7 +62,7 @@ export const mockPlatforms = [
   },
 ];
 
-export const mockTags = [
+const mockTags = [
   {
     id: 'tag-1',
     user_id: 'test-user-id',
