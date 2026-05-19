@@ -618,7 +618,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", p.JobItemID).Scan(ctx); err != nil {
 		slog.Error("process_sync_item: load job_item", "id", p.JobItemID, "err", err)
-		return nil
+		return err
 	}
 
 	// ── 2. Parse source_metadata ──────────────────────────────────────────

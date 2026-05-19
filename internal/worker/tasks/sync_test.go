@@ -345,8 +345,8 @@ func TestProcessSyncItem_ItemNotFound(t *testing.T) {
 	job := &river.Job[tasks.ProcessSyncItemArgs]{
 		Args: tasks.ProcessSyncItemArgs{JobItemID: uuid.NewString()},
 	}
-	if err := w.Work(context.Background(), job); err != nil {
-		t.Fatalf("expected nil, got %v", err)
+	if err := w.Work(context.Background(), job); err == nil {
+		t.Fatal("expected error when job_item not found so River retries, got nil")
 	}
 }
 
@@ -1941,3 +1941,4 @@ func TestGOGDispatch_TokenRefreshPersisted(t *testing.T) {
 		t.Errorf("refreshed refresh_token not persisted, got %q", parsed["refresh_token"])
 	}
 }
+
