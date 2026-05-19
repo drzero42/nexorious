@@ -34,7 +34,8 @@ func MaintenanceMiddleware() echo.MiddlewareFunc {
 			path := c.Request().URL.Path
 			if path == "/health" ||
 				strings.HasPrefix(path, "/api/admin/backups") ||
-				path == "/api/auth/me" {
+				path == "/api/auth/me" ||
+				path == "/static/app.css" {
 				return next(c)
 			}
 			return c.JSON(http.StatusServiceUnavailable, map[string]any{
