@@ -1,205 +1,188 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nexorious — Setup</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f3f4f6; }
-  .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,.1); padding: 40px; width: 100%; max-width: 420px; }
-  h1 { margin: 0 0 8px; font-size: 1.5rem; }
-  p { color: #555; margin: 0 0 24px; }
-  label { display: block; font-size: .875rem; font-weight: 500; margin-bottom: 4px; }
-  input[type=text], input[type=password] { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 10px 12px; font-size: 1rem; margin-bottom: 16px; }
-  input:focus { outline: 2px solid #2563eb; border-color: transparent; }
-  button.primary { width: 100%; background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 12px; font-size: 1rem; cursor: pointer; }
-  button.primary:disabled { opacity: .6; cursor: not-allowed; }
-  button.link { background: none; border: none; color: #6b7280; font-size: .875rem; cursor: pointer; text-decoration: underline; padding: 0; }
-  button.link:hover { color: #111827; }
-  button.link:disabled { opacity: .6; cursor: not-allowed; }
-  .error { color: #dc2626; font-size: .875rem; margin-bottom: 12px; display: none; }
-  .footer { margin-top: 20px; text-align: center; }
-  .drop-zone { border: 2px dashed #d1d5db; border-radius: 6px; padding: 32px; text-align: center; cursor: pointer; color: #6b7280; font-size: .875rem; transition: border-color .15s; }
-  .drop-zone:hover { border-color: #9ca3af; }
-  .drop-zone p { margin: 4px 0 0; }
-  .file-info { border: 1px solid #d1d5db; border-radius: 6px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-  .file-info span { font-size: .875rem; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
-  .file-info small { color: #6b7280; font-size: .75rem; display: block; }
-  .clear-btn { background: none; border: none; cursor: pointer; color: #6b7280; font-size: 1.2rem; line-height: 1; padding: 0 4px; flex-shrink: 0; }
-  .clear-btn:hover { color: #111827; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexorious — Setup</title>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<div class="card">
-  <div id="admin-view">
-    <h1>Welcome to Nexorious</h1>
-    <p>Create your admin account to get started.</p>
-    <div class="error" id="admin-err"></div>
-    <form id="admin-form">
-      <label for="username">Username</label>
-      <input type="text" id="username" name="username" autocomplete="username" required minlength="3">
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" autocomplete="new-password" required minlength="8">
-      <label for="confirm">Confirm Password</label>
-      <input type="password" id="confirm" name="confirm" autocomplete="new-password" required minlength="8">
-      <button type="submit" class="primary" id="admin-btn">Create Admin Account</button>
-    </form>
-    <div class="footer">
-      <button type="button" class="link" onclick="showRestore()">Restore from backup instead</button>
-    </div>
-  </div>
-
-  <div id="restore-view" style="display:none">
-    <h1>Restore from Backup</h1>
-    <p>Upload a backup archive to restore your data.</p>
-    <div class="error" id="restore-err"></div>
-    <input type="file" id="file-input" accept=".tar.gz" style="display:none">
-    <div id="drop-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
-      <div style="font-size:2rem;margin-bottom:8px">📦</div>
-      <strong>Click to select a backup file</strong>
-      <p>.tar.gz files only</p>
-    </div>
-    <div id="file-info" class="file-info" style="display:none">
-      <div style="min-width:0">
-        <span id="file-name"></span>
-        <small id="file-size"></small>
+  <div class="card">
+    <div id="admin-view">
+      <h1 class="card-title">Welcome to Nexorious</h1>
+      <p class="card-description">Create your admin account to get started.</p>
+      <div class="alert-destructive" id="admin-err"></div>
+      <form id="admin-form" class="stack">
+        <div>
+          <label class="label" for="username">Username</label>
+          <input class="input" type="text" id="username" name="username" autocomplete="username" required minlength="3">
+        </div>
+        <div>
+          <label class="label" for="password">Password</label>
+          <input class="input" type="password" id="password" name="password" autocomplete="new-password" required minlength="8">
+        </div>
+        <div>
+          <label class="label" for="confirm">Confirm Password</label>
+          <input class="input" type="password" id="confirm" name="confirm" autocomplete="new-password" required minlength="8">
+        </div>
+        <button type="submit" class="btn btn-primary" id="admin-btn">Create Admin Account</button>
+      </form>
+      <div class="footer-row">
+        <button type="button" class="btn-link" onclick="showRestore()">Restore from backup instead</button>
       </div>
-      <button type="button" class="clear-btn" onclick="clearFile()" title="Remove">✕</button>
     </div>
-    <button type="button" class="primary" id="restore-btn" onclick="doRestore()" disabled>Restore</button>
-    <div class="footer">
-      <button type="button" class="link" onclick="showAdmin()">Cancel — create a new account instead</button>
+
+    <div id="restore-view" style="display:none">
+      <h1 class="card-title">Restore from Backup</h1>
+      <p class="card-description">Upload a backup archive to restore your data.</p>
+      <div class="alert-destructive" id="restore-err"></div>
+      <input type="file" id="file-input" accept=".tar.gz" style="display:none">
+      <div id="drop-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="drop-zone-icon">📦</div>
+        <strong>Click to select a backup file</strong>
+        <span>.tar.gz files only</span>
+      </div>
+      <div id="file-info" class="file-info" style="display:none">
+        <div class="file-info-text">
+          <span class="file-info-name" id="file-name"></span>
+          <span class="file-info-size" id="file-size"></span>
+        </div>
+        <button type="button" class="clear-btn" onclick="clearFile()" title="Remove">✕</button>
+      </div>
+      <button type="button" class="btn btn-primary" id="restore-btn" onclick="doRestore()" disabled>Restore</button>
+      <div class="footer-row">
+        <button type="button" class="btn-link" onclick="showAdmin()">Cancel — create a new account instead</button>
+      </div>
     </div>
   </div>
-</div>
 
-<script>
-function showRestore() {
-  document.getElementById('admin-view').style.display = 'none';
-  document.getElementById('restore-view').style.display = '';
-  clearError('restore-err');
-}
-function showAdmin() {
-  document.getElementById('restore-view').style.display = 'none';
-  document.getElementById('admin-view').style.display = '';
-  clearError('admin-err');
-}
-function showError(id, msg) {
-  const el = document.getElementById(id);
-  el.textContent = msg;
-  el.style.display = 'block';
-}
-function clearError(id) {
-  const el = document.getElementById(id);
-  el.style.display = 'none';
-}
+  <script>
+    function showRestore() {
+      document.getElementById('admin-view').style.display = 'none';
+      document.getElementById('restore-view').style.display = '';
+      clearError('restore-err');
+    }
+    function showAdmin() {
+      document.getElementById('restore-view').style.display = 'none';
+      document.getElementById('admin-view').style.display = '';
+      clearError('admin-err');
+    }
+    function showError(id, msg) {
+      const el = document.getElementById(id);
+      el.textContent = msg;
+      el.classList.add('visible');
+    }
+    function clearError(id) {
+      const el = document.getElementById(id);
+      el.textContent = '';
+      el.classList.remove('visible');
+    }
 
-// File selection
-document.getElementById('file-input').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  if (!file.name.endsWith('.tar.gz')) {
-    showError('restore-err', 'Please select a .tar.gz backup file.');
-    e.target.value = '';
-    return;
-  }
-  clearError('restore-err');
-  document.getElementById('drop-zone').style.display = 'none';
-  document.getElementById('file-name').textContent = file.name;
-  document.getElementById('file-size').textContent = formatBytes(file.size);
-  document.getElementById('file-info').style.display = 'flex';
-  document.getElementById('restore-btn').disabled = false;
-});
-
-function clearFile() {
-  document.getElementById('file-input').value = '';
-  document.getElementById('file-info').style.display = 'none';
-  document.getElementById('drop-zone').style.display = '';
-  document.getElementById('restore-btn').disabled = true;
-  clearError('restore-err');
-}
-
-function formatBytes(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
-// Create admin
-document.getElementById('admin-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  clearError('admin-err');
-  const username = document.getElementById('username').value.trim();
-  const password = document.getElementById('password').value;
-  const confirm = document.getElementById('confirm').value;
-
-  if (username.length < 3) return showError('admin-err', 'Username must be at least 3 characters.');
-  if (password.length < 8) return showError('admin-err', 'Password must be at least 8 characters.');
-  if (password !== confirm) return showError('admin-err', 'Passwords do not match.');
-
-  const btn = document.getElementById('admin-btn');
-  btn.disabled = true;
-  btn.textContent = 'Creating account…';
-
-  try {
-    const res = await fetch('/api/auth/setup/admin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+    // File selection
+    document.getElementById('file-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!file.name.endsWith('.tar.gz')) {
+        showError('restore-err', 'Please select a .tar.gz backup file.');
+        e.target.value = '';
+        return;
+      }
+      clearError('restore-err');
+      document.getElementById('drop-zone').style.display = 'none';
+      document.getElementById('file-name').textContent = file.name;
+      document.getElementById('file-size').textContent = formatBytes(file.size);
+      document.getElementById('file-info').style.display = 'flex';
+      document.getElementById('restore-btn').disabled = false;
     });
-    if (res.status === 201) {
-      const data = await res.json();
-      localStorage.setItem('auth', JSON.stringify({
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token,
-        user: { id: data.user.id, username: data.user.username, isAdmin: data.user.is_admin, preferences: {} },
-      }));
-      window.location.href = '/';
-    } else if (res.status === 400) {
-      const body = await res.json();
-      showError('admin-err', body.error || 'Validation error.');
-    } else if (res.status === 403 || res.status === 500) {
-      window.location.href = '/login';
-    } else {
-      showError('admin-err', 'Setup failed. Please try again.');
+
+    function clearFile() {
+      document.getElementById('file-input').value = '';
+      document.getElementById('file-info').style.display = 'none';
+      document.getElementById('drop-zone').style.display = '';
+      document.getElementById('restore-btn').disabled = true;
+      clearError('restore-err');
     }
-  } catch {
-    showError('admin-err', 'Setup failed. Please try again.');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Create Admin Account';
-  }
-});
 
-// Restore from backup
-async function doRestore() {
-  const file = document.getElementById('file-input').files[0];
-  if (!file) return;
-  clearError('restore-err');
-
-  const btn = document.getElementById('restore-btn');
-  btn.disabled = true;
-  btn.textContent = 'Restoring…';
-
-  try {
-    const form = new FormData();
-    form.append('file', file);
-    const res = await fetch('/api/auth/setup/restore', { method: 'POST', body: form });
-    if (res.ok) {
-      window.location.href = '/login';
-    } else {
-      const body = await res.json().catch(() => ({}));
-      showError('restore-err', body.error || 'Restore failed. Please try again.');
-      btn.disabled = false;
-      btn.textContent = 'Restore';
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     }
-  } catch {
-    showError('restore-err', 'Restore failed. Please try again.');
-    btn.disabled = false;
-    btn.textContent = 'Restore';
-  }
-}
-</script>
+
+    // Create admin
+    document.getElementById('admin-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearError('admin-err');
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const confirm = document.getElementById('confirm').value;
+
+      if (username.length < 3) return showError('admin-err', 'Username must be at least 3 characters.');
+      if (password.length < 8) return showError('admin-err', 'Password must be at least 8 characters.');
+      if (password !== confirm) return showError('admin-err', 'Passwords do not match.');
+
+      const btn = document.getElementById('admin-btn');
+      btn.disabled = true;
+      btn.textContent = 'Creating account…';
+
+      try {
+        const res = await fetch('/api/auth/setup/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        if (res.status === 201) {
+          const data = await res.json();
+          localStorage.setItem('auth', JSON.stringify({
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token,
+            user: { id: data.user.id, username: data.user.username, isAdmin: data.user.is_admin, preferences: {} },
+          }));
+          window.location.href = '/';
+        } else if (res.status === 400) {
+          const body = await res.json();
+          showError('admin-err', body.error || 'Validation error.');
+        } else if (res.status === 403 || res.status === 500) {
+          window.location.href = '/login';
+        } else {
+          showError('admin-err', 'Setup failed. Please try again.');
+        }
+      } catch {
+        showError('admin-err', 'Setup failed. Please try again.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create Admin Account';
+      }
+    });
+
+    // Restore from backup
+    async function doRestore() {
+      const file = document.getElementById('file-input').files[0];
+      if (!file) return;
+      clearError('restore-err');
+
+      const btn = document.getElementById('restore-btn');
+      btn.disabled = true;
+      btn.textContent = 'Restoring…';
+
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await fetch('/api/auth/setup/restore', { method: 'POST', body: form });
+        if (res.ok) {
+          window.location.href = '/login';
+        } else {
+          const body = await res.json().catch(() => ({}));
+          showError('restore-err', body.error || 'Restore failed. Please try again.');
+          btn.disabled = false;
+          btn.textContent = 'Restore';
+        }
+      } catch {
+        showError('restore-err', 'Restore failed. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Restore';
+      }
+    }
+  </script>
 </body>
 </html>
