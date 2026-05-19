@@ -90,22 +90,27 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		return nil
 	}
 
-	// Step 5 — Create job, items, and enqueue River jobs in a single transaction.
+	// Step 5 — Create job and items in a transaction, then enqueue River jobs after commit.
+	// River jobs must be inserted AFTER the transaction commits: riverClient.Insert uses a
+	// separate connection and commits immediately, so workers can dequeue and attempt to load
+	// job_items before the bun transaction is visible — causing "no rows" errors.
 	jobID := uuid.NewString()
+	itemIDs := make([]string, 0, len(games))
 	if err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		// 5a — Insert job.
 		_, err := tx.NewRaw(
 			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-			 VALUES (?, ?, ?, ?, 'pending', 'low', ?, now())`,
+			 VALUES (?, ?, ?, ?, 'processing', 'low', ?, now())`,
 			jobID, adminID, models.JobTypeMetadataRefresh, models.JobSourceSystem, len(games),
 		).Exec(ctx)
 		if err != nil {
 			return fmt.Errorf("insert job: %w", err)
 		}
 
-		// 5b — Insert job_items and enqueue River jobs.
+		// 5b — Insert job_items only; River jobs are enqueued after commit.
 		for _, g := range games {
 			itemID := uuid.NewString()
+			itemIDs = append(itemIDs, itemID)
 
 			sourceMeta, _ := json.Marshal(map[string]any{"game_id": g.ID})
 			sourceMetaRaw := json.RawMessage(sourceMeta)
@@ -118,23 +123,17 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 			if err != nil {
 				return fmt.Errorf("insert job_item for game %d: %w", g.ID, err)
 			}
-
-			_, _ = w.RiverClient.Insert(ctx, MetadataRefreshItemArgs{JobItemID: itemID}, nil)
-		}
-
-		// 5c — Mark job processing.
-		_, err = tx.NewRaw(
-			`UPDATE jobs SET status = 'processing', started_at = now() WHERE id = ?`,
-			jobID,
-		).Exec(ctx)
-		if err != nil {
-			return fmt.Errorf("update job to processing: %w", err)
 		}
 
 		return nil
 	}); err != nil {
 		slog.Error("metadata_refresh_dispatch: transaction failed", "err", err)
 		return nil
+	}
+
+	// Step 6 — Enqueue River jobs now that job_items are committed and visible.
+	for _, itemID := range itemIDs {
+		_, _ = w.RiverClient.Insert(ctx, MetadataRefreshItemArgs{JobItemID: itemID}, nil)
 	}
 
 	slog.Info("metadata_refresh_dispatch: job created", "job_id", jobID, "game_count", len(games))
