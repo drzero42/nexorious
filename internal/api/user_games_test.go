@@ -70,6 +70,10 @@ func TestCreateUserGame(t *testing.T) {
 		if resp["game_id"] == nil {
 			t.Fatal("expected game_id in response")
 		}
+		// game relation must be present so the frontend can navigate to the new entry.
+		if resp["game"] == nil {
+			t.Fatal("expected game relation in response")
+		}
 	})
 
 	t.Run("success without play_status", func(t *testing.T) {

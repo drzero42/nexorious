@@ -371,6 +371,20 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
+	// Eager-load relations so the response includes the game, platforms and tags.
+	if err := h.db.NewSelect().Model(ug).
+		Where("user_game.id = ?", ug.ID).
+		Relation("Game").
+		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
+		}).
+		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("Tag")
+		}).
+		Scan(ctx); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+
 	return c.JSON(http.StatusCreated, toUserGameWithPlatformsResponse(*ug))
 }
 
