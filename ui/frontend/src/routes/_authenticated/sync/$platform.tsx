@@ -160,6 +160,14 @@ function SyncDetailPage() {
     enabled: !!status?.activeJobId,
   });
 
+  const invalidatedJobRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (activeJob?.isTerminal && activeJob.id !== invalidatedJobRef.current) {
+      invalidatedJobRef.current = activeJob.id;
+      queryClient.invalidateQueries({ queryKey: jobsKeys.recent(platform) });
+    }
+  }, [activeJob?.isTerminal, activeJob?.id, platform, queryClient]);
+
   // Mutations
   const { mutateAsync: updateConfig, isPending: isUpdating } = useUpdateSyncConfig();
   const { mutateAsync: triggerSync, isPending: isTriggeringSyncPending } = useTriggerSync();

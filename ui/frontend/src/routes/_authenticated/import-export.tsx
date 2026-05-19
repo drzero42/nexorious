@@ -16,7 +16,7 @@ import {
   getImportSourceDisplayInfo,
   getExportFormatDisplayInfo,
 } from '@/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/jobs';
@@ -28,7 +28,6 @@ import {
   FileSpreadsheet,
   Check,
   Loader2,
-  ExternalLink,
   RotateCcw,
 } from 'lucide-react';
 
@@ -235,6 +234,8 @@ function ImportExportPage() {
   // Check if there's an active job that should show inline progress
   const showJobProgress = activeJob != null;
   const hasActiveJob = activeJob != null && !activeJob.isTerminal;
+  // Exclude IDs for recent activity
+  const excludeJobIds = activeJob && !activeJob.isTerminal ? [activeJob.id] : [];
   // Check if the currently displayed job is a completed export (for download button)
   const isActiveJobCompletedExport = activeJob?.isTerminal &&
     activeJob?.status === JobStatus.COMPLETED &&
@@ -434,46 +435,12 @@ function ImportExportPage() {
       </Alert>
 
       {/* Recent Activity - shows completed jobs from last 7 days */}
-      {!showJobProgress && (
-        <section className="mb-6">
-          <RecentActivity
-            excludeJobIds={[activeImportJob?.id, activeExportJob?.id].filter((id): id is string => !!id)}
-          />
-        </section>
-      )}
+      <section className="mb-6">
+        <RecentActivity
+          excludeJobIds={excludeJobIds}
+        />
+      </section>
 
-      {/* Quick Links - always visible */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Links</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Link
-            to="/sync"
-            className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted"
-          >
-            <div>
-              <div className="font-medium">Sync Settings</div>
-              <div className="text-sm text-muted-foreground">
-                Connect and sync your Steam library
-              </div>
-            </div>
-            <ExternalLink className="h-4 w-4 text-muted-foreground" />
-          </Link>
-          <Link
-            to="/games"
-            className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted"
-          >
-            <div>
-              <div className="font-medium">View Collection</div>
-              <div className="text-sm text-muted-foreground">
-                Browse and manage your game library
-              </div>
-            </div>
-            <ExternalLink className="h-4 w-4 text-muted-foreground" />
-          </Link>
-        </CardContent>
-      </Card>
     </div>
   );
 }

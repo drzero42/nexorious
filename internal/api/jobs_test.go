@@ -106,6 +106,56 @@ func TestListJobs(t *testing.T) {
 	}
 }
 
+// ─── TestListJobs_ProgressCounts ─────────────────────────────────────────────
+
+func TestListJobs_ProgressCounts(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+
+	userID, token := setupTagUser(t, testDB, e, "jobs-progress")
+
+	jobID := uuid.New().String()
+	insertJob(t, testDB, jobID, userID, "import", "steam", "completed")
+	insertJobItem(t, testDB, uuid.New().String(), jobID, userID, "key-1", "Game A", "completed")
+	insertJobItem(t, testDB, uuid.New().String(), jobID, userID, "key-2", "Game B", "completed")
+	insertJobItem(t, testDB, uuid.New().String(), jobID, userID, "key-3", "Game C", "failed")
+
+	rec := getAuth(t, e, "/api/jobs", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	jobs, ok := resp["jobs"].([]any)
+	if !ok || len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %v", resp["jobs"])
+	}
+
+	job, ok := jobs[0].(map[string]any)
+	if !ok {
+		t.Fatalf("job is not an object: %v", jobs[0])
+	}
+
+	progress, ok := job["progress"].(map[string]any)
+	if !ok {
+		t.Fatalf("progress missing or wrong type: %v", job["progress"])
+	}
+
+	if got := progress["completed"].(float64); got != 2 {
+		t.Errorf("expected progress.completed=2, got %v", got)
+	}
+	if got := progress["failed"].(float64); got != 1 {
+		t.Errorf("expected progress.failed=1, got %v", got)
+	}
+	if got := progress["total"].(float64); got != 3 {
+		t.Errorf("expected progress.total=3, got %v", got)
+	}
+}
+
 // ─── TestGetJob ───────────────────────────────────────────────────────────────
 
 func TestGetJob(t *testing.T) {
@@ -451,12 +501,13 @@ func TestHandleRecentJobs_Empty(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var resp []any
+	var resp map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(resp) != 0 {
-		t.Fatalf("expected empty list, got %d", len(resp))
+	jobs, _ := resp["jobs"].([]any)
+	if len(jobs) != 0 {
+		t.Fatalf("expected empty list, got %d", len(jobs))
 	}
 }
 
@@ -472,12 +523,13 @@ func TestHandleRecentJobs_WithJobs(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var resp []any
+	var resp map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(resp) != 1 {
-		t.Fatalf("expected 1 job, got %d", len(resp))
+	jobs, _ := resp["jobs"].([]any)
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
 	}
 }
 
@@ -802,10 +854,11 @@ func TestRecentJobs_IncludesCompletedWithErrors(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var jobs []map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &jobs); err != nil {
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+	jobs, _ := resp["jobs"].([]any)
 	if len(jobs) != 1 {
 		t.Errorf("expected 1 job, got %d", len(jobs))
 	}
@@ -826,14 +879,15 @@ func TestRecentJobs_ReturnsSplitItemArrays(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var jobs []map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &jobs); err != nil {
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(jobs) != 1 {
-		t.Fatalf("expected 1 job, got %d", len(jobs))
+	rawJobs, _ := resp["jobs"].([]any)
+	if len(rawJobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(rawJobs))
 	}
-	job := jobs[0]
+	job, _ := rawJobs[0].(map[string]any)
 	completedItems, _ := job["completed_items"].([]any)
 	skippedItems, _ := job["skipped_items"].([]any)
 	igdbFailedItems, _ := job["igdb_failed_items"].([]any)
