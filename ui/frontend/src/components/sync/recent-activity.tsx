@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { useRecentJobs, jobsKeys } from '@/hooks';
-import { retryFailedItems } from '@/api';
+import { retryFailedItems } from '@/api/jobs';
 import type { RecentJobDetail, JobItemSummary } from '@/types';
 
 interface RecentActivityProps {

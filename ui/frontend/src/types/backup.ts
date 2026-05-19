@@ -5,7 +5,7 @@
 // Enums matching backend
 export type BackupSchedule = 'manual' | 'daily' | 'weekly';
 export type RetentionMode = 'days' | 'count';
-export type BackupType = 'scheduled' | 'manual' | 'pre_restore';
+type BackupType = 'scheduled' | 'manual' | 'pre_restore';
 
 // Configuration
 export interface BackupConfig {
@@ -35,7 +35,7 @@ export interface BackupConfigUpdateRequest {
 }
 
 // Backup info
-export interface BackupStats {
+interface BackupStats {
   users: number;
   games: number;
   tags: number;

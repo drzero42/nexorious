@@ -5,7 +5,7 @@ export type GameId = number & { readonly __brand: 'GameId' };
 export type UserGameId = string & { readonly __brand: 'UserGameId' };
 
 // Type guard for game IDs
-export function isGameId(value: unknown): value is GameId {
+function isGameId(value: unknown): value is GameId {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
@@ -20,40 +20,6 @@ export function toGameId(value: unknown): GameId {
     return value as GameId;
   }
   throw new Error(`Invalid game ID: ${value}`);
-}
-
-// Safe conversion that returns null on invalid input
-export function toGameIdOrNull(value: unknown): GameId | null {
-  try {
-    return toGameId(value);
-  } catch {
-    return null;
-  }
-}
-
-// Type guard for user game IDs (UUIDs)
-export function isUserGameId(value: unknown): value is UserGameId {
-  if (typeof value !== 'string') return false;
-  // Basic UUID v4 regex pattern
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(value);
-}
-
-// Convert a value to UserGameId with validation
-export function toUserGameId(value: unknown): UserGameId {
-  if (isUserGameId(value)) {
-    return value as UserGameId;
-  }
-  throw new Error(`Invalid user game ID (UUID expected): ${value}`);
-}
-
-// Safe conversion that returns null on invalid input
-export function toUserGameIdOrNull(value: unknown): UserGameId | null {
-  try {
-    return toUserGameId(value);
-  } catch {
-    return null;
-  }
 }
 
 export enum OwnershipStatus {
@@ -148,38 +114,6 @@ export interface UserGame {
   updated_at: string;
 }
 
-export interface UserGameFilters {
-  q?: string;
-  play_status?: PlayStatus;
-  ownership_status?: OwnershipStatus;
-  platform?: string;
-  genre?: string[];
-  game_mode?: string[];
-  theme?: string[];
-  player_perspective?: string[];
-  tag_id?: string;
-  is_loved?: boolean;
-  sort_by?: string;
-  sort_order?: 'asc' | 'desc';
-  page?: number;
-  per_page?: number;
-}
-
-export interface FilterOptionsResponse {
-  genres: string[];
-  game_modes: string[];
-  themes: string[];
-  player_perspectives: string[];
-}
-
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  page: number;
-  per_page: number;
-  pages: number;
-}
-
 export interface IGDBGameCandidate {
   igdb_id: GameId;
   igdb_slug?: string;
@@ -193,20 +127,3 @@ export interface IGDBGameCandidate {
   howlongtobeat_completionist?: number;
 }
 
-export interface UserGameCreateRequest {
-  game_id: GameId;
-  ownership_status?: OwnershipStatus;
-  play_status?: PlayStatus;
-  platforms?: Array<{
-    platform: string;
-    storefront?: string;
-  }>;
-}
-
-export interface UserGameUpdateRequest {
-  personal_rating?: number | null;
-  is_loved?: boolean;
-  play_status?: PlayStatus;
-  hours_played?: number;
-  personal_notes?: string;
-}

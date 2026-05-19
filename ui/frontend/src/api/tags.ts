@@ -67,18 +67,18 @@ export interface TagsListResponse {
   totalPages: number;
 }
 
-export interface TagCreateOrGetResponse {
+interface TagCreateOrGetResponse {
   tag: Tag;
   created: boolean;
 }
 
-export interface TagAssignResponse {
+interface TagAssignResponse {
   message: string;
   newAssociations: number;
   totalRequested: number;
 }
 
-export interface TagRemoveResponse {
+interface TagRemoveResponse {
   message: string;
   removedAssociations: number;
   totalRequested: number;

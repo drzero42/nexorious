@@ -8,7 +8,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { Platform } from '@/types';
 
-export interface PlatformIconProps {
+interface PlatformIconProps {
   platform: Platform;
   size?: 'sm' | 'md' | 'lg';
   showTooltip?: boolean;
@@ -22,7 +22,7 @@ const sizeClasses = {
   lg: 'h-6 w-6',
 };
 
-export function PlatformIcon({
+function PlatformIcon({
   platform,
   size = 'md',
   showTooltip = false,

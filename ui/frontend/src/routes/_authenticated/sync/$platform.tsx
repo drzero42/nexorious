@@ -14,7 +14,7 @@ import {
   usePSNStatus,
   jobsKeys,
 } from '@/hooks';
-import { retryFailedItems } from '@/api';
+import { retryFailedItems } from '@/api/jobs';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
 import { SteamConnectionCard, EpicConnectionCard, GOGConnectionCard, PSNConnectionCard, RecentActivity, ExternalGamesSection } from '@/components/sync';
 import {

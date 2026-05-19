@@ -103,21 +103,10 @@ export function getPlatformDisplayInfo(platform: SyncPlatform): {
   return info[platform];
 }
 
-export interface SteamVerifyRequest {
-  steamId: string;
-  webApiKey: string;
-}
-
 export interface SteamVerifyResponse {
   valid: boolean;
   steamUsername: string | null;
   error: string | null;
-}
-
-export interface SteamConnectionInfo {
-  configured: boolean;
-  steamId: string | null;
-  steamUsername: string | null;
 }
 
 // Error message mapping for Steam verification
@@ -142,10 +131,6 @@ export const EPIC_AUTH_URL =
 export const GOG_AUTH_URL =
   'https://login.gog.com/auth?client_id=46899977096215655&redirect_uri=https%3A%2F%2Fembed.gog.com%2Fon_login_success%3Forigin%3Dclient&response_type=code&layout=client2';
 
-export interface EpicConnectRequest {
-  authCode: string;
-}
-
 export interface EpicConnectResponse {
   displayName: string;
   accountId: string;
@@ -161,10 +146,6 @@ export interface EpicConnectionResponse {
 }
 
 // GOG Auth Types
-export interface GOGConnectRequest {
-  authCode: string;
-}
-
 export interface GOGConnectResponse {
   username: string;
   userId: string;
@@ -178,10 +159,6 @@ export interface GOGConnectionResponse {
 }
 
 // PSN Auth Types
-export interface PSNConfigureRequest {
-  npssoToken: string;
-}
-
 export interface PSNConfigureResponse {
   valid: boolean;
   accountId: string | null;
@@ -195,21 +172,6 @@ export interface PSNStatusResponse {
   onlineId: string | null;
   tokenExpired: boolean;
 }
-
-export interface PSNConnectionInfo {
-  configured: boolean;
-  accountId: string | null;
-  onlineId: string | null;
-  tokenExpired: boolean;
-}
-
-// Error message mapping for PSN configuration
-export const PSN_CONFIG_ERROR_MESSAGES: Record<string, string> = {
-  invalid_token: 'Invalid NPSSO token. Please check and try again.',
-  expired_token: 'NPSSO token has expired. Please obtain a new one.',
-  network_error: 'Could not connect to PlayStation Network. Please try again.',
-  rate_limited: 'PSN API rate limit reached. Please try again in a few minutes.',
-};
 
 export interface ExternalGame {
   id: string;

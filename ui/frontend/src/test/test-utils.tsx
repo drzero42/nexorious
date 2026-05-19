@@ -54,7 +54,6 @@ function customRender(ui: ReactElement, options: CustomRenderOptions = {}) {
 
 // Re-export everything from testing-library
 export * from "@testing-library/react";
-export { userEvent } from "@testing-library/user-event";
 
 // Override render with custom render
 export { customRender as render, createTestQueryClient, QueryWrapper };
