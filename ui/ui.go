@@ -13,3 +13,6 @@ var DBErrorBox embed.FS
 
 //go:embed setup
 var SetupBox embed.FS
+
+//go:embed all:shared
+var SharedBox embed.FS

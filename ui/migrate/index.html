@@ -4,69 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nexorious — Database Migration</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1117;
-      color: #e2e8f0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      padding: 2rem;
-    }
-    .card {
-      background: #1a1d27;
-      border: 1px solid #2d3148;
-      border-radius: 12px;
-      padding: 2rem;
-      width: 100%;
-      max-width: 640px;
-    }
-    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
-    .meta { color: #94a3b8; font-size: 0.875rem; margin-bottom: 1.5rem; }
-    .log {
-      background: #0f1117;
-      border: 1px solid #2d3148;
-      border-radius: 8px;
-      padding: 1rem;
-      height: 280px;
-      overflow-y: auto;
-      font-family: "JetBrains Mono", "Fira Code", monospace;
-      font-size: 0.8rem;
-      color: #a3e635;
-      white-space: pre-wrap;
-      word-break: break-all;
-      margin-bottom: 1.5rem;
-      display: none;
-    }
-    .log.visible { display: block; }
-    button {
-      background: #6366f1;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: opacity 0.15s;
-    }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .status { margin-top: 1rem; font-size: 0.875rem; color: #94a3b8; }
-    .error { color: #f87171; }
-    .success { color: #a3e635; }
-  </style>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <div class="card">
-    <h1>Database Migration Required</h1>
-    <p class="meta">
+  <div class="card card--wide">
+    <h1 class="card-title">Database Migration Required</h1>
+    <p class="card-description">
       {{.PendingCount}} migration{{if ne .PendingCount 1}}s{{end}} pending
     </p>
     <div class="log" id="log"></div>
-    <button id="btn" onclick="runMigrations()">Run Migrations</button>
-    <p class="status" id="status"></p>
+    <button class="btn btn-primary" id="btn" onclick="runMigrations()">Run Migrations</button>
+    <p class="meta" id="status"></p>
   </div>
 
   <script>
@@ -104,7 +52,7 @@
       btn.disabled = true;
       log.classList.add('visible');
       status.textContent = 'Running migrations…';
-      status.className = 'status';
+      status.className = 'meta';
 
       fetch('/api/migrate/run', { method: 'POST' })
         .then(res => {
@@ -121,20 +69,20 @@
           es.addEventListener('complete', function() {
             es.close();
             status.textContent = 'Migration complete. Redirecting…';
-            status.className = 'status success';
+            status.className = 'meta meta--success';
             setTimeout(() => { window.location.href = '/'; }, 1000);
           });
 
           es.onerror = function() {
             es.close();
             status.textContent = 'Connection lost. Check logs and refresh to retry.';
-            status.className = 'status error';
+            status.className = 'meta meta--error';
             btn.disabled = false;
           };
         })
         .catch(err => {
           status.textContent = err.message;
-          status.className = 'status error';
+          status.className = 'meta meta--error';
           btn.disabled = false;
         });
     }

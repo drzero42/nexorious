@@ -19,7 +19,7 @@ type Handler struct {
 }
 
 func NewHandler(m *Migrator, db *bun.DB) *Handler {
-	tmpl, err := template.ParseFS(ui.MigrateBox, "migrate/migrate.html")
+	tmpl, err := template.ParseFS(ui.MigrateBox, "migrate/index.html")
 	if err != nil {
 		panic(fmt.Sprintf("migrate: failed to parse template: %v", err))
 	}

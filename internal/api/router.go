@@ -57,13 +57,13 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 		},
 	}))
 
-	// Gate 1: DB unavailable — redirect everything except /db-error and /health
+	// Gate 1: DB unavailable — redirect everything except /db-error, /health, and /static/app.css
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			state := migrator.State()
 			if state == migrate.AppStateDBUnavailable {
 				path := c.Request().URL.Path
-				if path == "/db-error" || path == "/health" {
+				if path == "/db-error" || path == "/health" || path == "/static/app.css" {
 					return next(c)
 				}
 				return c.Redirect(http.StatusFound,
@@ -73,13 +73,14 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 		}
 	})
 
-	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health
+	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health, /static/app.css
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			state := migrator.State()
 			if state != migrate.AppStateReady && state != migrate.AppStateDBUnavailable {
 				path := c.Request().URL.Path
-				if strings.HasPrefix(path, "/migrate") || strings.HasPrefix(path, "/api/migrate") || path == "/health" {
+				if strings.HasPrefix(path, "/migrate") || strings.HasPrefix(path, "/api/migrate") ||
+					path == "/health" || path == "/static/app.css" {
 					return next(c)
 				}
 				return c.Redirect(http.StatusFound, "/migrate")
@@ -88,13 +89,14 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 		}
 	})
 
-	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /api/migrate*
+	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /api/migrate*, /static/app.css
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			if migrator.NeedsSetup() {
 				path := c.Request().URL.Path
 				if path == "/setup" || strings.HasPrefix(path, "/api/auth/setup") ||
-					path == "/health" || strings.HasPrefix(path, "/api/migrate") {
+					path == "/health" || strings.HasPrefix(path, "/api/migrate") ||
+					path == "/static/app.css" {
 					return next(c)
 				}
 				return c.Redirect(http.StatusFound, "/setup")
@@ -146,6 +148,18 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 	// DB-error route (bypassed by Gate 1)
 	dh := NewDBErrorHandler(resolvedDatabaseURL, migrator)
 	e.GET("/db-error", dh.HandleDBError)
+
+	// Shared stylesheet for /migrate, /db-error, /setup.
+	// Must be allow-listed by every state gate (see Gate 1/2/3/4 above and the maintenance middleware).
+	e.GET("/static/app.css", func(c *echo.Context) error {
+		f, err := ui.SharedBox.Open("shared/app.css")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		c.Response().Header().Set("Cache-Control", "public, max-age=3600")
+		return c.Stream(http.StatusOK, "text/css; charset=utf-8", f)
+	})
 
 	// Setup page (bypassed by Gate 3)
 	e.GET("/setup", func(c *echo.Context) error {

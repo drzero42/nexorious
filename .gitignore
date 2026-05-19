@@ -23,3 +23,6 @@ coverage.html
 
 # Legendary per-user working directories
 .legendary-work/
+
+# Superpowers brainstorm artifacts
+.superpowers/

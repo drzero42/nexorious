@@ -1,28 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nexorious — Database Unavailable</title>
-<style>
-  body { font-family: system-ui, sans-serif; max-width: 700px; margin: 60px auto; padding: 0 20px; color: #333; }
-  h1 { color: #c0392b; }
-  pre { background: #f5f5f5; border: 1px solid #ddd; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 0.9em; }
-  .label { font-weight: bold; margin-top: 16px; }
-  footer { margin-top: 32px; color: #888; font-size: 0.85em; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexorious — Database Unavailable</title>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<h1>Nexorious — Database Unavailable</h1>
-<p>The server cannot reach the database.</p>
-<div class="label">Connection:</div>
-<pre>{{.RedactedDSN}}</pre>
-<div class="label">Last failed:</div>
-<pre>{{.LastUnavailableAt}}</pre>
-<footer>
-  The page will automatically refresh every 5 seconds.<br>
-  If this problem persists, check that your database is running and the connection string is correct.
-</footer>
-<script>setTimeout(() => location.reload(), 5000)</script>
+  <div class="card">
+    <h1 class="card-title">Database Unavailable</h1>
+    <p class="card-description">
+      The server cannot reach the database. This page refreshes every 5 seconds.
+    </p>
+    <label class="label">Connection</label>
+    <pre class="code">{{.RedactedDSN}}</pre>
+    <label class="label">Last failed</label>
+    <pre class="code">{{.LastUnavailableAt}}</pre>
+  </div>
+  <script>setTimeout(() => location.reload(), 5000)</script>
 </body>
 </html>
