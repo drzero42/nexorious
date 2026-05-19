@@ -206,13 +206,14 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		tagsGroup.DELETE("/:id", th.HandleDeleteTag)
 
 		// Games routes (all JWT-protected)
-		gh := NewGamesHandler(db, igdbClient, cfg)
+		gh := NewGamesHandler(db, igdbClient, cfg, riverClient)
 		gamesGroup := e.Group("/api/games", auth.JWTMiddleware(cfg.SecretKey, db))
 		gamesGroup.GET("", gh.HandleListGames)
-		gamesGroup.GET("/:id", gh.HandleGetGame)
+		gamesGroup.POST("/metadata/refresh-job", gh.HandleStartMetadataRefreshJob)
 		gamesGroup.POST("/search/igdb", gh.HandleSearchIGDB)
 		gamesGroup.GET("/igdb/:igdb_id", gh.HandleGetIGDBGame)
 		gamesGroup.POST("/igdb-import", gh.HandleImportFromIGDB)
+		gamesGroup.GET("/:id", gh.HandleGetGame)
 
 		// User Games routes (all JWT-protected)
 		ugh := NewUserGamesHandler(db, cfg)

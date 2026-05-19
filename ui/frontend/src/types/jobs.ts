@@ -11,7 +11,7 @@ export enum JobType {
   SYNC = 'sync',
   IMPORT = 'import',
   EXPORT = 'export',
-  MAINTENANCE = 'maintenance',
+  METADATA_REFRESH = 'metadata_refresh',
 }
 
 export enum JobSource {
@@ -208,7 +208,7 @@ export function getJobTypeLabel(type: JobType): string {
     [JobType.SYNC]: 'Sync',
     [JobType.IMPORT]: 'Import',
     [JobType.EXPORT]: 'Export',
-    [JobType.MAINTENANCE]: 'Maintenance',
+    [JobType.METADATA_REFRESH]: 'Metadata Refresh',
   };
   return labels[type] || type;
 }

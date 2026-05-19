@@ -49,7 +49,7 @@ function MaintenancePage() {
   const igdbUnavailable = health?.igdb_status !== undefined && health.igdb_status !== 'ok';
 
   // Track active maintenance job
-  const { data: activeMaintenanceJob, refetch: refetchMaintenanceJob } = useActiveJob(JobType.MAINTENANCE);
+  const { data: activeMaintenanceJob, refetch: refetchMaintenanceJob } = useActiveJob(JobType.METADATA_REFRESH);
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
 
   // Determine which job to display (not dismissed)
@@ -215,7 +215,7 @@ function MaintenancePage() {
       {/* Recent Maintenance Jobs - shows completed jobs from last 7 days */}
       {!hasActiveJob && (
         <RecentActivity
-          jobTypes={[JobType.MAINTENANCE]}
+          jobTypes={[JobType.METADATA_REFRESH]}
           excludeJobIds={activeJob ? [activeJob.id] : []}
         />
       )}

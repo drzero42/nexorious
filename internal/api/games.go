@@ -7,24 +7,29 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
+	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // GamesHandler handles /api/games endpoints.
 type GamesHandler struct {
-	db   *bun.DB
-	igdb *igdb.Client
-	cfg  *config.Config
+	db          *bun.DB
+	igdb        *igdb.Client
+	cfg         *config.Config
+	riverClient *river.Client[pgx.Tx]
 }
 
 // NewGamesHandler creates a GamesHandler.
-func NewGamesHandler(db *bun.DB, igdbClient *igdb.Client, cfg *config.Config) *GamesHandler {
-	return &GamesHandler{db: db, igdb: igdbClient, cfg: cfg}
+func NewGamesHandler(db *bun.DB, igdbClient *igdb.Client, cfg *config.Config, riverClient *river.Client[pgx.Tx]) *GamesHandler {
+	return &GamesHandler{db: db, igdb: igdbClient, cfg: cfg, riverClient: riverClient}
 }
 
 // GameListResponse is the paginated response for game listings.
@@ -301,6 +306,33 @@ func (h *GamesHandler) HandleImportFromIGDB(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update game"})
 	}
 	return c.JSON(http.StatusOK, game)
+}
+
+// HandleStartMetadataRefreshJob handles POST /api/games/metadata/refresh-job.
+// Admin-only: dispatches a MetadataRefreshDispatch River job immediately.
+func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	if !auth.IsAdminFromContext(c) {
+		return echo.NewHTTPError(http.StatusForbidden, "admin access required")
+	}
+
+	if h.riverClient == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "worker not available")
+	}
+
+	if _, err := h.riverClient.Insert(c.Request().Context(), tasks.MetadataRefreshDispatchArgs{}, nil); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Metadata refresh job queued",
+		"job_id":  "",
+	})
 }
 
 func (h *GamesHandler) mapIGDBError(c *echo.Context, err error) error {
