@@ -614,7 +614,11 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 	}
 
 	if len(failedItems) == 0 {
-		return c.JSON(http.StatusOK, map[string]any{"retried": 0})
+		return c.JSON(http.StatusOK, map[string]any{
+			"success":       true,
+			"message":       "No failed items to retry",
+			"retried_count": 0,
+		})
 	}
 
 	// Reset failed + igdb_failed items to pending.
@@ -628,9 +632,10 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to reset items")
 	}
 
-	// Reset job status to processing.
+	// Reset job status to processing and clear auto_retry_done so that a
+	// subsequent IGDB failure can trigger another automatic retry cycle.
 	_, _ = h.db.NewRaw(`
-		UPDATE jobs SET status = ? WHERE id = ?`,
+		UPDATE jobs SET status = ?, auto_retry_done = false WHERE id = ?`,
 		models.JobStatusProcessing, jobID,
 	).Exec(context.Background())
 
@@ -639,7 +644,11 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 		retryInsert(context.Background(), h.riverClient, job.JobType, item.ID)
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{"retried": len(failedItems)})
+	return c.JSON(http.StatusOK, map[string]any{
+		"success":       true,
+		"message":       fmt.Sprintf("Retrying %d failed item(s)", len(failedItems)),
+		"retried_count": len(failedItems),
+	})
 }
 
 func retryInsert(ctx context.Context, rc *river.Client[pgx.Tx], jobType, jobItemID string) {
