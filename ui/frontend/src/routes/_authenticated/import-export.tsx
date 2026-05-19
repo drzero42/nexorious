@@ -235,6 +235,8 @@ function ImportExportPage() {
   // Check if there's an active job that should show inline progress
   const showJobProgress = activeJob != null;
   const hasActiveJob = activeJob != null && !activeJob.isTerminal;
+  // Exclude IDs for recent activity
+  const excludeJobIds = activeJob ? [activeJob.id] : [];
   // Check if the currently displayed job is a completed export (for download button)
   const isActiveJobCompletedExport = activeJob?.isTerminal &&
     activeJob?.status === JobStatus.COMPLETED &&
@@ -437,7 +439,7 @@ function ImportExportPage() {
       {!showJobProgress && (
         <section className="mb-6">
           <RecentActivity
-            excludeJobIds={[activeImportJob?.id, activeExportJob?.id].filter((id): id is string => !!id)}
+            excludeJobIds={excludeJobIds}
           />
         </section>
       )}
