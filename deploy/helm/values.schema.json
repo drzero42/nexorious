@@ -29,6 +29,10 @@
           "type": "string",
           "description": "External database URL. Leave empty to use in-cluster PostgreSQL."
         },
+        "legendaryWorkDir": {
+          "type": "string",
+          "description": "Legendary work directory path. Set to enable Epic Games Store sync."
+        },
         "postgresql": {
           "type": "object",
           "additionalProperties": false,
