@@ -16,7 +16,7 @@ import {
 } from '@/hooks';
 import { retryFailedItems } from '@/api';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
-import { SteamConnectionCard, EpicConnectionCard, PSNConnectionCard, RecentActivity, ExternalGamesSection } from '@/components/sync';
+import { SteamConnectionCard, EpicConnectionCard, GOGConnectionCard, PSNConnectionCard, RecentActivity, ExternalGamesSection } from '@/components/sync';
 import {
   SyncPlatform,
   SyncFrequency,
@@ -429,6 +429,16 @@ function SyncDetailPage() {
           onConnectionChange={() => {
             queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
             queryClient.invalidateQueries({ queryKey: authKeys.me() });
+          }}
+        />
+      )}
+
+      {/* GOG Connection Card - only show for GOG platform */}
+      {platform === SyncPlatform.GOG && (
+        <GOGConnectionCard
+          isConfigured={!!config?.isConfigured}
+          onConnectionChange={() => {
+            queryClient.invalidateQueries({ queryKey: syncKeys.gogConnection() });
           }}
         />
       )}

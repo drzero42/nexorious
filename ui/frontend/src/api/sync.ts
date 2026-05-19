@@ -9,6 +9,8 @@ import type {
   SteamVerifyResponse,
   EpicConnectResponse,
   EpicConnectionResponse,
+  GOGConnectResponse,
+  GOGConnectionResponse,
   PSNConfigureResponse,
   PSNStatusResponse,
   ExternalGame,
@@ -259,7 +261,55 @@ export async function getEpicConnection(): Promise<EpicConnectionResponse> {
  * Disconnect Epic Games Store. Clears legendary state and per-user working dir.
  */
 export async function disconnectEpic(): Promise<void> {
-  await api.delete('/sync/epic/disconnect');
+  await api.delete('/sync/epic/connection');
+}
+
+// ============================================================================
+// GOG Auth API Types
+// ============================================================================
+
+interface GOGConnectApiRequest {
+  auth_code: string;
+}
+
+interface GOGConnectApiResponse {
+  username: string;
+  user_id: string;
+}
+
+interface GOGConnectionApiResponse {
+  connected: boolean;
+  username?: string;
+  user_id?: string;
+  auth_url?: string;
+}
+
+// ============================================================================
+// GOG Auth Functions
+// ============================================================================
+
+export async function connectGOG(authCode: string): Promise<GOGConnectResponse> {
+  const response = await api.post<GOGConnectApiResponse>('/sync/gog/connect', {
+    auth_code: authCode,
+  } as GOGConnectApiRequest);
+  return {
+    username: response.username,
+    userId: response.user_id,
+  };
+}
+
+export async function getGOGConnection(): Promise<GOGConnectionResponse> {
+  const response = await api.get<GOGConnectionApiResponse>('/sync/gog/connection');
+  return {
+    connected: response.connected,
+    username: response.username,
+    userId: response.user_id,
+    authUrl: response.auth_url,
+  };
+}
+
+export async function disconnectGOG(): Promise<void> {
+  await api.delete('/sync/gog/connection');
 }
 
 // ============================================================================
@@ -324,7 +374,7 @@ export async function getPSNStatus(): Promise<PSNStatusResponse> {
  * Disconnect PSN integration.
  */
 export async function disconnectPSN(): Promise<void> {
-  await api.delete('/sync/psn/disconnect');
+  await api.delete('/sync/psn/connection');
 }
 
 // ============================================================================

@@ -6,6 +6,8 @@ func RawPlatformToSlug(raw string) (string, bool) {
 	switch raw {
 	case "pc-windows":
 		return "pc-windows", true
+	case "pc-linux":
+		return "pc-linux", true
 	case "playstation-5":
 		return "ps5", true
 	case "playstation-4":
@@ -25,6 +27,8 @@ func StorefrontToCollectionSlug(storefront string) (string, bool) {
 		return "playstation-store", true
 	case "epic":
 		return "epic-games-store", true
+	case "gog":
+		return "gog", true
 	default:
 		return "", false
 	}

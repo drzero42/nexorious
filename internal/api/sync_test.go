@@ -43,7 +43,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSN
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, nil, steam, psn, (api.EpicClient)(nil))
+	synch := api.NewSyncHandler(db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
 	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 	synch.RegisterRoutes(g)
 	return e
@@ -64,12 +64,12 @@ func TestSyncConfig_ListDefaults(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["total"].(float64) != 3 {
-		t.Fatalf("expected total=3, got %v", resp["total"])
+	if resp["total"].(float64) != 4 {
+		t.Fatalf("expected total=4, got %v", resp["total"])
 	}
 	configs := resp["configs"].([]any)
-	if len(configs) != 3 {
-		t.Fatalf("expected 3 configs, got %d", len(configs))
+	if len(configs) != 4 {
+		t.Fatalf("expected 4 configs, got %d", len(configs))
 	}
 	for _, c := range configs {
 		cfg := c.(map[string]any)
@@ -108,7 +108,7 @@ func TestSyncConfig_Put_InvalidStorefront(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "cfg-invalid-1")
 
-	rec := putJSONAuth(t, e, "/api/sync/config/gog", map[string]any{"frequency": "daily"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/config/battlenet", map[string]any{"frequency": "daily"}, token)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
@@ -391,7 +391,7 @@ func TestPSNDisconnect_Idempotent(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-disc-1")
 
-	rec := deleteAuth(t, e, "/api/sync/psn/disconnect", token)
+	rec := deleteAuth(t, e, "/api/sync/psn/connection", token)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", rec.Code)
 	}
@@ -504,8 +504,8 @@ func TestSyncListConfig_AfterPut(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["total"].(float64) != 3 {
-		t.Fatalf("expected total=3, got %v", resp["total"])
+	if resp["total"].(float64) != 4 {
+		t.Fatalf("expected total=4, got %v", resp["total"])
 	}
 	configs := resp["configs"].([]any)
 	// Find steam config and verify it has frequency=daily.
@@ -579,7 +579,7 @@ func TestSyncGetConfig_InvalidStorefront(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "getcfg-invalid")
 
-	rec := getAuth(t, e, "/api/sync/config/gog", token)
+	rec := getAuth(t, e, "/api/sync/config/battlenet", token)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -1032,7 +1032,38 @@ func newSyncTestAppWithEpic(t *testing.T, db *bun.DB, steam api.SteamClient, psn
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, nil, steam, psn, epic)
+	synch := api.NewSyncHandler(db, nil, steam, psn, epic, (api.GOGClient)(nil))
+	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	synch.RegisterRoutes(g)
+	return e
+}
+
+type stubGOGClient struct {
+	authURL string
+	token   *api.GOGTokenResponse
+	err     error
+}
+
+func (s *stubGOGClient) BuildAuthURL() string {
+	if s.authURL != "" {
+		return s.authURL
+	}
+	return "https://login.gog.com/auth?test=1"
+}
+
+func (s *stubGOGClient) ExchangeCode(_ context.Context, _ string) (*api.GOGTokenResponse, error) {
+	return s.token, s.err
+}
+
+func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient, gog api.GOGClient) interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+} {
+	t.Helper()
+	cfg := testCfg()
+	e := echo.New()
+	ah := api.NewAuthHandler(testDB, cfg)
+	e.POST("/api/auth/login", ah.HandleLogin)
+	synch := api.NewSyncHandler(db, nil, steam, psn, (api.EpicClient)(nil), gog)
 	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1147,7 +1178,7 @@ func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 		t.Fatalf("seed user_sync_configs: %v", err)
 	}
 
-	rec := deleteAuth(t, e, "/api/sync/epic/disconnect", token)
+	rec := deleteAuth(t, e, "/api/sync/epic/connection", token)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -1235,5 +1266,118 @@ func TestHandleGetEpicConnection_ConnectedReturnsAccountInfo(t *testing.T) {
 	}
 	if resp["display_name"] != "PlayerOne" || resp["account_id"] != "acct-xyz" {
 		t.Errorf("expected display_name/account_id from creds, got: %v", resp)
+	}
+}
+
+// ─── GOG connection-handler tests ────────────────────────────────────────────
+
+func TestGOGConnect_MissingAuthCode(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubGOGClient{}
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, app, "gog-conn-missing")
+
+	rec := postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{}, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("want 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGOGConnect_ExchangeFailure(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubGOGClient{err: fmt.Errorf("invalid code")}
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, app, "gog-conn-fail")
+
+	rec := postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{"auth_code": "bad"}, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("want 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGOGConnect_Success(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubGOGClient{
+		token: &api.GOGTokenResponse{
+			AccessToken:  "acc",
+			RefreshToken: "ref",
+			UserID:       "u1",
+			Username:     "goguser",
+		},
+	}
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, app, "gog-conn-ok")
+
+	rec := postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{"auth_code": "good"}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["username"] != "goguser" {
+		t.Errorf("username: got %q", body["username"])
+	}
+}
+
+func TestGOGDisconnect_Idempotent(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubGOGClient{}
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, app, "gog-disc")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/sync/gog/connection", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("want 204, got %d", rec.Code)
+	}
+}
+
+func TestGOGConnection_NotConnected(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubGOGClient{}
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, app, "gog-status-notconn")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sync/gog/connection", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var body map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["connected"] != false {
+		t.Errorf("want connected=false, got %v", body["connected"])
+	}
+}
+
+func TestGOGConnection_Connected(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubGOGClient{
+		token: &api.GOGTokenResponse{Username: "goguser", UserID: "u1", AccessToken: "a", RefreshToken: "r"},
+	}
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, app, "gog-status-conn")
+
+	// Connect first.
+	postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{"auth_code": "ok"}, token)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sync/gog/connection", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var body map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["connected"] != true {
+		t.Errorf("want connected=true, got %v", body["connected"])
+	}
+	if body["username"] != "goguser" {
+		t.Errorf("username: got %v", body["username"])
 	}
 }

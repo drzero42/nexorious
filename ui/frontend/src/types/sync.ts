@@ -12,6 +12,7 @@ export enum SyncPlatform {
 export const SUPPORTED_SYNC_PLATFORMS: SyncPlatform[] = [
   SyncPlatform.STEAM,
   SyncPlatform.EPIC,
+  SyncPlatform.GOG,
   SyncPlatform.PSN,
 ];
 
@@ -138,6 +139,9 @@ export const STEAM_VERIFY_ERROR_MESSAGES: Record<string, string> = {
 export const EPIC_AUTH_URL =
   'https://www.epicgames.com/id/api/redirect?clientId=34a02cf8f4414e29b15921876da36f9a&responseType=code';
 
+export const GOG_AUTH_URL =
+  'https://login.gog.com/auth?client_id=46899977096215655&redirect_uri=https%3A%2F%2Fembed.gog.com%2Fon_login_success%3Forigin%3Dclient&response_type=code&layout=client2';
+
 export interface EpicConnectRequest {
   authCode: string;
 }
@@ -154,6 +158,23 @@ export interface EpicConnectionResponse {
   accountId?: string;
   /** "legendary_not_configured" when disabled=true (LEGENDARY_WORK_DIR unset). */
   reason?: string;
+}
+
+// GOG Auth Types
+export interface GOGConnectRequest {
+  authCode: string;
+}
+
+export interface GOGConnectResponse {
+  username: string;
+  userId: string;
+}
+
+export interface GOGConnectionResponse {
+  connected: boolean;
+  username?: string;
+  userId?: string;
+  authUrl?: string;
 }
 
 // PSN Auth Types

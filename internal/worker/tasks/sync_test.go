@@ -18,6 +18,7 @@ import (
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
+	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
@@ -1265,9 +1266,12 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 
 	// Pre-insert God of War as skipped. The ON CONFLICT upsert does not touch
 	// is_skipped, so it remains true even when the batch includes this game.
+	// raw_platform must match the value in the sync batch so the upsert hits
+	// the correct row under the (user_id, storefront, external_id, raw_platform)
+	// unique constraint.
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'psn', 'NPWR00001_00', 'God of War', true, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, raw_platform, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'psn', 'NPWR00001_00', 'God of War', 'playstation-4', true, true, false, 0)`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
 
@@ -1781,5 +1785,159 @@ func TestEpicClientAdapter_SkipsPersistWhenSnapshotEmpty(t *testing.T) {
 	got := readEpicSnapshot(t, userID)
 	if got["user.json"] != `{"v":1}` {
 		t.Errorf("snapshot should be unchanged when CaptureSnapshot returns empty, got %v", got)
+	}
+}
+
+// ─── GOG dispatch tests ───────────────────────────────────────────────────────
+
+type fakeGOGAdapter struct {
+	entries     []gogsvc.ExternalLibraryEntry
+	refreshedTo *gogsvc.TokenResponse
+	refreshErr  error
+	libraryErr  error
+}
+
+func (f *fakeGOGAdapter) GetLibrary(_ context.Context, _ string, _ int, onBatch func([]gogsvc.ExternalLibraryEntry) error) error {
+	if f.libraryErr != nil {
+		return f.libraryErr
+	}
+	return onBatch(f.entries)
+}
+
+func (f *fakeGOGAdapter) RefreshToken(_ context.Context, _ string) (*gogsvc.TokenResponse, error) {
+	if f.refreshErr != nil {
+		return nil, f.refreshErr
+	}
+	if f.refreshedTo != nil {
+		return f.refreshedTo, nil
+	}
+	return &gogsvc.TokenResponse{AccessToken: "new-acc", RefreshToken: "new-ref", UserID: "u1", Username: "user"}, nil
+}
+
+func TestGOGDispatch_CreatesExternalGames(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'gog', 'pending', 'low')`,
+		jobID, userID,
+	).Exec(ctx)
+	creds := `{"access_token":"acc","refresh_token":"ref","user_id":"u1","username":"user"}`
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'gog', 'daily', ?)`,
+		configID, userID, creds,
+	).Exec(ctx)
+
+	adapter := &fakeGOGAdapter{
+		entries: []gogsvc.ExternalLibraryEntry{
+			{ExternalID: "1001", Title: "GOG Game", RawPlatform: "pc-windows", OwnershipStatus: "owned"},
+		},
+	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, GOG: adapter}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+
+	var count int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'gog'`, userID).Scan(ctx, &count)
+	if count != 1 {
+		t.Errorf("want 1 external_game, got %d", count)
+	}
+}
+
+func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'gog', 'pending', 'low')`,
+		jobID, userID,
+	).Exec(ctx)
+	creds := `{"access_token":"acc","refresh_token":"ref","user_id":"u1","username":"user"}`
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'gog', 'daily', ?)`,
+		configID, userID, creds,
+	).Exec(ctx)
+
+	adapter := &fakeGOGAdapter{
+		entries: []gogsvc.ExternalLibraryEntry{
+			{ExternalID: "2001", Title: "Dual Game", RawPlatform: "pc-windows", OwnershipStatus: "owned"},
+			{ExternalID: "2001", Title: "Dual Game", RawPlatform: "pc-linux", OwnershipStatus: "owned"},
+		},
+	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, GOG: adapter}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
+	}
+	_ = w.Work(ctx, job)
+
+	var count int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'gog' AND external_id = '2001'`,
+		userID,
+	).Scan(ctx, &count)
+	if count != 2 {
+		t.Errorf("want 2 external_games for dual-platform game, got %d", count)
+	}
+
+	// Verify both job_items have distinct item_keys.
+	var itemCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
+	if itemCount != 2 {
+		t.Errorf("want 2 job_items (one per platform), got %d", itemCount)
+	}
+}
+
+func TestGOGDispatch_TokenRefreshPersisted(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'gog', 'pending', 'low')`,
+		jobID, userID,
+	).Exec(ctx)
+	creds := `{"access_token":"old-acc","refresh_token":"old-ref","user_id":"u1","username":"user"}`
+	configID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'gog', 'daily', ?)`,
+		configID, userID, creds,
+	).Exec(ctx)
+
+	adapter := &fakeGOGAdapter{
+		refreshedTo: &gogsvc.TokenResponse{AccessToken: "new-acc", RefreshToken: "new-ref", UserID: "u1", Username: "user"},
+		entries:     []gogsvc.ExternalLibraryEntry{},
+	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, GOG: adapter}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
+	}
+	_ = w.Work(ctx, job)
+
+	var storedCreds string
+	_ = testDB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'gog'`,
+		userID,
+	).Scan(ctx, &storedCreds)
+	var parsed map[string]string
+	_ = json.Unmarshal([]byte(storedCreds), &parsed)
+	if parsed["access_token"] != "new-acc" {
+		t.Errorf("refreshed access_token not persisted, got %q", parsed["access_token"])
+	}
+	if parsed["refresh_token"] != "new-ref" {
+		t.Errorf("refreshed refresh_token not persisted, got %q", parsed["refresh_token"])
 	}
 }
