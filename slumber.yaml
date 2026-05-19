@@ -623,6 +623,52 @@ requests:
         url: "{{base_url}}/api/sync/epic/status"
         $ref: "#/.authenticated"
 
+      gog_connect:
+        name: GOG Connect
+        method: POST
+        url: "{{base_url}}/api/sync/gog/connect"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            auth_code: "{{prompt(message='GOG Auth Code', sensitive=true)}}"
+
+      gog_connection:
+        name: GOG Connection Status
+        method: GET
+        url: "{{base_url}}/api/sync/gog/connection"
+        $ref: "#/.authenticated"
+
+      gog_disconnect:
+        name: GOG Disconnect
+        method: DELETE
+        url: "{{base_url}}/api/sync/gog/connection"
+        $ref: "#/.authenticated"
+
+      gog_external_games:
+        name: GOG External Games
+        method: GET
+        url: "{{base_url}}/api/sync/gog/external-games"
+        $ref: "#/.authenticated"
+
+      gog_reset:
+        name: GOG Reset Sync Data
+        method: DELETE
+        url: "{{base_url}}/api/sync/gog/data"
+        $ref: "#/.authenticated"
+
+      gog_sync_status:
+        name: GOG Sync Status
+        method: GET
+        url: "{{base_url}}/api/sync/gog/status"
+        $ref: "#/.authenticated"
+
+      trigger_gog:
+        name: Trigger GOG Sync
+        method: POST
+        url: "{{base_url}}/api/sync/gog"
+        $ref: "#/.authenticated"
+
       trigger_steam:
         name: Trigger Steam Sync
         method: POST
