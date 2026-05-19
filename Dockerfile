@@ -30,6 +30,10 @@ FROM docker.io/library/alpine:3.23 AS runtime
 RUN apk add --no-cache \
       ca-certificates \
       postgresql18-client \
+      python3 py3-requests py3-filelock \
+ && apk add --no-cache --virtual .pip-tmp py3-pip \
+ && pip install --no-cache-dir --break-system-packages --no-deps legendary-gl==0.20.34 \
+ && apk del .pip-tmp \
  && addgroup -g 10001 -S nexorious \
  && adduser -u 10001 -S -G nexorious -h /app -s /sbin/nologin nexorious
 
