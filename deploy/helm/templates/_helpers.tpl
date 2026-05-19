@@ -299,3 +299,24 @@ _nexorious_unused
 _nexorious_unused
 {{- end -}}
 {{- end }}
+
+{{/*
+Inject legendary persistence entry and LEGENDARY_WORK_DIR env var when
+nexorious.legendaryWorkDir is set. Call this BEFORE bjw-s.common.loader.all
+so the loader sees the injected values.
+*/}}
+{{- define "nexorious.injectLegendaryIfEnabled" -}}
+{{- if .Values.nexorious.legendaryWorkDir -}}
+  {{- $_ := set .Values.persistence "legendary" (dict
+      "enabled"        true
+      "type"           "emptyDir"
+      "advancedMounts" (dict
+        "nexorious" (dict
+          "main" (list (dict "path" .Values.nexorious.legendaryWorkDir))
+        )
+      )
+  ) -}}
+  {{- $_ = set .Values.controllers.nexorious.containers.main.env
+      "LEGENDARY_WORK_DIR" .Values.nexorious.legendaryWorkDir -}}
+{{- end -}}
+{{- end }}
