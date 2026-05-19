@@ -37,6 +37,9 @@ nexorious:
   # -- Epic Games Store sync (e.g. /var/lib/legendary). When non-empty, the
   # -- chart injects LEGENDARY_WORK_DIR on the main container and mounts an
   # -- emptyDir volume at this path. Leave empty to disable Epic sync.
+  # -- Note: legendary auth state is snapshotted to the database after each
+  # -- sync, so the emptyDir is safe to lose on pod restarts — state is
+  # -- restored from the DB before every invocation.
   legendaryWorkDir: ""
 
   # -- External secret references (*From pattern)
