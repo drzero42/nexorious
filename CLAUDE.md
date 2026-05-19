@@ -50,6 +50,9 @@ make build       # compiles the Go binary
 devenv shell
 make                     # builds everything
 export DATABASE_URL="postgres://..."
+export SECRET_KEY="<random-secret>"   # required; used for JWT signing and encryption
+# Optional: IGDB_CLIENT_ID + IGDB_CLIENT_SECRET for metadata enrichment
+# Optional: PORT (default 8000), LOG_LEVEL (default info), WORKER_COUNT (default 4)
 ./nexorious              # starts server; visits /migrate if schema is pending
 ```
 
@@ -103,9 +106,9 @@ var DBErrorBox embed.FS
 //go:embed setup
 var SetupBox embed.FS
 ```
-FastAPI is eliminated; the Go binary serves the React SPA itself.
+The Go binary serves the React SPA itself.
 
-### Frontend Stack (unchanged from nexorious)
+### Frontend Stack
 - Vite 6 + React 19 + TypeScript
 - TanStack Router (file-based routes in `ui/frontend/src/routes/`)
 - TanStack Query, Tailwind CSS v4, shadcn/ui, React Hook Form + Zod, TipTap
@@ -117,7 +120,7 @@ FastAPI is eliminated; the Go binary serves the React SPA itself.
 - **API zone** — gated by state middleware, then JWT where required
 
 ### Workers & Scheduler
-River (`riverqueue/river`) is the job queue. Worker structs live under `worker/tasks/` (sync, import, export, metadata refresh) and `internal/scheduler/` (cleanup jobs, backup polling). Periodic schedules are registered in `scheduler.BuildPeriodicJobs()` using `robfig/cron/v3` expressions and River `PeriodicJob`. Backup orchestration still lives in `internal/backup/` and is invoked by the `CheckScheduledBackupWorker`.
+River (`riverqueue/river`) is the job queue. Worker structs live under `worker/tasks/` (sync, import, export, metadata refresh) and `internal/scheduler/` (cleanup jobs, backup polling). Periodic schedules are registered in `scheduler.BuildPeriodicJobs()` using `robfig/cron/v3` expressions and River `PeriodicJob`. Backup orchestration still lives in `internal/backup/` and is invoked by the `CheckScheduledBackupWorker`. Sync workers cover Steam, PSN, GOG (via Legendary), and IGDB metadata refresh.
 
 ### Rate Limiting
 `ratelimit.Limiter` interface with two implementations:
@@ -179,7 +182,7 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 - Use `*bun.DB` for DB access; pass via dependency injection
 
 **TypeScript (Frontend)**
-- Same conventions as nexorious: external → internal (`@/...`) → types import order
+- Import order: external → internal (`@/...`) → types
 - TanStack Query for server state; `useState` for local state only
 - `routeTree.gen.ts` is gitignored — run `npm run build` once in a fresh worktree before type-checking
 
