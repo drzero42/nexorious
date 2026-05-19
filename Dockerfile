@@ -9,7 +9,7 @@ COPY ui/frontend ./ui/frontend
 RUN cd ui/frontend && npm run build && touch dist/.gitkeep
 
 # ─── Stage 2: build the Go binary ────────────────────────────────────────────
-FROM docker.io/library/golang:1.25-alpine AS go-build
+FROM docker.io/library/golang:1.26-alpine AS go-build
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./
