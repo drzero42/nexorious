@@ -33,14 +33,12 @@ nexorious:
   # -- Example: postgresql://user:pass@my-postgres:5432/nexorious
   databaseUrl: ""
 
-  # -- Legendary work directory. Set to a writable absolute path to enable
-  # -- Epic Games Store sync (e.g. /var/lib/legendary). When non-empty, the
-  # -- chart injects LEGENDARY_WORK_DIR on the main container and mounts an
-  # -- emptyDir volume at this path. Leave empty to disable Epic sync.
+  # -- Legendary work directory. Injected as LEGENDARY_WORK_DIR and mounted
+  # -- as an emptyDir volume. Set to empty to disable Epic sync entirely.
   # -- Note: legendary auth state is snapshotted to the database after each
   # -- sync, so the emptyDir is safe to lose on pod restarts — state is
   # -- restored from the DB before every invocation.
-  legendaryWorkDir: ""
+  legendaryWorkDir: "/var/lib/legendary"
 
   # -- External secret references (*From pattern)
   # When *From.name and *From.key are both non-empty, the external secret is used
