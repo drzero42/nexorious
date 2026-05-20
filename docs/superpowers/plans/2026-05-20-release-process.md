@@ -4,7 +4,7 @@
 
 **Goal:** Wire up release-please to drive on-demand, Conventional-Commits-driven releases that publish versioned + `latest` container images and Helm charts, with auto-updated install pins in `Chart.yaml` and `docker-compose.yml`.
 
-**Architecture:** A new `release-please.yaml` workflow runs the `googleapis/release-please-action` on every push to `main` and on a daily schedule. It maintains a long-running "Release PR" that bumps the version in `.release-please-manifest.json`, prepends a `CHANGELOG.md` entry, and updates anchor-commented version strings in `deploy/helm/Chart.yaml` and `deploy/docker/docker-compose.yml`. Merging the Release PR creates a `vX.Y.Z` tag and GitHub Release, which fires the existing `build-push.yaml` `release: published` path. That path also gets two small additions: a `latest` image tag and a floating-`latest` Helm chart push.
+**Architecture:** A new `release-please.yaml` workflow runs the `googleapis/release-please-action` on every push to `main` and on a daily schedule. It maintains a long-running "Release PR" that bumps the version in `.github/.release-please-manifest.json`, prepends a `CHANGELOG.md` entry, and updates anchor-commented version strings in `deploy/helm/Chart.yaml` and `deploy/docker/docker-compose.yml`. Merging the Release PR creates a `vX.Y.Z` tag and GitHub Release, which fires the existing `build-push.yaml` `release: published` path. That path also gets two small additions: a `latest` image tag and a floating-`latest` Helm chart push.
 
 **Tech Stack:** GitHub Actions, [release-please](https://github.com/googleapis/release-please) v4, Helm 3 (OCI), Docker Buildx.
 
@@ -366,7 +366,7 @@ During the 0.x window the minor digit is reserved for breaking changes; everythi
 ### Promoting to 1.0.0
 
 When ready, open a single PR that:
-1. Edits `release-please-config.json` to remove (or set to `false`) `bump-minor-pre-major` and `bump-patch-for-minor-pre-major`.
+1. Edits `.github/release-please-config.json` to remove (or set to `false`) `bump-minor-pre-major` and `bump-patch-for-minor-pre-major`.
 2. Includes `Release-As: 1.0.0` in the commit body.
 
 After merging that PR, release-please opens a Release PR for `1.0.0`. From the next commit onward, post-1.0 SemVer applies automatically.
@@ -437,7 +437,7 @@ The `Release-As: 0.1.0` footer below forces the first release version regardless
 
 - [ ] After merge, `Release Please` workflow runs successfully on `main`.
 - [ ] release-please opens a PR titled `chore(main): release 0.1.0`.
-- [ ] The Release PR diff includes `CHANGELOG.md` entry, `.release-please-manifest.json` bumped to `0.1.0`, `Chart.yaml` `version`/`appVersion` set to `0.1.0`, `docker-compose.yml` image tag bumped to `:0.1.0`.
+- [ ] The Release PR diff includes `CHANGELOG.md` entry, `.github/.release-please-manifest.json` bumped to `0.1.0`, `Chart.yaml` `version`/`appVersion` set to `0.1.0`, `docker-compose.yml` image tag bumped to `:0.1.0`.
 - [ ] Merging the Release PR creates tag `v0.1.0` and a published GitHub Release.
 - [ ] `Build and Push Container Image` workflow fires on the release event and publishes `ghcr.io/drzero42/nexorious:0.1.0` and `:latest`, plus chart `0.1.0` and `0.0.0-latest`.
 
@@ -465,7 +465,7 @@ The PR URL is the deliverable. Hand it to the maintainer to review.
 This is what the *maintainer* does after merging — not the implementer, but documented here so the test plan is complete.
 
 1. **Wait for the `Release Please` workflow to run on main.** Visit the Actions tab; the run should be green and produce a new PR.
-2. **Inspect the Release PR.** Confirm it touches the four expected files (`CHANGELOG.md`, `.release-please-manifest.json`, `deploy/helm/Chart.yaml`, `deploy/docker/docker-compose.yml`) with `0.1.0` everywhere appropriate.
+2. **Inspect the Release PR.** Confirm it touches the four expected files (`CHANGELOG.md`, `.github/.release-please-manifest.json`, `deploy/helm/Chart.yaml`, `deploy/docker/docker-compose.yml`) with `0.1.0` everywhere appropriate.
 3. **Merge the Release PR via the GitHub UI.** Use the default "Squash and merge"; release-please's auto-generated body already contains the right metadata.
 4. **Confirm `v0.1.0` tag and GitHub Release exist.** `git fetch --tags && git tag -l v0.1.0` locally, or check the Releases page.
 5. **Confirm `build-push.yaml` ran on the release event.** Actions tab → most recent `Build and Push Container Image` run should show `release` as trigger, and both `build-push` and `build-push-chart` jobs should be green.

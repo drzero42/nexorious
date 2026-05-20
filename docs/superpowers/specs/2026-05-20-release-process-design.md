@@ -91,14 +91,14 @@ release-please opens/updates a Release PR that contains the following changes wh
 | File | Change |
 |---|---|
 | `CHANGELOG.md` | New section prepended for the version, sourced from `feat:` / `fix:` / `BREAKING CHANGE:` commits since the previous release. Created if it doesn't exist. |
-| `.release-please-manifest.json` | Version bumped to the new release version. |
-| `release-please-config.json` | Unchanged by the Release PR itself; edited by humans only (e.g. to flip flags at 1.0 promotion). |
+| `.github/.release-please-manifest.json` | Version bumped to the new release version. |
+| `.github/release-please-config.json` | Unchanged by the Release PR itself; edited by humans only (e.g. to flip flags at 1.0 promotion). |
 | `deploy/helm/Chart.yaml` | `version: X.Y.Z` and `appVersion: "X.Y.Z"` set to the release version. |
-| `deploy/docker/docker-compose.yml` | Image reference at line 36 updated from `ghcr.io/drzero42/nexorious:dev` to `ghcr.io/drzero42/nexorious:X.Y.Z`. |
+| `deploy/docker/docker-compose.yml` | Image reference updated from the `0.0.0` placeholder seeded at bootstrap to `ghcr.io/drzero42/nexorious:X.Y.Z`. |
 
 `chore:`, `ci:`, `docs:`, `refactor:`, `test:`, and `chore(deps):` commits do **not** open a Release PR or contribute version bumps. Only `feat:`, `fix:`, and breaking changes do. This prevents Renovate flurries from forcing pointless releases.
 
-The `extra-files` mechanism in `release-please-config.json` uses release-please's `generic` updater with anchor comments (e.g. `# x-release-please-version`) placed next to the lines to update. The exact anchor placement is an implementation detail for the plan to work out; the contract here is "these files end up bumped to the released version."
+The `extra-files` mechanism in `.github/release-please-config.json` uses release-please's `generic` updater with anchor comments (e.g. `# x-release-please-version`) placed next to the lines to update. The exact anchor placement is an implementation detail for the plan to work out; the contract here is "these files end up bumped to the released version."
 
 ### 6. CI integration
 
@@ -154,8 +154,8 @@ No CI commit-message linter. If non-conforming commits land on main, release-ple
 
 One-time setup, all in a single PR:
 
-1. Add `release-please-config.json` with the pre-1.0 config (release-type `simple`, both pre-major bump flags `true`, `extra-files` entries for the install pins).
-2. Add `.release-please-manifest.json` seeded at `0.0.0`. The first Release PR will then propose `0.1.0`.
+1. Add `.github/release-please-config.json` with the pre-1.0 config (release-type `simple`, both pre-major bump flags `true`, `extra-files` entries for the install pins).
+2. Add `.github/.release-please-manifest.json` seeded at `0.0.0`. The first Release PR will then propose `0.1.0`.
 3. Add `.github/workflows/release-please.yaml`.
 4. Modify `.github/workflows/build-push.yaml` to add the `latest` image tag and the floating chart tag on release.
 5. Add `CHANGELOG.md` as an empty file (or release-please creates it on first run — implementation detail for the plan).
@@ -168,7 +168,7 @@ After merging that PR, release-please opens a Release PR proposing `0.1.0`. Merg
 When the project is ready to commit to stability:
 
 1. Open a "prepare 1.0" PR with a single commit that:
-   - Edits `release-please-config.json` to remove (or set to `false`) `bump-minor-pre-major` and `bump-patch-for-minor-pre-major`.
+   - Edits `.github/release-please-config.json` to remove (or set to `false`) `bump-minor-pre-major` and `bump-patch-for-minor-pre-major`.
    - Includes `Release-As: 1.0.0` in the commit body. release-please honors that footer and pins the next release to that exact version.
 2. Merge the prep PR. release-please opens a Release PR with version `1.0.0` and a changelog covering everything since the prior 0.x release.
 3. Merge the Release PR. `v1.0.0` is tagged, `build-push.yaml` publishes the image and chart.
@@ -187,8 +187,8 @@ If we want to derisk before 1.0, that's the natural moment to introduce RC suppo
 
 | File | Change |
 |---|---|
-| `release-please-config.json` | **New.** Pre-1.0 release-please config with `extra-files` entries. |
-| `.release-please-manifest.json` | **New.** Seeded at `0.0.0`. |
+| `.github/release-please-config.json` | **New.** Pre-1.0 release-please config with `extra-files` entries. |
+| `.github/.release-please-manifest.json` | **New.** Seeded at `0.0.0`. |
 | `.github/workflows/release-please.yaml` | **New.** Runs release-please on push to main + daily schedule. |
 | `.github/workflows/build-push.yaml` | Add `latest` image tag and floating chart tag for release events. |
 | `deploy/helm/Chart.yaml` | Add release-please anchor comments next to `version:` and `appVersion:`. |
