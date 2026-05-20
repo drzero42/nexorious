@@ -130,7 +130,7 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 					).Exec(context.Background())
 					var sibJob models.Job
 					if jErr := h.db.NewRaw(`SELECT * FROM jobs WHERE id = ?`, si.JobID).Scan(context.Background(), &sibJob); jErr == nil {
-						retryInsert(context.Background(), h.riverClient, sibJob.JobType, si.ID)
+						retryInsert(context.Background(), h.db, h.riverClient, sibJob.JobType, si.ID)
 					}
 				}
 			}
@@ -145,7 +145,7 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get parent job")
 	}
 
-	retryInsert(context.Background(), h.riverClient, job.JobType, itemID)
+	retryInsert(context.Background(), h.db, h.riverClient, job.JobType, itemID)
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -242,7 +242,7 @@ func (h *JobItemsHandler) HandleRetryItem(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get parent job")
 	}
 
-	retryInsert(context.Background(), h.riverClient, job.JobType, itemID)
+	retryInsert(context.Background(), h.db, h.riverClient, job.JobType, itemID)
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }

@@ -975,10 +975,27 @@ func syncCheckJobCompletion(ctx context.Context, db *bun.DB, rc *river.Client[pg
 
 			_, _ = db.NewRaw(`UPDATE jobs SET auto_retry_done = true WHERE id = ?`, jobID).Exec(ctx)
 
-			if rc != nil {
-				for _, item := range resetItems {
-					_, _ = rc.Insert(ctx, ProcessSyncItemArgs{JobItemID: item.ID}, nil)
+			// EnqueueOrFail keeps job_items.status='pending' and river_job in
+			// lockstep: if the insert can't happen (nil client, River outage),
+			// the item is moved to 'failed' so it doesn't get stranded.
+			enqueueFailures := 0
+			for _, item := range resetItems {
+				if err := EnqueueOrFail(ctx, db, rc, item.ID, ProcessSyncItemArgs{JobItemID: item.ID}); err != nil {
+					slog.Error("process_sync_item: auto-retry enqueue failed",
+						"job_id", jobID, "item_id", item.ID, "err", err)
+					enqueueFailures++
 				}
+			}
+			// If every reset item just got marked failed, the parent job is now
+			// settled and needs its completion check; without this it would sit
+			// in 'processing' forever.
+			if enqueueFailures == len(resetItems) && len(resetItems) > 0 {
+				now := time.Now().UTC()
+				_, _ = db.NewRaw(
+					`UPDATE jobs SET status = 'completed_with_errors', completed_at = ?
+					 WHERE id = ? AND status IN ('pending', 'processing')`,
+					now, jobID,
+				).Exec(ctx)
 			}
 			return
 		}
