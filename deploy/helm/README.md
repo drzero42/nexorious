@@ -2,9 +2,9 @@
 
 Helm chart for [nexorious](https://github.com/drzero42/nexorious) (self-hosted game collection).
 
-Built on the [bjw-s common library](https://bjw-s-labs.github.io/helm-charts/)
-(`common-4.6.2`). Ships an in-cluster PostgreSQL StatefulSet by default and a
-single Deployment running the Go binary in two phases:
+Built on the [bjw-s common library](https://bjw-s-labs.github.io/helm-charts/).
+Ships an in-cluster PostgreSQL StatefulSet by default and a single Deployment
+running the Go binary in two phases:
 
 1. `migrate` initContainer — runs `/app/nexorious migrate` to apply any
    pending schema migrations.
