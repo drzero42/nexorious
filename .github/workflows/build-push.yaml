@@ -113,3 +113,12 @@ jobs:
 
       - name: Push Helm chart
         run: helm push "${{ steps.helm-package.outputs.path }}" oci://ghcr.io/drzero42/charts
+
+      - name: Push Helm chart (moving dev tag)
+        if: github.event_name != 'release'
+        run: |
+          PKG=$(helm package deploy/helm/ \
+            --version "0.0.0-dev" \
+            --app-version "dev" \
+            | awk '{print $NF}')
+          helm push "$PKG" oci://ghcr.io/drzero42/charts

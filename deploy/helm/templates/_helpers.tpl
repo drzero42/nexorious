@@ -145,7 +145,7 @@ The auto-built URL URL-encodes the password so special characters
 {{- if .Values.nexorious.databaseUrl -}}
 {{- .Values.nexorious.databaseUrl -}}
 {{- else -}}
-postgresql://{{ .Values.nexorious.postgresql.username }}:{{ .Values.nexorious.postgresql.password | urlquery }}@{{ include "nexorious.fullname" . }}-postgresql:5432/{{ .Values.nexorious.postgresql.database }}
+postgresql://{{ .Values.nexorious.postgresql.username }}:{{ .Values.nexorious.postgresql.password | urlquery }}@{{ include "nexorious.fullname" . }}-postgresql:5432/{{ .Values.nexorious.postgresql.database }}?sslmode=disable
 {{- end -}}
 {{- end }}
 
