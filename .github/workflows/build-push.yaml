@@ -18,9 +18,6 @@ jobs:
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
       - name: Determine if a build is needed
         id: check
         env:
@@ -35,30 +32,47 @@ jobs:
             exit 0
           fi
 
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          echo "HEAD short SHA: $SHORT_SHA"
+          # No checkout needed — the first 7 chars of GITHUB_SHA match
+          # docker/metadata-action's default {{sha}} length used by build-push.
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "HEAD short SHA: ${SHORT_SHA}"
 
-          # Query GHCR for any existing image version whose tag ends with the
-          # current HEAD short SHA. The tag format is YYYYMMDD-<short-sha>, so
-          # matching the suffix is sufficient and tolerant of a date rollover.
-          # Fail-open: if the API call itself fails (rate limit, transient 5xx),
-          # default to building rather than silently skipping the nightly.
-          if ! MATCHES=$(gh api \
+          # Query BOTH image (nexorious) and chart (charts/nexorious) packages
+          # for a tag ending in -<short-sha>. The image tag format is
+          # YYYYMMDD-<short-sha>; the chart tag is 0.0.0-dev-YYYYMMDD-<short-sha>;
+          # both end with -<short-sha>. We skip the build only if BOTH packages
+          # already have one for HEAD — otherwise a prior nightly's chart-push
+          # failure would leave the chart permanently absent (the image alone
+          # would short-circuit pre-check forever).
+          # The chart package path needs URL-encoding (%2F) for the slash.
+          # Fail-open: if either API call fails, default to building.
+          if ! IMAGE_MATCHES=$(gh api \
             -H "Accept: application/vnd.github+json" \
             --paginate \
             "/users/drzero42/packages/container/nexorious/versions" \
             --jq "[.[] | (.metadata.container.tags // [])[]] | map(select(endswith(\"-${SHORT_SHA}\"))) | length"); then
-            echo "::warning::gh api call failed; defaulting to should_build=true"
+            echo "::warning::gh api failed for nexorious; defaulting to should_build=true"
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "Image tags ending in -${SHORT_SHA}: ${IMAGE_MATCHES}"
 
-          echo "Found ${MATCHES} existing tag(s) ending in -${SHORT_SHA}"
-          if [[ "${MATCHES}" -gt 0 ]]; then
-            echo "Image for HEAD already built; skipping downstream jobs."
+          if ! CHART_MATCHES=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            --paginate \
+            "/users/drzero42/packages/container/charts%2Fnexorious/versions" \
+            --jq "[.[] | (.metadata.container.tags // [])[]] | map(select(endswith(\"-${SHORT_SHA}\"))) | length"); then
+            echo "::warning::gh api failed for charts/nexorious; defaulting to should_build=true"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Chart tags ending in -${SHORT_SHA}: ${CHART_MATCHES}"
+
+          if [[ "${IMAGE_MATCHES}" -gt 0 && "${CHART_MATCHES}" -gt 0 ]]; then
+            echo "Both image and chart already exist for HEAD; skipping downstream jobs."
             echo "should_build=false" >> "$GITHUB_OUTPUT"
           else
-            echo "No existing image for HEAD; will build."
+            echo "At least one package missing for HEAD; will build."
             echo "should_build=true" >> "$GITHUB_OUTPUT"
           fi
 
