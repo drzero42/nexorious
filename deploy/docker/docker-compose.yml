@@ -9,7 +9,7 @@
 #   docker compose down         # Stop (keeps volumes)
 #   docker compose down -v      # Stop and remove volumes (fresh DB)
 #
-# Configuration: copy .env.example to .env at the repo root and fill in values.
+# Configuration: copy .env.example to .env in this directory and fill in values.
 
 services:
   db:
