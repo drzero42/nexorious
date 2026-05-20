@@ -15,7 +15,7 @@ Image: `ghcr.io/drzero42/nexorious:<appVersion>`.
 
 ## Requirements
 
-- Kubernetes 1.28+
+- Kubernetes 1.31+
 - Helm 3.19+
 - An [IGDB API client](https://api.igdb.com/v4/getting-started)
 
@@ -29,8 +29,9 @@ These three values must be set or the chart will fail rendering:
 | `nexorious.igdbClientId`      | IGDB OAuth client id                                 |
 | `nexorious.igdbClientSecret`  | IGDB OAuth client secret                             |
 
-Additionally, set `nexorious.postgresql.password` (it has a placeholder
-default `change-me-in-production` — the chart will warn if you forget).
+Additionally, when using in-cluster PostgreSQL, set
+`nexorious.postgresql.password` (it has a placeholder default
+`change-me-in-production`; rendering will fail if you leave it).
 
 ## Install
 
@@ -51,11 +52,16 @@ helm upgrade nexorious oci://ghcr.io/drzero42/charts/nexorious --version 0.1.0 -
 
 ### Pinning the image tag
 
-By default the chart uses `appVersion: latest` for the nexorious image,
-which is convenient during development but unsuitable for real
-deployments — `latest` is a moving target and will silently roll on
-every pod restart. For any non-dev environment, pin both the main
-container and the migrate initContainer to the same release tag:
+Each released chart pins the nexorious image to its own `appVersion`
+(release-please keeps the chart version and `appVersion` in sync), so
+installing chart `X.Y.Z` already deploys image `X.Y.Z` without any
+extra configuration. Dev builds from `main` use `appVersion: dev`,
+which is a moving target and unsuitable for real deployments — pin to
+a release chart instead.
+
+To run a *different* image release than the chart was built for,
+override both the main container and the migrate initContainer to the
+same tag (note: no `v` prefix — image tags are stripped of it):
 
 ```yaml
 controllers:
@@ -63,11 +69,11 @@ controllers:
     initContainers:
       migrate:
         image:
-          tag: v0.5.0   # match the release you intend to deploy
+          tag: 0.5.0   # match the release you intend to deploy
     containers:
       main:
         image:
-          tag: v0.5.0
+          tag: 0.5.0
 ```
 
 ## Resources
@@ -77,11 +83,11 @@ The chart ships with conservative defaults for all containers
 for development and small homelab installs — operators should review
 and override them for production. Defaults:
 
-| Container             | requests        | limits   |
-|-----------------------|-----------------|----------|
-| nexorious main        | 100m / 128Mi    | – / 512Mi |
-| migrate initContainer | 100m / 128Mi    | – / 512Mi |
-| postgres              | 100m / 256Mi    | – / 1Gi   |
+| Container             | requests        | limits    |
+|-----------------------|-----------------|-----------|
+| nexorious main        | 100m / 128Mi    | – / 128Mi |
+| migrate initContainer | 100m / 128Mi    | – / 128Mi |
+| postgres              | 100m / 256Mi    | – / 256Mi |
 
 Override via standard bjw-s syntax, e.g.:
 
