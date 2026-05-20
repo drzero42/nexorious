@@ -23,6 +23,11 @@ import (
 // testDB is the single shared *bun.DB for all api_test tests.
 var testDB *bun.DB
 
+// testConnStr is the connection string for the shared test container, used by
+// helpers that need to build a pgx pool (e.g. for River clients in handler
+// tests that exercise the enqueue paths).
+var testConnStr string
+
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
@@ -47,6 +52,8 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "failed to get connection string: %v\n", err)
 		os.Exit(1)
 	}
+
+	testConnStr = connStr
 
 	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
 	testDB = bun.NewDB(sqldb, pgdialect.New())

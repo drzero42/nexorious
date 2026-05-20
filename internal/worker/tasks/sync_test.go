@@ -1033,6 +1033,85 @@ func TestProcessSyncItem_IGDBError_ThenAutoRetry_CompletesWithErrors(t *testing.
 	}
 }
 
+// TestProcessSyncItem_AutoRetry_NilRiverClient_MarksItemFailed is the
+// regression guard for the wiring bug at cmd/nexorious/serve.go where
+// ProcessSyncItemWorker was constructed without RiverClient. Before the fix the
+// auto-retry path in syncCheckJobCompletion silently skipped enqueue when
+// rc == nil, leaving the reset item in 'pending' with no backing river_job —
+// permanently stuck until the cron-based orphan rescue (≥30 min, ≥1 h age).
+//
+// This test pins the new behaviour: when RiverClient is nil the auto-retry
+// loop must mark the reset item 'failed' so it does not get stranded.
+func TestProcessSyncItem_AutoRetry_NilRiverClient_MarksItemFailed(t *testing.T) {
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
+	}))
+	defer tokenSrv.Close()
+
+	igdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer igdbSrv.Close()
+
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, auto_retry_done)
+		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1, false)`,
+		jobID, userID,
+	)
+
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'steam', '999', 'Stranded Game', false, true, false, 0)`,
+		egID, userID,
+	)
+
+	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '999', 'Stranded Game', ?, 'pending', '{}', '[]')`,
+		itemID, jobID, userID, string(metaJSON),
+	)
+
+	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
+	// RiverClient is deliberately nil — the production bug being guarded against.
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
+	riverJob := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
+	}
+
+	if err := w.Work(ctx, riverJob); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var itemStatus string
+	var itemErr *string
+	_ = testDB.NewRaw(`SELECT status, error_message FROM job_items WHERE id = ?`, itemID).
+		Scan(ctx, &itemStatus, &itemErr)
+	if itemStatus == "pending" {
+		t.Fatalf("regression: item stranded in pending without backing river_job")
+	}
+	if itemStatus != "failed" {
+		t.Errorf("expected item status=failed after nil-rc auto-retry, got %q", itemStatus)
+	}
+	if itemErr == nil || *itemErr == "" {
+		t.Errorf("expected diagnostic error_message, got %v", itemErr)
+	}
+
+	var jobStatus string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
+	if jobStatus == "processing" || jobStatus == "pending" {
+		t.Errorf("expected parent job to settle when all reset items fail to enqueue, got %q", jobStatus)
+	}
+}
+
 func TestDispatchSync_PSNInvalidCredentials(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()

@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
+	"github.com/riverqueue/river"
+	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/uptrace/bun"
 	"golang.org/x/crypto/bcrypt"
-
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/auth"
@@ -68,13 +71,33 @@ func newTestEcho(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 	return api.New(cfg, m, db, "", nil, nil, nil)
 }
 
-// newTestEchoPool returns an Echo instance wired with a real db and ready migrator.
+// newTestEchoPool returns an Echo instance wired with a real db, ready
+// migrator, and a real River client backed by the shared test container so
+// handler tests exercise production-realistic enqueue paths.
 func newTestEchoPool(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, db, "", nil, nil, nil)
+	rc := newTestRiverClient(t)
+	return api.New(cfg, m, db, "", nil, nil, nil, rc)
+}
+
+// newTestRiverClient builds a non-started River client against the shared
+// test container — sufficient for handler tests that only need Insert to
+// succeed.
+func newTestRiverClient(t *testing.T) *river.Client[pgx.Tx] {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(), testConnStr)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatalf("river.NewClient: %v", err)
+	}
+	return rc
 }
 
 // testCfg returns a minimal config suitable for api_test tests.

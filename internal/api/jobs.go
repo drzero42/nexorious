@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
@@ -637,7 +638,7 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 
 	// Submit tasks for each reset item.
 	for _, item := range failedItems {
-		retryInsert(context.Background(), h.riverClient, job.JobType, item.ID)
+		retryInsert(context.Background(), h.db, h.riverClient, job.JobType, item.ID)
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
@@ -647,16 +648,19 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 	})
 }
 
-func retryInsert(ctx context.Context, rc *river.Client[pgx.Tx], jobType, jobItemID string) {
-	if rc == nil {
+// retryInsert enqueues a River job for the given job_item. On any failure
+// (nil client, unknown job_type, River error) the job_item is marked 'failed'
+// by EnqueueOrFail so it does not get stranded in 'pending' with no backing
+// river_job.
+func retryInsert(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], jobType, jobItemID string) {
+	args, err := tasks.ArgsForJobType(jobType, jobItemID)
+	if err != nil {
+		slog.Error("retryInsert: unsupported job_type",
+			"job_type", jobType, "job_item_id", jobItemID, "err", err)
 		return
 	}
-	switch jobType {
-	case models.JobTypeSync:
-		_, _ = rc.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: jobItemID}, nil)
-	case models.JobTypeImport:
-		_, _ = rc.Insert(ctx, tasks.ImportItemArgs{JobItemID: jobItemID}, nil)
-	case models.JobTypeMetadataRefresh:
-		_, _ = rc.Insert(ctx, tasks.MetadataRefreshItemArgs{JobItemID: jobItemID}, nil)
+	if err := tasks.EnqueueOrFail(ctx, db, rc, jobItemID, args); err != nil {
+		slog.Error("retryInsert: enqueue failed",
+			"job_type", jobType, "job_item_id", jobItemID, "err", err)
 	}
 }
