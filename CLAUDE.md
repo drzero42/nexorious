@@ -227,16 +227,27 @@ During the 0.x window the minor digit is reserved for breaking changes; everythi
 
 ### Overrides
 
-- Force the next release version: include `Release-As: X.Y.Z` in any commit body on `main`. release-please honors that footer.
-- Skip a release after a `feat:` / `fix:` lands by mistake: close the Release PR; release-please reopens it on the next push, so to actually skip you must absorb the change into the next legitimate release.
+**Do not use the `Release-As:` commit footer.** Squash merges (the repo default) concatenate each branch commit's message instead of using the PR description body, so a footer placed in a PR body is silently lost. Use the config file instead — it survives any merge strategy.
+
+To force the next release version:
+
+1. Open a PR that edits `.github/release-please-config.json` and adds `"release-as": "X.Y.Z"` to the package config (`packages["."]`).
+2. Squash-merge. release-please regenerates the Release PR with the forced version.
+3. Merge the Release PR.
+4. **Follow-up PR**: remove the `"release-as"` entry. If left in, the *next* release will also try to use the same version and fail against the existing tag.
+
+`release-as` is marked deprecated in release-please's schema, but it's the only override mechanism that works reliably under squash merges in this repo.
+
+To skip a release after an unwanted `feat:` / `fix:` lands: close the Release PR; release-please reopens it on the next push to main, so a true skip requires absorbing the change into the next legitimate release.
 
 ### Promoting to 1.0.0
 
-When ready, open a single PR that:
-1. Edits `.github/release-please-config.json` to remove (or set to `false`) `bump-minor-pre-major` and `bump-patch-for-minor-pre-major`.
-2. Includes `Release-As: 1.0.0` in the commit body.
+Open a single PR that edits `.github/release-please-config.json` to:
 
-After merging that PR, release-please opens a Release PR for `1.0.0`. From the next commit onward, post-1.0 SemVer applies automatically.
+1. Remove (or set to `false`) `bump-minor-pre-major` and `bump-patch-for-minor-pre-major`.
+2. Add `"release-as": "1.0.0"` to the package config (`packages["."]`).
+
+Squash-merge. release-please regenerates the Release PR proposing `1.0.0`. Merge the Release PR. Then open a follow-up PR to remove `"release-as"` so subsequent releases compute normally — from the next commit onward, post-1.0 SemVer applies.
 
 ## Known Gotchas
 
