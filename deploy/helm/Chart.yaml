@@ -13,6 +13,7 @@ kubeVersion: ">=1.31.0-0"
 home: https://github.com/drzero42/nexorious
 sources:
   - https://github.com/drzero42/nexorious
+icon: https://raw.githubusercontent.com/drzero42/nexorious/main/deploy/helm/icon.png
 maintainers:
   - name: Nexorious
 keywords:
