@@ -18,7 +18,8 @@ export function Sidebar() {
     <aside className="hidden md:flex md:fixed md:left-0 md:top-0 w-64 bg-card border-r flex-col h-screen">
       {/* Logo */}
       <div className="p-4 border-b">
-        <Link to="/games" className="block">
+        <Link to="/games" className="flex items-center gap-2">
+          <img src="/logo.svg" alt="" className="h-8 w-8" />
           <h1 className="text-xl font-bold">Nexorious</h1>
         </Link>
       </div>
