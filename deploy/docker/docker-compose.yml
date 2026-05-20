@@ -44,6 +44,12 @@ services:
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:?IGDB_CLIENT_ID is required}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:?IGDB_CLIENT_SECRET is required}
+      LEGENDARY_WORK_DIR: /var/lib/legendary
+    volumes:
+      - type: tmpfs
+        target: /var/lib/legendary
+        tmpfs:
+          mode: 0777
     deploy:
       resources:
         limits:
