@@ -64,7 +64,12 @@ function LoginPage() {
 
   return (
     <Card className="w-full max-w-sm">
-      <CardHeader className="space-y-1 text-center">
+      <CardHeader className="space-y-2 text-center">
+        <img
+          src="/logo.svg"
+          alt=""
+          className="mx-auto h-14 w-14"
+        />
         <CardTitle className="text-2xl font-bold">Nexorious</CardTitle>
         <CardDescription>
           Sign in to your account to continue
