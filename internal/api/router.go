@@ -73,14 +73,16 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 		}
 	})
 
-	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health, /static/app.css
+	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health, /static/app.css, brand icon assets
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			state := migrator.State()
 			if state != migrate.AppStateReady && state != migrate.AppStateDBUnavailable {
 				path := c.Request().URL.Path
 				if strings.HasPrefix(path, "/migrate") || strings.HasPrefix(path, "/api/migrate") ||
-					path == "/health" || path == "/static/app.css" {
+					path == "/health" || path == "/static/app.css" ||
+					path == "/logo.svg" || path == "/favicon.svg" ||
+					path == "/favicon.ico" || path == "/apple-touch-icon.png" {
 					return next(c)
 				}
 				return c.Redirect(http.StatusFound, "/migrate")
@@ -89,14 +91,16 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 		}
 	})
 
-	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /api/migrate*, /static/app.css
+	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /api/migrate*, /static/app.css, brand icon assets
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			if migrator.NeedsSetup() {
 				path := c.Request().URL.Path
 				if path == "/setup" || strings.HasPrefix(path, "/api/auth/setup") ||
 					path == "/health" || strings.HasPrefix(path, "/api/migrate") ||
-					path == "/static/app.css" {
+					path == "/static/app.css" ||
+					path == "/logo.svg" || path == "/favicon.svg" ||
+					path == "/favicon.ico" || path == "/apple-touch-icon.png" {
 					return next(c)
 				}
 				return c.Redirect(http.StatusFound, "/setup")

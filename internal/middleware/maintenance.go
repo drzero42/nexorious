@@ -35,7 +35,11 @@ func MaintenanceMiddleware() echo.MiddlewareFunc {
 			if path == "/health" ||
 				strings.HasPrefix(path, "/api/admin/backups") ||
 				path == "/api/auth/me" ||
-				path == "/static/app.css" {
+				path == "/static/app.css" ||
+				path == "/logo.svg" ||
+				path == "/favicon.svg" ||
+				path == "/favicon.ico" ||
+				path == "/apple-touch-icon.png" {
 				return next(c)
 			}
 			return c.JSON(http.StatusServiceUnavailable, map[string]any{
