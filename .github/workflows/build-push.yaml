@@ -173,3 +173,34 @@ jobs:
             --app-version "dev" \
             | awk '{print $NF}')
           helm push "$PKG" oci://ghcr.io/drzero42/charts
+
+  cleanup:
+    name: Cleanup old dev versions
+    runs-on: ubuntu-latest
+    needs: build-push
+    if: github.event_name != 'release'
+
+    permissions:
+      packages: write
+
+    steps:
+      - name: Delete old dev container image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: nexorious
+          package-type: container
+          min-versions-to-keep: 30
+          # Never delete release images (semver: 1.2.3) or the floating 'dev' tag.
+          # Everything else (YYYYMMDD-<sha> dev builds) is subject to the
+          # min-versions-to-keep cap.
+          ignore-versions: '^(\d+\.\d+\.\d+|dev)$'
+
+      - name: Delete old dev Helm chart versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: charts/nexorious
+          package-type: container
+          min-versions-to-keep: 30
+          # Protect release charts (semver) and the moving '0.0.0-dev' tag.
+          # 0.0.0-dev-YYYYMMDD-<sha> dev versions are subject to the cap.
+          ignore-versions: '^(\d+\.\d+\.\d+|0\.0\.0-dev)$'
