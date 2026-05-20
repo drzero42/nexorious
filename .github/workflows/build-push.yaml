@@ -108,6 +108,8 @@ jobs:
           tags: |
             # Release tags: v1.2.3 → 1.2.3
             type=semver,pattern={{version}}
+            # Release floating tag
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
             # Main branch builds: YYYYMMDD-<short-sha> + dev
             type=raw,value={{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
@@ -185,6 +187,15 @@ jobs:
           PKG=$(helm package deploy/helm/ \
             --version "0.0.0-dev" \
             --app-version "dev" \
+            | awk '{print $NF}')
+          helm push "$PKG" oci://ghcr.io/drzero42/charts
+
+      - name: Push Helm chart (moving latest tag)
+        if: github.event_name == 'release'
+        run: |
+          PKG=$(helm package deploy/helm/ \
+            --version "0.0.0-latest" \
+            --app-version "${{ steps.chart-version.outputs.app_version }}" \
             | awk '{print $NF}')
           helm push "$PKG" oci://ghcr.io/drzero42/charts
 
