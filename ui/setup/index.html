@@ -4,12 +4,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nexorious — Setup</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <meta name="theme-color" content="#6d28d9">
   <link rel="stylesheet" href="/static/app.css">
+  <style>
+    .brand-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; }
+    .brand-row img { width: 40px; height: 40px; }
+  </style>
 </head>
 <body>
   <div class="card">
     <div id="admin-view">
-      <h1 class="card-title">Welcome to Nexorious</h1>
+      <div class="brand-row">
+        <img src="/logo.svg" alt="">
+        <h1 class="card-title">Welcome to Nexorious</h1>
+      </div>
       <p class="card-description">Create your admin account to get started.</p>
       <div class="alert-destructive" id="admin-err"></div>
       <form id="admin-form" class="stack">
@@ -33,7 +43,10 @@
     </div>
 
     <div id="restore-view" style="display:none">
-      <h1 class="card-title">Restore from Backup</h1>
+      <div class="brand-row">
+        <img src="/logo.svg" alt="">
+        <h1 class="card-title">Restore from Backup</h1>
+      </div>
       <p class="card-description">Upload a backup archive to restore your data.</p>
       <div class="alert-destructive" id="restore-err"></div>
       <input type="file" id="file-input" accept=".tar.gz" style="display:none">

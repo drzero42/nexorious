@@ -126,6 +126,47 @@ func TestSetupGate_BypassesMigrateRoutes(t *testing.T) {
 	}
 }
 
+// brandIconPaths are referenced from the static migrate and setup HTML pages
+// (and auto-requested by browsers); they must pass through both Gate 2
+// (AppStateNeedsMigration) and Gate 3 (NeedsSetup) without redirecting.
+var brandIconPaths = []string{
+	"/logo.svg",
+	"/favicon.svg",
+	"/favicon.ico",
+	"/apple-touch-icon.png",
+}
+
+func TestMigrationGate_BypassesBrandIconAssets(t *testing.T) {
+	for _, path := range brandIconPaths {
+		t.Run(path, func(t *testing.T) {
+			m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
+			e := api.New(testCfg(), m, nil, "", nil, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if loc := rec.Header().Get("Location"); loc == "/migrate" {
+				t.Errorf("brand asset %s should not redirect to /migrate", path)
+			}
+		})
+	}
+}
+
+func TestSetupGate_BypassesBrandIconAssets(t *testing.T) {
+	for _, path := range brandIconPaths {
+		t.Run(path, func(t *testing.T) {
+			migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
+			migrator.SetNeedsSetup(true)
+			e := api.New(testCfg(), migrator, nil, "", nil, nil, nil)
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if loc := rec.Header().Get("Location"); loc == "/setup" {
+				t.Errorf("brand asset %s should not redirect to /setup", path)
+			}
+		})
+	}
+}
+
 func TestHealth_OKWhenReady(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	e := api.New(testCfg(), migrator, nil, "", nil, nil, nil)
