@@ -26,3 +26,6 @@ coverage.html
 
 # Superpowers brainstorm artifacts
 .superpowers/
+
+# Test deployment values for helm chart
+deploy/nexorious-values.yaml
