@@ -25,6 +25,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 256m
 
   app:
     image: ghcr.io/drzero42/nexorious:dev
@@ -38,6 +44,12 @@ services:
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:?IGDB_CLIENT_ID is required}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:?IGDB_CLIENT_SECRET is required}
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+        reservations:
+          memory: 128m
 
 volumes:
   postgres_data:

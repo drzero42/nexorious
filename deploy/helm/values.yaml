@@ -170,7 +170,7 @@ controllers:
             cpu: 100m
             memory: 256Mi
           limits:
-            memory: 1Gi
+            memory: 256Mi
         probes:
           liveness:
             enabled: true
@@ -241,7 +241,7 @@ controllers:
             cpu: 100m
             memory: 128Mi
           limits:
-            memory: 512Mi
+            memory: 128Mi
         env:
           STORAGE_PATH: /app/storage
           BACKUP_PATH: /app/storage/backups
@@ -319,7 +319,7 @@ controllers:
             cpu: 100m
             memory: 128Mi
           limits:
-            memory: 512Mi
+            memory: 128Mi
         env:
           PORT: "8000"
           STORAGE_PATH: /app/storage
