@@ -41,11 +41,17 @@ jobs:
           # Query GHCR for any existing image version whose tag ends with the
           # current HEAD short SHA. The tag format is YYYYMMDD-<short-sha>, so
           # matching the suffix is sufficient and tolerant of a date rollover.
-          MATCHES=$(gh api \
+          # Fail-open: if the API call itself fails (rate limit, transient 5xx),
+          # default to building rather than silently skipping the nightly.
+          if ! MATCHES=$(gh api \
             -H "Accept: application/vnd.github+json" \
             --paginate \
             "/users/drzero42/packages/container/nexorious/versions" \
-            --jq "[.[] | (.metadata.container.tags // [])[]] | map(select(endswith(\"-${SHORT_SHA}\"))) | length")
+            --jq "[.[] | (.metadata.container.tags // [])[]] | map(select(endswith(\"-${SHORT_SHA}\"))) | length"); then
+            echo "::warning::gh api call failed; defaulting to should_build=true"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           echo "Found ${MATCHES} existing tag(s) ending in -${SHORT_SHA}"
           if [[ "${MATCHES}" -gt 0 ]]; then
