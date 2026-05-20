@@ -27,17 +27,18 @@
 ## Task 1: Add release-please configuration
 
 **Files:**
-- Create: `release-please-config.json`
-- Create: `.release-please-manifest.json`
+- Create: `.github/release-please-config.json`
+- Create: `.github/.release-please-manifest.json`
 
-- [ ] **Step 1: Create `release-please-config.json`**
+The config and manifest live under `.github/` to co-locate them with the workflow that consumes them. `release-please-action` accepts arbitrary paths via its `config-file` and `manifest-file` inputs (set in Task 3).
 
-Write to `release-please-config.json`:
+- [ ] **Step 1: Create `.github/release-please-config.json`**
+
+Write to `.github/release-please-config.json`:
 
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-type": "simple",
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": true,
   "include-component-in-tag": false,
@@ -63,15 +64,15 @@ Write to `release-please-config.json`:
 ```
 
 What each setting does:
-- `release-type: simple` — the version is tracked in the manifest, not in a language-specific file like `package.json`.
+- `release-type: simple` (under the package) — the version is tracked in the manifest, not in a language-specific file like `package.json`.
 - `bump-minor-pre-major: true` — breaking changes during 0.x bump the minor digit (0.4.x → 0.5.0) rather than going to 1.0.
 - `bump-patch-for-minor-pre-major: true` — `feat:` commits during 0.x bump patch (0.4.0 → 0.4.1) instead of minor. Reserves the minor digit for breaking changes during stabilization.
 - `include-component-in-tag: false` + `separate-pull-requests: false` — single-package mode; tags are plain `vX.Y.Z` with no component prefix and a single Release PR.
 - `extra-files` with `type: generic` — release-please will scan these files for `# x-release-please-version` anchor comments (added in Task 2) and update the version-looking substring on each anchored line.
 
-- [ ] **Step 2: Create `.release-please-manifest.json`**
+- [ ] **Step 2: Create `.github/.release-please-manifest.json`**
 
-Write to `.release-please-manifest.json`:
+Write to `.github/.release-please-manifest.json`:
 
 ```json
 {
@@ -85,8 +86,8 @@ The manifest is seeded at `0.0.0`. The bootstrap PR's `Release-As: 0.1.0` footer
 
 Run:
 ```bash
-jq . release-please-config.json > /dev/null
-jq . .release-please-manifest.json > /dev/null
+jq . .github/release-please-config.json > /dev/null
+jq . .github/.release-please-manifest.json > /dev/null
 echo "JSON OK"
 ```
 Expected: `JSON OK` with no errors.
@@ -94,7 +95,7 @@ Expected: `JSON OK` with no errors.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add release-please-config.json .release-please-manifest.json
+git add .github/release-please-config.json .github/.release-please-manifest.json
 git commit -m "ci: add release-please configuration and manifest"
 ```
 
@@ -204,8 +205,8 @@ jobs:
       - name: Run release-please
         uses: googleapis/release-please-action@v4
         with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
 ```
 
 What this does:
