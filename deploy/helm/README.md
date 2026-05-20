@@ -29,9 +29,19 @@ These three values must be set or the chart will fail rendering:
 | `nexorious.igdbClientId`      | IGDB OAuth client id                                 |
 | `nexorious.igdbClientSecret`  | IGDB OAuth client secret                             |
 
-Additionally, when using in-cluster PostgreSQL, set
-`nexorious.postgresql.password` (it has a placeholder default
-`change-me-in-production`; rendering will fail if you leave it).
+Any of them can alternatively be supplied via an external Secret — see
+[External secret refs](#external-secret-refs-from-pattern).
+
+`nexorious.postgresql.password` is **optional**. When empty (the default),
+the chart auto-generates a 32-character random password on first install
+and reads it back from the existing managed Secret on subsequent renders
+(via Helm's `lookup`), so the value stays stable across upgrades. Set it
+explicitly to override, or use `nexorious.postgresql.passwordFrom` to
+pull it from an external Secret.
+
+> **Caveat:** `helm template` and `helm install --dry-run` can't `lookup`
+> existing cluster state, so they emit a freshly generated password each
+> time. Actual `helm install` / `helm upgrade` work correctly.
 
 ## Install
 
@@ -40,8 +50,7 @@ helm install nexorious oci://ghcr.io/drzero42/charts/nexorious \
   --version 0.1.0 \
   --set nexorious.secretKey="$(openssl rand -hex 32)" \
   --set nexorious.igdbClientId="..." \
-  --set nexorious.igdbClientSecret="..." \
-  --set nexorious.postgresql.password="$(openssl rand -hex 24)"
+  --set nexorious.igdbClientSecret="..."
 ```
 
 Upgrade:
@@ -49,6 +58,15 @@ Upgrade:
 ```sh
 helm upgrade nexorious oci://ghcr.io/drzero42/charts/nexorious --version 0.1.0 -f my-values.yaml
 ```
+
+> **Note on `--set` for secrets:** the snippet above leaves the JWT
+> secret and IGDB credentials in your shell history and process arglist.
+> For anything beyond local experimentation, use a values file, `--set-file`,
+> or — better — an external Secret referenced via the `*From` fields
+> ([below](#external-secret-refs-from-pattern)). With a GitOps tool
+> (Flux, Argo CD, etc.) you typically commit a `HelmRelease` /
+> `Application` that references a pre-existing Secret and never pass
+> secrets through Helm flags at all.
 
 ### Pinning the image tag
 
@@ -106,10 +124,10 @@ controllers:
 
 ## External secret refs (`*From` pattern)
 
-Every non-DB credential and every DB connection field can come from an
-external Secret instead of being inlined in `values.yaml`. When `*From.name`
-and `*From.key` are both non-empty, the external Secret is used and the inline
-value is ignored.
+Every credential and every DB connection field can come from an external
+Secret instead of being inlined in `values.yaml`. When `*From.name`
+and `*From.key` are both non-empty, the external Secret is used and the
+inline value is ignored.
 
 ```yaml
 nexorious:
@@ -126,22 +144,52 @@ nexorious:
 
 ### DB connection modes (mutually exclusive)
 
+These configure how the **nexorious app** discovers its DSN:
+
 | Mode             | Values                                                   |
 |------------------|----------------------------------------------------------|
 | Inline URL       | `nexorious.databaseUrl: postgresql://...`                |
 | External URL ref | `nexorious.databaseUrlFrom: { name, key }`               |
-| Individual keys  | `nexorious.dbHostFrom`, `dbPortFrom`, `dbUserFrom`, `dbPasswordFrom`, `dbNameFrom` |
+| Individual keys  | `nexorious.dbHostFrom`, `dbPortFrom`, `dbUserFrom`, `dbPasswordFrom`, `dbNameFrom` (all five required together) |
 
-If none of those are set, the chart auto-builds `DATABASE_URL` from
+If none are set, the chart auto-builds `DATABASE_URL` from
 `nexorious.postgresql.{username,password,database}` pointing at the
 in-cluster `postgresql` StatefulSet.
+
+### In-cluster Postgres credentials
+
+When the bundled Postgres pod is enabled, its own `POSTGRES_USER`,
+`POSTGRES_PASSWORD`, and `POSTGRES_DB` env vars are sourced from the
+managed credentials Secret by default (populated from the
+`nexorious.postgresql.{username,password,database}` inline values). Each
+can be redirected to an externally-managed Secret instead:
+
+```yaml
+nexorious:
+  postgresql:
+    usernameFrom: { name: pg-creds, key: user }
+    passwordFrom: { name: pg-creds, key: password }
+    databaseFrom: { name: pg-creds, key: dbname }
+```
+
+This is the path for external-secrets-operator, SealedSecrets, Vault,
+etc. The `pg_isready` probes use `sh -c 'pg_isready -U "$POSTGRES_USER"'`
+so they pick up the value from the env regardless of whether it came
+from the inline value or an external Secret.
 
 ## In-cluster vs external PostgreSQL
 
 The chart ships PostgreSQL in-cluster (`postgresql.enabled: true` by
-default). To bring your own database, disable all three resources and supply
-a `DATABASE_URL`:
+default). The bundled Postgres password is auto-generated on first
+install — see [Required values](#required-values).
 
+### Bring your own PostgreSQL (e.g. CloudNativePG)
+
+To use a database managed outside the chart, disable all three in-cluster
+Postgres resources and point the nexorious app at the external DB. Three
+typical styles:
+
+**Inline DSN (quickest):**
 ```yaml
 controllers:
   postgresql:
@@ -155,6 +203,69 @@ persistence:
 nexorious:
   databaseUrl: "postgresql://user:pass@my-pg-host:5432/nexorious"
 ```
+
+**Full DSN from an external Secret** (e.g. the `app` Secret a CloudNativePG
+`Cluster` creates, which contains a `uri` key):
+```yaml
+controllers:
+  postgresql:
+    enabled: false
+service:
+  postgresql:
+    enabled: false
+persistence:
+  postgresql-data:
+    enabled: false
+nexorious:
+  databaseUrlFrom:
+    name: my-cnpg-cluster-app
+    key: uri
+```
+
+**Individual fields from an external Secret** (when you don't have a
+ready-made DSN):
+```yaml
+controllers:
+  postgresql:
+    enabled: false
+service:
+  postgresql:
+    enabled: false
+persistence:
+  postgresql-data:
+    enabled: false
+nexorious:
+  dbHostFrom:     { name: my-db-creds, key: host }
+  dbPortFrom:     { name: my-db-creds, key: port }
+  dbUserFrom:     { name: my-db-creds, key: user }
+  dbPasswordFrom: { name: my-db-creds, key: password }
+  dbNameFrom:     { name: my-db-creds, key: dbname }
+```
+
+Then:
+```sh
+helm install nexorious oci://ghcr.io/drzero42/charts/nexorious \
+  --version 0.1.0 -f my-values.yaml
+```
+
+The `migrate` initContainer applies migrations against the external
+database before the main container starts serving — no extra wiring
+needed.
+
+## Storage class
+
+By default each enabled PVC (`storage`, `postgresql-data`) is provisioned
+without a `storageClassName`, so the cluster's default StorageClass is
+used. To pin every PVC to a specific class in one place:
+
+```yaml
+global:
+  storageClass: fast-ssd
+```
+
+The chart applies this to any PVC under `persistence:` that does not set
+its own `storageClass` — per-PVC overrides win. Set to `-` to disable
+dynamic provisioning entirely (you supply pre-bound PVs).
 
 ## Ingress
 

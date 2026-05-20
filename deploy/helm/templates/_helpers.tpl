@@ -43,15 +43,18 @@ Validate required values.
 
 {{/* --- *From completeness checks --- */}}
 {{- $fromFields := list
-  (dict "label" "secretKeyFrom"        "from" .Values.nexorious.secretKeyFrom)
-  (dict "label" "igdbClientIdFrom"     "from" .Values.nexorious.igdbClientIdFrom)
-  (dict "label" "igdbClientSecretFrom" "from" .Values.nexorious.igdbClientSecretFrom)
-  (dict "label" "databaseUrlFrom"      "from" .Values.nexorious.databaseUrlFrom)
-  (dict "label" "dbHostFrom"           "from" .Values.nexorious.dbHostFrom)
-  (dict "label" "dbPortFrom"           "from" .Values.nexorious.dbPortFrom)
-  (dict "label" "dbUserFrom"           "from" .Values.nexorious.dbUserFrom)
-  (dict "label" "dbPasswordFrom"       "from" .Values.nexorious.dbPasswordFrom)
-  (dict "label" "dbNameFrom"           "from" .Values.nexorious.dbNameFrom)
+  (dict "label" "secretKeyFrom"               "from" .Values.nexorious.secretKeyFrom)
+  (dict "label" "igdbClientIdFrom"            "from" .Values.nexorious.igdbClientIdFrom)
+  (dict "label" "igdbClientSecretFrom"        "from" .Values.nexorious.igdbClientSecretFrom)
+  (dict "label" "databaseUrlFrom"             "from" .Values.nexorious.databaseUrlFrom)
+  (dict "label" "dbHostFrom"                  "from" .Values.nexorious.dbHostFrom)
+  (dict "label" "dbPortFrom"                  "from" .Values.nexorious.dbPortFrom)
+  (dict "label" "dbUserFrom"                  "from" .Values.nexorious.dbUserFrom)
+  (dict "label" "dbPasswordFrom"              "from" .Values.nexorious.dbPasswordFrom)
+  (dict "label" "dbNameFrom"                  "from" .Values.nexorious.dbNameFrom)
+  (dict "label" "postgresql.usernameFrom"     "from" .Values.nexorious.postgresql.usernameFrom)
+  (dict "label" "postgresql.passwordFrom"     "from" .Values.nexorious.postgresql.passwordFrom)
+  (dict "label" "postgresql.databaseFrom"     "from" .Values.nexorious.postgresql.databaseFrom)
 -}}
 {{- range $fromFields -}}
   {{- $err := include "nexorious._validateFrom" . -}}
@@ -125,11 +128,13 @@ Validate required values.
 {{- end -}}
 
 {{/* --- postgresql password placeholder check (in-cluster only) --- */}}
+{{/* Empty is fine — resolvePostgresPassword auto-generates and persists via
+     lookup. We only reject the legacy literal placeholder in case someone
+     copy-pastes it from older docs. */}}
 {{- if $postgresqlEnabled -}}
-  {{- $dbPasswordFromConfigured := not (empty (dig "name" "" (default dict .Values.nexorious.dbPasswordFrom))) -}}
   {{- $pw := .Values.nexorious.postgresql.password | default "" -}}
-  {{- if and (eq $pw "change-me-in-production") (not $dbPasswordFromConfigured) -}}
-    {{- fail "nexorious.postgresql.password must be set when using in-cluster Postgres (or use nexorious.dbPasswordFrom)" -}}
+  {{- if eq $pw "change-me-in-production" -}}
+    {{- fail "nexorious.postgresql.password is the literal placeholder. Leave empty to auto-generate, or set a real password (or use nexorious.postgresql.passwordFrom)." -}}
   {{- end -}}
 {{- end -}}
 
@@ -297,6 +302,116 @@ _nexorious_unused
 {{- .Values.nexorious.dbNameFrom.key -}}
 {{- else -}}
 _nexorious_unused
+{{- end -}}
+{{- end }}
+
+{{/*
+Helpers for the in-cluster Postgres pod's own credentials (POSTGRES_USER,
+POSTGRES_PASSWORD, POSTGRES_DB). When nexorious.postgresql.*From.name is
+set, the external secret is referenced; otherwise the managed credentials
+secret is used, populated from the inline values.
+*/}}
+
+{{- define "nexorious.postgresUsernameSecretName" -}}
+{{- if and .Values.nexorious.postgresql.usernameFrom .Values.nexorious.postgresql.usernameFrom.name -}}
+{{- .Values.nexorious.postgresql.usernameFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.postgresUsernameSecretKey" -}}
+{{- if and .Values.nexorious.postgresql.usernameFrom .Values.nexorious.postgresql.usernameFrom.key -}}
+{{- .Values.nexorious.postgresql.usernameFrom.key -}}
+{{- else -}}
+POSTGRES_USER
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.postgresPasswordSecretName" -}}
+{{- if and .Values.nexorious.postgresql.passwordFrom .Values.nexorious.postgresql.passwordFrom.name -}}
+{{- .Values.nexorious.postgresql.passwordFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.postgresPasswordSecretKey" -}}
+{{- if and .Values.nexorious.postgresql.passwordFrom .Values.nexorious.postgresql.passwordFrom.key -}}
+{{- .Values.nexorious.postgresql.passwordFrom.key -}}
+{{- else -}}
+POSTGRES_PASSWORD
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.postgresDatabaseSecretName" -}}
+{{- if and .Values.nexorious.postgresql.databaseFrom .Values.nexorious.postgresql.databaseFrom.name -}}
+{{- .Values.nexorious.postgresql.databaseFrom.name -}}
+{{- else -}}
+{{- include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.postgresDatabaseSecretKey" -}}
+{{- if and .Values.nexorious.postgresql.databaseFrom .Values.nexorious.postgresql.databaseFrom.key -}}
+{{- .Values.nexorious.postgresql.databaseFrom.key -}}
+{{- else -}}
+POSTGRES_DB
+{{- end -}}
+{{- end }}
+
+{{/*
+Resolve .Values.nexorious.postgresql.password when in-cluster Postgres is
+enabled, the field is empty, and no passwordFrom is configured. On first
+install we generate a 32-char random password; on subsequent renders we
+read it back from the existing managed Secret via `lookup` so it stays
+stable. The resolved value is cached into .Values so the auto-built
+DATABASE_URL and credentials-secret.yaml see the same string. Call BEFORE
+bjw-s.common.loader.all and credentials-secret.yaml so both see the
+resolved value.
+
+Caveat: `helm template` and `helm install --dry-run` can't `lookup`, so
+they emit a freshly generated password each time. Real `helm install`
+and `helm upgrade` work correctly.
+*/}}
+{{- define "nexorious.resolvePostgresPassword" -}}
+{{- $pgEnabled := dig "postgresql" "enabled" true .Values.controllers -}}
+{{- if $pgEnabled -}}
+  {{- $pgPasswordFromConfigured := not (empty (dig "name" "" (default dict .Values.nexorious.postgresql.passwordFrom))) -}}
+  {{- if not $pgPasswordFromConfigured -}}
+    {{- $current := .Values.nexorious.postgresql.password | default "" -}}
+    {{- if eq $current "" -}}
+      {{- $secretName := include "nexorious.credentialsSecretName" . -}}
+      {{- $existing := lookup "v1" "Secret" .Release.Namespace $secretName -}}
+      {{- $existingPw := "" -}}
+      {{- if and $existing $existing.data -}}
+        {{- $existingPw = index $existing.data "POSTGRES_PASSWORD" | default "" | b64dec -}}
+      {{- end -}}
+      {{- if $existingPw -}}
+        {{- $_ := set .Values.nexorious.postgresql "password" $existingPw -}}
+      {{- else -}}
+        {{- $_ := set .Values.nexorious.postgresql "password" (randAlphaNum 32) -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Apply .Values.global.storageClass to every enabled persistence entry that
+does not already set its own storageClass. Call BEFORE bjw-s.common.loader.all
+so the loader sees the mutated values.
+*/}}
+{{- define "nexorious.injectGlobalStorageClass" -}}
+{{- $sc := dig "storageClass" "" (default dict .Values.global) -}}
+{{- if $sc -}}
+  {{- range $name, $pvc := .Values.persistence -}}
+    {{- if and $pvc (kindIs "map" $pvc) (dig "enabled" false $pvc) -}}
+      {{- if not (hasKey $pvc "storageClass") -}}
+        {{- $_ := set $pvc "storageClass" $sc -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
 {{- end -}}
 {{- end }}
 

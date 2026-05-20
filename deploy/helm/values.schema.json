@@ -45,13 +45,39 @@
             },
             "password": {
               "type": "string",
-              "minLength": 1,
-              "description": "PostgreSQL password. Use only URL-safe characters when relying on auto-built DATABASE_URL."
+              "description": "PostgreSQL password. Leave empty to auto-generate on first install (preserved across upgrades via lookup of the existing managed Secret). Use only URL-safe characters when relying on auto-built DATABASE_URL."
             },
             "database": {
               "type": "string",
               "minLength": 1,
               "description": "PostgreSQL database name"
+            },
+            "usernameFrom": {
+              "type": ["object", "null"],
+              "description": "External secret reference for the in-cluster Postgres pod's POSTGRES_USER. When name and key are both non-empty, the inline username is ignored for the postgres pod's env.",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "key":  { "type": "string" }
+              }
+            },
+            "passwordFrom": {
+              "type": ["object", "null"],
+              "description": "External secret reference for the in-cluster Postgres pod's POSTGRES_PASSWORD. When name and key are both non-empty, the inline password is ignored for the postgres pod's env.",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "key":  { "type": "string" }
+              }
+            },
+            "databaseFrom": {
+              "type": ["object", "null"],
+              "description": "External secret reference for the in-cluster Postgres pod's POSTGRES_DB. When name and key are both non-empty, the inline database name is ignored for the postgres pod's env.",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "key":  { "type": "string" }
+              }
             }
           }
         },

@@ -32,12 +32,6 @@ WARNING: nexorious.igdbClientSecret is not set.
    --set nexorious.igdbClientSecret=<your-client-secret>
 {{- end }}
 
-{{- if eq .Values.nexorious.postgresql.password "change-me-in-production" }}
-
-WARNING: nexorious.postgresql.password is set to the default placeholder value.
-   Set it before deploying to production.
-{{- end }}
-
 == Access ==
 
 {{- if .Values.ingress.nexorious.enabled }}

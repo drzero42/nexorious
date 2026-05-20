@@ -10,11 +10,15 @@
 #   global.fullnameOverride: nexorious
 # =============================================================================
 
-# -- Global values used by the bjw-s common library.
+# -- Global values.
 # fullnameOverride: set this if installing with a release name other than
 # "nexorious" to keep service names predictable (e.g. nexorious-nexorious,
 # nexorious-postgresql).
-global: {}
+# storageClass: applied to every enabled PVC in `persistence:` that does not
+# set its own `storageClass`. Leave empty to fall back to the cluster's
+# default StorageClass. Set to "-" to disable dynamic provisioning.
+global:
+  storageClass: ""
 
 # -- Custom nexorious configuration (not part of the common library)
 nexorious:
@@ -82,18 +86,34 @@ nexorious:
 
   postgresql:
     # -- PostgreSQL username
-    # WARNING: this value is cosmetic. Changing it also requires updating
-    # controllers.postgresql.containers.main.env.POSTGRES_USER and the
-    # pg_isready probe commands below; otherwise the StatefulSet will
-    # reference a user that does not exist.
     username: nexorious
-    # -- PostgreSQL password. REQUIRED. Change before deploying.
+    # -- PostgreSQL password.
+    # -- Leave empty (the default) to auto-generate a 32-character random
+    # -- password on first install. The generated value is read back from the
+    # -- existing credentials Secret on subsequent upgrades, so it remains
+    # -- stable. Set explicitly to override.
     # -- The auto-built DATABASE_URL URL-encodes the password, so special
-    # -- characters (: @ / ? #) are safe. To skip auto-build entirely, set
-    # -- nexorious.databaseUrl explicitly.
-    password: "change-me-in-production"
+    # -- characters (: @ / ? #) are safe.
+    password: ""
     # -- PostgreSQL database name
     database: nexorious
+
+    # -- External secret references for the in-cluster Postgres pod
+    # credentials. When *From.name and *From.key are both set, the postgres
+    # pod's POSTGRES_USER / POSTGRES_DB / POSTGRES_PASSWORD env vars are
+    # sourced from that secret instead of the inline values above. Useful
+    # with external-secrets-operator, SealedSecrets, Vault, etc.
+    # To connect the nexorious app to the same external secret, also
+    # configure nexorious.databaseUrlFrom or nexorious.db*From.
+    usernameFrom:
+      name: ""
+      key: ""
+    passwordFrom:
+      name: ""
+      key: ""
+    databaseFrom:
+      name: ""
+      key: ""
 
 # =============================================================================
 # Default Pod options (applied to all controllers unless overridden)
@@ -147,15 +167,21 @@ controllers:
           tag: 18-alpine
           pullPolicy: IfNotPresent
         env:
-          # WARNING: must match nexorious.postgresql.username.
-          POSTGRES_USER: nexorious
-          # WARNING: must match nexorious.postgresql.database.
-          POSTGRES_DB: nexorious
+          POSTGRES_USER:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.postgresUsernameSecretName" . }}'
+                key: '{{ include "nexorious.postgresUsernameSecretKey" . }}'
+          POSTGRES_DB:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.postgresDatabaseSecretName" . }}'
+                key: '{{ include "nexorious.postgresDatabaseSecretKey" . }}'
           POSTGRES_PASSWORD:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious.credentialsSecretName" . }}'
-                key: POSTGRES_PASSWORD
+                name: '{{ include "nexorious.postgresPasswordSecretName" . }}'
+                key: '{{ include "nexorious.postgresPasswordSecretKey" . }}'
           PGDATA: /var/lib/postgresql/data/pgdata
         securityContext:
           allowPrivilegeEscalation: false
@@ -170,16 +196,18 @@ controllers:
           limits:
             memory: 256Mi
         probes:
+          # pg_isready is invoked via 'sh -c' so $POSTGRES_USER expands at
+          # runtime — works whether the env var is sourced inline or from an
+          # external secret via nexorious.postgresql.usernameFrom.
           liveness:
             enabled: true
             custom: true
             spec:
               exec:
                 command:
-                  - pg_isready
-                  # WARNING: must match nexorious.postgresql.username.
-                  - -U
-                  - nexorious
+                  - sh
+                  - -c
+                  - 'pg_isready -U "$POSTGRES_USER"'
               initialDelaySeconds: 10
               periodSeconds: 10
               failureThreshold: 5
@@ -189,10 +217,9 @@ controllers:
             spec:
               exec:
                 command:
-                  - pg_isready
-                  # WARNING: must match nexorious.postgresql.username.
-                  - -U
-                  - nexorious
+                  - sh
+                  - -c
+                  - 'pg_isready -U "$POSTGRES_USER"'
               initialDelaySeconds: 5
               periodSeconds: 5
               failureThreshold: 5
@@ -202,10 +229,9 @@ controllers:
             spec:
               exec:
                 command:
-                  - pg_isready
-                  # WARNING: must match nexorious.postgresql.username.
-                  - -U
-                  - nexorious
+                  - sh
+                  - -c
+                  - 'pg_isready -U "$POSTGRES_USER"'
               failureThreshold: 30
               periodSeconds: 5
 
@@ -240,8 +266,6 @@ controllers:
           limits:
             memory: 128Mi
         env:
-          STORAGE_PATH: /app/storage
-          BACKUP_PATH: /app/storage/backups
           LOG_LEVEL: info
           DEBUG: "false"
           SECRET_KEY:
@@ -475,8 +499,6 @@ persistence:
     advancedMounts:
       nexorious:
         main:
-          - path: /app/storage
-        migrate:
           - path: /app/storage
 
   # -- PostgreSQL data volume
