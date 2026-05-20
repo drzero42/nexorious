@@ -36,8 +36,8 @@ default `change-me-in-production` — the chart will warn if you forget).
 ## Install
 
 ```sh
-helm dependency update charts/nexorious
-helm install nexorious ./charts/nexorious \
+helm install nexorious oci://ghcr.io/drzero42/charts/nexorious \
+  --version 0.1.0 \
   --set nexorious.secretKey="$(openssl rand -hex 32)" \
   --set nexorious.igdbClientId="..." \
   --set nexorious.igdbClientSecret="..." \
@@ -47,7 +47,7 @@ helm install nexorious ./charts/nexorious \
 Upgrade:
 
 ```sh
-helm upgrade nexorious ./charts/nexorious -f my-values.yaml
+helm upgrade nexorious oci://ghcr.io/drzero42/charts/nexorious --version 0.1.0 -f my-values.yaml
 ```
 
 ### Pinning the image tag
