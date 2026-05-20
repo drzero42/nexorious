@@ -17,9 +17,9 @@
     golangci-lint
     nodejs_24
     uv
-    inputs.beads.packages.${system}.bd
     procps
     legendary-gl
+    yamllint
   ];
 
   # https://devenv.sh/languages/
@@ -27,6 +27,9 @@
     go = {
       enable = true;
       package = pkgs.go_1_25;
+    };
+    nix = {
+      enable = true;
     };
     typescript = {
       enable = true;
