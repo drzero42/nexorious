@@ -32,7 +32,7 @@ type Config struct {
 	// SecretKey is used for JWT signing and credential encryption.
 	SecretKey string `env:"SECRET_KEY,required"`
 
-	// JWT lifetimes. Go port uses 15 min access (Python defaulted to 30).
+	// JWT lifetimes.
 	AccessTokenExpireMinutes int `env:"ACCESS_TOKEN_EXPIRE_MINUTES" envDefault:"15"`
 	RefreshTokenExpireDays   int `env:"REFRESH_TOKEN_EXPIRE_DAYS"   envDefault:"30"`
 
@@ -69,7 +69,7 @@ type Config struct {
 
 	Port     int    `env:"PORT"      envDefault:"8000"`
 	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
-	Debug bool `env:"DEBUG"`
+	Debug    bool   `env:"DEBUG"`
 
 	// CORSOrigins is only needed in development; production is same-origin.
 	CORSOrigins []string `env:"CORS_ORIGINS" envSeparator:","`

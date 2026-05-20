@@ -1,6 +1,6 @@
 apiVersion: v2
 name: nexorious
-description: Self-hosted game collection (Go port)
+description: Self-hosted game collection
 type: application
 version: 0.1.0
 # appVersion drives the default image tag for the nexorious image. "latest"

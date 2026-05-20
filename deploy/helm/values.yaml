@@ -210,8 +210,7 @@ controllers:
               periodSeconds: 5
 
   # ---------------------------------------------------------------------------
-  # nexorious -- Go binary (Deployment)
-  # The Go port runs API, workers, and scheduler in-process as a single binary.
+  # nexorious
   # A 'migrate' initContainer applies pending migrations before the main
   # container starts serving HTTP.
   # ---------------------------------------------------------------------------

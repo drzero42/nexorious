@@ -1,7 +1,6 @@
 # nexorious Helm chart
 
-Helm chart for [nexorious](https://github.com/drzero42/nexorious), the
-Go port of nexorious (self-hosted game collection).
+Helm chart for [nexorious](https://github.com/drzero42/nexorious) (self-hosted game collection).
 
 Built on the [bjw-s common library](https://bjw-s-labs.github.io/helm-charts/)
 (`common-4.6.2`). Ships an in-cluster PostgreSQL StatefulSet by default and a
