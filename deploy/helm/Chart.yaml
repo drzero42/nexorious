@@ -2,12 +2,12 @@ apiVersion: v2
 name: nexorious
 description: Self-hosted game collection
 type: application
-version: 0.1.0
-# appVersion drives the default image tag for the nexorious image. "latest"
-# is dev-friendly only; real deployments should override
-# controllers.nexorious.containers.main.image.tag (and the matching
-# initContainers.migrate.image.tag) to pin a specific release.
-appVersion: "latest"
+version: 0.0.0 # x-release-please-version
+# appVersion is kept in sync with the application's release version by
+# release-please. Defaults to the released image tag; real deployments may
+# override controllers.nexorious.containers.main.image.tag (and the matching
+# initContainers.migrate.image.tag) to pin a specific release explicitly.
+appVersion: "0.0.0" # x-release-please-version
 kubeVersion: ">=1.31.0-0"
 home: https://github.com/drzero42/nexorious
 sources:

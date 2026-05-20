@@ -201,6 +201,43 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
 - Run `slumber collection` to verify the collection loads without errors after any change
 
+## Release Process
+
+Releases are produced by [release-please](https://github.com/googleapis/release-please) from the Conventional Commits on `main`. The full design is in [docs/superpowers/specs/2026-05-20-release-process-design.md](docs/superpowers/specs/2026-05-20-release-process-design.md).
+
+### Commit message convention (MANDATORY)
+
+All commits on `main` must follow [Conventional Commits](https://www.conventionalcommits.org/). PRs are squash-merged, so the **PR title** is the commit message release-please parses.
+
+| Prefix | Effect (pre-1.0) | Effect (post-1.0) |
+|---|---|---|
+| `feat: …` | patch bump | minor bump |
+| `fix: …` | patch bump | patch bump |
+| `feat!: …` or `BREAKING CHANGE:` footer | **minor bump** | **major bump** |
+| `chore:`, `ci:`, `docs:`, `refactor:`, `test:` | no release | no release |
+
+During the 0.x window the minor digit is reserved for breaking changes; everything else bumps patch.
+
+### Cutting a release
+
+1. Wait until there is a `feat:` or `fix:` on `main` since the last release (otherwise release-please's Release PR will be empty).
+2. Find the open PR titled `chore(main): release X.Y.Z` (opened by `release-please-action`).
+3. Review the proposed `CHANGELOG.md` diff, `Chart.yaml` / `docker-compose.yml` version bumps.
+4. Merge the Release PR. release-please creates the `vX.Y.Z` tag, publishes a GitHub Release, and `build-push.yaml` pushes the image and chart (semver tag + `latest`).
+
+### Overrides
+
+- Force the next release version: include `Release-As: X.Y.Z` in any commit body on `main`. release-please honors that footer.
+- Skip a release after a `feat:` / `fix:` lands by mistake: close the Release PR; release-please reopens it on the next push, so to actually skip you must absorb the change into the next legitimate release.
+
+### Promoting to 1.0.0
+
+When ready, open a single PR that:
+1. Edits `.github/release-please-config.json` to remove (or set to `false`) `bump-minor-pre-major` and `bump-patch-for-minor-pre-major`.
+2. Includes `Release-As: 1.0.0` in the commit body.
+
+After merging that PR, release-please opens a Release PR for `1.0.0`. From the next commit onward, post-1.0 SemVer applies automatically.
+
 ## Known Gotchas
 
 - **`sql.ErrNoRows` vs DB errors** — always `errors.Is(err, sql.ErrNoRows)` to distinguish "not found" (→ 404/401) from real connection failures (→ 500); import `"database/sql"` for the sentinel. Bun wraps pgx errors into `sql.ErrNoRows`, so use the stdlib sentinel (not `pgx.ErrNoRows`)
