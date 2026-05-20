@@ -1,3 +1,4 @@
 {{- include "nexorious.injectGlobalStorageClass" . -}}
 {{- include "nexorious.injectLegendaryIfEnabled" . -}}
+{{- include "nexorious.injectTmpDir" . -}}
 {{- include "bjw-s.common.loader.all" . -}}

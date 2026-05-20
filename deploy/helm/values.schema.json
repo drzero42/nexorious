@@ -33,6 +33,17 @@
           "type": "string",
           "description": "Absolute path for the Legendary work directory. When non-empty, the chart injects LEGENDARY_WORK_DIR on the main container and mounts an emptyDir volume at this path. Leave empty to disable Epic Games Store sync."
         },
+        "tmpDir": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Writable /tmp emptyDir mounted on the main container. Required because readOnlyRootFilesystem is true; the app stages backups (pg_dump output + cover-art copy) and buffers restore-upload tarballs under os.TempDir() before archiving/extracting.",
+          "properties": {
+            "sizeLimit": {
+              "type": "string",
+              "description": "Kubernetes resource quantity capping the emptyDir size (e.g. 2Gi, 500Mi). Bump if cover-art library or restore payloads exceed the default."
+            }
+          }
+        },
         "postgresql": {
           "type": "object",
           "additionalProperties": false,

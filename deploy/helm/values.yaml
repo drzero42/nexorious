@@ -44,6 +44,16 @@ nexorious:
   # -- restored from the DB before every invocation.
   legendaryWorkDir: "/var/lib/legendary"
 
+  # -- Writable /tmp emptyDir for the main container. The main container
+  # -- runs with readOnlyRootFilesystem: true, so /tmp must be a separate
+  # -- volume. Scheduled and manual backups stage pg_dump output and a copy
+  # -- of the cover-art directory here before producing the final archive,
+  # -- and restore endpoints buffer uploaded tarballs here before extracting.
+  # -- Bump sizeLimit if your cover-art library or restore payloads are
+  # -- larger than the default.
+  tmpDir:
+    sizeLimit: 2Gi
+
   # -- External secret references (*From pattern)
   # When *From.name and *From.key are both non-empty, the external secret is used
   # and the corresponding inline value is ignored.

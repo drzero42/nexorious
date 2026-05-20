@@ -480,3 +480,24 @@ so the loader sees the injected values.
       "LEGENDARY_WORK_DIR" .Values.nexorious.legendaryWorkDir -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+Inject a writable /tmp emptyDir for the main container. Required because
+controllers.nexorious.containers.main.securityContext.readOnlyRootFilesystem
+is true and the app uses os.MkdirTemp("", ...) to stage backup contents
+(pg_dump output + cover-art copy) and to buffer multipart restore uploads
+before archiving/extracting. Call this BEFORE bjw-s.common.loader.all so
+the loader sees the injected entry.
+*/}}
+{{- define "nexorious.injectTmpDir" -}}
+  {{- $_ := set .Values.persistence "tmp" (dict
+      "enabled"        true
+      "type"           "emptyDir"
+      "sizeLimit"      .Values.nexorious.tmpDir.sizeLimit
+      "advancedMounts" (dict
+        "nexorious" (dict
+          "main" (list (dict "path" "/tmp"))
+        )
+      )
+  ) -}}
+{{- end }}
