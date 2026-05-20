@@ -1,0 +1,28 @@
+---
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Daily reconciliation at 06:00 UTC. Catches edge cases where a push to
+    # main didn't trigger the action (e.g. concurrent merges). The Release PR
+    # is updated in-place; this is idempotent.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Run release-please
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
