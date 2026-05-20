@@ -44,7 +44,7 @@ type Config struct {
 	IGDBClientSecret      string  `env:"IGDB_CLIENT_SECRET"`
 	IGDBAccessToken       string  `env:"IGDB_ACCESS_TOKEN"`
 	IGDBRequestsPerSecond float64 `env:"IGDB_REQUESTS_PER_SECOND" envDefault:"4.0"`
-	IGDBBurstCapacity     int     `env:"IGDB_BURST_CAPACITY"      envDefault:"8"`
+	IGDBBurstCapacity     int     `env:"IGDB_BURST_CAPACITY"      envDefault:"4"`
 	IGDBMaxRetries        int     `env:"IGDB_MAX_RETRIES"         envDefault:"3"`
 	IGDBBackoffFactor     float64 `env:"IGDB_BACKOFF_FACTOR"      envDefault:"1.0"`
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,12 +31,14 @@ const (
 
 // Client provides access to the IGDB API with rate limiting and authentication.
 type Client struct {
-	httpClient *http.Client
-	auth       *AuthManager
-	limiter    ratelimit.Limiter
-	apiURL     string
-	configured bool
-	status     string
+	httpClient    *http.Client
+	auth          *AuthManager
+	limiter       ratelimit.Limiter
+	apiURL        string
+	configured    bool
+	status        string
+	maxRetries    int
+	backoffFactor float64
 }
 
 // NewClient creates an IGDB client from config. If IGDB credentials are missing,
@@ -46,12 +49,14 @@ func NewClient(cfg *config.Config, limiter ratelimit.Limiter) *Client {
 	}
 
 	return &Client{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		auth:       NewAuthManager(cfg.IGDBClientID, cfg.IGDBClientSecret, cfg.IGDBAccessToken),
-		limiter:    limiter,
-		apiURL:     defaultIGDBAPIURL,
-		configured: true,
-		status:     StatusOK,
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		auth:          NewAuthManager(cfg.IGDBClientID, cfg.IGDBClientSecret, cfg.IGDBAccessToken),
+		limiter:       limiter,
+		apiURL:        defaultIGDBAPIURL,
+		configured:    true,
+		status:        StatusOK,
+		maxRetries:    cfg.IGDBMaxRetries,
+		backoffFactor: cfg.IGDBBackoffFactor,
 	}
 }
 
@@ -326,28 +331,10 @@ type igdbTimeToBeatResponse struct {
 // fetchTimeToBeat fetches time-to-beat data from the separate IGDB endpoint.
 // Returns nil (no error) if no data exists for the game.
 func (c *Client) fetchTimeToBeat(ctx context.Context, igdbID int) (*timeToBeatResult, error) {
-	if err := c.limiter.Wait(ctx); err != nil {
-		return nil, err
-	}
-
-	token, err := c.auth.GetAccessToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	body := fmt.Sprintf(`fields hastily, normally, completely; where game_id = %d;`, igdbID)
-	url := c.apiURL + "/game_time_to_beats"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
+	resp, err := c.doPost(ctx, c.apiURL+"/game_time_to_beats", body)
 	if err != nil {
 		return nil, err
-	}
-	req.Header.Set("Client-ID", c.auth.clientID)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "text/plain")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("IGDB time-to-beat request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -380,16 +367,64 @@ func (c *Client) fetchTimeToBeat(ctx context.Context, igdbID int) (*timeToBeatRe
 }
 
 func (c *Client) searchIGDB(ctx context.Context, body string) ([]igdbGameResponse, error) {
+	resp, err := c.doPost(ctx, c.apiURL+"/games", body)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("IGDB API returned status %d", resp.StatusCode)
+	}
+
+	var games []igdbGameResponse
+	if err := json.NewDecoder(resp.Body).Decode(&games); err != nil {
+		return nil, fmt.Errorf("decode IGDB response: %w", err)
+	}
+	return games, nil
+}
+
+// doPost executes a POST against IGDB with rate limiting, auth, and transparent
+// retries: a single 401 retry that refreshes the access token, plus up to
+// c.maxRetries 429 retries that honor the Retry-After header (integer seconds)
+// or fall back to exponential backoff scaled by c.backoffFactor. The caller
+// owns resp.Body and must close it.
+func (c *Client) doPost(ctx context.Context, url, body string) (*http.Response, error) {
+	triedRefresh := false
+	rateLimitRetries := 0
+	for {
+		resp, err := c.executePost(ctx, url, body)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized && !triedRefresh {
+			triedRefresh = true
+			drainAndClose(resp.Body)
+			c.auth.InvalidateToken()
+			continue
+		}
+		if resp.StatusCode == http.StatusTooManyRequests && rateLimitRetries < c.maxRetries {
+			d := c.retryAfterDelay(resp.Header.Get("Retry-After"), rateLimitRetries)
+			rateLimitRetries++
+			drainAndClose(resp.Body)
+			if err := sleepCtx(ctx, d); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		return resp, nil
+	}
+}
+
+func (c *Client) executePost(ctx context.Context, url, body string) (*http.Response, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
 		return nil, err
 	}
-
 	token, err := c.auth.GetAccessToken(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	url := c.apiURL + "/games"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -402,41 +437,43 @@ func (c *Client) searchIGDB(ctx context.Context, body string) ([]igdbGameRespons
 	if err != nil {
 		return nil, fmt.Errorf("IGDB request failed: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	return resp, nil
+}
 
-	// Handle 401 — invalidate token and retry once
-	if resp.StatusCode == http.StatusUnauthorized {
-		c.auth.InvalidateToken()
-		token, err = c.auth.GetAccessToken(ctx)
-		if err != nil {
-			return nil, err
+// retryAfterDelay returns the sleep duration before the next 429 retry.
+// It honors a Retry-After header expressed as integer seconds (the IGDB form);
+// otherwise it falls back to exponential backoff of c.backoffFactor * 2^attempt
+// seconds. A non-positive result means "no sleep" (retry immediately).
+func (c *Client) retryAfterDelay(header string, attempt int) time.Duration {
+	if header != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && secs >= 0 {
+			return time.Duration(secs) * time.Second
 		}
-
-		if err := c.limiter.Wait(ctx); err != nil {
-			return nil, err
-		}
-
-		req, _ = http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
-		req.Header.Set("Client-ID", c.auth.clientID)
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Content-Type", "text/plain")
-
-		resp, err = c.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("IGDB retry failed: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
 	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("IGDB API returned status %d", resp.StatusCode)
+	if c.backoffFactor <= 0 {
+		return 0
 	}
+	multiplier := 1 << attempt
+	return time.Duration(c.backoffFactor * float64(multiplier) * float64(time.Second))
+}
 
-	var games []igdbGameResponse
-	if err := json.NewDecoder(resp.Body).Decode(&games); err != nil {
-		return nil, fmt.Errorf("decode IGDB response: %w", err)
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
 	}
-	return games, nil
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+func drainAndClose(body io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, body)
+	_ = body.Close()
 }
 
 // convertToGameMetadata converts an IGDB API response to our internal DTO.
