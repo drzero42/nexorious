@@ -11,14 +11,16 @@
   # https://devenv.sh/packages/
   packages = with pkgs; [
     git
-    go-task
     gnumake
-    inputs.drzero42.packages.${system}.slumber
+    go-task
     golangci-lint
-    nodejs_24
-    uv
-    procps
+    imagemagick
+    inputs.drzero42.packages.${system}.slumber
     legendary-gl
+    librsvg
+    nodejs_24
+    procps
+    uv
     yamllint
   ];
 
