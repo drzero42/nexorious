@@ -20,6 +20,51 @@ Name of the credentials secret.
 {{- end }}
 
 {{/*
+Sanitised `helm.sh/chart` label value. Mirrors the standard `helm create`
+output: replaces "+" (legal in semver build metadata but illegal in a
+Kubernetes label value) with "_", caps at 63 chars, and strips a trailing
+"-". Needed because Flux's source-controller appends the OCI artifact
+digest as build metadata (e.g. `0.0.0-dev-20260520-abc+93a225106d8d`),
+which the API server otherwise rejects.
+*/}}
+{{- define "nexorious.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
+{{- end }}
+
+{{/*
+Returns "true" when the managed credentials Secret has at least one
+inline credential to write; empty string otherwise. When every credential
+source is external (`*From` fields all set) and the bundled Postgres
+controller is disabled, the Secret would otherwise render with metadata
+but no `stringData` entries — pointless and noisy. Wrap the entire
+credentials-secret.yaml body in `{{- if include "nexorious.credentialsSecretNeeded" . }}`.
+*/}}
+{{- define "nexorious.credentialsSecretNeeded" -}}
+{{- $secretKeyFrom := default dict .Values.nexorious.secretKeyFrom -}}
+{{- $igdbClientIdFrom := default dict .Values.nexorious.igdbClientIdFrom -}}
+{{- $igdbClientSecretFrom := default dict .Values.nexorious.igdbClientSecretFrom -}}
+{{- $databaseUrlFrom := default dict .Values.nexorious.databaseUrlFrom -}}
+{{- $dbHostFrom := default dict .Values.nexorious.dbHostFrom -}}
+{{- $dbPortFrom := default dict .Values.nexorious.dbPortFrom -}}
+{{- $dbUserFrom := default dict .Values.nexorious.dbUserFrom -}}
+{{- $dbPasswordFrom := default dict .Values.nexorious.dbPasswordFrom -}}
+{{- $dbNameFrom := default dict .Values.nexorious.dbNameFrom -}}
+{{- $pgUsernameFrom := default dict .Values.nexorious.postgresql.usernameFrom -}}
+{{- $pgPasswordFrom := default dict .Values.nexorious.postgresql.passwordFrom -}}
+{{- $pgDatabaseFrom := default dict .Values.nexorious.postgresql.databaseFrom -}}
+{{- $omitDbUrl := or $databaseUrlFrom.name $dbHostFrom.name $dbPortFrom.name $dbUserFrom.name $dbPasswordFrom.name $dbNameFrom.name -}}
+{{- $pgEnabled := dig "postgresql" "enabled" true .Values.controllers -}}
+{{- if or
+      (not $secretKeyFrom.name)
+      (not $igdbClientIdFrom.name)
+      (not $igdbClientSecretFrom.name)
+      (and $pgEnabled (or (not $pgUsernameFrom.name) (not $pgPasswordFrom.name) (not $pgDatabaseFrom.name)))
+      (not $omitDbUrl) -}}
+true
+{{- end -}}
+{{- end }}
+
+{{/*
 Validate a single *From struct: both name and key must be set, or neither.
 Input dict: .label (string), .from (object with .name and .key fields).
 Returns an error string if invalid, empty string if valid.
