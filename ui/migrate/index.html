@@ -5,10 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nexorious — Database Migration</title>
   <link rel="stylesheet" href="/static/app.css">
+  <style>
+    .brand-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; }
+    .brand-row img { width: 40px; height: 40px; }
+  </style>
 </head>
 <body>
   <div class="card card--wide">
-    <h1 class="card-title">Database Migration Required</h1>
+    <div class="brand-row">
+      <img src="/logo.svg" alt="">
+      <h1 class="card-title">Database Migration Required</h1>
+    </div>
     <p class="card-description">
       {{.PendingCount}} migration{{if ne .PendingCount 1}}s{{end}} pending
     </p>
