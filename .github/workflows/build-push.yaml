@@ -12,9 +12,55 @@ on:
     types: [published]
 
 jobs:
+  pre-check:
+    name: Pre-check
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Determine if a build is needed
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Non-schedule triggers always build. workflow_dispatch is the manual
+          # escape hatch; release builds must always run regardless of API state.
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "Trigger=${{ github.event_name }} -> always build"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "HEAD short SHA: $SHORT_SHA"
+
+          # Query GHCR for any existing image version whose tag ends with the
+          # current HEAD short SHA. The tag format is YYYYMMDD-<short-sha>, so
+          # matching the suffix is sufficient and tolerant of a date rollover.
+          MATCHES=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            --paginate \
+            "/users/drzero42/packages/container/nexorious/versions" \
+            --jq "[.[] | (.metadata.container.tags // [])[]] | map(select(endswith(\"-${SHORT_SHA}\"))) | length")
+
+          echo "Found ${MATCHES} existing tag(s) ending in -${SHORT_SHA}"
+          if [[ "${MATCHES}" -gt 0 ]]; then
+            echo "Image for HEAD already built; skipping downstream jobs."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No existing image for HEAD; will build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build-push:
     name: Build and Push
     runs-on: ubuntu-latest
+    needs: pre-check
+    if: needs.pre-check.outputs.should_build == 'true'
 
     permissions:
       contents: read
