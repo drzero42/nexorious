@@ -41,7 +41,12 @@ export function MobileNav() {
           <SheetContent side="left" className="w-72 p-0">
             <SheetHeader className="p-4 border-b">
               <SheetTitle>
-                <Link to="/games" onClick={handleNavigate}>
+                <Link
+                  to="/games"
+                  onClick={handleNavigate}
+                  className="flex items-center gap-2"
+                >
+                  <img src="/logo.svg" alt="" className="h-7 w-7" />
                   Nexorious
                 </Link>
               </SheetTitle>
@@ -112,7 +117,8 @@ export function MobileNav() {
           </SheetContent>
         </Sheet>
 
-        <Link to="/games" className="font-bold text-lg">
+        <Link to="/games" className="flex items-center gap-2 font-bold text-lg">
+          <img src="/logo.svg" alt="" className="h-7 w-7" />
           Nexorious
         </Link>
       </div>
