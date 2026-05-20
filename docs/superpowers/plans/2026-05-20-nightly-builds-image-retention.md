@@ -288,6 +288,8 @@ Refs: docs/superpowers/specs/2026-05-20-nightly-builds-image-retention-design.md
 
 - [ ] **Step 1: Append the `cleanup` job**
 
+**Deviation from spec:** the spec named `actions/delete-package-versions@v5`. During implementation, code review confirmed that action's `ignore-versions` regex is evaluated against `version.name` from the REST API — which for container packages is the OCI manifest digest (`sha256:…`), NOT the tag. There is no way to protect by tag with that action; the regex `^(\d+\.\d+\.\d+|dev)$` would never match any digest, and once 30 newer dev builds existed it would delete release manifests. Switched to `vlaurin/action-ghcr-prune@v0.6.0`, which is purpose-built for tag-based retention (its `keep-tags-regexes` / `prune-tags-regexes` inputs evaluate against the version's container tags). User approved the deviation.
+
 Edit `.github/workflows/build-push.yaml`. Append the following block at the end of the file, after the final step of `build-push-chart`:
 
 ```yaml
@@ -302,33 +304,54 @@ Edit `.github/workflows/build-push.yaml`. Append the following block at the end 
       packages: write
 
     steps:
-      - name: Delete old dev container image versions
-        uses: actions/delete-package-versions@v5
+      # vlaurin/action-ghcr-prune (not actions/delete-package-versions) because
+      # the latter's ignore-versions regex matches against the OCI manifest
+      # digest (sha256:...), not against tags — making tag-based protection
+      # impossible. vlaurin's keep-tags-regexes / prune-tags-regexes evaluate
+      # against the version's container tags, which is what we need.
+      - name: Prune old dev container image versions
+        uses: vlaurin/action-ghcr-prune@v0.6.0
         with:
-          package-name: nexorious
-          package-type: container
-          min-versions-to-keep: 30
-          # Never delete release images (semver: 1.2.3) or the floating 'dev' tag.
-          # Everything else (YYYYMMDD-<sha> dev builds) is subject to the
-          # min-versions-to-keep cap.
-          ignore-versions: '^(\d+\.\d+\.\d+|dev)$'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          user: drzero42
+          container: nexorious
+          # Protect release images (semver, with optional pre-release suffix)
+          # and the floating 'dev' tag. Exclusion always wins over inclusion,
+          # so a manifest carrying BOTH 'dev' and YYYYMMDD-<sha> is preserved.
+          keep-tags-regexes: |
+            ^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$
+            ^dev$
+          # Prune dev-build tags: YYYYMMDD-<short-sha>. keep-last keeps the 30
+          # most recent of the matched-for-pruning versions.
+          prune-tags-regexes: |
+            ^\d{8}-[a-f0-9]+$
+          keep-last: 30
 
-      - name: Delete old dev Helm chart versions
-        uses: actions/delete-package-versions@v5
+      - name: Prune old dev Helm chart versions
+        uses: vlaurin/action-ghcr-prune@v0.6.0
         with:
-          package-name: charts/nexorious
-          package-type: container
-          min-versions-to-keep: 30
-          # Protect release charts (semver) and the moving '0.0.0-dev' tag.
-          # 0.0.0-dev-YYYYMMDD-<sha> dev versions are subject to the cap.
-          ignore-versions: '^(\d+\.\d+\.\d+|0\.0\.0-dev)$'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          user: drzero42
+          container: charts/nexorious
+          # Protect release charts and the moving '0.0.0-dev' chart tag.
+          keep-tags-regexes: |
+            ^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$
+            ^0\.0\.0-dev$
+          # Prune dev-build chart tags: 0.0.0-dev-YYYYMMDD-<short-sha>.
+          prune-tags-regexes: |
+            ^0\.0\.0-dev-\d{8}-[a-f0-9]+$
+          keep-last: 30
 ```
 
 Notes on the implementation choices:
-- `package-name: charts/nexorious` — the Helm chart is pushed to `oci://ghcr.io/drzero42/charts` with a chart name of `nexorious` (see existing line ~115 of the file), so the GHCR package path is `charts/nexorious`. `package-type` is still `container` for OCI Helm charts — GHCR exposes them under the container API.
-- `min-versions-to-keep: 30` — the action interprets this against the non-ignored versions; semver releases and the floating tags are excluded from the count by `ignore-versions`.
-- `ignore-versions` is an anchored regex: `^(\d+\.\d+\.\d+|dev)$` matches exactly a semver triple OR the literal string `dev`. The pipe is regex alternation; the surrounding `^...$` ensures `dev-extra` would NOT be ignored.
-- The cleanup job runs in **parallel** with `build-push-chart` (both `needs: build-push`). This matches the dependency graph in the spec. A consequence: on a given run the chart cleanup may execute before the new chart is pushed, in which case the new push adds a 31st version after cleanup leaves 30. This drift is bounded at +1 and is acceptable per the spec ("~30 versions").
+- **Action choice:** `vlaurin/action-ghcr-prune@v0.6.0` is the only well-maintained action that filters by container tags rather than manifest digest. Verified by reading its `action.yml` and `README.md`.
+- **`token: secrets.GITHUB_TOKEN`** — the action requires the token to have `packages:read` and `packages:delete` permissions. The job's `permissions: packages: write` block grants these for the same-owner namespace (`drzero42`). No PAT is required.
+- **`user: drzero42`** — the repo is owned by a user (not an org); use `user:`, not `organization:`. The action errors if both are set.
+- **`container: charts/nexorious`** — the action accepts the full container path including the `charts/` prefix (it URL-encodes the slash internally via Octokit). This matches the `oci://ghcr.io/drzero42/charts` push target.
+- **Regexes use JavaScript regex syntax** (the action runs on Node 20). The pre-release suffix in `^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$` future-proofs against `1.2.3-rc1`-style release tags. The dev-build patterns are anchored with `^...$` to avoid any cross-match (e.g. `dev` does not match `^\d{8}-…$`).
+- **`keep-last: 30`** — applied to versions matched by `prune-tags-regexes` (post-exclusion). The newest 30 dev-tagged versions are preserved; older ones are deleted. The latest dev build is ADDITIONALLY protected by the `^dev$` exclusion, so in steady state the registry holds 31 dev manifests (latest + 30 older), which the spec accepts as "~30 versions".
+- **`prune-untagged` intentionally NOT enabled** — the spec did not ask for it and untagged manifest pruning has edge cases (e.g. multi-arch platform-specific manifests appear untagged in GHCR's UI; deleting them would break manifest lists). The current build is single-platform, but leaving this off is the safer default.
+- **Parallelism with `build-push-chart`:** the cleanup job runs in parallel with `build-push-chart` (both `needs: build-push`). This matches the dependency graph in the spec. A consequence: on a given run the chart cleanup may execute before the new chart is pushed, in which case the new push adds a 31st version after cleanup leaves 30. This drift is bounded at +1 and is acceptable per the spec ("~30 versions").
 
 - [ ] **Step 2: Lint**
 

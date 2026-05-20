@@ -184,23 +184,40 @@ jobs:
       packages: write
 
     steps:
-      - name: Delete old dev container image versions
-        uses: actions/delete-package-versions@v5
+      # vlaurin/action-ghcr-prune (not actions/delete-package-versions) because
+      # the latter's ignore-versions regex matches against the OCI manifest
+      # digest (sha256:...), not against tags — making tag-based protection
+      # impossible. vlaurin's keep-tags-regexes / prune-tags-regexes evaluate
+      # against the version's container tags, which is what we need.
+      - name: Prune old dev container image versions
+        uses: vlaurin/action-ghcr-prune@v0.6.0
         with:
-          package-name: nexorious
-          package-type: container
-          min-versions-to-keep: 30
-          # Never delete release images (semver: 1.2.3) or the floating 'dev' tag.
-          # Everything else (YYYYMMDD-<sha> dev builds) is subject to the
-          # min-versions-to-keep cap.
-          ignore-versions: '^(\d+\.\d+\.\d+|dev)$'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          user: drzero42
+          container: nexorious
+          # Protect release images (semver, with optional pre-release suffix)
+          # and the floating 'dev' tag. Exclusion always wins over inclusion,
+          # so a manifest carrying BOTH 'dev' and YYYYMMDD-<sha> is preserved.
+          keep-tags-regexes: |
+            ^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$
+            ^dev$
+          # Prune dev-build tags: YYYYMMDD-<short-sha>. keep-last keeps the 30
+          # most recent of the matched-for-pruning versions.
+          prune-tags-regexes: |
+            ^\d{8}-[a-f0-9]+$
+          keep-last: 30
 
-      - name: Delete old dev Helm chart versions
-        uses: actions/delete-package-versions@v5
+      - name: Prune old dev Helm chart versions
+        uses: vlaurin/action-ghcr-prune@v0.6.0
         with:
-          package-name: charts/nexorious
-          package-type: container
-          min-versions-to-keep: 30
-          # Protect release charts (semver) and the moving '0.0.0-dev' tag.
-          # 0.0.0-dev-YYYYMMDD-<sha> dev versions are subject to the cap.
-          ignore-versions: '^(\d+\.\d+\.\d+|0\.0\.0-dev)$'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          user: drzero42
+          container: charts/nexorious
+          # Protect release charts and the moving '0.0.0-dev' chart tag.
+          keep-tags-regexes: |
+            ^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$
+            ^0\.0\.0-dev$
+          # Prune dev-build chart tags: 0.0.0-dev-YYYYMMDD-<short-sha>.
+          prune-tags-regexes: |
+            ^0\.0\.0-dev-\d{8}-[a-f0-9]+$
+          keep-last: 30
