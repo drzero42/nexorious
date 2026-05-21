@@ -73,46 +73,14 @@ in
           authentication — no database password is needed in
           `environmentFile`.
 
-          Set to `false` to supply your own database connection via
-          `DATABASE_URL` (or individual `DB_*` variables) in
-          `environmentFile`.
-        '';
-      };
-
-      host = mkOption {
-        type = types.str;
-        default = "localhost";
-        description = ''
-          PostgreSQL server hostname.
-          Only used when `database.createLocally` is `false`.
-        '';
-        example = "db.internal.example.com";
-      };
-
-      port = mkOption {
-        type = types.port;
-        default = 5432;
-        description = ''
-          PostgreSQL server port.
-          Only used when `database.createLocally` is `false`.
+          Set to `false` to supply `DATABASE_URL` via `environmentFile`.
         '';
       };
 
       name = mkOption {
         type = types.str;
         default = "nexorious";
-        description = "PostgreSQL database name.";
-      };
-
-      user = mkOption {
-        type = types.str;
-        default = "nexorious";
-        description = ''
-          PostgreSQL user for the database.
-          Only used when `database.createLocally` is `false`; when
-          `createLocally` is `true` the OS user `nexorious` connects
-          via peer authentication and this option is ignored.
-        '';
+        description = "PostgreSQL database name. Used when `database.createLocally` is `true`.";
       };
     };
 
