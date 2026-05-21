@@ -133,12 +133,17 @@
         header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:8px';
         const name = document.createElement('strong');
         name.textContent = b.filename;
-        name.style.cssText = 'word-break:break-all';
+        // min-width:0 lets the flex item shrink below its content size so the
+        // wrap actually engages; overflow-wrap:anywhere breaks at any character
+        // only when there is no shorter break opportunity.
+        name.style.cssText = 'min-width:0; overflow-wrap:anywhere';
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'btn btn-primary';
         btn.textContent = 'Restore';
-        btn.style.cssText = 'flex-shrink:0';
+        // Override .btn-primary's width:100% so the button sizes to its label
+        // instead of consuming the row and forcing the filename into a 1ch column.
+        btn.style.cssText = 'width:auto; flex:0 0 auto';
         btn.disabled = !b.restorable;
         btn.onclick = () => restoreFromDisk(b.filename);
         header.appendChild(name);
