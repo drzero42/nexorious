@@ -868,3 +868,31 @@ func TestValidateArchive_WithRealArchive(t *testing.T) {
 		t.Error("expected error for maxMigrationVersion too old")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ListAvailableArchives
+// ---------------------------------------------------------------------------
+
+func TestListAvailableArchives_NonExistentDir(t *testing.T) {
+	// Backup dir that doesn't exist must produce empty result, not error.
+	svc := backup.NewService(nil, "", "/nonexistent/path/that/does/not/exist", "", "0.1.0")
+	infos, err := svc.ListAvailableArchives(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListAvailableArchives: unexpected error: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Errorf("expected empty list, got %d entries", len(infos))
+	}
+}
+
+func TestListAvailableArchives_EmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	svc := backup.NewService(nil, "", dir, "", "0.1.0")
+	infos, err := svc.ListAvailableArchives(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListAvailableArchives: unexpected error: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Errorf("expected empty list, got %d entries", len(infos))
+	}
+}

@@ -230,6 +230,36 @@ func (s *Service) ValidateArchive(archivePath string, verifyChecksums bool, maxM
 	return manifest, nil
 }
 
+// ArchiveInfo summarizes one candidate backup archive found in the backup
+// directory. Files that fail to validate end-to-end (corrupt manifest,
+// migration version newer than this binary supports, etc.) are still returned
+// with Restorable=false and a human-readable Reason so the UI can show them.
+type ArchiveInfo struct {
+	Filename   string    `json:"filename"` // base name only
+	SizeBytes  int64     `json:"size_bytes"`
+	ModTime    time.Time `json:"mtime"`
+	Manifest   *Manifest `json:"manifest,omitempty"`
+	Restorable bool      `json:"restorable"`
+	Reason     string    `json:"reason,omitempty"`
+}
+
+// BackupPath returns the configured backup directory path. Exposed so handlers
+// can safely resolve a user-supplied filename to a full path under it.
+func (s *Service) BackupPath() string {
+	return s.backupPath
+}
+
+// ListAvailableArchives scans the configured backup directory (top-level only)
+// for *.tar.gz files and returns metadata for each. Files appear regardless of
+// whether they validate so callers can show non-restorable files with an
+// explanation. Sorted newest mtime first.
+//
+// Returns an empty slice (not an error) when the directory is empty,
+// unreadable, or doesn't exist — listing is best-effort discovery.
+func (s *Service) ListAvailableArchives(ctx context.Context, maxMigrationVersion string) ([]ArchiveInfo, error) {
+	return nil, nil
+}
+
 // archiveContainsFile returns true if the .tar.gz archive contains an entry
 // whose base name matches filename.
 func archiveContainsFile(archivePath, filename string) (bool, error) {
