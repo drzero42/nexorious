@@ -397,6 +397,71 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 	})
 }
 
+// HandleSetupListBackups lists candidate backup archives in the configured
+// backup directory during initial setup (GET /api/auth/setup/backups).
+func (h *BackupHandler) HandleSetupListBackups(c *echo.Context) error {
+	if err := h.requireNoUsers(c); err != nil {
+		return err
+	}
+
+	maxMigration := ""
+	if h.callbacks != nil {
+		maxMigration = h.callbacks.MaxMigration
+	}
+
+	infos, err := h.svc.ListAvailableArchives(c.Request().Context(), maxMigration)
+	if err != nil {
+		slog.Error("setup list backups failed", "err", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list backups"})
+	}
+
+	type manifestDTO struct {
+		CreatedAt        time.Time `json:"created_at"`
+		AppVersion       string    `json:"app_version"`
+		MigrationVersion string    `json:"migration_version"`
+		BackupType       string    `json:"backup_type"`
+		Stats            struct {
+			Users int `json:"users"`
+			Games int `json:"games"`
+			Tags  int `json:"tags"`
+		} `json:"stats"`
+	}
+	type entryDTO struct {
+		Filename   string       `json:"filename"`
+		SizeBytes  int64        `json:"size_bytes"`
+		ModTime    time.Time    `json:"mtime"`
+		Restorable bool         `json:"restorable"`
+		Reason     string       `json:"reason,omitempty"`
+		Manifest   *manifestDTO `json:"manifest,omitempty"`
+	}
+
+	out := make([]entryDTO, 0, len(infos))
+	for _, info := range infos {
+		e := entryDTO{
+			Filename:   info.Filename,
+			SizeBytes:  info.SizeBytes,
+			ModTime:    info.ModTime,
+			Restorable: info.Restorable,
+			Reason:     info.Reason,
+		}
+		if info.Manifest != nil {
+			m := &manifestDTO{
+				CreatedAt:        info.Manifest.CreatedAt,
+				AppVersion:       info.Manifest.AppVersion,
+				MigrationVersion: info.Manifest.MigrationVersion,
+				BackupType:       info.Manifest.BackupType,
+			}
+			m.Stats.Users = info.Manifest.StatsUsers
+			m.Stats.Games = info.Manifest.StatsGames
+			m.Stats.Tags = info.Manifest.StatsTags
+			e.Manifest = m
+		}
+		out = append(out, e)
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{"backups": out})
+}
+
 // makeRestoreOpts constructs RestoreOpts from the handler's callbacks.
 func (h *BackupHandler) makeRestoreOpts(skipPreRestore bool) backup.RestoreOpts {
 	if h.callbacks == nil {

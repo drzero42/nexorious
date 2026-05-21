@@ -185,6 +185,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 	// Backup handler — used by both setup restore and admin routes
 	bh := NewBackupHandler(backupSvc, db, restoreCallbacks)
 	e.POST("/api/auth/setup/restore", bh.HandleSetupRestore)
+	e.GET("/api/auth/setup/backups", bh.HandleSetupListBackups)
 
 	// Auth routes — only registered when a DB is available.
 	if db != nil {
