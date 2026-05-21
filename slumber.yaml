@@ -39,6 +39,20 @@ requests:
             username: "{{username}}"
             password: "{{password}}"
 
+      list_setup_backups:
+        name: List Setup Backups
+        method: GET
+        url: "{{base_url}}/api/auth/setup/backups"
+
+      setup_restore_disk:
+        name: Setup Restore from Disk
+        method: POST
+        url: "{{base_url}}/api/auth/setup/restore/disk"
+        body:
+          type: json
+          data:
+            filename: "{{response('list_setup_backups', trigger='no_history') | jsonpath('$.backups[*].filename', mode='array') | select()}}"
+
   admin:
     name: Admin
     requests:

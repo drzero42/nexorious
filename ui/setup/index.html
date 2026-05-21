@@ -47,8 +47,9 @@
         <img src="/logo.svg" alt="">
         <h1 class="card-title">Restore from Backup</h1>
       </div>
-      <p class="card-description">Upload a backup archive to restore your data.</p>
+      <p class="card-description">Upload a backup file, or pick one already on disk.</p>
       <div class="alert-destructive" id="restore-err"></div>
+
       <input type="file" id="file-input" accept=".tar.gz" style="display:none">
       <div id="drop-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
         <div class="drop-zone-icon">📦</div>
@@ -63,6 +64,12 @@
         <button type="button" class="clear-btn" onclick="clearFile()" title="Remove">✕</button>
       </div>
       <button type="button" class="btn btn-primary" id="restore-btn" onclick="doRestore()" disabled>Restore</button>
+
+      <div id="ondisk-section">
+        <p id="ondisk-or" class="card-description" style="display:none; margin:16px 0 8px 0"><strong>Or restore from a backup found on disk</strong></p>
+        <ul id="ondisk-list" class="ondisk-list" style="display:none; list-style:none; padding:0; margin:0"></ul>
+      </div>
+
       <div class="footer-row">
         <button type="button" class="btn-link" onclick="showAdmin()">Cancel — create a new account instead</button>
       </div>
@@ -74,6 +81,132 @@
       document.getElementById('admin-view').style.display = 'none';
       document.getElementById('restore-view').style.display = '';
       clearError('restore-err');
+      loadOnDiskBackups();
+    }
+
+    // Format a UTC ISO date as a local "YYYY-MM-DD HH:MM" string.
+    function fmtDate(iso) {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      const pad = n => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+        + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+
+    function fmtCount(n) {
+      return new Intl.NumberFormat().format(n);
+    }
+
+    let _ondiskLoaded = false;
+    async function loadOnDiskBackups() {
+      if (_ondiskLoaded) return;
+      _ondiskLoaded = true;
+      const list = document.getElementById('ondisk-list');
+      const orLine = document.getElementById('ondisk-or');
+
+      let backups = [];
+      try {
+        const res = await fetch('/api/auth/setup/backups');
+        if (res.ok) {
+          const data = await res.json();
+          backups = Array.isArray(data.backups) ? data.backups : [];
+        }
+      } catch {
+        // Fetch failure — leave the section hidden; upload zone above is sufficient.
+      }
+
+      if (backups.length === 0) {
+        // No on-disk backups (or fetch failed). Section stays hidden so the
+        // user just sees the upload zone, which is the only path that works.
+        return;
+      }
+
+      backups.forEach(b => {
+        const li = document.createElement('li');
+        li.style.cssText = 'border:1px solid var(--border, #444); border-radius:6px; padding:10px 12px; margin-bottom:8px; display:flex; flex-direction:column; gap:6px';
+
+        // Filename gets the full card width; even ~42-char timestamped names
+        // fit in a slightly smaller monospace face on a single line.
+        const name = document.createElement('div');
+        name.textContent = b.filename;
+        name.style.cssText = 'font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.875em; font-weight:600; overflow-wrap:anywhere';
+        li.appendChild(name);
+
+        const meta = document.createElement('div');
+        meta.style.cssText = 'font-size:0.85em; opacity:0.75';
+        const parts = [];
+        if (b.manifest && b.manifest.created_at) parts.push(fmtDate(b.manifest.created_at));
+        else parts.push(fmtDate(b.mtime));
+        parts.push(formatBytes(b.size_bytes));
+        if (b.manifest && b.manifest.backup_type) parts.push(b.manifest.backup_type);
+        meta.textContent = parts.join(' · ');
+        li.appendChild(meta);
+
+        if (b.manifest && b.manifest.stats) {
+          const stats = document.createElement('div');
+          stats.style.cssText = 'font-size:0.85em; opacity:0.75';
+          const s = b.manifest.stats;
+          const v = b.manifest.app_version ? ' · v' + b.manifest.app_version : '';
+          stats.textContent = fmtCount(s.games) + ' games · ' + fmtCount(s.users) + ' users · ' + fmtCount(s.tags) + ' tags' + v;
+          li.appendChild(stats);
+        }
+
+        if (!b.restorable && b.reason) {
+          const reason = document.createElement('div');
+          reason.style.cssText = 'font-size:0.85em; color:var(--destructive, #f87171)';
+          reason.textContent = '⚠ ' + b.reason;
+          li.appendChild(reason);
+        }
+
+        // Button row, right-aligned. Override .btn-primary's width:100% so the
+        // button hugs its label.
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex; justify-content:flex-end; margin-top:2px';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-primary';
+        btn.textContent = 'Restore';
+        btn.style.cssText = 'width:auto; flex:0 0 auto; padding:0.4rem 1.1rem';
+        btn.disabled = !b.restorable;
+        btn.onclick = () => restoreFromDisk(b.filename);
+        actions.appendChild(btn);
+        li.appendChild(actions);
+
+        list.appendChild(li);
+      });
+
+      list.style.display = '';
+      orLine.style.display = '';
+    }
+
+    async function restoreFromDisk(filename) {
+      if (!confirm('Restore from ' + filename + '? This will replace any existing data.')) return;
+      clearError('restore-err');
+      // Capture buttons that were enabled before this attempt so the failure
+      // path restores them without also enabling buttons originally disabled
+      // for non-restorable items.
+      const previouslyEnabled = Array.from(
+        document.querySelectorAll('#ondisk-list button, #restore-btn')
+      ).filter(b => !b.disabled);
+      previouslyEnabled.forEach(b => { b.disabled = true; });
+      const reenable = () => previouslyEnabled.forEach(b => { b.disabled = false; });
+      try {
+        const res = await fetch('/api/auth/setup/restore/disk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename }),
+        });
+        if (res.ok) {
+          window.location.href = '/login';
+          return;
+        }
+        const body = await res.json().catch(() => ({}));
+        showError('restore-err', body.error || 'Restore failed. Please try again.');
+        reenable();
+      } catch {
+        showError('restore-err', 'Restore failed. Please try again.');
+        reenable();
+      }
     }
     function showAdmin() {
       document.getElementById('restore-view').style.display = 'none';

@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/uptrace/bun"
@@ -349,5 +352,123 @@ func TestHandleCreateBackup_PgDumpUnavailable(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("expected 503, got %d", rec.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HandleSetupRestoreFromDisk
+// ---------------------------------------------------------------------------
+
+func TestHandleSetupRestoreFromDisk_FilenameValidation(t *testing.T) {
+	backup.CheckTools()
+	if !backup.PsqlAvailable() {
+		t.Skip("psql not available — handler returns 503 before filename validation")
+	}
+
+	truncateAllTables(t)
+
+	// Set up a backup dir with one valid-looking filename present (used by the
+	// symlink case — points to a target we create alongside it) and one absent
+	// (for the 404 case).
+	backupDir := t.TempDir()
+	realFile := filepath.Join(backupDir, "real.tar.gz")
+	if err := os.WriteFile(realFile, []byte("not-a-real-archive"), 0o644); err != nil {
+		t.Fatalf("write real.tar.gz: %v", err)
+	}
+	symlinkName := "linked.tar.gz"
+	if err := os.Symlink(realFile, filepath.Join(backupDir, symlinkName)); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	svc := backup.NewService(testDB, "", backupDir, "", "0.1.0")
+	e := newTestEchoBackup(t, testDB, svc)
+
+	cases := []struct {
+		name     string
+		filename string
+		wantCode int
+		wantErr  string // substring
+	}{
+		{"empty", "", http.StatusBadRequest, "filename is required"},
+		{"forward-slash", "../etc/passwd", http.StatusBadRequest, "invalid filename"},
+		{"subdir", "sub/file.tar.gz", http.StatusBadRequest, "invalid filename"},
+		{"backslash", `bad\name.tar.gz`, http.StatusBadRequest, "invalid filename"},
+		{"dotdot-bare", "..", http.StatusBadRequest, "invalid filename"},
+		{"not-in-dir", "nope.tar.gz", http.StatusNotFound, "backup not found"},
+		{"symlink", symlinkName, http.StatusBadRequest, "invalid filename"},
+		{"nul-byte", "real\x00.tar.gz", http.StatusBadRequest, "invalid filename"},
+		{"trailing-whitespace", "real.tar.gz ", http.StatusBadRequest, "invalid filename"},
+		{"leading-whitespace", " real.tar.gz", http.StatusBadRequest, "invalid filename"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]string{"filename": tc.filename})
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/setup/restore/disk", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantCode {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.wantCode, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tc.wantErr) {
+				t.Errorf("body %q does not contain %q", rec.Body.String(), tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestHandleSetupListBackups_RejectsWhenUsersExist asserts the list endpoint's
+// shared requireNoUsers gate. Always runs — no psql dependency.
+func TestHandleSetupListBackups_RejectsWhenUsersExist(t *testing.T) {
+	truncateAllTables(t)
+
+	backupDir := t.TempDir()
+	svc := backup.NewService(testDB, "", backupDir, "", "0.1.0")
+	e := newTestEchoBackup(t, testDB, svc)
+
+	// Create one admin so the gate is closed.
+	_, _ = setupAdminUser(t, testDB, e, "setup-gate-list")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/setup/backups", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("GET /backups: status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "no users exist") {
+		t.Errorf("GET /backups: body missing expected error message: %s", rec.Body.String())
+	}
+}
+
+// TestHandleSetupRestoreFromDisk_RejectsWhenUsersExist asserts the disk-restore
+// endpoint's shared requireNoUsers gate. Skipped without psql because the
+// handler runs PsqlAvailable() before requireNoUsers and would 503 first.
+func TestHandleSetupRestoreFromDisk_RejectsWhenUsersExist(t *testing.T) {
+	backup.CheckTools()
+	if !backup.PsqlAvailable() {
+		t.Skip("psql not available — disk-restore handler returns 503 before requireNoUsers")
+	}
+
+	truncateAllTables(t)
+
+	backupDir := t.TempDir()
+	svc := backup.NewService(testDB, "", backupDir, "", "0.1.0")
+	e := newTestEchoBackup(t, testDB, svc)
+
+	// Create one admin so the gate is closed.
+	_, _ = setupAdminUser(t, testDB, e, "setup-gate-disk")
+
+	body, _ := json.Marshal(map[string]string{"filename": "anything.tar.gz"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup/restore/disk", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("POST /restore/disk: status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "no users exist") {
+		t.Errorf("POST /restore/disk: body missing expected error message: %s", rec.Body.String())
 	}
 }

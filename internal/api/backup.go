@@ -325,6 +325,18 @@ func (h *BackupHandler) HandleRestoreUpload(c *echo.Context) error {
 	})
 }
 
+// requireNoUsers enforces the setup-mode gate: any of the setup-zone restore
+// handlers must reject with 403 if the users table is non-empty. Returns nil
+// to continue; returns a non-nil error already sent to the client to
+// short-circuit the handler.
+func (h *BackupHandler) requireNoUsers(c *echo.Context) error {
+	count, err := h.db.NewSelect().TableExpr("users").Count(c.Request().Context())
+	if err == nil && count > 0 {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "restore during setup is only available when no users exist"})
+	}
+	return nil
+}
+
 // HandleSetupRestore handles restore during initial setup (POST /api/auth/setup/restore).
 func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 	if !backup.PsqlAvailable() {
@@ -333,10 +345,8 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 		})
 	}
 
-	// Check that no users exist (setup mode only)
-	count, err := h.db.NewSelect().TableExpr("users").Count(c.Request().Context())
-	if err == nil && count > 0 {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "restore during setup is only available when no users exist"})
+	if err := h.requireNoUsers(c); err != nil {
+		return err
 	}
 
 	file, err := c.FormFile("file")
@@ -378,7 +388,146 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
 		slog.Error("setup restore failed", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Backup restored successfully. Please log in with your restored credentials.",
+	})
+}
+
+// HandleSetupListBackups lists candidate backup archives in the configured
+// backup directory during initial setup (GET /api/auth/setup/backups).
+func (h *BackupHandler) HandleSetupListBackups(c *echo.Context) error {
+	if err := h.requireNoUsers(c); err != nil {
+		return err
+	}
+
+	maxMigration := ""
+	if h.callbacks != nil {
+		maxMigration = h.callbacks.MaxMigration
+	}
+
+	infos, err := h.svc.ListAvailableArchives(c.Request().Context(), maxMigration)
+	if err != nil {
+		slog.Error("setup list backups failed", "err", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list backups"})
+	}
+
+	type manifestDTO struct {
+		CreatedAt        time.Time `json:"created_at"`
+		AppVersion       string    `json:"app_version"`
+		MigrationVersion string    `json:"migration_version"`
+		BackupType       string    `json:"backup_type"`
+		Stats            struct {
+			Users int `json:"users"`
+			Games int `json:"games"`
+			Tags  int `json:"tags"`
+		} `json:"stats"`
+	}
+	type entryDTO struct {
+		Filename   string       `json:"filename"`
+		SizeBytes  int64        `json:"size_bytes"`
+		ModTime    time.Time    `json:"mtime"`
+		Restorable bool         `json:"restorable"`
+		Reason     string       `json:"reason,omitempty"`
+		Manifest   *manifestDTO `json:"manifest,omitempty"`
+	}
+
+	out := make([]entryDTO, 0, len(infos))
+	for _, info := range infos {
+		e := entryDTO{
+			Filename:   info.Filename,
+			SizeBytes:  info.SizeBytes,
+			ModTime:    info.ModTime,
+			Restorable: info.Restorable,
+			Reason:     info.Reason,
+		}
+		if info.Manifest != nil {
+			m := &manifestDTO{
+				CreatedAt:        info.Manifest.CreatedAt,
+				AppVersion:       info.Manifest.AppVersion,
+				MigrationVersion: info.Manifest.MigrationVersion,
+				BackupType:       info.Manifest.BackupType,
+			}
+			m.Stats.Users = info.Manifest.StatsUsers
+			m.Stats.Games = info.Manifest.StatsGames
+			m.Stats.Tags = info.Manifest.StatsTags
+			e.Manifest = m
+		}
+		out = append(out, e)
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{"backups": out})
+}
+
+// HandleSetupRestoreFromDisk restores from a backup that already exists in the
+// configured backup directory (POST /api/auth/setup/restore/disk). Body:
+//
+//	{ "filename": "nexorious-backup-20260520-093015.tar.gz" }
+//
+// Only top-level regular files inside the configured BACKUP_PATH are
+// accepted. Symlinks are rejected. The on-disk file is preserved unchanged —
+// it is not renamed, moved, or deleted by the restore operation.
+//
+// Trust model: BACKUP_PATH must be writable only by the nexorious process.
+// Hardlinks at top level are not detected by os.Lstat and would be opened
+// like a regular file; the manifest validation that follows bounds disclosure
+// to "is this a valid Nexorious archive", not arbitrary read.
+func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
+	if !backup.PsqlAvailable() {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{
+			"error": "psql is not available on this system. Install PostgreSQL client tools to enable restore.",
+		})
+	}
+
+	if err := h.requireNoUsers(c); err != nil {
+		return err
+	}
+
+	var body struct {
+		Filename string `json:"filename"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+	}
+
+	filename := body.Filename
+	if filename == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "filename is required"})
+	}
+
+	// Layered path-traversal defense. None of these checks alone is enough.
+	if strings.ContainsAny(filename, `/\`) || strings.Contains(filename, "..") || strings.ContainsRune(filename, 0) || strings.TrimSpace(filename) != filename || filepath.Base(filename) != filename {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+	}
+
+	backupDir := h.svc.BackupPath()
+	fullPath := filepath.Join(backupDir, filename)
+	if filepath.Dir(fullPath) != filepath.Clean(backupDir) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+	}
+
+	fi, err := os.Lstat(fullPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "backup not found"})
+		}
+		slog.Error("setup restore-from-disk lstat failed", "err", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to inspect backup file"})
+	}
+	if fi.Mode()&os.ModeSymlink != 0 || !fi.Mode().IsRegular() {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+	}
+
+	opts := h.makeRestoreOpts(true)
+	if _, err := h.svc.RestoreFromArchive(fullPath, opts); err != nil {
+		if errors.Is(err, backup.ErrOperationInProgress) {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
+		}
+		slog.Error("setup restore-from-disk failed", "err", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{

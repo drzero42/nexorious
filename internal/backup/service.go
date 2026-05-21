@@ -230,6 +230,107 @@ func (s *Service) ValidateArchive(archivePath string, verifyChecksums bool, maxM
 	return manifest, nil
 }
 
+// ArchiveInfo summarizes one candidate backup archive found in the backup
+// directory. Files that fail to validate end-to-end (corrupt manifest,
+// migration version newer than this binary supports, etc.) are still returned
+// with Restorable=false and a human-readable Reason so the UI can show them.
+type ArchiveInfo struct {
+	Filename   string    `json:"filename"` // base name only
+	SizeBytes  int64     `json:"size_bytes"`
+	ModTime    time.Time `json:"mtime"`
+	Manifest   *Manifest `json:"manifest,omitempty"`
+	Restorable bool      `json:"restorable"`
+	Reason     string    `json:"reason,omitempty"`
+}
+
+// BackupPath returns the configured backup directory path. Exposed so handlers
+// can safely resolve a user-supplied filename to a full path under it.
+func (s *Service) BackupPath() string {
+	return s.backupPath
+}
+
+// ListAvailableArchives scans the configured backup directory (top-level only)
+// for *.tar.gz files and returns metadata for each. Files appear regardless of
+// whether they validate so callers can show non-restorable files with an
+// explanation. Sorted newest mtime first.
+//
+// Returns an empty slice (not an error) when the directory is empty,
+// unreadable, or doesn't exist — listing is best-effort discovery.
+func (s *Service) ListAvailableArchives(ctx context.Context, maxMigrationVersion string) ([]ArchiveInfo, error) {
+	if s.backupPath == "" {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(s.backupPath)
+	if err != nil {
+		// Missing dir / permission error is not fatal — listing is best-effort.
+		slog.Debug("ListAvailableArchives: ReadDir failed", "path", s.backupPath, "err", err)
+		return nil, nil
+	}
+
+	infos := make([]ArchiveInfo, 0, len(entries))
+	for _, ent := range entries {
+		if ent.IsDir() {
+			continue
+		}
+		name := ent.Name()
+		if !strings.HasSuffix(name, ".tar.gz") {
+			continue
+		}
+		fullPath := filepath.Join(s.backupPath, name)
+		fi, err := os.Lstat(fullPath)
+		if err != nil {
+			continue
+		}
+		// Only regular files. Skip symlinks, sockets, devices.
+		if !fi.Mode().IsRegular() {
+			continue
+		}
+
+		info := ArchiveInfo{
+			Filename:  name,
+			SizeBytes: fi.Size(),
+			ModTime:   fi.ModTime().UTC(),
+		}
+
+		manifest, mErr := readManifestFromArchive(fullPath)
+		switch {
+		case mErr != nil:
+			info.Restorable = false
+			info.Reason = "unreadable manifest"
+		case manifest.Version > MaxManifestVersion:
+			info.Restorable = false
+			info.Reason = fmt.Sprintf("unknown manifest version %d (max supported: %d)", manifest.Version, MaxManifestVersion)
+			info.Manifest = manifest
+		case maxMigrationVersion != "" && manifest.MigrationVersion > maxMigrationVersion:
+			info.Restorable = false
+			info.Reason = fmt.Sprintf(
+				"backup was created by a newer version of Nexorious (migration %s); this binary only supports up to migration %s — upgrade before restoring",
+				manifest.MigrationVersion, maxMigrationVersion,
+			)
+			info.Manifest = manifest
+		default:
+			// Final restorability check: database.sql must be present in the
+			// archive. Mirrors the assertion ValidateArchive makes at restore
+			// time, so a Restorable=true entry is a real promise.
+			found, fErr := archiveContainsFile(fullPath, "database.sql")
+			if fErr != nil || !found {
+				info.Restorable = false
+				info.Reason = "archive is missing database.sql"
+			} else {
+				info.Restorable = true
+			}
+			info.Manifest = manifest
+		}
+
+		infos = append(infos, info)
+	}
+
+	sort.Slice(infos, func(i, j int) bool {
+		return infos[i].ModTime.After(infos[j].ModTime)
+	})
+	return infos, nil
+}
+
 // archiveContainsFile returns true if the .tar.gz archive contains an entry
 // whose base name matches filename.
 func archiveContainsFile(archivePath, filename string) (bool, error) {
@@ -576,6 +677,31 @@ func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (stri
 	_ = manifest
 
 	return id, s.doRestore(destPath, id, opts)
+}
+
+// RestoreFromArchive restores from an archive that already lives at its final
+// location (typically inside the configured backup directory) without renaming
+// or moving it. Unlike RestoreFromUpload — which "promotes" a temp upload to
+// a timestamped name inside the backup dir — this method preserves the input
+// path. Used by the setup-zone disk-restore handler so the operator's curated
+// on-disk backup is not mutated by the restore operation.
+//
+// Returns a derived backup ID (the archive's filename without the .tar.gz
+// suffix) and any error from the underlying restore.
+func (s *Service) RestoreFromArchive(archivePath string, opts RestoreOpts) (string, error) {
+	if !s.mu.TryLock() {
+		return "", ErrOperationInProgress
+	}
+	defer s.mu.Unlock()
+
+	if _, err := s.ValidateArchive(archivePath, true, opts.MaxMigration); err != nil {
+		return "", fmt.Errorf("validate archive: %w", err)
+	}
+
+	// Derive an ID from the filename for logging/return value. doRestore reads
+	// directly from archivePath, so the file stays where it is.
+	id := strings.TrimSuffix(filepath.Base(archivePath), ".tar.gz")
+	return id, s.doRestore(archivePath, id, opts)
 }
 
 func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) error {
