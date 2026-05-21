@@ -3,6 +3,7 @@ package migrate_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -300,5 +301,31 @@ func TestStartDBProbe_RespectsContext(t *testing.T) {
 func TestAppState_String_MigrationFailed(t *testing.T) {
 	if got := migrate.AppStateMigrationFailed.String(); got != "migration_failed" {
 		t.Errorf("AppStateMigrationFailed.String() = %q, want %q", got, "migration_failed")
+	}
+}
+
+func TestTransitionToFailed_SetsStateAndStoresError(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateMigrating)
+
+	if got := m.LastError(); got != "" {
+		t.Fatalf("LastError before transition = %q, want empty", got)
+	}
+
+	m.TransitionToFailed(errors.New("boom"))
+
+	if got := m.State(); got != migrate.AppStateMigrationFailed {
+		t.Errorf("State = %v, want AppStateMigrationFailed", got)
+	}
+	if got := m.LastError(); got != "boom" {
+		t.Errorf("LastError = %q, want %q", got, "boom")
+	}
+}
+
+func TestTransitionToFailed_OverwritesPreviousError(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateMigrating)
+	m.TransitionToFailed(errors.New("first"))
+	m.TransitionToFailed(errors.New("second"))
+	if got := m.LastError(); got != "second" {
+		t.Errorf("LastError = %q, want %q", got, "second")
 	}
 }

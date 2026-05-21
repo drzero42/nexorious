@@ -56,6 +56,7 @@ type Migrator struct {
 	bunMig            *bunmigrate.Migrator
 	logCh             chan string
 	logWriter         io.Writer
+	lastError         atomic.Value // string; "" or absent means no failure recorded
 }
 
 func NewMigrator(db *bun.DB) *Migrator {
@@ -109,6 +110,23 @@ func (mg *Migrator) DetermineState() error {
 
 func (mg *Migrator) TransitionToReady() {
 	mg.state.Store(int32(AppStateReady))
+}
+
+// TransitionToFailed records the error and switches state to AppStateMigrationFailed.
+// The stored value is always a string; never store an error value here or
+// atomic.Value will panic on subsequent loads of a different concrete type.
+func (mg *Migrator) TransitionToFailed(err error) {
+	mg.lastError.Store(err.Error())
+	mg.state.Store(int32(AppStateMigrationFailed))
+}
+
+// LastError returns the most recent migration error message, or "" if none.
+func (mg *Migrator) LastError() string {
+	v := mg.lastError.Load()
+	if v == nil {
+		return ""
+	}
+	return v.(string)
 }
 
 func (mg *Migrator) State() AppState {
