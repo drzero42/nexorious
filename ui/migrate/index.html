@@ -97,6 +97,10 @@
             throw new Error('Failed to start migration (HTTP ' + res.status + ')');
           }
           var es = new EventSource('/api/migrate/progress');
+          // Sentinel so es.onerror can distinguish a normal close (after the
+          // 'complete' event) from a real connection failure. Browsers fire
+          // an error event whenever an EventSource is closed.
+          var completed = false;
 
           es.onmessage = function(e) {
             log.textContent += e.data + '\n';
@@ -104,6 +108,7 @@
           };
 
           es.addEventListener('complete', function() {
+            completed = true;
             es.close();
             // RunMigrations closes the SSE channel before the handler runs
             // InitNeedsSetup and calls TransitionToReady, so the server may
@@ -120,6 +125,7 @@
           });
 
           es.onerror = function() {
+            if (completed) return; // normal close after a 'complete' event
             es.close();
             status.textContent = 'Connection lost. Check logs and refresh to retry.';
             status.className = 'meta meta--error';
