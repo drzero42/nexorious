@@ -35,3 +35,4 @@ func TestStorefrontToCollectionSlug_GOG(t *testing.T) {
 		t.Errorf("got %q", slug)
 	}
 }
+

@@ -45,13 +45,13 @@ func makeProductsServer(t *testing.T, pages [][]map[string]any) *httptest.Server
 	}))
 }
 
-func product(id int64, title string, windows, linux bool) map[string]any {
+func product(id int64, title string, windows, mac, linux bool) map[string]any {
 	return map[string]any{
 		"id":    id,
 		"title": title,
 		"worksOn": map[string]any{
 			"Windows": windows,
-			"Mac":     false,
+			"Mac":     mac,
 			"Linux":   linux,
 		},
 	}
@@ -59,7 +59,7 @@ func product(id int64, title string, windows, linux bool) map[string]any {
 
 func TestGetLibrary_SinglePage(t *testing.T) {
 	srv := makeProductsServer(t, [][]map[string]any{
-		{product(1001, "Game A", true, false)},
+		{product(1001, "Game A", true, false, false)},
 	})
 	defer srv.Close()
 
@@ -88,8 +88,8 @@ func TestGetLibrary_SinglePage(t *testing.T) {
 
 func TestGetLibrary_MultiPage(t *testing.T) {
 	pages := [][]map[string]any{
-		{product(1001, "Game A", true, false), product(1002, "Game B", true, false)},
-		{product(1003, "Game C", true, false)},
+		{product(1001, "Game A", true, false, false), product(1002, "Game B", true, false, false)},
+		{product(1003, "Game C", true, false, false)},
 	}
 	srv := makeProductsServer(t, pages)
 	defer srv.Close()
@@ -110,7 +110,7 @@ func TestGetLibrary_MultiPage(t *testing.T) {
 
 func TestGetLibrary_DualPlatform_EmitsTwoEntries(t *testing.T) {
 	srv := makeProductsServer(t, [][]map[string]any{
-		{product(2001, "Linux Game", true, true)},
+		{product(2001, "Linux Game", true, false, true)},
 	})
 	defer srv.Close()
 
@@ -143,7 +143,7 @@ func TestGetLibrary_DualPlatform_EmitsTwoEntries(t *testing.T) {
 
 func TestGetLibrary_WindowsOnlyEmitsOneEntry(t *testing.T) {
 	srv := makeProductsServer(t, [][]map[string]any{
-		{product(3001, "Windows Only", true, false)},
+		{product(3001, "Windows Only", true, false, false)},
 	})
 	defer srv.Close()
 
@@ -163,7 +163,7 @@ func TestGetLibrary_WindowsOnlyEmitsOneEntry(t *testing.T) {
 
 func TestGetLibrary_PlaytimeAlwaysZero(t *testing.T) {
 	srv := makeProductsServer(t, [][]map[string]any{
-		{product(4001, "Some Game", true, false)},
+		{product(4001, "Some Game", true, false, false)},
 	})
 	defer srv.Close()
 
@@ -178,5 +178,34 @@ func TestGetLibrary_PlaytimeAlwaysZero(t *testing.T) {
 	}
 	if entries[0].PlaytimeHours != 0 {
 		t.Errorf("PlaytimeHours should be 0, got %d", entries[0].PlaytimeHours)
+	}
+}
+
+func TestGetLibrary_MacGameEmitsMacEntry(t *testing.T) {
+	srv := makeProductsServer(t, [][]map[string]any{
+		{product(5001, "Mac Game", false, true, false)},
+	})
+	defer srv.Close()
+
+	c := gog.NewClientWithURLs(srv.URL, srv.URL)
+	var entries []gog.ExternalLibraryEntry
+	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+		entries = append(entries, batch...)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("GetLibrary: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("want 1 entry for Mac-only game, got %d", len(entries))
+	}
+	if entries[0].ExternalID != "5001" {
+		t.Errorf("ExternalID: got %q", entries[0].ExternalID)
+	}
+	if entries[0].Title != "Mac Game" {
+		t.Errorf("Title: got %q", entries[0].Title)
+	}
+	if entries[0].RawPlatform != "pc-mac" {
+		t.Errorf("RawPlatform: got %q", entries[0].RawPlatform)
 	}
 }

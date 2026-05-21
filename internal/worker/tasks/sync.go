@@ -26,7 +26,8 @@ import (
 
 // SteamLibraryAdapter fetches the Steam game library.
 type SteamLibraryAdapter interface {
-	GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]steamsvc.ExternalLibraryEntry, error)
+	GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]steamsvc.OwnedGame, error)
+	GetAppDetailsPlatforms(ctx context.Context, appID int) (steamsvc.Platforms, error)
 }
 
 // PSNLibraryAdapter fetches the PSN game library.
@@ -183,35 +184,75 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			failSyncJob(ctx, w.DB, p.JobID, "invalid steam credentials")
 			return nil
 		}
-		raw, err := w.Steam.GetOwnedGames(ctx, creds.WebAPIKey, creds.SteamID)
+		owned, err := w.Steam.GetOwnedGames(ctx, creds.WebAPIKey, creds.SteamID)
 		if err != nil {
 			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("fetch steam library: %v", err))
 			return nil
 		}
 
-		rawPlatformByExtID := make(map[string]string, len(raw))
-		for _, e := range raw {
-			fetchedIDs[e.ExternalID] = struct{}{}
-			rawPlatformByExtID[e.ExternalID] = e.RawPlatform
-			ownership := e.OwnershipStatus
-			upsertNow := time.Now().UTC()
-			row := &models.ExternalGame{
-				ID:              uuid.NewString(),
-				UserID:          p.UserID,
-				Storefront:      p.Storefront,
-				ExternalID:      e.ExternalID,
-				Title:           e.Title,
-				IsAvailable:     true,
-				IsSubscription:  e.IsSubscription,
-				PlaytimeHours:   e.PlaytimeHours,
-				OwnershipStatus: &ownership,
-				RawPlatform:     e.RawPlatform,
-				CreatedAt:       upsertNow,
-				UpdatedAt:       upsertNow,
+		// Batch-load existing platform rows — rows already present skip appdetails.
+		var cachedRows []struct {
+			ExternalID  string `bun:"external_id"`
+			RawPlatform string `bun:"raw_platform"`
+		}
+		_ = w.DB.NewRaw(
+			`SELECT external_id, raw_platform FROM external_games WHERE user_id = ? AND storefront = 'steam'`,
+			p.UserID,
+		).Scan(ctx, &cachedRows)
+		existing := make(map[string][]string, len(cachedRows))
+		for _, r := range cachedRows {
+			existing[r.ExternalID] = append(existing[r.ExternalID], r.RawPlatform)
+		}
+
+		for _, og := range owned {
+			appidStr := fmt.Sprintf("%d", og.AppID)
+			fetchedIDs[appidStr] = struct{}{}
+
+			platforms := existing[appidStr]
+			if len(platforms) == 0 {
+				pl, detErr := w.Steam.GetAppDetailsPlatforms(ctx, og.AppID)
+				if detErr != nil {
+					if ctx.Err() != nil {
+						return nil // context cancelled; exit cleanly
+					}
+					slog.Warn("steam appdetails failed, skipping game this sync", "appid", og.AppID, "err", detErr)
+					continue
+				}
+				if pl.Windows {
+					platforms = append(platforms, "pc-windows")
+				}
+				if pl.Mac {
+					platforms = append(platforms, "pc-mac")
+				}
+				if pl.Linux {
+					platforms = append(platforms, "pc-linux")
+				}
+				if len(platforms) == 0 {
+					platforms = []string{"pc-windows"}
+				}
 			}
-			_, _ = w.DB.NewInsert().Model(row).
-				On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
-				Exec(ctx)
+
+			ownership := "owned"
+			upsertNow := time.Now().UTC()
+			for _, raw := range platforms {
+				row := &models.ExternalGame{
+					ID:              uuid.NewString(),
+					UserID:          p.UserID,
+					Storefront:      p.Storefront,
+					ExternalID:      appidStr,
+					Title:           og.Title,
+					IsAvailable:     true,
+					IsSubscription:  false,
+					PlaytimeHours:   og.PlaytimeHours,
+					OwnershipStatus: &ownership,
+					RawPlatform:     raw,
+					CreatedAt:       upsertNow,
+					UpdatedAt:       upsertNow,
+				}
+				_, _ = w.DB.NewInsert().Model(row).
+					On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
+					Exec(ctx)
+			}
 		}
 
 		var toProcess []models.ExternalGame
@@ -219,9 +260,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			Where("user_id = ? AND storefront = ? AND is_available = true AND is_skipped = false", p.UserID, p.Storefront).
 			Scan(ctx)
 		for _, eg := range toProcess {
+			itemKey := eg.ExternalID + ":" + eg.RawPlatform
 			metaJSON, _ := json.Marshal(map[string]any{
 				"external_game_id": eg.ID,
-				"raw_platform":     rawPlatformByExtID[eg.ExternalID],
+				"raw_platform":     eg.RawPlatform,
 				"playtime_hours":   eg.PlaytimeHours,
 			})
 			itemID := uuid.NewString()
@@ -229,7 +271,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
 				 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
 				 ON CONFLICT (job_id, item_key) DO NOTHING`,
-				itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
+				itemID, p.JobID, p.UserID, itemKey, eg.Title, string(metaJSON),
 			).Exec(ctx)
 			if w.RiverClient != nil {
 				_, _ = w.RiverClient.Insert(ctx, ProcessSyncItemArgs{JobItemID: itemID}, nil)

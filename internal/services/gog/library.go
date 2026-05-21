@@ -13,7 +13,7 @@ import (
 type ExternalLibraryEntry struct {
 	ExternalID      string
 	Title           string
-	RawPlatform     string // "pc-windows" or "pc-linux"
+	RawPlatform     string // "pc-windows", "pc-mac", or "pc-linux"
 	PlaytimeHours   int
 	OwnershipStatus string
 	IsSubscription  bool
@@ -85,10 +85,7 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 		return nil, 0, fmt.Errorf("gog: decode library response: %w", err)
 	}
 
-	numPages := body.NumPages
-	if numPages < 1 {
-		numPages = 1
-	}
+	numPages := max(body.NumPages, 1)
 
 	entries := make([]ExternalLibraryEntry, 0, len(body.Products)*2)
 	for _, p := range body.Products {
@@ -98,6 +95,16 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 				ExternalID:      id,
 				Title:           p.Title,
 				RawPlatform:     "pc-windows",
+				PlaytimeHours:   0,
+				OwnershipStatus: "owned",
+				IsSubscription:  false,
+			})
+		}
+		if p.WorksOn.Mac {
+			entries = append(entries, ExternalLibraryEntry{
+				ExternalID:      id,
+				Title:           p.Title,
+				RawPlatform:     "pc-mac",
 				PlaytimeHours:   0,
 				OwnershipStatus: "owned",
 				IsSubscription:  false,
