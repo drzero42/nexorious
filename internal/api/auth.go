@@ -223,8 +223,9 @@ func (h *AuthHandler) HandleLogout(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 
 	var req logoutRequest
-	// A missing/malformed body still results in 200 — logout is idempotent.
-	_ = c.Bind(&req)
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
 
 	if req.RefreshToken == "" {
 		return c.JSON(http.StatusOK, map[string]string{"message": "Successfully logged out"})
