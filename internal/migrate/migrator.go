@@ -24,6 +24,7 @@ const (
 	AppStateNeedsMigration
 	AppStateMigrating
 	AppStateReady
+	AppStateMigrationFailed
 )
 
 func (s AppState) String() string {
@@ -36,6 +37,8 @@ func (s AppState) String() string {
 		return "migrating"
 	case AppStateReady:
 		return "ready"
+	case AppStateMigrationFailed:
+		return "migration_failed"
 	default:
 		return "unknown"
 	}

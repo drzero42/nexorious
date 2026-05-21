@@ -296,3 +296,9 @@ func TestStartDBProbe_RespectsContext(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	// No assertion needed — if the goroutine leaks, the race detector will catch it.
 }
+
+func TestAppState_String_MigrationFailed(t *testing.T) {
+	if got := migrate.AppStateMigrationFailed.String(); got != "migration_failed" {
+		t.Errorf("AppStateMigrationFailed.String() = %q, want %q", got, "migration_failed")
+	}
+}
