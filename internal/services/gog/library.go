@@ -13,7 +13,7 @@ import (
 type ExternalLibraryEntry struct {
 	ExternalID      string
 	Title           string
-	RawPlatform     string // "pc-windows" or "pc-linux"
+	RawPlatform     string // "pc-windows", "pc-mac", or "pc-linux"
 	PlaytimeHours   int
 	OwnershipStatus string
 	IsSubscription  bool
@@ -98,6 +98,16 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 				ExternalID:      id,
 				Title:           p.Title,
 				RawPlatform:     "pc-windows",
+				PlaytimeHours:   0,
+				OwnershipStatus: "owned",
+				IsSubscription:  false,
+			})
+		}
+		if p.WorksOn.Mac {
+			entries = append(entries, ExternalLibraryEntry{
+				ExternalID:      id,
+				Title:           p.Title,
+				RawPlatform:     "pc-mac",
 				PlaytimeHours:   0,
 				OwnershipStatus: "owned",
 				IsSubscription:  false,
