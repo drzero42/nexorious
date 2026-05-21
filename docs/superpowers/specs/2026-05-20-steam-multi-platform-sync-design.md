@@ -35,7 +35,6 @@ DispatchSyncWorker (storefront = "steam"):
   2. existingPlatformsByAppID := SELECT external_id, raw_platform
                                   FROM external_games
                                   WHERE user_id = ? AND storefront = 'steam'
-                                  GROUP BY external_id
                                   → map[appidStr][]string
   3. for each og := range owned:
        appidStr := strconv.Itoa(og.AppID)
@@ -82,9 +81,9 @@ The cache lookup at step 2 is a single batched query, not N queries.
 - New type:
   ```go
   type Platforms struct {
-      Windows bool `json:"windows"`
-      Mac     bool `json:"mac"`
-      Linux   bool `json:"linux"`
+      Windows bool
+      Mac     bool
+      Linux   bool
   }
   ```
 - `GetOwnedGames(ctx, apiKey, steamID string) ([]OwnedGame, error)` — the previous return type `[]ExternalLibraryEntry` is removed from this method. The Steam-specific platform fan-out moves to the worker.
