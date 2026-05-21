@@ -210,10 +210,11 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 
 	group, err := mg.bunMig.Migrate(ctx)
 	if err != nil {
+		wrapped := fmt.Errorf("migrate: bun: %w", err)
 		mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", err))
-		mg.TransitionToFailed(err)
+		mg.TransitionToFailed(wrapped)
 		close(ch)
-		return err
+		return wrapped
 	}
 	if group.IsZero() {
 		mg.sendLog(ch, "No new migrations to run\n")
