@@ -42,9 +42,7 @@ export enum JobItemStatus {
   IGDB_FAILED = 'igdb_failed',
 }
 
-export enum JobPriority {
-  HIGH = 'high',
-}
+export type JobPriority = 'low' | 'normal' | 'high';
 
 // ============================================================================
 // Interfaces

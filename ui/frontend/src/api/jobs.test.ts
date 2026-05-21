@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as jobsApi from './jobs';
 import { api } from './client';
-import { JobType, JobSource, JobStatus, JobPriority } from '@/types';
+import { JobType, JobSource, JobStatus } from '@/types';
 
 vi.mock('./client', () => ({
   api: {
@@ -67,7 +67,7 @@ describe('jobsApi', () => {
       expect(result.jobs[0].jobType).toBe(JobType.SYNC);
       expect(result.jobs[0].source).toBe(JobSource.STEAM);
       expect(result.jobs[0].status).toBe(JobStatus.PROCESSING);
-      expect(result.jobs[0].priority).toBe(JobPriority.HIGH);
+      expect(result.jobs[0].priority).toBe('high');
       expect(result.jobs[0].progress.pending).toBe(10);
       expect(result.jobs[0].progress.completed).toBe(30);
       expect(result.jobs[0].progress.pendingReview).toBe(3);
