@@ -390,9 +390,12 @@ func (h *SyncHandler) HandleTriggerSync(c *echo.Context) error {
 	}
 
 	if h.riverClient != nil {
-		_, _ = h.riverClient.Insert(ctx, tasks.DispatchSyncArgs{
+		if _, err = h.riverClient.Insert(ctx, tasks.DispatchSyncArgs{
 			JobID: jobID, UserID: userID, Storefront: sf,
-		}, nil)
+		}, nil); err != nil {
+			slog.Error("sync: enqueue dispatch failed", "err", err, "job_id", jobID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync job")
+		}
 	}
 
 	return c.JSON(http.StatusOK, manualSyncTriggerResponse{
@@ -488,9 +491,12 @@ func (h *SyncHandler) HandleSteamVerify(c *echo.Context) error {
 		Frequency: "manual", StorefrontCredentials: &credsStr,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	_, _ = h.db.NewInsert().Model(row).
+	if _, err := h.db.NewInsert().Model(row).
 		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, updated_at = EXCLUDED.updated_at").
-		Exec(context.Background())
+		Exec(context.Background()); err != nil {
+		slog.Error("sync: persist steam credentials failed", "err", err, "user_id", userID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Steam connection")
+	}
 
 	name := summary.PersonaName
 	return c.JSON(http.StatusOK, steamVerifyResponse{Valid: true, SteamUsername: &name})
@@ -501,10 +507,13 @@ func (h *SyncHandler) HandleSteamDisconnect(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	_, _ = h.db.NewRaw(
+	if _, err := h.db.NewRaw(
 		`UPDATE user_sync_configs SET storefront_credentials = NULL, updated_at = now() WHERE user_id = ? AND storefront = 'steam'`,
 		userID,
-	).Exec(context.Background())
+	).Exec(context.Background()); err != nil {
+		slog.Error("sync: steam disconnect failed", "err", err, "user_id", userID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect Steam")
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -605,10 +614,13 @@ func (h *SyncHandler) HandlePSNDisconnect(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	_, _ = h.db.NewRaw(
+	if _, err := h.db.NewRaw(
 		`UPDATE user_sync_configs SET storefront_credentials = NULL, updated_at = now() WHERE user_id = ? AND storefront = 'psn'`,
 		userID,
-	).Exec(context.Background())
+	).Exec(context.Background()); err != nil {
+		slog.Error("sync: psn disconnect failed", "err", err, "user_id", userID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect PSN")
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -678,12 +690,17 @@ func (h *SyncHandler) HandleEpicDisconnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	ctx := context.Background()
-	_, _ = h.db.NewRaw(
+	if _, err := h.db.NewRaw(
 		`UPDATE user_sync_configs SET storefront_credentials = NULL, epic_legendary_state = NULL, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
 		userID,
-	).Exec(ctx)
+	).Exec(ctx); err != nil {
+		slog.Error("sync: epic disconnect failed", "err", err, "user_id", userID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect Epic")
+	}
 	if h.epicClient != nil {
-		_ = h.epicClient.Cleanup(ctx, userID)
+		if err := h.epicClient.Cleanup(ctx, userID); err != nil {
+			slog.Error("sync: epic cleanup failed", "err", err, "user_id", userID)
+		}
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -771,9 +788,12 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to find game")
 	}
 
-	_, _ = h.db.NewRaw(
+	if _, err := h.db.NewRaw(
 		`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ?`, id,
-	).Exec(ctx)
+	).Exec(ctx); err != nil {
+		slog.Error("sync: skip game failed", "err", err, "external_game_id", id)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -794,9 +814,12 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to find game")
 	}
 
-	_, _ = h.db.NewRaw(
+	if _, err := h.db.NewRaw(
 		`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE id = ?`, id,
-	).Exec(ctx)
+	).Exec(ctx); err != nil {
+		slog.Error("sync: unskip game failed", "err", err, "external_game_id", id)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to unskip game")
+	}
 
 	// Enqueue immediate re-processing. Failure here is non-fatal — the game
 	// will be picked up on the next full sync.
@@ -813,13 +836,19 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 			"raw_platform":     eg.RawPlatform,
 		})
 		itemID := uuid.NewString()
-		_, _ = h.db.NewRaw(
+		if _, err := h.db.NewRaw(
 			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
 			 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
 			itemID, jobID, userID, eg.ExternalID, eg.Title, string(meta),
-		).Exec(ctx)
+		).Exec(ctx); err != nil {
+			slog.Error("sync: insert job_item for unskip failed", "err", err, "external_game_id", eg.ID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
+		}
 		if h.riverClient != nil {
-			_, _ = h.riverClient.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: itemID}, nil)
+			if _, err := h.riverClient.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: itemID}, nil); err != nil {
+				slog.Error("sync: enqueue process_sync_item failed", "err", err, "job_item_id", itemID)
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
+			}
 		}
 	}
 
@@ -894,17 +923,23 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 		`SELECT * FROM jobs WHERE user_id = ? AND source = ? AND job_type = 'sync' AND status IN ('pending', 'processing') LIMIT 1`,
 		userID, sf,
 	).Scan(ctx, &activeJob); err == nil {
-		_, _ = h.db.NewRaw(
+		if _, err := h.db.NewRaw(
 			`UPDATE jobs SET status = ?, completed_at = now() WHERE id = ?`,
 			models.JobStatusCancelled, activeJob.ID,
-		).Exec(ctx)
-		_, _ = h.db.NewRaw(`
+		).Exec(ctx); err != nil {
+			slog.Error("sync: cancel active job failed", "err", err, "job_id", activeJob.ID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel active job")
+		}
+		if _, err := h.db.NewRaw(`
 			UPDATE river_job
 			SET state = 'cancelled', finalized_at = now()
 			WHERE state IN ('available', 'scheduled', 'retryable', 'pending')
 			  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE job_id = ?)`,
 			activeJob.ID,
-		).Exec(ctx)
+		).Exec(ctx); err != nil {
+			slog.Error("sync: cancel river jobs failed", "err", err, "job_id", activeJob.ID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel queued tasks")
+		}
 	}
 
 	if err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
@@ -981,25 +1016,37 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		}
 
 		// Delete the platform link.
-		_, _ = h.db.NewRaw(`DELETE FROM user_game_platforms WHERE id = ?`, ugpID).Exec(ctx)
+		if _, err := h.db.NewRaw(`DELETE FROM user_game_platforms WHERE id = ?`, ugpID).Exec(ctx); err != nil {
+			slog.Error("sync: delete user_game_platform failed", "err", err, "ugp_id", ugpID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to remove platform link")
+		}
 
 		// Apply orphan decision.
 		if otherCount == 0 && body.OrphanAction == "remove" {
-			_, _ = h.db.NewRaw(`DELETE FROM user_games WHERE id = ?`, ugID).Exec(ctx)
+			if _, err := h.db.NewRaw(`DELETE FROM user_games WHERE id = ?`, ugID).Exec(ctx); err != nil {
+				slog.Error("sync: delete user_game failed", "err", err, "user_game_id", ugID)
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to remove game")
+			}
 		}
 	}
 
 	// Ensure the games row exists (FK on external_games.resolved_igdb_id).
-	_, _ = h.db.NewRaw(
+	if _, err := h.db.NewRaw(
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 		body.IGDBID, eg.Title,
-	).Exec(ctx)
+	).Exec(ctx); err != nil {
+		slog.Error("sync: ensure game row failed", "err", err, "igdb_id", body.IGDBID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve game")
+	}
 
 	// Update external_game.
-	_, _ = h.db.NewRaw(
+	if _, err := h.db.NewRaw(
 		`UPDATE external_games SET resolved_igdb_id = ?, is_skipped = false, updated_at = now() WHERE id = ?`,
 		body.IGDBID, id,
-	).Exec(ctx)
+	).Exec(ctx); err != nil {
+		slog.Error("sync: update external_game resolution failed", "err", err, "external_game_id", id)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update external game")
+	}
 
 	// Create a mini-job and job_item, then enqueue ProcessSyncItem.
 	jobID := uuid.NewString()
@@ -1028,7 +1075,10 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 
 	if h.riverClient != nil {
-		_, _ = h.riverClient.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: itemID}, nil)
+		if _, err = h.riverClient.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: itemID}, nil); err != nil {
+			slog.Error("sync: enqueue process_sync_item failed", "err", err, "job_item_id", itemID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
+		}
 	}
 
 	return c.NoContent(http.StatusNoContent)
@@ -1089,10 +1139,13 @@ func (h *SyncHandler) HandleGOGDisconnect(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	_, _ = h.db.NewRaw(
+	if _, err := h.db.NewRaw(
 		`UPDATE user_sync_configs SET storefront_credentials = NULL, updated_at = now() WHERE user_id = ? AND storefront = 'gog'`,
 		userID,
-	).Exec(context.Background())
+	).Exec(context.Background()); err != nil {
+		slog.Error("sync: gog disconnect failed", "err", err, "user_id", userID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect GOG")
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
