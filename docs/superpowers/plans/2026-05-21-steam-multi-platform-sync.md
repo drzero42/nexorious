@@ -4,7 +4,7 @@
 
 **Goal:** Emit one `external_games` row per platform per Steam game by calling `store.steampowered.com/api/appdetails` per appid, cache results in `external_games`, and add parity fixes for GOG Mac emission and `pc-mac` platform resolution.
 
-**Architecture:** Steam sync calls `GetOwnedGames` for appids/titles, batch-queries existing `external_games` rows as a per-user cache, calls `GetAppDetailsPlatforms` per uncached appid (rate-limited 5 req/s), and fans out one upsert per detected platform. `item_key` for Steam job_items changes to `external_id:raw_platform` matching the GOG pattern. GOG gains a Mac emission branch. `platformresolution` learns `pc-mac → mac`. No schema change required.
+**Architecture:** Steam sync calls `GetOwnedGames` for appids/titles, batch-queries existing `external_games` rows as a per-user cache, calls `GetAppDetailsPlatforms` per uncached appid (rate-limited 5 req/s), and fans out one upsert per detected platform. `item_key` for Steam job_items changes to `external_id:raw_platform` matching the GOG pattern. GOG gains a Mac emission branch. `platformresolution` learns `pc-mac → mac`. One data migration adds `('mac', 'gog')` to `platform_storefronts`.
 
 **Tech Stack:** Go 1.25, `golang.org/x/time/rate`, `net/http/httptest` (tests), `uptrace/bun` (DB), `riverqueue/river` (job queue)
 
@@ -178,7 +178,48 @@ git commit -m "feat(gog): emit pc-mac entries for Mac-supported games"
 
 ---
 
-### Task 3: Refactor steam client and update consumers atomically
+### Task 3: Add `('mac', 'gog')` to `platform_storefronts` via migration
+
+GOG will now emit `pc-mac` entries. Without a `platform_storefronts` row linking `mac` to `gog`, `GET /api/platforms/mac/storefronts` silently omits GOG and the sync item would fail platform resolution for those entries.
+
+**Files:**
+- Create: `internal/db/migrations/20260521000001_mac_gog_platform_storefront.up.sql`
+- Create: `internal/db/migrations/20260521000001_mac_gog_platform_storefront.down.sql`
+
+- [ ] **Step 1: Create the up migration**
+
+Create `internal/db/migrations/20260521000001_mac_gog_platform_storefront.up.sql`:
+
+```sql
+INSERT INTO platform_storefronts (platform, storefront) VALUES ('mac', 'gog');
+```
+
+- [ ] **Step 2: Create the down migration**
+
+Create `internal/db/migrations/20260521000001_mac_gog_platform_storefront.down.sql`:
+
+```sql
+DELETE FROM platform_storefronts WHERE platform = 'mac' AND storefront = 'gog';
+```
+
+- [ ] **Step 3: Verify the build still compiles (migrations auto-discovered)**
+
+```bash
+go build ./...
+```
+Expected: zero errors — `migrations.go` uses `//go:embed *.sql` and picks up the new files automatically.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add internal/db/migrations/20260521000001_mac_gog_platform_storefront.up.sql \
+        internal/db/migrations/20260521000001_mac_gog_platform_storefront.down.sql
+git commit -m "feat(migrations): add mac/gog platform_storefronts entry"
+```
+
+---
+
+### Task 4: Refactor steam client and update consumers atomically
 
 Changing `GetOwnedGames`'s return type from `[]ExternalLibraryEntry` to `[]OwnedGame` breaks `sync.go` and `sync_test.go`. All three files must be updated together to keep the build green. This task also adds `GetAppDetailsPlatforms`, the rate limiter, and base-URL fields for test injection, plus creates `client_test.go`.
 
@@ -672,7 +713,7 @@ git commit -m "feat(steam): add OwnedGame/Platforms types, GetAppDetailsPlatform
 
 ---
 
-### Task 4: Rewrite Steam dispatch case with multi-platform logic
+### Task 5: Rewrite Steam dispatch case with multi-platform logic
 
 **Files:**
 - Modify: `internal/worker/tasks/sync.go`
@@ -966,6 +1007,9 @@ Find the `case "steam":` block in `Work()` (starts after the storefront switch a
 			if len(platforms) == 0 {
 				pl, detErr := w.Steam.GetAppDetailsPlatforms(ctx, og.AppID)
 				if detErr != nil {
+					if ctx.Err() != nil {
+						return nil // context cancelled; exit cleanly
+					}
 					slog.Warn("steam appdetails failed, skipping game this sync", "appid", og.AppID, "err", detErr)
 					continue
 				}
@@ -1055,7 +1099,7 @@ git commit -m "feat(steam): multi-platform detection via appdetails with externa
 
 ---
 
-### Task 5: Final verification and plan file commit
+### Task 6: Final verification and plan file commit
 
 - [ ] **Step 1: Run linter**
 
