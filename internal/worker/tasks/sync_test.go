@@ -341,6 +341,237 @@ func TestDispatchSync_SteamSuccess(t *testing.T) {
 	}
 }
 
+func TestDispatchSync_Steam_MultiPlatform_WindowsAndLinux(t *testing.T) {
+	// appdetails reports {Windows, Linux} for appid 730 →
+	// expect two external_games rows and two job_items keyed "730:pc-windows" / "730:pc-linux".
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	creds := `{"web_api_key":"k","steam_id":"s"}`
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
+		uuid.NewString(), userID, creds,
+	).Exec(ctx)
+
+	adapter := &fakeSteamAdapter{
+		games: []steamsvc.OwnedGame{
+			{AppID: 730, Title: "Counter-Strike 2", PlaytimeHours: 100},
+		},
+		platformsByAppID: map[int]steamsvc.Platforms{
+			730: {Windows: true, Linux: true},
+		},
+	}
+	rc := newTestRiverClient(t)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var egCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'steam' AND external_id = '730'`,
+		userID,
+	).Scan(ctx, &egCount)
+	if egCount != 2 {
+		t.Errorf("expected 2 external_games rows (Windows+Linux), got %d", egCount)
+	}
+
+	var itemCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
+	if itemCount != 2 {
+		t.Errorf("expected 2 job_items, got %d", itemCount)
+	}
+
+	var keys []string
+	_ = testDB.NewRaw(
+		`SELECT item_key FROM job_items WHERE job_id = ? ORDER BY item_key`, jobID,
+	).Scan(ctx, &keys)
+	if len(keys) != 2 || keys[0] != "730:pc-linux" || keys[1] != "730:pc-windows" {
+		t.Errorf("unexpected item_keys: %v", keys)
+	}
+}
+
+func TestDispatchSync_Steam_CacheHit_SkipsAppDetails(t *testing.T) {
+	// Pre-seed an external_games row for appid 999.
+	// Worker must NOT call GetAppDetailsPlatforms for 999; existing row stays available.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	creds := `{"web_api_key":"k","steam_id":"s"}`
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
+		uuid.NewString(), userID, creds,
+	).Exec(ctx)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, raw_platform, is_available, is_skipped, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'steam', '999', 'Cached Game', 'pc-linux', true, false, false, 0)`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	adapter := &fakeSteamAdapter{
+		games: []steamsvc.OwnedGame{
+			{AppID: 999, Title: "Cached Game", PlaytimeHours: 5},
+		},
+	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, id := range adapter.queriedAppIDs {
+		if id == 999 {
+			t.Errorf("GetAppDetailsPlatforms was called for cached appid 999")
+		}
+	}
+
+	var isAvail bool
+	_ = testDB.NewRaw(
+		`SELECT is_available FROM external_games WHERE user_id = ? AND storefront = 'steam' AND external_id = '999'`,
+		userID,
+	).Scan(ctx, &isAvail)
+	if !isAvail {
+		t.Error("expected pre-seeded external_games row to remain is_available=true")
+	}
+}
+
+func TestDispatchSync_Steam_AppDetailsFailure_NoRowNoItem(t *testing.T) {
+	// First-time sync: GetAppDetailsPlatforms returns an error for appid 888 →
+	// no external_games row written, no job_item created.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	creds := `{"web_api_key":"k","steam_id":"s"}`
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
+		uuid.NewString(), userID, creds,
+	).Exec(ctx)
+
+	adapter := &fakeSteamAdapter{
+		games: []steamsvc.OwnedGame{
+			{AppID: 888, Title: "Rate Limited Game", PlaytimeHours: 0},
+		},
+		platformErrByAppID: map[int]error{
+			888: errors.New("appdetails 429: rate limited"),
+		},
+	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var egCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'steam'`,
+		userID,
+	).Scan(ctx, &egCount)
+	if egCount != 0 {
+		t.Errorf("expected 0 external_games rows after appdetails failure, got %d", egCount)
+	}
+
+	var itemCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
+	if itemCount != 0 {
+		t.Errorf("expected 0 job_items for appdetails failure, got %d", itemCount)
+	}
+
+	queried := false
+	for _, id := range adapter.queriedAppIDs {
+		if id == 888 {
+			queried = true
+		}
+	}
+	if !queried {
+		t.Error("expected GetAppDetailsPlatforms to be called for appid 888")
+	}
+}
+
+func TestDispatchSync_Steam_NoPlatformsFallback_EmitsWindowsRow(t *testing.T) {
+	// appdetails returns Platforms{} (success=true, all false) for appid 777 →
+	// worker falls back to a single pc-windows row, item_key = "777:pc-windows".
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	creds := `{"web_api_key":"k","steam_id":"s"}`
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
+		uuid.NewString(), userID, creds,
+	).Exec(ctx)
+
+	adapter := &fakeSteamAdapter{
+		games: []steamsvc.OwnedGame{
+			{AppID: 777, Title: "No Platform Game", PlaytimeHours: 0},
+		},
+		platformsByAppID: map[int]steamsvc.Platforms{
+			777: {}, // all false
+		},
+	}
+	rc := newTestRiverClient(t)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var egCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'steam' AND external_id = '777' AND raw_platform = 'pc-windows'`,
+		userID,
+	).Scan(ctx, &egCount)
+	if egCount != 1 {
+		t.Errorf("expected 1 pc-windows external_games row for no-platforms fallback, got %d", egCount)
+	}
+
+	var itemKey string
+	_ = testDB.NewRaw(`SELECT item_key FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemKey)
+	if itemKey != "777:pc-windows" {
+		t.Errorf("expected item_key=777:pc-windows, got %q", itemKey)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ProcessSyncItemWorker — basic cases
 // ---------------------------------------------------------------------------
