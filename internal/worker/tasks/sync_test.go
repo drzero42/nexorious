@@ -31,12 +31,30 @@ import (
 
 // fakeSteamAdapter implements SteamLibraryAdapter for testing.
 type fakeSteamAdapter struct {
-	games []steamsvc.ExternalLibraryEntry
-	err   error
+	games              []steamsvc.OwnedGame
+	ownedErr           error
+	platformsByAppID   map[int]steamsvc.Platforms // nil entry → default {Windows: true}
+	platformErrByAppID map[int]error
+	queriedAppIDs      []int
 }
 
-func (f *fakeSteamAdapter) GetOwnedGames(_ context.Context, _, _ string) ([]steamsvc.ExternalLibraryEntry, error) {
-	return f.games, f.err
+func (f *fakeSteamAdapter) GetOwnedGames(_ context.Context, _, _ string) ([]steamsvc.OwnedGame, error) {
+	return f.games, f.ownedErr
+}
+
+func (f *fakeSteamAdapter) GetAppDetailsPlatforms(_ context.Context, appID int) (steamsvc.Platforms, error) {
+	f.queriedAppIDs = append(f.queriedAppIDs, appID)
+	if f.platformErrByAppID != nil {
+		if err, ok := f.platformErrByAppID[appID]; ok {
+			return steamsvc.Platforms{}, err
+		}
+	}
+	if f.platformsByAppID != nil {
+		if pl, ok := f.platformsByAppID[appID]; ok {
+			return pl, nil
+		}
+	}
+	return steamsvc.Platforms{Windows: true}, nil
 }
 
 // fakePSNAdapter implements PSNLibraryAdapter for testing.
@@ -253,7 +271,7 @@ func TestDispatchSync_SteamFetchError(t *testing.T) {
 		configID, userID, creds,
 	).Exec(ctx)
 
-	adapter := &fakeSteamAdapter{err: errSteamFetch}
+	adapter := &fakeSteamAdapter{ownedErr: errSteamFetch}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
@@ -294,8 +312,8 @@ func TestDispatchSync_SteamSuccess(t *testing.T) {
 	).Exec(ctx)
 
 	adapter := &fakeSteamAdapter{
-		games: []steamsvc.ExternalLibraryEntry{
-			{ExternalID: "730", Title: "Counter-Strike 2", RawPlatform: "PC", PlaytimeHours: 100, OwnershipStatus: "owned"},
+		games: []steamsvc.OwnedGame{
+			{AppID: 730, Title: "Counter-Strike 2", PlaytimeHours: 100},
 		},
 	}
 	rc := newTestRiverClient(t)

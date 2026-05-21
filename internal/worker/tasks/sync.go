@@ -26,7 +26,8 @@ import (
 
 // SteamLibraryAdapter fetches the Steam game library.
 type SteamLibraryAdapter interface {
-	GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]steamsvc.ExternalLibraryEntry, error)
+	GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]steamsvc.OwnedGame, error)
+	GetAppDetailsPlatforms(ctx context.Context, appID int) (steamsvc.Platforms, error)
 }
 
 // PSNLibraryAdapter fetches the PSN game library.
@@ -191,21 +192,22 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 
 		rawPlatformByExtID := make(map[string]string, len(raw))
 		for _, e := range raw {
-			fetchedIDs[e.ExternalID] = struct{}{}
-			rawPlatformByExtID[e.ExternalID] = e.RawPlatform
-			ownership := e.OwnershipStatus
+			extID := fmt.Sprintf("%d", e.AppID)
+			fetchedIDs[extID] = struct{}{}
+			rawPlatformByExtID[extID] = "pc-windows"
+			ownership := "owned"
 			upsertNow := time.Now().UTC()
 			row := &models.ExternalGame{
 				ID:              uuid.NewString(),
 				UserID:          p.UserID,
 				Storefront:      p.Storefront,
-				ExternalID:      e.ExternalID,
+				ExternalID:      extID,
 				Title:           e.Title,
 				IsAvailable:     true,
-				IsSubscription:  e.IsSubscription,
+				IsSubscription:  false,
 				PlaytimeHours:   e.PlaytimeHours,
 				OwnershipStatus: &ownership,
-				RawPlatform:     e.RawPlatform,
+				RawPlatform:     "pc-windows",
 				CreatedAt:       upsertNow,
 				UpdatedAt:       upsertNow,
 			}
