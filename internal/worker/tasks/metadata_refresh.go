@@ -133,7 +133,9 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 
 	// Step 6 — Enqueue River jobs now that job_items are committed and visible.
 	for _, itemID := range itemIDs {
-		_, _ = w.RiverClient.Insert(ctx, MetadataRefreshItemArgs{JobItemID: itemID}, nil)
+		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, MetadataRefreshItemArgs{JobItemID: itemID}); err != nil {
+			slog.Error("metadata_refresh_dispatch: enqueue item failed", "err", err, "job_id", jobID, "item_id", itemID)
+		}
 	}
 
 	slog.Info("metadata_refresh_dispatch: job created", "job_id", jobID, "game_count", len(games))
@@ -295,9 +297,11 @@ func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[Met
 				slog.Warn("metadata_refresh_item: cover art download failed",
 					"game_id", game.ID, "image_id", md.CoverImageID, "err", err)
 			} else if coverURLPath != "" {
-				_, _ = w.DB.NewRaw(
+				if _, err := w.DB.NewRaw(
 					`UPDATE games SET cover_art_url = ? WHERE id = ?`, coverURLPath, game.ID,
-				).Exec(ctx)
+				).Exec(ctx); err != nil {
+					slog.Error("metadata_refresh_item: update cover_art_url failed", "err", err, "game_id", game.ID)
+				}
 			}
 		}
 	}
