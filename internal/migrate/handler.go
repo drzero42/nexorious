@@ -47,11 +47,15 @@ func (h *Handler) HandleMigrateUI(c *echo.Context) error {
 func (h *Handler) HandleStatus(c *echo.Context) error {
 	state := h.migrator.State()
 
-	// In the failed state PendingCount may itself error (e.g. DB closed),
-	// and the UI does not need the pending count to render the failure card.
+	// In the failed state, try for a real pending count; fall back to 0 if
+	// PendingCount itself errors (e.g. DB closed during a Lock-acquire failure).
 	if state == AppStateMigrationFailed {
+		pending := 0
+		if n, err := h.migrator.PendingCount(); err == nil {
+			pending = n
+		}
 		return c.JSON(http.StatusOK, map[string]any{
-			"pending_count": 0,
+			"pending_count": pending,
 			"state":         state.String(),
 			"error":         h.migrator.LastError(),
 		})
