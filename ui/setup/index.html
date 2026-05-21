@@ -47,15 +47,8 @@
         <img src="/logo.svg" alt="">
         <h1 class="card-title">Restore from Backup</h1>
       </div>
-      <p class="card-description">Pick a backup found on disk, or upload one.</p>
+      <p class="card-description">Upload a backup file, or pick one already on disk.</p>
       <div class="alert-destructive" id="restore-err"></div>
-
-      <div id="ondisk-section">
-        <p id="ondisk-loading" class="card-description" style="margin:8px 0">Looking for backups on disk…</p>
-        <ul id="ondisk-list" class="ondisk-list" style="display:none; list-style:none; padding:0; margin:0 0 12px 0"></ul>
-        <p id="ondisk-empty" class="card-description" style="display:none; margin:8px 0">No backups found on disk — upload one instead.</p>
-        <p id="ondisk-or" class="card-description" style="display:none; margin:12px 0 8px 0"><strong>Or upload a backup file</strong></p>
-      </div>
 
       <input type="file" id="file-input" accept=".tar.gz" style="display:none">
       <div id="drop-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
@@ -71,6 +64,12 @@
         <button type="button" class="clear-btn" onclick="clearFile()" title="Remove">✕</button>
       </div>
       <button type="button" class="btn btn-primary" id="restore-btn" onclick="doRestore()" disabled>Restore</button>
+
+      <div id="ondisk-section">
+        <p id="ondisk-or" class="card-description" style="display:none; margin:16px 0 8px 0"><strong>Or restore from a backup found on disk</strong></p>
+        <ul id="ondisk-list" class="ondisk-list" style="display:none; list-style:none; padding:0; margin:0"></ul>
+      </div>
+
       <div class="footer-row">
         <button type="button" class="btn-link" onclick="showAdmin()">Cancel — create a new account instead</button>
       </div>
@@ -102,9 +101,7 @@
     async function loadOnDiskBackups() {
       if (_ondiskLoaded) return;
       _ondiskLoaded = true;
-      const loading = document.getElementById('ondisk-loading');
       const list = document.getElementById('ondisk-list');
-      const empty = document.getElementById('ondisk-empty');
       const orLine = document.getElementById('ondisk-or');
 
       let backups = [];
@@ -115,13 +112,12 @@
           backups = Array.isArray(data.backups) ? data.backups : [];
         }
       } catch {
-        // Fetch failure — fall through to "no backups" state.
+        // Fetch failure — leave the section hidden; upload zone above is sufficient.
       }
 
-      loading.style.display = 'none';
-
       if (backups.length === 0) {
-        empty.style.display = '';
+        // No on-disk backups (or fetch failed). Section stays hidden so the
+        // user just sees the upload zone, which is the only path that works.
         return;
       }
 
