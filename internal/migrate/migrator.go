@@ -197,19 +197,21 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 
 	ch := make(chan string, 256)
 	mg.logCh = ch
+	mg.lastError.Store("") // clear any previous failure before starting
 	mg.state.Store(int32(AppStateMigrating))
 
 	if err := mg.bunMig.Lock(ctx); err != nil {
-		mg.state.Store(int32(AppStateNeedsMigration))
+		wrapped := fmt.Errorf("migrate: acquire lock: %w", err)
+		mg.TransitionToFailed(wrapped)
 		close(ch)
-		return fmt.Errorf("migrate: acquire lock: %w", err)
+		return wrapped
 	}
 	defer mg.bunMig.Unlock(ctx) //nolint:errcheck
 
 	group, err := mg.bunMig.Migrate(ctx)
 	if err != nil {
 		mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", err))
-		mg.state.Store(int32(AppStateNeedsMigration))
+		mg.TransitionToFailed(err)
 		close(ch)
 		return err
 	}
@@ -221,17 +223,19 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 
 	riverMig, err := rivermigrate.New(riverdatabasesql.New(mg.db.DB), nil)
 	if err != nil {
+		wrapped := fmt.Errorf("migrate: River migrator: %w", err)
 		mg.sendLog(ch, fmt.Sprintf("River migration setup failed: %v\n", err))
-		mg.state.Store(int32(AppStateNeedsMigration))
+		mg.TransitionToFailed(wrapped)
 		close(ch)
-		return fmt.Errorf("migrate: River migrator: %w", err)
+		return wrapped
 	}
 	riverRes, err := riverMig.Migrate(ctx, rivermigrate.DirectionUp, nil)
 	if err != nil {
+		wrapped := fmt.Errorf("migrate: River: %w", err)
 		mg.sendLog(ch, fmt.Sprintf("River migration failed: %v\n", err))
-		mg.state.Store(int32(AppStateNeedsMigration))
+		mg.TransitionToFailed(wrapped)
 		close(ch)
-		return fmt.Errorf("migrate: River: %w", err)
+		return wrapped
 	}
 	if len(riverRes.Versions) == 0 {
 		mg.sendLog(ch, "No new River migrations to run\n")
