@@ -586,7 +586,10 @@ func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
 		IsVerified     bool       `json:"is_verified"`
 		TokenExpiredAt *time.Time `json:"token_expired_at"`
 	}
-	_ = json.Unmarshal([]byte(*row.StorefrontCredentials), &creds)
+	if err := json.Unmarshal([]byte(*row.StorefrontCredentials), &creds); err != nil {
+		slog.Error("psn: stored credentials are corrupted", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
+	}
 
 	return c.JSON(http.StatusOK, psnStatusResponse{
 		IsConfigured: true,
@@ -719,7 +722,10 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 		DisplayName string `json:"display_name"`
 		AccountID   string `json:"account_id"`
 	}
-	_ = json.Unmarshal([]byte(*row.StorefrontCredentials), &creds)
+	if err := json.Unmarshal([]byte(*row.StorefrontCredentials), &creds); err != nil {
+		slog.Error("epic: stored credentials are corrupted", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
+	}
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"connected":    true,
@@ -1119,7 +1125,10 @@ func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
 		Username string `json:"username"`
 		UserID   string `json:"user_id"`
 	}
-	_ = json.Unmarshal([]byte(*row.StorefrontCredentials), &creds)
+	if err := json.Unmarshal([]byte(*row.StorefrontCredentials), &creds); err != nil {
+		slog.Error("gog: stored credentials are corrupted", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
+	}
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"connected": true,
