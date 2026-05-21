@@ -127,28 +127,14 @@
 
       backups.forEach(b => {
         const li = document.createElement('li');
-        li.style.cssText = 'border:1px solid var(--border, #444); border-radius:6px; padding:10px 12px; margin-bottom:8px; display:flex; flex-direction:column; gap:4px';
+        li.style.cssText = 'border:1px solid var(--border, #444); border-radius:6px; padding:10px 12px; margin-bottom:8px; display:flex; flex-direction:column; gap:6px';
 
-        const header = document.createElement('div');
-        header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:8px';
-        const name = document.createElement('strong');
+        // Filename gets the full card width; even ~42-char timestamped names
+        // fit in a slightly smaller monospace face on a single line.
+        const name = document.createElement('div');
         name.textContent = b.filename;
-        // min-width:0 lets the flex item shrink below its content size so the
-        // wrap actually engages; overflow-wrap:anywhere breaks at any character
-        // only when there is no shorter break opportunity.
-        name.style.cssText = 'min-width:0; overflow-wrap:anywhere';
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'btn btn-primary';
-        btn.textContent = 'Restore';
-        // Override .btn-primary's width:100% so the button sizes to its label
-        // instead of consuming the row and forcing the filename into a 1ch column.
-        btn.style.cssText = 'width:auto; flex:0 0 auto';
-        btn.disabled = !b.restorable;
-        btn.onclick = () => restoreFromDisk(b.filename);
-        header.appendChild(name);
-        header.appendChild(btn);
-        li.appendChild(header);
+        name.style.cssText = 'font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:0.875em; font-weight:600; overflow-wrap:anywhere';
+        li.appendChild(name);
 
         const meta = document.createElement('div');
         meta.style.cssText = 'font-size:0.85em; opacity:0.75';
@@ -175,6 +161,20 @@
           reason.textContent = '⚠ ' + b.reason;
           li.appendChild(reason);
         }
+
+        // Button row, right-aligned. Override .btn-primary's width:100% so the
+        // button hugs its label.
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex; justify-content:flex-end; margin-top:2px';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-primary';
+        btn.textContent = 'Restore';
+        btn.style.cssText = 'width:auto; flex:0 0 auto; padding:0.4rem 1.1rem';
+        btn.disabled = !b.restorable;
+        btn.onclick = () => restoreFromDisk(b.filename);
+        actions.appendChild(btn);
+        li.appendChild(actions);
 
         list.appendChild(li);
       });
