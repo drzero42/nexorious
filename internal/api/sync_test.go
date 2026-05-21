@@ -618,6 +618,57 @@ func TestPSNStatus_WithCredentials(t *testing.T) {
 	}
 }
 
+// insertCorruptedSyncConfig inserts a user_sync_configs row with
+// deliberately corrupted storefront_credentials to test error handling.
+func insertCorruptedSyncConfig(t *testing.T, db *bun.DB, userID, storefront string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (gen_random_uuid()::text, ?, ?, 'manual', 'THIS IS NOT JSON', now(), now())
+		 ON CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = 'THIS IS NOT JSON', updated_at = now()`,
+		userID, storefront,
+	)
+	if err != nil {
+		t.Fatalf("insertCorruptedSyncConfig: %v", err)
+	}
+}
+
+func TestPSNStatus_CorruptedCredentials(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "psn-corrupt-creds")
+	insertCorruptedSyncConfig(t, testDB, userID, "psn")
+
+	rec := getAuth(t, e, "/api/sync/psn/connection", token)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 for corrupted PSN credentials", rec.Code)
+	}
+}
+
+func TestEpicStatus_CorruptedCredentials(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubEpicClient{configured: true})
+	userID, token := setupTagUser(t, testDB, e, "epic-corrupt-creds")
+	insertCorruptedSyncConfig(t, testDB, userID, "epic")
+
+	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 for corrupted Epic credentials", rec.Code)
+	}
+}
+
+func TestGOGStatus_CorruptedCredentials(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "gog-corrupt-creds")
+	insertCorruptedSyncConfig(t, testDB, userID, "gog")
+
+	rec := getAuth(t, e, "/api/sync/gog/connection", token)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 for corrupted GOG credentials", rec.Code)
+	}
+}
+
 // ─── TestListExternalGames ────────────────────────────────────────────────────
 
 func TestListExternalGames_EmptyList(t *testing.T) {

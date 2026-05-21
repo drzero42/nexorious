@@ -580,6 +580,27 @@ func TestHandleLogout_NoAuthorizationHeader(t *testing.T) {
 	}
 }
 
+func TestHandleLogout_MalformedBody(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+
+	insertAuthTestUser(t, testDB, "user-030", "zara", "pw", true, false)
+	access, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-030", cfg.AccessTokenExpireMinutes)
+	insertAuthTestSession(t, testDB, "user-030", access, "unused-hash-placeholder", 30)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout",
+		strings.NewReader(`{not valid json`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+access)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for malformed body", rec.Code)
+	}
+}
+
 // ─── GetMe tests ─────────────────────────────────────────────────────────────
 
 func TestGetMe_Success(t *testing.T) {
