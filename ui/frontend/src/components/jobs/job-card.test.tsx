@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { JobCard } from './job-card';
 import type { Job } from '@/types';
-import { JobType, JobSource, JobStatus, JobPriority } from '@/types';
+import { JobType, JobSource, JobStatus } from '@/types';
 
 
 const mockJob: Job = {
@@ -12,7 +12,7 @@ const mockJob: Job = {
   jobType: JobType.SYNC,
   source: JobSource.STEAM,
   status: JobStatus.PROCESSING,
-  priority: JobPriority.HIGH,
+  priority: 'high',
   progress: {
     pending: 20,
     processing: 5,
