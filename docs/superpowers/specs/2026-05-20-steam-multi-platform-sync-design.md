@@ -8,7 +8,7 @@
 
 Steam sync currently hardcodes `raw_platform = "pc-windows"` for every game. Steam's `IPlayerService/GetOwnedGames` endpoint does not include platform data, but the public store endpoint `store.steampowered.com/api/appdetails` does. This change calls `appdetails` per game to detect Windows/Mac/Linux availability, then emits one `ExternalLibraryEntry` per supported platform — mirroring the GOG pattern already implemented for `worksOn`. As a parity fix bundled into the same change, the GOG client also begins emitting Mac entries (it already parses `worksOn.Mac` but discards it), and `platformresolution` learns the `pc-mac → mac` mapping.
 
-`external_games` already supports per-platform rows via the unique key `(user_id, storefront, external_id, raw_platform)`, so no schema change is required. `external_games` itself serves as the per-user cache: when rows already exist for a given (user, steam, appid), the `appdetails` call is skipped on subsequent syncs.
+`external_games` already supports per-platform rows via the unique key `(user_id, storefront, external_id, raw_platform)`, so no `external_games` schema change is required. A new migration adds `('mac', 'gog')` to `platform_storefronts` so the Mac platform correctly lists GOG as one of its storefronts. `external_games` itself serves as the per-user cache: when rows already exist for a given (user, steam, appid), the `appdetails` call is skipped on subsequent syncs. The cache is keyed per-user; this is acceptable because there are no existing users at the time of this change.
 
 ## Decisions
 
@@ -23,7 +23,7 @@ Steam sync currently hardcodes `raw_platform = "pc-windows"` for every game. Ste
 | Steam client API shape | Two methods — `GetOwnedGames` returns `[]OwnedGame`; `GetAppDetailsPlatforms` per appid | Clean layering: client is dumb HTTP, worker orchestrates cache + fan-out |
 | `item_key` for Steam job_items | `external_id + ":" + raw_platform` | Matches the GOG pattern at `sync.go:507`; required for uniqueness when a single appid emits multiple platform entries |
 | GOG Mac emission | Bundled into the same change | GOG already parses `worksOn.Mac`; natural parity with adding `pc-mac` to `platformresolution` |
-| Schema change | None | `external_games` already has `raw_platform` in its unique key |
+| Schema change | New migration: add `('mac', 'gog')` to `platform_storefronts` | GOG will now emit `pc-mac` entries; without this row `GET /api/platforms/mac/storefronts` silently omits GOG |
 
 ## Architecture
 
@@ -44,6 +44,9 @@ DispatchSyncWorker (storefront = "steam"):
        if len(platforms) == 0 {
          pl, err := client.GetAppDetailsPlatforms(ctx, og.AppID)
          if err != nil {
+           if ctx.Err() != nil {
+             return nil  // context cancelled; exit cleanly
+           }
            slog.Warn("appdetails failed", "appid", og.AppID, "err", err)
            continue  // no rows written; no job_item dispatched; retry next sync
          }
@@ -79,16 +82,16 @@ The cache lookup at step 2 is a single batched query, not N queries.
 - New type:
   ```go
   type Platforms struct {
-      Windows bool
-      Mac     bool
-      Linux   bool
+      Windows bool `json:"windows"`
+      Mac     bool `json:"mac"`
+      Linux   bool `json:"linux"`
   }
   ```
 - `GetOwnedGames(ctx, apiKey, steamID string) ([]OwnedGame, error)` — the previous return type `[]ExternalLibraryEntry` is removed from this method. The Steam-specific platform fan-out moves to the worker.
 - `GetAppDetailsPlatforms(ctx context.Context, appID int) (Platforms, error)`:
   - `limiter.Wait(ctx)` at the top.
   - GET `https://store.steampowered.com/api/appdetails?appids=<appID>&filters=basics`.
-  - Decode into `map[string]struct{ Success bool; Data struct{ Platforms Platforms } }`.
+  - Decode into `map[string]struct{ Success bool `json:"success"`; Data struct{ Platforms Platforms `json:"platforms"` } `json:"data"` }`.
   - Return `Platforms{}, error` for non-200, `Success: false`, JSON decode error, or missing `<appID>` key.
   - Return parsed `Platforms{}` for `Success: true` with `Data.Platforms` zero-valued (caller decides fallback).
 - `ExternalLibraryEntry` is removed from this package — it now lives only in the worker layer for Steam (consumed inline; no public type needed since the worker assembles the entries directly from `OwnedGame` + detected platforms).
@@ -149,6 +152,14 @@ if p.WorksOn.Mac {
 
 The doc comment on `ExternalLibraryEntry.RawPlatform` is updated from `"pc-windows" or "pc-linux"` to `"pc-windows", "pc-mac", or "pc-linux"`.
 
+**New migration** (`internal/db/migrations/<timestamp>_mac_gog_platform_storefront.up.sql`)
+
+```sql
+INSERT INTO platform_storefronts (platform, storefront) VALUES ('mac', 'gog');
+```
+
+Down migration removes the row. This is a data-only change; no model or handler changes required.
+
 **`internal/api/router.go`** — no change required. The API-side `SteamClient` interface only declares `GetPlayerSummaries`; the worker takes a `*steamsvc.Client` directly (no adapter on that side). The `SteamLibraryAdapter` interface change is purely internal to `internal/worker/tasks` and the concrete client satisfies it after the method-signature edits.
 
 ## Failure handling
@@ -160,7 +171,7 @@ The doc comment on `ExternalLibraryEntry.RawPlatform` is updated from `"pc-windo
 | `appdetails` returns 200 with `success: false` for this appid | Treated as failure; skip game this sync, log `slog.Warn` |
 | `appdetails` returns non-200 (incl. 429, 5xx) | Failure; skip game this sync, log `slog.Warn` |
 | Network error / decode error | Failure; skip game this sync, log `slog.Warn` |
-| Context cancelled (sync job aborting) | `limiter.Wait` returns; the surrounding loop checks ctx and exits cleanly |
+| Context cancelled (sync job aborting) | `limiter.Wait` returns an error; `GetAppDetailsPlatforms` propagates it; the loop checks `ctx.Err() != nil` and returns `nil` immediately |
 
 The `appid` is always added to `fetchedIDs` regardless of success, so a transient failure does not flip an existing successfully-detected row's `is_available` to false in the step that marks removed games unavailable. A brand-new appid whose first detection fails simply doesn't appear in the user's library until the next sync succeeds — preferred over permanently mis-labelling its platform.
 
@@ -180,7 +191,7 @@ The `appid` is always added to `fetchedIDs` regardless of success, so a transien
 
 **`internal/worker/tasks/sync_test.go`** (extend existing)
 
-- Extend `fakeSteamAdapter` to also implement `GetAppDetailsPlatforms(appID int) (Platforms, error)` returning a configurable per-appid map, and track which appids were queried for cache-hit assertions.
+- Extend `fakeSteamAdapter` to also implement `GetAppDetailsPlatforms(ctx context.Context, appID int) (steamsvc.Platforms, error)` returning a configurable per-appid map, and track which appids were queried for cache-hit assertions.
 - New test: `GetAppDetailsPlatforms` reports `{Windows, Linux}` for appid 730 → expect two `external_games` rows (`pc-windows`, `pc-linux`) and two `job_items` rows with item_keys `730:pc-windows` and `730:pc-linux`.
 - New test (cache hit): pre-seed `external_games` with an existing `(user, 'steam', '999', 'pc-linux')` row, then run sync. Assert `GetAppDetailsPlatforms` was NOT called for appid 999 and the existing row's `is_available` stays true.
 - New test (api failure): `GetAppDetailsPlatforms` returns an error for appid X → no new `external_games` row for X, no `job_item` for X, but a pre-existing successfully-detected row for X remains `is_available = true`.
