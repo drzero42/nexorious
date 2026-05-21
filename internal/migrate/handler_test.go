@@ -2,6 +2,7 @@ package migrate_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -189,5 +190,42 @@ func TestHandleProgress_SSE_CompletionEvent(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "event: complete") {
 		t.Errorf("expected 'event: complete' in SSE response, got:\n%s", body)
+	}
+}
+
+func TestHandleStatus_MigrationFailedIncludesError(t *testing.T) {
+	db := setupTestDB(t)
+	m := migrate.NewMigrator(db)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
+	m.TransitionToFailed(errors.New("boom: schema is haunted"))
+
+	h := migrate.NewHandler(m, nil)
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/migrate/status", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.HandleStatus(c); err != nil {
+		t.Fatalf("HandleStatus: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+
+	var body struct {
+		PendingCount int    `json:"pending_count"`
+		State        string `json:"state"`
+		Error        string `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.State != "migration_failed" {
+		t.Errorf("state = %q, want migration_failed", body.State)
+	}
+	if body.Error != "boom: schema is haunted" {
+		t.Errorf("error = %q, want %q", body.Error, "boom: schema is haunted")
 	}
 }
