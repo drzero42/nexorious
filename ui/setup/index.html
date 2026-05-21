@@ -47,8 +47,16 @@
         <img src="/logo.svg" alt="">
         <h1 class="card-title">Restore from Backup</h1>
       </div>
-      <p class="card-description">Upload a backup archive to restore your data.</p>
+      <p class="card-description">Pick a backup found on disk, or upload one.</p>
       <div class="alert-destructive" id="restore-err"></div>
+
+      <div id="ondisk-section">
+        <p id="ondisk-loading" class="card-description" style="margin:8px 0">Looking for backups on disk…</p>
+        <ul id="ondisk-list" class="ondisk-list" style="display:none; list-style:none; padding:0; margin:0 0 12px 0"></ul>
+        <p id="ondisk-empty" class="card-description" style="display:none; margin:8px 0">No backups found on disk — upload one instead.</p>
+        <p id="ondisk-or" class="card-description" style="display:none; margin:12px 0 8px 0"><strong>Or upload a backup file</strong></p>
+      </div>
+
       <input type="file" id="file-input" accept=".tar.gz" style="display:none">
       <div id="drop-zone" class="drop-zone" onclick="document.getElementById('file-input').click()">
         <div class="drop-zone-icon">📦</div>
@@ -74,6 +82,124 @@
       document.getElementById('admin-view').style.display = 'none';
       document.getElementById('restore-view').style.display = '';
       clearError('restore-err');
+      loadOnDiskBackups();
+    }
+
+    // Format a UTC ISO date as a local "YYYY-MM-DD HH:MM" string.
+    function fmtDate(iso) {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      const pad = n => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+        + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+
+    function fmtCount(n) {
+      return new Intl.NumberFormat().format(n);
+    }
+
+    let _ondiskLoaded = false;
+    async function loadOnDiskBackups() {
+      if (_ondiskLoaded) return;
+      _ondiskLoaded = true;
+      const loading = document.getElementById('ondisk-loading');
+      const list = document.getElementById('ondisk-list');
+      const empty = document.getElementById('ondisk-empty');
+      const orLine = document.getElementById('ondisk-or');
+
+      let backups = [];
+      try {
+        const res = await fetch('/api/auth/setup/backups');
+        if (res.ok) {
+          const data = await res.json();
+          backups = Array.isArray(data.backups) ? data.backups : [];
+        }
+      } catch {
+        // Fetch failure — fall through to "no backups" state.
+      }
+
+      loading.style.display = 'none';
+
+      if (backups.length === 0) {
+        empty.style.display = '';
+        return;
+      }
+
+      backups.forEach(b => {
+        const li = document.createElement('li');
+        li.style.cssText = 'border:1px solid var(--border, #444); border-radius:6px; padding:10px 12px; margin-bottom:8px; display:flex; flex-direction:column; gap:4px';
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:8px';
+        const name = document.createElement('strong');
+        name.textContent = b.filename;
+        name.style.cssText = 'word-break:break-all';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-primary';
+        btn.textContent = 'Restore';
+        btn.style.cssText = 'flex-shrink:0';
+        btn.disabled = !b.restorable;
+        btn.onclick = () => restoreFromDisk(b.filename);
+        header.appendChild(name);
+        header.appendChild(btn);
+        li.appendChild(header);
+
+        const meta = document.createElement('div');
+        meta.style.cssText = 'font-size:0.85em; opacity:0.75';
+        const parts = [];
+        if (b.manifest && b.manifest.created_at) parts.push(fmtDate(b.manifest.created_at));
+        else parts.push(fmtDate(b.mtime));
+        parts.push(formatBytes(b.size_bytes));
+        if (b.manifest && b.manifest.backup_type) parts.push(b.manifest.backup_type);
+        meta.textContent = parts.join(' · ');
+        li.appendChild(meta);
+
+        if (b.manifest && b.manifest.stats) {
+          const stats = document.createElement('div');
+          stats.style.cssText = 'font-size:0.85em; opacity:0.75';
+          const s = b.manifest.stats;
+          const v = b.manifest.app_version ? ' · v' + b.manifest.app_version : '';
+          stats.textContent = fmtCount(s.games) + ' games · ' + fmtCount(s.users) + ' users · ' + fmtCount(s.tags) + ' tags' + v;
+          li.appendChild(stats);
+        }
+
+        if (!b.restorable && b.reason) {
+          const reason = document.createElement('div');
+          reason.style.cssText = 'font-size:0.85em; color:var(--destructive, #f87171)';
+          reason.textContent = '⚠ ' + b.reason;
+          li.appendChild(reason);
+        }
+
+        list.appendChild(li);
+      });
+
+      list.style.display = '';
+      orLine.style.display = '';
+    }
+
+    async function restoreFromDisk(filename) {
+      if (!confirm('Restore from ' + filename + '? This will replace any existing data.')) return;
+      clearError('restore-err');
+      const buttons = document.querySelectorAll('#ondisk-list button, #restore-btn');
+      buttons.forEach(b => b.disabled = true);
+      try {
+        const res = await fetch('/api/auth/setup/restore/disk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename }),
+        });
+        if (res.ok) {
+          window.location.href = '/login';
+          return;
+        }
+        const body = await res.json().catch(() => ({}));
+        showError('restore-err', body.error || 'Restore failed. Please try again.');
+        buttons.forEach(b => { b.disabled = false; });
+      } catch {
+        showError('restore-err', 'Restore failed. Please try again.');
+        buttons.forEach(b => { b.disabled = false; });
+      }
     }
     function showAdmin() {
       document.getElementById('restore-view').style.display = 'none';
