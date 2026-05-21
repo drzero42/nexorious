@@ -679,6 +679,31 @@ func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (stri
 	return id, s.doRestore(destPath, id, opts)
 }
 
+// RestoreFromArchive restores from an archive that already lives at its final
+// location (typically inside the configured backup directory) without renaming
+// or moving it. Unlike RestoreFromUpload — which "promotes" a temp upload to
+// a timestamped name inside the backup dir — this method preserves the input
+// path. Used by the setup-zone disk-restore handler so the operator's curated
+// on-disk backup is not mutated by the restore operation.
+//
+// Returns a derived backup ID (the archive's filename without the .tar.gz
+// suffix) and any error from the underlying restore.
+func (s *Service) RestoreFromArchive(archivePath string, opts RestoreOpts) (string, error) {
+	if !s.mu.TryLock() {
+		return "", ErrOperationInProgress
+	}
+	defer s.mu.Unlock()
+
+	if _, err := s.ValidateArchive(archivePath, true, opts.MaxMigration); err != nil {
+		return "", fmt.Errorf("validate archive: %w", err)
+	}
+
+	// Derive an ID from the filename for logging/return value. doRestore reads
+	// directly from archivePath, so the file stays where it is.
+	id := strings.TrimSuffix(filepath.Base(archivePath), ".tar.gz")
+	return id, s.doRestore(archivePath, id, opts)
+}
+
 func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) error {
 	conn, err := ParseDatabaseURL(s.databaseURL)
 	if err != nil {

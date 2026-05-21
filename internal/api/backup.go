@@ -388,7 +388,7 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
 		slog.Error("setup restore failed", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
@@ -468,7 +468,13 @@ func (h *BackupHandler) HandleSetupListBackups(c *echo.Context) error {
 //	{ "filename": "nexorious-backup-20260520-093015.tar.gz" }
 //
 // Only top-level regular files inside the configured BACKUP_PATH are
-// accepted. Symlinks are rejected. The file is never deleted after restore.
+// accepted. Symlinks are rejected. The on-disk file is preserved unchanged —
+// it is not renamed, moved, or deleted by the restore operation.
+//
+// Trust model: BACKUP_PATH must be writable only by the nexorious process.
+// Hardlinks at top level are not detected by os.Lstat and would be opened
+// like a regular file; the manifest validation that follows bounds disclosure
+// to "is this a valid Nexorious archive", not arbitrary read.
 func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
 	if !backup.PsqlAvailable() {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{
@@ -487,13 +493,13 @@ func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 	}
 
-	filename := strings.TrimSpace(body.Filename)
+	filename := body.Filename
 	if filename == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "filename is required"})
 	}
 
 	// Layered path-traversal defense. None of these checks alone is enough.
-	if strings.ContainsAny(filename, `/\`) || strings.Contains(filename, "..") || filepath.Base(filename) != filename {
+	if strings.ContainsAny(filename, `/\`) || strings.Contains(filename, "..") || strings.ContainsRune(filename, 0) || strings.TrimSpace(filename) != filename || filepath.Base(filename) != filename {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
 	}
 
@@ -516,12 +522,12 @@ func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
 	}
 
 	opts := h.makeRestoreOpts(true)
-	if _, err := h.svc.RestoreFromUpload(fullPath, opts); err != nil {
+	if _, err := h.svc.RestoreFromArchive(fullPath, opts); err != nil {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
 		slog.Error("setup restore-from-disk failed", "err", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{

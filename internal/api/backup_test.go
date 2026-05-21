@@ -396,6 +396,9 @@ func TestHandleSetupRestoreFromDisk_FilenameValidation(t *testing.T) {
 		{"dotdot-bare", "..", http.StatusBadRequest, "invalid filename"},
 		{"not-in-dir", "nope.tar.gz", http.StatusNotFound, "backup not found"},
 		{"symlink", symlinkName, http.StatusBadRequest, "invalid filename"},
+		{"nul-byte", "real\x00.tar.gz", http.StatusBadRequest, "invalid filename"},
+		{"trailing-whitespace", "real.tar.gz ", http.StatusBadRequest, "invalid filename"},
+		{"leading-whitespace", " real.tar.gz", http.StatusBadRequest, "invalid filename"},
 	}
 
 	for _, tc := range cases {
