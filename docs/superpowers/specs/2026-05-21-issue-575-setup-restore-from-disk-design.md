@@ -23,7 +23,7 @@ Add two new public endpoints in the setup zone:
 | `GET` | `/api/auth/setup/backups` | List candidate backup files in `BACKUP_PATH` |
 | `POST` | `/api/auth/setup/restore/disk` | Restore from a named on-disk backup |
 
-The setup page's restore view grows a "Backups found on disk" list above the existing upload zone. The on-disk restore reuses `Service.RestoreFromUpload(path, opts)` — it already validates manifest, checksums, and migration-version compatibility before swapping the database.
+The setup page's restore view grows a "Backups found on disk" list above the existing upload zone. The on-disk restore goes through a new `Service.RestoreFromArchive(path, opts)` method — a sibling of `Service.RestoreFromUpload` that runs the same `ValidateArchive` + `doRestore` sequence but does **not** rename the input. Reusing `RestoreFromUpload` directly would `os.Rename` the operator's curated on-disk backup to a new timestamped name inside `BACKUP_PATH`, destroying the original filename; `RestoreFromArchive` preserves the input file so subsequent restores can use it again.
 
 No new config, no new env vars, no schema migration. Pure additive change.
 
@@ -146,7 +146,7 @@ Implementation:
 5. On manifest read success, run the same migration-version check `ValidateArchive` does at [internal/backup/service.go:208-213](../../internal/backup/service.go#L208-L213). On mismatch → `Restorable=false`, reason matches the existing error string. Otherwise `Restorable=true`.
 6. Sort descending by `ModTime`. Return.
 
-Listing intentionally does **not** verify checksums — too slow for an interactive list, and `RestoreFromUpload` re-validates everything (including checksums) at restore time.
+Listing intentionally does **not** verify checksums — too slow for an interactive list, and `RestoreFromArchive` (and `RestoreFromUpload`) re-validate everything (including checksums) at restore time.
 
 ### `internal/api/backup.go`
 
@@ -186,14 +186,12 @@ func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error
   3. `fullPath := filepath.Join(backupPath, filename)`; verify `filepath.Dir(fullPath) == filepath.Clean(backupPath)` → 400 if not.
   4. `os.Lstat(fullPath)`: if `ErrNotExist` → 404; if symlink (`mode&os.ModeSymlink != 0`) → 400; if not a regular file → 400.
 - `opts := h.makeRestoreOpts(true)` (skip pre-restore, same as upload path).
-- `h.svc.RestoreFromUpload(fullPath, opts)`. Map errors using the same pattern as [internal/api/backup.go:377-381](../../internal/api/backup.go#L377-L381):
+- `h.svc.RestoreFromArchive(fullPath, opts)`. Map errors using the same pattern as the upload path:
   - `ErrOperationInProgress` → 409.
-  - Anything else → 500 with `"restore failed: <err>"`.
+  - Anything else → 500 with body `{"error": "restore failed"}`. Full error detail goes to `slog.Error` for operators; the body is kept static so the unauthenticated endpoint doesn't leak internal paths.
 - On success: 200 with the same success body `HandleSetupRestore` returns.
 
-Validation errors (corrupt manifest, future migration version, checksum mismatch) fall into the 500 bucket. This matches `HandleSetupRestore`'s existing behavior; finer-grained error classification (a `backup.ErrInvalidArchive` sentinel and a 422 mapping) is a separate change that should be applied to both setup-restore handlers at once if pursued — not in this PR's scope.
-
-The on-disk file is **never deleted** after restore — it's user-curated content, not a tmp upload.
+The on-disk file is **never renamed, moved, or deleted** by the restore — `RestoreFromArchive` is the new, non-mutating sibling of `RestoreFromUpload` that exists specifically so the operator's archive is preserved. Validation errors (corrupt manifest, future migration version, checksum mismatch) fall into the 500 bucket; finer-grained error classification (a `backup.ErrInvalidArchive` sentinel and a 422 mapping) is a separate change that should be applied to both setup-restore handlers at once if pursued — not in this PR's scope.
 
 ### `internal/api/router.go`
 
@@ -252,7 +250,7 @@ This endpoint is unauthenticated during setup (no users exist yet), so the only 
 4. `os.Lstat` reject symlinks — prevents a planted link from escaping the dir.
 5. Reject non-regular files (directories, devices, sockets).
 
-Only after all five pass does the path reach `RestoreFromUpload`. There's no TOCTOU concern: `RestoreFromUpload` re-validates the manifest, version, and checksums when it opens the archive, so even a file swap between `Lstat` and open would be caught before the database is touched.
+Only after all five pass does the path reach `RestoreFromArchive`. There's no in-process TOCTOU concern: `RestoreFromArchive` re-validates the manifest, version, and checksums when it opens the archive, so even a file swap between `Lstat` and open would be caught before the database is touched. Hardlinks at the top level of `BACKUP_PATH` are not detected by `os.Lstat` — the trust model assumes the directory is writable only by the nexorious process.
 
 ## Testing
 
@@ -304,11 +302,11 @@ The setup page has no automated test infra. Smoke-test:
 
 ## Edge cases
 
-- **File deleted between list and restore** → `RestoreFromUpload` fails at open; 500 with "restore failed: ...". User can refresh and try again. Not worth a dedicated 404 race-check.
+- **File deleted between list and restore** → `RestoreFromArchive` fails at open; 500 with body `"restore failed"`. User can refresh and try again. Not worth a dedicated 404 race-check.
 - **File mutated between list and restore** → checksums in the manifest are re-verified at restore time; mismatch aborts cleanly.
 - **Very large backup dir (1000+ files)** → opening every archive to read manifest could be slow. Acceptable for v1 (typical case is <50); can add an `(filename, mtime, size)` cache later if it becomes a real problem.
 - **`BACKUP_PATH` is the empty string** → treat as "no backup dir configured"; return empty list, no 500.
-- **Race with the backup scheduler** → `RestoreFromUpload` returns `ErrOperationInProgress` → mapped to 409, same as the upload path.
+- **Race with the backup scheduler** → `RestoreFromArchive` returns `ErrOperationInProgress` → mapped to 409, same as the upload path.
 - **Case sensitivity** → `*.tar.gz` matched case-sensitively. Matches Nexorious's own naming convention (always lowercase); on case-insensitive filesystems the on-disk casing is what's returned, and `.TAR.GZ` would be skipped. Acceptable.
 
 ## Out of scope

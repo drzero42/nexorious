@@ -4,7 +4,9 @@
 
 **Goal:** During setup (no users yet), let the operator pick from backup archives already in `BACKUP_PATH` and restore one of them, while the existing upload path keeps working.
 
-**Architecture:** New `Service.ListAvailableArchives` method scans `BACKUP_PATH` (top-level, `*.tar.gz` only) and classifies each file as restorable / not. Two new public setup-zone endpoints — `GET /api/auth/setup/backups` (list) and `POST /api/auth/setup/restore/disk` (restore by filename) — sit alongside the existing `POST /api/auth/setup/restore`. Disk-restore reuses `Service.RestoreFromUpload(path, opts)`. The setup HTML grows a list section above the existing upload zone.
+**Architecture:** New `Service.ListAvailableArchives` method scans `BACKUP_PATH` (top-level, `*.tar.gz` only) and classifies each file as restorable / not. Two new public setup-zone endpoints — `GET /api/auth/setup/backups` (list) and `POST /api/auth/setup/restore/disk` (restore by filename) — sit alongside the existing `POST /api/auth/setup/restore`. Disk-restore goes through a new `Service.RestoreFromArchive(path, opts)` method (a non-renaming sibling of `RestoreFromUpload` introduced mid-implementation so the operator's on-disk backup is preserved). The setup HTML grows a list section above the existing upload zone.
+
+> **Note:** The Task 5 code blocks below show the original handler body that called `RestoreFromUpload`. Code review during implementation found that `RestoreFromUpload` calls `os.Rename` on the input, which would have destroyed the operator's curated archive. The fix landed in commit `20518822` and is what shipped — the handler now calls `RestoreFromArchive`, and the 500 error body is the static string `"restore failed"` rather than `fmt.Sprintf("restore failed: %v", err)`. Filename validation also gained NUL-byte and whitespace-equality checks in the same commit. The Task 5 source-of-truth is the design spec; this plan is preserved as the historical implementation script.
 
 **Tech Stack:** Go 1.25 + Bun + Echo v5 (backend). Vanilla HTML/JS for the setup page (embedded via `ui/ui.go`).
 
