@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -75,6 +76,9 @@ func (c *Client) GetAccountInfo(ctx context.Context, npssoToken string) (*PSNAcc
 	// Fetch the authenticated user's own profile using the "me" alias supported
 	// by Sony's profile API.
 	accessToken, _ := psnClient.AccessToken()
+	if accessToken == "" {
+		return nil, fmt.Errorf("psn: access token unavailable after authentication")
+	}
 	profile, err := fetchMyProfile(ctx, accessToken)
 	if err != nil {
 		// If we can't fetch the profile, still return what we have from auth.
@@ -319,9 +323,7 @@ type ExternalLibraryEntry struct {
 
 func mergePlayedPurchased(played, purchased map[string]ExternalLibraryEntry) []ExternalLibraryEntry {
 	merged := make(map[string]ExternalLibraryEntry, len(played)+len(purchased))
-	for id, e := range played {
-		merged[id] = e
-	}
+	maps.Copy(merged, played)
 	for id, e := range purchased {
 		if existing, ok := merged[id]; ok {
 			if e.IsSubscription {
@@ -366,6 +368,9 @@ func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize in
 			return ErrInvalidNPSSOToken
 		}
 		accessToken, _ = psnClient.AccessToken()
+		if accessToken == "" {
+			return fmt.Errorf("psn: access token unavailable after authentication")
+		}
 	}
 	slog.Info("psn: auth succeeded")
 
@@ -389,10 +394,7 @@ func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize in
 
 	// ── Dispatch in batches ───────────────────────────────────────────────
 	for i := 0; i < len(all); i += batchSize {
-		end := i + batchSize
-		if end > len(all) {
-			end = len(all)
-		}
+		end := min(i+batchSize, len(all))
 		if err := onBatch(all[i:end]); err != nil {
 			return err
 		}

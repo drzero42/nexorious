@@ -217,8 +217,9 @@ func (h *AuthHandler) HandleRefresh(c *echo.Context) error {
 // HandleLogout handles POST /api/auth/logout.
 //
 // Requires a valid access token (JWTMiddleware). Deletes the session identified by the
-// refresh token. Always returns 200 — errors from an invalid refresh token are logged but
-// do not prevent a successful logout response (security: don't reveal token validity).
+// refresh token. Returns 400 if the request body is malformed JSON. Otherwise always
+// returns 200 — errors from an invalid refresh token are logged but do not prevent a
+// successful logout response (security: don't reveal token validity).
 func (h *AuthHandler) HandleLogout(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 
