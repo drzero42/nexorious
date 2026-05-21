@@ -85,10 +85,7 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 		return nil, 0, fmt.Errorf("gog: decode library response: %w", err)
 	}
 
-	numPages := body.NumPages
-	if numPages < 1 {
-		numPages = 1
-	}
+	numPages := max(body.NumPages, 1)
 
 	entries := make([]ExternalLibraryEntry, 0, len(body.Products)*2)
 	for _, p := range body.Products {
