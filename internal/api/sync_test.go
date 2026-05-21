@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
+	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/api"
@@ -1104,6 +1106,35 @@ func (s *stubGOGClient) BuildAuthURL() string {
 
 func (s *stubGOGClient) ExchangeCode(_ context.Context, _ string) (*api.GOGTokenResponse, error) {
 	return s.token, s.err
+}
+
+func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient, rc *river.Client[pgx.Tx]) interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+} {
+	t.Helper()
+	cfg := testCfg()
+	e := echo.New()
+	ah := api.NewAuthHandler(testDB, cfg)
+	e.POST("/api/auth/login", ah.HandleLogin)
+	synch := api.NewSyncHandler(db, rc, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
+	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	synch.RegisterRoutes(g)
+	return e
+}
+
+// TestHandleTriggerSync_RiverInsertFails_Returns500 locks in the contract that
+// HandleTriggerSync returns 500 when the River enqueue fails, rather than
+// silently succeeding with an orphaned job.
+func TestHandleTriggerSync_RiverInsertFails_Returns500(t *testing.T) {
+	truncateAllTables(t)
+	rc := newFailingRiverClient(t)
+	e := newSyncTestAppWithRiverClient(t, testDB, &stubSteamClient{}, &stubPSNClient{}, rc)
+	_, token := setupTagUser(t, testDB, e, "trigger-river-fail")
+
+	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 when River insert fails, got %d: %s", rec.Code, rec.Body.String())
+	}
 }
 
 func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient, gog api.GOGClient) interface {

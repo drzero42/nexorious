@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -97,37 +98,55 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 		var eg models.ExternalGame
 		if egErr := h.db.NewSelect().Model(&eg).Where("id = ?", meta.ExternalGameID).Scan(context.Background()); egErr == nil {
 			// Ensure the games row exists (FK on external_games.resolved_igdb_id).
-			_, _ = h.db.NewRaw(
+			if _, err := h.db.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 				body.IGDBID, eg.Title,
-			).Exec(context.Background())
+			).Exec(context.Background()); err != nil {
+				slog.Error("job_items: ensure game row failed", "err", err, "igdb_id", body.IGDBID)
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve game")
+			}
 			// Resolve the matched external_game immediately so step 3.6 can find it.
-			_, _ = h.db.NewRaw(
+			if _, err := h.db.NewRaw(
 				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
 				body.IGDBID, eg.ID,
-			).Exec(context.Background())
+			).Exec(context.Background()); err != nil {
+				slog.Error("job_items: resolve external_game failed", "err", err, "external_game_id", eg.ID)
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve external game")
+			}
 			// Find sibling external_games (same user/storefront/title, different SKU, still unresolved).
 			var siblings []models.ExternalGame
-			_ = h.db.NewSelect().Model(&siblings).
+			if err := h.db.NewSelect().Model(&siblings).
 				Where("user_id = ? AND storefront = ? AND title = ? AND id != ? AND resolved_igdb_id IS NULL",
 					eg.UserID, eg.Storefront, eg.Title, eg.ID).
-				Scan(context.Background())
+				Scan(context.Background()); err != nil {
+				slog.Error("job_items: query siblings failed", "err", err, "external_game_id", eg.ID)
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to query sibling games")
+			}
 			for _, sib := range siblings {
 				// Resolve the sibling external_game so step 3.6 in the worker skips IGDB search.
-				_, _ = h.db.NewRaw(
+				if _, err := h.db.NewRaw(
 					`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
 					body.IGDBID, sib.ID,
-				).Exec(context.Background())
+				).Exec(context.Background()); err != nil {
+					slog.Error("job_items: resolve sibling external_game failed", "err", err, "sibling_id", sib.ID)
+					return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve sibling game")
+				}
 				// Re-queue any pending_review job_items for this sibling.
 				var sibItems []models.JobItem
-				_ = h.db.NewRaw(
+				if err := h.db.NewRaw(
 					`SELECT * FROM job_items WHERE user_id = ? AND status = 'pending_review' AND source_metadata->>'external_game_id' = ?`,
 					eg.UserID, sib.ID,
-				).Scan(context.Background(), &sibItems)
+				).Scan(context.Background(), &sibItems); err != nil {
+					slog.Error("job_items: query sibling job_items failed", "err", err, "sibling_id", sib.ID)
+					return echo.NewHTTPError(http.StatusInternalServerError, "failed to query sibling items")
+				}
 				for _, si := range sibItems {
-					_, _ = h.db.NewRaw(
+					if _, err := h.db.NewRaw(
 						`UPDATE job_items SET status = 'pending' WHERE id = ?`, si.ID,
-					).Exec(context.Background())
+					).Exec(context.Background()); err != nil {
+						slog.Error("job_items: re-queue sibling job_item failed", "err", err, "job_item_id", si.ID)
+						return echo.NewHTTPError(http.StatusInternalServerError, "failed to re-queue sibling item")
+					}
 					var sibJob models.Job
 					if jErr := h.db.NewRaw(`SELECT * FROM jobs WHERE id = ?`, si.JobID).Scan(context.Background(), &sibJob); jErr == nil {
 						retryInsert(context.Background(), h.db, h.riverClient, sibJob.JobType, si.ID)
@@ -192,10 +211,13 @@ func (h *JobItemsHandler) HandleSkipItem(c *echo.Context) error {
 		ExternalGameID string `json:"external_game_id"`
 	}
 	if json.Unmarshal(item.SourceMetadata, &meta) == nil && meta.ExternalGameID != "" {
-		_, _ = h.db.NewRaw(
+		if _, err := h.db.NewRaw(
 			`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ? AND user_id = ?`,
 			meta.ExternalGameID, userID,
-		).Exec(context.Background())
+		).Exec(context.Background()); err != nil {
+			slog.Error("job_items: mark external_game skipped failed", "err", err, "external_game_id", meta.ExternalGameID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
+		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "skipped"})

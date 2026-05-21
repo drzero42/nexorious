@@ -100,6 +100,23 @@ func newTestRiverClient(t *testing.T) *river.Client[pgx.Tx] {
 	return rc
 }
 
+// newFailingRiverClient builds a River client backed by a pool that has been
+// closed, so every Insert call returns an error. Used to test 500 responses on
+// River insert failures.
+func newFailingRiverClient(t *testing.T) *river.Client[pgx.Tx] {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(), testConnStr)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatalf("river.NewClient: %v", err)
+	}
+	pool.Close() // closed pool causes Insert to fail immediately
+	return rc
+}
+
 // testCfg returns a minimal config suitable for api_test tests.
 func testCfg() *config.Config {
 	return &config.Config{

@@ -182,11 +182,13 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 			continue
 		}
 
-		_, _ = w.RiverClient.Insert(ctx, tasks.DispatchSyncArgs{
+		if _, err := w.RiverClient.Insert(ctx, tasks.DispatchSyncArgs{
 			JobID:      jobID,
 			UserID:     cfg.UserID,
 			Storefront: cfg.Storefront,
-		}, nil)
+		}, nil); err != nil {
+			slog.Error("CheckPendingSyncs: enqueue dispatch failed", "err", err, "job_id", jobID, "user_id", cfg.UserID)
+		}
 	}
 	return nil
 }
@@ -314,10 +316,12 @@ func CleanupExports(ctx context.Context, db *bun.DB) {
 	for i, j := range jobs {
 		ids[i] = j.ID
 	}
-	_, _ = db.NewRaw(
+	if _, err := db.NewRaw(
 		`UPDATE jobs SET file_path = NULL WHERE id IN (?)`,
 		bun.List(ids),
-	).Exec(ctx)
+	).Exec(ctx); err != nil {
+		slog.Error("cleanup: clear expired export file_paths failed", "err", err)
+	}
 	slog.Info("cleanup: cleaned expired exports", "count", len(jobs))
 }
 

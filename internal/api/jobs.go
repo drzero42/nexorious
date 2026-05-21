@@ -538,13 +538,16 @@ func (h *JobsHandler) HandleCancelJob(c *echo.Context) error {
 
 	// Cancel any queued River jobs for this nexorious job. ImportItemArgs serialises
 	// as {"job_item_id": "..."}, so match against the job_items table.
-	_, _ = h.db.NewRaw(`
+	if _, err := h.db.NewRaw(`
 		UPDATE river_job
 		SET state = 'cancelled', finalized_at = NOW()
 		WHERE state IN ('available', 'scheduled', 'retryable', 'pending')
 		  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE job_id = ?)`,
 		jobID,
-	).Exec(context.Background())
+	).Exec(context.Background()); err != nil {
+		slog.Error("jobs: cancel river jobs failed", "err", err, "job_id", jobID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel queued tasks")
+	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "cancelled"})
 }
@@ -631,10 +634,13 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 
 	// Reset job status to processing and clear auto_retry_done so that a
 	// subsequent IGDB failure can trigger another automatic retry cycle.
-	_, _ = h.db.NewRaw(`
+	if _, err := h.db.NewRaw(`
 		UPDATE jobs SET status = ?, auto_retry_done = false WHERE id = ?`,
 		models.JobStatusProcessing, jobID,
-	).Exec(context.Background())
+	).Exec(context.Background()); err != nil {
+		slog.Error("jobs: reset job status failed", "err", err, "job_id", jobID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to reset job status")
+	}
 
 	// Submit tasks for each reset item.
 	for _, item := range failedItems {
