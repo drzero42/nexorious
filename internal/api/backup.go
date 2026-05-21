@@ -462,6 +462,74 @@ func (h *BackupHandler) HandleSetupListBackups(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"backups": out})
 }
 
+// HandleSetupRestoreFromDisk restores from a backup that already exists in the
+// configured backup directory (POST /api/auth/setup/restore/disk). Body:
+//
+//	{ "filename": "nexorious-backup-20260520-093015.tar.gz" }
+//
+// Only top-level regular files inside the configured BACKUP_PATH are
+// accepted. Symlinks are rejected. The file is never deleted after restore.
+func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
+	if !backup.PsqlAvailable() {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{
+			"error": "psql is not available on this system. Install PostgreSQL client tools to enable restore.",
+		})
+	}
+
+	if err := h.requireNoUsers(c); err != nil {
+		return err
+	}
+
+	var body struct {
+		Filename string `json:"filename"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+	}
+
+	filename := strings.TrimSpace(body.Filename)
+	if filename == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "filename is required"})
+	}
+
+	// Layered path-traversal defense. None of these checks alone is enough.
+	if strings.ContainsAny(filename, `/\`) || strings.Contains(filename, "..") || filepath.Base(filename) != filename {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+	}
+
+	backupDir := h.svc.BackupPath()
+	fullPath := filepath.Join(backupDir, filename)
+	if filepath.Dir(fullPath) != filepath.Clean(backupDir) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+	}
+
+	fi, err := os.Lstat(fullPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "backup not found"})
+		}
+		slog.Error("setup restore-from-disk lstat failed", "err", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to inspect backup file"})
+	}
+	if fi.Mode()&os.ModeSymlink != 0 || !fi.Mode().IsRegular() {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+	}
+
+	opts := h.makeRestoreOpts(true)
+	if _, err := h.svc.RestoreFromUpload(fullPath, opts); err != nil {
+		if errors.Is(err, backup.ErrOperationInProgress) {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
+		}
+		slog.Error("setup restore-from-disk failed", "err", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Backup restored successfully. Please log in with your restored credentials.",
+	})
+}
+
 // makeRestoreOpts constructs RestoreOpts from the handler's callbacks.
 func (h *BackupHandler) makeRestoreOpts(skipPreRestore bool) backup.RestoreOpts {
 	if h.callbacks == nil {
