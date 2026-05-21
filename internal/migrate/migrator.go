@@ -113,6 +113,9 @@ func (mg *Migrator) TransitionToReady() {
 }
 
 // TransitionToFailed records the error and switches state to AppStateMigrationFailed.
+// The error is stored before the state flip so any observer that reads
+// AppStateMigrationFailed is guaranteed to see a non-empty LastError —
+// preserve this ordering when editing.
 // The stored value is always a string; never store an error value here or
 // atomic.Value will panic on subsequent loads of a different concrete type.
 func (mg *Migrator) TransitionToFailed(err error) {
