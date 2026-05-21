@@ -325,6 +325,18 @@ func (h *BackupHandler) HandleRestoreUpload(c *echo.Context) error {
 	})
 }
 
+// requireNoUsers enforces the setup-mode gate: any of the setup-zone restore
+// handlers must reject with 403 if the users table is non-empty. Returns nil
+// to continue; returns a non-nil error already sent to the client to
+// short-circuit the handler.
+func (h *BackupHandler) requireNoUsers(c *echo.Context) error {
+	count, err := h.db.NewSelect().TableExpr("users").Count(c.Request().Context())
+	if err == nil && count > 0 {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "restore during setup is only available when no users exist"})
+	}
+	return nil
+}
+
 // HandleSetupRestore handles restore during initial setup (POST /api/auth/setup/restore).
 func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 	if !backup.PsqlAvailable() {
@@ -333,10 +345,8 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 		})
 	}
 
-	// Check that no users exist (setup mode only)
-	count, err := h.db.NewSelect().TableExpr("users").Count(c.Request().Context())
-	if err == nil && count > 0 {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "restore during setup is only available when no users exist"})
+	if err := h.requireNoUsers(c); err != nil {
+		return err
 	}
 
 	file, err := c.FormFile("file")
