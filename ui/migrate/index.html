@@ -28,19 +28,34 @@
   </div>
 
   <script>
-    // Poll /api/migrate/status every 5s so the page reacts to server-side state
-    // changes (DB going down → Gate 1 redirects, DB recovery → redirect to /).
-    // Polling is stopped once the user kicks off a migration so the live log
-    // stream is never interrupted by a reload.
-    var pollTimer = setInterval(function() {
-      fetch('/api/migrate/status')
+    var pollIntervalMs = 5000;
+    var pollTimer = null;
+
+    function startPolling() {
+      stopPolling();
+      pollTimer = setInterval(function() {
+        checkStatusAndAct().catch(function() { /* network blip — keep polling */ });
+      }, pollIntervalMs);
+    }
+
+    function stopPolling() {
+      if (pollTimer !== null) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    // Fetch /api/migrate/status once and react to its state.
+    // Returns a promise that resolves after the side-effect (redirect / render) runs.
+    function checkStatusAndAct() {
+      return fetch('/api/migrate/status')
         .then(function(res) {
           // Gate 1 redirects /api/migrate/status to /db-error when DB is down;
           // fetch follows the redirect and we land on HTML, not JSON.
           var ct = res.headers.get('content-type') || '';
           if (!ct.includes('application/json')) {
             window.location.reload();
-            return;
+            return null;
           }
           return res.json();
         })
@@ -48,28 +63,44 @@
           if (!data) return;
           if (data.state === 'ready') {
             window.location.href = '/';
+          } else if (data.state === 'migration_failed') {
+            showFailure(data.error);
           }
-        })
-        .catch(function() { /* network blip — keep polling */ });
-    }, 5000);
+        });
+    }
+
+    function showFailure(message) {
+      var btn = document.getElementById('btn');
+      var status = document.getElementById('status');
+      status.textContent = 'Migration failed: ' + (message || 'unknown error');
+      status.className = 'meta meta--error';
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
 
     function runMigrations() {
-      clearInterval(pollTimer);
-      const btn = document.getElementById('btn');
-      const log = document.getElementById('log');
-      const status = document.getElementById('status');
+      stopPolling();
+      var btn = document.getElementById('btn');
+      var log = document.getElementById('log');
+      var status = document.getElementById('status');
 
       btn.disabled = true;
+      btn.textContent = 'Run Migrations';
+      log.textContent = '';
       log.classList.add('visible');
       status.textContent = 'Running migrations…';
       status.className = 'meta';
 
       fetch('/api/migrate/run', { method: 'POST' })
-        .then(res => {
+        .then(function(res) {
           if (!res.ok) {
             throw new Error('Failed to start migration (HTTP ' + res.status + ')');
           }
-          const es = new EventSource('/api/migrate/progress');
+          var es = new EventSource('/api/migrate/progress');
+          // Sentinel so es.onerror can distinguish a normal close (after the
+          // 'complete' event) from a real connection failure. Browsers fire
+          // an error event whenever an EventSource is closed.
+          var completed = false;
 
           es.onmessage = function(e) {
             log.textContent += e.data + '\n';
@@ -77,25 +108,40 @@
           };
 
           es.addEventListener('complete', function() {
+            completed = true;
             es.close();
-            status.textContent = 'Migration complete. Redirecting…';
-            status.className = 'meta meta--success';
-            setTimeout(() => { window.location.href = '/'; }, 1000);
+            // RunMigrations closes the SSE channel before the handler runs
+            // InitNeedsSetup and calls TransitionToReady, so the server may
+            // still report state="migrating" briefly. checkStatusAndAct
+            // handles ready/migration_failed; the resumed poll catches up
+            // for the brief still-migrating window.
+            checkStatusAndAct()
+              .then(function() { startPolling(); })
+              .catch(function() {
+                status.textContent = 'Could not verify migration status. Refresh to retry.';
+                status.className = 'meta meta--error';
+                btn.disabled = false;
+              });
           });
 
           es.onerror = function() {
+            if (completed) return; // normal close after a 'complete' event
             es.close();
             status.textContent = 'Connection lost. Check logs and refresh to retry.';
             status.className = 'meta meta--error';
             btn.disabled = false;
           };
         })
-        .catch(err => {
+        .catch(function(err) {
           status.textContent = err.message;
           status.className = 'meta meta--error';
           btn.disabled = false;
         });
     }
+
+    // On page load: immediate status check (so a previously-failed state is
+    // shown without waiting for the first 5s tick), then start the poll.
+    checkStatusAndAct().catch(function() {}).then(function() { startPolling(); });
   </script>
 </body>
 </html>

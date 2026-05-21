@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
@@ -45,14 +46,29 @@ func (h *Handler) HandleMigrateUI(c *echo.Context) error {
 }
 
 func (h *Handler) HandleStatus(c *echo.Context) error {
+	state := h.migrator.State()
+
+	// In the failed state, try for a real pending count; fall back to 0 if
+	// PendingCount itself errors (e.g. DB closed during a Lock-acquire failure).
+	if state == AppStateMigrationFailed {
+		pending := 0
+		if n, err := h.migrator.PendingCount(); err == nil {
+			pending = n
+		}
+		return c.JSON(http.StatusOK, map[string]any{
+			"pending_count": pending,
+			"state":         state.String(),
+			"error":         h.migrator.LastError(),
+		})
+	}
+
 	pending, err := h.migrator.PendingCount()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get pending count")
 	}
-
 	return c.JSON(http.StatusOK, map[string]any{
 		"pending_count": pending,
-		"state":         h.migrator.State().String(),
+		"state":         state.String(),
 	})
 }
 
@@ -63,15 +79,21 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 	case AppStateReady:
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "already up to date"})
 	}
+	// Allowed: AppStateNeedsMigration and AppStateMigrationFailed.
+	// (Gate 1 redirects callers away before AppStateDBUnavailable can reach here.)
 
 	go func() {
-		if err := h.migrator.RunMigrations(context.Background()); err != nil {
-			_ = err
+		ctx := context.Background()
+		if err := h.migrator.RunMigrations(ctx); err != nil {
+			slog.Error("migrate: run migrations failed", "err", err)
+			// RunMigrations already called TransitionToFailed; nothing else to do.
 			return
 		}
 		if h.db != nil {
-			if err := h.migrator.InitNeedsSetup(context.Background(), h.db); err != nil {
-				_ = err
+			if err := h.migrator.InitNeedsSetup(ctx, h.db); err != nil {
+				slog.Error("migrate: init needs-setup failed", "err", err)
+				h.migrator.TransitionToFailed(err)
+				return
 			}
 		}
 		h.migrator.TransitionToReady()
