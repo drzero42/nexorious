@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/labstack/echo/v5"
 
@@ -190,6 +191,64 @@ func TestHandleProgress_SSE_CompletionEvent(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "event: complete") {
 		t.Errorf("expected 'event: complete' in SSE response, got:\n%s", body)
+	}
+}
+
+func TestHandleRun_MigrationFailure_StateAndStatus(t *testing.T) {
+	db := setupTestDB(t)
+	m := migrate.NewMigrator(db)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
+	// Close the underlying *sql.DB so RunMigrations fails inside the goroutine.
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close: %v", err)
+	}
+	h := migrate.NewHandler(m, db)
+
+	e := echo.New()
+	runReq := httptest.NewRequest(http.MethodPost, "/api/migrate/run", nil)
+	runRec := httptest.NewRecorder()
+	if err := h.HandleRun(e.NewContext(runReq, runRec)); err != nil {
+		t.Fatalf("HandleRun: %v", err)
+	}
+	if runRec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", runRec.Code)
+	}
+
+	// Wait up to 2s for the goroutine to transition to MigrationFailed.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if m.State() == migrate.AppStateMigrationFailed {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if m.State() != migrate.AppStateMigrationFailed {
+		t.Fatalf("state = %v, want AppStateMigrationFailed", m.State())
+	}
+	if m.LastError() == "" {
+		t.Errorf("LastError is empty after failed run")
+	}
+
+	// Verify /api/migrate/status reflects the failure.
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/migrate/status", nil)
+	statusRec := httptest.NewRecorder()
+	if err := h.HandleStatus(e.NewContext(statusReq, statusRec)); err != nil {
+		t.Fatalf("HandleStatus: %v", err)
+	}
+	var body struct {
+		State string `json:"state"`
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(statusRec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.State != "migration_failed" {
+		t.Errorf("state = %q, want migration_failed", body.State)
+	}
+	if body.Error == "" {
+		t.Errorf("error field is empty in status payload")
 	}
 }
 

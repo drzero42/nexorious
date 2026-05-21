@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
@@ -78,15 +79,21 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 	case AppStateReady:
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "already up to date"})
 	}
+	// Allowed: AppStateNeedsMigration and AppStateMigrationFailed.
+	// (Gate 1 redirects callers away before AppStateDBUnavailable can reach here.)
 
 	go func() {
-		if err := h.migrator.RunMigrations(context.Background()); err != nil {
-			_ = err
+		ctx := context.Background()
+		if err := h.migrator.RunMigrations(ctx); err != nil {
+			slog.Error("migrate: run migrations failed", "err", err)
+			// RunMigrations already called TransitionToFailed; nothing else to do.
 			return
 		}
 		if h.db != nil {
-			if err := h.migrator.InitNeedsSetup(context.Background(), h.db); err != nil {
-				_ = err
+			if err := h.migrator.InitNeedsSetup(ctx, h.db); err != nil {
+				slog.Error("migrate: init needs-setup failed", "err", err)
+				h.migrator.TransitionToFailed(err)
+				return
 			}
 		}
 		h.migrator.TransitionToReady()
