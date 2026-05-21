@@ -418,3 +418,50 @@ func TestHandleSetupRestoreFromDisk_FilenameValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestSetupZoneRejectsWhenUsersExist asserts that both new setup-zone restore
+// handlers — list and disk-restore — return 403 once a user exists. The
+// shared requireNoUsers helper has a single test here for both routes.
+func TestSetupZoneRejectsWhenUsersExist(t *testing.T) {
+	backup.CheckTools()
+	if !backup.PsqlAvailable() {
+		t.Skip("psql not available — disk-restore handler returns 503 before requireNoUsers")
+	}
+
+	truncateAllTables(t)
+
+	backupDir := t.TempDir()
+	svc := backup.NewService(testDB, "", backupDir, "", "0.1.0")
+	e := newTestEchoBackup(t, testDB, svc)
+
+	// Create one admin so the gate is closed.
+	_, _ = setupAdminUser(t, testDB, e, "setup-gate")
+
+	// GET /api/auth/setup/backups → 403
+	{
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/setup/backups", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("GET /backups: status = %d, want 403: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "no users exist") {
+			t.Errorf("GET /backups: body missing expected error message: %s", rec.Body.String())
+		}
+	}
+
+	// POST /api/auth/setup/restore/disk → 403
+	{
+		body, _ := json.Marshal(map[string]string{"filename": "anything.tar.gz"})
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/setup/restore/disk", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("POST /restore/disk: status = %d, want 403: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "no users exist") {
+			t.Errorf("POST /restore/disk: body missing expected error message: %s", rec.Body.String())
+		}
+	}
+}
