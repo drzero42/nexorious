@@ -8,6 +8,8 @@ func RawPlatformToSlug(raw string) (string, bool) {
 		return "pc-windows", true
 	case "pc-linux":
 		return "pc-linux", true
+	case "pc-mac":
+		return "mac", true
 	case "playstation-5":
 		return "ps5", true
 	case "playstation-4":

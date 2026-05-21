@@ -35,3 +35,13 @@ func TestStorefrontToCollectionSlug_GOG(t *testing.T) {
 		t.Errorf("got %q", slug)
 	}
 }
+
+func TestRawPlatformToSlug_PCMac(t *testing.T) {
+	slug, ok := platformresolution.RawPlatformToSlug("pc-mac")
+	if !ok {
+		t.Fatal("expected ok=true for pc-mac")
+	}
+	if slug != "mac" {
+		t.Errorf("expected slug=mac, got %s", slug)
+	}
+}
