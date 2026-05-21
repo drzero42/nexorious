@@ -11,9 +11,8 @@
       forEachSystem = f: nixpkgs.lib.genAttrs systems
         (system: f nixpkgs.legacyPackages.${system});
 
-      # Update this when cutting a release. Matches the version in
-      # deploy/helm/Chart.yaml (managed by release-please).
-      version = "0.0.0";
+      # Kept in sync with deploy/helm/Chart.yaml by release-please.
+      version = "0.0.0"; # x-release-please-version
     in
     {
       packages = forEachSystem (pkgs: rec {

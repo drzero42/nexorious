@@ -193,6 +193,24 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 - Zero TypeScript/lint errors (`npm run check`) and zero knip findings (`npm run knip`) before committing
 - All tests must pass before committing
 
+### Nix Flake Maintenance
+
+The `nix/` directory contains the Nix package and NixOS module. Two hashes must be kept in sync with their respective lock files:
+
+- **`npmDepsHash` in `nix/frontend.nix`** — update after any `ui/frontend/package-lock.json` change:
+  ```bash
+  nix run nixpkgs#prefetch-npm-deps -- ui/frontend/package-lock.json
+  # paste the output hash into nix/frontend.nix → npmDepsHash
+  ```
+- **`vendorHash` in `nix/package.nix`** — update after any `go.mod` / `go.sum` change:
+  ```bash
+  # Set vendorHash = pkgs.lib.fakeHash; in nix/package.nix, then:
+  nix build .#nexorious 2>&1 | grep "got:"
+  # paste the "got:" hash into nix/package.nix → vendorHash
+  ```
+
+The `version` field in `flake.nix` is managed automatically by release-please (same as `Chart.yaml`).
+
 ### Slumber Collection Maintenance
 When adding a new API route, always add a corresponding request to `slumber.yaml`:
 - Add it to the matching domain folder (e.g. a new `GET /api/games` goes in a `games/` folder)
