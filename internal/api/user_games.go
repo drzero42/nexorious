@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"slices"
@@ -944,11 +945,14 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	_ = h.db.NewSelect().Model(plat).
+	if err := h.db.NewSelect().Model(plat).
 		Where("id = ?", plat.ID).
 		Relation("PlatformRecord").
 		Relation("StorefrontRecord").
-		Scan(ctx)
+		Scan(ctx); err != nil {
+		slog.Error("user_games: load platform relations failed", "err", err, "platform_id", plat.ID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load platform")
+	}
 	return c.JSON(http.StatusCreated, toUserGamePlatformResponse(*plat))
 }
 
@@ -1039,11 +1043,14 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	_ = h.db.NewSelect().Model(&plat).
+	if err := h.db.NewSelect().Model(&plat).
 		Where("id = ?", plat.ID).
 		Relation("PlatformRecord").
 		Relation("StorefrontRecord").
-		Scan(ctx)
+		Scan(ctx); err != nil {
+		slog.Error("user_games: load platform relations failed", "err", err, "platform_id", plat.ID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load platform")
+	}
 	return c.JSON(http.StatusOK, toUserGamePlatformResponse(plat))
 }
 

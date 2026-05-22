@@ -433,7 +433,7 @@ func checksumDir(dir string) string {
 			return err
 		}
 		defer func() { _ = f.Close() }()
-		_, _ = io.Copy(h, f)
+		_, _ = io.Copy(h, f) // hash.Hash.Write never returns an error
 		return nil
 	})
 	return hex.EncodeToString(h.Sum(nil))
@@ -658,7 +658,7 @@ func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (stri
 	}
 	defer s.mu.Unlock()
 
-	manifest, err := s.ValidateArchive(uploadedPath, true, opts.MaxMigration)
+	_, err := s.ValidateArchive(uploadedPath, true, opts.MaxMigration)
 	if err != nil {
 		return "", fmt.Errorf("validate uploaded archive: %w", err)
 	}
@@ -674,7 +674,6 @@ func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (stri
 		}
 		_ = os.Remove(uploadedPath)
 	}
-	_ = manifest
 
 	return id, s.doRestore(destPath, id, opts)
 }
@@ -831,8 +830,16 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 	extractedDir := filepath.Join(tmpDir, entries[0].Name())
 
 	terminateCmd := "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();"
-	_ = RunPsqlCommand(conn, terminateCmd)
-	_ = RunPsqlCommand(conn, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+	if err := RunPsqlCommand(conn, terminateCmd); err != nil {
+		slog.Error("rollback failed: terminate connections", "err", err, "original_err", originalErr)
+		opts.SetAppState("db_unavailable")
+		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
+	}
+	if err := RunPsqlCommand(conn, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
+		slog.Error("rollback failed: drop/recreate schema", "err", err, "original_err", originalErr)
+		opts.SetAppState("db_unavailable")
+		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
+	}
 
 	sqlFile := filepath.Join(extractedDir, "database.sql")
 	if err := RunPsqlFile(conn, sqlFile); err != nil {

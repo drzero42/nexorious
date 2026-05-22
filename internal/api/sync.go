@@ -1006,9 +1006,12 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	if platformFound {
 		// Count other platforms on the same user_game.
 		var otherCount int
-		_ = h.db.NewRaw(
+		if err := h.db.NewRaw(
 			`SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = ? AND id != ?`, ugID, ugpID,
-		).Scan(ctx, &otherCount)
+		).Scan(ctx, &otherCount); err != nil {
+			slog.Error("sync: count other platforms failed", "err", err, "user_game_id", ugID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to check platform count")
+		}
 
 		// Require orphan_action when this is the last platform.
 		if otherCount == 0 && body.OrphanAction == "" {
