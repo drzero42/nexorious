@@ -10,9 +10,9 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v5 v5.1.1
 	github.com/paul-mannino/go-fuzzywuzzy v0.0.0-20241117160931-a1769aeb6b21
-	github.com/riverqueue/river v0.37.1
-	github.com/riverqueue/river/riverdriver/riverdatabasesql v0.37.1
-	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.37.1
+	github.com/riverqueue/river v0.38.0
+	github.com/riverqueue/river/riverdriver/riverdatabasesql v0.38.0
+	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.38.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/sizovilya/go-psn-api v1.0.2
 	github.com/spf13/cobra v1.10.2
@@ -70,9 +70,9 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
-	github.com/riverqueue/river/riverdriver v0.37.1 // indirect
-	github.com/riverqueue/river/rivershared v0.37.1 // indirect
-	github.com/riverqueue/river/rivertype v0.37.1 // indirect
+	github.com/riverqueue/river/riverdriver v0.38.0 // indirect
+	github.com/riverqueue/river/rivershared v0.38.0 // indirect
+	github.com/riverqueue/river/rivertype v0.38.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
