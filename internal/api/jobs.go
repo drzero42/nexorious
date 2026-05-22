@@ -34,19 +34,21 @@ func NewJobsHandler(db *bun.DB, riverClient *river.Client[pgx.Tx]) *JobsHandler 
 
 // jobItemCounts fetches aggregated item status counts for a job and returns a
 // progress map ready for the API response.
-func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) map[string]any {
+func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[string]any, error) {
 	type statusCount struct {
 		Status string `bun:"status"`
 		Count  int    `bun:"count"`
 	}
 	var counts []statusCount
-	_ = h.db.NewRaw(`
+	if err := h.db.NewRaw(`
 		SELECT status, COUNT(*)::int AS count
 		FROM job_items
 		WHERE job_id = ?
 		GROUP BY status`,
 		jobID,
-	).Scan(ctx, &counts)
+	).Scan(ctx, &counts); err != nil {
+		return nil, err
+	}
 
 	m := map[string]int{
 		"pending": 0, "processing": 0, "completed": 0,
@@ -69,7 +71,7 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) map[strin
 		"skipped": m["skipped"], "failed": m["failed"],
 		"igdb_failed": m["igdb_failed"],
 		"total": total, "percent": percent,
-	}
+	}, nil
 }
 
 // toJobResponse builds the complete job API response DTO including computed fields.
@@ -176,7 +178,11 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 
 	jobDTOs := make([]map[string]any, 0, len(jobs))
 	for i := range jobs {
-		progress := h.jobItemCounts(context.Background(), jobs[i].ID)
+		progress, err := h.jobItemCounts(context.Background(), jobs[i].ID)
+		if err != nil {
+			slog.Error("jobs: fetch item counts failed", "err", err, "job_id", jobs[i].ID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to load job progress")
+		}
 		jobDTOs = append(jobDTOs, toJobResponse(&jobs[i], progress))
 	}
 
@@ -291,7 +297,11 @@ func (h *JobsHandler) HandleActiveJob(c *echo.Context) error {
 		}
 	}
 
-	progress := h.jobItemCounts(ctx, job.ID)
+	progress, err := h.jobItemCounts(ctx, job.ID)
+	if err != nil {
+		slog.Error("jobs: fetch item counts failed", "err", err, "job_id", job.ID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load job progress")
+	}
 	return c.JSON(http.StatusOK, toJobResponse(&job, progress))
 }
 
@@ -409,7 +419,11 @@ func (h *JobsHandler) HandleGetJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job")
 	}
 
-	progress := h.jobItemCounts(ctx, job.ID)
+	progress, err := h.jobItemCounts(ctx, job.ID)
+	if err != nil {
+		slog.Error("jobs: fetch item counts failed", "err", err, "job_id", job.ID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load job progress")
+	}
 	return c.JSON(http.StatusOK, toJobResponse(&job, progress))
 }
 
