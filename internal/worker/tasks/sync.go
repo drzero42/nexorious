@@ -793,7 +793,6 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	// ── 2. Parse source_metadata ──────────────────────────────────────────
 	var meta struct {
 		ExternalGameID string `json:"external_game_id"`
-		RawPlatform    string `json:"raw_platform"`
 		PlaytimeHours  int    `json:"playtime_hours"`
 	}
 	if err := json.Unmarshal(item.SourceMetadata, &meta); err != nil {
@@ -926,11 +925,24 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 		return nil
 	}
 
-	// ── 7. Resolve platform and storefront slugs ──────────────────────────
-	platformSlug, platformOK := platformresolution.RawPlatformToSlug(meta.RawPlatform)
+	// ── 7. Load platform rows ─────────────────────────────────────────────
+	var egPlatforms []models.ExternalGamePlatform
+	if err := w.DB.NewSelect().Model(&egPlatforms).
+		Where("external_game_id = ?", eg.ID).
+		Scan(ctx); err != nil {
+		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("load platforms: %v", err))
+		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		return nil
+	}
+	if len(egPlatforms) == 0 {
+		syncMarkItemFailed(ctx, w.DB, &item, "external game has no platform rows")
+		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		return nil
+	}
+
 	storefrontSlug, storefrontOK := platformresolution.StorefrontToCollectionSlug(eg.Storefront)
-	if !platformOK || !storefrontOK {
-		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("unresolved platform=%s storefront=%s", meta.RawPlatform, eg.Storefront))
+	if !storefrontOK {
+		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("unresolved storefront=%s", eg.Storefront))
 		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
@@ -972,7 +984,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 		}
 	}
 
-	// ── 9. Find or create user_game_platform ─────────────────────────────
+	// ── 9. Find or create user_game_platform for each platform ───────────
 	ownership := ""
 	if eg.OwnershipStatus != nil {
 		ownership = *eg.OwnershipStatus
@@ -981,51 +993,48 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	} else {
 		ownership = "owned"
 	}
-
 	hoursPlayed := float64(eg.PlaytimeHours)
 
-	var existingUGPID string
-	var existingOwnership *string
-	ugpErr := w.DB.NewRaw(
-		`SELECT id, ownership_status FROM user_game_platforms WHERE user_game_id = ? AND platform = ? AND storefront = ?`,
-		ugID, platformSlug, storefrontSlug,
-	).Scan(ctx, &existingUGPID, &existingOwnership)
+	for _, egp := range egPlatforms {
+		var existingUGPID string
+		var existingOwnership *string
+		ugpErr := w.DB.NewRaw(
+			`SELECT id, ownership_status FROM user_game_platforms WHERE user_game_id = ? AND platform = ? AND storefront = ?`,
+			ugID, egp.Platform, storefrontSlug,
+		).Scan(ctx, &existingUGPID, &existingOwnership)
 
-	if errors.Is(ugpErr, sql.ErrNoRows) || ugpErr != nil {
-		// Insert new platform row.
-		ugpID := uuid.NewString()
-		extGameID := eg.ID
-		if _, err := w.DB.NewRaw(
-			`INSERT INTO user_game_platforms
-			 (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status,
-			  original_platform_name, original_storefront_name, external_game_id, sync_from_source, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, true, ?, ?, ?, ?, ?, true, now(), now())
-			 ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
-			ugpID, ugID, platformSlug, storefrontSlug, hoursPlayed, ownership,
-			meta.RawPlatform, eg.Storefront, extGameID,
-		).Exec(ctx); err != nil {
-			slog.Error("process_sync_item: insert user_game_platform failed", "err", err, "job_item_id", p.JobItemID)
-		}
-	} else {
-		// Update if new ownership rank is higher than existing.
-		existingRank := 0
-		if existingOwnership != nil {
-			existingRank = ownershipRank(*existingOwnership)
-		}
-		if ownershipRank(ownership) > existingRank {
-			if _, err := w.DB.NewRaw(
-				`UPDATE user_game_platforms SET ownership_status = ?, hours_played = ?, updated_at = now() WHERE id = ?`,
-				ownership, hoursPlayed, existingUGPID,
+		if errors.Is(ugpErr, sql.ErrNoRows) || ugpErr != nil {
+			ugpID := uuid.NewString()
+			if _, err := w.DB.NewRaw(`
+				INSERT INTO user_game_platforms
+				(id, user_game_id, platform, storefront, is_available, hours_played, ownership_status,
+				 original_platform_name, original_storefront_name, external_game_id, sync_from_source, created_at, updated_at)
+				VALUES (?, ?, ?, ?, true, ?, ?, ?, ?, ?, true, now(), now())
+				ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
+				ugpID, ugID, egp.Platform, storefrontSlug, hoursPlayed, ownership,
+				egp.Platform, eg.Storefront, eg.ID,
 			).Exec(ctx); err != nil {
-				slog.Error("process_sync_item: update ugp ownership failed", "err", err, "job_item_id", p.JobItemID)
+				slog.Error("process_sync_item: insert user_game_platform failed", "err", err, "job_item_id", p.JobItemID, "platform", egp.Platform)
 			}
 		} else {
-			// Still update hours_played even if ownership rank doesn't improve.
-			if _, err := w.DB.NewRaw(
-				`UPDATE user_game_platforms SET hours_played = ?, updated_at = now() WHERE id = ?`,
-				hoursPlayed, existingUGPID,
-			).Exec(ctx); err != nil {
-				slog.Error("process_sync_item: update ugp playtime failed", "err", err, "job_item_id", p.JobItemID)
+			existingRank := 0
+			if existingOwnership != nil {
+				existingRank = ownershipRank(*existingOwnership)
+			}
+			if ownershipRank(ownership) > existingRank {
+				if _, err := w.DB.NewRaw(
+					`UPDATE user_game_platforms SET ownership_status = ?, hours_played = ?, updated_at = now() WHERE id = ?`,
+					ownership, hoursPlayed, existingUGPID,
+				).Exec(ctx); err != nil {
+					slog.Error("process_sync_item: update ugp ownership failed", "err", err, "job_item_id", p.JobItemID)
+				}
+			} else {
+				if _, err := w.DB.NewRaw(
+					`UPDATE user_game_platforms SET hours_played = ?, updated_at = now() WHERE id = ?`,
+					hoursPlayed, existingUGPID,
+				).Exec(ctx); err != nil {
+					slog.Error("process_sync_item: update ugp playtime failed", "err", err, "job_item_id", p.JobItemID)
+				}
 			}
 		}
 	}
