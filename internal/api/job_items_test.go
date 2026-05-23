@@ -124,12 +124,17 @@ func TestResolveItem_PropagatesResolutionToSiblings(t *testing.T) {
 		if err != nil {
 			t.Fatalf("insert external_game %s: %v", row.id, err)
 		}
-		_ = row.platform
+		if _, err := testDB.ExecContext(context.Background(),
+			`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (gen_random_uuid()::text, ?, ?, now())`,
+			row.id, row.platform,
+		); err != nil {
+			t.Fatalf("insert external_game_platform %s: %v", row.id, err)
+		}
 	}
 
 	// job_items for each SKU — both pending_review, source_metadata links to external_game.
-	ppsMeta, _ := json.Marshal(map[string]string{"external_game_id": egPSPAID, "raw_platform": "playstation-5"})
-	cusaMeta, _ := json.Marshal(map[string]string{"external_game_id": egCUSAID, "raw_platform": "playstation-4"})
+	ppsMeta, _ := json.Marshal(map[string]any{"external_game_id": egPSPAID, "playtime_hours": 0})
+	cusaMeta, _ := json.Marshal(map[string]any{"external_game_id": egCUSAID, "playtime_hours": 0})
 	for _, row := range []struct {
 		id, extID string
 		meta      []byte

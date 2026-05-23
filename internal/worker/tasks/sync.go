@@ -359,7 +359,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 
 					platform, ok := platformresolution.RawPlatformToSlug(e.RawPlatform)
 					if !ok {
-						slog.Error("dispatch_sync: psn unknown platform, using default", "raw_platform", e.RawPlatform, "external_id", e.ExternalID)
+						slog.Error("dispatch_sync: psn unknown platform, using default", "storefront_platform", e.RawPlatform, "external_id", e.ExternalID)
 						platform = "playstation-4"
 					}
 
@@ -616,7 +616,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 
 					platform, ok := platformresolution.RawPlatformToSlug(e.RawPlatform)
 					if !ok {
-						slog.Error("dispatch_sync: gog unknown platform, using default", "raw_platform", e.RawPlatform, "external_id", e.ExternalID)
+						slog.Error("dispatch_sync: gog unknown platform, using default", "storefront_platform", e.RawPlatform, "external_id", e.ExternalID)
 						platform = "pc-windows"
 					}
 
