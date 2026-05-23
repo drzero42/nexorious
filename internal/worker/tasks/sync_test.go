@@ -478,9 +478,10 @@ func TestDispatchSync_Steam_CacheHit_SkipsAppDetails(t *testing.T) {
 	}
 }
 
-func TestDispatchSync_Steam_AppDetailsFailure_NoRowNoItem(t *testing.T) {
-	// First-time sync: GetAppDetailsPlatforms returns an error for appid 888 →
-	// no external_games row written, no job_item created.
+func TestDispatchSync_Steam_AppDetailsFailure_FallsBackToWindows(t *testing.T) {
+	// First-time sync: GetAppDetailsPlatforms returns an error (e.g. 429) for
+	// appid 888 → worker falls back to pc-windows and still upserts the game so
+	// it is picked up in the same sync run rather than requiring a second sync.
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -501,15 +502,16 @@ func TestDispatchSync_Steam_AppDetailsFailure_NoRowNoItem(t *testing.T) {
 		uuid.NewString(), userID, credsCiphertext,
 	).Exec(ctx)
 
+	rc := newTestRiverClient(t)
 	adapter := &fakeSteamAdapter{
 		games: []steamsvc.OwnedGame{
 			{AppID: 888, Title: "Rate Limited Game", PlaytimeHours: 0},
 		},
 		platformErrByAppID: map[int]error{
-			888: errors.New("appdetails 429: rate limited"),
+			888: errors.New("steam appdetails HTTP 429 for appid 888"),
 		},
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: rc}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
@@ -518,29 +520,21 @@ func TestDispatchSync_Steam_AppDetailsFailure_NoRowNoItem(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var egCount int
+	// Game must be upserted with pc-windows fallback, not skipped.
+	var rawPlatform string
 	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'steam'`,
+		`SELECT raw_platform FROM external_games WHERE user_id = ? AND storefront = 'steam' AND external_id = '888'`,
 		userID,
-	).Scan(ctx, &egCount)
-	if egCount != 0 {
-		t.Errorf("expected 0 external_games rows after appdetails failure, got %d", egCount)
+	).Scan(ctx, &rawPlatform)
+	if rawPlatform != "pc-windows" {
+		t.Errorf("expected raw_platform=pc-windows fallback after appdetails failure, got %q", rawPlatform)
 	}
 
+	// A job_item must have been enqueued so it is processed in this sync run.
 	var itemCount int
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
-	if itemCount != 0 {
-		t.Errorf("expected 0 job_items for appdetails failure, got %d", itemCount)
-	}
-
-	queried := false
-	for _, id := range adapter.queriedAppIDs {
-		if id == 888 {
-			queried = true
-		}
-	}
-	if !queried {
-		t.Error("expected GetAppDetailsPlatforms to be called for appid 888")
+	if itemCount != 1 {
+		t.Errorf("expected 1 job_item after appdetails fallback, got %d", itemCount)
 	}
 }
 
