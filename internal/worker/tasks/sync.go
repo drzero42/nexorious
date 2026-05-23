@@ -14,6 +14,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
@@ -67,8 +68,9 @@ type epicSubprocessClient interface {
 // It loads the legendary state snapshot from the DB, restores it to disk,
 // calls the epic.Client, then captures and persists the updated snapshot.
 type EpicClientAdapter struct {
-	Client epicSubprocessClient
-	DB     *bun.DB
+	Client    epicSubprocessClient
+	DB        *bun.DB
+	Encrypter *crypto.Encrypter
 }
 
 func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBatch func([]epicsvc.ExternalLibraryEntry) error) error {
@@ -77,15 +79,25 @@ func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBat
 	}
 
 	// 1. Load snapshot from DB.
-	var snapshotJSON []byte
+	var rawStateJSON []byte
 	if err := a.DB.NewRaw(
 		`SELECT epic_legendary_state FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
 		userID,
-	).Scan(ctx, &snapshotJSON); err != nil || len(snapshotJSON) == 0 {
+	).Scan(ctx, &rawStateJSON); err != nil || len(rawStateJSON) == 0 {
 		return fmt.Errorf("epic: no legendary state found for user (not connected)")
 	}
+	// rawStateJSON is JSONB storing a JSON string: "enc:v1:base64..."
+	var ciphertextStr string
+	if err := json.Unmarshal(rawStateJSON, &ciphertextStr); err != nil {
+		return fmt.Errorf("epic: unmarshal legendary state wrapper: %w", err)
+	}
+	plainState, err := a.Encrypter.Decrypt(ciphertextStr)
+	if err != nil {
+		slog.Warn("epic: legendary state decrypt failed", "user_id", userID, "err", err)
+		return fmt.Errorf("epic: legendary state decrypt failed")
+	}
 	var snapshot map[string]string
-	if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
+	if err := json.Unmarshal(plainState, &snapshot); err != nil {
 		return fmt.Errorf("epic: unmarshal legendary state: %w", err)
 	}
 
@@ -102,12 +114,18 @@ func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBat
 	if captureErr != nil {
 		slog.Error("epic: capture snapshot after GetLibrary failed", "user_id", userID, "err", captureErr)
 	} else if len(newSnapshot) > 0 {
-		newJSON, _ := json.Marshal(newSnapshot)
-		if _, err := a.DB.NewRaw(
-			`UPDATE user_sync_configs SET epic_legendary_state = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
-			string(newJSON), userID,
-		).Exec(context.Background()); err != nil {
-			slog.Error("epic: persist updated snapshot failed", "user_id", userID, "err", err)
+		newPlainJSON, _ := json.Marshal(newSnapshot)
+		newCiphertext, encErr := a.Encrypter.Encrypt(newPlainJSON)
+		if encErr != nil {
+			slog.Error("epic: encrypt updated snapshot failed", "user_id", userID, "err", encErr)
+		} else {
+			newStateJSON, _ := json.Marshal(newCiphertext) // wrap string as JSON for JSONB
+			if _, err := a.DB.NewRaw(
+				`UPDATE user_sync_configs SET epic_legendary_state = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
+				string(newStateJSON), userID,
+			).Exec(context.Background()); err != nil {
+				slog.Error("epic: persist updated snapshot failed", "user_id", userID, "err", err)
+			}
 		}
 	}
 
@@ -140,6 +158,7 @@ func (DispatchSyncArgs) InsertOpts() river.InsertOpts {
 type DispatchSyncWorker struct {
 	river.WorkerDefaults[DispatchSyncArgs]
 	DB          *bun.DB
+	Encrypter   *crypto.Encrypter
 	Steam       SteamLibraryAdapter
 	PSN         PSNLibraryAdapter
 	Epic        EpicLibraryAdapter
@@ -178,11 +197,17 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	// ── 3+4+6. Fetch library, upsert external_games, dispatch items ───────
 	switch p.Storefront {
 	case "steam":
+		plainCreds, err := w.Encrypter.Decrypt(*cfg.StorefrontCredentials)
+		if err != nil {
+			slog.Warn("dispatch_sync: steam credentials decrypt failed", "user_id", p.UserID, "err", err)
+			failSyncJob(ctx, w.DB, p.JobID, "credentials decrypt failed")
+			return nil
+		}
 		var creds struct {
 			WebAPIKey string `json:"web_api_key"`
 			SteamID   string `json:"steam_id"`
 		}
-		if err := json.Unmarshal([]byte(*cfg.StorefrontCredentials), &creds); err != nil {
+		if err := json.Unmarshal(plainCreds, &creds); err != nil {
 			failSyncJob(ctx, w.DB, p.JobID, "invalid steam credentials")
 			return nil
 		}
@@ -289,11 +314,17 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 
 	case "psn":
+		plainCreds, err := w.Encrypter.Decrypt(*cfg.StorefrontCredentials)
+		if err != nil {
+			slog.Warn("dispatch_sync: psn credentials decrypt failed", "user_id", p.UserID, "err", err)
+			failSyncJob(ctx, w.DB, p.JobID, "credentials decrypt failed")
+			return nil
+		}
 		var psnCreds struct {
 			NpssoToken string `json:"npsso_token"`
 			IsVerified bool   `json:"is_verified"`
 		}
-		if err := json.Unmarshal([]byte(*cfg.StorefrontCredentials), &psnCreds); err != nil {
+		if err := json.Unmarshal(plainCreds, &psnCreds); err != nil {
 			failSyncJob(ctx, w.DB, p.JobID, "invalid psn credentials")
 			return nil
 		}
@@ -381,10 +412,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 					"token_expired_at": expiredAt,
 				}
 				if b, merr := json.Marshal(newCreds); merr == nil {
-					s := string(b)
-					if _, err := w.DB.NewRaw(
+					enc, encErr := w.Encrypter.Encrypt(b)
+					if encErr != nil {
+						slog.Error("dispatch_sync: encrypt expired psn token failed", "err", encErr, "job_id", p.JobID)
+					} else if _, err := w.DB.NewRaw(
 						`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'psn'`,
-						s, p.UserID,
+						enc, p.UserID,
 					).Exec(context.Background()); err != nil {
 						slog.Error("dispatch_sync: persist expired psn token failed", "err", err, "job_id", p.JobID)
 					}
@@ -478,13 +511,19 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			return nil
 		}
 
+		plainGOGCreds, err := w.Encrypter.Decrypt(*cfg.StorefrontCredentials)
+		if err != nil {
+			slog.Warn("dispatch_sync: gog credentials decrypt failed", "user_id", p.UserID, "err", err)
+			failSyncJob(ctx, w.DB, p.JobID, "credentials decrypt failed")
+			return nil
+		}
 		var creds struct {
 			AccessToken  string `json:"access_token"`
 			RefreshToken string `json:"refresh_token"`
 			UserID       string `json:"user_id"`
 			Username     string `json:"username"`
 		}
-		if err := json.Unmarshal([]byte(*cfg.StorefrontCredentials), &creds); err != nil {
+		if err := json.Unmarshal(plainGOGCreds, &creds); err != nil {
 			failSyncJob(ctx, w.DB, p.JobID, "invalid gog credentials")
 			return nil
 		}
@@ -499,11 +538,16 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		creds.AccessToken = newTok.AccessToken
 		creds.RefreshToken = newTok.RefreshToken
 		if newCredsJSON, merr := json.Marshal(creds); merr == nil {
-			if _, err := w.DB.NewRaw(
-				`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'gog'`,
-				string(newCredsJSON), p.UserID,
-			).Exec(context.Background()); err != nil {
-				slog.Error("dispatch_sync: persist refreshed gog token failed", "err", err, "job_id", p.JobID)
+			enc, encErr := w.Encrypter.Encrypt(newCredsJSON)
+			if encErr != nil {
+				slog.Error("dispatch_sync: encrypt refreshed gog token failed", "err", encErr, "job_id", p.JobID)
+			} else {
+				if _, err := w.DB.NewRaw(
+					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'gog'`,
+					enc, p.UserID,
+				).Exec(context.Background()); err != nil {
+					slog.Error("dispatch_sync: persist refreshed gog token failed", "err", err, "job_id", p.JobID)
+				}
 			}
 		}
 
