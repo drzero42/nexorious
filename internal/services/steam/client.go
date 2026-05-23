@@ -154,7 +154,7 @@ func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platfor
 	if err := c.limiter.Wait(ctx); err != nil {
 		return Platforms{}, err
 	}
-	url := fmt.Sprintf("%s/api/appdetails?appids=%d&filters=basics", c.appDetailsBase, appID)
+	url := fmt.Sprintf("%s/api/appdetails?appids=%d&filters=platforms", c.appDetailsBase, appID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return Platforms{}, fmt.Errorf("steam appdetails: build request: %w", err)
