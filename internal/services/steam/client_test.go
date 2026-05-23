@@ -80,7 +80,10 @@ func TestGetAppDetailsPlatforms_HappyPath_MixedPlatforms(t *testing.T) {
 	}
 }
 
-func TestGetAppDetailsPlatforms_SuccessFalse_ReturnsError(t *testing.T) {
+func TestGetAppDetailsPlatforms_SuccessFalse_ReturnsZeroValueNoError(t *testing.T) {
+	// success=false means Steam has no current store data for this appid (e.g. removed
+	// or delisted games). The caller treats Platforms{} the same as all-false platforms
+	// and falls back to a default, so we must not error here.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"730": map[string]any{"success": false},
@@ -89,9 +92,12 @@ func TestGetAppDetailsPlatforms_SuccessFalse_ReturnsError(t *testing.T) {
 	defer srv.Close()
 
 	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
-	_, err := c.GetAppDetailsPlatforms(context.Background(), 730)
-	if err == nil {
-		t.Fatal("expected error for success=false, got nil")
+	pl, err := c.GetAppDetailsPlatforms(context.Background(), 730)
+	if err != nil {
+		t.Fatalf("expected no error for success=false, got %v", err)
+	}
+	if pl.Windows || pl.Mac || pl.Linux {
+		t.Errorf("expected all-false Platforms{}, got %+v", pl)
 	}
 }
 

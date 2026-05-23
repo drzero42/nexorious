@@ -148,8 +148,8 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 }
 
 // GetAppDetailsPlatforms fetches platform availability for the given appID.
-// Returns (Platforms{}, error) for non-200, success=false, decode error, or missing key.
-// Returns (Platforms{}, nil) when success=true but all platforms are false — caller decides fallback.
+// Returns (Platforms{}, nil) when success=false (removed/delisted app) or all platforms are false — caller decides fallback.
+// Returns (Platforms{}, error) for non-200, decode error, or missing key.
 func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platforms, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
 		return Platforms{}, err
@@ -187,7 +187,9 @@ func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platfor
 		return Platforms{}, fmt.Errorf("steam appdetails: missing key %q in response", key)
 	}
 	if !entry.Success {
-		return Platforms{}, fmt.Errorf("steam appdetails: success=false for appid %d", appID)
+		// Steam has no current store data for this appid (removed/delisted games still
+		// present in the user's library). Caller falls back to a default platform.
+		return Platforms{}, nil
 	}
 	return Platforms{
 		Windows: entry.Data.Platforms.Windows,
