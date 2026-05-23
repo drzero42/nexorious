@@ -919,9 +919,9 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		jobID, userID, eg.Storefront, now,
 	).Exec(ctx)
 	if jerr == nil {
-		meta, _ := json.Marshal(map[string]string{
+		meta, _ := json.Marshal(map[string]any{
 			"external_game_id": eg.ID,
-			"raw_platform":     eg.RawPlatform,
+			"playtime_hours":   eg.PlaytimeHours,
 		})
 		itemID := uuid.NewString()
 		if _, err := h.db.NewRaw(
@@ -1151,9 +1151,9 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job")
 	}
 
-	meta, _ := json.Marshal(map[string]string{
+	meta, _ := json.Marshal(map[string]any{
 		"external_game_id": eg.ID,
-		"raw_platform":     eg.RawPlatform,
+		"playtime_hours":   eg.PlaytimeHours,
 	})
 	itemID := uuid.NewString()
 	_, err = h.db.NewRaw(

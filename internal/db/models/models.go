@@ -154,24 +154,36 @@ type UserGameTag struct {
 	Tag *Tag `bun:"rel:belongs-to,join:tag_id=id" json:"tag,omitempty"`
 }
 
-// ExternalGame mirrors the external_games table.
+// ExternalGame mirrors the external_games table — one row per (user_id, storefront, external_id).
 type ExternalGame struct {
 	bun.BaseModel `bun:"table:external_games"`
 
-	ID              string    `bun:"id,pk"                  json:"id"`
-	UserID          string    `bun:"user_id,notnull"         json:"user_id"`
-	Storefront      string    `bun:"storefront,notnull"      json:"storefront"`
-	ExternalID      string    `bun:"external_id,notnull"     json:"external_id"`
-	Title           string    `bun:"title,notnull"           json:"title"`
-	ResolvedIGDBID  *int32    `bun:"resolved_igdb_id"        json:"resolved_igdb_id"`
-	IsSkipped       bool      `bun:"is_skipped,notnull"      json:"is_skipped"`
-	IsAvailable     bool      `bun:"is_available,notnull"    json:"is_available"`
-	IsSubscription  bool      `bun:"is_subscription,notnull" json:"is_subscription"`
-	PlaytimeHours   int       `bun:"playtime_hours,notnull"  json:"playtime_hours"`
-	OwnershipStatus *string   `bun:"ownership_status"        json:"ownership_status"`
-	RawPlatform     string    `bun:"raw_platform,notnull"    json:"raw_platform"`
-	CreatedAt       time.Time `bun:"created_at,notnull"      json:"created_at"`
-	UpdatedAt       time.Time `bun:"updated_at,notnull"      json:"updated_at"`
+	ID              string    `bun:"id,pk"                   json:"id"`
+	UserID          string    `bun:"user_id,notnull"          json:"user_id"`
+	Storefront      string    `bun:"storefront,notnull"       json:"storefront"`
+	ExternalID      string    `bun:"external_id,notnull"      json:"external_id"`
+	Title           string    `bun:"title,notnull"            json:"title"`
+	ResolvedIGDBID  *int32    `bun:"resolved_igdb_id"         json:"resolved_igdb_id"`
+	IsSkipped       bool      `bun:"is_skipped,notnull"       json:"is_skipped"`
+	IsAvailable     bool      `bun:"is_available,notnull"     json:"is_available"`
+	IsSubscription  bool      `bun:"is_subscription,notnull"  json:"is_subscription"`
+	PlaytimeHours   int       `bun:"playtime_hours,notnull"   json:"playtime_hours"`
+	OwnershipStatus *string   `bun:"ownership_status"         json:"ownership_status"`
+	CreatedAt       time.Time `bun:"created_at,notnull"       json:"created_at"`
+	UpdatedAt       time.Time `bun:"updated_at,notnull"       json:"updated_at"`
+
+	Platforms []ExternalGamePlatform `bun:"rel:has-many,join:id=external_game_id" json:"-"`
+}
+
+// ExternalGamePlatform mirrors the external_game_platforms table.
+// platform holds a canonical slug matching platforms.name.
+type ExternalGamePlatform struct {
+	bun.BaseModel `bun:"table:external_game_platforms"`
+
+	ID             string    `bun:"id,pk"                    json:"id"`
+	ExternalGameID string    `bun:"external_game_id,notnull" json:"external_game_id"`
+	Platform       string    `bun:"platform,notnull"         json:"platform"`
+	CreatedAt      time.Time `bun:"created_at,notnull"       json:"created_at"`
 }
 
 // UserSyncConfig mirrors the user_sync_configs table.

@@ -222,77 +222,75 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 		slog.Debug("dispatch_sync: steam owned games fetched", "count", len(owned), "user_id", p.UserID)
 
-		// Batch-load existing platform rows — rows already present skip appdetails.
-		var cachedRows []struct {
-			ExternalID  string `bun:"external_id"`
-			RawPlatform string `bun:"raw_platform"`
-		}
-		if err := w.DB.NewRaw(
-			`SELECT external_id, raw_platform FROM external_games WHERE user_id = ? AND storefront = 'steam'`,
-			p.UserID,
-		).Scan(ctx, &cachedRows); err != nil {
-			slog.Error("dispatch_sync: steam load cached rows failed", "err", err, "job_id", p.JobID)
-		}
-		existing := make(map[string][]string, len(cachedRows))
-		for _, r := range cachedRows {
-			existing[r.ExternalID] = append(existing[r.ExternalID], r.RawPlatform)
-		}
-
 		for _, og := range owned {
 			appidStr := fmt.Sprintf("%d", og.AppID)
 			fetchedIDs[appidStr] = struct{}{}
 
-			platforms := existing[appidStr]
-			if len(platforms) == 0 {
-				pl, detErr := w.Steam.GetAppDetailsPlatforms(ctx, og.AppID)
-				if detErr != nil {
-					if ctx.Err() != nil {
-						slog.Warn("dispatch_sync: steam loop exiting early — context cancelled", "ctx_err", ctx.Err(), "appid", og.AppID, "appdetails_err", detErr, "job_id", p.JobID)
-						failSyncJob(context.Background(), w.DB, p.JobID, fmt.Sprintf("sync cancelled: %v", ctx.Err()))
-						return ctx.Err()
-					}
-					slog.Warn("steam appdetails failed, using pc-windows fallback", "appid", og.AppID, "err", detErr)
-					platforms = []string{"pc-windows"}
+			// Always fetch platforms from appdetails to keep data current.
+			pl, detErr := w.Steam.GetAppDetailsPlatforms(ctx, og.AppID)
+			if detErr != nil {
+				if ctx.Err() != nil {
+					slog.Warn("dispatch_sync: steam loop exiting early — context cancelled", "ctx_err", ctx.Err(), "appid", og.AppID, "appdetails_err", detErr, "job_id", p.JobID)
+					failSyncJob(context.Background(), w.DB, p.JobID, fmt.Sprintf("sync cancelled: %v", ctx.Err()))
+					return ctx.Err()
 				}
-				slog.Debug("dispatch_sync: steam appdetails", "appid", og.AppID, "platforms", pl)
-				if pl.Windows {
-					platforms = append(platforms, "pc-windows")
-				}
-				if pl.Mac {
-					platforms = append(platforms, "pc-mac")
-				}
-				if pl.Linux {
-					platforms = append(platforms, "pc-linux")
-				}
-				if len(platforms) == 0 {
-					platforms = []string{"pc-windows"}
-				}
+				slog.Warn("steam appdetails failed, using pc-windows fallback", "appid", og.AppID, "err", detErr)
+				pl = steamsvc.Platforms{Windows: true}
+			}
+
+			var resolvedPlatforms []string
+			if pl.Windows {
+				resolvedPlatforms = append(resolvedPlatforms, "pc-windows")
+			}
+			if pl.Mac {
+				resolvedPlatforms = append(resolvedPlatforms, "mac")
+			}
+			if pl.Linux {
+				resolvedPlatforms = append(resolvedPlatforms, "pc-linux")
+			}
+			if len(resolvedPlatforms) == 0 {
+				resolvedPlatforms = []string{"pc-windows"}
 			}
 
 			ownership := "owned"
 			upsertNow := time.Now().UTC()
-			for _, raw := range platforms {
-				row := &models.ExternalGame{
-					ID:              uuid.NewString(),
-					UserID:          p.UserID,
-					Storefront:      p.Storefront,
-					ExternalID:      appidStr,
-					Title:           og.Title,
-					IsAvailable:     true,
-					IsSubscription:  false,
-					PlaytimeHours:   og.PlaytimeHours,
-					OwnershipStatus: &ownership,
-					RawPlatform:     raw,
-					CreatedAt:       upsertNow,
-					UpdatedAt:       upsertNow,
+
+			var egID string
+			if err := w.DB.NewRaw(`
+				INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, playtime_hours, ownership_status, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, true, false, ?, ?, ?, ?)
+				ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
+					title = EXCLUDED.title,
+					playtime_hours = EXCLUDED.playtime_hours,
+					is_subscription = EXCLUDED.is_subscription,
+					ownership_status = EXCLUDED.ownership_status,
+					is_available = true,
+					updated_at = now()
+				RETURNING id`,
+				uuid.NewString(), p.UserID, p.Storefront, appidStr, og.Title,
+				og.PlaytimeHours, &ownership, upsertNow, upsertNow,
+			).Scan(ctx, &egID); err != nil {
+				slog.Error("dispatch_sync: steam upsert external_game failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
+				continue
+			}
+
+			for _, platform := range resolvedPlatforms {
+				if _, err := w.DB.NewRaw(`
+					INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
+					VALUES (?, ?, ?, now())
+					ON CONFLICT (external_game_id, platform) DO NOTHING`,
+					uuid.NewString(), egID, platform,
+				).Exec(ctx); err != nil {
+					slog.Error("dispatch_sync: steam upsert platform failed", "err", err, "job_id", p.JobID, "external_id", appidStr, "platform", platform)
 				}
-				if _, err := w.DB.NewInsert().Model(row).
-					On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
-					Exec(ctx); err != nil {
-					slog.Error("dispatch_sync: steam upsert external_game failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
-				} else {
-					slog.Debug("dispatch_sync: steam upserted game", "appid", appidStr, "platform", raw, "title", og.Title)
-				}
+			}
+
+			if _, err := w.DB.NewRaw(`
+				DELETE FROM external_game_platforms
+				WHERE external_game_id = ? AND platform NOT IN (?)`,
+				egID, bun.List(resolvedPlatforms),
+			).Exec(ctx); err != nil {
+				slog.Error("dispatch_sync: steam delete stale platforms failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
 			}
 		}
 
@@ -304,18 +302,16 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 		slog.Debug("dispatch_sync: steam to-process count", "count", len(toProcess), "job_id", p.JobID)
 		for _, eg := range toProcess {
-			itemKey := eg.ExternalID + ":" + eg.RawPlatform
 			metaJSON, _ := json.Marshal(map[string]any{
 				"external_game_id": eg.ID,
-				"raw_platform":     eg.RawPlatform,
 				"playtime_hours":   eg.PlaytimeHours,
 			})
 			itemID := uuid.NewString()
-			if _, err := w.DB.NewRaw(
-				`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-				 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
-				 ON CONFLICT (job_id, item_key) DO NOTHING`,
-				itemID, p.JobID, p.UserID, itemKey, eg.Title, string(metaJSON),
+			if _, err := w.DB.NewRaw(`
+				INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+				ON CONFLICT (job_id, item_key) DO NOTHING`,
+				itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
 			).Exec(ctx); err != nil {
 				slog.Error("dispatch_sync: steam insert job_item failed", "err", err, "job_id", p.JobID, "external_id", eg.ExternalID)
 			}
@@ -351,37 +347,49 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 					return nil
 				}
 				slog.Info("dispatch_sync: psn batch received", "job_id", p.JobID, "batch_size", len(batch))
-				rawPlatformByExtID := make(map[string]string, len(batch))
 				batchExtIDs := make([]string, 0, len(batch))
 				for _, e := range batch {
 					fetchedIDs[e.ExternalID] = struct{}{}
 					batchExtIDs = append(batchExtIDs, e.ExternalID)
-					rawPlatformByExtID[e.ExternalID] = e.RawPlatform
+
+					platform, ok := platformresolution.RawPlatformToSlug(e.RawPlatform)
+					if !ok {
+						slog.Error("dispatch_sync: psn unknown platform, using default", "raw_platform", e.RawPlatform, "external_id", e.ExternalID)
+						platform = "playstation-4"
+					}
+
 					ownership := e.OwnershipStatus
 					upsertNow := time.Now().UTC()
-					row := &models.ExternalGame{
-						ID:              uuid.NewString(),
-						UserID:          p.UserID,
-						Storefront:      p.Storefront,
-						ExternalID:      e.ExternalID,
-						Title:           e.Title,
-						IsAvailable:     true,
-						IsSubscription:  e.IsSubscription,
-						PlaytimeHours:   e.PlaytimeHours,
-						OwnershipStatus: &ownership,
-						RawPlatform:     e.RawPlatform,
-						CreatedAt:       upsertNow,
-						UpdatedAt:       upsertNow,
-					}
-					if _, err := w.DB.NewInsert().Model(row).
-						On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
-						Exec(ctx); err != nil {
+
+					var egID string
+					if err := w.DB.NewRaw(`
+						INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, playtime_hours, ownership_status, created_at, updated_at)
+						VALUES (?, ?, ?, ?, ?, true, ?, ?, ?, ?, ?)
+						ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
+							title = EXCLUDED.title,
+							playtime_hours = EXCLUDED.playtime_hours,
+							is_subscription = EXCLUDED.is_subscription,
+							ownership_status = EXCLUDED.ownership_status,
+							is_available = true,
+							updated_at = now()
+						RETURNING id`,
+						uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
+						e.IsSubscription, e.PlaytimeHours, &ownership, upsertNow, upsertNow,
+					).Scan(ctx, &egID); err != nil {
 						slog.Error("dispatch_sync: psn upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
+						continue
+					}
+
+					if _, err := w.DB.NewRaw(`
+						INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
+						VALUES (?, ?, ?, now())
+						ON CONFLICT (external_game_id, platform) DO NOTHING`,
+						uuid.NewString(), egID, platform,
+					).Exec(ctx); err != nil {
+						slog.Error("dispatch_sync: psn upsert platform failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
 					}
 				}
 
-				// Re-query only this batch to get DB state (is_skipped, id).
-				// is_skipped is preserved by the ON CONFLICT clause above.
 				var toProcess []models.ExternalGame
 				if err := w.DB.NewSelect().Model(&toProcess).
 					Where("user_id = ? AND storefront = ? AND is_available = true AND is_skipped = false AND external_id IN (?)",
@@ -394,14 +402,13 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				for _, eg := range toProcess {
 					metaJSON, _ := json.Marshal(map[string]any{
 						"external_game_id": eg.ID,
-						"raw_platform":     rawPlatformByExtID[eg.ExternalID],
 						"playtime_hours":   eg.PlaytimeHours,
 					})
 					itemID := uuid.NewString()
-					if _, err := w.DB.NewRaw(
-						`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-						 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
-						 ON CONFLICT (job_id, item_key) DO NOTHING`,
+					if _, err := w.DB.NewRaw(`
+						INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+						ON CONFLICT (job_id, item_key) DO NOTHING`,
 						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
 					).Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: psn insert job_item failed", "job_id", p.JobID, "external_id", eg.ExternalID, "err", err)
@@ -457,25 +464,35 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				for _, e := range batch {
 					fetchedIDs[e.ExternalID] = struct{}{}
 					batchExtIDs = append(batchExtIDs, e.ExternalID)
+
 					ownership := e.OwnershipStatus
 					upsertNow := time.Now().UTC()
-					row := &models.ExternalGame{
-						ID:              uuid.NewString(),
-						UserID:          p.UserID,
-						Storefront:      p.Storefront,
-						ExternalID:      e.ExternalID,
-						Title:           e.Title,
-						IsAvailable:     true,
-						IsSubscription:  false,
-						OwnershipStatus: &ownership,
-						RawPlatform:     "pc-windows",
-						CreatedAt:       upsertNow,
-						UpdatedAt:       upsertNow,
-					}
-					if _, err := w.DB.NewInsert().Model(row).
-						On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
-						Exec(ctx); err != nil {
+
+					var egID string
+					if err := w.DB.NewRaw(`
+						INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, playtime_hours, ownership_status, created_at, updated_at)
+						VALUES (?, ?, ?, ?, ?, true, false, 0, ?, ?, ?)
+						ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
+							title = EXCLUDED.title,
+							is_subscription = EXCLUDED.is_subscription,
+							ownership_status = EXCLUDED.ownership_status,
+							is_available = true,
+							updated_at = now()
+						RETURNING id`,
+						uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
+						&ownership, upsertNow, upsertNow,
+					).Scan(ctx, &egID); err != nil {
 						slog.Error("dispatch_sync: epic upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
+						continue
+					}
+
+					if _, err := w.DB.NewRaw(`
+						INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
+						VALUES (?, ?, 'pc-windows', now())
+						ON CONFLICT (external_game_id, platform) DO NOTHING`,
+						uuid.NewString(), egID,
+					).Exec(ctx); err != nil {
+						slog.Error("dispatch_sync: epic upsert platform failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
 					}
 				}
 
@@ -491,13 +508,13 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				for _, eg := range toProcess {
 					metaJSON, _ := json.Marshal(map[string]any{
 						"external_game_id": eg.ID,
-						"raw_platform":     "pc-windows",
+						"playtime_hours":   eg.PlaytimeHours,
 					})
 					itemID := uuid.NewString()
-					if _, err := w.DB.NewRaw(
-						`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-						 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
-						 ON CONFLICT (job_id, item_key) DO NOTHING`,
+					if _, err := w.DB.NewRaw(`
+						INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+						ON CONFLICT (job_id, item_key) DO NOTHING`,
 						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
 					).Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: epic insert job_item failed", "job_id", p.JobID, "external_id", eg.ExternalID, "err", err)
@@ -539,8 +556,6 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			return nil
 		}
 
-		// Refresh the access token upfront; GOG tokens expire in ~1h.
-		// Always persist the new tokens — refresh tokens may rotate.
 		newTok, err := w.GOG.RefreshToken(ctx, creds.RefreshToken)
 		if err != nil {
 			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("gog token refresh failed: %v", err))
@@ -562,6 +577,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			}
 		}
 
+		// seenEGPlatforms tracks which canonical platform slugs were seen per
+		// external_game_id across all batches, for end-of-stream reconciliation.
+		seenEGPlatforms := make(map[string][]string)
+
 		slog.Info("dispatch_sync: starting gog library fetch", "job_id", p.JobID, "user_id", p.UserID)
 		const gogBatchSize = 50
 		if err := w.GOG.GetLibrary(ctx, creds.AccessToken, gogBatchSize,
@@ -571,38 +590,62 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				}
 				slog.Info("dispatch_sync: gog batch received", "job_id", p.JobID, "batch_size", len(batch))
 
-				batchExtIDs := make([]string, 0, len(batch))
-				seen := make(map[string]struct{})
+				// dispatchedInBatch deduplicates job_item dispatch within this batch.
+				dispatchedInBatch := make(map[string]struct{})
+
 				for _, e := range batch {
 					fetchedIDs[e.ExternalID] = struct{}{}
-					if _, ok := seen[e.ExternalID]; !ok {
-						batchExtIDs = append(batchExtIDs, e.ExternalID)
-						seen[e.ExternalID] = struct{}{}
+
+					platform, ok := platformresolution.RawPlatformToSlug(e.RawPlatform)
+					if !ok {
+						slog.Error("dispatch_sync: gog unknown platform, using default", "raw_platform", e.RawPlatform, "external_id", e.ExternalID)
+						platform = "pc-windows"
 					}
 
 					ownership := e.OwnershipStatus
 					upsertNow := time.Now().UTC()
-					row := &models.ExternalGame{
-						ID:              uuid.NewString(),
-						UserID:          p.UserID,
-						Storefront:      p.Storefront,
-						ExternalID:      e.ExternalID,
-						Title:           e.Title,
-						IsAvailable:     true,
-						IsSubscription:  e.IsSubscription,
-						PlaytimeHours:   e.PlaytimeHours,
-						OwnershipStatus: &ownership,
-						RawPlatform:     e.RawPlatform,
-						CreatedAt:       upsertNow,
-						UpdatedAt:       upsertNow,
-					}
-					if _, err := w.DB.NewInsert().Model(row).
-						On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
-						Exec(ctx); err != nil {
+
+					var egID string
+					if err := w.DB.NewRaw(`
+						INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, playtime_hours, ownership_status, created_at, updated_at)
+						VALUES (?, ?, ?, ?, ?, true, ?, ?, ?, ?, ?)
+						ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
+							title = EXCLUDED.title,
+							playtime_hours = EXCLUDED.playtime_hours,
+							is_subscription = EXCLUDED.is_subscription,
+							ownership_status = EXCLUDED.ownership_status,
+							is_available = true,
+							updated_at = now()
+						RETURNING id`,
+						uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
+						e.IsSubscription, e.PlaytimeHours, &ownership, upsertNow, upsertNow,
+					).Scan(ctx, &egID); err != nil {
 						slog.Error("dispatch_sync: gog upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
+						continue
 					}
+
+					seenEGPlatforms[egID] = append(seenEGPlatforms[egID], platform)
+
+					if _, err := w.DB.NewRaw(`
+						INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
+						VALUES (?, ?, ?, now())
+						ON CONFLICT (external_game_id, platform) DO NOTHING`,
+						uuid.NewString(), egID, platform,
+					).Exec(ctx); err != nil {
+						slog.Error("dispatch_sync: gog upsert platform failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
+					}
+
+					if _, alreadyDispatched := dispatchedInBatch[e.ExternalID]; alreadyDispatched {
+						continue
+					}
+					dispatchedInBatch[e.ExternalID] = struct{}{}
 				}
 
+				// Re-query this batch's unique external_ids to get DB state (is_skipped, id).
+				batchExtIDs := make([]string, 0, len(dispatchedInBatch))
+				for extID := range dispatchedInBatch {
+					batchExtIDs = append(batchExtIDs, extID)
+				}
 				var toProcess []models.ExternalGame
 				if err := w.DB.NewSelect().Model(&toProcess).
 					Where("user_id = ? AND storefront = ? AND is_available = true AND is_skipped = false AND external_id IN (?)",
@@ -613,20 +656,16 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				slog.Info("dispatch_sync: gog batch to dispatch", "job_id", p.JobID, "to_process", len(toProcess))
 
 				for _, eg := range toProcess {
-					// item_key includes raw_platform to ensure uniqueness for
-					// dual-platform games (same ExternalID, different platform).
-					itemKey := eg.ExternalID + ":" + eg.RawPlatform
 					metaJSON, _ := json.Marshal(map[string]any{
 						"external_game_id": eg.ID,
-						"raw_platform":     eg.RawPlatform,
 						"playtime_hours":   eg.PlaytimeHours,
 					})
 					itemID := uuid.NewString()
-					if _, err := w.DB.NewRaw(
-						`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-						 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
-						 ON CONFLICT (job_id, item_key) DO NOTHING`,
-						itemID, p.JobID, p.UserID, itemKey, eg.Title, string(metaJSON),
+					if _, err := w.DB.NewRaw(`
+						INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+						ON CONFLICT (job_id, item_key) DO NOTHING`,
+						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
 					).Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: gog insert job_item failed", "job_id", p.JobID, "external_id", eg.ExternalID, "err", err)
 					}
@@ -642,6 +681,17 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			slog.Error("dispatch_sync: gog library fetch failed", "job_id", p.JobID, "err", err)
 			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("gog_fetch_error: %v", err))
 			return nil
+		}
+
+		// Reconcile: delete platform rows no longer present in the upstream library.
+		for egID, platforms := range seenEGPlatforms {
+			if _, err := w.DB.NewRaw(`
+				DELETE FROM external_game_platforms
+				WHERE external_game_id = ? AND platform NOT IN (?)`,
+				egID, bun.List(platforms),
+			).Exec(ctx); err != nil {
+				slog.Error("dispatch_sync: gog delete stale platforms failed", "err", err, "job_id", p.JobID, "external_game_id", egID)
+			}
 		}
 
 	default:
