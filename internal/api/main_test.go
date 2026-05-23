@@ -17,11 +17,15 @@ import (
 	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 	bunmigrate "github.com/uptrace/bun/migrate"
 
+	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/migrations"
 )
 
 // testDB is the single shared *bun.DB for all api_test tests.
 var testDB *bun.DB
+
+// testEncrypter is the shared Encrypter for all api_test tests.
+var testEncrypter *crypto.Encrypter
 
 // testConnStr is the connection string for the shared test container, used by
 // helpers that need to build a pgx pool (e.g. for River clients in handler
@@ -76,6 +80,12 @@ func TestMain(m *testing.M) {
 	}
 	if _, err := riverMig.Migrate(ctx, rivermigrate.DirectionUp, nil); err != nil {
 		fmt.Fprintf(os.Stderr, "river migrate: %v\n", err)
+		os.Exit(1)
+	}
+
+	testEncrypter, err = crypto.NewEncrypter("test-db-encryption-key-32-bytes!!")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "crypto encrypter init: %v\n", err)
 		os.Exit(1)
 	}
 
