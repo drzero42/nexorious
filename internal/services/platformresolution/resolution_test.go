@@ -36,3 +36,22 @@ func TestStorefrontToCollectionSlug_GOG(t *testing.T) {
 	}
 }
 
+func TestRawPlatformToSlug_PSN4(t *testing.T) {
+	slug, ok := platformresolution.RawPlatformToSlug("playstation-4")
+	if !ok {
+		t.Fatal("expected playstation-4 to resolve")
+	}
+	if slug != "playstation-4" {
+		t.Errorf("got %q, want %q", slug, "playstation-4")
+	}
+}
+
+func TestRawPlatformToSlug_PSN5(t *testing.T) {
+	slug, ok := platformresolution.RawPlatformToSlug("playstation-5")
+	if !ok {
+		t.Fatal("expected playstation-5 to resolve")
+	}
+	if slug != "playstation-5" {
+		t.Errorf("got %q, want %q", slug, "playstation-5")
+	}
+}
