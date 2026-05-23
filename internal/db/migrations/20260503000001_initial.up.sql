@@ -10,7 +10,6 @@ CREATE TABLE users (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX users_username_idx ON users (username);
 CREATE INDEX users_is_active_idx ON users (is_active) WHERE is_active = true;
 
 -- User sessions table
@@ -133,7 +132,6 @@ CREATE TABLE user_game_platforms (
 CREATE UNIQUE INDEX user_game_platforms_uniq
     ON user_game_platforms (user_game_id, platform, storefront) NULLS NOT DISTINCT;
 
-CREATE INDEX user_game_platforms_user_game_id_idx ON user_game_platforms (user_game_id);
 CREATE INDEX user_game_platforms_platform_idx ON user_game_platforms (platform);
 CREATE INDEX user_game_platforms_storefront_idx ON user_game_platforms (storefront);
 CREATE INDEX user_game_platforms_external_game_id_idx ON user_game_platforms (external_game_id);
