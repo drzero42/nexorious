@@ -7,6 +7,7 @@ import type {
   SyncPlatform,
   SyncFrequency,
   SteamVerifyResponse,
+  SteamConnectionData,
   EpicConnectResponse,
   EpicConnectionResponse,
   GOGConnectResponse,
@@ -173,6 +174,13 @@ interface SteamVerifyApiResponse {
   error: string | null;
 }
 
+interface SteamConnectionApiResponse {
+  connected: boolean;
+  credentials_error?: boolean;
+  steam_id?: string;
+  username?: string;
+}
+
 // ============================================================================
 // Epic Auth API Types
 // ============================================================================
@@ -189,6 +197,7 @@ interface EpicConnectApiResponse {
 interface EpicConnectionApiResponse {
   connected: boolean;
   disabled: boolean;
+  credentials_error?: boolean;
   display_name?: string;
   account_id?: string;
   reason?: string;
@@ -251,6 +260,7 @@ export async function getEpicConnection(): Promise<EpicConnectionResponse> {
   return {
     connected: response.connected,
     disabled: response.disabled,
+    credentialsError: response.credentials_error ?? false,
     displayName: response.display_name,
     accountId: response.account_id,
     reason: response.reason,
@@ -279,6 +289,7 @@ interface GOGConnectApiResponse {
 
 interface GOGConnectionApiResponse {
   connected: boolean;
+  credentials_error?: boolean;
   username?: string;
   user_id?: string;
   auth_url?: string;
@@ -302,6 +313,7 @@ export async function getGOGConnection(): Promise<GOGConnectionResponse> {
   const response = await api.get<GOGConnectionApiResponse>('/sync/gog/connection');
   return {
     connected: response.connected,
+    credentialsError: response.credentials_error ?? false,
     username: response.username,
     userId: response.user_id,
     authUrl: response.auth_url,
@@ -330,10 +342,10 @@ interface PSNConfigureApiResponse {
 
 interface PSNStatusApiResponse {
   is_configured: boolean;
+  credentials_error?: boolean;
   online_id: string | null;
   account_id: string | null;
   region: string | null;
-  token_expired: boolean;
 }
 
 // ============================================================================
@@ -366,7 +378,20 @@ export async function getPSNStatus(): Promise<PSNStatusResponse> {
     configured: response.is_configured,
     accountId: response.account_id,
     onlineId: response.online_id,
-    tokenExpired: response.token_expired,
+    credentialsError: response.credentials_error ?? false,
+  };
+}
+
+/**
+ * Get Steam connection status.
+ */
+export async function getSteamConnection(): Promise<SteamConnectionData> {
+  const response = await api.get<SteamConnectionApiResponse>('/sync/steam/connection');
+  return {
+    connected: response.connected,
+    credentialsError: response.credentials_error ?? false,
+    steamId: response.steam_id ?? '',
+    username: response.username ?? '',
   };
 }
 

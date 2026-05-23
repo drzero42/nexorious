@@ -17,6 +17,7 @@ func TestLoad_DatabaseURLFromIndividualVars(t *testing.T) {
 	t.Setenv("DB_NAME", "mydb")
 	// Required fields.
 	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	t.Setenv("IGDB_CLIENT_ID", "testclientid")
 	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
 
@@ -35,6 +36,7 @@ func TestLoad_DatabaseURLFromIndividualVars(t *testing.T) {
 func TestLoad_DatabaseURLExplicit(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgresql://override:pass@host/db")
 	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	t.Setenv("IGDB_CLIENT_ID", "testclientid")
 	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
 
@@ -49,7 +51,8 @@ func TestLoad_DatabaseURLExplicit(t *testing.T) {
 }
 
 func TestLoad_RequiredFieldsMissing(t *testing.T) {
-	// Only SECRET_KEY is required now — IGDB vars are optional.
+	// SECRET_KEY and DB_ENCRYPTION_KEY are both required.
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	saved := os.Getenv("SECRET_KEY")
 	os.Unsetenv("SECRET_KEY") //nolint:errcheck
 	t.Cleanup(func() {
@@ -68,6 +71,7 @@ func TestLoad_RequiredFieldsMissing(t *testing.T) {
 
 func TestLoad_SucceedsWithoutIGDBVars(t *testing.T) {
 	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	// Explicitly unset IGDB vars to ensure they're not inherited.
 	os.Unsetenv("IGDB_CLIENT_ID")   //nolint:errcheck
 	os.Unsetenv("IGDB_CLIENT_SECRET") //nolint:errcheck
@@ -86,6 +90,7 @@ func TestLoad_SucceedsWithoutIGDBVars(t *testing.T) {
 
 func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	t.Setenv("IGDB_CLIENT_ID", "testclientid")
 	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
 

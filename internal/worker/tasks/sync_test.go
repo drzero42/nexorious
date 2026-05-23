@@ -113,7 +113,7 @@ func newTestRiverClient(t *testing.T) *river.Client[pgx.Tx] {
 
 func TestDispatchSync_InvalidPayload(t *testing.T) {
 	truncateAllTables(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: &fakeSteamAdapter{}, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: &fakeSteamAdapter{}, RiverClient: nil}
 
 	// With River, args are already typed — test that a job with empty args
 	// (no matching sync config) returns nil without panicking.
@@ -137,7 +137,7 @@ func TestDispatchSync_NoSyncConfig(t *testing.T) {
 		jobID, userID,
 	)
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: &fakeSteamAdapter{}, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: &fakeSteamAdapter{}, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
@@ -172,7 +172,7 @@ func TestDispatchSync_NoCredentials(t *testing.T) {
 		configID, userID,
 	).Exec(ctx)
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: &fakeSteamAdapter{}, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: &fakeSteamAdapter{}, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
@@ -205,7 +205,7 @@ func TestDispatchSync_UnknownStorefront(t *testing.T) {
 		configID, userID, creds,
 	).Exec(ctx)
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: &fakeSteamAdapter{}, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: &fakeSteamAdapter{}, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "bogus"},
 	}
@@ -231,14 +231,19 @@ func TestDispatchSync_SteamInvalidCredentials(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
 		jobID, userID,
 	)
-	// Invalid JSON for credentials.
+	// Invalid JSON for credentials — encrypt "not-valid-json" so decrypt succeeds
+	// but JSON unmarshal fails, exercising the "invalid steam credentials" branch.
+	invalidCredsEnc, err := testEncrypter.Encrypt([]byte("not-valid-json"))
+	if err != nil {
+		t.Fatalf("encrypt invalid creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
-		configID, userID, "not-valid-json",
+		configID, userID, invalidCredsEnc,
 	).Exec(ctx)
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: &fakeSteamAdapter{}, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: &fakeSteamAdapter{}, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
@@ -264,15 +269,19 @@ func TestDispatchSync_SteamFetchError(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
 		jobID, userID,
 	)
-	creds := `{"web_api_key":"k","steam_id":"s"}`
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
 	adapter := &fakeSteamAdapter{ownedErr: errSteamFetch}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
@@ -304,11 +313,15 @@ func TestDispatchSync_SteamSuccess(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
 		jobID, userID,
 	)
-	creds := `{"web_api_key":"k","steam_id":"s"}`
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
 	adapter := &fakeSteamAdapter{
@@ -317,7 +330,7 @@ func TestDispatchSync_SteamSuccess(t *testing.T) {
 		},
 	}
 	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: rc}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: rc}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
@@ -354,10 +367,14 @@ func TestDispatchSync_Steam_MultiPlatform_WindowsAndLinux(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
 		jobID, userID,
 	)
-	creds := `{"web_api_key":"k","steam_id":"s"}`
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
-		uuid.NewString(), userID, creds,
+		uuid.NewString(), userID, credsCiphertext,
 	).Exec(ctx)
 
 	adapter := &fakeSteamAdapter{
@@ -369,7 +386,7 @@ func TestDispatchSync_Steam_MultiPlatform_WindowsAndLinux(t *testing.T) {
 		},
 	}
 	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: rc}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: rc}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
@@ -415,10 +432,14 @@ func TestDispatchSync_Steam_CacheHit_SkipsAppDetails(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
 		jobID, userID,
 	)
-	creds := `{"web_api_key":"k","steam_id":"s"}`
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
-		uuid.NewString(), userID, creds,
+		uuid.NewString(), userID, credsCiphertext,
 	).Exec(ctx)
 
 	_, _ = testDB.NewRaw(
@@ -432,7 +453,7 @@ func TestDispatchSync_Steam_CacheHit_SkipsAppDetails(t *testing.T) {
 			{AppID: 999, Title: "Cached Game", PlaytimeHours: 5},
 		},
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
@@ -470,10 +491,14 @@ func TestDispatchSync_Steam_AppDetailsFailure_NoRowNoItem(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
 		jobID, userID,
 	)
-	creds := `{"web_api_key":"k","steam_id":"s"}`
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
-		uuid.NewString(), userID, creds,
+		uuid.NewString(), userID, credsCiphertext,
 	).Exec(ctx)
 
 	adapter := &fakeSteamAdapter{
@@ -484,7 +509,7 @@ func TestDispatchSync_Steam_AppDetailsFailure_NoRowNoItem(t *testing.T) {
 			888: errors.New("appdetails 429: rate limited"),
 		},
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
@@ -532,10 +557,14 @@ func TestDispatchSync_Steam_NoPlatformsFallback_EmitsWindowsRow(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
 		jobID, userID,
 	)
-	creds := `{"web_api_key":"k","steam_id":"s"}`
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
-		uuid.NewString(), userID, creds,
+		uuid.NewString(), userID, credsCiphertext,
 	).Exec(ctx)
 
 	adapter := &fakeSteamAdapter{
@@ -547,7 +576,7 @@ func TestDispatchSync_Steam_NoPlatformsFallback_EmitsWindowsRow(t *testing.T) {
 		},
 	}
 	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Steam: adapter, RiverClient: rc}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: rc}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
@@ -1372,13 +1401,18 @@ func TestDispatchSync_PSNInvalidCredentials(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
+	// Encrypt "not-valid-json" so decrypt succeeds but JSON unmarshal fails.
+	invalidCredsEnc, err := testEncrypter.Encrypt([]byte("not-valid-json"))
+	if err != nil {
+		t.Fatalf("encrypt invalid creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
-		configID, userID, "not-valid-json",
+		configID, userID, invalidCredsEnc,
 	).Exec(ctx)
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: &fakePSNAdapter{}, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, PSN: &fakePSNAdapter{}, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
 	}
@@ -1403,14 +1437,18 @@ func TestDispatchSync_PSNTokenNotVerified(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
-	creds := `{"npsso_token":"abc123","is_verified":false}`
+	rawCreds := `{"npsso_token":"abc123","is_verified":false}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
-	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: &fakePSNAdapter{}, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, PSN: &fakePSNAdapter{}, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
 	}
@@ -1435,16 +1473,20 @@ func TestDispatchSync_PSNAuthError_MarksTokenExpired(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
-	creds := `{"npsso_token":"validtoken","is_verified":true}`
+	rawCreds := `{"npsso_token":"validtoken","is_verified":true}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
 	// ErrInvalidNPSSOToken signals that the npsso token is bad → token must be marked expired.
 	adapter := &fakePSNAdapter{err: psnsvc.ErrInvalidNPSSOToken}
-	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: adapter, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, PSN: adapter, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
 	}
@@ -1458,13 +1500,17 @@ func TestDispatchSync_PSNAuthError_MarksTokenExpired(t *testing.T) {
 		t.Errorf("expected job status=failed (auth error), got %q", status)
 	}
 
-	// Token must be marked as expired in user_sync_configs.
-	var rawCreds string
-	_ = testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &rawCreds)
+	// Token must be marked as expired in user_sync_configs — decrypt before asserting.
+	var storedCreds string
+	_ = testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &storedCreds)
+	decryptedCreds, decErr := testEncrypter.Decrypt(storedCreds)
+	if decErr != nil {
+		t.Fatalf("decrypt stored creds: %v", decErr)
+	}
 	var parsedCreds struct {
 		IsVerified bool `json:"is_verified"`
 	}
-	_ = json.Unmarshal([]byte(rawCreds), &parsedCreds)
+	_ = json.Unmarshal(decryptedCreds, &parsedCreds)
 	if parsedCreds.IsVerified {
 		t.Error("expected is_verified=false after auth error, token still marked verified")
 	}
@@ -1481,16 +1527,20 @@ func TestDispatchSync_PSNServiceError_PreservesToken(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
-	creds := `{"npsso_token":"validtoken","is_verified":true}`
+	rawCreds := `{"npsso_token":"validtoken","is_verified":true}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
 	// A generic (non-auth) error — e.g. 503 from Sony's API — must NOT mark the token expired.
 	adapter := &fakePSNAdapter{err: errors.New("request failed with status 503: service unavailable")}
-	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: adapter, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, PSN: adapter, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
 	}
@@ -1505,12 +1555,17 @@ func TestDispatchSync_PSNServiceError_PreservesToken(t *testing.T) {
 	}
 
 	// Token must NOT be marked expired — the token is valid, the service was unavailable.
-	var rawCreds string
-	_ = testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &rawCreds)
+	// Credentials are stored encrypted; decrypt before asserting.
+	var storedCreds string
+	_ = testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &storedCreds)
+	decryptedCreds, decErr := testEncrypter.Decrypt(storedCreds)
+	if decErr != nil {
+		t.Fatalf("decrypt stored creds: %v", decErr)
+	}
 	var parsedCreds struct {
 		IsVerified bool `json:"is_verified"`
 	}
-	_ = json.Unmarshal([]byte(rawCreds), &parsedCreds)
+	_ = json.Unmarshal(decryptedCreds, &parsedCreds)
 	if !parsedCreds.IsVerified {
 		t.Error("expected is_verified=true after service error (token not expired), but token was marked expired")
 	}
@@ -1527,11 +1582,15 @@ func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'pending', 'low', 0)`,
 		jobID, userID,
 	).Exec(ctx)
-	creds := `{"npsso_token":"validtoken","is_verified":true}`
+	rawCreds := `{"npsso_token":"validtoken","is_verified":true}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
 	// Two pages of games — verifies that both pages are processed.
@@ -1544,7 +1603,7 @@ func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 	}
 	adapter := &fakePSNAdapter{pages: [][]psnsvc.ExternalLibraryEntry{page1, page2}}
 	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: adapter, RiverClient: rc}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, PSN: adapter, RiverClient: rc}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
 	}
@@ -1585,11 +1644,15 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'pending', 'low', 0)`,
 		jobID, userID,
 	).Exec(ctx)
-	creds := `{"npsso_token":"validtoken","is_verified":true}`
+	rawCreds := `{"npsso_token":"validtoken","is_verified":true}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
 	// Pre-insert God of War as skipped. The ON CONFLICT upsert does not touch
@@ -1608,7 +1671,7 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 		{ExternalID: "NPWR00002_00", Title: "Spider-Man", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
 	}
 	adapter := &fakePSNAdapter{pages: [][]psnsvc.ExternalLibraryEntry{page1}}
-	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: adapter, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, PSN: adapter, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
 	}
@@ -1642,15 +1705,19 @@ func TestDispatchSync_PSNGraphQLSchemaChanged_PreservesToken(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
-	creds := `{"npsso_token":"validtoken","is_verified":true}`
+	rawCreds := `{"npsso_token":"validtoken","is_verified":true}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'psn', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
 	adapter := &fakePSNAdapter{err: psnsvc.ErrPSNGraphQLSchemaChanged}
-	w := &tasks.DispatchSyncWorker{DB: testDB, PSN: adapter, RiverClient: nil}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, PSN: adapter, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
 	}
@@ -1665,12 +1732,17 @@ func TestDispatchSync_PSNGraphQLSchemaChanged_PreservesToken(t *testing.T) {
 	}
 
 	// Token must NOT be marked expired — schema change is not an auth error.
-	var rawCreds string
-	_ = testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &rawCreds)
+	// Credentials are stored encrypted; decrypt before asserting.
+	var storedCreds string
+	_ = testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &storedCreds)
+	decryptedCreds, decErr := testEncrypter.Decrypt(storedCreds)
+	if decErr != nil {
+		t.Fatalf("decrypt stored creds: %v", decErr)
+	}
 	var parsedCreds struct {
 		IsVerified bool `json:"is_verified"`
 	}
-	_ = json.Unmarshal([]byte(rawCreds), &parsedCreds)
+	_ = json.Unmarshal(decryptedCreds, &parsedCreds)
 	if !parsedCreds.IsVerified {
 		t.Error("expected is_verified=true after schema-changed error (token not expired)")
 	}
@@ -1936,14 +2008,23 @@ func (f *fakeEpicSubprocessClient) CaptureSnapshot(_ string) (map[string]string,
 
 func seedEpicConfig(t *testing.T, userID string, snapshot map[string]string) {
 	t.Helper()
-	snapJSON, err := json.Marshal(snapshot)
+	snapPlainJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		t.Fatalf("marshal snapshot: %v", err)
+	}
+	ciphertext, err := testEncrypter.Encrypt(snapPlainJSON)
+	if err != nil {
+		t.Fatalf("encrypt snapshot: %v", err)
+	}
+	// epic_legendary_state is JSONB; store the ciphertext string as a JSON string.
+	stateJSON, err := json.Marshal(ciphertext)
+	if err != nil {
+		t.Fatalf("marshal ciphertext as JSON string: %v", err)
 	}
 	_, err = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, epic_legendary_state, created_at, updated_at)
 		 VALUES (?, ?, 'epic', 'manual', ?::jsonb, now(), now())`,
-		uuid.NewString(), userID, string(snapJSON),
+		uuid.NewString(), userID, string(stateJSON),
 	).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("seed user_sync_configs: %v", err)
@@ -1952,20 +2033,29 @@ func seedEpicConfig(t *testing.T, userID string, snapshot map[string]string) {
 
 func readEpicSnapshot(t *testing.T, userID string) map[string]string {
 	t.Helper()
-	var snapJSON []byte
+	var rawStateJSON []byte
 	err := testDB.NewRaw(
 		`SELECT epic_legendary_state FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
 		userID,
-	).Scan(context.Background(), &snapJSON)
+	).Scan(context.Background(), &rawStateJSON)
 	if err != nil {
 		t.Fatalf("read epic_legendary_state: %v", err)
 	}
-	if len(snapJSON) == 0 {
+	if len(rawStateJSON) == 0 {
 		return nil
 	}
+	// rawStateJSON is JSONB storing a JSON string: "enc:v1:base64..."
+	var ciphertextStr string
+	if err := json.Unmarshal(rawStateJSON, &ciphertextStr); err != nil {
+		t.Fatalf("unmarshal ciphertext wrapper: %v", err)
+	}
+	plainState, err := testEncrypter.Decrypt(ciphertextStr)
+	if err != nil {
+		t.Fatalf("decrypt snapshot: %v", err)
+	}
 	var out map[string]string
-	if err := json.Unmarshal(snapJSON, &out); err != nil {
-		t.Fatalf("unmarshal snapshot: %v", err)
+	if err := json.Unmarshal(plainState, &out); err != nil {
+		t.Fatalf("unmarshal decrypted snapshot: %v", err)
 	}
 	return out
 }
@@ -1976,7 +2066,7 @@ func TestEpicClientAdapter_NotConfigured_ReturnsErrorWithoutTouchingDB(t *testin
 	insertTestUser(t, testDB, userID)
 
 	fake := &fakeEpicSubprocessClient{configured: false}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
 	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
 	if err == nil {
@@ -1994,7 +2084,7 @@ func TestEpicClientAdapter_NoSnapshotInDB_ReturnsError(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	fake := &fakeEpicSubprocessClient{configured: true}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
 	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
 	if err == nil {
@@ -2018,7 +2108,7 @@ func TestEpicClientAdapter_RestoresSnapshotFromDB(t *testing.T) {
 	seedEpicConfig(t, userID, original)
 
 	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: original}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
 	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
 	if err != nil {
@@ -2047,7 +2137,7 @@ func TestEpicClientAdapter_PersistsNewSnapshotAfterSuccess(t *testing.T) {
 	seedEpicConfig(t, userID, original)
 
 	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: updated}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
 	if err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil }); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -2079,7 +2169,7 @@ func TestEpicClientAdapter_PersistsSnapshotEvenOnFetchError(t *testing.T) {
 		getLibraryErr:   fetchErr,
 		captureSnapshot: updatedAfterFailedFetch,
 	}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
 	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
 	if err == nil || err.Error() != fetchErr.Error() {
@@ -2104,7 +2194,7 @@ func TestEpicClientAdapter_SkipsPersistWhenSnapshotEmpty(t *testing.T) {
 	seedEpicConfig(t, userID, original)
 
 	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: map[string]string{}}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
 	if err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil }); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -2153,11 +2243,15 @@ func TestGOGDispatch_CreatesExternalGames(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'gog', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
-	creds := `{"access_token":"acc","refresh_token":"ref","user_id":"u1","username":"user"}`
+	rawCreds := `{"access_token":"acc","refresh_token":"ref","user_id":"u1","username":"user"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'gog', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
 	adapter := &fakeGOGAdapter{
@@ -2165,7 +2259,7 @@ func TestGOGDispatch_CreatesExternalGames(t *testing.T) {
 			{ExternalID: "1001", Title: "GOG Game", RawPlatform: "pc-windows", OwnershipStatus: "owned"},
 		},
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, GOG: adapter}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, GOG: adapter}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
 	}
@@ -2191,11 +2285,15 @@ func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'gog', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
-	creds := `{"access_token":"acc","refresh_token":"ref","user_id":"u1","username":"user"}`
+	rawCreds := `{"access_token":"acc","refresh_token":"ref","user_id":"u1","username":"user"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'gog', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
 	adapter := &fakeGOGAdapter{
@@ -2204,7 +2302,7 @@ func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
 			{ExternalID: "2001", Title: "Dual Game", RawPlatform: "pc-linux", OwnershipStatus: "owned"},
 		},
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, GOG: adapter}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, GOG: adapter}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
 	}
@@ -2238,30 +2336,39 @@ func TestGOGDispatch_TokenRefreshPersisted(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'gog', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
-	creds := `{"access_token":"old-acc","refresh_token":"old-ref","user_id":"u1","username":"user"}`
+	rawCreds := `{"access_token":"old-acc","refresh_token":"old-ref","user_id":"u1","username":"user"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'gog', 'daily', ?)`,
-		configID, userID, creds,
+		configID, userID, credsCiphertext,
 	).Exec(ctx)
 
 	adapter := &fakeGOGAdapter{
 		refreshedTo: &gogsvc.TokenResponse{AccessToken: "new-acc", RefreshToken: "new-ref", UserID: "u1", Username: "user"},
 		entries:     []gogsvc.ExternalLibraryEntry{},
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, GOG: adapter}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, GOG: adapter}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
 	}
 	_ = w.Work(ctx, job)
 
+	// Credentials are stored encrypted; decrypt before asserting.
 	var storedCreds string
 	_ = testDB.NewRaw(
 		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'gog'`,
 		userID,
 	).Scan(ctx, &storedCreds)
+	decryptedCreds, decErr := testEncrypter.Decrypt(storedCreds)
+	if decErr != nil {
+		t.Fatalf("decrypt stored creds: %v", decErr)
+	}
 	var parsed map[string]string
-	_ = json.Unmarshal([]byte(storedCreds), &parsed)
+	_ = json.Unmarshal(decryptedCreds, &parsed)
 	if parsed["access_token"] != "new-acc" {
 		t.Errorf("refreshed access_token not persisted, got %q", parsed["access_token"])
 	}

@@ -18,6 +18,13 @@ WARNING: nexorious.secretKey is set to the default placeholder value.
    --set nexorious.secretKey=$(openssl rand -hex 32)
 {{- end }}
 
+{{- if eq .Values.nexorious.dbEncryptionKey "change-me-in-production" }}
+
+WARNING: nexorious.dbEncryptionKey is set to the default placeholder value.
+   Set it to a secure random value:
+   --set nexorious.dbEncryptionKey=$(openssl rand -base64 32)
+{{- end }}
+
 {{- if eq .Values.nexorious.igdbClientId "" }}
 
 WARNING: nexorious.igdbClientId is not set.

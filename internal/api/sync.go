@@ -19,6 +19,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -160,16 +161,24 @@ type psnConfigureResponse struct {
 }
 
 type psnStatusResponse struct {
-	IsConfigured bool   `json:"is_configured"`
-	OnlineID     string `json:"online_id"`
-	AccountID    string `json:"account_id"`
-	Region       string `json:"region"`
-	TokenExpired bool   `json:"token_expired"`
+	IsConfigured     bool   `json:"is_configured"`
+	CredentialsError bool   `json:"credentials_error,omitempty"`
+	OnlineID         string `json:"online_id,omitempty"`
+	AccountID        string `json:"account_id,omitempty"`
+	Region           string `json:"region,omitempty"`
+}
+
+type steamConnectionResponse struct {
+	Connected        bool   `json:"connected"`
+	CredentialsError bool   `json:"credentials_error,omitempty"`
+	SteamID          string `json:"steam_id,omitempty"`
+	Username         string `json:"username,omitempty"`
 }
 
 // SyncHandler handles sync configuration, trigger, and status endpoints.
 type SyncHandler struct {
 	db          *bun.DB
+	encrypter   *crypto.Encrypter
 	riverClient *river.Client[pgx.Tx]
 	steamClient SteamClient
 	psnClient   PSNClient
@@ -178,14 +187,15 @@ type SyncHandler struct {
 }
 
 // NewSyncHandler constructs a SyncHandler.
-func NewSyncHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient, epic EpicClient, gog GOGClient) *SyncHandler {
-	return &SyncHandler{db: db, riverClient: riverClient, steamClient: steam, psnClient: psn, epicClient: epic, gogClient: gog}
+func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient, epic EpicClient, gog GOGClient) *SyncHandler {
+	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, psnClient: psn, epicClient: epic, gogClient: gog}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
 // Static-segment routes are registered before parameterised routes to avoid conflicts.
 func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/steam/verify", h.HandleSteamVerify)
+	g.GET("/steam/connection", h.HandleGetSteamConnection)
 	g.DELETE("/steam/connection", h.HandleSteamDisconnect)
 	g.POST("/psn/configure", h.HandlePSNConfigure)
 	g.GET("/psn/connection", h.HandleGetPSNStatus)
@@ -483,12 +493,18 @@ func (h *SyncHandler) HandleSteamVerify(c *echo.Context) error {
 		"steam_id":     req.SteamID,
 		"display_name": summary.PersonaName,
 	}
-	credsJSON, _ := json.Marshal(creds)
-	credsStr := string(credsJSON)
+	credsJSON, err := json.Marshal(creds)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
+	ciphertext, err := h.encrypter.Encrypt(credsJSON)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
 	now := time.Now().UTC()
 	row := &models.UserSyncConfig{
 		ID: uuid.NewString(), UserID: userID, Storefront: "steam",
-		Frequency: "manual", StorefrontCredentials: &credsStr,
+		Frequency: "manual", StorefrontCredentials: &ciphertext,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if _, err := h.db.NewInsert().Model(row).
@@ -515,6 +531,47 @@ func (h *SyncHandler) HandleSteamDisconnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect Steam")
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *SyncHandler) HandleGetSteamConnection(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	var row models.UserSyncConfig
+	err := h.db.NewSelect().Model(&row).
+		Where("user_id = ? AND storefront = 'steam'", userID).
+		Scan(context.Background())
+	if errors.Is(err, sql.ErrNoRows) {
+		return c.JSON(http.StatusOK, steamConnectionResponse{Connected: false})
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get steam config")
+	}
+	if row.StorefrontCredentials == nil {
+		return c.JSON(http.StatusOK, steamConnectionResponse{Connected: false})
+	}
+
+	plainCreds, err := h.encrypter.Decrypt(*row.StorefrontCredentials)
+	if err != nil {
+		slog.Warn("steam: credentials decrypt failed", "user_id", userID, "err", err)
+		return c.JSON(http.StatusOK, steamConnectionResponse{Connected: true, CredentialsError: true})
+	}
+	var creds struct {
+		SteamID     string `json:"steam_id"`
+		DisplayName string `json:"display_name"`
+	}
+	if err := json.Unmarshal(plainCreds, &creds); err != nil {
+		slog.Error("steam: stored credentials are corrupted", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
+	}
+
+	return c.JSON(http.StatusOK, steamConnectionResponse{
+		Connected: true,
+		SteamID:   creds.SteamID,
+		Username:  creds.DisplayName,
+	})
 }
 
 func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
@@ -546,12 +603,18 @@ func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
 		"is_verified":      true,
 		"token_expired_at": nil,
 	}
-	credsJSON, _ := json.Marshal(creds)
-	credsStr := string(credsJSON)
+	credsJSON, err := json.Marshal(creds)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
+	ciphertext, err := h.encrypter.Encrypt(credsJSON)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
 	now := time.Now().UTC()
 	row := &models.UserSyncConfig{
 		ID: uuid.NewString(), UserID: userID, Storefront: "psn",
-		Frequency: "manual", StorefrontCredentials: &credsStr,
+		Frequency: "manual", StorefrontCredentials: &ciphertext,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if _, err := h.db.NewInsert().Model(row).
@@ -588,24 +651,28 @@ func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
 		return c.JSON(http.StatusOK, psnStatusResponse{})
 	}
 
-	var creds struct {
-		OnlineID       string     `json:"online_id"`
-		AccountID      string     `json:"account_id"`
-		Region         string     `json:"region"`
-		IsVerified     bool       `json:"is_verified"`
-		TokenExpiredAt *time.Time `json:"token_expired_at"`
+	plainCreds, err := h.encrypter.Decrypt(*row.StorefrontCredentials)
+	if err != nil {
+		slog.Warn("psn: credentials decrypt failed", "user_id", userID, "err", err)
+		return c.JSON(http.StatusOK, psnStatusResponse{IsConfigured: true, CredentialsError: true})
 	}
-	if err := json.Unmarshal([]byte(*row.StorefrontCredentials), &creds); err != nil {
+	var creds struct {
+		OnlineID   string `json:"online_id"`
+		AccountID  string `json:"account_id"`
+		Region     string `json:"region"`
+		IsVerified bool   `json:"is_verified"`
+	}
+	if err := json.Unmarshal(plainCreds, &creds); err != nil {
 		slog.Error("psn: stored credentials are corrupted", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
 	}
 
 	return c.JSON(http.StatusOK, psnStatusResponse{
-		IsConfigured: true,
-		OnlineID:     creds.OnlineID,
-		AccountID:    creds.AccountID,
-		Region:       creds.Region,
-		TokenExpired: !creds.IsVerified && creds.TokenExpiredAt != nil,
+		IsConfigured:     true,
+		CredentialsError: !creds.IsVerified,
+		OnlineID:         creds.OnlineID,
+		AccountID:        creds.AccountID,
+		Region:           creds.Region,
 	})
 }
 
@@ -650,13 +717,29 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "epic: user.json missing after auth")
 	}
 
-	snapshotJSON, _ := json.Marshal(snapshot)
 	creds := map[string]string{
 		"display_name": info.DisplayName,
 		"account_id":   info.AccountID,
 	}
-	credsJSON, _ := json.Marshal(creds)
-	credsStr := string(credsJSON)
+	credsJSON, err := json.Marshal(creds)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
+	credsCiphertext, err := h.encrypter.Encrypt(credsJSON)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
+
+	snapshotJSON, err := json.Marshal(snapshot)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
+	stateCiphertext, err := h.encrypter.Encrypt(snapshotJSON)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
+	// epic_legendary_state is a JSONB column; store the ciphertext as a JSON string scalar.
+	stateJSON, _ := json.Marshal(stateCiphertext)
 	now := time.Now().UTC()
 
 	row := &models.UserSyncConfig{
@@ -664,8 +747,8 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 		UserID:                userID,
 		Storefront:            "epic",
 		Frequency:             "manual",
-		StorefrontCredentials: &credsStr,
-		EpicLegendaryState:    snapshotJSON,
+		StorefrontCredentials: &credsCiphertext,
+		EpicLegendaryState:    stateJSON,
 		CreatedAt:             now,
 		UpdatedAt:             now,
 	}
@@ -735,11 +818,16 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{"connected": false, "disabled": false})
 	}
 
+	plainCreds, err := h.encrypter.Decrypt(*row.StorefrontCredentials)
+	if err != nil {
+		slog.Warn("epic: credentials decrypt failed", "user_id", userID, "err", err)
+		return c.JSON(http.StatusOK, map[string]any{"connected": true, "credentials_error": true, "disabled": false})
+	}
 	var creds struct {
 		DisplayName string `json:"display_name"`
 		AccountID   string `json:"account_id"`
 	}
-	if err := json.Unmarshal([]byte(*row.StorefrontCredentials), &creds); err != nil {
+	if err := json.Unmarshal(plainCreds, &creds); err != nil {
 		slog.Error("epic: stored credentials are corrupted", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
 	}
@@ -1111,8 +1199,14 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 		"user_id":       tok.UserID,
 		"username":      tok.Username,
 	}
-	credsJSON, _ := json.Marshal(creds)
-	credsStr := string(credsJSON)
+	credsJSON, err := json.Marshal(creds)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
+	ciphertext, err := h.encrypter.Encrypt(credsJSON)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
+	}
 	now := time.Now().UTC()
 
 	row := &models.UserSyncConfig{
@@ -1120,7 +1214,7 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 		UserID:                userID,
 		Storefront:            "gog",
 		Frequency:             "manual",
-		StorefrontCredentials: &credsStr,
+		StorefrontCredentials: &ciphertext,
 		CreatedAt:             now,
 		UpdatedAt:             now,
 	}
@@ -1177,11 +1271,16 @@ func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{"connected": false, "auth_url": authURL})
 	}
 
+	plainCreds, err := h.encrypter.Decrypt(*row.StorefrontCredentials)
+	if err != nil {
+		slog.Warn("gog: credentials decrypt failed", "user_id", userID, "err", err)
+		return c.JSON(http.StatusOK, map[string]any{"connected": true, "credentials_error": true, "auth_url": authURL})
+	}
 	var creds struct {
 		Username string `json:"username"`
 		UserID   string `json:"user_id"`
 	}
-	if err := json.Unmarshal([]byte(*row.StorefrontCredentials), &creds); err != nil {
+	if err := json.Unmarshal(plainCreds, &creds); err != nil {
 		slog.Error("gog: stored credentials are corrupted", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
 	}

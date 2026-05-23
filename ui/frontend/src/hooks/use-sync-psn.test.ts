@@ -117,7 +117,7 @@ describe('PSN Hooks', () => {
         configured: true,
         accountId: 'test-account-id',
         onlineId: 'TestUser',
-        tokenExpired: false,
+        credentialsError: false,
       });
 
       const { result } = renderHook(() => usePSNStatus(), {
@@ -132,7 +132,7 @@ describe('PSN Hooks', () => {
         configured: true,
         accountId: 'test-account-id',
         onlineId: 'TestUser',
-        tokenExpired: false,
+        credentialsError: false,
       });
 
       mockGetPSNStatus.mockRestore();
@@ -144,7 +144,7 @@ describe('PSN Hooks', () => {
         configured: true,
         accountId: 'test-account-id',
         onlineId: 'TestUser',
-        tokenExpired: true,
+        credentialsError: true,
       });
 
       const { result } = renderHook(() => usePSNStatus(), {
@@ -155,7 +155,7 @@ describe('PSN Hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.tokenExpired).toBe(true);
+      expect(result.current.data?.credentialsError).toBe(true);
 
       mockGetPSNStatus.mockRestore();
     });

@@ -17,6 +17,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/backup"
+	"github.com/drzero42/nexorious/internal/crypto"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	"github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/ratelimit"
@@ -52,6 +53,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseSlogLevel(cfg.LogLevel),
 	})))
+
+	encrypter, err := crypto.NewEncrypter(cfg.DBEncryptionKey)
+	if err != nil {
+		slog.Error("invalid DB_ENCRYPTION_KEY", "err", err)
+		os.Exit(1)
+	}
 
 	// -------------------------------------------------------------------------
 	// Database
@@ -163,11 +170,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
-		DB:    db,
-		Steam: steamsvc.NewClient(),
-		PSN:   psnsvc.NewClient(),
-		Epic:  &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: db},
-		GOG:   gogsvc.NewClient(),
+		DB:        db,
+		Encrypter: encrypter,
+		Steam:     steamsvc.NewClient(),
+		PSN:       psnsvc.NewClient(),
+		Epic:      &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: db, Encrypter: encrypter},
+		GOG:       gogsvc.NewClient(),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
@@ -240,11 +248,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			}
 
 			newDispatchSync := &tasks.DispatchSyncWorker{
-				DB:    newDB,
-				Steam: steamsvc.NewClient(),
-				PSN:   psnsvc.NewClient(),
-				Epic:  &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: newDB},
-				GOG:   gogsvc.NewClient(),
+				DB:        newDB,
+				Encrypter: encrypter,
+				Steam:     steamsvc.NewClient(),
+				PSN:       psnsvc.NewClient(),
+				Epic:      &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: newDB, Encrypter: encrypter},
+				GOG:       gogsvc.NewClient(),
 			}
 			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
 				DB:         newDB,
@@ -309,7 +318,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		RebuildBackupJob: func(_ context.Context, _, _ string, _ int) {},
 	}
 
-	e := api.New(cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, riverClient)
+	e := api.New(encrypter, cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, riverClient)
 
 	// StartDBProbe — polls every 5s, calls initAppState on recovery.
 	migrator.StartDBProbe(shutdownCtx, db, initAppState)

@@ -19,11 +19,15 @@ import (
 	bunmigrate "github.com/uptrace/bun/migrate"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/migrations"
 )
 
 // testDB is the shared database connection for all external package tests.
 var testDB *bun.DB
+
+// testEncrypter is the shared Encrypter for all tasks_test tests.
+var testEncrypter *crypto.Encrypter
 
 // testConnStr is the DSN of the shared test container, exposed for tests that
 // need a pgxpool (e.g. to create a non-started River client).
@@ -79,6 +83,14 @@ func TestMain(m *testing.M) {
 		_ = testDB.Close()
 		_ = ctr.Terminate(ctx)
 		panic("river migrate: " + err.Error())
+	}
+
+	var encErr error
+	testEncrypter, encErr = crypto.NewEncrypter("test-db-encryption-key-32-bytes!!")
+	if encErr != nil {
+		_ = testDB.Close()
+		_ = ctr.Terminate(ctx)
+		panic("crypto encrypter init: " + encErr.Error())
 	}
 
 	code := m.Run()

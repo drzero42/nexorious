@@ -16,10 +16,12 @@
 #
 # The environment file must contain:
 #   SECRET_KEY=<random-secret-used-for-JWT-signing-and-encryption>
+#   DB_ENCRYPTION_KEY=<random-secret-for-at-rest-credential-encryption>
 #   IGDB_CLIENT_ID=<twitch-client-id>
 #   IGDB_CLIENT_SECRET=<twitch-client-secret>
 #
 # Generate SECRET_KEY with: openssl rand -base64 32
+# Generate DB_ENCRYPTION_KEY with: openssl rand -base64 32
 # Obtain IGDB credentials at: https://dev.twitch.tv/console
 #
 # When database.createLocally = true (the default), PostgreSQL is managed
@@ -130,6 +132,8 @@ in
         **Required variables:**
 
         - `SECRET_KEY` — random secret for JWT signing and credential
+          encryption. Generate with `openssl rand -base64 32`.
+        - `DB_ENCRYPTION_KEY` — random secret for at-rest credential
           encryption. Generate with `openssl rand -base64 32`.
         - `IGDB_CLIENT_ID`, `IGDB_CLIENT_SECRET` — Twitch/IGDB API
           credentials for game metadata enrichment. Obtain at

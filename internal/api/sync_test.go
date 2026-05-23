@@ -45,7 +45,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSN
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
 	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 	synch.RegisterRoutes(g)
 	return e
@@ -300,6 +300,13 @@ func TestSteamVerify_StubSuccess(t *testing.T) {
 	if creds == "" {
 		t.Fatal("expected non-empty credentials")
 	}
+	// verify stored value is ciphertext, not plaintext
+	if strings.Contains(creds, "web_api_key") {
+		t.Fatal("stored credentials must be ciphertext, not plaintext")
+	}
+	if !strings.HasPrefix(creds, "enc:v1:") {
+		t.Fatalf("expected enc:v1: prefix, got %q", creds[:min(20, len(creds))])
+	}
 }
 
 func TestSteamDisconnect_Idempotent(t *testing.T) {
@@ -380,11 +387,11 @@ func TestPSNStatus_NoRow(t *testing.T) {
 	if resp["is_configured"].(bool) {
 		t.Fatal("expected is_configured=false")
 	}
-	if resp["token_expired"].(bool) {
-		t.Fatal("expected token_expired=false")
+	if resp["credentials_error"] != nil {
+		t.Fatalf("expected credentials_error absent/null, got %v", resp["credentials_error"])
 	}
-	if resp["online_id"] != "" {
-		t.Fatalf("expected online_id='', got %v", resp["online_id"])
+	if resp["online_id"] != nil {
+		t.Fatalf("expected online_id absent/null, got %v", resp["online_id"])
 	}
 }
 
@@ -595,19 +602,24 @@ func TestPSNStatus_WithCredentials(t *testing.T) {
 		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456", Region: "GB"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
-	_, token := setupTagUser(t, testDB, e, "psn-stat-cred")
+	userID, token := setupTagUser(t, testDB, e, "psn-stat-cred")
 
-	// Configure PSN first to store credentials.
-	token64 := strings.Repeat("b", 64)
-	rec := postJSONAuth(t, e, "/api/sync/psn/configure", map[string]any{
-		"npsso_token": token64,
-	}, token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("configure expected 200, got %d: %s", rec.Code, rec.Body.String())
+	rawCreds := `{"npsso_token":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","online_id":"MyPSNName","account_id":"123456","region":"GB","is_verified":true,"token_expired_at":null}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt psn creds: %v", err)
+	}
+	_, err = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'manual', ?, now(), now())`,
+		"cfg-psn-cred", userID, credsCiphertext,
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("seed user_sync_configs: %v", err)
 	}
 
 	// Now get PSN status — should return configured=true.
-	rec = getAuth(t, e, "/api/sync/psn/connection", token)
+	rec := getAuth(t, e, "/api/sync/psn/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -641,9 +653,32 @@ func TestPSNStatus_CorruptedCredentials(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "psn-corrupt-creds")
 	insertCorruptedSyncConfig(t, testDB, userID, "psn")
 
+	// Decrypt failure must surface credentials_error=true without clearing the row.
 	rec := getAuth(t, e, "/api/sync/psn/connection", token)
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 for corrupted PSN credentials", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 for undecryptable PSN credentials", rec.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["is_configured"] != true {
+		t.Errorf("expected is_configured=true (row still exists), got %v", resp["is_configured"])
+	}
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true, got %v", resp["credentials_error"])
+	}
+
+	// Credentials row must NOT be cleared.
+	var creds string
+	err := testDB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'psn'`, userID,
+	).Scan(context.Background(), &creds)
+	if err != nil {
+		t.Fatalf("credentials row missing after decrypt failure: %v", err)
+	}
+	if creds == "" {
+		t.Error("expected credentials to remain non-null after decrypt failure")
 	}
 }
 
@@ -653,21 +688,67 @@ func TestEpicStatus_CorruptedCredentials(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "epic-corrupt-creds")
 	insertCorruptedSyncConfig(t, testDB, userID, "epic")
 
+	// Decrypt failure must surface credentials_error=true without clearing the row.
 	rec := getAuth(t, e, "/api/sync/epic/connection", token)
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 for corrupted Epic credentials", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 for undecryptable Epic credentials", rec.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["connected"] != true {
+		t.Errorf("expected connected=true (row still exists), got %v", resp["connected"])
+	}
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true, got %v", resp["credentials_error"])
+	}
+
+	// Credentials row must NOT be cleared.
+	var creds string
+	err := testDB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`, userID,
+	).Scan(context.Background(), &creds)
+	if err != nil {
+		t.Fatalf("credentials row missing after decrypt failure: %v", err)
+	}
+	if creds == "" {
+		t.Error("expected credentials to remain non-null after decrypt failure")
 	}
 }
 
 func TestGOGStatus_CorruptedCredentials(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubGOGClient{})
 	userID, token := setupTagUser(t, testDB, e, "gog-corrupt-creds")
 	insertCorruptedSyncConfig(t, testDB, userID, "gog")
 
+	// Decrypt failure must surface credentials_error=true without clearing the row.
 	rec := getAuth(t, e, "/api/sync/gog/connection", token)
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 for corrupted GOG credentials", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 for undecryptable GOG credentials", rec.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["connected"] != true {
+		t.Errorf("expected connected=true (row still exists), got %v", resp["connected"])
+	}
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true, got %v", resp["credentials_error"])
+	}
+
+	// Credentials row must NOT be cleared.
+	var creds string
+	err := testDB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'gog'`, userID,
+	).Scan(context.Background(), &creds)
+	if err != nil {
+		t.Fatalf("credentials row missing after decrypt failure: %v", err)
+	}
+	if creds == "" {
+		t.Error("expected credentials to remain non-null after decrypt failure")
 	}
 }
 
@@ -1085,7 +1166,7 @@ func newSyncTestAppWithEpic(t *testing.T, db *bun.DB, steam api.SteamClient, psn
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, nil, steam, psn, epic, (api.GOGClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, epic, (api.GOGClient)(nil))
 	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1116,7 +1197,7 @@ func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClie
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, rc, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
 	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1145,7 +1226,7 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, nil, steam, psn, (api.EpicClient)(nil), gog)
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), gog)
 	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1234,11 +1315,40 @@ func TestHandleEpicConnect_HappyPathPersistsConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan user_sync_configs: %v", err)
 	}
-	if !strings.Contains(credsRaw, "EpicTester") || !strings.Contains(credsRaw, "acct-123") {
-		t.Errorf("storefront_credentials missing fields: %s", credsRaw)
+	// After encryption, stored values must be opaque ciphertext, not plaintext.
+	if !strings.HasPrefix(credsRaw, "enc:v1:") {
+		t.Fatalf("expected enc:v1: prefix for storefront_credentials, got %q", credsRaw[:min(20, len(credsRaw))])
 	}
-	if !strings.Contains(snapshotRaw, "user.json") {
-		t.Errorf("epic_legendary_state did not persist snapshot: %s", snapshotRaw)
+	decryptedCreds, err := testEncrypter.Decrypt(credsRaw)
+	if err != nil {
+		t.Fatalf("decrypt storefront_credentials: %v", err)
+	}
+	var credsMap map[string]string
+	if err := json.Unmarshal(decryptedCreds, &credsMap); err != nil {
+		t.Fatalf("unmarshal decrypted creds: %v", err)
+	}
+	if credsMap["display_name"] != "EpicTester" || credsMap["account_id"] != "acct-123" {
+		t.Errorf("decrypted storefront_credentials missing fields: %v", credsMap)
+	}
+
+	// epic_legendary_state is stored as a JSONB string scalar containing the ciphertext.
+	var stateCiphertext string
+	if err := json.Unmarshal([]byte(snapshotRaw), &stateCiphertext); err != nil {
+		t.Fatalf("unmarshal epic_legendary_state jsonb string: %v", err)
+	}
+	if !strings.HasPrefix(stateCiphertext, "enc:v1:") {
+		t.Fatalf("expected enc:v1: prefix for epic_legendary_state, got %q", stateCiphertext[:min(20, len(stateCiphertext))])
+	}
+	decryptedState, err := testEncrypter.Decrypt(stateCiphertext)
+	if err != nil {
+		t.Fatalf("decrypt epic_legendary_state: %v", err)
+	}
+	var stateMap map[string]string
+	if err := json.Unmarshal(decryptedState, &stateMap); err != nil {
+		t.Fatalf("unmarshal decrypted epic_legendary_state: %v", err)
+	}
+	if _, ok := stateMap["user.json"]; !ok {
+		t.Errorf("decrypted epic_legendary_state missing user.json key: %v", stateMap)
 	}
 }
 
@@ -1248,13 +1358,23 @@ func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-disc")
 
-	// Pre-populate a connected Epic row.
-	creds := `{"display_name":"X","account_id":"y"}`
-	snap := `{"user.json":"{}"}`
-	_, err := testDB.NewRaw(
+	// Pre-populate a connected Epic row with realistic ciphertext fixtures.
+	credsJSON := `{"display_name":"X","account_id":"y"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(credsJSON))
+	if err != nil {
+		t.Fatalf("encrypt creds fixture: %v", err)
+	}
+	snapJSON := `{"user.json":"{}"}`
+	snapCiphertext, err := testEncrypter.Encrypt([]byte(snapJSON))
+	if err != nil {
+		t.Fatalf("encrypt snap fixture: %v", err)
+	}
+	// epic_legendary_state is JSONB; store the ciphertext as a JSON string scalar.
+	snapJSONB, _ := json.Marshal(snapCiphertext)
+	_, err = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, epic_legendary_state, created_at, updated_at)
 		 VALUES (?, ?, 'epic', 'manual', ?, ?::jsonb, now(), now())`,
-		"cfg-epic-disc", userID, creds, snap,
+		"cfg-epic-disc", userID, credsCiphertext, string(snapJSONB),
 	).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("seed user_sync_configs: %v", err)
@@ -1327,11 +1447,15 @@ func TestHandleGetEpicConnection_ConnectedReturnsAccountInfo(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-status-conn")
 
-	creds := `{"display_name":"PlayerOne","account_id":"acct-xyz"}`
-	_, err := testDB.NewRaw(
+	rawCreds := `{"display_name":"PlayerOne","account_id":"acct-xyz"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt epic creds: %v", err)
+	}
+	_, err = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
 		 VALUES (?, ?, 'epic', 'manual', ?, now(), now())`,
-		"cfg-epic-conn", userID, creds,
+		"cfg-epic-conn", userID, credsCiphertext,
 	).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("seed user_sync_configs: %v", err)
@@ -1442,10 +1566,21 @@ func TestGOGConnection_Connected(t *testing.T) {
 		token: &api.GOGTokenResponse{Username: "goguser", UserID: "u1", AccessToken: "a", RefreshToken: "r"},
 	}
 	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
-	_, token := setupTagUser(t, testDB, app, "gog-status-conn")
+	userID, token := setupTagUser(t, testDB, app, "gog-status-conn")
 
-	// Connect first.
-	postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{"auth_code": "ok"}, token)
+	rawCreds := `{"access_token":"a","refresh_token":"r","user_id":"u1","username":"goguser"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt gog creds: %v", err)
+	}
+	_, err = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'gog', 'manual', ?, now(), now())`,
+		"cfg-gog-conn", userID, credsCiphertext,
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("seed user_sync_configs: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/gog/connection", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -1461,5 +1596,98 @@ func TestGOGConnection_Connected(t *testing.T) {
 	}
 	if body["username"] != "goguser" {
 		t.Errorf("username: got %v", body["username"])
+	}
+}
+
+// ─── Steam connection-handler tests ──────────────────────────────────────────
+
+func TestGetSteamConnection_NotConnected(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, testDB, e, "steam-conn-notconn")
+
+	rec := getAuth(t, e, "/api/sync/steam/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["connected"] != false {
+		t.Errorf("want connected=false, got %v", body["connected"])
+	}
+	if body["credentials_error"] != nil {
+		t.Errorf("want credentials_error absent, got %v", body["credentials_error"])
+	}
+}
+
+func TestGetSteamConnection_Connected(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "steam-conn-ok")
+
+	rawCreds := `{"web_api_key":"AABBCCDD00112233445566778899AABB","steam_id":"76561198012345678","display_name":"Frostbyte"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt steam creds: %v", err)
+	}
+	_, err = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'steam', 'manual', ?, now(), now())`,
+		"cfg-steam-conn", userID, credsCiphertext,
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("seed user_sync_configs: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/sync/steam/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["connected"] != true {
+		t.Errorf("want connected=true, got %v", body["connected"])
+	}
+	if body["steam_id"] != "76561198012345678" {
+		t.Errorf("steam_id: got %v", body["steam_id"])
+	}
+	if body["username"] != "Frostbyte" {
+		t.Errorf("username: got %v", body["username"])
+	}
+	if body["credentials_error"] != nil {
+		t.Errorf("want credentials_error absent, got %v", body["credentials_error"])
+	}
+}
+
+func TestGetSteamConnection_CorruptedCredentials(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "steam-conn-corrupt")
+	insertCorruptedSyncConfig(t, testDB, userID, "steam")
+
+	// Decrypt failure must surface credentials_error=true without clearing the row.
+	rec := getAuth(t, e, "/api/sync/steam/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["connected"] != true {
+		t.Errorf("want connected=true (row still exists), got %v", body["connected"])
+	}
+	if body["credentials_error"] != true {
+		t.Errorf("want credentials_error=true, got %v", body["credentials_error"])
+	}
+
+	// Credentials row must NOT be cleared.
+	var creds string
+	err := testDB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`, userID,
+	).Scan(context.Background(), &creds)
+	if err != nil {
+		t.Fatalf("credentials row missing after decrypt failure: %v", err)
+	}
+	if creds == "" {
+		t.Error("expected credentials to remain non-null after decrypt failure")
 	}
 }

@@ -37,7 +37,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -49,7 +49,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={false}
+          credentialsError={false}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -59,18 +59,18 @@ describe('PSNConnectionCard', () => {
       expect(screen.getByText('Connected')).toBeInTheDocument();
     });
 
-    it('renders "Token Expired" badge when token expired', () => {
+    it('renders "Credentials Error" badge when credentials error', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={true}
+          credentialsError={true}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
         />
       );
 
-      expect(screen.getByText('Token Expired')).toBeInTheDocument();
+      expect(screen.getByText('Credentials Error')).toBeInTheDocument();
     });
   });
 
@@ -79,7 +79,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -91,7 +91,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -103,7 +103,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -115,7 +115,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -131,7 +131,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={false}
+          credentialsError={false}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -145,7 +145,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={false}
+          credentialsError={false}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -159,7 +159,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={false}
+          credentialsError={false}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -173,7 +173,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={false}
+          credentialsError={false}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -187,7 +187,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={false}
+          credentialsError={false}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -198,12 +198,12 @@ describe('PSNConnectionCard', () => {
     });
   });
 
-  describe('token expired state', () => {
-    it('shows warning when token expired', () => {
+  describe('credentials error state', () => {
+    it('shows warning when credentials error', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={true}
+          credentialsError={true}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -213,11 +213,11 @@ describe('PSNConnectionCard', () => {
       expect(screen.getByText(/Your NPSSO token has expired/)).toBeInTheDocument();
     });
 
-    it('shows reconfigure form when token expired', () => {
+    it('shows reconfigure form when credentials error', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={true}
+          credentialsError={true}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -236,7 +236,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -258,7 +258,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -280,7 +280,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -309,7 +309,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -340,7 +340,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -370,7 +370,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -394,7 +394,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={false}
+          credentialsError={false}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -419,7 +419,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={false}
+          credentialsError={false}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -450,7 +450,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
-          tokenExpired={false}
+          credentialsError={false}
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
@@ -476,7 +476,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -497,7 +497,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );
@@ -518,7 +518,7 @@ describe('PSNConnectionCard', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
-          tokenExpired={false}
+          credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
         />
       );

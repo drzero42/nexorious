@@ -41,6 +41,7 @@ credentials-secret.yaml body in `{{- if include "nexorious.credentialsSecretNeed
 */}}
 {{- define "nexorious.credentialsSecretNeeded" -}}
 {{- $secretKeyFrom := default dict .Values.nexorious.secretKeyFrom -}}
+{{- $dbEncryptionKeyFrom := default dict .Values.nexorious.dbEncryptionKeyFrom -}}
 {{- $igdbClientIdFrom := default dict .Values.nexorious.igdbClientIdFrom -}}
 {{- $igdbClientSecretFrom := default dict .Values.nexorious.igdbClientSecretFrom -}}
 {{- $databaseUrlFrom := default dict .Values.nexorious.databaseUrlFrom -}}
@@ -56,6 +57,7 @@ credentials-secret.yaml body in `{{- if include "nexorious.credentialsSecretNeed
 {{- $pgEnabled := dig "postgresql" "enabled" true .Values.controllers -}}
 {{- if or
       (not $secretKeyFrom.name)
+      (not $dbEncryptionKeyFrom.name)
       (not $igdbClientIdFrom.name)
       (not $igdbClientSecretFrom.name)
       (and $pgEnabled (or (not $pgUsernameFrom.name) (not $pgPasswordFrom.name) (not $pgDatabaseFrom.name)))
@@ -89,6 +91,7 @@ Validate required values.
 {{/* --- *From completeness checks --- */}}
 {{- $fromFields := list
   (dict "label" "secretKeyFrom"               "from" .Values.nexorious.secretKeyFrom)
+  (dict "label" "dbEncryptionKeyFrom"         "from" .Values.nexorious.dbEncryptionKeyFrom)
   (dict "label" "igdbClientIdFrom"            "from" .Values.nexorious.igdbClientIdFrom)
   (dict "label" "igdbClientSecretFrom"        "from" .Values.nexorious.igdbClientSecretFrom)
   (dict "label" "databaseUrlFrom"             "from" .Values.nexorious.databaseUrlFrom)
@@ -113,6 +116,13 @@ Validate required values.
 {{- if not $secretKeyFromConfigured -}}
   {{- if eq .Values.nexorious.secretKey "change-me-in-production" }}
     {{- fail "nexorious.secretKey must be set to a secure random value" }}
+  {{- end }}
+{{- end }}
+
+{{- $dbEncryptionKeyFromConfigured := not (empty (dig "name" "" (default dict .Values.nexorious.dbEncryptionKeyFrom))) -}}
+{{- if not $dbEncryptionKeyFromConfigured -}}
+  {{- if eq .Values.nexorious.dbEncryptionKey "change-me-in-production" }}
+    {{- fail "nexorious.dbEncryptionKey must be set to a secure random value" }}
   {{- end }}
 {{- end }}
 
@@ -219,6 +229,22 @@ Otherwise, falls back to the managed credentials secret.
 {{- .Values.nexorious.secretKeyFrom.key -}}
 {{- else -}}
 SECRET_KEY
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbEncryptionKeySecretName" -}}
+{{- if and .Values.nexorious.dbEncryptionKeyFrom .Values.nexorious.dbEncryptionKeyFrom.name -}}
+{{- .Values.nexorious.dbEncryptionKeyFrom.name -}}
+{{- else -}}
+{{ include "nexorious.fullname" . }}-credentials
+{{- end -}}
+{{- end }}
+
+{{- define "nexorious.dbEncryptionKeySecretKey" -}}
+{{- if and .Values.nexorious.dbEncryptionKeyFrom .Values.nexorious.dbEncryptionKeyFrom.key -}}
+{{- .Values.nexorious.dbEncryptionKeyFrom.key -}}
+{{- else -}}
+DB_ENCRYPTION_KEY
 {{- end -}}
 {{- end }}
 

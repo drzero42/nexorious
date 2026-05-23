@@ -183,6 +183,7 @@ describe('syncApi', () => {
       expect(result).toEqual({
         connected: true,
         disabled: false,
+        credentialsError: false,
         displayName: 'EpicUser123',
         accountId: 'acct-abc',
         reason: undefined,
@@ -203,6 +204,7 @@ describe('syncApi', () => {
       expect(result).toEqual({
         connected: false,
         disabled: true,
+        credentialsError: false,
         displayName: undefined,
         accountId: undefined,
         reason: 'legendary_not_configured',

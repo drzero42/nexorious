@@ -12,6 +12,7 @@ import {
   useJob,
   useCancelJob,
   usePSNStatus,
+  useSteamConnection,
   jobsKeys,
 } from '@/hooks';
 import { retryFailedItems } from '@/api/jobs';
@@ -130,14 +131,8 @@ function SyncDetailPage() {
 
   const isValidPlatform = SUPPORTED_SYNC_PLATFORMS.includes(platform);
 
-  // Get current user for Steam preferences (must be called before any conditional return)
+  // Get current user for PSN/GOG preferences (must be called before any conditional return)
   const { data: currentUser } = useCurrentUser();
-
-  // Extract Steam credentials from user preferences
-  const steamPrefs = currentUser?.preferences?.steam as {
-    steam_id?: string;
-    username?: string;
-  } | undefined;
 
   // Extract PSN credentials from user preferences
   const psnPrefs = currentUser?.preferences?.psn as
@@ -154,6 +149,9 @@ function SyncDetailPage() {
 
   // Fetch PSN-specific status
   const { data: psnStatus } = usePSNStatus();
+
+  // Fetch Steam connection status
+  const { data: steamConnection } = useSteamConnection();
 
   // Fetch job details if there's an active job
   const { data: activeJob } = useJob(status?.activeJobId ?? undefined, {
@@ -420,11 +418,13 @@ function SyncDetailPage() {
       {platform === SyncPlatform.STEAM && (
         <SteamConnectionCard
           isConfigured={config.isConfigured}
-          steamId={steamPrefs?.steam_id}
-          steamUsername={steamPrefs?.username}
+          credentialsError={steamConnection?.credentialsError ?? false}
+          steamId={steamConnection?.steamId}
+          steamUsername={steamConnection?.username}
           onConnectionChange={() => {
             // Invalidate queries to refresh data
             queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
+            queryClient.invalidateQueries({ queryKey: syncKeys.steamConnection() });
             queryClient.invalidateQueries({ queryKey: authKeys.me() });
           }}
         />
@@ -455,7 +455,7 @@ function SyncDetailPage() {
       {platform === SyncPlatform.PSN && (
         <PSNConnectionCard
           isConfigured={config.isConfigured}
-          tokenExpired={psnStatus?.tokenExpired ?? false}
+          credentialsError={psnStatus?.credentialsError ?? false}
           onlineId={psnPrefs?.online_id}
           accountId={psnPrefs?.account_id}
           onConnectionChange={() => {

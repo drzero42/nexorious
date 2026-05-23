@@ -66,7 +66,7 @@ export DATABASE_URL="postgres://user:password@localhost:5432/nexorious"
 The simplest production-like deployment uses the published container image:
 
 ```bash
-cp .env.example .env   # fill in SECRET_KEY, IGDB_CLIENT_ID, IGDB_CLIENT_SECRET, POSTGRES_PASSWORD
+cp .env.example .env   # fill in SECRET_KEY, DB_ENCRYPTION_KEY, IGDB_CLIENT_ID, IGDB_CLIENT_SECRET, POSTGRES_PASSWORD
 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
@@ -92,6 +92,7 @@ See `deploy/helm/values.yaml` for the full values reference.
 # Required
 DATABASE_URL=postgres://user:password@host:5432/nexorious?sslmode=disable
 SECRET_KEY=your-secret-key-here           # generate: openssl rand -hex 32
+DB_ENCRYPTION_KEY=your-db-encryption-key  # generate: openssl rand -base64 32
 IGDB_CLIENT_ID=your-igdb-client-id
 IGDB_CLIENT_SECRET=your-igdb-client-secret
 
@@ -107,6 +108,7 @@ LOG_LEVEL=info                             # default: info
 - [ ] PostgreSQL configured
 - [ ] `DATABASE_URL` set
 - [ ] `SECRET_KEY` set to a cryptographically random value
+- [ ] `DB_ENCRYPTION_KEY` set to a cryptographically random value
 - [ ] IGDB API credentials configured
 - [ ] Storage directory writable
 - [ ] Backup procedures in place

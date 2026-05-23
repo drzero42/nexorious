@@ -51,7 +51,8 @@ make build       # compiles the Go binary
 devenv shell
 make                     # builds everything
 export DATABASE_URL="postgres://..."
-export SECRET_KEY="<random-secret>"   # required; used for JWT signing and encryption
+export SECRET_KEY="<random-secret>"         # required; used for JWT signing
+export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -base64 32
 # Optional: IGDB_CLIENT_ID + IGDB_CLIENT_SECRET for metadata enrichment
 # Optional: PORT (default 8000), LOG_LEVEL (default info), WORKER_COUNT (default 4)
 ./nexorious              # starts server; visits /migrate if schema is pending

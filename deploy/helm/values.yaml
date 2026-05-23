@@ -25,6 +25,15 @@ nexorious:
   # -- JWT signing secret key. REQUIRED. Generate with: openssl rand -hex 32
   secretKey: "change-me-in-production"
 
+  # -- At-rest credential encryption key. REQUIRED. Generate with: openssl rand -base64 32
+  dbEncryptionKey: "change-me-in-production"
+
+  # -- Supply DB_ENCRYPTION_KEY from an existing Secret instead of inline.
+  # -- If set, dbEncryptionKey is ignored.
+  dbEncryptionKeyFrom:
+    name: ""
+    key: ""
+
   # -- IGDB API client ID. REQUIRED. nexorious will not function without valid IGDB credentials.
   # -- Obtain from: https://api.igdb.com/v4/getting-started
   igdbClientId: ""
@@ -283,6 +292,11 @@ controllers:
               secretKeyRef:
                 name: '{{ include "nexorious.secretKeySecretName" . }}'
                 key: '{{ include "nexorious.secretKeySecretKey" . }}'
+          DB_ENCRYPTION_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbEncryptionKeySecretName" . }}'
+                key: '{{ include "nexorious.dbEncryptionKeySecretKey" . }}'
           IGDB_CLIENT_ID:
             valueFrom:
               secretKeyRef:
@@ -363,6 +377,11 @@ controllers:
               secretKeyRef:
                 name: '{{ include "nexorious.secretKeySecretName" . }}'
                 key: '{{ include "nexorious.secretKeySecretKey" . }}'
+          DB_ENCRYPTION_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.dbEncryptionKeySecretName" . }}'
+                key: '{{ include "nexorious.dbEncryptionKeySecretKey" . }}'
           IGDB_CLIENT_ID:
             valueFrom:
               secretKeyRef:
