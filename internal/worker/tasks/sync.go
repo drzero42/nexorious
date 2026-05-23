@@ -216,6 +216,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("fetch steam library: %v", err))
 			return nil
 		}
+		slog.Debug("dispatch_sync: steam owned games fetched", "count", len(owned), "user_id", p.UserID)
 
 		// Batch-load existing platform rows — rows already present skip appdetails.
 		var cachedRows []struct {
@@ -247,6 +248,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 					slog.Warn("steam appdetails failed, skipping game this sync", "appid", og.AppID, "err", detErr)
 					continue
 				}
+				slog.Debug("dispatch_sync: steam appdetails", "appid", og.AppID, "platforms", pl)
 				if pl.Windows {
 					platforms = append(platforms, "pc-windows")
 				}
@@ -282,6 +284,8 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 					On("CONFLICT (user_id, storefront, external_id, raw_platform) DO UPDATE SET title = EXCLUDED.title, playtime_hours = EXCLUDED.playtime_hours, is_subscription = EXCLUDED.is_subscription, ownership_status = EXCLUDED.ownership_status, is_available = true, updated_at = now()").
 					Exec(ctx); err != nil {
 					slog.Error("dispatch_sync: steam upsert external_game failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
+				} else {
+					slog.Debug("dispatch_sync: steam upserted game", "appid", appidStr, "platform", raw, "title", og.Title)
 				}
 			}
 		}
@@ -292,6 +296,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			Scan(ctx); err != nil {
 			slog.Error("dispatch_sync: steam query to-process failed", "err", err, "job_id", p.JobID)
 		}
+		slog.Debug("dispatch_sync: steam to-process count", "count", len(toProcess), "job_id", p.JobID)
 		for _, eg := range toProcess {
 			itemKey := eg.ExternalID + ":" + eg.RawPlatform
 			metaJSON, _ := json.Marshal(map[string]any{
