@@ -29,8 +29,12 @@ type Config struct {
 	// Security
 	// -------------------------------------------------------------------------
 
-	// SecretKey is used for JWT signing and credential encryption.
+	// SecretKey is used for JWT signing.
 	SecretKey string `env:"SECRET_KEY,required"`
+
+	// DBEncryptionKey is used for at-rest encryption of storefront credentials.
+	// Generate with: openssl rand -base64 32
+	DBEncryptionKey string `env:"DB_ENCRYPTION_KEY,required"`
 
 	// JWT lifetimes.
 	AccessTokenExpireMinutes int `env:"ACCESS_TOKEN_EXPIRE_MINUTES" envDefault:"15"`
