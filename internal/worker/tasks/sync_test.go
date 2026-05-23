@@ -356,7 +356,7 @@ func TestDispatchSync_SteamSuccess(t *testing.T) {
 
 func TestDispatchSync_Steam_MultiPlatform_WindowsAndLinux(t *testing.T) {
 	// appdetails reports {Windows, Linux} for appid 730 →
-	// expect two external_games rows and two job_items keyed "730:pc-windows" / "730:pc-linux".
+	// expect 1 external_games row, 2 external_game_platforms rows, 1 job_item keyed "730".
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -400,28 +400,37 @@ func TestDispatchSync_Steam_MultiPlatform_WindowsAndLinux(t *testing.T) {
 		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'steam' AND external_id = '730'`,
 		userID,
 	).Scan(ctx, &egCount)
-	if egCount != 2 {
-		t.Errorf("expected 2 external_games rows (Windows+Linux), got %d", egCount)
+	if egCount != 1 {
+		t.Errorf("expected 1 external_games row, got %d", egCount)
+	}
+
+	var egpCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM external_game_platforms egp
+		 JOIN external_games eg ON eg.id = egp.external_game_id
+		 WHERE eg.user_id = ? AND eg.storefront = 'steam' AND eg.external_id = '730'`,
+		userID,
+	).Scan(ctx, &egpCount)
+	if egpCount != 2 {
+		t.Errorf("expected 2 external_game_platforms rows (Windows+Linux), got %d", egpCount)
 	}
 
 	var itemCount int
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
-	if itemCount != 2 {
-		t.Errorf("expected 2 job_items, got %d", itemCount)
+	if itemCount != 1 {
+		t.Errorf("expected 1 job_item, got %d", itemCount)
 	}
 
-	var keys []string
-	_ = testDB.NewRaw(
-		`SELECT item_key FROM job_items WHERE job_id = ? ORDER BY item_key`, jobID,
-	).Scan(ctx, &keys)
-	if len(keys) != 2 || keys[0] != "730:pc-linux" || keys[1] != "730:pc-windows" {
-		t.Errorf("unexpected item_keys: %v", keys)
+	var itemKey string
+	_ = testDB.NewRaw(`SELECT item_key FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemKey)
+	if itemKey != "730" {
+		t.Errorf("expected item_key=730, got %q", itemKey)
 	}
 }
 
-func TestDispatchSync_Steam_CacheHit_SkipsAppDetails(t *testing.T) {
-	// Pre-seed an external_games row for appid 999.
-	// Worker must NOT call GetAppDetailsPlatforms for 999; existing row stays available.
+func TestDispatchSync_Steam_PlatformUpdate_AddsNewPlatform(t *testing.T) {
+	// Pre-seed game 999 with only pc-windows. Second sync returns {Windows, Linux}.
+	// Worker must add the pc-linux platform row.
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -442,15 +451,15 @@ func TestDispatchSync_Steam_CacheHit_SkipsAppDetails(t *testing.T) {
 		uuid.NewString(), userID, credsCiphertext,
 	).Exec(ctx)
 
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, raw_platform, is_available, is_skipped, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '999', 'Cached Game', 'pc-linux', true, false, false, 0)`,
-		uuid.NewString(), userID,
-	).Exec(ctx)
+	// Pre-seed with Windows only.
+	insertTestExternalGame(t, userID, "steam", "999", "Cached Game", "pc-windows")
 
 	adapter := &fakeSteamAdapter{
 		games: []steamsvc.OwnedGame{
 			{AppID: 999, Title: "Cached Game", PlaytimeHours: 5},
+		},
+		platformsByAppID: map[int]steamsvc.Platforms{
+			999: {Windows: true, Linux: true},
 		},
 	}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: nil}
@@ -462,26 +471,24 @@ func TestDispatchSync_Steam_CacheHit_SkipsAppDetails(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	for _, id := range adapter.queriedAppIDs {
-		if id == 999 {
-			t.Errorf("GetAppDetailsPlatforms was called for cached appid 999")
-		}
+	// Appdetails must have been called.
+	if len(adapter.queriedAppIDs) == 0 || adapter.queriedAppIDs[0] != 999 {
+		t.Errorf("expected GetAppDetailsPlatforms to be called for appid 999, got %v", adapter.queriedAppIDs)
 	}
 
-	var isAvail bool
+	var egpCount int
 	_ = testDB.NewRaw(
-		`SELECT is_available FROM external_games WHERE user_id = ? AND storefront = 'steam' AND external_id = '999'`,
+		`SELECT COUNT(*) FROM external_game_platforms egp
+		 JOIN external_games eg ON eg.id = egp.external_game_id
+		 WHERE eg.user_id = ? AND eg.external_id = '999'`,
 		userID,
-	).Scan(ctx, &isAvail)
-	if !isAvail {
-		t.Error("expected pre-seeded external_games row to remain is_available=true")
+	).Scan(ctx, &egpCount)
+	if egpCount != 2 {
+		t.Errorf("expected 2 platform rows (windows+linux) after update, got %d", egpCount)
 	}
 }
 
 func TestDispatchSync_Steam_AppDetailsFailure_FallsBackToWindows(t *testing.T) {
-	// First-time sync: GetAppDetailsPlatforms returns an error (e.g. 429) for
-	// appid 888 → worker falls back to pc-windows and still upserts the game so
-	// it is picked up in the same sync run rather than requiring a second sync.
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -520,21 +527,27 @@ func TestDispatchSync_Steam_AppDetailsFailure_FallsBackToWindows(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Game must be upserted with pc-windows fallback, not skipped.
-	var rawPlatform string
+	var platform string
 	_ = testDB.NewRaw(
-		`SELECT raw_platform FROM external_games WHERE user_id = ? AND storefront = 'steam' AND external_id = '888'`,
+		`SELECT egp.platform FROM external_game_platforms egp
+		 JOIN external_games eg ON eg.id = egp.external_game_id
+		 WHERE eg.user_id = ? AND eg.storefront = 'steam' AND eg.external_id = '888'`,
 		userID,
-	).Scan(ctx, &rawPlatform)
-	if rawPlatform != "pc-windows" {
-		t.Errorf("expected raw_platform=pc-windows fallback after appdetails failure, got %q", rawPlatform)
+	).Scan(ctx, &platform)
+	if platform != "pc-windows" {
+		t.Errorf("expected pc-windows fallback platform, got %q", platform)
 	}
 
-	// A job_item must have been enqueued so it is processed in this sync run.
 	var itemCount int
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
 	if itemCount != 1 {
 		t.Errorf("expected 1 job_item after appdetails fallback, got %d", itemCount)
+	}
+
+	var itemKey string
+	_ = testDB.NewRaw(`SELECT item_key FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemKey)
+	if itemKey != "888" {
+		t.Errorf("expected item_key=888, got %q", itemKey)
 	}
 }
 
@@ -579,19 +592,21 @@ func TestDispatchSync_Steam_NoPlatformsFallback_EmitsWindowsRow(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var egCount int
+	var egpCount int
 	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'steam' AND external_id = '777' AND raw_platform = 'pc-windows'`,
+		`SELECT COUNT(*) FROM external_game_platforms egp
+		 JOIN external_games eg ON eg.id = egp.external_game_id
+		 WHERE eg.user_id = ? AND eg.storefront = 'steam' AND eg.external_id = '777' AND egp.platform = 'pc-windows'`,
 		userID,
-	).Scan(ctx, &egCount)
-	if egCount != 1 {
-		t.Errorf("expected 1 pc-windows external_games row for no-platforms fallback, got %d", egCount)
+	).Scan(ctx, &egpCount)
+	if egpCount != 1 {
+		t.Errorf("expected 1 pc-windows platform row for no-platforms fallback, got %d", egpCount)
 	}
 
 	var itemKey string
 	_ = testDB.NewRaw(`SELECT item_key FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemKey)
-	if itemKey != "777:pc-windows" {
-		t.Errorf("expected item_key=777:pc-windows, got %q", itemKey)
+	if itemKey != "777" {
+		t.Errorf("expected item_key=777, got %q", itemKey)
 	}
 }
 
@@ -642,7 +657,7 @@ func TestProcessSyncItem_SkippedExternalGame(t *testing.T) {
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
@@ -686,7 +701,7 @@ func TestProcessSyncItem_NoIGDBID_PendingReview(t *testing.T) {
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
@@ -741,9 +756,13 @@ func TestProcessSyncItem_WithResolvedIGDBID_Completed(t *testing.T) {
 	)
 
 	// Valid platform: pc-windows, valid storefront: steam (both from migration seed).
-	metaJSON, _ := json.Marshal(map[string]string{
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'pc-windows', now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	metaJSON, _ := json.Marshal(map[string]any{
 		"external_game_id": egID,
-		"raw_platform":     "pc-windows",
+		"playtime_hours":   100,
 	})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
@@ -775,7 +794,9 @@ func TestProcessSyncItem_WithResolvedIGDBID_Completed(t *testing.T) {
 	}
 }
 
-func TestProcessSyncItem_UnresolvedPlatform_Failed(t *testing.T) {
+func TestProcessSyncItem_NoPlatforms_Failed(t *testing.T) {
+	// An external_games row with no external_game_platforms rows is a bug.
+	// The worker must mark the item failed.
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -786,41 +807,36 @@ func TestProcessSyncItem_UnresolvedPlatform_Failed(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
 		jobID, userID,
 	)
-	const igdbID = int32(730)
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'CS2', now(), now()) ON CONFLICT (id) DO NOTHING`,
-		igdbID,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (12345, 'No Platform Game', now(), now()) ON CONFLICT DO NOTHING`,
 	)
 	egID := uuid.NewString()
-	igdbIDVal := igdbID
-	_, _ = testDB.ExecContext(ctx,
+	_, _ = testDB.NewRaw(
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', '730', 'CS2', false, true, false, 0, ?)`,
-		egID, userID, igdbIDVal,
-	)
-	metaJSON, _ := json.Marshal(map[string]string{
-		"external_game_id": egID,
-		"raw_platform":     "unknown-platform",
-	})
+		 VALUES (?, ?, 'steam', 'app-noplatform', 'No Platform Game', false, true, false, 0, 12345)`,
+		egID, userID,
+	).Exec(ctx)
+	// No external_game_platforms row inserted — this is the bug scenario.
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
+	_, _ = testDB.NewRaw(
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '730', 'CS2', ?, 'pending', '{}', '[]')`,
+		 VALUES (?, ?, ?, 'app-noplatform', 'No Platform Game', ?, 'pending', '{}', '[]')`,
 		itemID, jobID, userID, string(metaJSON),
-	)
+	).Exec(ctx)
 
-	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
 	job := &river.Job[tasks.ProcessSyncItemArgs]{
 		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
 	}
-
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	var status string
 	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)
 	if status != "failed" {
-		t.Errorf("expected item status=failed (unresolved platform), got %q", status)
+		t.Errorf("expected status=failed for game with no platform rows, got %q", status)
 	}
 }
 
@@ -856,7 +872,7 @@ func TestProcessSyncItem_WithIGDBAutoResolve(t *testing.T) {
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 100})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
@@ -919,7 +935,7 @@ func TestProcessSyncItem_LowConfidenceIGDB_StoresMatchConfidence(t *testing.T) {
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
@@ -987,7 +1003,11 @@ func TestProcessSyncItem_IGDBPrefixTitle_AutoResolves(t *testing.T) {
 
 	// Use pc-windows (from migration seed) so platform resolution succeeds and
 	// the item can reach completed status rather than stopping at failed.
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "pc-windows"})
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'pc-windows', now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
@@ -1054,7 +1074,11 @@ func TestProcessSyncItem_ManualResolution_DoesNotRevertToPendingReview(t *testin
 
 	// Simulate HandleResolveItem: item has resolved_igdb_id=28960 set by the user,
 	// status reset to pending for re-processing.
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "pc-windows"})
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'pc-windows', now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, resolved_igdb_id)
@@ -1138,7 +1162,16 @@ func TestProcessSyncItem_CrossSKU_InheritsResolutionFromSibling(t *testing.T) {
 		egPS5ID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egPS5ID, "raw_platform": "playstation-5"})
+	// Add platform rows so the worker can proceed past the platform-resolution step.
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'playstation-4', now())`,
+		uuid.NewString(), egPS4ID,
+	).Exec(ctx)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'playstation-5', now())`,
+		uuid.NewString(), egPS5ID,
+	).Exec(ctx)
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egPS5ID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
@@ -1200,7 +1233,7 @@ func TestProcessSyncItem_IGDBError_MarksItemIGDBFailed(t *testing.T) {
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
@@ -1255,7 +1288,7 @@ func TestProcessSyncItem_IGDBError_ThenAutoRetry_CompletesWithErrors(t *testing.
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
@@ -1344,7 +1377,7 @@ func TestProcessSyncItem_AutoRetry_NilRiverClient_MarksItemFailed(t *testing.T) 
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
@@ -1651,13 +1684,15 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 
 	// Pre-insert God of War as skipped. The ON CONFLICT upsert does not touch
 	// is_skipped, so it remains true even when the batch includes this game.
-	// raw_platform must match the value in the sync batch so the upsert hits
-	// the correct row under the (user_id, storefront, external_id, raw_platform)
-	// unique constraint.
+	egID := uuid.NewString()
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, raw_platform, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'psn', 'NPWR00001_00', 'God of War', 'playstation-4', true, true, false, 0)`,
-		uuid.NewString(), userID,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'psn', 'NPWR00001_00', 'God of War', true, true, false, 0)`,
+		egID, userID,
+	).Exec(ctx)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'playstation-4', now())`,
+		uuid.NewString(), egID,
 	).Exec(ctx)
 
 	page1 := []psnsvc.ExternalLibraryEntry{
@@ -1768,10 +1803,15 @@ func TestProcessSyncItem_PlaytimeHoursWrittenToUserGame(t *testing.T) {
 		egID, userID, igdbIDVal,
 	)
 
+	// Add platform row for platform resolution.
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'playstation-4', now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+
 	// source_metadata includes playtime_hours=47
 	metaJSON, _ := json.Marshal(map[string]any{
 		"external_game_id": egID,
-		"raw_platform":     "playstation-4",
 		"playtime_hours":   47,
 	})
 	itemID := uuid.NewString()
@@ -1858,14 +1898,16 @@ func TestDispatchSync_Epic_HappyPath(t *testing.T) {
 		t.Errorf("expected 2 external_games rows, got %d", count)
 	}
 
-	// Verify raw_platform is pc-windows.
-	var rawPlatform string
+	// Verify pc-windows platform row exists.
+	var platformCount int
 	_ = testDB.NewRaw(
-		`SELECT raw_platform FROM external_games WHERE user_id = ? AND storefront = 'epic' AND external_id = 'Fortnite'`,
+		`SELECT COUNT(*) FROM external_game_platforms egp
+		 JOIN external_games eg ON eg.id = egp.external_game_id
+		 WHERE eg.user_id = ? AND eg.storefront = 'epic' AND eg.external_id = 'Fortnite' AND egp.platform = 'pc-windows'`,
 		userID,
-	).Scan(ctx, &rawPlatform)
-	if rawPlatform != "pc-windows" {
-		t.Errorf("expected raw_platform=pc-windows, got %q", rawPlatform)
+	).Scan(ctx, &platformCount)
+	if platformCount != 1 {
+		t.Errorf("expected 1 pc-windows platform row for Fortnite, got %d", platformCount)
 	}
 
 	// Verify job is not failed.
@@ -1930,7 +1972,7 @@ func TestProcessSyncItem_CancelledJobNotOverwritten(t *testing.T) {
 
 	// The external_game was deleted by the reset; job_item still references it.
 	egID := uuid.NewString()
-	metaJSON, _ := json.Marshal(map[string]string{"external_game_id": egID, "raw_platform": "PC"})
+	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
@@ -2200,6 +2242,30 @@ func TestEpicClientAdapter_SkipsPersistWhenSnapshotEmpty(t *testing.T) {
 	}
 }
 
+// insertTestExternalGame inserts a minimal external_games row and one
+// external_game_platforms row. Returns the external_game id.
+func insertTestExternalGame(t *testing.T, userID, storefront, externalID, title, platform string) string {
+	t.Helper()
+	egID := uuid.NewString()
+	_, err := testDB.NewRaw(
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, ?, ?, ?, false, true, false, 0)`,
+		egID, userID, storefront, externalID, title,
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("insertTestExternalGame: %v", err)
+	}
+	_, err = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
+		 VALUES (?, ?, ?, now())`,
+		uuid.NewString(), egID, platform,
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("insertTestExternalGamePlatform: %v", err)
+	}
+	return egID
+}
+
 // ─── GOG dispatch tests ───────────────────────────────────────────────────────
 
 type fakeGOGAdapter struct {
@@ -2269,6 +2335,8 @@ func TestGOGDispatch_CreatesExternalGames(t *testing.T) {
 }
 
 func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
+	// Same external_id with two platform entries → 1 external_games row,
+	// 2 external_game_platforms rows, 1 job_item.
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -2284,10 +2352,9 @@ func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encrypt creds: %v", err)
 	}
-	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'gog', 'daily', ?)`,
-		configID, userID, credsCiphertext,
+		uuid.NewString(), userID, credsCiphertext,
 	).Exec(ctx)
 
 	adapter := &fakeGOGAdapter{
@@ -2302,20 +2369,30 @@ func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
 	}
 	_ = w.Work(ctx, job)
 
-	var count int
+	var egCount int
 	_ = testDB.NewRaw(
 		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'gog' AND external_id = '2001'`,
 		userID,
-	).Scan(ctx, &count)
-	if count != 2 {
-		t.Errorf("want 2 external_games for dual-platform game, got %d", count)
+	).Scan(ctx, &egCount)
+	if egCount != 1 {
+		t.Errorf("want 1 external_game for dual-platform game, got %d", egCount)
 	}
 
-	// Verify both job_items have distinct item_keys.
+	var egpCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM external_game_platforms egp
+		 JOIN external_games eg ON eg.id = egp.external_game_id
+		 WHERE eg.user_id = ? AND eg.external_id = '2001'`,
+		userID,
+	).Scan(ctx, &egpCount)
+	if egpCount != 2 {
+		t.Errorf("want 2 external_game_platforms rows, got %d", egpCount)
+	}
+
 	var itemCount int
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
-	if itemCount != 2 {
-		t.Errorf("want 2 job_items (one per platform), got %d", itemCount)
+	if itemCount != 1 {
+		t.Errorf("want 1 job_item (one per game, not per platform), got %d", itemCount)
 	}
 }
 

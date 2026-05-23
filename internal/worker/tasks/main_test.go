@@ -105,7 +105,7 @@ func truncateAllTables(t *testing.T) {
 	t.Helper()
 	_, err := testDB.ExecContext(context.Background(), `
 		TRUNCATE TABLE
-			users, user_sessions, games, external_games,
+			users, user_sessions, games, external_games, external_game_platforms,
 			platforms, storefronts, platform_storefronts,
 			tags, user_games, user_game_tags, user_game_platforms,
 			jobs, job_items, river_job, backup_config,
