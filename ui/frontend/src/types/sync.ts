@@ -139,6 +139,7 @@ export interface EpicConnectResponse {
 export interface EpicConnectionResponse {
   connected: boolean;
   disabled: boolean;
+  credentialsError?: boolean;
   displayName?: string;
   accountId?: string;
   /** "legendary_not_configured" when disabled=true (LEGENDARY_WORK_DIR unset). */
@@ -153,6 +154,7 @@ export interface GOGConnectResponse {
 
 export interface GOGConnectionResponse {
   connected: boolean;
+  credentialsError?: boolean;
   username?: string;
   userId?: string;
   authUrl?: string;
@@ -170,7 +172,15 @@ export interface PSNStatusResponse {
   configured: boolean;
   accountId: string | null;
   onlineId: string | null;
-  tokenExpired: boolean;
+  credentialsError: boolean;
+}
+
+// Steam Connection Types
+export interface SteamConnectionData {
+  connected: boolean;
+  credentialsError: boolean;
+  steamId: string;
+  username: string;
 }
 
 export interface ExternalGame {

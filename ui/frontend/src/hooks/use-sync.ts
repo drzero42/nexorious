@@ -8,6 +8,7 @@ import type {
   SyncStatus,
   ManualSyncResponse,
   SteamVerifyResponse,
+  SteamConnectionData,
   EpicConnectResponse,
   EpicConnectionResponse,
   GOGConnectResponse,
@@ -26,6 +27,7 @@ export const syncKeys = {
   config: (platform: SyncPlatform) => [...syncKeys.configs(), platform] as const,
   statuses: () => [...syncKeys.all, 'statuses'] as const,
   status: (platform: SyncPlatform) => [...syncKeys.statuses(), platform] as const,
+  steamConnection: () => [...syncKeys.all, 'steamConnection'] as const,
   epicConnection: () => [...syncKeys.all, 'epicConnection'] as const,
   gogConnection: () => [...syncKeys.all, 'gogConnection'] as const,
   psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
@@ -164,6 +166,19 @@ export function useDisconnectSteam() {
       // Invalidate all sync-related queries
       queryClient.invalidateQueries({ queryKey: syncKeys.all });
     },
+  });
+}
+
+/**
+ * Hook to fetch Steam connection status.
+ * Returns connected state, credentialsError flag, steamId, and username.
+ */
+export function useSteamConnection() {
+  return useQuery<SteamConnectionData, Error>({
+    queryKey: syncKeys.steamConnection(),
+    queryFn: syncApi.getSteamConnection,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 }
 

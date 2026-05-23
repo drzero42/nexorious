@@ -12,6 +12,7 @@ import {
   useJob,
   useCancelJob,
   usePSNStatus,
+  useSteamConnection,
   jobsKeys,
 } from '@/hooks';
 import { retryFailedItems } from '@/api/jobs';
@@ -154,6 +155,9 @@ function SyncDetailPage() {
 
   // Fetch PSN-specific status
   const { data: psnStatus } = usePSNStatus();
+
+  // Fetch Steam connection status
+  const { data: steamConnection } = useSteamConnection();
 
   // Fetch job details if there's an active job
   const { data: activeJob } = useJob(status?.activeJobId ?? undefined, {
@@ -420,11 +424,13 @@ function SyncDetailPage() {
       {platform === SyncPlatform.STEAM && (
         <SteamConnectionCard
           isConfigured={config.isConfigured}
+          credentialsError={steamConnection?.credentialsError ?? false}
           steamId={steamPrefs?.steam_id}
           steamUsername={steamPrefs?.username}
           onConnectionChange={() => {
             // Invalidate queries to refresh data
             queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
+            queryClient.invalidateQueries({ queryKey: syncKeys.steamConnection() });
             queryClient.invalidateQueries({ queryKey: authKeys.me() });
           }}
         />
@@ -455,7 +461,7 @@ function SyncDetailPage() {
       {platform === SyncPlatform.PSN && (
         <PSNConnectionCard
           isConfigured={config.isConfigured}
-          tokenExpired={psnStatus?.tokenExpired ?? false}
+          credentialsError={psnStatus?.credentialsError ?? false}
           onlineId={psnPrefs?.online_id}
           accountId={psnPrefs?.account_id}
           onConnectionChange={() => {

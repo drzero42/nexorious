@@ -59,6 +59,7 @@ export {
   useTriggerSync,
   useVerifySteamCredentials,
   useDisconnectSteam,
+  useSteamConnection,
   useConnectEpic,
   useEpicConnection,
   useDisconnectEpic,

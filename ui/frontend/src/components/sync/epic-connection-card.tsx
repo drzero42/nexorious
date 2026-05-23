@@ -26,7 +26,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Loader2, Check, ExternalLink, Info } from 'lucide-react';
+import { Loader2, Check, ExternalLink, Info, AlertTriangle } from 'lucide-react';
 import { useConnectEpic, useDisconnectEpic, useEpicConnection } from '@/hooks';
 import { EPIC_AUTH_URL } from '@/types';
 
@@ -38,11 +38,13 @@ type EpicAuthCodeForm = z.infer<typeof epicAuthCodeSchema>;
 
 interface EpicConnectionCardProps {
   isConfigured: boolean;
+  credentialsError?: boolean;
   onConnectionChange: () => void;
 }
 
 export function EpicConnectionCard({
   isConfigured,
+  credentialsError = false,
   onConnectionChange,
 }: EpicConnectionCardProps) {
   const { data: connection } = useEpicConnection();
@@ -64,6 +66,7 @@ export function EpicConnectionCard({
   const isDisabled = connection?.disabled === true;
   const displayName = connection?.displayName;
   const accountId = connection?.accountId;
+  const resolvedCredentialsError = connection?.credentialsError ?? credentialsError;
 
   const onSubmit = async (data: EpicAuthCodeForm) => {
     try {
@@ -93,6 +96,12 @@ export function EpicConnectionCard({
       return {
         label: 'Disabled',
         className: 'bg-muted text-muted-foreground',
+      };
+    }
+    if (resolvedCredentialsError) {
+      return {
+        label: 'Credentials Error',
+        className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
       };
     }
     if (!isConfigured) {
@@ -133,7 +142,7 @@ export function EpicConnectionCard({
               environment variable to enable it.
             </AlertDescription>
           </Alert>
-        ) : isConfigured ? (
+        ) : isConfigured && !resolvedCredentialsError ? (
           <div className="space-y-4">
             <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-4">
               <Check className="h-5 w-5 text-green-600" />
@@ -180,6 +189,20 @@ export function EpicConnectionCard({
             </AlertDialog>
           </div>
         ) : (
+          <div className="space-y-4">
+            {resolvedCredentialsError && (
+              <div className="flex items-start gap-3 rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/20">
+                <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                <div>
+                  <p className="font-medium text-yellow-800 dark:text-yellow-200">
+                    Epic Games credentials are invalid or could not be decrypted
+                  </p>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                    Please re-authorize with Epic Games to continue syncing your library.
+                  </p>
+                </div>
+              </div>
+            )}
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <Alert>
               <Info className="h-4 w-4" />
@@ -247,13 +270,14 @@ export function EpicConnectionCard({
               {isConnecting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Connecting...
+                  {resolvedCredentialsError ? 'Reconfiguring...' : 'Connecting...'}
                 </>
               ) : (
-                'Connect Epic Games Store'
+                <>{resolvedCredentialsError ? 'Reconfigure' : 'Connect Epic Games Store'}</>
               )}
             </Button>
           </form>
+          </div>
         )}
       </CardContent>
     </Card>

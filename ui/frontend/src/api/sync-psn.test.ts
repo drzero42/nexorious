@@ -91,7 +91,7 @@ describe('PSN API', () => {
         online_id: 'TestPSNUser',
         account_id: 'psn-account-123',
         region: 'US',
-        token_expired: false,
+        credentials_error: false,
       };
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
@@ -103,7 +103,7 @@ describe('PSN API', () => {
         configured: true,
         accountId: 'psn-account-123',
         onlineId: 'TestPSNUser',
-        tokenExpired: false,
+        credentialsError: false,
       });
     });
 
@@ -113,7 +113,7 @@ describe('PSN API', () => {
         online_id: null,
         account_id: null,
         region: null,
-        token_expired: false,
+        credentials_error: false,
       };
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
@@ -124,24 +124,24 @@ describe('PSN API', () => {
         configured: false,
         accountId: null,
         onlineId: null,
-        tokenExpired: false,
+        credentialsError: false,
       });
     });
 
-    it('should detect expired token', async () => {
+    it('should detect credentials error', async () => {
       const mockResponse = {
         is_configured: true,
         online_id: 'TestPSNUser',
         account_id: 'psn-account-123',
         region: 'US',
-        token_expired: true,
+        credentials_error: true,
       };
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
       const result = await getPSNStatus();
 
-      expect(result.tokenExpired).toBe(true);
+      expect(result.credentialsError).toBe(true);
       expect(result.configured).toBe(true);
     });
 
@@ -151,7 +151,7 @@ describe('PSN API', () => {
         online_id: 'TestUser',
         account_id: '12345',
         region: 'EU',
-        token_expired: false,
+        credentials_error: false,
       };
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
@@ -162,11 +162,11 @@ describe('PSN API', () => {
       expect(result).toHaveProperty('configured');
       expect(result).toHaveProperty('onlineId');
       expect(result).toHaveProperty('accountId');
-      expect(result).toHaveProperty('tokenExpired');
+      expect(result).toHaveProperty('credentialsError');
       expect(result).not.toHaveProperty('is_configured');
       expect(result).not.toHaveProperty('online_id');
       expect(result).not.toHaveProperty('account_id');
-      expect(result).not.toHaveProperty('token_expired');
+      expect(result).not.toHaveProperty('credentials_error');
     });
   });
 
