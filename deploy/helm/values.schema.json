@@ -17,6 +17,19 @@
           "type": "string",
           "description": "JWT signing secret key. Generate with: openssl rand -hex 32"
         },
+        "dbEncryptionKey": {
+          "type": "string",
+          "description": "At-rest credential encryption key. Generate with: openssl rand -base64 32"
+        },
+        "dbEncryptionKeyFrom": {
+          "type": ["object", "null"],
+          "description": "External secret reference for dbEncryptionKey. When name and key are both non-empty, the dbEncryptionKey inline value is ignored.",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
+        },
         "igdbClientId": {
           "type": "string",
           "description": "IGDB API client ID. Required — nexorious will not function without valid IGDB credentials."
