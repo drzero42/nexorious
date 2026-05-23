@@ -147,6 +147,10 @@ func (DispatchSyncArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{MaxAttempts: 1, Priority: 1}
 }
 
+// Timeout overrides River's 1-minute default so large libraries (hundreds of
+// games needing sequential appdetails calls) can complete in a single run.
+func (w *DispatchSyncWorker) Timeout(*river.Job[DispatchSyncArgs]) time.Duration { return -1 }
+
 // DispatchSyncWorker is a River worker that:
 // 1. Marks the job as processing
 // 2. Reads credentials from user_sync_configs
@@ -243,10 +247,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				pl, detErr := w.Steam.GetAppDetailsPlatforms(ctx, og.AppID)
 				if detErr != nil {
 					if ctx.Err() != nil {
-						return nil // context cancelled; exit cleanly
+						slog.Warn("dispatch_sync: steam loop exiting early — context cancelled", "ctx_err", ctx.Err(), "appid", og.AppID, "appdetails_err", detErr, "job_id", p.JobID)
+						failSyncJob(context.Background(), w.DB, p.JobID, fmt.Sprintf("sync cancelled: %v", ctx.Err()))
+						return ctx.Err()
 					}
-					slog.Warn("steam appdetails failed, skipping game this sync", "appid", og.AppID, "err", detErr)
-					continue
+					slog.Warn("steam appdetails failed, using pc-windows fallback", "appid", og.AppID, "err", detErr)
+					platforms = []string{"pc-windows"}
 				}
 				slog.Debug("dispatch_sync: steam appdetails", "appid", og.AppID, "platforms", pl)
 				if pl.Windows {
