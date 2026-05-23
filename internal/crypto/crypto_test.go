@@ -26,7 +26,7 @@ func TestEncrypter_RoundTrip(t *testing.T) {
 		t.Fatalf("Encrypt: %v", err)
 	}
 	if !strings.HasPrefix(ciphertext, "enc:v1:") {
-		t.Fatalf("expected enc:v1: prefix, got %q", ciphertext[:min(len(ciphertext), 20)])
+		t.Fatalf("expected enc:v1: prefix, got %q", ciphertext)
 	}
 	got, err := enc.Decrypt(ciphertext)
 	if err != nil {
@@ -92,9 +92,3 @@ func TestNewEncrypter_ShortKey(t *testing.T) {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
