@@ -131,14 +131,8 @@ function SyncDetailPage() {
 
   const isValidPlatform = SUPPORTED_SYNC_PLATFORMS.includes(platform);
 
-  // Get current user for Steam preferences (must be called before any conditional return)
+  // Get current user for PSN/GOG preferences (must be called before any conditional return)
   const { data: currentUser } = useCurrentUser();
-
-  // Extract Steam credentials from user preferences
-  const steamPrefs = currentUser?.preferences?.steam as {
-    steam_id?: string;
-    username?: string;
-  } | undefined;
 
   // Extract PSN credentials from user preferences
   const psnPrefs = currentUser?.preferences?.psn as
@@ -425,8 +419,8 @@ function SyncDetailPage() {
         <SteamConnectionCard
           isConfigured={config.isConfigured}
           credentialsError={steamConnection?.credentialsError ?? false}
-          steamId={steamPrefs?.steam_id}
-          steamUsername={steamPrefs?.username}
+          steamId={steamConnection?.steamId}
+          steamUsername={steamConnection?.username}
           onConnectionChange={() => {
             // Invalidate queries to refresh data
             queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
