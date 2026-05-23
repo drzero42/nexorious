@@ -154,7 +154,7 @@ func TestGetAppDetailsPlatforms_AllFalsePlatforms_ReturnsZeroValueNoError(t *tes
 	}
 }
 
-func TestGetAppDetailsPlatforms_UsesFiltersEqualPlatforms(t *testing.T) {
+func TestGetAppDetailsPlatforms_UsesFiltersPlatformsInURL(t *testing.T) {
 	var capturedURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedURL = r.URL.String()
@@ -172,7 +172,7 @@ func TestGetAppDetailsPlatforms_UsesFiltersEqualPlatforms(t *testing.T) {
 	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
 	_, _ = c.GetAppDetailsPlatforms(context.Background(), 730)
 	if q := capturedURL; q != "/api/appdetails?appids=730&filters=platforms" {
-		t.Errorf("wrong URL: got %q, want filters=platforms", q)
+		t.Errorf("wrong URL: got %q", q)
 	}
 }
 
