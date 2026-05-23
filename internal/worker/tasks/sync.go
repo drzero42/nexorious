@@ -341,6 +341,11 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 
 		slog.Info("dispatch_sync: starting psn library fetch", "job_id", p.JobID, "user_id", p.UserID)
+
+		// seenPSNPlatforms tracks canonical platform slugs seen per external_game_id
+		// across all batches, for end-of-stream reconciliation.
+		seenPSNPlatforms := make(map[string][]string)
+
 		if err := w.PSN.GetLibrary(ctx, psnCreds.NpssoToken, psnLibraryBatchSize,
 			func(batch []psnsvc.ExternalLibraryEntry) error {
 				if len(batch) == 0 {
@@ -379,6 +384,8 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 						slog.Error("dispatch_sync: psn upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
 						continue
 					}
+
+					seenPSNPlatforms[egID] = append(seenPSNPlatforms[egID], platform)
 
 					if _, err := w.DB.NewRaw(`
 						INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
@@ -446,6 +453,17 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf("psn_fetch_error: %v", err))
 			}
 			return nil
+		}
+
+		// Reconcile: delete platform rows no longer present in the upstream library.
+		for egID, platforms := range seenPSNPlatforms {
+			if _, err := w.DB.NewRaw(`
+				DELETE FROM external_game_platforms
+				WHERE external_game_id = ? AND platform NOT IN (?)`,
+				egID, bun.List(platforms),
+			).Exec(ctx); err != nil {
+				slog.Error("dispatch_sync: psn delete stale platforms failed", "err", err, "job_id", p.JobID, "external_game_id", egID)
+			}
 		}
 
 	case "epic":
@@ -1003,8 +1021,9 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 			ugID, egp.Platform, storefrontSlug,
 		).Scan(ctx, &existingUGPID, &existingOwnership)
 
-		if errors.Is(ugpErr, sql.ErrNoRows) || ugpErr != nil {
+		if errors.Is(ugpErr, sql.ErrNoRows) || ugpErr != nil { // treat any scan error as not-found; ON CONFLICT DO NOTHING makes the insert safe
 			ugpID := uuid.NewString()
+			// original_platform_name holds the canonical slug post-normalisation; raw upstream names are resolved at dispatch time.
 			if _, err := w.DB.NewRaw(`
 				INSERT INTO user_game_platforms
 				(id, user_game_id, platform, storefront, is_available, hours_played, ownership_status,
