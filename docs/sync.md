@@ -158,13 +158,25 @@ If a credential error occurs at any point, the job is marked `failed` and all pe
 One `IGDBMatchWorker` job runs per game. River handles retries with exponential backoff for transient IGDB API failures.
 
 1. **Already resolved or skipped?** If `external_game.resolved_igdb_id` is set, or `is_skipped` is true, route directly to Stage 3 — no IGDB search is performed. On subsequent syncs, most games will take this path.
-2. **Search IGDB** for the game title; score each candidate using fuzzy title matching
-3. **Auto-resolve** if the best candidate scores ≥ 0.85 and has a clear margin (> 0.01) over the second-best: set `resolved_igdb_id` on the `external_game` and enqueue Stage 3
-4. **pending_review** if no clear winner is found, or if IGDB API calls fail after all River retries are exhausted: store the candidates in `job_item.igdb_candidates` and mark the item `pending_review` for the user to resolve
+2. **Sibling check:** If the game has no `resolved_igdb_id`, look for a sibling — another `external_games` row for the same user, storefront, and title that is already resolved. If found, inherit its `resolved_igdb_id` and route directly to Stage 3, skipping the IGDB search entirely. This avoids unnecessary API calls when a related entry for the same game has already been matched.
+3. **Search IGDB** for the game title; score each candidate using fuzzy title matching
+4. **Auto-resolve** if the best candidate scores ≥ 0.85 and has a clear margin (> 0.01) over the second-best: set `resolved_igdb_id` on the `external_game` and enqueue Stage 3
+5. **pending_review** if no clear winner is found, or if IGDB API calls fail after all River retries are exhausted: store the candidates in `job_item.igdb_candidates` and mark the item `pending_review` for the user to resolve
 
 ### Title matching
 
 Before searching, titles are normalised (trademark symbols removed, diacritics folded, common suffixes like "GOTY" expanded, etc.). Candidates are scored using a weighted combination of fuzzy matching algorithms. The auto-resolve threshold is 0.85 with a tie-breaking margin of 0.01.
+
+### Siblings
+
+A sibling is another `external_games` row for the same user, storefront, and title. This occurs on storefronts that assign separate identifiers to different platform releases of the same game — for example, PSN assigns distinct title IDs to the PS4 and PS5 versions of a game.
+
+The sibling mechanic prevents the same game from requiring repeated manual resolution. It operates in two places:
+
+- **Stage 2 (pull):** before searching IGDB, check whether a sibling is already resolved and inherit its match
+- **Manual match (push):** when the user resolves a `pending_review` item, any unresolved siblings with the same title are resolved with the same IGDB ID and a Stage 3 job is enqueued for each
+
+The timing of Stage 2 processing means one sibling may land in `pending_review` before the other has been resolved. In that case the push mechanic ensures that resolving one automatically resolves the other.
 
 ---
 
@@ -223,7 +235,7 @@ A job is complete only when every job_item is either `completed` or `skipped`. I
 
 ### Resolving a pending_review item
 
-The user can either select a game from the suggested `igdb_candidates` or perform their own IGDB search and choose any result. Once a match is chosen, `resolved_igdb_id` is set on both the job_item and the `external_game`, and a Stage 3 job is enqueued immediately.
+The user can either select a game from the suggested `igdb_candidates` or perform their own IGDB search and choose any result. Once a match is chosen, `resolved_igdb_id` is set on the job_item and the `external_game`, a Stage 3 job is enqueued immediately, and any unresolved siblings (same user, storefront, and title) are resolved with the same IGDB ID and also enqueued for Stage 3.
 
 ### Skipping a game
 
