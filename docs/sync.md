@@ -42,6 +42,7 @@ The sync system reads and writes these core tables:
 | `external_game_platforms` | Platform slugs and per-platform playtime for each ExternalGame |
 | `jobs` | One row per sync run; tracks status and lifecycle |
 | `job_items` | One row per game per sync run; tracks matching progress |
+| `sync_changes` | Changelog entries written by Stage 1 and Stage 3; backs the Sync History UI |
 | `games` | IGDB master catalogue; new rows are inserted when a match is found |
 | `user_games` | The user's canonical library; one row per user + IGDB game |
 | `user_game_platforms` | One row per user + game + platform + storefront combination |
@@ -59,6 +60,28 @@ Playtime is stored at the `external_game_platforms` level (`hours_played`). Stag
 Not all storefronts provide playtime. When a storefront does not provide playtime, `hours_played` is 0 for all platform rows. Playtime is never decreased — a `user_game_platforms` row's `hours_played` is only updated when the incoming value is greater than the stored value.
 
 > **Note:** `user_games.hours_played` currently exists as a stored column but should be refactored to a calculated sum of `user_game_platforms.hours_played`. See [#613](https://github.com/drzero42/nexorious/issues/613).
+
+### Sync Changes
+
+`sync_changes` records what happened to a user's library during each sync run. Each row captures one event:
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT | Primary key |
+| `job_id` | TEXT | The sync job that produced this change; FK to `jobs` |
+| `user_id` | TEXT | FK to `users` |
+| `external_game_id` | TEXT | FK to `external_games`; nullable (SET NULL on delete) |
+| `change_type` | TEXT | `added`, `removed`, or `status_changed` |
+| `title` | TEXT | Game title at the time of the event; denormalised for display |
+| `old_status` | TEXT | Previous ownership status; only set for `status_changed` |
+| `new_status` | TEXT | New ownership status; only set for `status_changed` |
+| `created_at` | TIMESTAMPTZ | When the event was recorded |
+
+Writers:
+- **Stage 1** writes a `removed` entry for each game marked `is_available = false` during the availability sweep
+- **Stage 3** writes an `added` entry when a new `user_games` row is inserted, and a `status_changed` entry when the ownership rank guard replaces an existing status
+
+Old entries are pruned by a periodic maintenance job (see Maintenance).
 
 ---
 
@@ -152,7 +175,7 @@ The `DispatchSyncWorker` runs once per sync job. It:
    - Accumulates each game's `external_id` into an in-memory set of fetched IDs
    - Upserts platform rows into `external_game_platforms`; removes any platform rows for that game that were not in this batch
    - Enqueues one Stage 2 job per game in the batch
-4. After all batches complete, runs a sweep: queries all `external_games` rows for this user and storefront where `is_available = true`, and marks any whose `external_id` is not in the fetched ID set as `is_available = false` — these are games that were not seen in this sync run and have been removed from the user's library
+4. After all batches complete, runs a sweep: queries all `external_games` rows for this user and storefront where `is_available = true`, and marks any whose `external_id` is not in the fetched ID set as `is_available = false` — these are games that were not seen in this sync run and have been removed from the user's library. For each game marked unavailable, writes a `removed` entry to `sync_changes`
 
 If a credential error occurs at any point, the job is marked `failed` and all pending job_items are cancelled. Any `external_games` rows already upserted in this run are kept.
 
@@ -191,10 +214,10 @@ One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a user action.
 
 1. If `is_skipped` is true: skip steps 2, 3, and 4
 2. Propagate `job_item.resolved_igdb_id` to `external_game.resolved_igdb_id` — this is the step that durably records the match on the ExternalGame for future sync runs
-3. Upsert `user_games`: one row per user + IGDB game ID
+3. Upsert `user_games`: one row per user + IGDB game ID. If this is an INSERT (new game), write an `added` entry to `sync_changes`
 4. For each platform row in `external_game_platforms`:
    - Upsert `user_game_platforms` with conflict key `(user_game_id, platform, storefront)`
-   - On conflict: apply the ownership rank guard (never downgrade ownership status); update `hours_played` only if the incoming value from `external_game_platforms.hours_played` is greater
+   - On conflict: apply the ownership rank guard (never downgrade ownership status); update `hours_played` only if the incoming value from `external_game_platforms.hours_played` is greater; if the ownership status changed, write a `status_changed` entry to `sync_changes`
    - Set `external_game_id` to the specific ExternalGame row that produced this platform entry
 5. Update `external_game.updated_at` — always, whether the game was skipped or not
 
@@ -277,6 +300,12 @@ Credentials are stored encrypted at rest in `user_sync_configs.storefront_creden
 ## Scheduled Sync
 
 A periodic worker checks `user_sync_configs` for all users where the sync frequency is not `manual` and the last sync was more than the configured interval ago (hourly / daily / weekly). For each, it creates a Job and enqueues a Stage 1 run — provided no active job already exists for that user and storefront. All four storefronts support scheduled sync.
+
+---
+
+## Maintenance
+
+A periodic maintenance worker prunes old `sync_changes` entries beyond a configurable retention period. This keeps the table from growing unboundedly while preserving recent history for the Sync History UI.
 
 ---
 
