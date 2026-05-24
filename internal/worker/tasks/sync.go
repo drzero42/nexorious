@@ -854,7 +854,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	// ── 2. Load external_game via direct column ───────────────────────────
 	if item.ExternalGameID == nil {
 		syncMarkItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item")
-		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
@@ -862,7 +862,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	var eg models.ExternalGame
 	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, "external game not found")
-		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
@@ -918,7 +918,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	// ── 4. Skipped games ──────────────────────────────────────────────────
 	if eg.IsSkipped {
 		syncMarkItemSkipped(ctx, w.DB, &item)
-		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
@@ -928,7 +928,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 		if err != nil {
 			msg := fmt.Sprintf("igdb search failed: %v", err)
 			syncMarkItemFailed(ctx, w.DB, &item, msg)
-			syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+			syncCheckJobCompletion(ctx, w.DB, item.JobID)
 			return nil
 		}
 		normalizedQuery := matching.NormalizeTitle(eg.Title)
@@ -970,7 +970,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 			item.IGDBCandidates = candidatesJSON
 			item.MatchConfidence = &bestScore
 			syncMarkItemPendingReview(ctx, w.DB, &item)
-			syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+			syncCheckJobCompletion(ctx, w.DB, item.JobID)
 			return nil
 		}
 	}
@@ -978,7 +978,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	// ── 6. Still no IGDB ID → pending_review ─────────────────────────────
 	if eg.ResolvedIGDBID == nil {
 		syncMarkItemPendingReview(ctx, w.DB, &item)
-		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
@@ -988,19 +988,19 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 		Where("external_game_id = ?", eg.ID).
 		Scan(ctx); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("load platforms: %v", err))
-		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 	if len(egPlatforms) == 0 {
 		syncMarkItemFailed(ctx, w.DB, &item, "external game has no platform rows")
-		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	storefrontSlug, storefrontOK := platformresolution.StorefrontToCollectionSlug(eg.Storefront)
 	if !storefrontOK {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("unresolved storefront=%s", eg.Storefront))
-		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
@@ -1028,7 +1028,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 			item.UserID, *eg.ResolvedIGDBID,
 		).Scan(ctx, &ugID); ferr != nil {
 			syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("find/create user_game: %v", ferr))
-			syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+			syncCheckJobCompletion(ctx, w.DB, item.JobID)
 			return nil
 		}
 	}
@@ -1091,7 +1091,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 
 	// ── 10. Mark item completed ───────────────────────────────────────────
 	syncMarkItemCompleted(ctx, w.DB, &item)
-	syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+	syncCheckJobCompletion(ctx, w.DB, item.JobID)
 	return nil
 }
 
@@ -1161,7 +1161,7 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 //   - pending_review items still exist: job stays processing (user must review).
 //   - Any failed items exist and no pending_review: marks job completed_with_errors.
 //   - No pending_review, no failed: marks job completed.
-func syncCheckJobCompletion(ctx context.Context, db *bun.DB, _ *river.Client[pgx.Tx], jobID string) {
+func syncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 	var activeRemaining int
 	if err := db.NewRaw(
 		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status IN ('pending', 'processing')`,
