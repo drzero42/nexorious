@@ -126,7 +126,9 @@ Each adapter lives in its own `services/` package and is responsible for:
 
 ### Adapter interface
 
-Each game yielded by the adapter provides:
+The `tasks` package defines a concrete Go interface (`StorefrontAdapter`) that every storefront adapter must implement. Each `services/` package implements this interface; the `DispatchSyncWorker` depends only on the interface, never on a concrete adapter type.
+
+The interface requires a `GetLibrary` method that accepts a context, a batch size, and a callback. The adapter calls the callback once per batch of ≤10 games, each represented by a `GameEntry` value with the following fields:
 
 | Field | Type | Notes |
 |---|---|---|
