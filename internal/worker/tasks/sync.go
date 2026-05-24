@@ -418,9 +418,13 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 					fetchedIDs[e.ExternalID] = struct{}{}
 					batchExtIDs = append(batchExtIDs, e.ExternalID)
 
-					platform, ok := platformresolution.PlatformToSlug(e.RawPlatform)
+					rawPlatform := ""
+					if len(e.Platforms) > 0 {
+						rawPlatform = e.Platforms[0]
+					}
+					platform, ok := platformresolution.PlatformToSlug(rawPlatform)
 					if !ok {
-						slog.Error("dispatch_sync: psn unknown platform, using default", "storefront_platform", e.RawPlatform, "external_id", e.ExternalID)
+						slog.Error("dispatch_sync: psn unknown platform, using default", "storefront_platform", rawPlatform, "external_id", e.ExternalID)
 						platform = "playstation-4"
 					}
 
@@ -668,9 +672,13 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				for _, e := range batch {
 					fetchedIDs[e.ExternalID] = struct{}{}
 
-					platform, ok := platformresolution.PlatformToSlug(e.RawPlatform)
+					rawPlatform := ""
+					if len(e.Platforms) > 0 {
+						rawPlatform = e.Platforms[0]
+					}
+					platform, ok := platformresolution.PlatformToSlug(rawPlatform)
 					if !ok {
-						slog.Error("dispatch_sync: gog unknown platform, using default", "storefront_platform", e.RawPlatform, "external_id", e.ExternalID)
+						slog.Error("dispatch_sync: gog unknown platform, using default", "storefront_platform", rawPlatform, "external_id", e.ExternalID)
 						platform = "pc-windows"
 					}
 

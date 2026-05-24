@@ -203,7 +203,7 @@ func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[
 			result[t.TitleID] = ExternalGameEntry{
 				ExternalID:      t.TitleID,
 				Title:           t.Name,
-				RawPlatform:     rawPlatform,
+				Platforms:       []string{rawPlatform},
 				PlaytimeHours:   parseDurationHours(t.PlayDuration),
 				OwnershipStatus: ownership,
 				IsSubscription:  isSub,
@@ -296,7 +296,7 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 			result[g.TitleID] = ExternalGameEntry{
 				ExternalID:      g.TitleID,
 				Title:           g.Name,
-				RawPlatform:     rawPlatform,
+				Platforms:       []string{rawPlatform},
 				PlaytimeHours:   0,
 				OwnershipStatus: ownership,
 				IsSubscription:  isSub,
@@ -315,7 +315,7 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 type ExternalGameEntry struct {
 	ExternalID      string
 	Title           string
-	RawPlatform     string
+	Platforms       []string // single element per entry; PSN creates one ExternalGame per title ID
 	PlaytimeHours   int
 	OwnershipStatus string
 	IsSubscription  bool

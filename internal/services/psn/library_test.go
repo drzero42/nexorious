@@ -64,8 +64,8 @@ func TestFetchPlayHistory_HappyPath(t *testing.T) {
 	if !ok {
 		t.Fatal("expected entry for PPSA07950_00")
 	}
-	if ps5.RawPlatform != "playstation-5" {
-		t.Errorf("expected RawPlatform=playstation-5, got %q", ps5.RawPlatform)
+	if len(ps5.Platforms) == 0 || ps5.Platforms[0] != "playstation-5" {
+		t.Errorf("expected Platforms[0]=playstation-5, got %v", ps5.Platforms)
 	}
 	if ps5.PlaytimeHours != 340 {
 		t.Errorf("expected PlaytimeHours=340, got %d", ps5.PlaytimeHours)
@@ -81,8 +81,8 @@ func TestFetchPlayHistory_HappyPath(t *testing.T) {
 	if !ok {
 		t.Fatal("expected entry for CUSA12345_00")
 	}
-	if ps4.RawPlatform != "playstation-4" {
-		t.Errorf("expected RawPlatform=playstation-4, got %q", ps4.RawPlatform)
+	if len(ps4.Platforms) == 0 || ps4.Platforms[0] != "playstation-4" {
+		t.Errorf("expected Platforms[0]=playstation-4, got %v", ps4.Platforms)
 	}
 	if ps4.OwnershipStatus != "subscription" {
 		t.Errorf("expected OwnershipStatus=subscription, got %q", ps4.OwnershipStatus)
@@ -204,8 +204,8 @@ func TestFetchPurchasedGames_HappyPath(t *testing.T) {
 	if !ok {
 		t.Fatal("expected entry for CUSA10410_00")
 	}
-	if ps4.RawPlatform != "playstation-4" {
-		t.Errorf("expected RawPlatform=playstation-4, got %q", ps4.RawPlatform)
+	if len(ps4.Platforms) == 0 || ps4.Platforms[0] != "playstation-4" {
+		t.Errorf("expected Platforms[0]=playstation-4, got %v", ps4.Platforms)
 	}
 	if !ps4.IsSubscription {
 		t.Error("expected IsSubscription=true for PS_PLUS game")
@@ -221,8 +221,8 @@ func TestFetchPurchasedGames_HappyPath(t *testing.T) {
 	if !ok {
 		t.Fatal("expected entry for PPSA01234_00")
 	}
-	if ps5.RawPlatform != "playstation-5" {
-		t.Errorf("expected RawPlatform=playstation-5, got %q", ps5.RawPlatform)
+	if len(ps5.Platforms) == 0 || ps5.Platforms[0] != "playstation-5" {
+		t.Errorf("expected Platforms[0]=playstation-5, got %v", ps5.Platforms)
 	}
 	if ps5.IsSubscription {
 		t.Error("expected IsSubscription=false for non-PS_PLUS game")
@@ -315,10 +315,10 @@ func TestFetchPurchasedGames_HTTPError(t *testing.T) {
 
 func TestMergePlayedPurchased_UnionBothSources(t *testing.T) {
 	played := map[string]ExternalGameEntry{
-		"DISC1": {ExternalID: "DISC1", Title: "Disc Game", RawPlatform: "playstation-4", PlaytimeHours: 5, OwnershipStatus: "owned"},
+		"DISC1": {ExternalID: "DISC1", Title: "Disc Game", Platforms: []string{"playstation-4"}, PlaytimeHours: 5, OwnershipStatus: "owned"},
 	}
 	purchased := map[string]ExternalGameEntry{
-		"DL1": {ExternalID: "DL1", Title: "Digital", RawPlatform: "playstation-5", PlaytimeHours: 0, OwnershipStatus: "owned"},
+		"DL1": {ExternalID: "DL1", Title: "Digital", Platforms: []string{"playstation-5"}, PlaytimeHours: 0, OwnershipStatus: "owned"},
 	}
 	result := mergePlayedPurchased(played, purchased)
 	if len(result) != 2 {
@@ -328,10 +328,10 @@ func TestMergePlayedPurchased_UnionBothSources(t *testing.T) {
 
 func TestMergePlayedPurchased_PurchasedUpgradesSubscription(t *testing.T) {
 	played := map[string]ExternalGameEntry{
-		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 10, OwnershipStatus: "owned", IsSubscription: false},
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 10, OwnershipStatus: "owned", IsSubscription: false},
 	}
 	purchased := map[string]ExternalGameEntry{
-		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 0, OwnershipStatus: "subscription", IsSubscription: true},
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 0, OwnershipStatus: "subscription", IsSubscription: true},
 	}
 	result := mergePlayedPurchased(played, purchased)
 	if len(result) != 1 {
@@ -348,10 +348,10 @@ func TestMergePlayedPurchased_PurchasedUpgradesSubscription(t *testing.T) {
 
 func TestMergePlayedPurchased_PurchasedDoesNotDowngradeOwnership(t *testing.T) {
 	played := map[string]ExternalGameEntry{
-		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 5, OwnershipStatus: "owned", IsSubscription: false},
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 5, OwnershipStatus: "owned", IsSubscription: false},
 	}
 	purchased := map[string]ExternalGameEntry{
-		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 0, OwnershipStatus: "owned", IsSubscription: false},
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 0, OwnershipStatus: "owned", IsSubscription: false},
 	}
 	result := mergePlayedPurchased(played, purchased)
 	if len(result) != 1 {
@@ -364,7 +364,7 @@ func TestMergePlayedPurchased_PurchasedDoesNotDowngradeOwnership(t *testing.T) {
 
 func TestMergePlayedPurchased_DiscGameNotInPurchased(t *testing.T) {
 	played := map[string]ExternalGameEntry{
-		"DISC1": {ExternalID: "DISC1", RawPlatform: "playstation-4", PlaytimeHours: 3, OwnershipStatus: "owned"},
+		"DISC1": {ExternalID: "DISC1", Platforms: []string{"playstation-4"}, PlaytimeHours: 3, OwnershipStatus: "owned"},
 	}
 	result := mergePlayedPurchased(played, map[string]ExternalGameEntry{})
 	if len(result) != 1 || result[0].ExternalID != "DISC1" {
