@@ -23,26 +23,20 @@ import (
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
 	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
+	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
 )
 
 // ExternalGameEntry is the normalised game representation yielded by any storefront adapter.
-type ExternalGameEntry struct {
-	ExternalID      string
-	Title           string
-	PlaytimeHours   float64  // 0 when the storefront does not provide playtime
-	Platforms       []string // storefront-specific names; canonicalised to slugs by the worker
-	OwnershipStatus string   // "owned", "subscription", etc.
-	IsSubscription  bool
-}
+// Defined as a type alias so service adapter packages can implement StorefrontAdapter
+// without importing this (tasks) package and creating an import cycle.
+type ExternalGameEntry = storefrontadapter.ExternalGameEntry
 
 // StorefrontAdapter is the interface every storefront adapter must satisfy.
-type StorefrontAdapter interface {
-	GetLibrary(ctx context.Context, batchSize int, onBatch func([]ExternalGameEntry) error) error
-}
+type StorefrontAdapter = storefrontadapter.Adapter
 
 // ErrCredentials is returned by an adapter when credentials are invalid,
 // expired, or cannot be decrypted. DispatchSyncWorker marks the job failed on this error.
-var ErrCredentials = errors.New("credentials error")
+var ErrCredentials = storefrontadapter.ErrCredentials
 
 // SteamLibraryAdapter fetches the Steam game library.
 type SteamLibraryAdapter interface {
