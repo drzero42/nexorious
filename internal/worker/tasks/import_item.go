@@ -249,6 +249,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 
+	gameHoursApplied := false
 	for _, pd := range gd.Platforms {
 		if pd.PlatformID == "" {
 			continue
@@ -289,8 +290,9 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		// If this platform has no per-platform hours but the game record has a
 		// total, apply it to the first platform row as a best-effort migration.
 		hoursPlayed := pd.HoursPlayed
-		if hoursPlayed == nil && gd.HoursPlayed != nil && len(existingPlatforms) == 0 {
+		if hoursPlayed == nil && gd.HoursPlayed != nil && !gameHoursApplied {
 			hoursPlayed = gd.HoursPlayed
+			gameHoursApplied = true
 		}
 
 		ugp := &models.UserGamePlatform{
