@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/crypto"
+	"github.com/drzero42/nexorious/internal/db/models"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	"github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/ratelimit"
@@ -169,13 +171,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		staleThreshold = 4 * time.Hour
 	}
 
+	epicClient := epicsvc.NewClient(cfg.LegendaryWorkDir)
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
-		DB:        db,
-		Encrypter: encrypter,
-		Steam:     steamsvc.NewClient(),
-		PSN:       psnsvc.NewClient(),
-		Epic:      &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: db, Encrypter: encrypter},
-		GOG:       gogsvc.NewClient(),
+		DB:      db,
+		Adapter: buildAdapterFactory(db, encrypter, epicClient),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
@@ -248,13 +247,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				return fmt.Errorf("RebuildServices: pgxpool: %w", err)
 			}
 
+			newEpicClient := epicsvc.NewClient(cfg.LegendaryWorkDir)
 			newDispatchSync := &tasks.DispatchSyncWorker{
-				DB:        newDB,
-				Encrypter: encrypter,
-				Steam:     steamsvc.NewClient(),
-				PSN:       psnsvc.NewClient(),
-				Epic:      &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: newDB, Encrypter: encrypter},
-				GOG:       gogsvc.NewClient(),
+				DB:      newDB,
+				Adapter: buildAdapterFactory(newDB, encrypter, newEpicClient),
 			}
 			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
 				DB:         newDB,
@@ -380,5 +376,100 @@ func parseSlogLevel(s string) slog.Level {
 		return slog.LevelError
 	default:
 		return slog.LevelInfo
+	}
+}
+
+func buildAdapterFactory(
+	db *bun.DB,
+	encrypter *crypto.Encrypter,
+	epicClient *epicsvc.Client,
+) func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+	return func(ctx context.Context, storefront string, cfg models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+		switch storefront {
+		case "steam":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
+			if err != nil {
+				slog.Warn("adapter factory: steam decrypt failed", "user_id", cfg.UserID, "err", err)
+				return nil, tasks.ErrCredentials
+			}
+			var creds struct {
+				WebAPIKey string `json:"web_api_key"`
+				SteamID   string `json:"steam_id"`
+			}
+			if err := json.Unmarshal(plain, &creds); err != nil {
+				return nil, tasks.ErrCredentials
+			}
+			return steamsvc.NewAdapter(steamsvc.NewClient(), creds.WebAPIKey, creds.SteamID), nil
+
+		case "psn":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
+			if err != nil {
+				slog.Warn("adapter factory: psn decrypt failed", "user_id", cfg.UserID, "err", err)
+				return nil, tasks.ErrCredentials
+			}
+			var creds struct {
+				NPSSOToken string `json:"npsso_token"`
+			}
+			if err := json.Unmarshal(plain, &creds); err != nil {
+				return nil, tasks.ErrCredentials
+			}
+			return psnsvc.NewAdapter(psnsvc.NewClient(), creds.NPSSOToken), nil
+
+		case "gog":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
+			if err != nil {
+				slog.Warn("adapter factory: gog decrypt failed", "user_id", cfg.UserID, "err", err)
+				return nil, tasks.ErrCredentials
+			}
+			var creds struct {
+				AccessToken  string `json:"access_token"`
+				RefreshToken string `json:"refresh_token"`
+				UserID       string `json:"user_id"`
+				Username     string `json:"username"`
+			}
+			if err := json.Unmarshal(plain, &creds); err != nil {
+				return nil, tasks.ErrCredentials
+			}
+			gogClient := gogsvc.NewClient()
+			newTok, err := gogClient.RefreshToken(ctx, creds.RefreshToken)
+			if err != nil {
+				slog.Warn("adapter factory: gog token refresh failed", "user_id", cfg.UserID, "err", err)
+				return nil, tasks.ErrCredentials
+			}
+			creds.AccessToken = newTok.AccessToken
+			creds.RefreshToken = newTok.RefreshToken
+			if newCredsJSON, merr := json.Marshal(creds); merr == nil {
+				enc, encErr := encrypter.Encrypt(newCredsJSON)
+				if encErr != nil {
+					slog.Error("adapter factory: encrypt refreshed gog token failed", "err", encErr, "user_id", cfg.UserID)
+				} else if _, err := db.NewRaw(
+					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'gog'`,
+					enc, cfg.UserID,
+				).Exec(ctx); err != nil {
+					slog.Error("adapter factory: persist refreshed gog token failed", "err", err, "user_id", cfg.UserID)
+				}
+			}
+			return gogsvc.NewAdapter(gogClient, newTok.AccessToken), nil
+
+		case "epic":
+			return &tasks.EpicClientAdapter{
+				Client:    epicClient,
+				DB:        db,
+				Encrypter: encrypter,
+				UserID:    cfg.UserID,
+			}, nil
+
+		default:
+			return nil, fmt.Errorf("unknown storefront: %s", storefront)
+		}
 	}
 }
