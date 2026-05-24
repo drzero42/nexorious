@@ -277,7 +277,7 @@ All adapters implement the same interface. The differences below are the only pl
 ### Steam
 
 - **Auth:** API key + Steam ID; static credentials, no refresh needed
-- **Library fetch:** A single API call returns the full library. The adapter chunks the list into batches of ≤10. For each batch, it makes one AppDetails API call per game to resolve platform availability, then yields the enriched batch via the callback
+- **Library fetch:** A single API call returns the full library. The adapter then makes one AppDetails API call per game to resolve platform availability, and chunks the enriched results into batches of ≤10 before yielding them via the callback. The batching is adapter-side; the Steam API itself is not paginated
 - **Rate limiting:** A token bucket enforces a minimum delay between AppDetails calls. On a 429 response, the adapter backs off and retries. Rate limiting is handled consistently with the shared library's backoff interface
 - **Platforms:** `pc-windows`, `mac`, `pc-linux` as reported by AppDetails; mapped to canonical slugs
 - **Playtime:** Provided as total playtime across all platforms (not per platform). Written only to the highest-priority platform row in the order `pc-windows` → `mac` → `pc-linux`; all other platform rows for the same game receive 0
