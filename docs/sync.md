@@ -311,7 +311,7 @@ A periodic worker checks `user_sync_configs` for all users where the sync freque
 
 ## Maintenance
 
-A periodic maintenance worker prunes old `sync_changes` entries beyond a configurable retention period. This keeps the table from growing unboundedly while preserving recent history for the Sync History UI.
+A periodic maintenance worker prunes `sync_changes` entries older than the retention period configured by `SYNC_HISTORY_RETENTION_DAYS` (default: 90 days). This keeps the table from growing unboundedly while preserving recent history for the Sync History UI.
 
 ---
 
