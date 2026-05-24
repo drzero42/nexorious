@@ -83,12 +83,21 @@ type fakeEpicAdapter struct {
 	err     error
 }
 
-func (f *fakeEpicAdapter) GetLibrary(_ context.Context, _ string, onBatch func([]epicsvc.ExternalGameEntry) error) error {
+func (f *fakeEpicAdapter) GetLibrary(_ context.Context, _ int, onBatch func([]tasks.ExternalGameEntry) error) error {
 	if f.err != nil {
 		return f.err
 	}
 	for _, batch := range f.batches {
-		if err := onBatch(batch); err != nil {
+		mapped := make([]tasks.ExternalGameEntry, 0, len(batch))
+		for _, e := range batch {
+			mapped = append(mapped, tasks.ExternalGameEntry{
+				ExternalID:      e.ExternalID,
+				Title:           e.Title,
+				Platforms:       []string{"pc-windows"},
+				OwnershipStatus: e.OwnershipStatus,
+			})
+		}
+		if err := onBatch(mapped); err != nil {
 			return err
 		}
 	}
@@ -1031,11 +1040,11 @@ func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 
 	// Two pages of games — verifies that both pages are processed.
 	page1 := []psnsvc.ExternalGameEntry{
-		{ExternalID: "NPWR00001_00", Title: "God of War", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
-		{ExternalID: "NPWR00002_00", Title: "Spider-Man", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
+		{ExternalID: "NPWR00001_00", Title: "God of War", Platforms: []string{"playstation-4"}, OwnershipStatus: "owned"},
+		{ExternalID: "NPWR00002_00", Title: "Spider-Man", Platforms: []string{"playstation-4"}, OwnershipStatus: "owned"},
 	}
 	page2 := []psnsvc.ExternalGameEntry{
-		{ExternalID: "NPWR00003_00", Title: "Horizon", RawPlatform: "playstation-5", OwnershipStatus: "owned"},
+		{ExternalID: "NPWR00003_00", Title: "Horizon", Platforms: []string{"playstation-5"}, OwnershipStatus: "owned"},
 	}
 	adapter := &fakePSNAdapter{pages: [][]psnsvc.ExternalGameEntry{page1, page2}}
 	rc := newTestRiverClient(t)
@@ -1105,8 +1114,8 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 	).Exec(ctx)
 
 	page1 := []psnsvc.ExternalGameEntry{
-		{ExternalID: "NPWR00001_00", Title: "God of War", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
-		{ExternalID: "NPWR00002_00", Title: "Spider-Man", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
+		{ExternalID: "NPWR00001_00", Title: "God of War", Platforms: []string{"playstation-4"}, OwnershipStatus: "owned"},
+		{ExternalID: "NPWR00002_00", Title: "Spider-Man", Platforms: []string{"playstation-4"}, OwnershipStatus: "owned"},
 	}
 	adapter := &fakePSNAdapter{pages: [][]psnsvc.ExternalGameEntry{page1}}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, PSN: adapter, RiverClient: nil}
@@ -1386,9 +1395,9 @@ func TestEpicClientAdapter_NotConfigured_ReturnsErrorWithoutTouchingDB(t *testin
 	insertTestUser(t, testDB, userID)
 
 	fake := &fakeEpicSubprocessClient{configured: false}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter, UserID: userID}
 
-	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil })
+	err := a.GetLibrary(context.Background(), 0, func([]tasks.ExternalGameEntry) error { return nil })
 	if err == nil {
 		t.Fatal("expected error when not configured, got nil")
 	}
@@ -1404,9 +1413,9 @@ func TestEpicClientAdapter_NoSnapshotInDB_ReturnsError(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	fake := &fakeEpicSubprocessClient{configured: true}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter, UserID: userID}
 
-	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil })
+	err := a.GetLibrary(context.Background(), 0, func([]tasks.ExternalGameEntry) error { return nil })
 	if err == nil {
 		t.Fatal("expected error when no snapshot in DB, got nil")
 	}
@@ -1428,9 +1437,9 @@ func TestEpicClientAdapter_RestoresSnapshotFromDB(t *testing.T) {
 	seedEpicConfig(t, userID, original)
 
 	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: original}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter, UserID: userID}
 
-	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil })
+	err := a.GetLibrary(context.Background(), 0, func([]tasks.ExternalGameEntry) error { return nil })
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1457,9 +1466,9 @@ func TestEpicClientAdapter_PersistsNewSnapshotAfterSuccess(t *testing.T) {
 	seedEpicConfig(t, userID, original)
 
 	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: updated}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter, UserID: userID}
 
-	if err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil }); err != nil {
+	if err := a.GetLibrary(context.Background(), 0, func([]tasks.ExternalGameEntry) error { return nil }); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -1489,9 +1498,9 @@ func TestEpicClientAdapter_PersistsSnapshotEvenOnFetchError(t *testing.T) {
 		getLibraryErr:   fetchErr,
 		captureSnapshot: updatedAfterFailedFetch,
 	}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter, UserID: userID}
 
-	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil })
+	err := a.GetLibrary(context.Background(), 0, func([]tasks.ExternalGameEntry) error { return nil })
 	if err == nil || err.Error() != fetchErr.Error() {
 		t.Fatalf("expected fetch error to propagate, got %v", err)
 	}
@@ -1514,9 +1523,9 @@ func TestEpicClientAdapter_SkipsPersistWhenSnapshotEmpty(t *testing.T) {
 	seedEpicConfig(t, userID, original)
 
 	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: map[string]string{}}
-	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
+	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter, UserID: userID}
 
-	if err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil }); err != nil {
+	if err := a.GetLibrary(context.Background(), 0, func([]tasks.ExternalGameEntry) error { return nil }); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -1600,7 +1609,7 @@ func TestGOGDispatch_CreatesExternalGames(t *testing.T) {
 
 	adapter := &fakeGOGAdapter{
 		entries: []gogsvc.ExternalGameEntry{
-			{ExternalID: "1001", Title: "GOG Game", RawPlatform: "pc-windows", OwnershipStatus: "owned"},
+			{ExternalID: "1001", Title: "GOG Game", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"},
 		},
 	}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, GOG: adapter}
@@ -1643,8 +1652,7 @@ func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
 
 	adapter := &fakeGOGAdapter{
 		entries: []gogsvc.ExternalGameEntry{
-			{ExternalID: "2001", Title: "Dual Game", RawPlatform: "pc-windows", OwnershipStatus: "owned"},
-			{ExternalID: "2001", Title: "Dual Game", RawPlatform: "pc-linux", OwnershipStatus: "owned"},
+			{ExternalID: "2001", Title: "Dual Game", Platforms: []string{"pc-windows", "pc-linux"}, OwnershipStatus: "owned"},
 		},
 	}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, GOG: adapter}

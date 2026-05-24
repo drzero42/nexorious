@@ -53,11 +53,7 @@ const psnLibraryBatchSize = 10
 
 // EpicLibraryAdapter fetches the Epic Games Store library via Legendary.
 type EpicLibraryAdapter interface {
-	GetLibrary(
-		ctx context.Context,
-		userID string,
-		onBatch func([]epicsvc.ExternalGameEntry) error,
-	) error
+	GetLibrary(ctx context.Context, batchSize int, onBatch func([]ExternalGameEntry) error) error
 }
 
 // GOGLibraryAdapter fetches the GOG game library.
@@ -77,16 +73,17 @@ type epicSubprocessClient interface {
 	CaptureSnapshot(userID string) (map[string]string, error)
 }
 
-// EpicClientAdapter implements EpicLibraryAdapter.
+// EpicClientAdapter implements EpicLibraryAdapter and StorefrontAdapter.
 // It loads the legendary state snapshot from the DB, restores it to disk,
 // calls the epic.Client, then captures and persists the updated snapshot.
 type EpicClientAdapter struct {
 	Client    epicSubprocessClient
 	DB        *bun.DB
 	Encrypter *crypto.Encrypter
+	UserID    string
 }
 
-func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBatch func([]epicsvc.ExternalGameEntry) error) error {
+func (a *EpicClientAdapter) GetLibrary(ctx context.Context, _ int, onBatch func([]ExternalGameEntry) error) error {
 	if !a.Client.Configured() {
 		return fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
 	}
@@ -95,14 +92,14 @@ func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBat
 	var ciphertextStr string
 	if err := a.DB.NewRaw(
 		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
-		userID,
+		a.UserID,
 	).Scan(ctx, &ciphertextStr); err != nil || ciphertextStr == "" {
-		return fmt.Errorf("epic: no legendary state found for user (not connected)")
+		return fmt.Errorf("%w: epic legendary state not found", ErrCredentials)
 	}
 	plainState, err := a.Encrypter.Decrypt(ciphertextStr)
 	if err != nil {
-		slog.Warn("epic: legendary state decrypt failed", "user_id", userID, "err", err)
-		return fmt.Errorf("epic: legendary state decrypt failed")
+		slog.Warn("epic: legendary state decrypt failed", "user_id", a.UserID, "err", err)
+		return fmt.Errorf("%w: epic legendary state decrypt failed", ErrCredentials)
 	}
 	var snapshot map[string]string
 	if err := json.Unmarshal(plainState, &snapshot); err != nil {
@@ -110,28 +107,41 @@ func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBat
 	}
 
 	// 2. Restore snapshot to disk.
-	if err := a.Client.RestoreSnapshot(userID, snapshot); err != nil {
+	if err := a.Client.RestoreSnapshot(a.UserID, snapshot); err != nil {
 		return fmt.Errorf("epic: restore snapshot: %w", err)
 	}
 
-	// 3. Fetch library.
-	fetchErr := a.Client.GetLibrary(ctx, userID, onBatch)
+	// 3. Fetch library, mapping epicsvc entries to ExternalGameEntry.
+	fetchErr := a.Client.GetLibrary(ctx, a.UserID, func(batch []epicsvc.ExternalGameEntry) error {
+		mapped := make([]ExternalGameEntry, 0, len(batch))
+		for _, e := range batch {
+			mapped = append(mapped, ExternalGameEntry{
+				ExternalID:      e.ExternalID,
+				Title:           e.Title,
+				PlaytimeHours:   0,
+				Platforms:       []string{"pc-windows"},
+				OwnershipStatus: e.OwnershipStatus,
+				IsSubscription:  false,
+			})
+		}
+		return onBatch(mapped)
+	})
 
 	// 4. Capture updated snapshot regardless of fetch error.
-	newSnapshot, captureErr := a.Client.CaptureSnapshot(userID)
+	newSnapshot, captureErr := a.Client.CaptureSnapshot(a.UserID)
 	if captureErr != nil {
-		slog.Error("epic: capture snapshot after GetLibrary failed", "user_id", userID, "err", captureErr)
+		slog.Error("epic: capture snapshot after GetLibrary failed", "user_id", a.UserID, "err", captureErr)
 	} else if len(newSnapshot) > 0 {
 		newPlainJSON, _ := json.Marshal(newSnapshot)
 		newCiphertext, encErr := a.Encrypter.Encrypt(newPlainJSON)
 		if encErr != nil {
-			slog.Error("epic: encrypt updated snapshot failed", "user_id", userID, "err", encErr)
+			slog.Error("epic: encrypt updated snapshot failed", "user_id", a.UserID, "err", encErr)
 		} else {
 			if _, err := a.DB.NewRaw(
 				`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
-				newCiphertext, userID,
+				newCiphertext, a.UserID,
 			).Exec(context.Background()); err != nil {
-				slog.Error("epic: persist updated snapshot failed", "user_id", userID, "err", err)
+				slog.Error("epic: persist updated snapshot failed", "user_id", a.UserID, "err", err)
 			}
 		}
 	}
@@ -533,8 +543,8 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			return nil
 		}
 		slog.Info("dispatch_sync: starting epic library fetch", "job_id", p.JobID, "user_id", p.UserID)
-		if err := w.Epic.GetLibrary(ctx, p.UserID,
-			func(batch []epicsvc.ExternalGameEntry) error {
+		if err := w.Epic.GetLibrary(ctx, 0,
+			func(batch []ExternalGameEntry) error {
 				if len(batch) == 0 {
 					return nil
 				}
@@ -672,16 +682,6 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				for _, e := range batch {
 					fetchedIDs[e.ExternalID] = struct{}{}
 
-					rawPlatform := ""
-					if len(e.Platforms) > 0 {
-						rawPlatform = e.Platforms[0]
-					}
-					platform, ok := platformresolution.PlatformToSlug(rawPlatform)
-					if !ok {
-						slog.Error("dispatch_sync: gog unknown platform, using default", "storefront_platform", rawPlatform, "external_id", e.ExternalID)
-						platform = "pc-windows"
-					}
-
 					ownership := e.OwnershipStatus
 					upsertNow := time.Now().UTC()
 
@@ -703,16 +703,28 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 						continue
 					}
 
-					seenEGPlatforms[egID] = append(seenEGPlatforms[egID], platform)
+					platforms := e.Platforms
+					if len(platforms) == 0 {
+						platforms = []string{"pc-windows"}
+					}
+					for _, rawPlatform := range platforms {
+						platform, ok := platformresolution.PlatformToSlug(rawPlatform)
+						if !ok {
+							slog.Error("dispatch_sync: gog unknown platform, using default", "storefront_platform", rawPlatform, "external_id", e.ExternalID)
+							platform = "pc-windows"
+						}
 
-					if _, err := w.DB.NewRaw(`
-						INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
-						VALUES (?, ?, ?, 0, now())
-						ON CONFLICT (external_game_id, platform) DO UPDATE SET
-							hours_played = GREATEST(EXCLUDED.hours_played, external_game_platforms.hours_played)`,
-						uuid.NewString(), egID, platform,
-					).Exec(ctx); err != nil {
-						slog.Error("dispatch_sync: gog upsert platform failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
+						seenEGPlatforms[egID] = append(seenEGPlatforms[egID], platform)
+
+						if _, err := w.DB.NewRaw(`
+							INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+							VALUES (?, ?, ?, 0, now())
+							ON CONFLICT (external_game_id, platform) DO UPDATE SET
+								hours_played = GREATEST(EXCLUDED.hours_played, external_game_platforms.hours_played)`,
+							uuid.NewString(), egID, platform,
+						).Exec(ctx); err != nil {
+							slog.Error("dispatch_sync: gog upsert platform failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
+						}
 					}
 
 					if _, alreadyDispatched := dispatchedInBatch[e.ExternalID]; alreadyDispatched {
