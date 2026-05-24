@@ -856,14 +856,14 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 
 	if item.ExternalGameID == nil {
 		syncMarkItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item")
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	var eg models.ExternalGame
 	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, "external game not found")
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
@@ -908,7 +908,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 				slog.Warn("igdb_match: IGDB failed on final attempt, marking pending_review",
 					"item_id", p.JobItemID, "err", err)
 				syncMarkItemPendingReview(ctx, w.DB, &item)
-				syncCheckJobCompletion(ctx, w.DB, item.JobID)
+				SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 				return nil
 			}
 			return fmt.Errorf("igdb_match: search failed (will retry): %w", err)
@@ -951,20 +951,20 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		item.IGDBCandidates = candidatesJSON
 		item.MatchConfidence = &bestScore
 		syncMarkItemPendingReview(ctx, w.DB, &item)
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	// No IGDB client configured — mark pending_review.
 	syncMarkItemPendingReview(ctx, w.DB, &item)
-	syncCheckJobCompletion(ctx, w.DB, item.JobID)
+	SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 	return nil
 }
 
 func (w *IGDBMatchWorker) enqueueUserGame(ctx context.Context, jobItemID, jobID string) error {
 	if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, jobItemID, UserGameArgs{JobItemID: jobItemID}); err != nil {
 		slog.Error("igdb_match: enqueue user_game_write failed", "item_id", jobItemID, "err", err)
-		syncCheckJobCompletion(ctx, w.DB, jobID)
+		SyncCheckJobCompletion(ctx, w.DB, jobID)
 	}
 	return nil
 }
@@ -999,14 +999,14 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 
 	if item.ExternalGameID == nil {
 		syncMarkItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item")
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	var eg models.ExternalGame
 	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, "external game not found")
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
@@ -1018,7 +1018,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			slog.Error("user_game_write: update external_game updated_at (skipped)", "err", err)
 		}
 		syncMarkItemSkipped(ctx, w.DB, &item)
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
@@ -1042,7 +1042,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 
 	if eg.ResolvedIGDBID == nil {
 		syncMarkItemFailed(ctx, w.DB, &item, "no resolved_igdb_id on external_game")
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
@@ -1071,7 +1071,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		ugID, item.UserID, *eg.ResolvedIGDBID, now, now,
 	).Scan(ctx, &isNewRow); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("upsert user_game: %v", err))
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 	ugID = isNewRow.ID
@@ -1082,19 +1082,19 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		Where("external_game_id = ?", eg.ID).
 		Scan(ctx); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("load platforms: %v", err))
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 	if len(egPlatforms) == 0 {
 		syncMarkItemFailed(ctx, w.DB, &item, "external game has no platform rows")
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	storefrontSlug, ok := platformresolution.StorefrontToCollectionSlug(eg.Storefront)
 	if !ok {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("unresolved storefront=%s", eg.Storefront))
-		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
@@ -1190,7 +1190,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	}
 
 	syncMarkItemCompleted(ctx, w.DB, &item)
-	syncCheckJobCompletion(ctx, w.DB, item.JobID)
+	SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 	return nil
 }
 
@@ -1260,7 +1260,7 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 //   - pending_review items still exist: job stays processing (user must review).
 //   - Any failed items exist and no pending_review: marks job completed_with_errors.
 //   - No pending_review, no failed: marks job completed.
-func syncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
+func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 	var activeRemaining int
 	if err := db.NewRaw(
 		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status IN ('pending', 'processing')`,

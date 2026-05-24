@@ -15,6 +15,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 type JobItemsHandler struct {
@@ -212,6 +213,8 @@ func (h *JobItemsHandler) HandleSkipItem(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 		}
 	}
+
+	tasks.SyncCheckJobCompletion(context.Background(), h.db, item.JobID)
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "skipped"})
 }

@@ -256,6 +256,50 @@ func TestRetryItem(t *testing.T) {
 	}
 }
 
+// ─── TestSkipItem_TerminatesJobWhenLastItem ───────────────────────────────────
+
+func TestSkipItem_TerminatesJobWhenLastItem(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+
+	userID, token := setupTagUser(t, testDB, e, "ji-skip-term")
+
+	// Create a sync job with exactly one pending_review item.
+	insertJob(t, testDB, "job-skip-term", userID, "sync", "steam", "processing")
+	// Insert an external_game so HandleSkipItem can mark it skipped.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, created_at, updated_at)
+		 VALUES ('eg-skip-term', ?, 'steam', 'app999', 'Skip Me', true, false, 'owned', now(), now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert external_game: %v", err)
+	}
+	_, err = testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-skip-term-1', 'job-skip-term', ?, 'app999', 'Skip Me', 'eg-skip-term', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	rec := postJSONAuth(t, e, "/api/job-items/ji-skip-term-1/skip", map[string]any{}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var jobStatus string
+	if err := testDB.QueryRowContext(context.Background(),
+		`SELECT status FROM jobs WHERE id = 'job-skip-term'`,
+	).Scan(&jobStatus); err != nil {
+		t.Fatalf("query job status: %v", err)
+	}
+	if jobStatus != "completed" {
+		t.Fatalf("expected job status=completed, got %q", jobStatus)
+	}
+}
+
 // ─── TestRetryItem_NotFailed ──────────────────────────────────────────────────
 
 func TestRetryItem_NotFailed(t *testing.T) {
