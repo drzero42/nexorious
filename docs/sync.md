@@ -64,7 +64,7 @@ Not all storefronts provide playtime. When a storefront does not provide playtim
 
 ## Architecture
 
-The sync pipeline has three stages. Each stage is implemented as a River worker job. A shared worker library handles the mechanics common to all storefronts — batching, rate limiting, database upserts, and job tracking — while each storefront implements a standard adapter interface that owns its own auth and API communication.
+The sync pipeline has three stages. Each stage is implemented as a River worker job in the `tasks` package. The `DispatchSyncWorker` defines a standard adapter interface; each storefront implements that interface in its own `services/` package (`services/steam`, `services/psn`, `services/gog`, `services/epic`). Storefront-specific knowledge — auth, API communication, credential lifecycle — never crosses into the workers.
 
 ```mermaid
 flowchart TD
@@ -76,7 +76,7 @@ flowchart TD
         D[Upsert external_games<br/>+ external_game_platforms] --> E
         E[Enqueue one Stage 2 job<br/>per game in batch] --> F{More batches?}
         F -->|yes| C
-        F -->|no| G[Timestamp sweep:<br/>mark missing games is_available=false]
+        F -->|no| G[Availability sweep:<br/>mark missing games is_available=false]
     end
 
     subgraph Stage2["Stage 2 — IGDB Match"]
@@ -106,20 +106,22 @@ flowchart TD
     S --> N
 ```
 
-### Shared worker library responsibilities
+### DispatchSyncWorker responsibilities
 
 - Recording `sync_started_at` at the beginning of a sync run
 - Calling the adapter's batch callback and iterating until the library is fully fetched
 - Applying rate limiting between API calls
 - Upserting `external_games` and `external_game_platforms` after each batch
 - Enqueuing Stage 2 jobs after each batch
-- Running the timestamp sweep at the end of the fetch phase
+- Running the availability sweep at the end of the fetch phase
 - Failing the job and cancelling pending items on credential errors
 
 ### Storefront adapter responsibilities
 
+Each adapter lives in its own `services/` package and is responsible for:
+
 - All authentication mechanics (token refresh, CLI state management, credential expiry detection)
-- Signalling credential errors to the shared library
+- Signalling credential errors to the worker
 - Yielding games in batches of ≤10 via a callback
 
 ### Adapter interface
@@ -131,7 +133,7 @@ Each game yielded by the adapter provides:
 | `ExternalID` | string | Storefront-specific game identifier |
 | `Title` | string | Game name as reported by the storefront |
 | `PlaytimeHours` | int | Hours played; 0 means not provided by this storefront |
-| `RawPlatforms` | []string | Platform names in storefront-specific format; resolved to canonical slugs by the library |
+| `RawPlatforms` | []string | Platform names in storefront-specific format; resolved to canonical slugs by the worker |
 | `OwnershipStatus` | string | `owned`, `subscription`, etc. |
 | `IsSubscription` | bool | True if the game is accessed via a subscription service |
 
