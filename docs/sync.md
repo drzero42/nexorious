@@ -258,7 +258,14 @@ The user replaces an existing IGDB match with a different one. `external_game.re
 
 ## Credential Errors
 
-All storefronts expose credential problems through a unified `credentials_error` flag in their status response. This covers expired tokens, decryption failures, and any other auth issue.
+All storefronts expose credential problems through a unified `credentials_error` flag in their status response. Each storefront detects errors differently, but all surface them the same way to the worker:
+
+| Storefront | Detection mechanism |
+|---|---|
+| **Steam** | Decryption failure of `storefront_credentials`, or API key rejected by the Steam API |
+| **PSN** | Authentication failure when exchanging the NPSSO token for an access token (token expires approximately every 2 months) |
+| **GOG** | OAuth2 refresh token failure (refresh token expired or revoked) |
+| **Epic** | Decryption failure of `storefront_credentials`, or Legendary CLI reports an authentication failure |
 
 When a credential error occurs mid-sync, the job is marked `failed` and all pending job_items are cancelled. The user must reconfigure their credentials before triggering a new sync.
 
