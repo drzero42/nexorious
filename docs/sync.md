@@ -59,8 +59,6 @@ Playtime is stored at the `external_game_platforms` level (`hours_played`). Stag
 
 Not all storefronts provide playtime. When a storefront does not provide playtime, `hours_played` is 0 for all platform rows. Playtime is never decreased — a `user_game_platforms` row's `hours_played` is only updated when the incoming value is greater than the stored value.
 
-> **Note:** `user_games.hours_played` currently exists as a stored column but should be refactored to a calculated sum of `user_game_platforms.hours_played`. See [#613](https://github.com/drzero42/nexorious/issues/613).
-
 ### Sync Changes
 
 `sync_changes` records what happened to a user's library during each sync run. Each row captures one event:
