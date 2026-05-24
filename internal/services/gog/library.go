@@ -13,7 +13,7 @@ import (
 type ExternalGameEntry struct {
 	ExternalID      string
 	Title           string
-	RawPlatform     string // "pc-windows", "pc-mac", or "pc-linux"
+	Platforms       []string // all platforms this product runs on
 	PlaytimeHours   int
 	OwnershipStatus string
 	IsSubscription  bool
@@ -87,39 +87,30 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 
 	numPages := max(body.NumPages, 1)
 
-	entries := make([]ExternalGameEntry, 0, len(body.Products)*2)
+	entries := make([]ExternalGameEntry, 0, len(body.Products))
 	for _, p := range body.Products {
 		id := strconv.FormatInt(p.ID, 10)
+		var platforms []string
 		if p.WorksOn.Windows {
-			entries = append(entries, ExternalGameEntry{
-				ExternalID:      id,
-				Title:           p.Title,
-				RawPlatform:     "pc-windows",
-				PlaytimeHours:   0,
-				OwnershipStatus: "owned",
-				IsSubscription:  false,
-			})
+			platforms = append(platforms, "pc-windows")
 		}
 		if p.WorksOn.Mac {
-			entries = append(entries, ExternalGameEntry{
-				ExternalID:      id,
-				Title:           p.Title,
-				RawPlatform:     "pc-mac",
-				PlaytimeHours:   0,
-				OwnershipStatus: "owned",
-				IsSubscription:  false,
-			})
+			platforms = append(platforms, "pc-mac")
 		}
 		if p.WorksOn.Linux {
-			entries = append(entries, ExternalGameEntry{
-				ExternalID:      id,
-				Title:           p.Title,
-				RawPlatform:     "pc-linux",
-				PlaytimeHours:   0,
-				OwnershipStatus: "owned",
-				IsSubscription:  false,
-			})
+			platforms = append(platforms, "pc-linux")
 		}
+		if len(platforms) == 0 {
+			platforms = []string{"pc-windows"}
+		}
+		entries = append(entries, ExternalGameEntry{
+			ExternalID:      id,
+			Title:           p.Title,
+			Platforms:       platforms,
+			PlaytimeHours:   0,
+			OwnershipStatus: "owned",
+			IsSubscription:  false,
+		})
 	}
 	return entries, numPages, nil
 }
