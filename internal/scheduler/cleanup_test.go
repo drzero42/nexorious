@@ -323,33 +323,6 @@ func TestCheckPendingSyncs_NeverSynced_Dispatched(t *testing.T) {
 	}
 }
 
-func TestCheckPendingSyncs_EpicSkipped(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := insertUser(t, ctx, nil)
-
-	// Epic storefront — should always be skipped.
-	configID := uuid.NewString()
-	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add)
-		 VALUES (?, ?, 'epic', 'daily', false)`,
-		configID, userID,
-	).Exec(ctx)
-	if err != nil {
-		t.Fatalf("insert sync config: %v", err)
-	}
-
-	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
-	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
-
-	var count int
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
-		t.Fatalf("count jobs: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("expected 0 sync jobs for epic storefront, got %d", count)
-	}
-}
 
 func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
 	truncateAllTables(t)

@@ -148,10 +148,6 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 	}
 
 	for _, cfg := range configs {
-		if cfg.Storefront == "epic" {
-			continue
-		}
-
 		needsSync := false
 		if cfg.LastSyncedAt == nil {
 			needsSync = true
