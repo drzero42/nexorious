@@ -101,7 +101,7 @@ const (
 	JobItemStatusPendingReview = "pending_review"
 	JobItemStatusSkipped       = "skipped"
 	JobItemStatusFailed        = "failed"
-	JobItemStatusIGDBFailed    = "igdb_failed"
+	JobItemStatusCancelled     = "cancelled"
 )
 
 type JobItem struct {
@@ -110,6 +110,7 @@ type JobItem struct {
 	ID              string          `bun:"id,pk"                    json:"id"`
 	JobID           string          `bun:"job_id,notnull"           json:"job_id"`
 	UserID          string          `bun:"user_id,notnull"          json:"user_id"`
+	ExternalGameID  *string         `bun:"external_game_id"         json:"external_game_id"`
 	ItemKey         string          `bun:"item_key,notnull"         json:"item_key"`
 	SourceTitle     string          `bun:"source_title,notnull"     json:"source_title"`
 	SourceMetadata  json.RawMessage `bun:"source_metadata,notnull"  json:"source_metadata"`
