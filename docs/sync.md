@@ -302,3 +302,73 @@ All adapters implement the same interface. The differences below are the only pl
 - **Rate limiting:** Handled internally by the Legendary CLI
 - **Platforms:** Epic does not expose per-game platform data; all entries are `pc-windows`
 - **Playtime:** Not provided; always 0
+
+---
+
+## User Interface
+
+The sync UI has two levels: a hub page that shows all storefronts at a glance, and a per-storefront detail page where the user can configure, monitor, and act on sync results.
+
+### Navigation
+
+The global navigation shows an aggregate count of `pending_review` items across all storefronts. Tapping it navigates to the sync hub page.
+
+### Sync Hub Page
+
+A grid of storefront cards — one per supported storefront. Each card shows:
+
+- Platform name and icon
+- Connection status (Connected / Credentials Error / Not Configured)
+- Last synced timestamp
+- Pending review count badge; clicking it navigates to that storefront's detail page, anchoring to the Needs Review section where possible
+- A Sync Now button to trigger a manual sync without navigating into the detail page
+
+No game-level details are shown on the hub page.
+
+### Platform Detail Page
+
+#### Header
+
+The platform name and a connection status badge. The badge is one of: **Connected**, **Credentials Error**, or **Not Configured**. Clicking the badge toggles the Connection & Settings section open or closed.
+
+#### Connection & Settings Section
+
+Collapsible. Collapsed by default when the connection is working; expanded by default when the status is Credentials Error or Not Configured.
+
+Contains:
+- Storefront-specific credential input (e.g. API key for Steam, NPSSO token for PSN, OAuth flow for GOG and Epic)
+- Sync frequency setting (Manual / Hourly / Daily / Weekly)
+- Disconnect action
+
+#### Progress Box
+
+Shown only while a sync job is active. Displays:
+
+- Total number of games found on the storefront so far; during Stage 1 this count grows as games are fetched; once Stage 1 completes it is fixed for that run
+- Live counts per state: matched, needs review, skipped, failed, and still processing
+
+When the job reaches a terminal state the progress box collapses to a single summary line showing the outcome and timestamp, or disappears entirely.
+
+Games that are currently in-flight (being processed by Stage 2 or Stage 3) do not appear in the External Games section — only the counts in the progress box reflect their existence until they settle into a stable state.
+
+#### External Games Section
+
+A permanent view of all external games for this storefront, organised into four groups. Only games in stable states are shown here.
+
+| Group | Condition | Default | Actions |
+|---|---|---|---|
+| **Needs Review** | `pending_review` job item | Expanded | Pick IGDB match, Skip |
+| **Failed** | Permanent Stage 2 or Stage 3 failure | Expanded | Retry (per game), Retry All |
+| **Matched** | `resolved_igdb_id` set, Stage 3 complete | Collapsed | Change match |
+| **Skipped** | `is_skipped = true` | Collapsed | Unskip |
+
+The Needs Review group is the most prominent — these games are blocking the job from completing and require user action.
+
+#### Sync History
+
+A log of past sync runs for this storefront. Each entry shows:
+
+- Timestamp and outcome (completed, completed with pending review items, failed)
+- A changelog: games added to the library, games that became unavailable (removed from the storefront), and games whose status changed (e.g. ownership type updated)
+
+The history does not reproduce the full per-game processing trace — it is a human-readable record of what changed in the user's library as a result of each sync run.
