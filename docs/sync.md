@@ -189,13 +189,14 @@ The timing of Stage 2 processing means one sibling may land in `pending_review` 
 
 One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a user action.
 
-1. If `is_skipped` is true: skip steps 2 and 3
-2. Upsert `user_games`: one row per user + IGDB game ID
-3. For each platform row in `external_game_platforms`:
+1. If `is_skipped` is true: skip steps 2, 3, and 4
+2. Propagate `job_item.resolved_igdb_id` to `external_game.resolved_igdb_id` — this is the step that durably records the match on the ExternalGame for future sync runs
+3. Upsert `user_games`: one row per user + IGDB game ID
+4. For each platform row in `external_game_platforms`:
    - Upsert `user_game_platforms` with conflict key `(user_game_id, platform, storefront)`
    - On conflict: apply the ownership rank guard (never downgrade ownership status); update `hours_played` only if the incoming value from `external_game_platforms.hours_played` is greater
    - Set `external_game_id` to the specific ExternalGame row that produced this platform entry
-4. Update `external_game.updated_at` — always, whether the game was skipped or not
+5. Update `external_game.updated_at` — always, whether the game was skipped or not
 
 ### Ownership rank guard
 
@@ -240,7 +241,7 @@ A job is complete only when every job_item is either `completed` or `skipped`. I
 
 ### Resolving a pending_review item
 
-The user can either select a game from the suggested `igdb_candidates` or perform their own IGDB search and choose any result. Once a match is chosen, `resolved_igdb_id` is set on the job_item and the `external_game`, a Stage 3 job is enqueued immediately, and any unresolved siblings (same user, storefront, and title) are resolved with the same IGDB ID and also enqueued for Stage 3.
+The user can either select a game from the suggested `igdb_candidates` or perform their own IGDB search and choose any result. Once a match is chosen, the resolve endpoint sets `resolved_igdb_id` on the `job_item` and enqueues a Stage 3 job immediately. Stage 3 then propagates `resolved_igdb_id` from the `job_item` to the `external_game` as its first write step — the `external_game` is not updated at the time of the user's action, only when Stage 3 runs. Any unresolved siblings (same user, storefront, and title) are resolved with the same IGDB ID and also enqueued for Stage 3 at the time of the user's action.
 
 ### Skipping a game
 
