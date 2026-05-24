@@ -139,7 +139,6 @@ type externalGameResponse struct {
 	IsSkipped                  bool    `bun:"is_skipped"                     json:"is_skipped"`
 	IsAvailable                bool    `bun:"is_available"                   json:"is_available"`
 	IsSubscription             bool    `bun:"is_subscription"                json:"is_subscription"`
-	PlaytimeHours              int     `bun:"playtime_hours"                 json:"playtime_hours"`
 	HasUserGame                bool    `bun:"has_user_game"                  json:"has_user_game"`
 	UserGameID                 *string `bun:"user_game_id"                   json:"user_game_id"`
 	IGDBTitle                  *string `bun:"igdb_title"                     json:"igdb_title"`
@@ -742,19 +741,15 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 	stateJSON, _ := json.Marshal(stateCiphertext)
 	now := time.Now().UTC()
 
-	row := &models.UserSyncConfig{
-		ID:                    uuid.NewString(),
-		UserID:                userID,
-		Storefront:            "epic",
-		Frequency:             "manual",
-		StorefrontCredentials: &credsCiphertext,
-		EpicLegendaryState:    stateJSON,
-		CreatedAt:             now,
-		UpdatedAt:             now,
-	}
-	if _, err := h.db.NewInsert().Model(row).
-		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, epic_legendary_state = EXCLUDED.epic_legendary_state, updated_at = EXCLUDED.updated_at").
-		Exec(context.Background()); err != nil {
+	if _, err := h.db.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, epic_legendary_state, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?, ?, ?, ?)
+		 ON CONFLICT (user_id, storefront) DO UPDATE SET
+		     storefront_credentials = EXCLUDED.storefront_credentials,
+		     epic_legendary_state = EXCLUDED.epic_legendary_state,
+		     updated_at = EXCLUDED.updated_at`,
+		uuid.NewString(), userID, credsCiphertext, stateJSON, now, now,
+	).Exec(context.Background()); err != nil {
 		slog.Error("epic: persist storefront credentials failed", "user_id", userID, "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Epic connection")
 	}
@@ -919,15 +914,11 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		jobID, userID, eg.Storefront, now,
 	).Exec(ctx)
 	if jerr == nil {
-		meta, _ := json.Marshal(map[string]any{
-			"external_game_id": eg.ID,
-			"playtime_hours":   eg.PlaytimeHours,
-		})
 		itemID := uuid.NewString()
 		if _, err := h.db.NewRaw(
-			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-			itemID, jobID, userID, eg.ExternalID, eg.Title, string(meta),
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
+			itemID, jobID, userID, eg.ExternalID, eg.Title, eg.ID,
 		).Exec(ctx); err != nil {
 			slog.Error("sync: insert job_item for unskip failed", "err", err, "external_game_id", eg.ID)
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
@@ -965,7 +956,6 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 			eg.is_skipped,
 			eg.is_available,
 			eg.is_subscription,
-			eg.playtime_hours,
 			(ugp.user_game_id IS NOT NULL) AS has_user_game,
 			ugp.user_game_id,
 			g.title AS igdb_title,
@@ -1151,15 +1141,11 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job")
 	}
 
-	meta, _ := json.Marshal(map[string]any{
-		"external_game_id": eg.ID,
-		"playtime_hours":   eg.PlaytimeHours,
-	})
 	itemID := uuid.NewString()
 	_, err = h.db.NewRaw(
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-		itemID, jobID, userID, eg.ExternalID, eg.Title, string(meta),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
+		itemID, jobID, userID, eg.ExternalID, eg.Title, eg.ID,
 	).Exec(ctx)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")

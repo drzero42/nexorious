@@ -414,19 +414,9 @@ func TestUpdateProgress(t *testing.T) {
 	gameID := insertTestGame(t, testDB, "Test Game Progress")
 	insertTestUserGame(t, testDB, "ug-prog-1", userID, int(gameID))
 
-	t.Run("success hours only", func(t *testing.T) {
+	t.Run("success play_status", func(t *testing.T) {
 		rec := putJSONAuth(t, e, "/api/user-games/ug-prog-1/progress", map[string]any{
-			"hours_played": 12.5,
-		}, token)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-		}
-	})
-
-	t.Run("success both fields", func(t *testing.T) {
-		rec := putJSONAuth(t, e, "/api/user-games/ug-prog-1/progress", map[string]any{
-			"hours_played": 25.0,
-			"play_status":  "in_progress",
+			"play_status": "in_progress",
 		}, token)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -451,7 +441,7 @@ func TestUpdateProgress(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		rec := putJSONAuth(t, e, "/api/user-games/nonexistent/progress", map[string]any{
-			"hours_played": 1.0,
+			"play_status": "completed",
 		}, token)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
@@ -1178,7 +1168,7 @@ func TestCollectionStats(t *testing.T) {
 		}
 	})
 
-	t.Run("hours fallback", func(t *testing.T) {
+	t.Run("hours from platforms", func(t *testing.T) {
 		userID, token := setupUserGamesUser(t, testDB, e, "stats-hours")
 
 		g1 := insertTestGame(t, testDB, "Hours Game 1")
@@ -1195,9 +1185,10 @@ func TestCollectionStats(t *testing.T) {
 		_, _ = testDB.ExecContext(context.Background(),
 			`UPDATE user_game_platforms SET hours_played = 50.5 WHERE id = 'ugp-hours-1'`)
 
-		// Game 2: no platform hours, legacy hours = 10.0
+		// Game 2: platform hours = 10.0
+		insertTestUserGamePlatform(t, testDB, "ugp-hours-2", "ug-hours-2", &pc, &steam)
 		_, _ = testDB.ExecContext(context.Background(),
-			`UPDATE user_games SET hours_played = 10.0 WHERE id = 'ug-hours-2'`)
+			`UPDATE user_game_platforms SET hours_played = 10.0 WHERE id = 'ugp-hours-2'`)
 
 		rec := getAuth(t, e, "/api/user-games/stats", token)
 		if rec.Code != http.StatusOK {

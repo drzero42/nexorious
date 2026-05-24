@@ -777,15 +777,15 @@ func TestHandleRetryFailed_MetadataRefreshJobType(t *testing.T) {
 	}
 }
 
-func TestJobProgress_IncludesIGDBFailed(t *testing.T) {
+func TestJobProgress_IncludesFailedCount(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "igdb-failed-progress")
+	userID, token := setupTagUser(t, testDB, e, "failed-progress")
 
 	jobID := uuid.NewString()
 	insertJob(t, testDB, jobID, userID, "sync", "steam", "processing")
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k1", "Game A", "completed")
-	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k2", "Game B", "igdb_failed")
+	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k2", "Game B", "failed")
 
 	rec := getAuth(t, e, "/api/jobs/"+jobID, token)
 	if rec.Code != http.StatusOK {
@@ -799,21 +799,21 @@ func TestJobProgress_IncludesIGDBFailed(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected progress map, got %T", resp["progress"])
 	}
-	if igdbFailed, ok := progress["igdb_failed"].(float64); !ok || igdbFailed != 1 {
-		t.Errorf("expected igdb_failed=1 in progress, got %v", progress["igdb_failed"])
+	if failed, ok := progress["failed"].(float64); !ok || failed != 1 {
+		t.Errorf("expected failed=1 in progress, got %v", progress["failed"])
 	}
 }
 
-func TestRetryFailed_IncludesIGDBFailed(t *testing.T) {
+func TestRetryFailed_RetriesFailedItems(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "retry-igdb-failed")
+	userID, token := setupTagUser(t, testDB, e, "retry-failed")
 
 	jobID := uuid.NewString()
 	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed_with_errors")
 
 	item1ID := uuid.NewString()
-	insertJobItem(t, testDB, item1ID, jobID, userID, "k1", "Game A", "igdb_failed")
+	insertJobItem(t, testDB, item1ID, jobID, userID, "k1", "Game A", "failed")
 	item2ID := uuid.NewString()
 	insertJobItem(t, testDB, item2ID, jobID, userID, "k2", "Game B", "failed")
 	item3ID := uuid.NewString()
@@ -828,14 +828,14 @@ func TestRetryFailed_IncludesIGDBFailed(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if retried, ok := resp["retried_count"].(float64); !ok || retried != 2 {
-		t.Errorf("expected retried=2 (1 igdb_failed + 1 failed), got %v", resp["retried_count"])
+		t.Errorf("expected retried=2, got %v", resp["retried_count"])
 	}
 
 	var s1, s2 string
 	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, item1ID).Scan(context.Background(), &s1)
 	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, item2ID).Scan(context.Background(), &s2)
 	if s1 != "pending" {
-		t.Errorf("expected igdb_failed item reset to pending, got %q", s1)
+		t.Errorf("expected failed item reset to pending, got %q", s1)
 	}
 	if s2 != "pending" {
 		t.Errorf("expected failed item reset to pending, got %q", s2)
@@ -872,7 +872,7 @@ func TestRecentJobs_ReturnsSplitItemArrays(t *testing.T) {
 	jobID := uuid.NewString()
 	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed_with_errors")
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k1", "Game A", "completed")
-	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k2", "Game B", "igdb_failed")
+	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k2", "Game B", "failed")
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k3", "Game C", "skipped")
 
 	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
@@ -890,15 +890,15 @@ func TestRecentJobs_ReturnsSplitItemArrays(t *testing.T) {
 	job, _ := rawJobs[0].(map[string]any)
 	completedItems, _ := job["completed_items"].([]any)
 	skippedItems, _ := job["skipped_items"].([]any)
-	igdbFailedItems, _ := job["igdb_failed_items"].([]any)
+	failedItems, _ := job["failed_items"].([]any)
 	if len(completedItems) != 1 {
 		t.Errorf("expected 1 completed_item, got %d", len(completedItems))
 	}
 	if len(skippedItems) != 1 {
 		t.Errorf("expected 1 skipped_item, got %d", len(skippedItems))
 	}
-	if len(igdbFailedItems) != 1 {
-		t.Errorf("expected 1 igdb_failed_item, got %d", len(igdbFailedItems))
+	if len(failedItems) != 1 {
+		t.Errorf("expected 1 failed_item, got %d", len(failedItems))
 	}
 }
 

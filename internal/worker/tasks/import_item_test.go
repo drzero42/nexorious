@@ -65,9 +65,6 @@ func TestImportItem_BasicGame(t *testing.T) {
 	if ug.PersonalRating == nil || *ug.PersonalRating != 9 {
 		t.Errorf("personal_rating = %v, want 9", ug.PersonalRating)
 	}
-	if ug.HoursPlayed == nil || *ug.HoursPlayed != 42.5 {
-		t.Errorf("hours_played = %v, want 42.5", ug.HoursPlayed)
-	}
 
 	// Verify JobItem is completed.
 	var item models.JobItem

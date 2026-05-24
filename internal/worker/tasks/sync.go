@@ -240,18 +240,17 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				IsSkipped bool   `bun:"is_skipped"`
 			}
 			if err := w.DB.NewRaw(`
-				INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, playtime_hours, ownership_status, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, true, false, ?, ?, ?, ?)
+				INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, true, false, ?, ?, ?)
 				ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
 					title = EXCLUDED.title,
-					playtime_hours = EXCLUDED.playtime_hours,
 					is_subscription = EXCLUDED.is_subscription,
 					ownership_status = EXCLUDED.ownership_status,
 					is_available = true,
 					updated_at = now()
 				RETURNING id, is_skipped`,
 				uuid.NewString(), p.UserID, p.Storefront, appidStr, og.Title,
-				og.PlaytimeHours, &ownership, upsertNow, upsertNow,
+				&ownership, upsertNow, upsertNow,
 			).Scan(ctx, &egRow); err != nil {
 				slog.Error("dispatch_sync: steam upsert external_game failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
 				continue
@@ -312,12 +311,17 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				resolvedPlatforms = []string{"pc-windows"}
 			}
 
-			for _, platform := range resolvedPlatforms {
+			for i, platform := range resolvedPlatforms {
+				platformHours := 0.0
+				if i == 0 {
+					platformHours = float64(og.PlaytimeHours)
+				}
 				if _, err := w.DB.NewRaw(`
-					INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
-					VALUES (?, ?, ?, now())
-					ON CONFLICT (external_game_id, platform) DO NOTHING`,
-					uuid.NewString(), egID, platform,
+					INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+					VALUES (?, ?, ?, ?, now())
+					ON CONFLICT (external_game_id, platform) DO UPDATE SET
+						hours_played = GREATEST(EXCLUDED.hours_played, external_game_platforms.hours_played)`,
+					uuid.NewString(), egID, platform, platformHours,
 				).Exec(ctx); err != nil {
 					slog.Error("dispatch_sync: steam upsert platform failed", "err", err, "job_id", p.JobID, "external_id", appidStr, "platform", platform)
 				}
@@ -340,16 +344,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			if egRow.IsSkipped {
 				continue
 			}
-			metaJSON, _ := json.Marshal(map[string]any{
-				"external_game_id": egID,
-				"playtime_hours":   og.PlaytimeHours,
-			})
 			itemID := uuid.NewString()
 			if _, err := w.DB.NewRaw(`
-				INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-				VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+				INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())
 				ON CONFLICT (job_id, item_key) DO NOTHING`,
-				itemID, p.JobID, p.UserID, appidStr, og.Title, string(metaJSON),
+				itemID, p.JobID, p.UserID, appidStr, og.Title, egID,
 			).Exec(ctx); err != nil {
 				slog.Error("dispatch_sync: steam insert job_item failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
 			}
@@ -422,18 +422,17 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 
 					var egID string
 					if err := w.DB.NewRaw(`
-						INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, playtime_hours, ownership_status, created_at, updated_at)
-						VALUES (?, ?, ?, ?, ?, true, ?, ?, ?, ?, ?)
+						INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, created_at, updated_at)
+						VALUES (?, ?, ?, ?, ?, true, ?, ?, ?, ?)
 						ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
 							title = EXCLUDED.title,
-							playtime_hours = EXCLUDED.playtime_hours,
 							is_subscription = EXCLUDED.is_subscription,
 							ownership_status = EXCLUDED.ownership_status,
 							is_available = true,
 							updated_at = now()
 						RETURNING id`,
 						uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
-						e.IsSubscription, e.PlaytimeHours, &ownership, upsertNow, upsertNow,
+						e.IsSubscription, &ownership, upsertNow, upsertNow,
 					).Scan(ctx, &egID); err != nil {
 						slog.Error("dispatch_sync: psn upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
 						continue
@@ -442,10 +441,11 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 					seenPSNPlatforms[egID] = append(seenPSNPlatforms[egID], platform)
 
 					if _, err := w.DB.NewRaw(`
-						INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
-						VALUES (?, ?, ?, now())
-						ON CONFLICT (external_game_id, platform) DO NOTHING`,
-						uuid.NewString(), egID, platform,
+						INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+						VALUES (?, ?, ?, ?, now())
+						ON CONFLICT (external_game_id, platform) DO UPDATE SET
+							hours_played = GREATEST(EXCLUDED.hours_played, external_game_platforms.hours_played)`,
+						uuid.NewString(), egID, platform, e.PlaytimeHours,
 					).Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: psn upsert platform failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
 					}
@@ -461,16 +461,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				slog.Info("dispatch_sync: psn batch to dispatch", "job_id", p.JobID, "to_process", len(toProcess), "batch_size", len(batch))
 
 				for _, eg := range toProcess {
-					metaJSON, _ := json.Marshal(map[string]any{
-						"external_game_id": eg.ID,
-						"playtime_hours":   eg.PlaytimeHours,
-					})
 					itemID := uuid.NewString()
 					if _, err := w.DB.NewRaw(`
-						INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+						INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())
 						ON CONFLICT (job_id, item_key) DO NOTHING`,
-						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
+						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, eg.ID,
 					).Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: psn insert job_item failed", "job_id", p.JobID, "external_id", eg.ExternalID, "err", err)
 					}
@@ -542,8 +538,8 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 
 					var egID string
 					if err := w.DB.NewRaw(`
-						INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, playtime_hours, ownership_status, created_at, updated_at)
-						VALUES (?, ?, ?, ?, ?, true, false, 0, ?, ?, ?)
+						INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, created_at, updated_at)
+						VALUES (?, ?, ?, ?, ?, true, false, ?, ?, ?)
 						ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
 							title = EXCLUDED.title,
 							is_subscription = EXCLUDED.is_subscription,
@@ -559,9 +555,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 					}
 
 					if _, err := w.DB.NewRaw(`
-						INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
-						VALUES (?, ?, 'pc-windows', now())
-						ON CONFLICT (external_game_id, platform) DO NOTHING`,
+						INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+						VALUES (?, ?, 'pc-windows', 0, now())
+						ON CONFLICT (external_game_id, platform) DO UPDATE SET
+							hours_played = GREATEST(EXCLUDED.hours_played, external_game_platforms.hours_played)`,
 						uuid.NewString(), egID,
 					).Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: epic upsert platform failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
@@ -578,16 +575,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				slog.Info("dispatch_sync: epic batch to dispatch", "job_id", p.JobID, "to_process", len(toProcess), "batch_size", len(batch))
 
 				for _, eg := range toProcess {
-					metaJSON, _ := json.Marshal(map[string]any{
-						"external_game_id": eg.ID,
-						"playtime_hours":   eg.PlaytimeHours,
-					})
 					itemID := uuid.NewString()
 					if _, err := w.DB.NewRaw(`
-						INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+						INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())
 						ON CONFLICT (job_id, item_key) DO NOTHING`,
-						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
+						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, eg.ID,
 					).Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: epic insert job_item failed", "job_id", p.JobID, "external_id", eg.ExternalID, "err", err)
 					}
@@ -679,18 +672,17 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 
 					var egID string
 					if err := w.DB.NewRaw(`
-						INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, playtime_hours, ownership_status, created_at, updated_at)
-						VALUES (?, ?, ?, ?, ?, true, ?, ?, ?, ?, ?)
+						INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, created_at, updated_at)
+						VALUES (?, ?, ?, ?, ?, true, ?, ?, ?, ?)
 						ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
 							title = EXCLUDED.title,
-							playtime_hours = EXCLUDED.playtime_hours,
 							is_subscription = EXCLUDED.is_subscription,
 							ownership_status = EXCLUDED.ownership_status,
 							is_available = true,
 							updated_at = now()
 						RETURNING id`,
 						uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
-						e.IsSubscription, e.PlaytimeHours, &ownership, upsertNow, upsertNow,
+						e.IsSubscription, &ownership, upsertNow, upsertNow,
 					).Scan(ctx, &egID); err != nil {
 						slog.Error("dispatch_sync: gog upsert external_game failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
 						continue
@@ -699,9 +691,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 					seenEGPlatforms[egID] = append(seenEGPlatforms[egID], platform)
 
 					if _, err := w.DB.NewRaw(`
-						INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
-						VALUES (?, ?, ?, now())
-						ON CONFLICT (external_game_id, platform) DO NOTHING`,
+						INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+						VALUES (?, ?, ?, 0, now())
+						ON CONFLICT (external_game_id, platform) DO UPDATE SET
+							hours_played = GREATEST(EXCLUDED.hours_played, external_game_platforms.hours_played)`,
 						uuid.NewString(), egID, platform,
 					).Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: gog upsert platform failed", "job_id", p.JobID, "external_id", e.ExternalID, "err", err)
@@ -728,16 +721,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				slog.Info("dispatch_sync: gog batch to dispatch", "job_id", p.JobID, "to_process", len(toProcess))
 
 				for _, eg := range toProcess {
-					metaJSON, _ := json.Marshal(map[string]any{
-						"external_game_id": eg.ID,
-						"playtime_hours":   eg.PlaytimeHours,
-					})
 					itemID := uuid.NewString()
 					if _, err := w.DB.NewRaw(`
-						INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-						VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
+						INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+						VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())
 						ON CONFLICT (job_id, item_key) DO NOTHING`,
-						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
+						itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, eg.ID,
 					).Exec(ctx); err != nil {
 						slog.Error("dispatch_sync: gog insert job_item failed", "job_id", p.JobID, "external_id", eg.ExternalID, "err", err)
 					}
@@ -862,20 +851,16 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 		return err
 	}
 
-	// ── 2. Parse source_metadata ──────────────────────────────────────────
-	var meta struct {
-		ExternalGameID string `json:"external_game_id"`
-		PlaytimeHours  int    `json:"playtime_hours"`
-	}
-	if err := json.Unmarshal(item.SourceMetadata, &meta); err != nil {
-		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err))
+	// ── 2. Load external_game via direct column ───────────────────────────
+	if item.ExternalGameID == nil {
+		syncMarkItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item")
 		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
 	// ── 3. Load external_game ─────────────────────────────────────────────
 	var eg models.ExternalGame
-	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", meta.ExternalGameID).Scan(ctx); err != nil {
+	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, "external game not found")
 		syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
@@ -942,7 +927,7 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 		candidates, err := w.IGDBClient.SearchGames(ctx, eg.Title, 10)
 		if err != nil {
 			msg := fmt.Sprintf("igdb search failed: %v", err)
-			syncMarkItemIGDBFailed(ctx, w.DB, &item, msg)
+			syncMarkItemFailed(ctx, w.DB, &item, msg)
 			syncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 			return nil
 		}
@@ -1030,10 +1015,10 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 		ugID = uuid.NewString()
 		now := time.Now().UTC()
 		if _, err := w.DB.NewRaw(
-			`INSERT INTO user_games (id, user_id, game_id, hours_played, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?)
+			`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?)
 			 ON CONFLICT (user_id, game_id) DO NOTHING`,
-			ugID, item.UserID, *eg.ResolvedIGDBID, float64(meta.PlaytimeHours), now, now,
+			ugID, item.UserID, *eg.ResolvedIGDBID, now, now,
 		).Exec(ctx); err != nil {
 			slog.Error("process_sync_item: insert user_game failed", "err", err, "job_item_id", p.JobItemID)
 		}
@@ -1047,14 +1032,6 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 			return nil
 		}
 	}
-	if meta.PlaytimeHours > 0 {
-		if _, err := w.DB.NewRaw(
-			`UPDATE user_games SET hours_played = ?, updated_at = now() WHERE id = ? AND (hours_played IS NULL OR hours_played < ?)`,
-			float64(meta.PlaytimeHours), ugID, float64(meta.PlaytimeHours),
-		).Exec(ctx); err != nil {
-			slog.Error("process_sync_item: update playtime failed", "err", err, "job_item_id", p.JobItemID)
-		}
-	}
 
 	// ── 9. Find or create user_game_platform for each platform ───────────
 	ownership := ""
@@ -1065,9 +1042,9 @@ func (w *ProcessSyncItemWorker) Work(ctx context.Context, job *river.Job[Process
 	} else {
 		ownership = "owned"
 	}
-	hoursPlayed := float64(eg.PlaytimeHours)
 
 	for _, egp := range egPlatforms {
+		hoursPlayed := egp.HoursPlayed
 		var existingUGPID string
 		var existingOwnership *string
 		ugpErr := w.DB.NewRaw(
@@ -1133,21 +1110,6 @@ func syncMarkItemFailed(ctx context.Context, db *bun.DB, item *models.JobItem, m
 	}
 }
 
-// syncMarkItemIGDBFailed sets a job_item to igdb_failed for IGDB API errors.
-func syncMarkItemIGDBFailed(ctx context.Context, db *bun.DB, item *models.JobItem, msg string) {
-	now := time.Now().UTC()
-	item.Status = models.JobItemStatusIGDBFailed
-	item.ErrorMessage = &msg
-	item.ProcessedAt = &now
-	_, err := db.NewUpdate().Model(item).
-		Column("status", "error_message", "processed_at").
-		Where("id = ?", item.ID).
-		Exec(ctx)
-	if err != nil {
-		slog.Error("process_sync_item: syncMarkItemIGDBFailed", "id", item.ID, "err", err)
-	}
-}
-
 // syncMarkItemCompleted sets a job_item to completed.
 func syncMarkItemCompleted(ctx context.Context, db *bun.DB, item *models.JobItem) {
 	now := time.Now().UTC()
@@ -1195,15 +1157,11 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 // do not count as active, but they DO block job termination — the job stays in
 // 'processing' until every item has been resolved by the user, auto-matched, or failed.
 //
-// Once no active items remain it checks for igdb_failed items:
-//   - auto_retry_done=false: resets them to pending, re-enqueues, sets auto_retry_done=true.
-//   - auto_retry_done=true AND no pending_review: marks job completed_with_errors.
-//   - auto_retry_done=true AND pending_review items remain: stays processing.
-//
-// If no igdb_failed items remain:
+// Once no active items remain:
 //   - pending_review items still exist: job stays processing (user must review).
-//   - No pending_review items: marks job completed.
-func syncCheckJobCompletion(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], jobID string) {
+//   - Any failed items exist and no pending_review: marks job completed_with_errors.
+//   - No pending_review, no failed: marks job completed.
+func syncCheckJobCompletion(ctx context.Context, db *bun.DB, _ *river.Client[pgx.Tx], jobID string) {
 	var activeRemaining int
 	if err := db.NewRaw(
 		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status IN ('pending', 'processing')`,
@@ -1216,94 +1174,7 @@ func syncCheckJobCompletion(ctx context.Context, db *bun.DB, rc *river.Client[pg
 		return
 	}
 
-	var igdbFailedCount int
-	if err := db.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'igdb_failed'`,
-		jobID,
-	).Scan(ctx, &igdbFailedCount); err != nil {
-		slog.Error("process_sync_item: syncCheckJobCompletion igdb_failed count", "job_id", jobID, "err", err)
-		return
-	}
-
-	if igdbFailedCount > 0 {
-		var autoRetryDone bool
-		if err := db.NewRaw(`SELECT auto_retry_done FROM jobs WHERE id = ?`, jobID).
-			Scan(ctx, &autoRetryDone); err != nil {
-			slog.Error("process_sync_item: syncCheckJobCompletion auto_retry_done", "job_id", jobID, "err", err)
-			return
-		}
-
-		if !autoRetryDone {
-			type itemRow struct {
-				ID string `bun:"id"`
-			}
-			var resetItems []itemRow
-			if err := db.NewRaw(
-				`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL
-				 WHERE job_id = ? AND status = 'igdb_failed'
-				 RETURNING id`,
-				jobID,
-			).Scan(ctx, &resetItems); err != nil {
-				slog.Error("process_sync_item: syncCheckJobCompletion reset igdb_failed", "job_id", jobID, "err", err)
-				return
-			}
-
-			if _, err := db.NewRaw(`UPDATE jobs SET auto_retry_done = true WHERE id = ?`, jobID).Exec(ctx); err != nil {
-				slog.Error("process_sync_item: set auto_retry_done failed", "err", err, "job_id", jobID)
-			}
-
-			// EnqueueOrFail keeps job_items.status='pending' and river_job in
-			// lockstep: if the insert can't happen (nil client, River outage),
-			// the item is moved to 'failed' so it doesn't get stranded.
-			enqueueFailures := 0
-			for _, item := range resetItems {
-				if err := EnqueueOrFail(ctx, db, rc, item.ID, ProcessSyncItemArgs{JobItemID: item.ID}); err != nil {
-					slog.Error("process_sync_item: auto-retry enqueue failed",
-						"job_id", jobID, "item_id", item.ID, "err", err)
-					enqueueFailures++
-				}
-			}
-			// If every reset item just got marked failed, the parent job is now
-			// settled and needs its completion check; without this it would sit
-			// in 'processing' forever.
-			if enqueueFailures == len(resetItems) && len(resetItems) > 0 {
-				now := time.Now().UTC()
-				if _, err := db.NewRaw(
-					`UPDATE jobs SET status = 'completed_with_errors', completed_at = ?
-					 WHERE id = ? AND status IN ('pending', 'processing')`,
-					now, jobID,
-				).Exec(ctx); err != nil {
-					slog.Error("process_sync_item: finalize job (all-enqueue-failed) failed", "err", err, "job_id", jobID)
-				}
-			}
-			return
-		}
-
-		// pending_review items still need user action — don't finalize yet.
-		var prCountForErrors int
-		if err := db.NewRaw(
-			`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'pending_review'`,
-			jobID,
-		).Scan(ctx, &prCountForErrors); err != nil {
-			slog.Error("process_sync_item: syncCheckJobCompletion pending_review count (errors path)", "job_id", jobID, "err", err)
-			return
-		}
-		if prCountForErrors > 0 {
-			return
-		}
-
-		now := time.Now().UTC()
-		if _, err := db.NewRaw(
-			`UPDATE jobs SET status = 'completed_with_errors', completed_at = ? WHERE id = ? AND status IN ('pending', 'processing')`,
-			now, jobID,
-		).Exec(ctx); err != nil {
-			slog.Error("process_sync_item: finalize job completed_with_errors failed", "err", err, "job_id", jobID)
-		}
-		return
-	}
-
-	// No igdb_failed items. If pending_review items still exist the job stays
-	// processing — user must resolve them via the review queue.
+	// If pending_review items still exist the job stays processing — user must resolve them.
 	var pendingReviewCount int
 	if err := db.NewRaw(
 		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'pending_review'`,
@@ -1316,11 +1187,24 @@ func syncCheckJobCompletion(ctx context.Context, db *bun.DB, rc *river.Client[pg
 		return
 	}
 
+	var failedCount int
+	if err := db.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'failed'`,
+		jobID,
+	).Scan(ctx, &failedCount); err != nil {
+		slog.Error("process_sync_item: syncCheckJobCompletion failed count", "job_id", jobID, "err", err)
+		return
+	}
+
 	now := time.Now().UTC()
+	finalStatus := "completed"
+	if failedCount > 0 {
+		finalStatus = "completed_with_errors"
+	}
 	if _, err := db.NewRaw(
-		`UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ? AND status IN ('pending', 'processing')`,
-		now, jobID,
+		`UPDATE jobs SET status = ?, completed_at = ? WHERE id = ? AND status IN ('pending', 'processing')`,
+		finalStatus, now, jobID,
 	).Exec(ctx); err != nil {
-		slog.Error("process_sync_item: finalize job completed failed", "err", err, "job_id", jobID)
+		slog.Error("process_sync_item: finalize job failed", "err", err, "job_id", jobID, "final_status", finalStatus)
 	}
 }

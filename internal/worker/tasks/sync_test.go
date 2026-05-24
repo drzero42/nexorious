@@ -636,8 +636,8 @@ func TestDispatchSync_Steam_SkippedGameExcluded(t *testing.T) {
 	// Pre-insert CS2 as skipped.
 	egID := uuid.NewString()
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', true, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', true, true, false)`,
 		egID, userID,
 	).Exec(ctx)
 
@@ -672,6 +672,140 @@ func TestDispatchSync_Steam_SkippedGameExcluded(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND item_key = '730'`, jobID).Scan(ctx, &cs2Count)
 	if cs2Count != 0 {
 		t.Error("expected no job_item for skipped CS2")
+	}
+}
+
+func TestDispatchSync_Steam_PlaytimeStoredOnPlatform(t *testing.T) {
+	// PlaytimeHours=100 on a single-platform game → primary platform gets 100,
+	// secondary platforms get 0. Verifies playtime moved from external_games to
+	// external_game_platforms.hours_played.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
+		uuid.NewString(), userID, credsCiphertext,
+	).Exec(ctx)
+
+	adapter := &fakeSteamAdapter{
+		games: []steamsvc.OwnedGame{
+			{AppID: 730, Title: "Counter-Strike 2", PlaytimeHours: 100},
+		},
+		platformsByAppID: map[int]steamsvc.Platforms{
+			730: {Windows: true, Linux: true},
+		},
+	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	type platformHours struct {
+		Platform    string  `bun:"platform"`
+		HoursPlayed float64 `bun:"hours_played"`
+	}
+	var rows []platformHours
+	_ = testDB.NewRaw(`
+		SELECT egp.platform, egp.hours_played
+		FROM external_game_platforms egp
+		JOIN external_games eg ON eg.id = egp.external_game_id
+		WHERE eg.user_id = ? AND eg.storefront = 'steam' AND eg.external_id = '730'
+		ORDER BY egp.platform`,
+		userID,
+	).Scan(ctx, &rows)
+
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 platform rows, got %d", len(rows))
+	}
+
+	var primaryHours, secondaryHours float64
+	for _, r := range rows {
+		if r.Platform == "pc-windows" {
+			primaryHours = r.HoursPlayed
+		} else {
+			secondaryHours = r.HoursPlayed
+		}
+	}
+	if primaryHours != 100 {
+		t.Errorf("expected primary (pc-windows) hours_played=100, got %f", primaryHours)
+	}
+	if secondaryHours != 0 {
+		t.Errorf("expected secondary (pc-linux) hours_played=0, got %f", secondaryHours)
+	}
+}
+
+func TestDispatchSync_Steam_JobItemExternalGameIDSet(t *testing.T) {
+	// Verifies that job_items.external_game_id is populated directly (not via
+	// source_metadata JSON) after a Steam dispatch.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
+		uuid.NewString(), userID, credsCiphertext,
+	).Exec(ctx)
+
+	adapter := &fakeSteamAdapter{
+		games: []steamsvc.OwnedGame{
+			{AppID: 570, Title: "Dota 2", PlaytimeHours: 50},
+		},
+	}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var egID *string
+	_ = testDB.NewRaw(
+		`SELECT id FROM external_games WHERE user_id = ? AND storefront = 'steam' AND external_id = '570'`,
+		userID,
+	).Scan(ctx, &egID)
+	if egID == nil {
+		t.Fatal("expected external_game row for appid 570")
+	}
+
+	var itemExternalGameID *string
+	_ = testDB.NewRaw(
+		`SELECT external_game_id FROM job_items WHERE job_id = ? AND item_key = '570'`,
+		jobID,
+	).Scan(ctx, &itemExternalGameID)
+	if itemExternalGameID == nil {
+		t.Fatal("expected job_items.external_game_id to be set")
+	}
+	if *itemExternalGameID != *egID {
+		t.Errorf("expected job_items.external_game_id=%q, got %q", *egID, *itemExternalGameID)
 	}
 }
 
@@ -717,17 +851,16 @@ func TestProcessSyncItem_SkippedExternalGame(t *testing.T) {
 	// Insert an external_game marked as skipped.
 	egID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '730', 'CS2', true, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '730', 'CS2', true, true, false)`,
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '730', 'CS2', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '730', 'CS2', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
 	)
 
 	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
@@ -761,17 +894,16 @@ func TestProcessSyncItem_NoIGDBID_PendingReview(t *testing.T) {
 	// External game with no IGDB ID.
 	egID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '440', 'Team Fortress 2', false, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '440', 'Team Fortress 2', false, true, false)`,
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '440', 'Team Fortress 2', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '440', 'Team Fortress 2', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
 	)
 
 	// Pass nil igdbClient so IGDB search is skipped → pending_review.
@@ -815,25 +947,21 @@ func TestProcessSyncItem_WithResolvedIGDBID_Completed(t *testing.T) {
 	egID := uuid.NewString()
 	igdbIDVal := igdbID
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', false, true, false, 100, ?)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', false, true, false, ?)`,
 		egID, userID, igdbIDVal,
 	)
 
 	// Valid platform: pc-windows, valid storefront: steam (both from migration seed).
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'pc-windows', now())`,
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 100, now())`,
 		uuid.NewString(), egID,
 	).Exec(ctx)
-	metaJSON, _ := json.Marshal(map[string]any{
-		"external_game_id": egID,
-		"playtime_hours":   100,
-	})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '730', 'Counter-Strike 2', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '730', 'Counter-Strike 2', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
 	)
 
 	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
@@ -877,17 +1005,16 @@ func TestProcessSyncItem_NoPlatforms_Failed(t *testing.T) {
 	)
 	egID := uuid.NewString()
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours, resolved_igdb_id)
-		 VALUES (?, ?, 'steam', 'app-noplatform', 'No Platform Game', false, true, false, 0, 12345)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', 'app-noplatform', 'No Platform Game', false, true, false, 12345)`,
 		egID, userID,
 	).Exec(ctx)
 	// No external_game_platforms row inserted — this is the bug scenario.
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.NewRaw(
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, 'app-noplatform', 'No Platform Game', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'app-noplatform', 'No Platform Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
 	).Exec(ctx)
 
 	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
@@ -932,17 +1059,16 @@ func TestProcessSyncItem_WithIGDBAutoResolve(t *testing.T) {
 
 	egID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', false, true, false, 100)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', false, true, false)`,
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 100})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '730', 'Counter-Strike 2', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '730', 'Counter-Strike 2', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
 	)
 
 	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
@@ -995,17 +1121,16 @@ func TestProcessSyncItem_LowConfidenceIGDB_StoresMatchConfidence(t *testing.T) {
 
 	egID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '204100', 'Max Payne 3', false, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '204100', 'Max Payne 3', false, true, false)`,
 		egID, userID,
 	)
 
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '204100', 'Max Payne 3', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '204100', 'Max Payne 3', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
 	)
 
 	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
@@ -1061,23 +1186,22 @@ func TestProcessSyncItem_IGDBPrefixTitle_AutoResolves(t *testing.T) {
 
 	egID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '261510', 'Tesla Effect', false, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '261510', 'Tesla Effect', false, true, false)`,
 		egID, userID,
 	)
 
 	// Use pc-windows (from migration seed) so platform resolution succeeds and
 	// the item can reach completed status rather than stopping at failed.
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'pc-windows', now())`,
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
 		uuid.NewString(), egID,
 	).Exec(ctx)
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '261510', 'Tesla Effect', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '261510', 'Tesla Effect', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
 	)
 
 	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
@@ -1132,23 +1256,22 @@ func TestProcessSyncItem_ManualResolution_DoesNotRevertToPendingReview(t *testin
 
 	egID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '28960', 'Eets', false, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '28960', 'Eets', false, true, false)`,
 		egID, userID,
 	)
 
 	// Simulate HandleResolveItem: item has resolved_igdb_id=28960 set by the user,
 	// status reset to pending for re-processing.
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'pc-windows', now())`,
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
 		uuid.NewString(), egID,
 	).Exec(ctx)
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, resolved_igdb_id)
-		 VALUES (?, ?, ?, '28960', 'Eets', ?, 'pending', '{}', '[]', 28960)`,
-		itemID, jobID, userID, string(metaJSON),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, resolved_igdb_id)
+		 VALUES (?, ?, ?, '28960', 'Eets', ?, '{}', 'pending', '{}', '[]', 28960)`,
+		itemID, jobID, userID, egID,
 	)
 
 	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
@@ -1214,34 +1337,33 @@ func TestProcessSyncItem_CrossSKU_InheritsResolutionFromSibling(t *testing.T) {
 	// PS4 SKU — already resolved from a previous sync.
 	egPS4ID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, resolved_igdb_id, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'psn', 'CUSA27708_00', 'Evil Dead: The Game', 141544, false, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, resolved_igdb_id, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'psn', 'CUSA27708_00', 'Evil Dead: The Game', 141544, false, true, false)`,
 		egPS4ID, userID,
 	)
 
 	// PS5 SKU — new entry, not yet resolved.
 	egPS5ID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'psn', 'PPSA03521_00', 'Evil Dead: The Game', false, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'psn', 'PPSA03521_00', 'Evil Dead: The Game', false, true, false)`,
 		egPS5ID, userID,
 	)
 
 	// Add platform rows so the worker can proceed past the platform-resolution step.
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'playstation-4', now())`,
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'playstation-4', 0, now())`,
 		uuid.NewString(), egPS4ID,
 	).Exec(ctx)
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'playstation-5', now())`,
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'playstation-5', 0, now())`,
 		uuid.NewString(), egPS5ID,
 	).Exec(ctx)
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egPS5ID, "playtime_hours": 0})
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, 'PPSA03521_00', 'Evil Dead: The Game', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'PPSA03521_00', 'Evil Dead: The Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egPS5ID,
 	)
 
 	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
@@ -1267,307 +1389,6 @@ func TestProcessSyncItem_CrossSKU_InheritsResolutionFromSibling(t *testing.T) {
 		t.Error("PS5 SKU item landed in pending_review despite sibling PS4 SKU already being resolved")
 	}
 }
-
-func TestProcessSyncItem_IGDBError_MarksItemIGDBFailed(t *testing.T) {
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
-	}))
-	defer tokenSrv.Close()
-
-	igdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	defer igdbSrv.Close()
-
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	// auto_retry_done=true so the item stays igdb_failed (no reset) and job becomes completed_with_errors.
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, auto_retry_done) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1, true)`,
-		jobID, userID,
-	)
-
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '123', 'Some Game', false, true, false, 0)`,
-		egID, userID,
-	)
-
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
-	itemID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '123', 'Some Game', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
-	)
-
-	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
-	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: igdbClient}
-	job := &river.Job[tasks.ProcessSyncItemArgs]{
-		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
-	}
-
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)
-	if status != "igdb_failed" {
-		t.Errorf("expected item status=igdb_failed, got %q", status)
-	}
-}
-
-func TestProcessSyncItem_IGDBError_ThenAutoRetry_CompletesWithErrors(t *testing.T) {
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
-	}))
-	defer tokenSrv.Close()
-
-	igdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	defer igdbSrv.Close()
-
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, auto_retry_done)
-		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1, false)`,
-		jobID, userID,
-	)
-
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '999', 'Retry Game', false, true, false, 0)`,
-		egID, userID,
-	)
-
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
-	itemID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '999', 'Retry Game', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
-	)
-
-	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
-	rc := newTestRiverClient(t)
-	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
-	riverJob := &river.Job[tasks.ProcessSyncItemArgs]{
-		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
-	}
-
-	// First run: item → igdb_failed, auto_retry triggers (resets to pending, sets auto_retry_done=true).
-	if err := w.Work(ctx, riverJob); err != nil {
-		t.Fatalf("unexpected error on first run: %v", err)
-	}
-
-	var itemStatus string
-	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &itemStatus)
-
-	var autoRetryDone bool
-	_ = testDB.NewRaw(`SELECT auto_retry_done FROM jobs WHERE id = ?`, jobID).Scan(ctx, &autoRetryDone)
-
-	if itemStatus != "pending" {
-		t.Errorf("expected item reset to pending after auto-retry, got %q", itemStatus)
-	}
-	if !autoRetryDone {
-		t.Error("expected auto_retry_done=true after first completion check")
-	}
-
-	var jobStatus string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
-	if jobStatus != "processing" {
-		t.Errorf("expected job still processing after auto-retry, got %q", jobStatus)
-	}
-
-	// Second run: item → igdb_failed again, auto_retry_done=true → job completed_with_errors.
-	if err := w.Work(ctx, riverJob); err != nil {
-		t.Fatalf("unexpected error on second run: %v", err)
-	}
-
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
-	if jobStatus != "completed_with_errors" {
-		t.Errorf("expected job completed_with_errors after retry exhausted, got %q", jobStatus)
-	}
-}
-
-func TestProcessSyncItem_IGDBFailed_WithPendingReview_StaysProcessing(t *testing.T) {
-	// When auto_retry_done=true and igdb_failed items remain, the job must NOT
-	// transition to completed_with_errors while there are pending_review items —
-	// those items still require user action before the sync is done.
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, auto_retry_done)
-		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 2, true)`,
-		jobID, userID,
-	)
-
-	// Game A: igdb_failed (auto-retry already exhausted).
-	egA := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '111', 'Game A', false, true, false, 0)`,
-		egA, userID,
-	)
-	metaA, _ := json.Marshal(map[string]any{"external_game_id": egA, "playtime_hours": 0})
-	itemA := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '111', 'Game A', ?, 'igdb_failed', '{}', '[]')`,
-		itemA, jobID, userID, string(metaA),
-	)
-
-	// Game B: pending_review (awaiting manual matching).
-	egB := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '222', 'Game B', false, true, false, 0)`,
-		egB, userID,
-	)
-	metaB, _ := json.Marshal(map[string]any{"external_game_id": egB, "playtime_hours": 0})
-	itemB := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '222', 'Game B', ?, 'pending_review', '{}', '[]')`,
-		itemB, jobID, userID, string(metaB),
-	)
-
-	// Trigger completion check via a no-op third item that just finished.
-	// We test syncCheckJobCompletion directly by calling it via the exported path:
-	// simulate it being called after game A was processed (as igdb_failed again).
-	// The easiest way is to directly call the unexported function via a helper item.
-	// Instead, directly verify the DB state after manually invoking check via an item.
-	//
-	// We'll use Work() on a synthetic item that is already failed to trigger the check.
-	egC := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '333', 'Game C', false, true, false, 0)`,
-		egC, userID,
-	)
-	metaC, _ := json.Marshal(map[string]any{"external_game_id": "nonexistent-id", "playtime_hours": 0})
-	itemC := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '333', 'Game C', ?, 'pending', '{}', '[]')`,
-		itemC, jobID, userID, string(metaC),
-	)
-
-	// Work on item C — source_metadata has a nonexistent external_game_id so it
-	// fails immediately, then calls syncCheckJobCompletion.
-	// At that point: igdb_failed=1, pending_review=1, auto_retry_done=true.
-	// The job must remain in 'processing'.
-	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
-	riverJob := &river.Job[tasks.ProcessSyncItemArgs]{
-		Args: tasks.ProcessSyncItemArgs{JobItemID: itemC},
-	}
-	if err := w.Work(ctx, riverJob); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	var jobStatus string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
-	if jobStatus != "processing" {
-		t.Errorf("job must stay processing while pending_review items exist, got %q", jobStatus)
-	}
-}
-
-// TestProcessSyncItem_AutoRetry_NilRiverClient_MarksItemFailed is the
-// regression guard for the wiring bug at cmd/nexorious/serve.go where
-// ProcessSyncItemWorker was constructed without RiverClient. Before the fix the
-// auto-retry path in syncCheckJobCompletion silently skipped enqueue when
-// rc == nil, leaving the reset item in 'pending' with no backing river_job —
-// permanently stuck until the cron-based orphan rescue (≥30 min, ≥1 h age).
-//
-// This test pins the new behaviour: when RiverClient is nil the auto-retry
-// loop must mark the reset item 'failed' so it does not get stranded.
-func TestProcessSyncItem_AutoRetry_NilRiverClient_MarksItemFailed(t *testing.T) {
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
-	}))
-	defer tokenSrv.Close()
-
-	igdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	defer igdbSrv.Close()
-
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, auto_retry_done)
-		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1, false)`,
-		jobID, userID,
-	)
-
-	egID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'steam', '999', 'Stranded Game', false, true, false, 0)`,
-		egID, userID,
-	)
-
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
-	itemID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '999', 'Stranded Game', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
-	)
-
-	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
-	// RiverClient is deliberately nil — the production bug being guarded against.
-	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
-	riverJob := &river.Job[tasks.ProcessSyncItemArgs]{
-		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
-	}
-
-	if err := w.Work(ctx, riverJob); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	var itemStatus string
-	var itemErr *string
-	_ = testDB.NewRaw(`SELECT status, error_message FROM job_items WHERE id = ?`, itemID).
-		Scan(ctx, &itemStatus, &itemErr)
-	if itemStatus == "pending" {
-		t.Fatalf("regression: item stranded in pending without backing river_job")
-	}
-	if itemStatus != "failed" {
-		t.Errorf("expected item status=failed after nil-rc auto-retry, got %q", itemStatus)
-	}
-	if itemErr == nil || *itemErr == "" {
-		t.Errorf("expected diagnostic error_message, got %v", itemErr)
-	}
-
-	var jobStatus string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
-	if jobStatus == "processing" || jobStatus == "pending" {
-		t.Errorf("expected parent job to settle when all reset items fail to enqueue, got %q", jobStatus)
-	}
-}
-
 func TestDispatchSync_PSNInvalidCredentials(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
@@ -1837,12 +1658,12 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 	// is_skipped, so it remains true even when the batch includes this game.
 	egID := uuid.NewString()
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, 'psn', 'NPWR00001_00', 'God of War', true, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'psn', 'NPWR00001_00', 'God of War', true, true, false)`,
 		egID, userID,
 	).Exec(ctx)
 	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'playstation-4', now())`,
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'playstation-4', 0, now())`,
 		uuid.NewString(), egID,
 	).Exec(ctx)
 
@@ -1925,79 +1746,6 @@ func TestDispatchSync_PSNGraphQLSchemaChanged_PreservesToken(t *testing.T) {
 	_ = json.Unmarshal(decryptedCreds, &parsedCreds)
 	if !parsedCreds.IsVerified {
 		t.Error("expected is_verified=true after schema-changed error (token not expired)")
-	}
-}
-
-func TestProcessSyncItem_PlaytimeHoursWrittenToUserGame(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'processing', 'low', 1)`,
-		jobID, userID,
-	)
-
-	const igdbID = int32(9999)
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Test Game', now(), now()) ON CONFLICT (id) DO NOTHING`,
-		igdbID,
-	)
-
-	egID := uuid.NewString()
-	igdbIDVal := igdbID
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours, resolved_igdb_id)
-		 VALUES (?, ?, 'psn', 'PPSA09999_00', 'Test Game', false, true, false, 47, ?)`,
-		egID, userID, igdbIDVal,
-	)
-
-	// Add platform row for platform resolution.
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (?, ?, 'playstation-4', now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
-
-	// source_metadata includes playtime_hours=47
-	metaJSON, _ := json.Marshal(map[string]any{
-		"external_game_id": egID,
-		"playtime_hours":   47,
-	})
-	itemID := uuid.NewString()
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, 'PPSA09999_00', 'Test Game', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
-	)
-
-	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
-	job := &river.Job[tasks.ProcessSyncItemArgs]{
-		Args: tasks.ProcessSyncItemArgs{JobItemID: itemID},
-	}
-
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	var itemStatus string
-	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &itemStatus)
-	if itemStatus != "completed" {
-		t.Errorf("expected item completed, got %q", itemStatus)
-	}
-
-	// user_games.hours_played should be set from meta.PlaytimeHours
-	var hoursPlayed *float64
-	_ = testDB.NewRaw(
-		`SELECT hours_played FROM user_games WHERE user_id = ? AND game_id = ?`,
-		userID, igdbID,
-	).Scan(ctx, &hoursPlayed)
-	if hoursPlayed == nil {
-		t.Fatal("expected user_games.hours_played to be set, got nil")
-	}
-	if *hoursPlayed != 47.0 {
-		t.Errorf("expected user_games.hours_played=47.0, got %f", *hoursPlayed)
 	}
 }
 
@@ -2121,14 +1869,12 @@ func TestProcessSyncItem_CancelledJobNotOverwritten(t *testing.T) {
 		jobID, userID,
 	)
 
-	// The external_game was deleted by the reset; job_item still references it.
-	egID := uuid.NewString()
-	metaJSON, _ := json.Marshal(map[string]any{"external_game_id": egID, "playtime_hours": 0})
+	// The external_game was deleted by the reset; external_game_id is NULL on the job_item.
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, '730', 'CS2', ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, string(metaJSON),
+		 VALUES (?, ?, ?, '730', 'CS2', '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID,
 	)
 
 	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
@@ -2399,16 +2145,16 @@ func insertTestExternalGame(t *testing.T, userID, storefront, externalID, title,
 	t.Helper()
 	egID := uuid.NewString()
 	_, err := testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-		 VALUES (?, ?, ?, ?, ?, false, true, false, 0)`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, ?, ?, ?, false, true, false)`,
 		egID, userID, storefront, externalID, title,
 	).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("insertTestExternalGame: %v", err)
 	}
 	_, err = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
-		 VALUES (?, ?, ?, now())`,
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+		 VALUES (?, ?, ?, 0, now())`,
 		uuid.NewString(), egID, platform,
 	).Exec(context.Background())
 	if err != nil {
