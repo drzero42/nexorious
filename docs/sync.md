@@ -145,9 +145,10 @@ The `DispatchSyncWorker` runs once per sync job. It:
 2. Calls the storefront adapter which fetches the library and yields games in batches of ≤10
 3. After each batch:
    - Upserts each game into `external_games`, always setting `updated_at = now()` and `is_available = true`
+   - Accumulates each game's `external_id` into an in-memory set of fetched IDs
    - Upserts platform rows into `external_game_platforms`; removes any platform rows for that game that were not in this batch
    - Enqueues one Stage 2 job per game in the batch
-4. After all batches complete, runs a timestamp sweep: any `external_games` row for this user and storefront where `updated_at < sync_started_at` is marked `is_available = false` — these are games that were not seen in this sync run and have been removed from the user's library
+4. After all batches complete, runs a sweep: queries all `external_games` rows for this user and storefront where `is_available = true`, and marks any whose `external_id` is not in the fetched ID set as `is_available = false` — these are games that were not seen in this sync run and have been removed from the user's library
 
 If a credential error occurs at any point, the job is marked `failed` and all pending job_items are cancelled. Any `external_games` rows already upserted in this run are kept.
 
