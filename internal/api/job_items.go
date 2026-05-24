@@ -94,7 +94,7 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 	if item.ExternalGameID != nil && *item.ExternalGameID != "" {
 		var eg models.ExternalGame
 		if egErr := h.db.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(context.Background()); egErr == nil {
-			// Ensure the games row exists (FK on external_games.resolved_igdb_id).
+			// Ensure the games row exists (FK on external_games.resolved_igdb_id for siblings).
 			if _, err := h.db.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 				body.IGDBID, eg.Title,
@@ -102,14 +102,8 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 				slog.Error("job_items: ensure game row failed", "err", err, "igdb_id", body.IGDBID)
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve game")
 			}
-			// Resolve the matched external_game immediately so step 3.6 can find it.
-			if _, err := h.db.NewRaw(
-				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
-				body.IGDBID, eg.ID,
-			).Exec(context.Background()); err != nil {
-				slog.Error("job_items: resolve external_game failed", "err", err, "external_game_id", eg.ID)
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve external game")
-			}
+			// NOTE: Do NOT update the primary external_game.resolved_igdb_id here.
+			// Stage 3 (UserGameWorker) reads job_item.resolved_igdb_id and applies it.
 			// Find sibling external_games (same user/storefront/title, different SKU, still unresolved).
 			var siblings []models.ExternalGame
 			if err := h.db.NewSelect().Model(&siblings).
@@ -144,24 +138,18 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 						slog.Error("job_items: re-queue sibling job_item failed", "err", err, "job_item_id", si.ID)
 						return echo.NewHTTPError(http.StatusInternalServerError, "failed to re-queue sibling item")
 					}
-					var sibJob models.Job
-					if jErr := h.db.NewRaw(`SELECT * FROM jobs WHERE id = ?`, si.JobID).Scan(context.Background(), &sibJob); jErr == nil {
-						retryInsert(context.Background(), h.db, h.riverClient, sibJob.JobType, si.ID)
+					if err := tasks.EnqueueOrFail(context.Background(), h.db, h.riverClient, si.ID, tasks.UserGameArgs{JobItemID: si.ID}); err != nil {
+						slog.Error("job_items: enqueue sibling Stage 3 failed", "err", err, "job_item_id", si.ID)
 					}
 				}
 			}
 		}
 	}
 
-	// Get job type to determine task type.
-	var job models.Job
-	err = h.db.NewRaw(`SELECT * FROM jobs WHERE id = ?`, item.JobID).
-		Scan(context.Background(), &job)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get parent job")
+	if err := tasks.EnqueueOrFail(context.Background(), h.db, h.riverClient, itemID, tasks.UserGameArgs{JobItemID: itemID}); err != nil {
+		slog.Error("job_items: enqueue Stage 3 failed", "err", err, "job_item_id", itemID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue processing")
 	}
-
-	retryInsert(context.Background(), h.db, h.riverClient, job.JobType, itemID)
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }

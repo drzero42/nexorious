@@ -98,8 +98,8 @@ func TestResolveItem(t *testing.T) {
 func TestResolveItem_PropagatesResolutionToSiblings(t *testing.T) {
 	// When the user resolves a pending_review job_item for one SKU (e.g. PPSA/PS5),
 	// HandleResolveItem must also:
-	//   - write resolved_igdb_id to external_games for the resolved SKU
-	//   - write resolved_igdb_id to external_games for all same-title sibling SKUs
+	//   - leave primary external_game.resolved_igdb_id NULL (Stage 3 / UserGameWorker sets it)
+	//   - write resolved_igdb_id to external_games for all same-title sibling SKUs (push mechanic)
 	//   - reset sibling pending_review job_items to pending (so the worker re-runs them)
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
@@ -158,14 +158,14 @@ func TestResolveItem_PropagatesResolutionToSiblings(t *testing.T) {
 
 	ctx := context.Background()
 
-	// PPSA external_game must be resolved.
+	// PPSA external_game resolved_igdb_id must remain NULL: Stage 3 (UserGameWorker) sets it.
 	var ppsaResolved *int
 	_ = testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = ?`, egPSPAID).Scan(ctx, &ppsaResolved)
-	if ppsaResolved == nil || *ppsaResolved != 266683 {
-		t.Errorf("expected external_games(PPSA).resolved_igdb_id=266683, got %v", ppsaResolved)
+	if ppsaResolved != nil {
+		t.Errorf("expected external_games(PPSA).resolved_igdb_id=NULL (Stage 3 sets it), got %v", *ppsaResolved)
 	}
 
-	// CUSA sibling external_game must also be resolved.
+	// CUSA sibling external_game must be pre-resolved (push mechanic so Stage 3 can proceed).
 	var cusaResolved *int
 	_ = testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = ?`, egCUSAID).Scan(ctx, &cusaResolved)
 	if cusaResolved == nil || *cusaResolved != 266683 {
@@ -177,6 +177,78 @@ func TestResolveItem_PropagatesResolutionToSiblings(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, "ji-sib-cusa").Scan(ctx, &cusaStatus)
 	if cusaStatus != "pending" {
 		t.Errorf("expected CUSA job_item status=pending after sibling resolve, got %q", cusaStatus)
+	}
+}
+
+// ─── TestResolveItem_EnqueuesStage3NotStage2 ──────────────────────────────────
+
+func TestResolveItem_EnqueuesStage3NotStage2(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	ctx := context.Background()
+
+	userID, token := setupTagUser(t, testDB, e, "ji-res-stage")
+
+	insertJob(t, testDB, "job-res-stage", userID, "sync", "psn", "processing")
+
+	_, err := testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, created_at, updated_at)
+		 VALUES ('eg-res-stage', ?, 'psn', 'PPSA-001', 'My Game', true, false, 'owned', now(), now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert external_game: %v", err)
+	}
+	_, err = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-res-stage-1', 'job-res-stage', ?, 'PPSA-001', 'My Game', 'eg-res-stage', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	rec := postJSONAuth(t, e, "/api/job-items/ji-res-stage-1/resolve", map[string]any{"igdb_id": 12345}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Assert external_game.resolved_igdb_id is still NULL (Stage 3 sets it, not the handler).
+	var resolvedIGDBID *int
+	if err := testDB.QueryRowContext(ctx,
+		`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-res-stage'`,
+	).Scan(&resolvedIGDBID); err != nil {
+		t.Fatalf("query external_game: %v", err)
+	}
+	if resolvedIGDBID != nil {
+		t.Fatalf("expected external_game.resolved_igdb_id=NULL, got %v", *resolvedIGDBID)
+	}
+
+	// Assert job_item.resolved_igdb_id is set and status is pending.
+	var itemStatus string
+	var itemIGDBID *int
+	if err := testDB.QueryRowContext(ctx,
+		`SELECT status, resolved_igdb_id FROM job_items WHERE id = 'ji-res-stage-1'`,
+	).Scan(&itemStatus, &itemIGDBID); err != nil {
+		t.Fatalf("query job_item: %v", err)
+	}
+	if itemStatus != "pending" {
+		t.Fatalf("expected job_item status=pending, got %q", itemStatus)
+	}
+	if itemIGDBID == nil || *itemIGDBID != 12345 {
+		t.Fatalf("expected job_item.resolved_igdb_id=12345, got %v", itemIGDBID)
+	}
+
+	// Assert a user_game_write river job was enqueued (not igdb_match).
+	var kind string
+	err = testDB.QueryRowContext(ctx,
+		`SELECT kind FROM river_job WHERE kind IN ('user_game_write','igdb_match') ORDER BY id DESC LIMIT 1`,
+	).Scan(&kind)
+	if err != nil {
+		t.Fatalf("query river_job: %v", err)
+	}
+	if kind != "user_game_write" {
+		t.Fatalf("expected kind=user_game_write, got %q", kind)
 	}
 }
 
