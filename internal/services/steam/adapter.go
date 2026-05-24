@@ -26,6 +26,9 @@ func NewAdapter(client *Client, apiKey, steamID string) storefrontadapter.Adapte
 // PlaytimeHours in each ExternalGameEntry holds the total for the game; the worker assigns
 // it to the first platform row only.
 func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]storefrontadapter.ExternalGameEntry) error) error {
+	if batchSize <= 0 {
+		batchSize = 10
+	}
 	owned, err := a.client.GetOwnedGames(ctx, a.apiKey, a.steamID)
 	if err != nil {
 		return fmt.Errorf("steam: fetch owned games: %w", err)

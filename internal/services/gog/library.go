@@ -38,9 +38,8 @@ type product struct {
 }
 
 // GetLibrary fetches the user's complete GOG library by paging
-// account/getFilteredProducts. For each game available on both Windows and
-// Linux, two entries are emitted with the same ExternalID but different
-// RawPlatform values. onBatch is called once per page.
+// account/getFilteredProducts. Each product is emitted as a single entry whose
+// Platforms slice holds all supported platforms. onBatch is called once per page.
 func (c *Client) GetLibrary(ctx context.Context, accessToken string, _ int, onBatch func([]ExternalGameEntry) error) error {
 	for page := 1; ; page++ {
 		entries, numPages, err := c.fetchPage(ctx, accessToken, page)
