@@ -161,7 +161,7 @@ The interface requires a `GetLibrary` method that accepts a context, a batch siz
 | `ExternalID` | string | Storefront-specific game identifier |
 | `Title` | string | Game name as reported by the storefront |
 | `PlaytimeHours` | int | Hours played; 0 means not provided by this storefront |
-| `RawPlatforms` | []string | Platform names in storefront-specific format; resolved to canonical slugs by the worker |
+| `Platforms` | []string | Platform names in storefront-specific format; resolved to canonical slugs by the worker |
 | `OwnershipStatus` | string | `owned`, `subscription`, etc. |
 | `IsSubscription` | bool | True if the game is accessed via a subscription service |
 
