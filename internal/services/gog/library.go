@@ -8,9 +8,9 @@ import (
 	"strconv"
 )
 
-// ExternalLibraryEntry is a normalised game entry from GOG.
+// ExternalGameEntry is a normalised game entry from GOG.
 // PlaytimeHours is always 0 — the GOG library API has no playtime field.
-type ExternalLibraryEntry struct {
+type ExternalGameEntry struct {
 	ExternalID      string
 	Title           string
 	RawPlatform     string // "pc-windows", "pc-mac", or "pc-linux"
@@ -41,7 +41,7 @@ type product struct {
 // account/getFilteredProducts. For each game available on both Windows and
 // Linux, two entries are emitted with the same ExternalID but different
 // RawPlatform values. onBatch is called once per page.
-func (c *Client) GetLibrary(ctx context.Context, accessToken string, _ int, onBatch func([]ExternalLibraryEntry) error) error {
+func (c *Client) GetLibrary(ctx context.Context, accessToken string, _ int, onBatch func([]ExternalGameEntry) error) error {
 	for page := 1; ; page++ {
 		entries, numPages, err := c.fetchPage(ctx, accessToken, page)
 		if err != nil {
@@ -59,7 +59,7 @@ func (c *Client) GetLibrary(ctx context.Context, accessToken string, _ int, onBa
 	return nil
 }
 
-func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([]ExternalLibraryEntry, int, error) {
+func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([]ExternalGameEntry, int, error) {
 	url := fmt.Sprintf("%s/account/getFilteredProducts?mediaType=1&page=%d", c.embedBase, page)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -87,11 +87,11 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 
 	numPages := max(body.NumPages, 1)
 
-	entries := make([]ExternalLibraryEntry, 0, len(body.Products)*2)
+	entries := make([]ExternalGameEntry, 0, len(body.Products)*2)
 	for _, p := range body.Products {
 		id := strconv.FormatInt(p.ID, 10)
 		if p.WorksOn.Windows {
-			entries = append(entries, ExternalLibraryEntry{
+			entries = append(entries, ExternalGameEntry{
 				ExternalID:      id,
 				Title:           p.Title,
 				RawPlatform:     "pc-windows",
@@ -101,7 +101,7 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 			})
 		}
 		if p.WorksOn.Mac {
-			entries = append(entries, ExternalLibraryEntry{
+			entries = append(entries, ExternalGameEntry{
 				ExternalID:      id,
 				Title:           p.Title,
 				RawPlatform:     "pc-mac",
@@ -111,7 +111,7 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 			})
 		}
 		if p.WorksOn.Linux {
-			entries = append(entries, ExternalLibraryEntry{
+			entries = append(entries, ExternalGameEntry{
 				ExternalID:      id,
 				Title:           p.Title,
 				RawPlatform:     "pc-linux",

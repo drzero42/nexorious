@@ -61,11 +61,11 @@ func (f *fakeSteamAdapter) GetAppDetailsPlatforms(_ context.Context, appID int) 
 
 // fakePSNAdapter implements PSNLibraryAdapter for testing.
 type fakePSNAdapter struct {
-	pages [][]psnsvc.ExternalLibraryEntry // each inner slice is one batch/page
-	err   error                           // if non-nil, returned by GetLibrary
+	pages [][]psnsvc.ExternalGameEntry // each inner slice is one batch/page
+	err   error                        // if non-nil, returned by GetLibrary
 }
 
-func (f *fakePSNAdapter) GetLibrary(_ context.Context, _ string, _ int, onBatch func([]psnsvc.ExternalLibraryEntry) error) error {
+func (f *fakePSNAdapter) GetLibrary(_ context.Context, _ string, _ int, onBatch func([]psnsvc.ExternalGameEntry) error) error {
 	if f.err != nil {
 		return f.err
 	}
@@ -79,11 +79,11 @@ func (f *fakePSNAdapter) GetLibrary(_ context.Context, _ string, _ int, onBatch 
 
 // fakeEpicAdapter implements EpicLibraryAdapter for testing.
 type fakeEpicAdapter struct {
-	batches [][]epicsvc.ExternalLibraryEntry
+	batches [][]epicsvc.ExternalGameEntry
 	err     error
 }
 
-func (f *fakeEpicAdapter) GetLibrary(_ context.Context, _ string, onBatch func([]epicsvc.ExternalLibraryEntry) error) error {
+func (f *fakeEpicAdapter) GetLibrary(_ context.Context, _ string, onBatch func([]epicsvc.ExternalGameEntry) error) error {
 	if f.err != nil {
 		return f.err
 	}
@@ -1030,14 +1030,14 @@ func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 	).Exec(ctx)
 
 	// Two pages of games — verifies that both pages are processed.
-	page1 := []psnsvc.ExternalLibraryEntry{
+	page1 := []psnsvc.ExternalGameEntry{
 		{ExternalID: "NPWR00001_00", Title: "God of War", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
 		{ExternalID: "NPWR00002_00", Title: "Spider-Man", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
 	}
-	page2 := []psnsvc.ExternalLibraryEntry{
+	page2 := []psnsvc.ExternalGameEntry{
 		{ExternalID: "NPWR00003_00", Title: "Horizon", RawPlatform: "playstation-5", OwnershipStatus: "owned"},
 	}
-	adapter := &fakePSNAdapter{pages: [][]psnsvc.ExternalLibraryEntry{page1, page2}}
+	adapter := &fakePSNAdapter{pages: [][]psnsvc.ExternalGameEntry{page1, page2}}
 	rc := newTestRiverClient(t)
 	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, PSN: adapter, RiverClient: rc}
 	job := &river.Job[tasks.DispatchSyncArgs]{
@@ -1104,11 +1104,11 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 		uuid.NewString(), egID,
 	).Exec(ctx)
 
-	page1 := []psnsvc.ExternalLibraryEntry{
+	page1 := []psnsvc.ExternalGameEntry{
 		{ExternalID: "NPWR00001_00", Title: "God of War", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
 		{ExternalID: "NPWR00002_00", Title: "Spider-Man", RawPlatform: "playstation-4", OwnershipStatus: "owned"},
 	}
-	adapter := &fakePSNAdapter{pages: [][]psnsvc.ExternalLibraryEntry{page1}}
+	adapter := &fakePSNAdapter{pages: [][]psnsvc.ExternalGameEntry{page1}}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, PSN: adapter, RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
@@ -1204,7 +1204,7 @@ func TestDispatchSync_Epic_HappyPath(t *testing.T) {
 		configID, userID,
 	).Exec(ctx)
 
-	epicGames := []epicsvc.ExternalLibraryEntry{
+	epicGames := []epicsvc.ExternalGameEntry{
 		{ExternalID: "Fortnite", Title: "Fortnite", OwnershipStatus: "owned"},
 		{ExternalID: "RocketLeague", Title: "Rocket League", OwnershipStatus: "owned"},
 	}
@@ -1213,7 +1213,7 @@ func TestDispatchSync_Epic_HappyPath(t *testing.T) {
 		DB:          testDB,
 		Steam:       &fakeSteamAdapter{},
 		PSN:         &fakePSNAdapter{},
-		Epic:        &fakeEpicAdapter{batches: [][]epicsvc.ExternalLibraryEntry{epicGames}},
+		Epic:        &fakeEpicAdapter{batches: [][]epicsvc.ExternalGameEntry{epicGames}},
 		RiverClient: nil,
 	}
 	job := &river.Job[tasks.DispatchSyncArgs]{
@@ -1292,7 +1292,6 @@ func TestDispatchSync_Epic_NilAdapter(t *testing.T) {
 	}
 }
 
-
 // ---------------------------------------------------------------------------
 // EpicClientAdapter — DB↔disk snapshot round-trip
 // ---------------------------------------------------------------------------
@@ -1306,7 +1305,7 @@ type fakeEpicSubprocessClient struct {
 	getLibraryErr    error
 	captureSnapshot  map[string]string
 	captureErr       error
-	libraryBatches   [][]epicsvc.ExternalLibraryEntry
+	libraryBatches   [][]epicsvc.ExternalGameEntry
 	restoredSnapshot map[string]string
 
 	restoreCalled    bool
@@ -1322,7 +1321,7 @@ func (f *fakeEpicSubprocessClient) RestoreSnapshot(_ string, snapshot map[string
 	return f.restoreErr
 }
 
-func (f *fakeEpicSubprocessClient) GetLibrary(_ context.Context, _ string, onBatch func([]epicsvc.ExternalLibraryEntry) error) error {
+func (f *fakeEpicSubprocessClient) GetLibrary(_ context.Context, _ string, onBatch func([]epicsvc.ExternalGameEntry) error) error {
 	f.getLibraryCalled = true
 	if f.getLibraryErr != nil {
 		return f.getLibraryErr
@@ -1389,7 +1388,7 @@ func TestEpicClientAdapter_NotConfigured_ReturnsErrorWithoutTouchingDB(t *testin
 	fake := &fakeEpicSubprocessClient{configured: false}
 	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
-	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
+	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil })
 	if err == nil {
 		t.Fatal("expected error when not configured, got nil")
 	}
@@ -1407,7 +1406,7 @@ func TestEpicClientAdapter_NoSnapshotInDB_ReturnsError(t *testing.T) {
 	fake := &fakeEpicSubprocessClient{configured: true}
 	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
-	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
+	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil })
 	if err == nil {
 		t.Fatal("expected error when no snapshot in DB, got nil")
 	}
@@ -1431,7 +1430,7 @@ func TestEpicClientAdapter_RestoresSnapshotFromDB(t *testing.T) {
 	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: original}
 	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
-	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
+	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil })
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1460,7 +1459,7 @@ func TestEpicClientAdapter_PersistsNewSnapshotAfterSuccess(t *testing.T) {
 	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: updated}
 	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
-	if err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil }); err != nil {
+	if err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil }); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -1492,7 +1491,7 @@ func TestEpicClientAdapter_PersistsSnapshotEvenOnFetchError(t *testing.T) {
 	}
 	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
-	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil })
+	err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil })
 	if err == nil || err.Error() != fetchErr.Error() {
 		t.Fatalf("expected fetch error to propagate, got %v", err)
 	}
@@ -1517,7 +1516,7 @@ func TestEpicClientAdapter_SkipsPersistWhenSnapshotEmpty(t *testing.T) {
 	fake := &fakeEpicSubprocessClient{configured: true, captureSnapshot: map[string]string{}}
 	a := &tasks.EpicClientAdapter{Client: fake, DB: testDB, Encrypter: testEncrypter}
 
-	if err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalLibraryEntry) error { return nil }); err != nil {
+	if err := a.GetLibrary(context.Background(), userID, func([]epicsvc.ExternalGameEntry) error { return nil }); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -1554,13 +1553,13 @@ func insertTestExternalGame(t *testing.T, userID, storefront, externalID, title,
 // ─── GOG dispatch tests ───────────────────────────────────────────────────────
 
 type fakeGOGAdapter struct {
-	entries     []gogsvc.ExternalLibraryEntry
+	entries     []gogsvc.ExternalGameEntry
 	refreshedTo *gogsvc.TokenResponse
 	refreshErr  error
 	libraryErr  error
 }
 
-func (f *fakeGOGAdapter) GetLibrary(_ context.Context, _ string, _ int, onBatch func([]gogsvc.ExternalLibraryEntry) error) error {
+func (f *fakeGOGAdapter) GetLibrary(_ context.Context, _ string, _ int, onBatch func([]gogsvc.ExternalGameEntry) error) error {
 	if f.libraryErr != nil {
 		return f.libraryErr
 	}
@@ -1600,7 +1599,7 @@ func TestGOGDispatch_CreatesExternalGames(t *testing.T) {
 	).Exec(ctx)
 
 	adapter := &fakeGOGAdapter{
-		entries: []gogsvc.ExternalLibraryEntry{
+		entries: []gogsvc.ExternalGameEntry{
 			{ExternalID: "1001", Title: "GOG Game", RawPlatform: "pc-windows", OwnershipStatus: "owned"},
 		},
 	}
@@ -1643,7 +1642,7 @@ func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
 	).Exec(ctx)
 
 	adapter := &fakeGOGAdapter{
-		entries: []gogsvc.ExternalLibraryEntry{
+		entries: []gogsvc.ExternalGameEntry{
 			{ExternalID: "2001", Title: "Dual Game", RawPlatform: "pc-windows", OwnershipStatus: "owned"},
 			{ExternalID: "2001", Title: "Dual Game", RawPlatform: "pc-linux", OwnershipStatus: "owned"},
 		},
@@ -1989,7 +1988,7 @@ func TestGOGDispatch_TokenRefreshPersisted(t *testing.T) {
 
 	adapter := &fakeGOGAdapter{
 		refreshedTo: &gogsvc.TokenResponse{AccessToken: "new-acc", RefreshToken: "new-ref", UserID: "u1", Username: "user"},
-		entries:     []gogsvc.ExternalLibraryEntry{},
+		entries:     []gogsvc.ExternalGameEntry{},
 	}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, GOG: adapter}
 	job := &river.Job[tasks.DispatchSyncArgs]{
@@ -2253,4 +2252,3 @@ func TestUserGameWorker_StatusChangedSyncChange(t *testing.T) {
 		t.Errorf("new_status: want 'owned', got %v", sc.NewStatus)
 	}
 }
-

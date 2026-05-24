@@ -152,9 +152,9 @@ type playHistoryResponse struct {
 	TotalItemCount int `json:"totalItemCount"`
 }
 
-func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[string]ExternalLibraryEntry, error) {
+func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[string]ExternalGameEntry, error) {
 	const limit = 200
-	result := make(map[string]ExternalLibraryEntry)
+	result := make(map[string]ExternalGameEntry)
 
 	for offset := 0; ; offset += limit {
 		u := fmt.Sprintf(
@@ -200,7 +200,7 @@ func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[
 				isSub = true
 			}
 
-			result[t.TitleID] = ExternalLibraryEntry{
+			result[t.TitleID] = ExternalGameEntry{
 				ExternalID:      t.TitleID,
 				Title:           t.Name,
 				RawPlatform:     rawPlatform,
@@ -233,9 +233,9 @@ type purchasedGamesResponse struct {
 
 const graphqlHash = "827a423f6a8ddca4107ac01395af2ec0eafd8396fc7fa204aaf9b7ed2eefa168"
 
-func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (map[string]ExternalLibraryEntry, error) {
+func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (map[string]ExternalGameEntry, error) {
 	size := c.graphqlPageSize
-	result := make(map[string]ExternalLibraryEntry)
+	result := make(map[string]ExternalGameEntry)
 
 	for start := 0; ; start += size {
 		variables := fmt.Sprintf(`{"platform":["ps4","ps5"],"size":%d,"start":%d,"sortBy":"ACTIVE_DATE","sortDirection":"desc"}`, size, start)
@@ -293,7 +293,7 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 				ownership = "subscription"
 			}
 
-			result[g.TitleID] = ExternalLibraryEntry{
+			result[g.TitleID] = ExternalGameEntry{
 				ExternalID:      g.TitleID,
 				Title:           g.Name,
 				RawPlatform:     rawPlatform,
@@ -311,8 +311,8 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 	return result, nil
 }
 
-// ExternalLibraryEntry is a normalised game entry from PSN.
-type ExternalLibraryEntry struct {
+// ExternalGameEntry is a normalised game entry from PSN.
+type ExternalGameEntry struct {
 	ExternalID      string
 	Title           string
 	RawPlatform     string
@@ -321,8 +321,8 @@ type ExternalLibraryEntry struct {
 	IsSubscription  bool
 }
 
-func mergePlayedPurchased(played, purchased map[string]ExternalLibraryEntry) []ExternalLibraryEntry {
-	merged := make(map[string]ExternalLibraryEntry, len(played)+len(purchased))
+func mergePlayedPurchased(played, purchased map[string]ExternalGameEntry) []ExternalGameEntry {
+	merged := make(map[string]ExternalGameEntry, len(played)+len(purchased))
 	maps.Copy(merged, played)
 	for id, e := range purchased {
 		if existing, ok := merged[id]; ok {
@@ -335,7 +335,7 @@ func mergePlayedPurchased(played, purchased map[string]ExternalLibraryEntry) []E
 			merged[id] = e
 		}
 	}
-	all := make([]ExternalLibraryEntry, 0, len(merged))
+	all := make([]ExternalGameEntry, 0, len(merged))
 	for _, e := range merged {
 		all = append(all, e)
 	}
@@ -345,7 +345,7 @@ func mergePlayedPurchased(played, purchased map[string]ExternalLibraryEntry) []E
 // GetLibrary fetches the user's PSN game library by merging play history
 // (gamelist/v2) and purchased games (GraphQL) into a unified set.
 // onBatch is called for each page of batchSize entries and may return an error to abort.
-func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize int, onBatch func([]ExternalLibraryEntry) error) error {
+func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize int, onBatch func([]ExternalGameEntry) error) error {
 	// ── Auth ─────────────────────────────────────────────────────────────
 	var accessToken string
 	if c.authFn != nil {

@@ -33,7 +33,7 @@ type SteamLibraryAdapter interface {
 
 // PSNLibraryAdapter fetches the PSN game library.
 type PSNLibraryAdapter interface {
-	GetLibrary(ctx context.Context, npssoToken string, batchSize int, onBatch func([]psnsvc.ExternalLibraryEntry) error) error
+	GetLibrary(ctx context.Context, npssoToken string, batchSize int, onBatch func([]psnsvc.ExternalGameEntry) error) error
 }
 
 const psnLibraryBatchSize = 10
@@ -43,14 +43,14 @@ type EpicLibraryAdapter interface {
 	GetLibrary(
 		ctx context.Context,
 		userID string,
-		onBatch func([]epicsvc.ExternalLibraryEntry) error,
+		onBatch func([]epicsvc.ExternalGameEntry) error,
 	) error
 }
 
 // GOGLibraryAdapter fetches the GOG game library.
 type GOGLibraryAdapter interface {
 	GetLibrary(ctx context.Context, accessToken string, batchSize int,
-		onBatch func([]gogsvc.ExternalLibraryEntry) error) error
+		onBatch func([]gogsvc.ExternalGameEntry) error) error
 	RefreshToken(ctx context.Context, refreshToken string) (*gogsvc.TokenResponse, error)
 }
 
@@ -60,7 +60,7 @@ type GOGLibraryAdapter interface {
 type epicSubprocessClient interface {
 	Configured() bool
 	RestoreSnapshot(userID string, snapshot map[string]string) error
-	GetLibrary(ctx context.Context, userID string, onBatch func([]epicsvc.ExternalLibraryEntry) error) error
+	GetLibrary(ctx context.Context, userID string, onBatch func([]epicsvc.ExternalGameEntry) error) error
 	CaptureSnapshot(userID string) (map[string]string, error)
 }
 
@@ -73,7 +73,7 @@ type EpicClientAdapter struct {
 	Encrypter *crypto.Encrypter
 }
 
-func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBatch func([]epicsvc.ExternalLibraryEntry) error) error {
+func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBatch func([]epicsvc.ExternalGameEntry) error) error {
 	if !a.Client.Configured() {
 		return fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
 	}
@@ -395,7 +395,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		seenPSNPlatforms := make(map[string][]string)
 
 		if err := w.PSN.GetLibrary(ctx, psnCreds.NpssoToken, psnLibraryBatchSize,
-			func(batch []psnsvc.ExternalLibraryEntry) error {
+			func(batch []psnsvc.ExternalGameEntry) error {
 				if len(batch) == 0 {
 					return nil
 				}
@@ -517,7 +517,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 		slog.Info("dispatch_sync: starting epic library fetch", "job_id", p.JobID, "user_id", p.UserID)
 		if err := w.Epic.GetLibrary(ctx, p.UserID,
-			func(batch []epicsvc.ExternalLibraryEntry) error {
+			func(batch []epicsvc.ExternalGameEntry) error {
 				if len(batch) == 0 {
 					return nil
 				}
@@ -643,7 +643,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		slog.Info("dispatch_sync: starting gog library fetch", "job_id", p.JobID, "user_id", p.UserID)
 		const gogBatchSize = 50
 		if err := w.GOG.GetLibrary(ctx, creds.AccessToken, gogBatchSize,
-			func(batch []gogsvc.ExternalLibraryEntry) error {
+			func(batch []gogsvc.ExternalGameEntry) error {
 				if len(batch) == 0 {
 					return nil
 				}

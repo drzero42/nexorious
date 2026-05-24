@@ -140,7 +140,7 @@ The access token is a constructor argument. `ErrGOGAuthExpired` wraps `tasks.Err
 ### Epic (`tasks` package — `EpicClientAdapter`)
 
 `EpicClientAdapter` already uses the batch callback pattern. Changes:
-- Rename `epicsvc.ExternalLibraryEntry` → `epicsvc.ExternalGameEntry`
+- Rename `epicsvc.ExternalGameEntry` → `epicsvc.ExternalGameEntry`
 - Map to `tasks.ExternalGameEntry{Platforms: []string{"pc-windows"}}`
 - Decrypt failure wraps `tasks.ErrCredentials`
 

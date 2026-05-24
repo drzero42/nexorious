@@ -314,10 +314,10 @@ func TestFetchPurchasedGames_HTTPError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMergePlayedPurchased_UnionBothSources(t *testing.T) {
-	played := map[string]ExternalLibraryEntry{
+	played := map[string]ExternalGameEntry{
 		"DISC1": {ExternalID: "DISC1", Title: "Disc Game", RawPlatform: "playstation-4", PlaytimeHours: 5, OwnershipStatus: "owned"},
 	}
-	purchased := map[string]ExternalLibraryEntry{
+	purchased := map[string]ExternalGameEntry{
 		"DL1": {ExternalID: "DL1", Title: "Digital", RawPlatform: "playstation-5", PlaytimeHours: 0, OwnershipStatus: "owned"},
 	}
 	result := mergePlayedPurchased(played, purchased)
@@ -327,10 +327,10 @@ func TestMergePlayedPurchased_UnionBothSources(t *testing.T) {
 }
 
 func TestMergePlayedPurchased_PurchasedUpgradesSubscription(t *testing.T) {
-	played := map[string]ExternalLibraryEntry{
+	played := map[string]ExternalGameEntry{
 		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 10, OwnershipStatus: "owned", IsSubscription: false},
 	}
-	purchased := map[string]ExternalLibraryEntry{
+	purchased := map[string]ExternalGameEntry{
 		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 0, OwnershipStatus: "subscription", IsSubscription: true},
 	}
 	result := mergePlayedPurchased(played, purchased)
@@ -347,10 +347,10 @@ func TestMergePlayedPurchased_PurchasedUpgradesSubscription(t *testing.T) {
 }
 
 func TestMergePlayedPurchased_PurchasedDoesNotDowngradeOwnership(t *testing.T) {
-	played := map[string]ExternalLibraryEntry{
+	played := map[string]ExternalGameEntry{
 		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 5, OwnershipStatus: "owned", IsSubscription: false},
 	}
-	purchased := map[string]ExternalLibraryEntry{
+	purchased := map[string]ExternalGameEntry{
 		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 0, OwnershipStatus: "owned", IsSubscription: false},
 	}
 	result := mergePlayedPurchased(played, purchased)
@@ -363,10 +363,10 @@ func TestMergePlayedPurchased_PurchasedDoesNotDowngradeOwnership(t *testing.T) {
 }
 
 func TestMergePlayedPurchased_DiscGameNotInPurchased(t *testing.T) {
-	played := map[string]ExternalLibraryEntry{
+	played := map[string]ExternalGameEntry{
 		"DISC1": {ExternalID: "DISC1", RawPlatform: "playstation-4", PlaytimeHours: 3, OwnershipStatus: "owned"},
 	}
-	result := mergePlayedPurchased(played, map[string]ExternalLibraryEntry{})
+	result := mergePlayedPurchased(played, map[string]ExternalGameEntry{})
 	if len(result) != 1 || result[0].ExternalID != "DISC1" {
 		t.Errorf("expected disc game in result, got %v", result)
 	}
@@ -409,7 +409,7 @@ func TestGetLibrary_MergesResults(t *testing.T) {
 	c.SetAuthFn(func(_ context.Context, _ string) (string, error) { return "test-token", nil })
 
 	var total int
-	err := c.GetLibrary(context.Background(), "fake-npsso", 10, func(batch []ExternalLibraryEntry) error {
+	err := c.GetLibrary(context.Background(), "fake-npsso", 10, func(batch []ExternalGameEntry) error {
 		total += len(batch)
 		return nil
 	})
@@ -433,7 +433,7 @@ func TestGetLibrary_PlayHistoryError_ReturnsError(t *testing.T) {
 	c.SetGraphQLURL(srv.URL)
 	c.SetAuthFn(func(_ context.Context, _ string) (string, error) { return "tok", nil })
 
-	err := c.GetLibrary(context.Background(), "npsso", 10, func([]ExternalLibraryEntry) error { return nil })
+	err := c.GetLibrary(context.Background(), "npsso", 10, func([]ExternalGameEntry) error { return nil })
 	if err == nil {
 		t.Fatal("expected error when gamelist endpoint fails, got nil")
 	}
@@ -458,7 +458,7 @@ func TestGetLibrary_GraphQLSchemaChanged_ReturnsSentinel(t *testing.T) {
 	c.SetGraphQLURL(srv.URL)
 	c.SetAuthFn(func(_ context.Context, _ string) (string, error) { return "tok", nil })
 
-	err := c.GetLibrary(context.Background(), "npsso", 10, func([]ExternalLibraryEntry) error { return nil })
+	err := c.GetLibrary(context.Background(), "npsso", 10, func([]ExternalGameEntry) error { return nil })
 	if !errors.Is(err, ErrPSNGraphQLSchemaChanged) {
 		t.Errorf("expected ErrPSNGraphQLSchemaChanged, got %v", err)
 	}

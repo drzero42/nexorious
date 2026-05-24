@@ -798,7 +798,7 @@ Replace the entire `case "psn":` block. PSN entries each have exactly one platfo
 
 		slog.Info("dispatch_sync: starting psn library fetch", "job_id", p.JobID, "user_id", p.UserID)
 		if err := w.PSN.GetLibrary(ctx, psnCreds.NpssoToken, psnLibraryBatchSize,
-			func(batch []psnsvc.ExternalLibraryEntry) error {
+			func(batch []psnsvc.ExternalGameEntry) error {
 				if len(batch) == 0 {
 					return nil
 				}
@@ -981,7 +981,7 @@ GOG sends one entry per platform per game (same external_id can appear twice —
 		slog.Info("dispatch_sync: starting gog library fetch", "job_id", p.JobID, "user_id", p.UserID)
 		const gogBatchSize = 50
 		if err := w.GOG.GetLibrary(ctx, creds.AccessToken, gogBatchSize,
-			func(batch []gogsvc.ExternalLibraryEntry) error {
+			func(batch []gogsvc.ExternalGameEntry) error {
 				if len(batch) == 0 {
 					return nil
 				}
@@ -1111,7 +1111,7 @@ Epic always uses `pc-windows`. The upsert pattern is the same as the other store
 		}
 		slog.Info("dispatch_sync: starting epic library fetch", "job_id", p.JobID, "user_id", p.UserID)
 		if err := w.Epic.GetLibrary(ctx, p.UserID,
-			func(batch []epicsvc.ExternalLibraryEntry) error {
+			func(batch []epicsvc.ExternalGameEntry) error {
 				if len(batch) == 0 {
 					return nil
 				}
@@ -1678,7 +1678,7 @@ func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
 	).Exec(ctx)
 
 	adapter := &fakeGOGAdapter{
-		entries: []gogsvc.ExternalLibraryEntry{
+		entries: []gogsvc.ExternalGameEntry{
 			{ExternalID: "2001", Title: "Dual Game", RawPlatform: "pc-windows", OwnershipStatus: "owned"},
 			{ExternalID: "2001", Title: "Dual Game", RawPlatform: "pc-linux", OwnershipStatus: "owned"},
 		},

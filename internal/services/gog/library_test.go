@@ -64,8 +64,8 @@ func TestGetLibrary_SinglePage(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
@@ -95,8 +95,8 @@ func TestGetLibrary_MultiPage(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
@@ -115,8 +115,8 @@ func TestGetLibrary_DualPlatform_EmitsTwoEntries(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
@@ -148,8 +148,8 @@ func TestGetLibrary_WindowsOnlyEmitsOneEntry(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	_ = c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	_ = c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
@@ -168,8 +168,8 @@ func TestGetLibrary_PlaytimeAlwaysZero(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	_ = c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	_ = c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
@@ -188,8 +188,8 @@ func TestGetLibrary_MacGameEmitsMacEntry(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})

@@ -36,8 +36,8 @@ type EpicAccountInfo struct {
 	AccountID   string
 }
 
-// ExternalLibraryEntry is a normalised game entry from the Epic library.
-type ExternalLibraryEntry struct {
+// ExternalGameEntry is a normalised game entry from the Epic library.
+type ExternalGameEntry struct {
 	ExternalID      string // legendary app_name
 	Title           string
 	Namespace       string
@@ -86,7 +86,7 @@ func (c *Client) Authenticate(ctx context.Context, userID, authCode string) (*Ep
 // GetLibrary runs `legendary list --json`, parses the output, skips DLC entries,
 // and streams results to onBatch. The caller is responsible for restoring the
 // snapshot before calling this method and capturing it afterward.
-func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]ExternalLibraryEntry) error) error {
+func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]ExternalGameEntry) error) error {
 	if !c.Configured() {
 		return fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
 	}
@@ -106,12 +106,12 @@ func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]E
 		return fmt.Errorf("epic: parse legendary list output: %w", err)
 	}
 
-	entries := make([]ExternalLibraryEntry, 0, len(raw))
+	entries := make([]ExternalGameEntry, 0, len(raw))
 	for _, r := range raw {
 		if r.MainGameAppName != "" {
 			continue // skip DLC
 		}
-		entries = append(entries, ExternalLibraryEntry{
+		entries = append(entries, ExternalGameEntry{
 			ExternalID:      r.AppName,
 			Title:           r.AppTitle,
 			Namespace:       r.Namespace,
