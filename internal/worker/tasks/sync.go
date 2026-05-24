@@ -1249,7 +1249,7 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 	}
 }
 
-// syncCheckJobCompletion checks whether active processing of job_items is complete and
+// SyncCheckJobCompletion checks whether active processing of job_items is complete and
 // drives the job to its terminal state.
 //
 // "Active" means pending or processing. pending_review items require user action and
@@ -1266,7 +1266,7 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status IN ('pending', 'processing')`,
 		jobID,
 	).Scan(ctx, &activeRemaining); err != nil {
-		slog.Error("process_sync_item: syncCheckJobCompletion count", "job_id", jobID, "err", err)
+		slog.Error("sync: SyncCheckJobCompletion count", "job_id", jobID, "err", err)
 		return
 	}
 	if activeRemaining > 0 {
@@ -1279,7 +1279,7 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'pending_review'`,
 		jobID,
 	).Scan(ctx, &pendingReviewCount); err != nil {
-		slog.Error("process_sync_item: syncCheckJobCompletion pending_review count", "job_id", jobID, "err", err)
+		slog.Error("sync: SyncCheckJobCompletion pending_review count", "job_id", jobID, "err", err)
 		return
 	}
 	if pendingReviewCount > 0 {
@@ -1291,7 +1291,7 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'failed'`,
 		jobID,
 	).Scan(ctx, &failedCount); err != nil {
-		slog.Error("process_sync_item: syncCheckJobCompletion failed count", "job_id", jobID, "err", err)
+		slog.Error("sync: SyncCheckJobCompletion failed count", "job_id", jobID, "err", err)
 		return
 	}
 
@@ -1304,6 +1304,6 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 		`UPDATE jobs SET status = ?, completed_at = ? WHERE id = ? AND status IN ('pending', 'processing')`,
 		finalStatus, now, jobID,
 	).Exec(ctx); err != nil {
-		slog.Error("process_sync_item: finalize job failed", "err", err, "job_id", jobID, "final_status", finalStatus)
+		slog.Error("sync: SyncCheckJobCompletion finalize job failed", "err", err, "job_id", jobID, "final_status", finalStatus)
 	}
 }
