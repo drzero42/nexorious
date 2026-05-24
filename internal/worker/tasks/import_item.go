@@ -214,7 +214,6 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			PlayStatus:     gd.PlayStatus,
 			PersonalRating: personalRating,
 			IsLoved:        gd.IsLoved,
-			HoursPlayed:    gd.HoursPlayed,
 			PersonalNotes:  gd.PersonalNotes,
 			CreatedAt:      createdAt,
 			UpdatedAt:      updatedAt,
@@ -286,6 +285,14 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			continue
 		}
 
+		// Backward-compat: old exports stored hours at game level only.
+		// If this platform has no per-platform hours but the game record has a
+		// total, apply it to the first platform row as a best-effort migration.
+		hoursPlayed := pd.HoursPlayed
+		if hoursPlayed == nil && gd.HoursPlayed != nil && len(existingPlatforms) == 0 {
+			hoursPlayed = gd.HoursPlayed
+		}
+
 		ugp := &models.UserGamePlatform{
 			ID:              uuid.NewString(),
 			UserGameID:      ug.ID,
@@ -294,7 +301,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			StoreGameID:     pd.StoreGameID,
 			StoreUrl:        pd.StoreUrl,
 			IsAvailable:     pd.IsAvailable,
-			HoursPlayed:     pd.HoursPlayed,
+			HoursPlayed:     hoursPlayed,
 			OwnershipStatus: pd.OwnershipStatus,
 			AcquiredDate:    parseFlexibleDate(pd.AcquiredDate),
 			CreatedAt:       now,

@@ -57,16 +57,15 @@ func TestBuildCSVRow_AllFieldsSet(t *testing.T) {
 	tagName := "favorites"
 
 	ug := models.UserGame{
-		ID:            "ug1",
-		UserID:        "u1",
-		GameID:        42,
-		PlayStatus:    &ps,
+		ID:             "ug1",
+		UserID:         "u1",
+		GameID:         42,
+		PlayStatus:     &ps,
 		PersonalRating: &rating,
-		IsLoved:       true,
-		HoursPlayed:   &hours,
-		PersonalNotes: &notes,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		IsLoved:        true,
+		PersonalNotes:  &notes,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 		Game: &models.Game{
 			ID: 42, Title: "Full Game",
 			ReleaseDate: &releaseDate,
@@ -75,9 +74,10 @@ func TestBuildCSVRow_AllFieldsSet(t *testing.T) {
 		Platforms: []models.UserGamePlatform{
 			{
 				ID: "ugp1", UserGameID: "ug1",
-				Platform:    &platform,
+				Platform:     &platform,
+				HoursPlayed:  &hours,
 				AcquiredDate: &acquired,
-				CreatedAt:   time.Now(), UpdatedAt: time.Now(),
+				CreatedAt:    time.Now(), UpdatedAt: time.Now(),
 			},
 		},
 		Tags: []models.UserGameTag{
@@ -207,6 +207,7 @@ func TestBuildJSONDoc_WithLovedAndRated(t *testing.T) {
 	rating := int32(8)
 	hours := 10.0
 	status := "playing"
+	platform := "pc-windows"
 	ug := models.UserGame{
 		ID:             "ug1",
 		UserID:         "u1",
@@ -214,9 +215,11 @@ func TestBuildJSONDoc_WithLovedAndRated(t *testing.T) {
 		IsLoved:        true,
 		PersonalRating: &rating,
 		PlayStatus:     &status,
-		HoursPlayed:    &hours,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
+		Platforms: []models.UserGamePlatform{
+			{ID: "ugp1", UserGameID: "ug1", Platform: &platform, HoursPlayed: &hours, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		},
 	}
 	doc := buildJSONDoc("u1", []models.UserGame{ug})
 	if doc.ExportStats.LovedCount != 1 {
@@ -227,5 +230,29 @@ func TestBuildJSONDoc_WithLovedAndRated(t *testing.T) {
 	}
 	if doc.ExportStats.TotalHours != 10.0 {
 		t.Errorf("expected TotalHours=10.0, got %v", doc.ExportStats.TotalHours)
+	}
+}
+
+func TestBuildJSONDoc_HoursFromPlatforms(t *testing.T) {
+	h1 := 10.5
+	h2 := 4.5
+	platform := "pc-windows"
+	ug := models.UserGame{
+		ID:        "ug1",
+		UserID:    "u1",
+		GameID:    42,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Platforms: []models.UserGamePlatform{
+			{ID: "ugp1", UserGameID: "ug1", Platform: &platform, HoursPlayed: &h1, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+			{ID: "ugp2", UserGameID: "ug1", Platform: &platform, HoursPlayed: &h2, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		},
+	}
+	doc := buildJSONDoc("u1", []models.UserGame{ug})
+	if doc.ExportStats.TotalHours != 15.0 {
+		t.Errorf("TotalHours: want 15.0, got %v", doc.ExportStats.TotalHours)
+	}
+	if doc.Games[0].HoursPlayed == nil || *doc.Games[0].HoursPlayed != 15.0 {
+		t.Errorf("games[0].HoursPlayed: want 15.0, got %v", doc.Games[0].HoursPlayed)
 	}
 }
