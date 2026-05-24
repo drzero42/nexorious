@@ -488,9 +488,11 @@ func TestDispatchSync_Steam_PlatformUpdate_AddsNewPlatform(t *testing.T) {
 	}
 }
 
-func TestDispatchSync_Steam_AppDetailsFailure_AbortsSync(t *testing.T) {
-	// When GetAppDetailsPlatforms fails (e.g. rate-limited after retries), the sync
-	// must abort and return an error — no platform row must be guessed.
+func TestDispatchSync_Steam_AppDetailsFailure_SkipsPlatformUpdate(t *testing.T) {
+	// When GetAppDetailsPlatforms fails (e.g. persistent error after retries), the
+	// sync must complete successfully but skip the platform update for that game.
+	// No platform row must be written and the game must not be dispatched (it has
+	// no platform rows so ProcessSyncItemWorker cannot process it).
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -517,7 +519,7 @@ func TestDispatchSync_Steam_AppDetailsFailure_AbortsSync(t *testing.T) {
 			{AppID: 888, Title: "Rate Limited Game", PlaytimeHours: 0},
 		},
 		platformErrByAppID: map[int]error{
-			888: errors.New("steam appdetails HTTP 429 for appid 888"),
+			888: errors.New("steam appdetails HTTP 500 for appid 888"),
 		},
 	}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: rc}
@@ -525,8 +527,8 @@ func TestDispatchSync_Steam_AppDetailsFailure_AbortsSync(t *testing.T) {
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
 
-	if err := w.Work(ctx, job); err == nil {
-		t.Fatal("expected Work to return an error when appdetails fails, got nil")
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("expected Work to succeed even when appdetails fails, got: %v", err)
 	}
 
 	// No platform row must be written — we must not guess.
@@ -541,11 +543,11 @@ func TestDispatchSync_Steam_AppDetailsFailure_AbortsSync(t *testing.T) {
 		t.Errorf("expected 0 platform rows when appdetails fails, got %d", egpCount)
 	}
 
-	// No job_items should be dispatched.
+	// Game has no platform rows so it must not be dispatched — nothing for ProcessSyncItemWorker to do.
 	var itemCount int
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
 	if itemCount != 0 {
-		t.Errorf("expected 0 job_items when sync aborts, got %d", itemCount)
+		t.Errorf("expected 0 job_items (game has no platform data), got %d", itemCount)
 	}
 }
 
@@ -605,6 +607,71 @@ func TestDispatchSync_Steam_NoPlatformsFallback_EmitsWindowsRow(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT item_key FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemKey)
 	if itemKey != "777" {
 		t.Errorf("expected item_key=777, got %q", itemKey)
+	}
+}
+
+func TestDispatchSync_Steam_SkippedGameExcluded(t *testing.T) {
+	// Pre-seed game 730 as skipped. The ON CONFLICT upsert must not clear is_skipped,
+	// and the worker must not create a job_item for it.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt creds: %v", err)
+	}
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
+		uuid.NewString(), userID, credsCiphertext,
+	).Exec(ctx)
+
+	// Pre-insert CS2 as skipped.
+	egID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', true, true, false, 0)`,
+		egID, userID,
+	).Exec(ctx)
+
+	adapter := &fakeSteamAdapter{
+		games: []steamsvc.OwnedGame{
+			{AppID: 730, Title: "Counter-Strike 2", PlaytimeHours: 100},
+			{AppID: 570, Title: "Dota 2", PlaytimeHours: 50},
+		},
+		platformsByAppID: map[int]steamsvc.Platforms{
+			730: {Windows: true},
+			570: {Windows: true},
+		},
+	}
+	rc := newTestRiverClient(t)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only 1 job_item (Dota 2); CS2 is skipped.
+	var itemCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
+	if itemCount != 1 {
+		t.Errorf("expected 1 job_item (skipped game excluded), got %d", itemCount)
+	}
+
+	var cs2Count int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND item_key = '730'`, jobID).Scan(ctx, &cs2Count)
+	if cs2Count != 0 {
+		t.Error("expected no job_item for skipped CS2")
 	}
 }
 

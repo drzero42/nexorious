@@ -3,6 +3,7 @@ package steam
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -149,22 +150,22 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 	return games, nil
 }
 
+// ErrRateLimited is returned by GetAppDetailsPlatforms when Steam responds with
+// HTTP 429 and a brief retry does not help. The caller should back off globally
+// before retrying the same request.
+var ErrRateLimited = errors.New("steam: rate limited (429)")
+
 // GetAppDetailsPlatforms fetches platform availability for the given appID.
 // Returns (Platforms{}, nil) when success=false (removed/delisted app) — caller decides fallback.
-// Returns (Platforms{}, error) for persistent non-200, decode error, or missing key.
-// Retries up to 3 times on 429 (honoring Retry-After) and up to 2 times on network errors.
+// Returns (Platforms{}, ErrRateLimited) on 429 after a brief retry.
+// Returns (Platforms{}, error) for network errors, decode errors, or missing key.
 func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platforms, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
 		return Platforms{}, err
 	}
 	url := fmt.Sprintf("%s/api/appdetails?appids=%d&filters=platforms", c.appDetailsBase, appID)
 
-	const maxRateLimitRetries = 3
-	const maxNetworkRetries = 2
-	rateLimitRetries := 0
-	networkRetries := 0
-
-	for {
+	for attempt := 0; attempt <= 1; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return Platforms{}, fmt.Errorf("steam appdetails: build request: %w", err)
@@ -174,8 +175,7 @@ func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platfor
 			if ctx.Err() != nil {
 				return Platforms{}, ctx.Err()
 			}
-			if networkRetries < maxNetworkRetries {
-				networkRetries++
+			if attempt == 0 {
 				if sleepErr := steamSleepCtx(ctx, 2*time.Second); sleepErr != nil {
 					return Platforms{}, sleepErr
 				}
@@ -184,14 +184,16 @@ func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platfor
 			return Platforms{}, fmt.Errorf("steam appdetails network error: %w", err)
 		}
 
-		if resp.StatusCode == http.StatusTooManyRequests && rateLimitRetries < maxRateLimitRetries {
-			d := steamRetryAfterDelay(resp.Header.Get("Retry-After"), rateLimitRetries)
-			rateLimitRetries++
+		if resp.StatusCode == http.StatusTooManyRequests {
 			_ = resp.Body.Close()
-			if sleepErr := steamSleepCtx(ctx, d); sleepErr != nil {
-				return Platforms{}, sleepErr
+			if attempt == 0 {
+				d := steamRetryAfterDelay(resp.Header.Get("Retry-After"))
+				if sleepErr := steamSleepCtx(ctx, d); sleepErr != nil {
+					return Platforms{}, sleepErr
+				}
+				continue
 			}
-			continue
+			return Platforms{}, ErrRateLimited
 		}
 
 		if resp.StatusCode != http.StatusOK {
@@ -231,18 +233,18 @@ func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platfor
 			Linux:   entry.Data.Platforms.Linux,
 		}, nil
 	}
+	return Platforms{}, ErrRateLimited
 }
 
-// steamRetryAfterDelay returns how long to wait before retrying a 429.
-// It honors a Retry-After header (integer seconds); otherwise it falls back
-// to exponential backoff: 10s, 20s, 40s, …
-func steamRetryAfterDelay(header string, attempt int) time.Duration {
+// steamRetryAfterDelay returns how long to wait before the one brief 429 retry.
+// It honors a Retry-After header (integer seconds); otherwise defaults to 10s.
+func steamRetryAfterDelay(header string) time.Duration {
 	if header != "" {
 		if secs, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && secs > 0 {
 			return time.Duration(secs) * time.Second
 		}
 	}
-	return time.Duration(10*(1<<attempt)) * time.Second
+	return 10 * time.Second
 }
 
 func steamSleepCtx(ctx context.Context, d time.Duration) error {

@@ -222,11 +222,46 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 		slog.Debug("dispatch_sync: steam owned games fetched", "count", len(owned), "user_id", p.UserID)
 
+		// Global backoff state shared across the game loop. When Steam rate-limits us,
+		// we sleep once (lifting the limit for all subsequent games) rather than skipping.
+		// Two attempts: 2 minutes, then 5 minutes. Skipping is the last resort.
+		steamGlobalBackoffs := []time.Duration{2 * time.Minute, 5 * time.Minute}
+		steamGlobalBackoffIdx := 0
+
 		for _, og := range owned {
 			appidStr := fmt.Sprintf("%d", og.AppID)
 			fetchedIDs[appidStr] = struct{}{}
 
-			// Always fetch platforms from appdetails to keep data current.
+			ownership := "owned"
+			upsertNow := time.Now().UTC()
+
+			var egRow struct {
+				ID        string `bun:"id"`
+				IsSkipped bool   `bun:"is_skipped"`
+			}
+			if err := w.DB.NewRaw(`
+				INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, playtime_hours, ownership_status, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, true, false, ?, ?, ?, ?)
+				ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
+					title = EXCLUDED.title,
+					playtime_hours = EXCLUDED.playtime_hours,
+					is_subscription = EXCLUDED.is_subscription,
+					ownership_status = EXCLUDED.ownership_status,
+					is_available = true,
+					updated_at = now()
+				RETURNING id, is_skipped`,
+				uuid.NewString(), p.UserID, p.Storefront, appidStr, og.Title,
+				og.PlaytimeHours, &ownership, upsertNow, upsertNow,
+			).Scan(ctx, &egRow); err != nil {
+				slog.Error("dispatch_sync: steam upsert external_game failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
+				continue
+			}
+			egID := egRow.ID
+
+			// Fetch platforms from appdetails to keep data current.
+			// On ErrRateLimited the client already did one brief retry; we do a longer
+			// global backoff here (shared across the loop) and retry the same game.
+			// On a non-rate-limit error we skip platform updates for this game only.
 			pl, detErr := w.Steam.GetAppDetailsPlatforms(ctx, og.AppID)
 			if detErr != nil {
 				if ctx.Err() != nil {
@@ -234,9 +269,33 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 					failSyncJob(context.Background(), w.DB, p.JobID, fmt.Sprintf("sync cancelled: %v", ctx.Err()))
 					return ctx.Err()
 				}
-				slog.Error("dispatch_sync: steam appdetails failed — aborting sync", "appid", og.AppID, "err", detErr, "job_id", p.JobID)
-				failSyncJob(context.Background(), w.DB, p.JobID, fmt.Sprintf("steam appdetails failed: %v", detErr))
-				return detErr
+				if errors.Is(detErr, steamsvc.ErrRateLimited) && steamGlobalBackoffIdx < len(steamGlobalBackoffs) {
+					d := steamGlobalBackoffs[steamGlobalBackoffIdx]
+					steamGlobalBackoffIdx++
+					slog.Warn("dispatch_sync: steam rate limited, waiting for limit to lift", "wait", d, "appid", og.AppID, "job_id", p.JobID)
+					timer := time.NewTimer(d)
+					var sleepErr error
+					select {
+					case <-timer.C:
+					case <-ctx.Done():
+						timer.Stop()
+						sleepErr = ctx.Err()
+					}
+					if sleepErr != nil {
+						failSyncJob(context.Background(), w.DB, p.JobID, fmt.Sprintf("sync cancelled: %v", sleepErr))
+						return sleepErr
+					}
+					pl, detErr = w.Steam.GetAppDetailsPlatforms(ctx, og.AppID)
+				}
+				if detErr != nil {
+					if ctx.Err() != nil {
+						slog.Warn("dispatch_sync: steam loop exiting early — context cancelled", "ctx_err", ctx.Err(), "appid", og.AppID, "appdetails_err", detErr, "job_id", p.JobID)
+						failSyncJob(context.Background(), w.DB, p.JobID, fmt.Sprintf("sync cancelled: %v", ctx.Err()))
+						return ctx.Err()
+					}
+					slog.Warn("dispatch_sync: steam appdetails failed after retry, skipping platform update for this game", "appid", og.AppID, "err", detErr, "job_id", p.JobID)
+					continue
+				}
 			}
 
 			var resolvedPlatforms []string
@@ -251,28 +310,6 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			}
 			if len(resolvedPlatforms) == 0 {
 				resolvedPlatforms = []string{"pc-windows"}
-			}
-
-			ownership := "owned"
-			upsertNow := time.Now().UTC()
-
-			var egID string
-			if err := w.DB.NewRaw(`
-				INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, playtime_hours, ownership_status, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, true, false, ?, ?, ?, ?)
-				ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
-					title = EXCLUDED.title,
-					playtime_hours = EXCLUDED.playtime_hours,
-					is_subscription = EXCLUDED.is_subscription,
-					ownership_status = EXCLUDED.ownership_status,
-					is_available = true,
-					updated_at = now()
-				RETURNING id`,
-				uuid.NewString(), p.UserID, p.Storefront, appidStr, og.Title,
-				og.PlaytimeHours, &ownership, upsertNow, upsertNow,
-			).Scan(ctx, &egID); err != nil {
-				slog.Error("dispatch_sync: steam upsert external_game failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
-				continue
 			}
 
 			for _, platform := range resolvedPlatforms {
@@ -293,28 +330,25 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			).Exec(ctx); err != nil {
 				slog.Error("dispatch_sync: steam delete stale platforms failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
 			}
-		}
 
-		var toProcess []models.ExternalGame
-		if err := w.DB.NewSelect().Model(&toProcess).
-			Where("user_id = ? AND storefront = ? AND is_available = true AND is_skipped = false", p.UserID, p.Storefront).
-			Scan(ctx); err != nil {
-			slog.Error("dispatch_sync: steam query to-process failed", "err", err, "job_id", p.JobID)
-		}
-		slog.Debug("dispatch_sync: steam to-process count", "count", len(toProcess), "job_id", p.JobID)
-		for _, eg := range toProcess {
+			// Dispatch the job_item immediately after platform data is written so the
+			// user sees progress in the UI without waiting for the full loop to finish.
+			// Skip user-skipped games (is_skipped survives the ON CONFLICT DO UPDATE).
+			if egRow.IsSkipped {
+				continue
+			}
 			metaJSON, _ := json.Marshal(map[string]any{
-				"external_game_id": eg.ID,
-				"playtime_hours":   eg.PlaytimeHours,
+				"external_game_id": egID,
+				"playtime_hours":   og.PlaytimeHours,
 			})
 			itemID := uuid.NewString()
 			if _, err := w.DB.NewRaw(`
 				INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
 				VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())
 				ON CONFLICT (job_id, item_key) DO NOTHING`,
-				itemID, p.JobID, p.UserID, eg.ExternalID, eg.Title, string(metaJSON),
+				itemID, p.JobID, p.UserID, appidStr, og.Title, string(metaJSON),
 			).Exec(ctx); err != nil {
-				slog.Error("dispatch_sync: steam insert job_item failed", "err", err, "job_id", p.JobID, "external_id", eg.ExternalID)
+				slog.Error("dispatch_sync: steam insert job_item failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
 			}
 			if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, ProcessSyncItemArgs{JobItemID: itemID}); err != nil {
 				slog.Error("dispatch_sync: steam enqueue failed", "err", err, "job_id", p.JobID, "item_id", itemID)
