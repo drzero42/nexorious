@@ -1,6 +1,7 @@
 -- Drop in reverse dependency order
 DROP TABLE IF EXISTS rate_limiter_tokens;
 DROP TABLE IF EXISTS backup_config;
+DROP TABLE IF EXISTS sync_changes;
 DROP TABLE IF EXISTS job_items;
 DROP TABLE IF EXISTS jobs;
 DROP TABLE IF EXISTS user_sync_configs;

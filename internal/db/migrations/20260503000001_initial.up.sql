@@ -97,7 +97,6 @@ CREATE TABLE user_games (
     play_status     TEXT,
     personal_rating INTEGER,
     is_loved        BOOLEAN NOT NULL DEFAULT false,
-    hours_played    NUMERIC(10,2),
     personal_notes  TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -172,7 +171,6 @@ CREATE TABLE external_games (
     is_skipped       BOOLEAN NOT NULL DEFAULT false,
     is_available     BOOLEAN NOT NULL DEFAULT true,
     is_subscription  BOOLEAN NOT NULL DEFAULT false,
-    playtime_hours   INTEGER NOT NULL DEFAULT 0,
     ownership_status TEXT,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -189,6 +187,7 @@ CREATE TABLE external_game_platforms (
     id               TEXT PRIMARY KEY,
     external_game_id TEXT NOT NULL REFERENCES external_games(id) ON DELETE CASCADE,
     platform         TEXT NOT NULL,
+    hours_played     NUMERIC(10,2) NOT NULL DEFAULT 0,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(external_game_id, platform)
 );
@@ -210,7 +209,6 @@ CREATE TABLE user_sync_configs (
     frequency              TEXT NOT NULL DEFAULT 'manual',
     auto_add               BOOLEAN NOT NULL DEFAULT false,
     storefront_credentials TEXT,
-    epic_legendary_state   JSONB,
     last_synced_at         TIMESTAMPTZ,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -246,6 +244,7 @@ CREATE TABLE job_items (
     id                  TEXT PRIMARY KEY,
     job_id              TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    external_game_id    TEXT REFERENCES external_games(id) ON DELETE SET NULL,
     item_key            TEXT NOT NULL,
     source_title        TEXT NOT NULL,
     source_metadata     JSONB NOT NULL DEFAULT '{}',
@@ -263,6 +262,24 @@ CREATE TABLE job_items (
 CREATE INDEX job_items_job_id_idx ON job_items (job_id);
 CREATE INDEX job_items_user_id_idx ON job_items (user_id);
 CREATE INDEX job_items_status_idx ON job_items (status);
+CREATE INDEX job_items_external_game_id_idx ON job_items (external_game_id);
+
+-- Sync changes: one row per library event per sync run (backs the Sync History UI)
+CREATE TABLE sync_changes (
+    id               TEXT PRIMARY KEY,
+    job_id           TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    external_game_id TEXT REFERENCES external_games(id) ON DELETE SET NULL,
+    change_type      TEXT NOT NULL,
+    title            TEXT NOT NULL,
+    old_status       TEXT,
+    new_status       TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX sync_changes_job_id_idx    ON sync_changes (job_id);
+CREATE INDEX sync_changes_user_id_idx   ON sync_changes (user_id);
+CREATE INDEX sync_changes_created_at_idx ON sync_changes (created_at);
 
 -- Backup config
 CREATE TABLE backup_config (
