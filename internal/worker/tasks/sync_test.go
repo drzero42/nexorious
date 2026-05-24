@@ -1403,6 +1403,92 @@ func TestProcessSyncItem_IGDBError_ThenAutoRetry_CompletesWithErrors(t *testing.
 	}
 }
 
+func TestProcessSyncItem_IGDBFailed_WithPendingReview_StaysProcessing(t *testing.T) {
+	// When auto_retry_done=true and igdb_failed items remain, the job must NOT
+	// transition to completed_with_errors while there are pending_review items —
+	// those items still require user action before the sync is done.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, auto_retry_done)
+		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 2, true)`,
+		jobID, userID,
+	)
+
+	// Game A: igdb_failed (auto-retry already exhausted).
+	egA := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'steam', '111', 'Game A', false, true, false, 0)`,
+		egA, userID,
+	)
+	metaA, _ := json.Marshal(map[string]any{"external_game_id": egA, "playtime_hours": 0})
+	itemA := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '111', 'Game A', ?, 'igdb_failed', '{}', '[]')`,
+		itemA, jobID, userID, string(metaA),
+	)
+
+	// Game B: pending_review (awaiting manual matching).
+	egB := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'steam', '222', 'Game B', false, true, false, 0)`,
+		egB, userID,
+	)
+	metaB, _ := json.Marshal(map[string]any{"external_game_id": egB, "playtime_hours": 0})
+	itemB := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '222', 'Game B', ?, 'pending_review', '{}', '[]')`,
+		itemB, jobID, userID, string(metaB),
+	)
+
+	// Trigger completion check via a no-op third item that just finished.
+	// We test syncCheckJobCompletion directly by calling it via the exported path:
+	// simulate it being called after game A was processed (as igdb_failed again).
+	// The easiest way is to directly call the unexported function via a helper item.
+	// Instead, directly verify the DB state after manually invoking check via an item.
+	//
+	// We'll use Work() on a synthetic item that is already failed to trigger the check.
+	egC := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
+		 VALUES (?, ?, 'steam', '333', 'Game C', false, true, false, 0)`,
+		egC, userID,
+	)
+	metaC, _ := json.Marshal(map[string]any{"external_game_id": "nonexistent-id", "playtime_hours": 0})
+	itemC := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '333', 'Game C', ?, 'pending', '{}', '[]')`,
+		itemC, jobID, userID, string(metaC),
+	)
+
+	// Work on item C — source_metadata has a nonexistent external_game_id so it
+	// fails immediately, then calls syncCheckJobCompletion.
+	// At that point: igdb_failed=1, pending_review=1, auto_retry_done=true.
+	// The job must remain in 'processing'.
+	w := &tasks.ProcessSyncItemWorker{DB: testDB, IGDBClient: nil}
+	riverJob := &river.Job[tasks.ProcessSyncItemArgs]{
+		Args: tasks.ProcessSyncItemArgs{JobItemID: itemC},
+	}
+	if err := w.Work(ctx, riverJob); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var jobStatus string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
+	if jobStatus != "processing" {
+		t.Errorf("job must stay processing while pending_review items exist, got %q", jobStatus)
+	}
+}
+
 // TestProcessSyncItem_AutoRetry_NilRiverClient_MarksItemFailed is the
 // regression guard for the wiring bug at cmd/nexorious/serve.go where
 // ProcessSyncItemWorker was constructed without RiverClient. Before the fix the

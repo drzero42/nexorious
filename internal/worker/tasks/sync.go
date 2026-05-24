@@ -331,8 +331,11 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				slog.Error("dispatch_sync: steam delete stale platforms failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
 			}
 
-			// Dispatch the job_item immediately after platform data is written so the
-			// user sees progress in the UI without waiting for the full loop to finish.
+			// Insert the job_item as 'pending' as soon as platform data is written so
+			// it is visible in the DB (and in the UI) without waiting for the full loop.
+			// The River enqueue is deferred to after the loop so that no worker can call
+			// syncCheckJobCompletion before all items have been inserted as 'pending' —
+			// otherwise a fast early match could prematurely complete the job.
 			// Skip user-skipped games (is_skipped survives the ON CONFLICT DO UPDATE).
 			if egRow.IsSkipped {
 				continue
@@ -350,8 +353,24 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			).Exec(ctx); err != nil {
 				slog.Error("dispatch_sync: steam insert job_item failed", "err", err, "job_id", p.JobID, "external_id", appidStr)
 			}
-			if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, ProcessSyncItemArgs{JobItemID: itemID}); err != nil {
-				slog.Error("dispatch_sync: steam enqueue failed", "err", err, "job_id", p.JobID, "item_id", itemID)
+		}
+
+		// All job_items are now in the DB as 'pending'. Enqueue them to River in one
+		// pass so workers only start after every item exists — this prevents a fast
+		// early match from seeing activeRemaining=0 and prematurely completing the job.
+		var steamPending []struct {
+			ID string `bun:"id"`
+		}
+		if err := w.DB.NewRaw(
+			`SELECT id FROM job_items WHERE job_id = ? AND status = 'pending'`,
+			p.JobID,
+		).Scan(ctx, &steamPending); err != nil {
+			slog.Error("dispatch_sync: steam query pending items failed", "err", err, "job_id", p.JobID)
+		}
+		slog.Debug("dispatch_sync: steam enqueuing items", "count", len(steamPending), "job_id", p.JobID)
+		for _, item := range steamPending {
+			if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, item.ID, ProcessSyncItemArgs{JobItemID: item.ID}); err != nil {
+				slog.Error("dispatch_sync: steam enqueue failed", "err", err, "job_id", p.JobID, "item_id", item.ID)
 			}
 		}
 
@@ -1172,12 +1191,14 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 // syncCheckJobCompletion checks whether active processing of job_items is complete and
 // drives the job to its terminal state.
 //
-// "Active" means pending or processing — pending_review items require user action and
-// do not block this check (they sit in the review queue indefinitely until resolved).
+// "Active" means pending or processing. pending_review items require user action and
+// do not count as active, but they DO block job termination — the job stays in
+// 'processing' until every item has been resolved by the user, auto-matched, or failed.
 //
 // Once no active items remain it checks for igdb_failed items:
 //   - auto_retry_done=false: resets them to pending, re-enqueues, sets auto_retry_done=true.
-//   - auto_retry_done=true: marks job completed_with_errors.
+//   - auto_retry_done=true AND no pending_review: marks job completed_with_errors.
+//   - auto_retry_done=true AND pending_review items remain: stays processing.
 //
 // If no igdb_failed items remain:
 //   - pending_review items still exist: job stays processing (user must review).
@@ -1255,6 +1276,19 @@ func syncCheckJobCompletion(ctx context.Context, db *bun.DB, rc *river.Client[pg
 					slog.Error("process_sync_item: finalize job (all-enqueue-failed) failed", "err", err, "job_id", jobID)
 				}
 			}
+			return
+		}
+
+		// pending_review items still need user action — don't finalize yet.
+		var prCountForErrors int
+		if err := db.NewRaw(
+			`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'pending_review'`,
+			jobID,
+		).Scan(ctx, &prCountForErrors); err != nil {
+			slog.Error("process_sync_item: syncCheckJobCompletion pending_review count (errors path)", "job_id", jobID, "err", err)
+			return
+		}
+		if prCountForErrors > 0 {
 			return
 		}
 
