@@ -39,7 +39,7 @@ The sync system reads and writes these core tables:
 |---|---|
 | `user_sync_configs` | Credentials, sync frequency, and last sync timestamp per user and storefront |
 | `external_games` | One row per user + storefront + game; persists across sync runs |
-| `external_game_platforms` | Platform slugs for each ExternalGame |
+| `external_game_platforms` | Platform slugs and per-platform playtime for each ExternalGame |
 | `jobs` | One row per sync run; tracks status and lifecycle |
 | `job_items` | One row per game per sync run; tracks matching progress |
 | `games` | IGDB master catalogue; new rows are inserted when a match is found |
@@ -54,11 +54,11 @@ For example, PSN creates one ExternalGame row per title ID. The PS4 and PS5 vers
 
 ### Playtime
 
-Playtime is stored at the `user_game_platforms` level (`hours_played`), not at the `user_games` level. The total playtime for a game is the sum of hours across all its platform rows.
+Playtime is stored at the `external_game_platforms` level (`hours_played`). Stage 1 writes the correct value to each platform row as part of the upsert; Stage 3 reads from there when writing to `user_game_platforms`. The total playtime for a game in the user's library is the sum of `hours_played` across all its `user_game_platforms` rows.
+
+Not all storefronts provide playtime. When a storefront does not provide playtime, `hours_played` is 0 for all platform rows. Playtime is never decreased — a `user_game_platforms` row's `hours_played` is only updated when the incoming value is greater than the stored value.
 
 > **Note:** `user_games.hours_played` currently exists as a stored column but should be refactored to a calculated sum of `user_game_platforms.hours_played`. See [#613](https://github.com/drzero42/nexorious/issues/613).
-
-Not all storefronts provide playtime. When a storefront does not provide playtime, `hours_played` is 0 for that platform row. Playtime is never decreased — a platform row's `hours_played` is only updated when the incoming value is greater than the stored value.
 
 ---
 
@@ -189,9 +189,9 @@ One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a user action.
 
 1. If `is_skipped` is true: skip steps 2 and 3
 2. Upsert `user_games`: one row per user + IGDB game ID
-3. For each platform in `external_game_platforms`:
+3. For each platform row in `external_game_platforms`:
    - Upsert `user_game_platforms` with conflict key `(user_game_id, platform, storefront)`
-   - On conflict: apply the ownership rank guard (never downgrade ownership status); update `hours_played` only if the incoming value is greater
+   - On conflict: apply the ownership rank guard (never downgrade ownership status); update `hours_played` only if the incoming value from `external_game_platforms.hours_played` is greater
    - Set `external_game_id` to the specific ExternalGame row that produced this platform entry
 4. Update `external_game.updated_at` — always, whether the game was skipped or not
 
@@ -279,8 +279,8 @@ All adapters implement the same interface. The differences below are the only pl
 - **Auth:** API key + Steam ID; static credentials, no refresh needed
 - **Library fetch:** A single API call returns the full library. The adapter then makes one AppDetails API call per game to resolve platform availability, and chunks the enriched results into batches of ≤10 before yielding them via the callback. The batching is adapter-side; the Steam API itself is not paginated
 - **Rate limiting:** A token bucket enforces a minimum delay between AppDetails calls. On a 429 response, the adapter backs off and retries. Rate limiting is handled consistently with the shared library's backoff interface
-- **Platforms:** `pc-windows`, `mac`, `pc-linux` as reported by AppDetails; mapped to canonical slugs
-- **Playtime:** Provided as total playtime across all platforms (not per platform). Written only to the highest-priority platform row in the order `pc-windows` → `mac` → `pc-linux`; all other platform rows for the same game receive 0
+- **Platforms:** `pc-windows`, `mac`, `pc-linux` as reported by AppDetails; all supported platforms are recorded as separate `external_game_platforms` rows
+- **Playtime:** Provided as a single total across all platforms. The adapter assigns this value to the `hours_played` of the highest-priority platform row in the order `pc-windows` → `mac` → `pc-linux`; all other platform rows for the same game receive 0
 
 ### PSN
 
