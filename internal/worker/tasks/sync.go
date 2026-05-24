@@ -981,6 +981,211 @@ func (UserGameArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{MaxAttempts: 5, Priority: 1}
 }
 
+// UserGameWorker writes the user_game and user_game_platform rows for a resolved sync item.
+type UserGameWorker struct {
+	river.WorkerDefaults[UserGameArgs]
+	DB          *bun.DB
+	RiverClient *river.Client[pgx.Tx]
+}
+
+func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs]) error {
+	p := job.Args
+
+	var item models.JobItem
+	if err := w.DB.NewSelect().Model(&item).Where("id = ?", p.JobItemID).Scan(ctx); err != nil {
+		slog.Error("user_game_write: load job_item", "id", p.JobItemID, "err", err)
+		return err
+	}
+
+	if item.ExternalGameID == nil {
+		syncMarkItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item")
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+
+	var eg models.ExternalGame
+	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
+		syncMarkItemFailed(ctx, w.DB, &item, "external game not found")
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+
+	// Skipped games: mark the item skipped and check completion.
+	if eg.IsSkipped {
+		if _, err := w.DB.NewRaw(
+			`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: update external_game updated_at (skipped)", "err", err)
+		}
+		syncMarkItemSkipped(ctx, w.DB, &item)
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+
+	// Manual resolution propagation: job_item has resolved_igdb_id but external_game doesn't.
+	if eg.ResolvedIGDBID == nil && item.ResolvedIGDBID != nil {
+		igdbID := int32(*item.ResolvedIGDBID)
+		eg.ResolvedIGDBID = &igdbID
+		if _, err := w.DB.NewRaw(
+			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+			igdbID, eg.Title,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: insert game row (manual resolve)", "err", err, "igdb_id", igdbID)
+		}
+		if _, err := w.DB.NewRaw(
+			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+			igdbID, eg.ID,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: apply manual resolution", "err", err, "external_game_id", eg.ID)
+		}
+	}
+
+	if eg.ResolvedIGDBID == nil {
+		syncMarkItemFailed(ctx, w.DB, &item, "no resolved_igdb_id on external_game")
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+
+	// Ensure games row exists.
+	if _, err := w.DB.NewRaw(
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+		*eg.ResolvedIGDBID, eg.Title,
+	).Exec(ctx); err != nil {
+		slog.Error("user_game_write: ensure game row", "err", err)
+	}
+
+	// Upsert user_games; detect new row via xmax=0.
+	ugID := uuid.NewString()
+	now := time.Now().UTC()
+	var isNewRow struct {
+		ID    string `bun:"id"`
+		IsNew bool   `bun:"is_new"`
+	}
+	if err := w.DB.NewRaw(
+		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT (user_id, game_id) DO UPDATE SET updated_at = now()
+		 RETURNING id, (xmax = 0) AS is_new`,
+		ugID, item.UserID, *eg.ResolvedIGDBID, now, now,
+	).Scan(ctx, &isNewRow); err != nil {
+		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("upsert user_game: %v", err))
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+	ugID = isNewRow.ID
+	if isNewRow.IsNew {
+		if _, err := w.DB.NewRaw(
+			`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			 VALUES (?, ?, ?, ?, 'added', ?, now())`,
+			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: insert sync_change (added)", "err", err)
+		}
+	}
+
+	// Load platform rows from external_game_platforms.
+	var egPlatforms []models.ExternalGamePlatform
+	if err := w.DB.NewSelect().Model(&egPlatforms).
+		Where("external_game_id = ?", eg.ID).
+		Scan(ctx); err != nil {
+		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("load platforms: %v", err))
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+	if len(egPlatforms) == 0 {
+		syncMarkItemFailed(ctx, w.DB, &item, "external game has no platform rows")
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+
+	storefrontSlug, ok := platformresolution.StorefrontToCollectionSlug(eg.Storefront)
+	if !ok {
+		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("unresolved storefront=%s", eg.Storefront))
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+
+	ownership := "owned"
+	if eg.OwnershipStatus != nil {
+		ownership = *eg.OwnershipStatus
+	} else if eg.IsSubscription {
+		ownership = "subscription"
+	}
+
+	for _, egp := range egPlatforms {
+		var existingID string
+		var existingOwnership *string
+		var existingHours *float64
+		err := w.DB.NewRaw(
+			`SELECT id, ownership_status, hours_played FROM user_game_platforms WHERE user_game_id = ? AND platform = ? AND storefront = ?`,
+			ugID, egp.Platform, storefrontSlug,
+		).Scan(ctx, &existingID, &existingOwnership, &existingHours)
+
+		if errors.Is(err, sql.ErrNoRows) || err != nil {
+			// No existing row — insert new platform.
+			ugpID := uuid.NewString()
+			if _, err := w.DB.NewRaw(`
+				INSERT INTO user_game_platforms
+				(id, user_game_id, platform, storefront, is_available, hours_played, ownership_status,
+				 original_platform_name, original_storefront_name, external_game_id, sync_from_source, created_at, updated_at)
+				VALUES (?, ?, ?, ?, true, ?, ?, ?, ?, ?, true, now(), now())
+				ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
+				ugpID, ugID, egp.Platform, storefrontSlug, egp.HoursPlayed, ownership,
+				egp.Platform, eg.Storefront, eg.ID,
+			).Exec(ctx); err != nil {
+				slog.Error("user_game_write: insert user_game_platform", "err", err, "item_id", p.JobItemID)
+			}
+		} else {
+			existingRank := 0
+			if existingOwnership != nil {
+				existingRank = ownershipRank(*existingOwnership)
+			}
+			newRank := ownershipRank(ownership)
+
+			if newRank > existingRank {
+				// Ownership upgrade — write status_changed sync_change.
+				if _, err := w.DB.NewRaw(
+					`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, old_status, new_status, created_at)
+					 VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?, now())`,
+					uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title, existingOwnership, &ownership,
+				).Exec(ctx); err != nil {
+					slog.Error("user_game_write: insert sync_change (status_changed)", "err", err)
+				}
+				newHours := egp.HoursPlayed
+				if existingHours != nil && *existingHours > egp.HoursPlayed {
+					newHours = *existingHours
+				}
+				if _, err := w.DB.NewRaw(
+					`UPDATE user_game_platforms SET ownership_status = ?, hours_played = ?, updated_at = now() WHERE id = ?`,
+					ownership, newHours, existingID,
+				).Exec(ctx); err != nil {
+					slog.Error("user_game_write: update ugp ownership", "err", err, "item_id", p.JobItemID)
+				}
+			} else {
+				// No ownership change — only update hours if higher.
+				if egp.HoursPlayed > 0 && (existingHours == nil || egp.HoursPlayed > *existingHours) {
+					if _, err := w.DB.NewRaw(
+						`UPDATE user_game_platforms SET hours_played = ?, updated_at = now() WHERE id = ?`,
+						egp.HoursPlayed, existingID,
+					).Exec(ctx); err != nil {
+						slog.Error("user_game_write: update ugp hours", "err", err, "item_id", p.JobItemID)
+					}
+				}
+			}
+		}
+	}
+
+	if _, err := w.DB.NewRaw(
+		`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
+	).Exec(ctx); err != nil {
+		slog.Error("user_game_write: update external_game updated_at", "err", err)
+	}
+
+	syncMarkItemCompleted(ctx, w.DB, &item)
+	syncCheckJobCompletion(ctx, w.DB, item.JobID)
+	return nil
+}
+
 // ── ProcessSyncItem ───────────────────────────────────────────────────────────
 
 // ProcessSyncItemArgs is the River job args type for "process_sync_item".

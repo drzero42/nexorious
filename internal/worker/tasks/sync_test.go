@@ -2618,3 +2618,240 @@ func TestGOGDispatch_TokenRefreshPersisted(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// UserGameWorker — Stage 3 tests
+// ---------------------------------------------------------------------------
+
+func TestUserGameWorker_CreatesUserGameAndSyncChange(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	// Seed platform and storefront required by user_game_platforms FKs.
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING`)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(730)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Counter-Strike 2', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	egID := uuid.NewString()
+	igdbIDVal := igdbID
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', false, true, false, ?)`,
+		egID, userID, igdbIDVal,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 42.5, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '730', 'Counter-Strike 2', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	job := &river.Job[tasks.UserGameArgs]{
+		Args: tasks.UserGameArgs{JobItemID: itemID},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// user_games row must exist.
+	var ugCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM user_games WHERE user_id = ? AND game_id = ?`, userID, igdbID).Scan(ctx, &ugCount)
+	if ugCount != 1 {
+		t.Errorf("expected 1 user_game, got %d", ugCount)
+	}
+	// user_game_platforms row with hours_played=42.5.
+	var ugpHours *float64
+	_ = testDB.NewRaw(
+		`SELECT ugp.hours_played FROM user_game_platforms ugp
+		 JOIN user_games ug ON ug.id = ugp.user_game_id
+		 WHERE ug.user_id = ? AND ug.game_id = ? AND ugp.platform = 'pc-windows' AND ugp.storefront = 'steam'`,
+		userID, igdbID,
+	).Scan(ctx, &ugpHours)
+	if ugpHours == nil || *ugpHours != 42.5 {
+		t.Errorf("hours_played: want 42.5, got %v", ugpHours)
+	}
+	// sync_changes: added.
+	var changeCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM sync_changes WHERE job_id = ? AND change_type = 'added'`, jobID,
+	).Scan(ctx, &changeCount)
+	if changeCount != 1 {
+		t.Errorf("expected 1 added sync_change, got %d", changeCount)
+	}
+	// item status: completed.
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)
+	if status != "completed" {
+		t.Errorf("item status: want 'completed', got %q", status)
+	}
+}
+
+func TestUserGameWorker_OwnershipRankGuard(t *testing.T) {
+	// existing UGP has ownership=owned (rank 4). New sync says subscription (rank 2).
+	// The existing ownership must NOT be downgraded.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	// Seed platform and storefront required by user_game_platforms FKs.
+	// psn storefront maps to 'playstation-store' via StorefrontToCollectionSlug.
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('playstation-4', 'PlayStation 4') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('playstation-store', 'PlayStation Store') ON CONFLICT DO NOTHING`)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(800)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'PSN Game', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	ugID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at) VALUES (?, ?, ?, now(), now())`,
+		ugID, userID, igdbID,
+	)
+	ownership := "owned"
+	existingHours := 10.0
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_game_platforms (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, sync_from_source, created_at, updated_at)
+		 VALUES (?, ?, 'playstation-4', 'playstation-store', true, ?, ?, true, now(), now())`,
+		uuid.NewString(), ugID, existingHours, ownership,
+	)
+	egID := uuid.NewString()
+	subOwnership := "subscription"
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, ownership_status, resolved_igdb_id)
+		 VALUES (?, ?, 'psn', 'CUSA800', 'PSN Game', false, true, true, ?, ?)`,
+		egID, userID, subOwnership, igdbID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'playstation-4', 20.0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'CUSA800', 'PSN Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Ownership must not be downgraded from 'owned' to 'subscription'.
+	var resultOwnership string
+	_ = testDB.NewRaw(
+		`SELECT ownership_status FROM user_game_platforms WHERE user_game_id = ? AND platform = 'playstation-4' AND storefront = 'playstation-store'`,
+		ugID,
+	).Scan(ctx, &resultOwnership)
+	if resultOwnership != "owned" {
+		t.Errorf("ownership should not be downgraded: want 'owned', got %q", resultOwnership)
+	}
+	// hours_played should be updated to the higher value (20.0 > 10.0).
+	var resultHours float64
+	_ = testDB.NewRaw(
+		`SELECT hours_played FROM user_game_platforms WHERE user_game_id = ? AND platform = 'playstation-4' AND storefront = 'playstation-store'`,
+		ugID,
+	).Scan(ctx, &resultHours)
+	if resultHours != 20.0 {
+		t.Errorf("hours_played should update to higher value: want 20.0, got %v", resultHours)
+	}
+	// No sync_change: game already existed (not a new addition).
+	var changeCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM sync_changes WHERE job_id = ? AND change_type = 'added'`, jobID).Scan(ctx, &changeCount)
+	if changeCount != 0 {
+		t.Errorf("expected 0 added sync_changes (game pre-existed), got %d", changeCount)
+	}
+}
+
+func TestUserGameWorker_StatusChangedSyncChange(t *testing.T) {
+	// Existing UGP has subscription; new sync says owned (upgrade).
+	// Expect a status_changed sync_change.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	// Seed platform and storefront required by user_game_platforms FKs.
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING`)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(900)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Status Change Game', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	ugID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at) VALUES (?, ?, ?, now(), now())`,
+		ugID, userID, igdbID,
+	)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_game_platforms (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, sync_from_source, created_at, updated_at)
+		 VALUES (?, ?, 'pc-windows', 'steam', true, 0, 'subscription', true, now(), now())`,
+		uuid.NewString(), ugID,
+	)
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, ownership_status, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', '900', 'Status Change Game', false, true, false, 'owned', ?)`,
+		egID, userID, igdbID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 5.0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '900', 'Status Change Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var sc struct {
+		ChangeType string  `bun:"change_type"`
+		OldStatus  *string `bun:"old_status"`
+		NewStatus  *string `bun:"new_status"`
+	}
+	_ = testDB.NewRaw(
+		`SELECT change_type, old_status, new_status FROM sync_changes WHERE job_id = ?`, jobID,
+	).Scan(ctx, &sc)
+	if sc.ChangeType != "status_changed" {
+		t.Errorf("change_type: want 'status_changed', got %q", sc.ChangeType)
+	}
+	if sc.OldStatus == nil || *sc.OldStatus != "subscription" {
+		t.Errorf("old_status: want 'subscription', got %v", sc.OldStatus)
+	}
+	if sc.NewStatus == nil || *sc.NewStatus != "owned" {
+		t.Errorf("new_status: want 'owned', got %v", sc.NewStatus)
+	}
+}
+
