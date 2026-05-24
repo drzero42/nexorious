@@ -488,7 +488,9 @@ func TestDispatchSync_Steam_PlatformUpdate_AddsNewPlatform(t *testing.T) {
 	}
 }
 
-func TestDispatchSync_Steam_AppDetailsFailure_FallsBackToWindows(t *testing.T) {
+func TestDispatchSync_Steam_AppDetailsFailure_AbortsSync(t *testing.T) {
+	// When GetAppDetailsPlatforms fails (e.g. rate-limited after retries), the sync
+	// must abort and return an error — no platform row must be guessed.
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -523,31 +525,27 @@ func TestDispatchSync_Steam_AppDetailsFailure_FallsBackToWindows(t *testing.T) {
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	}
 
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err := w.Work(ctx, job); err == nil {
+		t.Fatal("expected Work to return an error when appdetails fails, got nil")
 	}
 
-	var platform string
+	// No platform row must be written — we must not guess.
+	var egpCount int
 	_ = testDB.NewRaw(
-		`SELECT egp.platform FROM external_game_platforms egp
+		`SELECT COUNT(*) FROM external_game_platforms egp
 		 JOIN external_games eg ON eg.id = egp.external_game_id
 		 WHERE eg.user_id = ? AND eg.storefront = 'steam' AND eg.external_id = '888'`,
 		userID,
-	).Scan(ctx, &platform)
-	if platform != "pc-windows" {
-		t.Errorf("expected pc-windows fallback platform, got %q", platform)
+	).Scan(ctx, &egpCount)
+	if egpCount != 0 {
+		t.Errorf("expected 0 platform rows when appdetails fails, got %d", egpCount)
 	}
 
+	// No job_items should be dispatched.
 	var itemCount int
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
-	if itemCount != 1 {
-		t.Errorf("expected 1 job_item after appdetails fallback, got %d", itemCount)
-	}
-
-	var itemKey string
-	_ = testDB.NewRaw(`SELECT item_key FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemKey)
-	if itemKey != "888" {
-		t.Errorf("expected item_key=888, got %q", itemKey)
+	if itemCount != 0 {
+		t.Errorf("expected 0 job_items when sync aborts, got %d", itemCount)
 	}
 }
 

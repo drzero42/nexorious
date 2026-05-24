@@ -234,8 +234,9 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 					failSyncJob(context.Background(), w.DB, p.JobID, fmt.Sprintf("sync cancelled: %v", ctx.Err()))
 					return ctx.Err()
 				}
-				slog.Warn("steam appdetails failed, using pc-windows fallback", "appid", og.AppID, "err", detErr)
-				pl = steamsvc.Platforms{Windows: true}
+				slog.Error("dispatch_sync: steam appdetails failed — aborting sync", "appid", og.AppID, "err", detErr, "job_id", p.JobID)
+				failSyncJob(context.Background(), w.DB, p.JobID, fmt.Sprintf("steam appdetails failed: %v", detErr))
+				return detErr
 			}
 
 			var resolvedPlatforms []string

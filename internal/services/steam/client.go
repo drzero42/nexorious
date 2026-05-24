@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -148,52 +150,108 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 }
 
 // GetAppDetailsPlatforms fetches platform availability for the given appID.
-// Returns (Platforms{}, nil) when success=false (removed/delisted app) or all platforms are false — caller decides fallback.
-// Returns (Platforms{}, error) for non-200, decode error, or missing key.
+// Returns (Platforms{}, nil) when success=false (removed/delisted app) — caller decides fallback.
+// Returns (Platforms{}, error) for persistent non-200, decode error, or missing key.
+// Retries up to 3 times on 429 (honoring Retry-After) and up to 2 times on network errors.
 func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platforms, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
 		return Platforms{}, err
 	}
 	url := fmt.Sprintf("%s/api/appdetails?appids=%d&filters=platforms", c.appDetailsBase, appID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return Platforms{}, fmt.Errorf("steam appdetails: build request: %w", err)
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return Platforms{}, fmt.Errorf("steam appdetails network error: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return Platforms{}, fmt.Errorf("steam appdetails HTTP %d for appid %d", resp.StatusCode, appID)
-	}
 
-	var body map[string]struct {
-		Success bool `json:"success"`
-		Data    struct {
-			Platforms struct {
-				Windows bool `json:"windows"`
-				Mac     bool `json:"mac"`
-				Linux   bool `json:"linux"`
-			} `json:"platforms"`
-		} `json:"data"`
+	const maxRateLimitRetries = 3
+	const maxNetworkRetries = 2
+	rateLimitRetries := 0
+	networkRetries := 0
+
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return Platforms{}, fmt.Errorf("steam appdetails: build request: %w", err)
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return Platforms{}, ctx.Err()
+			}
+			if networkRetries < maxNetworkRetries {
+				networkRetries++
+				if sleepErr := steamSleepCtx(ctx, 2*time.Second); sleepErr != nil {
+					return Platforms{}, sleepErr
+				}
+				continue
+			}
+			return Platforms{}, fmt.Errorf("steam appdetails network error: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests && rateLimitRetries < maxRateLimitRetries {
+			d := steamRetryAfterDelay(resp.Header.Get("Retry-After"), rateLimitRetries)
+			rateLimitRetries++
+			_ = resp.Body.Close()
+			if sleepErr := steamSleepCtx(ctx, d); sleepErr != nil {
+				return Platforms{}, sleepErr
+			}
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return Platforms{}, fmt.Errorf("steam appdetails HTTP %d for appid %d", resp.StatusCode, appID)
+		}
+
+		var body map[string]struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Platforms struct {
+					Windows bool `json:"windows"`
+					Mac     bool `json:"mac"`
+					Linux   bool `json:"linux"`
+				} `json:"platforms"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			_ = resp.Body.Close()
+			return Platforms{}, fmt.Errorf("steam appdetails decode error: %w", err)
+		}
+		_ = resp.Body.Close()
+
+		key := fmt.Sprintf("%d", appID)
+		entry, ok := body[key]
+		if !ok {
+			return Platforms{}, fmt.Errorf("steam appdetails: missing key %q in response", key)
+		}
+		if !entry.Success {
+			// Steam has no current store data for this appid (removed/delisted games still
+			// present in the user's library). Caller falls back to a default platform.
+			return Platforms{}, nil
+		}
+		return Platforms{
+			Windows: entry.Data.Platforms.Windows,
+			Mac:     entry.Data.Platforms.Mac,
+			Linux:   entry.Data.Platforms.Linux,
+		}, nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return Platforms{}, fmt.Errorf("steam appdetails decode error: %w", err)
+}
+
+// steamRetryAfterDelay returns how long to wait before retrying a 429.
+// It honors a Retry-After header (integer seconds); otherwise it falls back
+// to exponential backoff: 10s, 20s, 40s, …
+func steamRetryAfterDelay(header string, attempt int) time.Duration {
+	if header != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
 	}
-	key := fmt.Sprintf("%d", appID)
-	entry, ok := body[key]
-	if !ok {
-		return Platforms{}, fmt.Errorf("steam appdetails: missing key %q in response", key)
+	return time.Duration(10*(1<<attempt)) * time.Second
+}
+
+func steamSleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	if !entry.Success {
-		// Steam has no current store data for this appid (removed/delisted games still
-		// present in the user's library). Caller falls back to a default platform.
-		return Platforms{}, nil
-	}
-	return Platforms{
-		Windows: entry.Data.Platforms.Windows,
-		Mac:     entry.Data.Platforms.Mac,
-		Linux:   entry.Data.Platforms.Linux,
-	}, nil
 }
