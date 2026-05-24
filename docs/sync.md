@@ -117,10 +117,10 @@ flowchart TD
     end
 
     subgraph Stage3["Stage 3 — User Game Write"]
-        N{is_skipped?} -->|yes| O[Update<br/>external_game.updated_at]
-        N -->|no| P[Upsert user_games]
-        P --> Q[Upsert user_game_platforms<br/>per platform<br/>with ownership rank guard]
-        Q --> O
+        S3A{is_skipped?} -->|yes| S3D[Update<br/>external_game.updated_at]
+        S3A -->|no| S3B[Upsert user_games]
+        S3B --> S3C[Upsert user_game_platforms<br/>per platform<br/>with ownership rank guard]
+        S3C --> S3D
     end
 
     subgraph UserAction["User Action"]
@@ -130,8 +130,8 @@ flowchart TD
     end
 
     E --> H
-    L --> N
-    S --> N
+    L --> S3A
+    S --> S3A
 ```
 
 ### DispatchSyncWorker responsibilities
