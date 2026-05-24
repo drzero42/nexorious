@@ -826,6 +826,161 @@ func ownershipRank(status string) int {
 	}
 }
 
+// ── IGDBMatchWorker — Stage 2 ─────────────────────────────────────────────────
+
+type IGDBMatchArgs struct {
+	JobItemID string `json:"job_item_id"`
+}
+
+func (IGDBMatchArgs) Kind() string { return "igdb_match" }
+
+func (IGDBMatchArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 5, Priority: 1}
+}
+
+type IGDBMatchWorker struct {
+	river.WorkerDefaults[IGDBMatchArgs]
+	DB          *bun.DB
+	IGDBClient  *igdbsvc.Client
+	RiverClient *river.Client[pgx.Tx]
+}
+
+func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs]) error {
+	p := job.Args
+
+	var item models.JobItem
+	if err := w.DB.NewSelect().Model(&item).Where("id = ?", p.JobItemID).Scan(ctx); err != nil {
+		slog.Error("igdb_match: load job_item", "id", p.JobItemID, "err", err)
+		return err
+	}
+
+	if item.ExternalGameID == nil {
+		syncMarkItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item")
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+
+	var eg models.ExternalGame
+	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
+		syncMarkItemFailed(ctx, w.DB, &item, "external game not found")
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+
+	// Fast-path: skipped games go straight to UserGameWorker.
+	if eg.IsSkipped {
+		return w.enqueueUserGame(ctx, item.ID, item.JobID)
+	}
+
+	// Fast-path: already resolved (manual or prior run).
+	if eg.ResolvedIGDBID != nil {
+		return w.enqueueUserGame(ctx, item.ID, item.JobID)
+	}
+
+	// Sibling check: same user/storefront/title already resolved by another SKU.
+	var sibling models.ExternalGame
+	if err := w.DB.NewSelect().Model(&sibling).
+		Where("user_id = ? AND storefront = ? AND title = ? AND id != ? AND resolved_igdb_id IS NOT NULL",
+			eg.UserID, eg.Storefront, eg.Title, eg.ID).
+		Limit(1).
+		Scan(ctx); err == nil && sibling.ResolvedIGDBID != nil {
+		igdbID := *sibling.ResolvedIGDBID
+		if _, err := w.DB.NewRaw(
+			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+			igdbID, eg.Title,
+		).Exec(ctx); err != nil {
+			slog.Error("igdb_match: insert game row (sibling)", "err", err, "igdb_id", igdbID)
+		}
+		if _, err := w.DB.NewRaw(
+			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+			igdbID, eg.ID,
+		).Exec(ctx); err != nil {
+			slog.Error("igdb_match: apply sibling resolution", "err", err, "external_game_id", eg.ID)
+		}
+		return w.enqueueUserGame(ctx, item.ID, item.JobID)
+	}
+
+	// IGDB search.
+	if w.IGDBClient != nil && w.IGDBClient.Configured() {
+		candidates, err := w.IGDBClient.SearchGames(ctx, eg.Title, 10)
+		if err != nil {
+			if job.Attempt >= job.MaxAttempts {
+				slog.Warn("igdb_match: IGDB failed on final attempt, marking pending_review",
+					"item_id", p.JobItemID, "err", err)
+				syncMarkItemPendingReview(ctx, w.DB, &item)
+				syncCheckJobCompletion(ctx, w.DB, item.JobID)
+				return nil
+			}
+			return fmt.Errorf("igdb_match: search failed (will retry): %w", err)
+		}
+
+		normalizedQuery := matching.NormalizeTitle(eg.Title)
+		var bestScore, secondBestScore float64
+		var bestID int32
+		for _, c := range candidates {
+			score := matching.FuzzyConfidence(normalizedQuery, matching.NormalizeTitle(c.Title))
+			if score > bestScore {
+				secondBestScore = bestScore
+				bestScore = score
+				bestID = int32(c.IgdbID)
+			} else if score > secondBestScore {
+				secondBestScore = score
+			}
+		}
+
+		const autoResolveThreshold = 0.85
+		const tieEpsilon = 0.01
+		if bestScore >= autoResolveThreshold && (bestScore-secondBestScore) > tieEpsilon {
+			if _, err := w.DB.NewRaw(
+				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+				bestID, eg.Title,
+			).Exec(ctx); err != nil {
+				slog.Error("igdb_match: insert game row (auto-resolve)", "err", err, "igdb_id", bestID)
+			}
+			if _, err := w.DB.NewRaw(
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+				bestID, eg.ID,
+			).Exec(ctx); err != nil {
+				slog.Error("igdb_match: auto-resolve external_game", "err", err, "external_game_id", eg.ID)
+			}
+			return w.enqueueUserGame(ctx, item.ID, item.JobID)
+		}
+
+		// Low confidence — store candidates, mark pending_review.
+		candidatesJSON, _ := json.Marshal(candidates)
+		item.IGDBCandidates = candidatesJSON
+		item.MatchConfidence = &bestScore
+		syncMarkItemPendingReview(ctx, w.DB, &item)
+		syncCheckJobCompletion(ctx, w.DB, item.JobID)
+		return nil
+	}
+
+	// No IGDB client configured — mark pending_review.
+	syncMarkItemPendingReview(ctx, w.DB, &item)
+	syncCheckJobCompletion(ctx, w.DB, item.JobID)
+	return nil
+}
+
+func (w *IGDBMatchWorker) enqueueUserGame(ctx context.Context, jobItemID, jobID string) error {
+	if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, jobItemID, UserGameArgs{JobItemID: jobItemID}); err != nil {
+		slog.Error("igdb_match: enqueue user_game_write failed", "item_id", jobItemID, "err", err)
+		syncCheckJobCompletion(ctx, w.DB, jobID)
+	}
+	return nil
+}
+
+// ── UserGameWorker — Stage 3 ──────────────────────────────────────────────────
+
+type UserGameArgs struct {
+	JobItemID string `json:"job_item_id"`
+}
+
+func (UserGameArgs) Kind() string { return "user_game_write" }
+
+func (UserGameArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 5, Priority: 1}
+}
+
 // ── ProcessSyncItem ───────────────────────────────────────────────────────────
 
 // ProcessSyncItemArgs is the River job args type for "process_sync_item".

@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/ratelimit"
@@ -2377,6 +2378,191 @@ func TestDispatchSync_RemovedGames_WritesSyncChange(t *testing.T) {
 	).Scan(ctx, &changeTitle)
 	if changeTitle != "Old Game" {
 		t.Errorf("sync_change title: want 'Old Game', got %q", changeTitle)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// IGDBMatchWorker — Stage 2
+// ---------------------------------------------------------------------------
+
+func TestIGDBMatchWorker_SiblingResolution(t *testing.T) {
+	// A sibling external_game row already has resolved_igdb_id set.
+	// IGDBMatchWorker must inherit it and enqueue UserGameArgs without calling IGDB.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'processing', 'normal', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(7777)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Sibling Game', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	// Sibling: same user/storefront/title, different external_id, already resolved.
+	siblingID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
+		 VALUES (?, ?, 'psn', 'CUSA001', 'Sibling Game', false, true, false, ?)`,
+		siblingID, userID, igdbID,
+	)
+	// Target: same title, unresolved.
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'psn', 'PPSA001', 'Sibling Game', false, true, false)`,
+		egID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'playstation-5', 0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	rc := newTestRiverClient(t)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'PPSA001', 'Sibling Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: rc}
+	job := &river.Job[tasks.IGDBMatchArgs]{
+		JobRow: &rivertype.JobRow{MaxAttempts: 5},
+		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// external_game must have inherited resolved_igdb_id.
+	var resolvedID *int32
+	_ = testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = ?`, egID).Scan(ctx, &resolvedID)
+	if resolvedID == nil || *resolvedID != igdbID {
+		t.Errorf("resolved_igdb_id: want %d, got %v", igdbID, resolvedID)
+	}
+	// Item must still be pending (UserGameWorker handles completion).
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)
+	if status != "pending" {
+		t.Errorf("item status after sibling resolution: want 'pending', got %q", status)
+	}
+}
+
+func TestIGDBMatchWorker_NoIGDBClient_PendingReview(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '111', 'Unknown Game', false, true, false)`,
+		egID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '111', 'Unknown Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
+	job := &river.Job[tasks.IGDBMatchArgs]{
+		JobRow: &rivertype.JobRow{MaxAttempts: 5},
+		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)
+	if status != "pending_review" {
+		t.Errorf("expected pending_review, got %q", status)
+	}
+}
+
+func TestIGDBMatchWorker_AutoResolve(t *testing.T) {
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
+	}))
+	defer tokenSrv.Close()
+
+	const igdbID = int32(500)
+	igdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": igdbID, "name": "Counter-Strike 2", "slug": "counter-strike-2"},
+		})
+	}))
+	defer igdbSrv.Close()
+
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', false, true, false)`,
+		egID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	rc := newTestRiverClient(t)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '730', 'Counter-Strike 2', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
+	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
+	job := &river.Job[tasks.IGDBMatchArgs]{
+		JobRow: &rivertype.JobRow{MaxAttempts: 5},
+		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var resolvedID *int32
+	_ = testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = ?`, egID).Scan(ctx, &resolvedID)
+	if resolvedID == nil || *resolvedID != igdbID {
+		t.Errorf("resolved_igdb_id: want %d, got %v", igdbID, resolvedID)
+	}
+	// games row must exist.
+	var gameTitle string
+	_ = testDB.NewRaw(`SELECT title FROM games WHERE id = ?`, igdbID).Scan(ctx, &gameTitle)
+	if gameTitle == "" {
+		t.Error("games row should have been inserted by IGDBMatchWorker")
+	}
+	// Item stays pending (UserGameWorker handles the transition).
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)
+	if status != "pending" {
+		t.Errorf("item status: want 'pending', got %q (UserGameWorker transitions it)", status)
 	}
 }
 
