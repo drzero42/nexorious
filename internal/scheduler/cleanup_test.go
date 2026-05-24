@@ -422,6 +422,69 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 // BuildPeriodicJobs — guard branches for invalid config durations
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// CleanupSyncChanges
+// ---------------------------------------------------------------------------
+
+func TestCleanupSyncChanges_DeletesOldRows(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := insertUser(t, ctx, nil)
+
+	// Insert a job so sync_changes can reference it.
+	jobID := uuid.NewString()
+	_, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at)
+         VALUES (?, ?, 'sync', 'steam', 'completed', 'low', now())`,
+		jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+
+	// 100-day-old row — should be deleted when retention=90.
+	_, err = testDB.NewRaw(
+		`INSERT INTO sync_changes (id, job_id, user_id, change_type, title, created_at)
+         VALUES (?, ?, ?, 'added', 'Old Game', now() - interval '100 days')`,
+		uuid.NewString(), jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert old sync_change: %v", err)
+	}
+	// 50-day-old row — should remain.
+	_, err = testDB.NewRaw(
+		`INSERT INTO sync_changes (id, job_id, user_id, change_type, title, created_at)
+         VALUES (?, ?, ?, 'added', 'Mid Game', now() - interval '50 days')`,
+		uuid.NewString(), jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert mid sync_change: %v", err)
+	}
+	// 1-day-old row — should remain.
+	_, err = testDB.NewRaw(
+		`INSERT INTO sync_changes (id, job_id, user_id, change_type, title, created_at)
+         VALUES (?, ?, ?, 'added', 'New Game', now() - interval '1 day')`,
+		uuid.NewString(), jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert new sync_change: %v", err)
+	}
+
+	scheduler.CleanupSyncChanges(ctx, testDB, 90)
+
+	var count int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM sync_changes`).Scan(ctx, &count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 rows remaining, got %d", count)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BuildPeriodicJobs — guard branches for invalid config durations
+// ---------------------------------------------------------------------------
+
 func TestBuildPeriodicJobs_InvalidMetadataRefreshInterval_DefaultsTo24h(t *testing.T) {
 	cfg := &config.Config{
 		MetadataRefreshInterval: "not-a-duration",
