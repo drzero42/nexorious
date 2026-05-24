@@ -11,7 +11,7 @@ Syncing imports a user's game library from an external storefront (Steam, PSN, G
 The sync pipeline is designed to be:
 
 - **Consistent** — the same general process applies to all storefronts; per-storefront differences are isolated to adapter code
-- **Resilient** — transient failures are retried automatically; persistent failures surface to the user for manual resolution
+- **Resilient** — transient failures are retried automatically; anything the process cannot resolve on its own — whether from an API failure or an ambiguous match — is routed to the user without blocking the rest of the sync
 - **Non-destructive** — ownership and playtime are never downgraded; existing data is only improved
 
 ---
