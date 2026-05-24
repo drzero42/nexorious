@@ -117,35 +117,32 @@ func TestResolveItem_PropagatesResolutionToSiblings(t *testing.T) {
 		{egCUSAID, "CUSA43774_00", "playstation-4"},
 	} {
 		_, err := testDB.ExecContext(context.Background(),
-			`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours)
-			 VALUES (?, ?, 'psn', ?, 'Tomb Raider I-III Remastered', false, true, false, 0)`,
+			`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+			 VALUES (?, ?, 'psn', ?, 'Tomb Raider I-III Remastered', false, true, false)`,
 			row.id, userID, row.extID,
 		)
 		if err != nil {
 			t.Fatalf("insert external_game %s: %v", row.id, err)
 		}
 		if _, err := testDB.ExecContext(context.Background(),
-			`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at) VALUES (gen_random_uuid()::text, ?, ?, now())`,
+			`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (gen_random_uuid()::text, ?, ?, 0, now())`,
 			row.id, row.platform,
 		); err != nil {
 			t.Fatalf("insert external_game_platform %s: %v", row.id, err)
 		}
 	}
 
-	// job_items for each SKU — both pending_review, source_metadata links to external_game.
-	ppsMeta, _ := json.Marshal(map[string]any{"external_game_id": egPSPAID, "playtime_hours": 0})
-	cusaMeta, _ := json.Marshal(map[string]any{"external_game_id": egCUSAID, "playtime_hours": 0})
+	// job_items for each SKU — both pending_review, external_game_id set directly.
 	for _, row := range []struct {
-		id, extID string
-		meta      []byte
+		id, extID, egID string
 	}{
-		{"ji-sib-ppsa", "PPSA16902_00", ppsMeta},
-		{"ji-sib-cusa", "CUSA43774_00", cusaMeta},
+		{"ji-sib-ppsa", "PPSA16902_00", egPSPAID},
+		{"ji-sib-cusa", "CUSA43774_00", egCUSAID},
 	} {
 		_, err := testDB.ExecContext(context.Background(),
-			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-			 VALUES (?, ?, ?, ?, 'Tomb Raider I-III Remastered', ?, 'pending_review', '{}', '[]')`,
-			row.id, "job-ji-sib", userID, row.extID, string(row.meta),
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+			 VALUES (?, ?, ?, ?, 'Tomb Raider I-III Remastered', ?, '{}', 'pending_review', '{}', '[]')`,
+			row.id, "job-ji-sib", userID, row.extID, row.egID,
 		)
 		if err != nil {
 			t.Fatalf("insert job_item %s: %v", row.id, err)

@@ -411,8 +411,8 @@ func TestPSNDisconnect_Idempotent(t *testing.T) {
 func insertExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID, title string) {
 	t.Helper()
 	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, false, true, false, 0, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, false, true, false, now(), now())`,
 		id, userID, storefront, extID, title,
 	)
 	if err != nil {
@@ -1307,48 +1307,27 @@ func TestHandleEpicConnect_HappyPathPersistsConfig(t *testing.T) {
 	}
 
 	var credsRaw string
-	var snapshotRaw string
 	err := testDB.NewRaw(
-		`SELECT storefront_credentials, epic_legendary_state::text FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
 		userID,
-	).Scan(context.Background(), &credsRaw, &snapshotRaw)
+	).Scan(context.Background(), &credsRaw)
 	if err != nil {
 		t.Fatalf("scan user_sync_configs: %v", err)
 	}
-	// After encryption, stored values must be opaque ciphertext, not plaintext.
+	// storefront_credentials holds the encrypted legendary snapshot.
 	if !strings.HasPrefix(credsRaw, "enc:v1:") {
 		t.Fatalf("expected enc:v1: prefix for storefront_credentials, got %q", credsRaw[:min(20, len(credsRaw))])
 	}
-	decryptedCreds, err := testEncrypter.Decrypt(credsRaw)
+	decryptedState, err := testEncrypter.Decrypt(credsRaw)
 	if err != nil {
 		t.Fatalf("decrypt storefront_credentials: %v", err)
 	}
-	var credsMap map[string]string
-	if err := json.Unmarshal(decryptedCreds, &credsMap); err != nil {
-		t.Fatalf("unmarshal decrypted creds: %v", err)
-	}
-	if credsMap["display_name"] != "EpicTester" || credsMap["account_id"] != "acct-123" {
-		t.Errorf("decrypted storefront_credentials missing fields: %v", credsMap)
-	}
-
-	// epic_legendary_state is stored as a JSONB string scalar containing the ciphertext.
-	var stateCiphertext string
-	if err := json.Unmarshal([]byte(snapshotRaw), &stateCiphertext); err != nil {
-		t.Fatalf("unmarshal epic_legendary_state jsonb string: %v", err)
-	}
-	if !strings.HasPrefix(stateCiphertext, "enc:v1:") {
-		t.Fatalf("expected enc:v1: prefix for epic_legendary_state, got %q", stateCiphertext[:min(20, len(stateCiphertext))])
-	}
-	decryptedState, err := testEncrypter.Decrypt(stateCiphertext)
-	if err != nil {
-		t.Fatalf("decrypt epic_legendary_state: %v", err)
-	}
 	var stateMap map[string]string
 	if err := json.Unmarshal(decryptedState, &stateMap); err != nil {
-		t.Fatalf("unmarshal decrypted epic_legendary_state: %v", err)
+		t.Fatalf("unmarshal decrypted storefront_credentials: %v", err)
 	}
 	if _, ok := stateMap["user.json"]; !ok {
-		t.Errorf("decrypted epic_legendary_state missing user.json key: %v", stateMap)
+		t.Errorf("decrypted storefront_credentials missing user.json key: %v", stateMap)
 	}
 }
 
@@ -1358,23 +1337,16 @@ func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-disc")
 
-	// Pre-populate a connected Epic row with realistic ciphertext fixtures.
-	credsJSON := `{"display_name":"X","account_id":"y"}`
-	credsCiphertext, err := testEncrypter.Encrypt([]byte(credsJSON))
-	if err != nil {
-		t.Fatalf("encrypt creds fixture: %v", err)
-	}
+	// Pre-populate a connected Epic row: storefront_credentials holds the encrypted snapshot.
 	snapJSON := `{"user.json":"{}"}`
 	snapCiphertext, err := testEncrypter.Encrypt([]byte(snapJSON))
 	if err != nil {
 		t.Fatalf("encrypt snap fixture: %v", err)
 	}
-	// epic_legendary_state is JSONB; store the ciphertext as a JSON string scalar.
-	snapJSONB, _ := json.Marshal(snapCiphertext)
 	_, err = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, epic_legendary_state, created_at, updated_at)
-		 VALUES (?, ?, 'epic', 'manual', ?, ?::jsonb, now(), now())`,
-		"cfg-epic-disc", userID, credsCiphertext, string(snapJSONB),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?, now(), now())`,
+		"cfg-epic-disc", userID, snapCiphertext,
 	).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("seed user_sync_configs: %v", err)
@@ -1388,19 +1360,16 @@ func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 		t.Errorf("expected Cleanup(%q) to be called, got called=%v user=%q", userID, stub.cleanupCalled, stub.cleanupUserID)
 	}
 
-	var credsAfter, snapAfter *string
+	var credsAfter *string
 	err = testDB.NewRaw(
-		`SELECT storefront_credentials, epic_legendary_state::text FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
 		userID,
-	).Scan(context.Background(), &credsAfter, &snapAfter)
+	).Scan(context.Background(), &credsAfter)
 	if err != nil {
 		t.Fatalf("scan after disconnect: %v", err)
 	}
 	if credsAfter != nil {
 		t.Errorf("expected storefront_credentials cleared, got %v", *credsAfter)
-	}
-	if snapAfter != nil {
-		t.Errorf("expected epic_legendary_state cleared, got %v", *snapAfter)
 	}
 }
 

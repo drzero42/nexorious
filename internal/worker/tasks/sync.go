@@ -79,17 +79,12 @@ func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBat
 	}
 
 	// 1. Load snapshot from DB.
-	var rawStateJSON []byte
-	if err := a.DB.NewRaw(
-		`SELECT epic_legendary_state FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
-		userID,
-	).Scan(ctx, &rawStateJSON); err != nil || len(rawStateJSON) == 0 {
-		return fmt.Errorf("epic: no legendary state found for user (not connected)")
-	}
-	// rawStateJSON is JSONB storing a JSON string: "enc:v1:base64..."
 	var ciphertextStr string
-	if err := json.Unmarshal(rawStateJSON, &ciphertextStr); err != nil {
-		return fmt.Errorf("epic: unmarshal legendary state wrapper: %w", err)
+	if err := a.DB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		userID,
+	).Scan(ctx, &ciphertextStr); err != nil || ciphertextStr == "" {
+		return fmt.Errorf("epic: no legendary state found for user (not connected)")
 	}
 	plainState, err := a.Encrypter.Decrypt(ciphertextStr)
 	if err != nil {
@@ -119,10 +114,9 @@ func (a *EpicClientAdapter) GetLibrary(ctx context.Context, userID string, onBat
 		if encErr != nil {
 			slog.Error("epic: encrypt updated snapshot failed", "user_id", userID, "err", encErr)
 		} else {
-			newStateJSON, _ := json.Marshal(newCiphertext) // wrap string as JSON for JSONB
 			if _, err := a.DB.NewRaw(
-				`UPDATE user_sync_configs SET epic_legendary_state = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
-				string(newStateJSON), userID,
+				`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
+				newCiphertext, userID,
 			).Exec(context.Background()); err != nil {
 				slog.Error("epic: persist updated snapshot failed", "user_id", userID, "err", err)
 			}

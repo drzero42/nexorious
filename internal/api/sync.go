@@ -716,19 +716,6 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "epic: user.json missing after auth")
 	}
 
-	creds := map[string]string{
-		"display_name": info.DisplayName,
-		"account_id":   info.AccountID,
-	}
-	credsJSON, err := json.Marshal(creds)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
-	}
-	credsCiphertext, err := h.encrypter.Encrypt(credsJSON)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
-	}
-
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -737,18 +724,15 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
 	}
-	// epic_legendary_state is a JSONB column; store the ciphertext as a JSON string scalar.
-	stateJSON, _ := json.Marshal(stateCiphertext)
 	now := time.Now().UTC()
 
 	if _, err := h.db.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, epic_legendary_state, created_at, updated_at)
-		 VALUES (?, ?, 'epic', 'manual', ?, ?, ?, ?)
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?, ?, ?)
 		 ON CONFLICT (user_id, storefront) DO UPDATE SET
 		     storefront_credentials = EXCLUDED.storefront_credentials,
-		     epic_legendary_state = EXCLUDED.epic_legendary_state,
 		     updated_at = EXCLUDED.updated_at`,
-		uuid.NewString(), userID, credsCiphertext, stateJSON, now, now,
+		uuid.NewString(), userID, stateCiphertext, now, now,
 	).Exec(context.Background()); err != nil {
 		slog.Error("epic: persist storefront credentials failed", "user_id", userID, "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Epic connection")
@@ -769,7 +753,7 @@ func (h *SyncHandler) HandleEpicDisconnect(c *echo.Context) error {
 	}
 	ctx := context.Background()
 	if _, err := h.db.NewRaw(
-		`UPDATE user_sync_configs SET storefront_credentials = NULL, epic_legendary_state = NULL, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
+		`UPDATE user_sync_configs SET storefront_credentials = NULL, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
 		userID,
 	).Exec(ctx); err != nil {
 		slog.Error("sync: epic disconnect failed", "err", err, "user_id", userID)

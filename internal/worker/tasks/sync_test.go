@@ -1761,7 +1761,7 @@ func TestDispatchSync_Epic_HappyPath(t *testing.T) {
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'epic', 'pending', 'high')`,
 		jobID, userID,
 	)
-	// Epic uses epic_legendary_state not storefront_credentials — insert row with NULL creds.
+	// Epic stores its snapshot in storefront_credentials; NULL is fine here since we don't call GetLibrary.
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic', 'manual')`,
@@ -1950,15 +1950,10 @@ func seedEpicConfig(t *testing.T, userID string, snapshot map[string]string) {
 	if err != nil {
 		t.Fatalf("encrypt snapshot: %v", err)
 	}
-	// epic_legendary_state is JSONB; store the ciphertext string as a JSON string.
-	stateJSON, err := json.Marshal(ciphertext)
-	if err != nil {
-		t.Fatalf("marshal ciphertext as JSON string: %v", err)
-	}
 	_, err = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, epic_legendary_state, created_at, updated_at)
-		 VALUES (?, ?, 'epic', 'manual', ?::jsonb, now(), now())`,
-		uuid.NewString(), userID, string(stateJSON),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?, now(), now())`,
+		uuid.NewString(), userID, ciphertext,
 	).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("seed user_sync_configs: %v", err)
@@ -1967,21 +1962,13 @@ func seedEpicConfig(t *testing.T, userID string, snapshot map[string]string) {
 
 func readEpicSnapshot(t *testing.T, userID string) map[string]string {
 	t.Helper()
-	var rawStateJSON []byte
-	err := testDB.NewRaw(
-		`SELECT epic_legendary_state FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
-		userID,
-	).Scan(context.Background(), &rawStateJSON)
-	if err != nil {
-		t.Fatalf("read epic_legendary_state: %v", err)
-	}
-	if len(rawStateJSON) == 0 {
-		return nil
-	}
-	// rawStateJSON is JSONB storing a JSON string: "enc:v1:base64..."
 	var ciphertextStr string
-	if err := json.Unmarshal(rawStateJSON, &ciphertextStr); err != nil {
-		t.Fatalf("unmarshal ciphertext wrapper: %v", err)
+	err := testDB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		userID,
+	).Scan(context.Background(), &ciphertextStr)
+	if err != nil || ciphertextStr == "" {
+		t.Fatalf("read storefront_credentials for epic: %v", err)
 	}
 	plainState, err := testEncrypter.Decrypt(ciphertextStr)
 	if err != nil {

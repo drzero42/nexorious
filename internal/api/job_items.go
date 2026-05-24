@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -91,12 +90,9 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 	}
 
 	// Propagate the resolution to external_games and to same-title sibling SKUs.
-	var meta struct {
-		ExternalGameID string `json:"external_game_id"`
-	}
-	if json.Unmarshal(item.SourceMetadata, &meta) == nil && meta.ExternalGameID != "" {
+	if item.ExternalGameID != nil && *item.ExternalGameID != "" {
 		var eg models.ExternalGame
-		if egErr := h.db.NewSelect().Model(&eg).Where("id = ?", meta.ExternalGameID).Scan(context.Background()); egErr == nil {
+		if egErr := h.db.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(context.Background()); egErr == nil {
 			// Ensure the games row exists (FK on external_games.resolved_igdb_id).
 			if _, err := h.db.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
@@ -134,7 +130,7 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 				// Re-queue any pending_review job_items for this sibling.
 				var sibItems []models.JobItem
 				if err := h.db.NewRaw(
-					`SELECT * FROM job_items WHERE user_id = ? AND status = 'pending_review' AND source_metadata->>'external_game_id' = ?`,
+					`SELECT * FROM job_items WHERE user_id = ? AND status = 'pending_review' AND external_game_id = ?`,
 					eg.UserID, sib.ID,
 				).Scan(context.Background(), &sibItems); err != nil {
 					slog.Error("job_items: query sibling job_items failed", "err", err, "sibling_id", sib.ID)
@@ -207,15 +203,12 @@ func (h *JobItemsHandler) HandleSkipItem(c *echo.Context) error {
 
 	// For sync items, mark the external game as skipped so it won't be
 	// re-queued on the next sync run.
-	var meta struct {
-		ExternalGameID string `json:"external_game_id"`
-	}
-	if json.Unmarshal(item.SourceMetadata, &meta) == nil && meta.ExternalGameID != "" {
+	if item.ExternalGameID != nil && *item.ExternalGameID != "" {
 		if _, err := h.db.NewRaw(
 			`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ? AND user_id = ?`,
-			meta.ExternalGameID, userID,
+			*item.ExternalGameID, userID,
 		).Exec(context.Background()); err != nil {
-			slog.Error("job_items: mark external_game skipped failed", "err", err, "external_game_id", meta.ExternalGameID)
+			slog.Error("job_items: mark external_game skipped failed", "err", err, "external_game_id", *item.ExternalGameID)
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 		}
 	}
