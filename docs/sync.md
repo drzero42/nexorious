@@ -28,7 +28,6 @@ The sync pipeline is designed to be:
 | **IGDB** | The canonical game database used to identify and deduplicate games across storefronts |
 | **pending_review** | A JobItem state where the user must manually pick an IGDB match or skip the game |
 | **Ownership rank** | A hierarchy that prevents ownership downgrades: `owned` > `borrowed` / `rented` > `subscription` > `no_longer_owned` |
-| **SKU** | A specific platform release of a game (e.g. a PS4 and PS5 version of the same game are different SKUs with different IDs) |
 
 ---
 
@@ -49,9 +48,9 @@ The sync system reads and writes these core tables:
 
 ### Key relationships
 
-`user_games` holds one row per user per IGDB game, regardless of how many storefronts or platforms the game was found on. Each `user_game_platforms` row points back to the specific `external_games` row (SKU) that created it via `external_game_id`. This means a single `user_games` row can have multiple `user_game_platforms` rows pointing to different `external_games` rows — which is expected and correct for multi-SKU storefronts.
+`user_games` holds one row per user per IGDB game, regardless of how many storefronts or platforms the game was found on. Each `user_game_platforms` row points back to the specific `external_games` row that created it via `external_game_id`. This means a single `user_games` row can have multiple `user_game_platforms` rows pointing to different `external_games` rows — which is expected and correct for storefronts that create multiple ExternalGame rows for the same game.
 
-For example, if a user owns both the PS4 and PS5 versions of a game, these are two separate SKUs on PSN, each producing their own `external_games` row and their own `user_game_platforms` row — but both pointing to the same `user_games` row.
+For example, PSN creates one ExternalGame row per title ID. The PS4 and PS5 versions of the same game are separate title IDs, so they produce separate ExternalGame rows and separate `user_game_platforms` rows — but both point to the same `user_games` row.
 
 ### Playtime
 
@@ -178,7 +177,7 @@ One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a user action.
 3. For each platform in `external_game_platforms`:
    - Upsert `user_game_platforms` with conflict key `(user_game_id, platform, storefront)`
    - On conflict: apply the ownership rank guard (never downgrade ownership status); update `hours_played` only if the incoming value is greater
-   - Set `external_game_id` to the specific ExternalGame row (SKU) that produced this platform entry
+   - Set `external_game_id` to the specific ExternalGame row that produced this platform entry
 4. Update `external_game.updated_at` — always, whether the game was skipped or not
 
 ### Ownership rank guard
@@ -273,8 +272,8 @@ All adapters implement the same interface. The differences below are the only pl
 - **Auth:** NPSSO token exchanged for an access token; token expiry is detected and surfaced as a credential error
 - **Library fetch:** Paginated API; the adapter re-chunks pages into batches of ≤10 for the callback
 - **Rate limiting:** No published hard limit; the adapter applies a conservative request delay between pages
-- **Platforms:** Derived from the `category` field in the API response — `ps4_game` maps to `playstation-4`, `ps5_native_game` maps to `playstation-5`. Each PSN title ID is a separate SKU, so PS4 and PS5 versions of the same game appear as two separate ExternalGame rows, each with their own platform and playtime
-- **Playtime:** Provided per SKU as an ISO 8601 duration string, parsed to hours
+- **Platforms:** Derived from the `category` field in the API response — `ps4_game` maps to `playstation-4`, `ps5_native_game` maps to `playstation-5`. PSN creates one ExternalGame row per title ID, so the PS4 and PS5 versions of the same game appear as two separate ExternalGame rows, each with their own platform and playtime
+- **Playtime:** Provided per title ID as an ISO 8601 duration string, parsed to hours
 
 ### GOG
 
