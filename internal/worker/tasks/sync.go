@@ -1054,7 +1054,9 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		slog.Error("user_game_write: ensure game row", "err", err)
 	}
 
-	// Upsert user_games; detect new row via xmax=0.
+	// (xmax = 0) detects new vs. updated row; relies on ON CONFLICT DO UPDATE (not DO NOTHING).
+	// NOTE: sync_changes('added') is written after the platform loop to avoid orphans when
+	// platform load fails after the user_games row has already been committed.
 	ugID := uuid.NewString()
 	now := time.Now().UTC()
 	var isNewRow struct {
@@ -1073,15 +1075,6 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		return nil
 	}
 	ugID = isNewRow.ID
-	if isNewRow.IsNew {
-		if _, err := w.DB.NewRaw(
-			`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-			 VALUES (?, ?, ?, ?, 'added', ?, now())`,
-			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
-		).Exec(ctx); err != nil {
-			slog.Error("user_game_write: insert sync_change (added)", "err", err)
-		}
-	}
 
 	// Load platform rows from external_game_platforms.
 	var egPlatforms []models.ExternalGamePlatform
@@ -1179,6 +1172,18 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
 	).Exec(ctx); err != nil {
 		slog.Error("user_game_write: update external_game updated_at", "err", err)
+	}
+
+	// Write sync_changes('added') only after platforms are confirmed written,
+	// preventing orphan user_games + sync_changes rows on platform-load failure.
+	if isNewRow.IsNew {
+		if _, err := w.DB.NewRaw(
+			`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			 VALUES (?, ?, ?, ?, 'added', ?, now())`,
+			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: insert sync_change (added)", "err", err)
+		}
 	}
 
 	syncMarkItemCompleted(ctx, w.DB, &item)
