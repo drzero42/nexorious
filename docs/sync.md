@@ -208,9 +208,9 @@ owned  >  borrowed / rented  >  subscription  >  no_longer_owned
 stateDiagram-v2
     [*] --> pending : triggered (manual or scheduled)
     pending --> processing : DispatchSyncWorker starts
-    processing --> processing : items in pending_review\n(waits indefinitely for user)
+    processing --> processing : pending_review items remain
     processing --> completed : all items completed or skipped
-    processing --> failed : credential error or\nunrecoverable dispatch failure
+    processing --> failed : credential error or fatal dispatch failure
     failed --> [*]
     completed --> [*]
 ```
