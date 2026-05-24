@@ -775,6 +775,13 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			).Exec(ctx); err != nil {
 				slog.Error("dispatch_sync: mark game unavailable failed", "err", err, "job_id", p.JobID, "external_game_id", eg.ID)
 			}
+			if _, err := w.DB.NewRaw(
+				`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+				 VALUES (?, ?, ?, ?, 'removed', ?, now())`,
+				uuid.NewString(), p.JobID, p.UserID, eg.ID, eg.Title,
+			).Exec(ctx); err != nil {
+				slog.Error("dispatch_sync: insert sync_change (removed) failed", "err", err, "job_id", p.JobID, "external_game_id", eg.ID)
+			}
 		}
 	}
 
@@ -790,7 +797,8 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	return nil
 }
 
-// failSyncJob marks a job as failed with the given error message.
+// failSyncJob marks a job as failed with the given error message and cancels
+// any pending job_items for that job so they are not left orphaned.
 func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 	now := time.Now().UTC()
 	if _, err := db.NewRaw(
@@ -798,6 +806,12 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 		msg, now, jobID,
 	).Exec(ctx); err != nil {
 		slog.Error("dispatch_sync: fail job update failed", "err", err, "job_id", jobID)
+	}
+	if _, err := db.NewRaw(
+		`UPDATE job_items SET status = 'cancelled' WHERE job_id = ? AND status = 'pending'`,
+		jobID,
+	).Exec(ctx); err != nil {
+		slog.Error("dispatch_sync: cancel pending items failed", "err", err, "job_id", jobID)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -2290,6 +2291,105 @@ func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
 	if itemCount != 1 {
 		t.Errorf("want 1 job_item (one per game, not per platform), got %d", itemCount)
+	}
+}
+
+func TestFailSyncJob_CancelsPendingItems(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 2)`,
+		jobID, userID,
+	)
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription) VALUES (?, ?, 'steam', '1', 'Game', false, true, false)`,
+		egID, userID,
+	)
+	// Two pending items, one completed item.
+	item1 := uuid.NewString()
+	item2 := uuid.NewString()
+	item3 := uuid.NewString()
+	for _, id := range []string{item1, item2} {
+		_, _ = testDB.ExecContext(ctx,
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates) VALUES (?, ?, ?, ?, 'Game', ?, '{}', 'pending', '{}', '[]')`,
+			id, jobID, userID, id, egID,
+		)
+	}
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates) VALUES (?, ?, ?, ?, 'Game', ?, '{}', 'completed', '{}', '[]')`,
+		item3, jobID, userID, item3, egID,
+	)
+
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
+		uuid.NewString(), userID, credsCiphertext,
+	).Exec(ctx)
+
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: &fakeSteamAdapter{ownedErr: fmt.Errorf("network error")}, RiverClient: nil}
+	_ = w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	})
+
+	var cancelledCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'cancelled'`, jobID).Scan(ctx, &cancelledCount)
+	if cancelledCount != 2 {
+		t.Errorf("expected 2 cancelled items, got %d", cancelledCount)
+	}
+	var completedStatus string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, item3).Scan(ctx, &completedStatus)
+	if completedStatus != "completed" {
+		t.Errorf("completed item should not be cancelled, got %q", completedStatus)
+	}
+}
+
+func TestDispatchSync_RemovedGames_WritesSyncChange(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	rawCreds := `{"web_api_key":"k","steam_id":"s"}`
+	credsCiphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'steam', 'daily', ?)`,
+		uuid.NewString(), userID, credsCiphertext,
+	).Exec(ctx)
+
+	// Pre-seed a game that is NOT returned by the sync (should be marked removed).
+	insertTestExternalGame(t, userID, "steam", "999", "Old Game", "pc-windows")
+
+	// Sync returns an empty library — game 999 is gone.
+	adapter := &fakeSteamAdapter{games: []steamsvc.OwnedGame{}}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Encrypter: testEncrypter, Steam: adapter, RiverClient: nil}
+	_ = w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	})
+
+	var changeCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM sync_changes WHERE job_id = ? AND change_type = 'removed'`, jobID,
+	).Scan(ctx, &changeCount)
+	if changeCount != 1 {
+		t.Errorf("expected 1 removed sync_change, got %d", changeCount)
+	}
+	var changeTitle string
+	_ = testDB.NewRaw(
+		`SELECT title FROM sync_changes WHERE job_id = ? AND change_type = 'removed'`, jobID,
+	).Scan(ctx, &changeTitle)
+	if changeTitle != "Old Game" {
+		t.Errorf("sync_change title: want 'Old Game', got %q", changeTitle)
 	}
 }
 
