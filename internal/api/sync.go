@@ -908,8 +908,8 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
 		if h.riverClient != nil {
-			if _, err := h.riverClient.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: itemID}, nil); err != nil {
-				slog.Error("sync: enqueue process_sync_item failed", "err", err, "job_item_id", itemID)
+			if _, err := h.riverClient.Insert(ctx, tasks.IGDBMatchArgs{JobItemID: itemID}, nil); err != nil {
+				slog.Error("sync: enqueue igdb_match failed", "err", err, "job_item_id", itemID)
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 			}
 		}
@@ -1136,8 +1136,8 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 
 	if h.riverClient != nil {
-		if _, err = h.riverClient.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: itemID}, nil); err != nil {
-			slog.Error("sync: enqueue process_sync_item failed", "err", err, "job_item_id", itemID)
+		if _, err = h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: itemID}, nil); err != nil {
+			slog.Error("sync: enqueue user_game_write failed", "err", err, "job_item_id", itemID)
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 		}
 	}

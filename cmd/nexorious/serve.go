@@ -183,14 +183,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	checkPendingSyncsWorker := &scheduler.CheckPendingSyncsWorker{DB: db}
 	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
-	processSyncItemWorker := &tasks.ProcessSyncItemWorker{DB: db, IGDBClient: igdbClient}
+	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, IGDBClient: igdbClient}
+	userGameWorker := &tasks.UserGameWorker{DB: db}
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.ExportJSONWorker{DB: db, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.ExportCSVWorker{DB: db, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, dispatchSyncWorker)
-	river.AddWorker(workers, processSyncItemWorker)
+	river.AddWorker(workers, igdbMatchWorker)
+	river.AddWorker(workers, userGameWorker)
 	river.AddWorker(workers, metaDispatchWorker)
 	river.AddWorker(workers, &tasks.MetadataRefreshItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &scheduler.CleanupOldJobsWorker{DB: db})
@@ -216,10 +218,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	metaDispatchWorker.RiverClient = riverClient
 	checkPendingSyncsWorker.RiverClient = riverClient
 	rescueOrphanedWorker.RiverClient = riverClient
-	// ProcessSyncItem re-enqueues itself for the one-shot auto-retry of
-	// igdb_failed items in syncCheckJobCompletion; without this wiring the
-	// reset items sit in 'pending' forever with no backing river_job.
-	processSyncItemWorker.RiverClient = riverClient
+	igdbMatchWorker.RiverClient = riverClient
+	userGameWorker.RiverClient = riverClient
 
 	// -------------------------------------------------------------------------
 	// HTTP server
@@ -261,14 +261,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			}
 			newCheckSyncs := &scheduler.CheckPendingSyncsWorker{DB: newDB}
 			newRescueOrphaned := &scheduler.RescueOrphanedPendingItemsWorker{DB: newDB}
-			newProcessSyncItem := &tasks.ProcessSyncItemWorker{DB: newDB, IGDBClient: igdbClient}
+			newIGDBMatch := &tasks.IGDBMatchWorker{DB: newDB, IGDBClient: igdbClient}
+			newUserGame := &tasks.UserGameWorker{DB: newDB}
 
 			newWorkers := river.NewWorkers()
 			river.AddWorker(newWorkers, &tasks.ImportItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &tasks.ExportJSONWorker{DB: newDB, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &tasks.ExportCSVWorker{DB: newDB, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, newDispatchSync)
-			river.AddWorker(newWorkers, newProcessSyncItem)
+			river.AddWorker(newWorkers, newIGDBMatch)
+			river.AddWorker(newWorkers, newUserGame)
 			river.AddWorker(newWorkers, newMetaDispatch)
 			river.AddWorker(newWorkers, &tasks.MetadataRefreshItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &scheduler.CleanupOldJobsWorker{DB: newDB})
@@ -293,7 +295,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newMetaDispatch.RiverClient = newClient
 			newCheckSyncs.RiverClient = newClient
 			newRescueOrphaned.RiverClient = newClient
-			newProcessSyncItem.RiverClient = newClient
+			newIGDBMatch.RiverClient = newClient
+			newUserGame.RiverClient = newClient
 
 			if err := newClient.Start(shutdownCtx); err != nil {
 				return fmt.Errorf("RebuildServices: River start: %w", err)
