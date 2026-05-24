@@ -219,7 +219,7 @@ The timing of Stage 2 processing means one sibling may land in `pending_review` 
 One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a user action.
 
 1. If `is_skipped` is true: skip steps 2, 3, and 4
-2. Propagate `job_item.resolved_igdb_id` to `external_game.resolved_igdb_id` — this is the step that durably records the match on the ExternalGame for future sync runs
+2. If `external_game.resolved_igdb_id` is not already set (i.e. Stage 3 was triggered by a manual user resolution, not auto-resolve), propagate `job_item.resolved_igdb_id` to `external_game.resolved_igdb_id` — this durably records the match for future sync runs
 3. Upsert `user_games`: one row per user + IGDB game ID. If this is an INSERT (new game), write an `added` entry to `sync_changes`
 4. For each platform row in `external_game_platforms`:
    - Upsert `user_game_platforms` with conflict key `(user_game_id, platform, storefront)`
