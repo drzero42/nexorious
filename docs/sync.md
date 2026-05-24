@@ -103,12 +103,17 @@ flowchart TD
     end
 
     subgraph Stage2["Stage 2 — IGDB Match"]
-        H{Already resolved<br/>or skipped?} -->|yes| L
-        H -->|no| I[Search IGDB<br/>score candidates]
-        I --> J{Clear winner<br/>score ≥ 0.85?}
-        J -->|yes| K[Set resolved_igdb_id<br/>on external_game]
-        K --> L[Enqueue Stage 3]
-        J -->|no, or retries exhausted| M([pending_review:<br/>await user action])
+        H{is_skipped?} -->|yes| L
+        H -->|no| I{Sibling resolved?}
+        I -->|yes| J[Inherit resolved_igdb_id]
+        J --> K{resolved_igdb_id set?}
+        I -->|no| K
+        K -->|yes| L[Enqueue Stage 3]
+        K -->|no| N[Search IGDB<br/>score candidates]
+        N --> O{Clear winner<br/>score ≥ 0.85?}
+        O -->|yes| P[Set resolved_igdb_id<br/>on external_game]
+        P --> L
+        O -->|no, or retries exhausted| M([pending_review:<br/>await user action])
     end
 
     subgraph Stage3["Stage 3 — User Game Write"]
@@ -185,11 +190,12 @@ If a credential error occurs at any point, the job is marked `failed` and all pe
 
 One `IGDBMatchWorker` job runs per game. River handles retries with exponential backoff for transient IGDB API failures.
 
-1. **Already resolved or skipped?** If `external_game.resolved_igdb_id` is set, or `is_skipped` is true, route directly to Stage 3 — no IGDB search is performed. On subsequent syncs, most games will take this path.
-2. **Sibling check:** If the game has no `resolved_igdb_id`, look for a sibling — another `external_games` row for the same user, storefront, and title that is already resolved. If found, inherit its `resolved_igdb_id` and route directly to Stage 3, skipping the IGDB search entirely. This avoids unnecessary API calls when a related entry for the same game has already been matched.
-3. **Search IGDB** for the game title; score each candidate using fuzzy title matching
-4. **Auto-resolve** if the best candidate scores ≥ 0.85 and has a clear margin (> 0.01) over the second-best: set `resolved_igdb_id` on the `external_game` and enqueue Stage 3
-5. **pending_review** if no clear winner is found, or if IGDB API calls fail after all River retries are exhausted: store the candidates in `job_item.igdb_candidates` and mark the item `pending_review` for the user to resolve
+1. **Skipped?** If `is_skipped` is true, route directly to Stage 3 — no matching is ever performed for skipped games
+2. **Sibling check:** Look for another `external_games` row for the same user, storefront, and title that already has `resolved_igdb_id` set. If found, inherit its `resolved_igdb_id`. This avoids an unnecessary IGDB search when a related entry has already been matched
+3. **Already resolved?** If `resolved_igdb_id` is now set — either from a previous sync run or just inherited from a sibling — route directly to Stage 3. On subsequent syncs, most games will take this path
+4. **Search IGDB** for the game title; score each candidate using fuzzy title matching
+5. **Auto-resolve** if the best candidate scores ≥ 0.85 and has a clear margin (> 0.01) over the second-best: set `resolved_igdb_id` on the `external_game` and enqueue Stage 3
+6. **pending_review** if no clear winner is found, or if IGDB API calls fail after all River retries are exhausted: store the candidates in `job_item.igdb_candidates` and mark the item `pending_review` for the user to resolve
 
 ### Title matching
 
