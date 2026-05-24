@@ -71,34 +71,34 @@ flowchart TD
     A([Trigger: manual or scheduled]) --> B
 
     subgraph Stage1["Stage 1 — Fetch"]
-        B[DispatchSyncWorker\nrecords sync_started_at] --> C
-        C[Adapter fetches library\nin batches of ≤10] --> D
-        D[Upsert external_games\n+ external_game_platforms] --> E
-        E[Enqueue one Stage 2 job\nper game in batch] --> F{More batches?}
+        B[DispatchSyncWorker<br/>records sync_started_at] --> C
+        C[Adapter fetches library<br/>in batches of ≤10] --> D
+        D[Upsert external_games<br/>+ external_game_platforms] --> E
+        E[Enqueue one Stage 2 job<br/>per game in batch] --> F{More batches?}
         F -->|yes| C
-        F -->|no| G[Timestamp sweep:\nmark missing games is_available=false]
+        F -->|no| G[Timestamp sweep:<br/>mark missing games is_available=false]
     end
 
     subgraph Stage2["Stage 2 — IGDB Match"]
-        H{Already resolved\nor skipped?} -->|yes| L
-        H -->|no| I[Search IGDB\nscore candidates]
-        I --> J{Clear winner\nscore ≥ 0.85?}
-        J -->|yes| K[Set resolved_igdb_id\non external_game]
+        H{Already resolved<br/>or skipped?} -->|yes| L
+        H -->|no| I[Search IGDB<br/>score candidates]
+        I --> J{Clear winner<br/>score ≥ 0.85?}
+        J -->|yes| K[Set resolved_igdb_id<br/>on external_game]
         K --> L[Enqueue Stage 3]
-        J -->|no, or retries exhausted| M([pending_review:\nawait user action])
+        J -->|no, or retries exhausted| M([pending_review:<br/>await user action])
     end
 
     subgraph Stage3["Stage 3 — User Game Write"]
-        N{is_skipped?} -->|yes| O[Update\nexternal_game.updated_at]
+        N{is_skipped?} -->|yes| O[Update<br/>external_game.updated_at]
         N -->|no| P[Upsert user_games]
-        P --> Q[Upsert user_game_platforms\nper platform\nwith ownership rank guard]
+        P --> Q[Upsert user_game_platforms<br/>per platform<br/>with ownership rank guard]
         Q --> O
     end
 
     subgraph UserAction["User Action"]
         M --> R{User decision}
-        R -->|picks IGDB match| S[Set resolved_igdb_id\nenqueue Stage 3]
-        R -->|skips game| T[Set is_skipped=true\nmark item skipped]
+        R -->|picks IGDB match| S[Set resolved_igdb_id<br/>enqueue Stage 3]
+        R -->|skips game| T[Set is_skipped=true<br/>mark item skipped]
     end
 
     E --> H
