@@ -14,6 +14,7 @@ interface SyncServiceCardProps {
   credentialsError?: boolean;
   onTriggerSync: () => Promise<void>;
   isSyncing?: boolean;
+  externalGameCount?: number;
 }
 
 function formatLastSync(dateStr: string | null): string {
@@ -39,6 +40,7 @@ export function SyncServiceCard({
   credentialsError = false,
   onTriggerSync,
   isSyncing = false,
+  externalGameCount,
 }: SyncServiceCardProps) {
   const platformInfo = getStorefrontDisplayInfo(config.storefront);
   const isCurrentlySyncing = isSyncing || status?.isSyncing;
@@ -73,6 +75,9 @@ export function SyncServiceCard({
               <p className="text-sm text-muted-foreground">
                 Last synced: {formatLastSync(config.lastSyncedAt)}
               </p>
+              {externalGameCount !== undefined && externalGameCount > 0 && (
+                <p className="text-sm text-muted-foreground">{externalGameCount} games</p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
