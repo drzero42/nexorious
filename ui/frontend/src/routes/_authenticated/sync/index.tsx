@@ -154,15 +154,15 @@ function SyncPage() {
           {/* Info Alert */}
           <Alert className="mb-6">
             <Info className="h-4 w-4" />
-            <AlertTitle>About Platform Syncing</AlertTitle>
+            <AlertTitle>About Storefront Syncing</AlertTitle>
             <AlertDescription>
               <p className="mb-2">
-                Connect your gaming platforms to automatically sync your game libraries. New games
+                Connect your gaming storefronts to automatically sync your game libraries. New games
                 will appear in your collection, and you can review pending items before they&apos;re
                 added.
               </p>
               <p>
-                Configure sync frequency for each platform individually from the platform detail
+                Configure sync frequency for each storefront individually from the storefront details
                 page. Manual sync is always available regardless of your settings.
               </p>
             </AlertDescription>
