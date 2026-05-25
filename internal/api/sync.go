@@ -577,9 +577,10 @@ func (h *SyncHandler) HandleGetSteamConnection(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, steamConnectionResponse{
-		Connected: true,
-		SteamID:   creds.SteamID,
-		Username:  creds.DisplayName,
+		Connected:        true,
+		SteamID:          creds.SteamID,
+		Username:         creds.DisplayName,
+		CredentialsError: row.CredentialsError,
 	})
 }
 
@@ -678,7 +679,7 @@ func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, psnStatusResponse{
 		IsConfigured:     true,
-		CredentialsError: !creds.IsVerified,
+		CredentialsError: row.CredentialsError,
 		OnlineID:         creds.OnlineID,
 		AccountID:        creds.AccountID,
 		Region:           creds.Region,
@@ -822,10 +823,11 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"connected":    true,
-		"disabled":     false,
-		"display_name": creds.DisplayName,
-		"account_id":   creds.AccountID,
+		"connected":        true,
+		"disabled":         false,
+		"credentials_error": row.CredentialsError,
+		"display_name":     creds.DisplayName,
+		"account_id":       creds.AccountID,
 	})
 }
 
@@ -1432,9 +1434,10 @@ func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"connected": true,
-		"username":  creds.Username,
-		"user_id":   creds.UserID,
-		"auth_url":  authURL,
+		"connected":        true,
+		"credentials_error": row.CredentialsError,
+		"username":         creds.Username,
+		"user_id":          creds.UserID,
+		"auth_url":         authURL,
 	})
 }

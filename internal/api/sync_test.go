@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
 	"github.com/riverqueue/river"
@@ -1831,6 +1832,105 @@ func TestGetSteamConnection_Connected(t *testing.T) {
 	}
 	if body["credentials_error"] != nil {
 		t.Errorf("want credentials_error absent, got %v", body["credentials_error"])
+	}
+}
+
+func TestGetSteamConnection_DBCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "sc-db-cred-err")
+
+	rawCreds := `{"steam_id":"76561198000000001","web_api_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","display_name":"TestUser"}`
+	ciphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'steam', 'manual', ?, true, now(), now())`,
+		uuid.NewString(), userID, ciphertext,
+	)
+
+	rec := getAuth(t, e, "/api/sync/steam/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
+	}
+}
+
+func TestGetPSNStatus_DBCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "psn-db-cred-err")
+
+	rawCreds := `{"npsso_token":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","online_id":"MyPSN","account_id":"123","region":"GB","is_verified":true,"token_expired_at":null}`
+	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'manual', ?, true, now(), now())`,
+		uuid.NewString(), userID, ciphertext,
+	)
+
+	rec := getAuth(t, e, "/api/sync/psn/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
+	}
+}
+
+func TestGetGOGConnection_DBCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubGOGClient{})
+	userID, token := setupTagUser(t, testDB, e, "gog-db-cred-err")
+
+	rawCreds := `{"access_token":"aaa","refresh_token":"bbb","user_id":"u1","username":"GogUser"}`
+	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'gog', 'manual', ?, true, now(), now())`,
+		uuid.NewString(), userID, ciphertext,
+	)
+
+	rec := getAuth(t, e, "/api/sync/gog/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
+	}
+}
+
+func TestGetEpicConnection_DBCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubEpicClient{configured: true})
+	userID, token := setupTagUser(t, testDB, e, "epic-db-cred-err")
+
+	rawCreds := `{"user.json":"{\"displayName\":\"EpicUser\",\"account_id\":\"abc123\"}"}`
+	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?, true, now(), now())`,
+		uuid.NewString(), userID, ciphertext,
+	)
+
+	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
 	}
 }
 
