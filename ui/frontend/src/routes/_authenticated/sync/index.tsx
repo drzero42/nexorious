@@ -168,38 +168,6 @@ function SyncPage() {
             </AlertDescription>
           </Alert>
 
-          {/* Quick Links */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Links</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Link
-                to="/import-export"
-                className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted"
-              >
-                <div>
-                  <div className="font-medium">Import/Export</div>
-                  <div className="text-sm text-muted-foreground">
-                    Bulk import or export your collection
-                  </div>
-                </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
-              </Link>
-              <Link
-                to="/games"
-                className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted"
-              >
-                <div>
-                  <div className="font-medium">View Collection</div>
-                  <div className="text-sm text-muted-foreground">
-                    Browse and manage your game library
-                  </div>
-                </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
-              </Link>
-            </CardContent>
-          </Card>
         </>
       )}
     </div>
