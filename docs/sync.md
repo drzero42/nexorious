@@ -416,6 +416,7 @@ The Needs Review group is the most prominent — these games are blocking the jo
 A log of past sync runs for this storefront. Each entry shows:
 
 - Timestamp and outcome (`completed` or `failed`)
-- A changelog: games added to the library, games that became unavailable (removed from the storefront), and games whose status changed (e.g. ownership type updated)
+- A summary: counts of games added, removed, and status-changed for that run
+- An expandable changelog: the individual game titles behind those counts, grouped by change type (added, removed, status changed)
 
-The history does not reproduce the full per-game processing trace — it is a human-readable record of what changed in the user's library as a result of each sync run.
+The changelog is collapsed by default — the summary counts are visible immediately. Expanding reveals the per-game detail. The history does not reproduce the full per-game processing trace — it is a human-readable record of what changed in the user's library as a result of each sync run.
