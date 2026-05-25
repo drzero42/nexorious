@@ -19,10 +19,10 @@ import { retryFailedItems } from '@/api/jobs';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
 import { SteamConnectionCard, EpicConnectionCard, GOGConnectionCard, PSNConnectionCard, RecentActivity, ExternalGamesSection } from '@/components/sync';
 import {
-  SyncPlatform,
+  SyncStorefront,
   SyncFrequency,
-  SUPPORTED_SYNC_PLATFORMS,
-  getPlatformDisplayInfo,
+  SUPPORTED_SYNC_STOREFRONTS,
+  getStorefrontDisplayInfo,
   getSyncFrequencyLabel,
 } from '@/types';
 import type { SyncConfigUpdateData } from '@/types';
@@ -54,7 +54,7 @@ import {
 import { RefreshCw, Loader2, AlertCircle, Settings, Clock } from 'lucide-react';
 import { config as envConfig } from '@/lib/env';
 
-export const Route = createFileRoute('/_authenticated/sync/$platform')({
+export const Route = createFileRoute('/_authenticated/sync/$storefront')({
   component: SyncDetailPage,
 });
 
@@ -121,15 +121,15 @@ function SyncDetailPageSkeleton() {
 }
 
 function SyncDetailPage() {
-  const { platform: platformParam } = Route.useParams();
-  const platform = platformParam as SyncPlatform;
+  const { storefront: storefrontParam } = Route.useParams();
+  const storefront = storefrontParam as SyncStorefront;
   const queryClient = useQueryClient();
 
   // Local state for optimistic updates
   const [localFrequency, setLocalFrequency] = useState<SyncFrequency | null>(null);
   const [localAutoAdd, setLocalAutoAdd] = useState<boolean | null>(null);
 
-  const isValidPlatform = SUPPORTED_SYNC_PLATFORMS.includes(platform);
+  const isValidPlatform = SUPPORTED_SYNC_STOREFRONTS.includes(storefront);
 
   // Get current user for PSN/GOG preferences (must be called before any conditional return)
   const { data: currentUser } = useCurrentUser();
@@ -144,8 +144,8 @@ function SyncDetailPage() {
     | undefined;
 
   // Fetch sync config and status
-  const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(platform);
-  const { data: status, isLoading: statusLoading } = useSyncStatus(platform);
+  const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(storefront);
+  const { data: status, isLoading: statusLoading } = useSyncStatus(storefront);
 
   // Fetch PSN-specific status
   const { data: psnStatus } = usePSNStatus();
@@ -162,9 +162,9 @@ function SyncDetailPage() {
   useEffect(() => {
     if (activeJob?.isTerminal && activeJob.id !== invalidatedJobRef.current) {
       invalidatedJobRef.current = activeJob.id;
-      queryClient.invalidateQueries({ queryKey: jobsKeys.recent(platform) });
+      queryClient.invalidateQueries({ queryKey: jobsKeys.recent(storefront) });
     }
-  }, [activeJob?.isTerminal, activeJob?.id, platform, queryClient]);
+  }, [activeJob?.isTerminal, activeJob?.id, storefront, queryClient]);
 
   // Mutations
   const { mutateAsync: updateConfig, isPending: isUpdating } = useUpdateSyncConfig();
@@ -183,7 +183,7 @@ function SyncDetailPage() {
     wasResettingRef.current = isResetting;
   }, [isResetting]);
 
-  const platformInfo = getPlatformDisplayInfo(platform);
+  const platformInfo = getStorefrontDisplayInfo(storefront);
   const isLoading = configLoading || statusLoading;
   const isSyncing = isTriggeringSyncPending || status?.isSyncing;
 
@@ -193,7 +193,7 @@ function SyncDetailPage() {
 
   const handleUpdateConfig = async (data: SyncConfigUpdateData) => {
     try {
-      await updateConfig({ platform, data });
+      await updateConfig({ storefront, data });
       toast.success('Settings updated');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update settings';
@@ -216,7 +216,7 @@ function SyncDetailPage() {
 
   const handleTriggerSync = async () => {
     try {
-      await triggerSync(platform);
+      await triggerSync(storefront);
       toast.success(`${platformInfo.name} sync started`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start sync';
@@ -229,7 +229,7 @@ function SyncDetailPage() {
     // closes it after the mutation settles.
     event.preventDefault();
     try {
-      await resetSync(platform);
+      await resetSync(storefront);
       toast.success(`${platformInfo.name} sync data reset`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to reset sync data';
@@ -263,13 +263,13 @@ function SyncDetailPage() {
     }
   };
 
-  // Validate platform - only allow supported platforms
+  // Validate storefront - only allow supported storefronts
   if (!isValidPlatform) {
     return (
       <div className="text-center py-12">
-        <h3 className="mt-4 text-lg font-medium">Platform not found</h3>
+        <h3 className="mt-4 text-lg font-medium">Storefront not found</h3>
         <p className="mt-2 text-sm text-muted-foreground">
-          The sync platform &quot;{platformParam}&quot; is not supported.
+          The sync storefront &quot;{storefrontParam}&quot; is not supported.
         </p>
         <div className="mt-6">
           <Link to="/sync">
@@ -414,8 +414,8 @@ function SyncDetailPage() {
         </CardHeader>
       </Card>
 
-      {/* Steam Connection Card - only show for Steam platform */}
-      {platform === SyncPlatform.STEAM && (
+      {/* Steam Connection Card - only show for Steam storefront */}
+      {storefront === SyncStorefront.STEAM && (
         <SteamConnectionCard
           isConfigured={config.isConfigured}
           credentialsError={steamConnection?.credentialsError ?? false}
@@ -423,26 +423,26 @@ function SyncDetailPage() {
           steamUsername={steamConnection?.username}
           onConnectionChange={() => {
             // Invalidate queries to refresh data
-            queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
+            queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
             queryClient.invalidateQueries({ queryKey: syncKeys.steamConnection() });
             queryClient.invalidateQueries({ queryKey: authKeys.me() });
           }}
         />
       )}
 
-      {/* Epic Connection Card - only show for Epic platform */}
-      {platform === SyncPlatform.EPIC && (
+      {/* Epic Connection Card - only show for Epic storefront */}
+      {storefront === SyncStorefront.EPIC && (
         <EpicConnectionCard
           isConfigured={config.isConfigured}
           onConnectionChange={() => {
-            queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
+            queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
             queryClient.invalidateQueries({ queryKey: authKeys.me() });
           }}
         />
       )}
 
-      {/* GOG Connection Card - only show for GOG platform */}
-      {platform === SyncPlatform.GOG && (
+      {/* GOG Connection Card - only show for GOG storefront */}
+      {storefront === SyncStorefront.GOG && (
         <GOGConnectionCard
           isConfigured={!!config?.isConfigured}
           onConnectionChange={() => {
@@ -451,15 +451,15 @@ function SyncDetailPage() {
         />
       )}
 
-      {/* PSN Connection Card - only show for PSN platform */}
-      {platform === SyncPlatform.PSN && (
+      {/* PSN Connection Card - only show for PSN storefront */}
+      {storefront === SyncStorefront.PSN && (
         <PSNConnectionCard
           isConfigured={config.isConfigured}
           credentialsError={psnStatus?.credentialsError ?? false}
           onlineId={psnPrefs?.online_id}
           accountId={psnPrefs?.account_id}
           onConnectionChange={() => {
-            queryClient.invalidateQueries({ queryKey: syncKeys.config(platform) });
+            queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
             queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
             queryClient.invalidateQueries({ queryKey: authKeys.me() });
           }}
@@ -539,10 +539,10 @@ function SyncDetailPage() {
       </Card>
 
       {/* External Games Library */}
-      <ExternalGamesSection platform={platform} />
+      <ExternalGamesSection platform={storefront} />
 
       {/* Recent Sync Activity */}
-      <RecentActivity platform={platform} />
+      <RecentActivity platform={storefront} />
     </div>
   );
 }

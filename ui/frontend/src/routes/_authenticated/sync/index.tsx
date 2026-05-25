@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, Info, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { SUPPORTED_SYNC_PLATFORMS, SyncPlatform, SyncFrequency } from '@/types';
+import { SUPPORTED_SYNC_STOREFRONTS, SyncStorefront, SyncFrequency } from '@/types';
 import type { SyncConfig, SyncConfigUpdateData } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/sync/')({
@@ -44,29 +44,29 @@ function SyncServiceCardWithStatus({
   onTriggerSync,
 }: {
   config: SyncConfig;
-  onUpdate: (platform: SyncPlatform, data: SyncConfigUpdateData) => Promise<void>;
-  onTriggerSync: (platform: SyncPlatform) => Promise<void>;
+  onUpdate: (storefront: SyncStorefront, data: SyncConfigUpdateData) => Promise<void>;
+  onTriggerSync: (storefront: SyncStorefront) => Promise<void>;
 }) {
-  const { data: status } = useSyncStatus(config.platform);
+  const { data: status } = useSyncStatus(config.storefront);
   const { data: reviewData } = usePendingReviewCount();
   const { isPending: isUpdating } = useUpdateSyncConfig();
   const { isPending: isSyncing } = useTriggerSync();
   const { mutateAsync: resetSync, isPending: isResetting } = useResetSyncData();
 
-  const pendingReviewCount = reviewData?.countsBySource?.[config.platform] ?? 0;
+  const pendingReviewCount = reviewData?.countsBySource?.[config.storefront] ?? 0;
 
   const handleUpdate = async (data: SyncConfigUpdateData) => {
-    await onUpdate(config.platform, data);
+    await onUpdate(config.storefront, data);
   };
 
   const handleTriggerSync = async () => {
-    await onTriggerSync(config.platform);
+    await onTriggerSync(config.storefront);
   };
 
   const handleReset = async () => {
     try {
-      await resetSync(config.platform);
-      toast.success(`${config.platform} sync data reset successfully`);
+      await resetSync(config.storefront);
+      toast.success(`${config.storefront} sync data reset successfully`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to reset sync data';
       toast.error(message);
@@ -95,18 +95,18 @@ function SyncPage() {
   const { mutateAsync: updateConfig } = useUpdateSyncConfig();
   const { mutateAsync: triggerSync } = useTriggerSync();
 
-  // Create map of existing configs by platform
-  const configsByPlatform = new Map<SyncPlatform, SyncConfig>();
+  // Create map of existing configs by storefront
+  const configsByStorefront = new Map<SyncStorefront, SyncConfig>();
   configs?.configs.forEach(config => {
-    configsByPlatform.set(config.platform, config);
+    configsByStorefront.set(config.storefront, config);
   });
 
-  // Create configs for all supported platforms (will show "not configured" for missing ones)
-  const allPlatformConfigs = SUPPORTED_SYNC_PLATFORMS.map(platform => {
-    return configsByPlatform.get(platform) || {
-      id: `placeholder-${platform}`,
+  // Create configs for all supported storefronts (will show "not configured" for missing ones)
+  const allStorefrontConfigs = SUPPORTED_SYNC_STOREFRONTS.map(storefront => {
+    return configsByStorefront.get(storefront) || {
+      id: `placeholder-${storefront}`,
       userId: '',
-      platform,
+      storefront,
       frequency: SyncFrequency.MANUAL,
       autoAdd: false,
       lastSyncedAt: null,
@@ -116,9 +116,9 @@ function SyncPage() {
     };
   });
 
-  const handleUpdateConfig = async (platform: SyncPlatform, data: SyncConfigUpdateData) => {
+  const handleUpdateConfig = async (storefront: SyncStorefront, data: SyncConfigUpdateData) => {
     try {
-      await updateConfig({ platform, data });
+      await updateConfig({ storefront, data });
       toast.success('Sync settings updated successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update sync settings';
@@ -127,11 +127,11 @@ function SyncPage() {
     }
   };
 
-  const handleTriggerSync = async (platform: SyncPlatform) => {
+  const handleTriggerSync = async (storefront: SyncStorefront) => {
     try {
-      await triggerSync(platform);
-      toast.success(`${platform} sync started successfully`);
-      navigate({ to: '/sync/$platform', params: { platform } });
+      await triggerSync(storefront);
+      toast.success(`${storefront} sync started successfully`);
+      navigate({ to: '/sync/$storefront', params: { storefront } });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to trigger sync';
       toast.error(message);
@@ -170,9 +170,9 @@ function SyncPage() {
 
       {!isLoading && !error && (
         <>
-          {/* All Platform Services Grid */}
+          {/* All Storefront Services Grid */}
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {allPlatformConfigs.map((config: SyncConfig) => (
+            {allStorefrontConfigs.map((config: SyncConfig) => (
               <SyncServiceCardWithStatus
                 key={config.id}
                 config={config}

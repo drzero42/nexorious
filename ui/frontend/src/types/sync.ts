@@ -2,18 +2,18 @@
  * Types for sync configuration and status management.
  */
 
-export enum SyncPlatform {
+export enum SyncStorefront {
   STEAM = 'steam',
   EPIC = 'epic',
   GOG = 'gog',
   PSN = 'psn',
 }
 
-export const SUPPORTED_SYNC_PLATFORMS: SyncPlatform[] = [
-  SyncPlatform.STEAM,
-  SyncPlatform.EPIC,
-  SyncPlatform.GOG,
-  SyncPlatform.PSN,
+export const SUPPORTED_SYNC_STOREFRONTS: SyncStorefront[] = [
+  SyncStorefront.STEAM,
+  SyncStorefront.EPIC,
+  SyncStorefront.GOG,
+  SyncStorefront.PSN,
 ];
 
 export enum SyncFrequency {
@@ -26,7 +26,7 @@ export enum SyncFrequency {
 export interface SyncConfig {
   id: string;
   userId: string;
-  platform: SyncPlatform;
+  storefront: SyncStorefront;
   frequency: SyncFrequency;
   autoAdd: boolean;
   lastSyncedAt: string | null;
@@ -41,7 +41,7 @@ export interface SyncConfigUpdateData {
 }
 
 export interface SyncStatus {
-  platform: SyncPlatform;
+  storefront: SyncStorefront;
   isSyncing: boolean;
   lastSyncedAt: string | null;
   activeJobId: string | null;
@@ -52,7 +52,7 @@ export interface SyncStatus {
 export interface ManualSyncResponse {
   message: string;
   jobId: string;
-  platform: string;
+  storefront: string;
   status: string;
 }
 
@@ -67,40 +67,40 @@ export function getSyncFrequencyLabel(frequency: SyncFrequency): string {
   return labels[frequency];
 }
 
-// Helper to get platform display info
-export function getPlatformDisplayInfo(platform: SyncPlatform): {
+// Helper to get storefront display info
+export function getStorefrontDisplayInfo(storefront: SyncStorefront): {
   name: string;
   color: string;
   bgColor: string;
   iconUrl: string;
 } {
-  const info: Record<SyncPlatform, { name: string; color: string; bgColor: string; iconUrl: string }> = {
-    [SyncPlatform.STEAM]: {
+  const info: Record<SyncStorefront, { name: string; color: string; bgColor: string; iconUrl: string }> = {
+    [SyncStorefront.STEAM]: {
       name: 'Steam',
       color: 'text-[#1b2838]',
       bgColor: 'bg-[#1b2838]/10 dark:bg-[#1b2838]/30',
       iconUrl: '/logos/storefronts/steam/steam-icon-light.svg',
     },
-    [SyncPlatform.EPIC]: {
+    [SyncStorefront.EPIC]: {
       name: 'Epic Games',
       color: 'text-gray-800 dark:text-gray-200',
       bgColor: 'bg-gray-100 dark:bg-gray-700',
       iconUrl: '/logos/storefronts/epic-games-store/epic-games-store-icon-light.svg',
     },
-    [SyncPlatform.GOG]: {
+    [SyncStorefront.GOG]: {
       name: 'GOG',
       color: 'text-purple-700 dark:text-purple-400',
       bgColor: 'bg-purple-100 dark:bg-purple-900/30',
       iconUrl: '/logos/storefronts/gog/gog-icon-light.svg',
     },
-    [SyncPlatform.PSN]: {
+    [SyncStorefront.PSN]: {
       name: 'PlayStation Network',
       color: 'text-[#003087]',
       bgColor: 'bg-[#003087]/10 dark:bg-[#003087]/30',
       iconUrl: '/logos/storefronts/playstation-store/playstation-store-icon-light.svg',
     },
   };
-  return info[platform];
+  return info[storefront];
 }
 
 export interface SteamVerifyResponse {

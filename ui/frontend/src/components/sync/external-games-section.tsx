@@ -38,10 +38,10 @@ import {
   useUnskipExternalGame,
   useRematchExternalGame,
 } from '@/hooks/use-sync';
-import type { ExternalGame, IGDBGameCandidate, SyncPlatform } from '@/types';
+import type { ExternalGame, IGDBGameCandidate, SyncStorefront } from '@/types';
 
 interface ExternalGamesSectionProps {
-  platform: SyncPlatform;
+  platform: SyncStorefront;
 }
 
 interface PendingRematch {

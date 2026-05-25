@@ -15,7 +15,7 @@ import {
   useDisconnectEpic,
   syncKeys,
 } from './use-sync';
-import { SyncPlatform, SyncFrequency } from '@/types';
+import { SyncStorefront, SyncFrequency } from '@/types';
 import * as syncApi from '@/api/sync';
 
 const API_URL = '/api';
@@ -69,8 +69,8 @@ describe('use-sync hooks', () => {
     });
 
     it('generates correct query keys for config with platform', () => {
-      expect(syncKeys.config(SyncPlatform.STEAM)).toEqual(['sync', 'configs', 'steam']);
-      expect(syncKeys.config(SyncPlatform.GOG)).toEqual(['sync', 'configs', 'gog']);
+      expect(syncKeys.config(SyncStorefront.STEAM)).toEqual(['sync', 'configs', 'steam']);
+      expect(syncKeys.config(SyncStorefront.GOG)).toEqual(['sync', 'configs', 'gog']);
     });
 
     it('generates correct query keys for statuses', () => {
@@ -78,8 +78,8 @@ describe('use-sync hooks', () => {
     });
 
     it('generates correct query keys for status with platform', () => {
-      expect(syncKeys.status(SyncPlatform.STEAM)).toEqual(['sync', 'statuses', 'steam']);
-      expect(syncKeys.status(SyncPlatform.GOG)).toEqual(['sync', 'statuses', 'gog']);
+      expect(syncKeys.status(SyncStorefront.STEAM)).toEqual(['sync', 'statuses', 'steam']);
+      expect(syncKeys.status(SyncStorefront.GOG)).toEqual(['sync', 'statuses', 'gog']);
     });
 
   });
@@ -106,7 +106,7 @@ describe('use-sync hooks', () => {
       });
 
       expect(result.current.data?.configs).toHaveLength(1);
-      expect(result.current.data?.configs[0].platform).toBe(SyncPlatform.STEAM);
+      expect(result.current.data?.configs[0].storefront).toBe(SyncStorefront.STEAM);
       expect(result.current.data?.configs[0].frequency).toBe(SyncFrequency.DAILY);
       expect(result.current.data?.configs[0].autoAdd).toBe(true);
       expect(result.current.data?.total).toBe(1);
@@ -142,7 +142,7 @@ describe('use-sync hooks', () => {
         })
       );
 
-      const { result } = renderHook(() => useSyncConfig(SyncPlatform.STEAM), {
+      const { result } = renderHook(() => useSyncConfig(SyncStorefront.STEAM), {
         wrapper: QueryWrapper,
       });
 
@@ -150,7 +150,7 @@ describe('use-sync hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.platform).toBe(SyncPlatform.STEAM);
+      expect(result.current.data?.storefront).toBe(SyncStorefront.STEAM);
       expect(result.current.data?.frequency).toBe(SyncFrequency.DAILY);
       expect(result.current.data?.isConfigured).toBe(true);
     });
@@ -162,7 +162,7 @@ describe('use-sync hooks', () => {
         })
       );
 
-      const { result } = renderHook(() => useSyncConfig(SyncPlatform.EPIC), {
+      const { result } = renderHook(() => useSyncConfig(SyncStorefront.EPIC), {
         wrapper: QueryWrapper,
       });
 
@@ -182,7 +182,7 @@ describe('use-sync hooks', () => {
         })
       );
 
-      const { result } = renderHook(() => useSyncStatus(SyncPlatform.STEAM), {
+      const { result } = renderHook(() => useSyncStatus(SyncStorefront.STEAM), {
         wrapper: QueryWrapper,
       });
 
@@ -190,7 +190,7 @@ describe('use-sync hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.platform).toBe(SyncPlatform.STEAM);
+      expect(result.current.data?.storefront).toBe(SyncStorefront.STEAM);
       expect(result.current.data?.isSyncing).toBe(false);
       expect(result.current.data?.lastSyncedAt).toBe('2025-01-01T12:00:00Z');
       expect(result.current.data?.activeJobId).toBeNull();
@@ -207,7 +207,7 @@ describe('use-sync hooks', () => {
         })
       );
 
-      const { result } = renderHook(() => useSyncStatus(SyncPlatform.STEAM), {
+      const { result } = renderHook(() => useSyncStatus(SyncStorefront.STEAM), {
         wrapper: QueryWrapper,
       });
 
@@ -246,7 +246,7 @@ describe('use-sync hooks', () => {
 
       await act(async () => {
         await result.current.mutateAsync({
-          platform: SyncPlatform.STEAM,
+          storefront: SyncStorefront.STEAM,
           data: {
             frequency: SyncFrequency.WEEKLY,
             autoAdd: false,
@@ -276,7 +276,7 @@ describe('use-sync hooks', () => {
       await act(async () => {
         try {
           await result.current.mutateAsync({
-            platform: SyncPlatform.STEAM,
+            storefront: SyncStorefront.STEAM,
             data: { autoAdd: false },
           });
         } catch {
@@ -310,7 +310,7 @@ describe('use-sync hooks', () => {
       });
 
       await act(async () => {
-        await result.current.mutateAsync(SyncPlatform.STEAM);
+        await result.current.mutateAsync(SyncStorefront.STEAM);
       });
 
       await waitFor(() => {
@@ -318,7 +318,7 @@ describe('use-sync hooks', () => {
       });
 
       expect(result.current.data?.jobId).toBe('job-123');
-      expect(result.current.data?.platform).toBe('steam');
+      expect(result.current.data?.storefront).toBe('steam');
       expect(result.current.data?.status).toBe('queued');
       expect(result.current.data?.message).toBe('Sync started');
     });
@@ -339,7 +339,7 @@ describe('use-sync hooks', () => {
 
       await act(async () => {
         try {
-          await result.current.mutateAsync(SyncPlatform.STEAM);
+          await result.current.mutateAsync(SyncStorefront.STEAM);
         } catch {
           // Expected error
         }

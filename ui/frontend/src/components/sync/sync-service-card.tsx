@@ -19,7 +19,7 @@ import { Loader2, RefreshCw, History } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { config as envConfig } from '@/lib/env';
 import type { SyncConfig, SyncStatus, SyncConfigUpdateData } from '@/types';
-import { SyncFrequency, getSyncFrequencyLabel, getPlatformDisplayInfo } from '@/types';
+import { SyncFrequency, getSyncFrequencyLabel, getStorefrontDisplayInfo } from '@/types';
 
 interface SyncServiceCardProps {
   config: SyncConfig;
@@ -80,7 +80,7 @@ export function SyncServiceCard({
     void onReset?.();
   };
 
-  const platformInfo = getPlatformDisplayInfo(config.platform);
+  const platformInfo = getStorefrontDisplayInfo(config.storefront);
   const isCurrentlySyncing = isSyncing || status?.isSyncing;
 
   const handleFrequencyChange = async (frequency: SyncFrequency) => {
@@ -172,7 +172,7 @@ export function SyncServiceCard({
 
       <CardFooter className="flex items-center justify-between border-t bg-muted/50 px-6 py-4">
         <Link
-          to="/sync/$platform" params={{ platform: config.platform }}
+          to="/sync/$storefront" params={{ storefront: config.storefront }}
           className="flex items-center gap-1 text-sm text-primary hover:underline"
         >
           <History className="h-4 w-4" />

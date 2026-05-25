@@ -6,7 +6,7 @@ import {
   disconnectEpic,
 } from './sync';
 import { api } from './client';
-import { SyncPlatform, SyncFrequency } from '@/types';
+import { SyncStorefront, SyncFrequency } from '@/types';
 
 vi.mock('./client', () => ({
   api: {
@@ -46,7 +46,7 @@ describe('syncApi', () => {
       const result = await syncApi.getSyncConfigs();
 
       expect(api.get).toHaveBeenCalledWith('/sync/config');
-      expect(result.configs[0].platform).toBe(SyncPlatform.STEAM);
+      expect(result.configs[0].storefront).toBe(SyncStorefront.STEAM);
       expect(result.configs[0].frequency).toBe(SyncFrequency.DAILY);
       expect(result.configs[0].autoAdd).toBe(true);
       expect(result.configs[0].userId).toBe('user-1');
@@ -69,10 +69,10 @@ describe('syncApi', () => {
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await syncApi.getSyncConfig(SyncPlatform.STEAM);
+      const result = await syncApi.getSyncConfig(SyncStorefront.STEAM);
 
       expect(api.get).toHaveBeenCalledWith('/sync/config/steam');
-      expect(result.platform).toBe(SyncPlatform.STEAM);
+      expect(result.storefront).toBe(SyncStorefront.STEAM);
       expect(result.frequency).toBe(SyncFrequency.DAILY);
       expect(result.autoAdd).toBe(true);
       expect(result.userId).toBe('user-1');
@@ -95,7 +95,7 @@ describe('syncApi', () => {
 
       vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
-      const result = await syncApi.updateSyncConfig(SyncPlatform.STEAM, {
+      const result = await syncApi.updateSyncConfig(SyncStorefront.STEAM, {
         frequency: SyncFrequency.WEEKLY,
         autoAdd: false,
       });
@@ -120,11 +120,11 @@ describe('syncApi', () => {
 
       vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
 
-      const result = await syncApi.triggerSync(SyncPlatform.STEAM);
+      const result = await syncApi.triggerSync(SyncStorefront.STEAM);
 
       expect(api.post).toHaveBeenCalledWith('/sync/steam');
       expect(result.jobId).toBe('job-123');
-      expect(result.platform).toBe('steam');
+      expect(result.storefront).toBe('steam');
     });
   });
 
@@ -139,7 +139,7 @@ describe('syncApi', () => {
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await syncApi.getSyncStatus(SyncPlatform.STEAM);
+      const result = await syncApi.getSyncStatus(SyncStorefront.STEAM);
 
       expect(api.get).toHaveBeenCalledWith('/sync/steam/status');
       expect(result.isSyncing).toBe(true);

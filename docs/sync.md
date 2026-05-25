@@ -376,7 +376,7 @@ No game-level details are shown on the hub page.
 
 #### Header
 
-The platform name and a connection status badge. The badge is one of: **Connected**, **Credentials Error**, or **Not Configured**. Clicking the badge toggles the Connection & Settings section open or closed.
+The storefront name and a connection status badge. The badge is one of: **Connected**, **Credentials Error**, or **Not Configured**. Clicking the badge toggles the Connection & Settings section open or closed.
 
 #### Connection & Settings Section
 

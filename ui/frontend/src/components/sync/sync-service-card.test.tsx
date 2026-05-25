@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, within } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
 import { SyncServiceCard } from './sync-service-card';
-import { SyncPlatform, SyncFrequency } from '@/types';
+import { SyncStorefront, SyncFrequency } from '@/types';
 import type { SyncConfig, SyncStatus } from '@/types';
 
 
 const createMockConfig = (overrides: Partial<SyncConfig> = {}): SyncConfig => ({
   id: 'config-1',
   userId: 'user-1',
-  platform: SyncPlatform.STEAM,
+  storefront: SyncStorefront.STEAM,
   frequency: SyncFrequency.DAILY,
   autoAdd: true,
   lastSyncedAt: '2024-01-01T12:00:00Z',
@@ -20,7 +20,7 @@ const createMockConfig = (overrides: Partial<SyncConfig> = {}): SyncConfig => ({
 });
 
 const createMockStatus = (overrides: Partial<SyncStatus> = {}): SyncStatus => ({
-  platform: SyncPlatform.STEAM,
+  storefront: SyncStorefront.STEAM,
   isSyncing: false,
   lastSyncedAt: '2024-01-01T12:00:00Z',
   activeJobId: null,
@@ -50,7 +50,7 @@ describe('SyncServiceCard', () => {
     });
 
     it('renders GOG platform name', () => {
-      const config = createMockConfig({ platform: SyncPlatform.GOG });
+      const config = createMockConfig({ storefront: SyncStorefront.GOG });
       render(
         <SyncServiceCard
           config={config}
@@ -63,7 +63,7 @@ describe('SyncServiceCard', () => {
     });
 
     it('renders Epic Games platform name', () => {
-      const config = createMockConfig({ platform: SyncPlatform.EPIC });
+      const config = createMockConfig({ storefront: SyncStorefront.EPIC });
       render(
         <SyncServiceCard
           config={config}
@@ -339,7 +339,7 @@ describe('SyncServiceCard', () => {
 
   describe('view details link', () => {
     it('has view details link', () => {
-      const config = createMockConfig({ platform: SyncPlatform.STEAM });
+      const config = createMockConfig({ storefront: SyncStorefront.STEAM });
       render(
         <SyncServiceCard
           config={config}
@@ -354,7 +354,7 @@ describe('SyncServiceCard', () => {
     });
 
     it('creates correct details link for GOG platform', () => {
-      const config = createMockConfig({ platform: SyncPlatform.GOG });
+      const config = createMockConfig({ storefront: SyncStorefront.GOG });
       render(
         <SyncServiceCard
           config={config}
@@ -368,7 +368,7 @@ describe('SyncServiceCard', () => {
     });
 
     it('creates correct details link for Epic platform', () => {
-      const config = createMockConfig({ platform: SyncPlatform.EPIC });
+      const config = createMockConfig({ storefront: SyncStorefront.EPIC });
       render(
         <SyncServiceCard
           config={config}
