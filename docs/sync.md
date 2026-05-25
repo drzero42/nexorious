@@ -410,6 +410,8 @@ A permanent view of all external games for this storefront, organised into four 
 
 The Needs Review group is the most prominent — these games are blocking the job from completing and require user action.
 
+The **Matched** group displays the external game title alongside a **Platform** column showing the platforms associated with that external game (sourced from `external_game_platforms`). Each platform is rendered as its canonical slug (e.g. `pc-windows`, `playstation-5`). When an external game has multiple platforms, all are shown in the same row.
+
 #### Sync History
 
 A log of past sync runs for this storefront. Each entry shows:
