@@ -879,6 +879,8 @@ func TestRematchExternalGame_KeepOrphan(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "rm-keep")
 	insertExternalGame(t, testDB, "eg-rm-2", userID, "steam", "2", "Game Two")
 	insertUserGameAndPlatform(t, testDB, "ug-rm-2", userID, "2222", "ugp-rm-2", "eg-rm-2")
+	// Insert a recent sync job so HandleRematchExternalGame can create a job_item attached to it
+	insertJob(t, testDB, "job-rm-keep", userID, "sync", "steam", "pending")
 
 	// Insert the target games row so FK is satisfied
 	_, _ = testDB.ExecContext(context.Background(),
@@ -916,6 +918,8 @@ func TestRematchExternalGame_RemoveOrphan(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "rm-remove")
 	insertExternalGame(t, testDB, "eg-rm-3", userID, "steam", "3", "Game Three")
 	insertUserGameAndPlatform(t, testDB, "ug-rm-3", userID, "3333", "ugp-rm-3", "eg-rm-3")
+	// Insert a recent sync job so HandleRematchExternalGame can create a job_item attached to it
+	insertJob(t, testDB, "job-rm-remove", userID, "sync", "steam", "pending")
 
 	_, _ = testDB.ExecContext(context.Background(),
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (7777, 'Another Game', now(), now()) ON CONFLICT DO NOTHING`)
