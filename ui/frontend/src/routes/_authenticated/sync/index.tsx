@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus, usePendingReviewCount, useResetSyncData, useSteamConnection, usePSNStatus, useEpicConnection, useGOGConnection } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -103,7 +103,6 @@ function SyncServiceCardWithStatus({
 }
 
 function SyncPage() {
-  const navigate = useNavigate();
   const { data: configs, isLoading, error } = useSyncConfigs();
   const { mutateAsync: updateConfig } = useUpdateSyncConfig();
   const { mutateAsync: triggerSync } = useTriggerSync();
@@ -144,7 +143,6 @@ function SyncPage() {
     try {
       await triggerSync(storefront);
       toast.success(`${storefront} sync started successfully`);
-      navigate({ to: '/sync/$storefront', params: { storefront } });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to trigger sync';
       toast.error(message);

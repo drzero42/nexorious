@@ -121,9 +121,15 @@ export function SyncServiceCard({
           </div>
           <div className="flex items-center gap-2">
             {pendingReviewCount !== undefined && pendingReviewCount > 0 && (
-              <Badge variant="destructive">
-                {pendingReviewCount}
-              </Badge>
+              <Link
+                to="/sync/$storefront"
+                params={{ storefront: config.storefront }}
+                hash="needs-review"
+              >
+                <Badge variant="destructive">
+                  {pendingReviewCount}
+                </Badge>
+              </Link>
             )}
             {credentialsError ? (
               <Badge variant="destructive">Credentials Error</Badge>
