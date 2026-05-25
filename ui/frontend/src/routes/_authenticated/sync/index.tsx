@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useSyncConfigs, useTriggerSync, useSyncStatus, usePendingReviewCount, useSteamConnection, usePSNStatus, useEpicConnection, useGOGConnection } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle, Info, ArrowRight } from 'lucide-react';
+import { AlertCircle, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { SUPPORTED_SYNC_STOREFRONTS, SyncStorefront, SyncFrequency } from '@/types';
 import type { SyncConfig } from '@/types';
