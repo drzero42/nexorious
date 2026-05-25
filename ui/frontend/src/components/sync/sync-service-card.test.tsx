@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, within } from '@/test/test-utils';
+import { render, screen } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
 import { SyncServiceCard } from './sync-service-card';
 import { SyncStorefront, SyncFrequency } from '@/types';
@@ -28,7 +28,6 @@ const createMockStatus = (overrides: Partial<SyncStatus> = {}): SyncStatus => ({
 });
 
 describe('SyncServiceCard', () => {
-  const mockOnUpdate = vi.fn();
   const mockOnTriggerSync = vi.fn();
 
   beforeEach(() => {
@@ -36,17 +35,18 @@ describe('SyncServiceCard', () => {
   });
 
   describe('rendering', () => {
-    it('renders platform name', () => {
+    it('renders platform name as a link to detail page', () => {
       const config = createMockConfig();
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
 
-      expect(screen.getByText('Steam')).toBeInTheDocument();
+      const link = screen.getByRole('link', { name: 'Steam' });
+      expect(link).toBeInTheDocument();
+      expect(link).toHaveAttribute('href', '/sync/steam');
     });
 
     it('renders GOG platform name', () => {
@@ -54,7 +54,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -67,12 +66,73 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
 
       expect(screen.getByText('Epic Games')).toBeInTheDocument();
+    });
+
+    it('creates correct detail link for GOG platform', () => {
+      const config = createMockConfig({ storefront: SyncStorefront.GOG });
+      render(
+        <SyncServiceCard
+          config={config}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      const link = screen.getByRole('link', { name: 'GOG' });
+      expect(link).toHaveAttribute('href', '/sync/gog');
+    });
+
+    it('creates correct detail link for Epic platform', () => {
+      const config = createMockConfig({ storefront: SyncStorefront.EPIC });
+      render(
+        <SyncServiceCard
+          config={config}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      const link = screen.getByRole('link', { name: 'Epic Games' });
+      expect(link).toHaveAttribute('href', '/sync/epic');
+    });
+
+    it('does not render frequency select', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    });
+
+    it('does not render auto-add toggle', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    });
+
+    it('does not render a View details footer link', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.queryByRole('link', { name: /view details/i })).not.toBeInTheDocument();
     });
   });
 
@@ -82,7 +142,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -95,134 +154,24 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
 
       expect(screen.getByText('Not Configured')).toBeInTheDocument();
     });
-  });
 
-  describe('frequency select', () => {
-    it('calls onUpdate when frequency is changed', async () => {
-      const user = userEvent.setup({ delay: null });
-      const config = createMockConfig({ frequency: SyncFrequency.DAILY });
-      mockOnUpdate.mockResolvedValue(undefined);
-
+    it('shows Credentials Error badge when credentialsError is true', () => {
+      const config = createMockConfig({ isConfigured: true });
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
+          credentialsError={true}
           onTriggerSync={mockOnTriggerSync}
         />
       );
 
-      const trigger = screen.getByRole('combobox');
-      await user.click(trigger);
-
-      const hourlyOption = screen.getByRole('option', { name: 'Every hour' });
-      await user.click(hourlyOption);
-
-      expect(mockOnUpdate).toHaveBeenCalledWith({ frequency: SyncFrequency.HOURLY });
-    });
-
-    it('disables frequency select when isUpdating is true', () => {
-      const config = createMockConfig();
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-          isUpdating={true}
-        />
-      );
-
-      const trigger = screen.getByRole('combobox');
-      expect(trigger).toBeDisabled();
-    });
-
-    it('disables frequency select when not configured', () => {
-      const config = createMockConfig({ isConfigured: false });
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-        />
-      );
-
-      const trigger = screen.getByRole('combobox');
-      expect(trigger).toBeDisabled();
-    });
-  });
-
-  describe('auto-add toggle', () => {
-    it('calls onUpdate when auto-add toggle is changed to true', async () => {
-      const user = userEvent.setup({ delay: null });
-      const config = createMockConfig({ autoAdd: false });
-      mockOnUpdate.mockResolvedValue(undefined);
-
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-        />
-      );
-
-      const autoAddSwitch = screen.getByRole('switch');
-      await user.click(autoAddSwitch);
-
-      expect(mockOnUpdate).toHaveBeenCalledWith({ autoAdd: true });
-    });
-
-    it('calls onUpdate when auto-add toggle is changed to false', async () => {
-      const user = userEvent.setup({ delay: null });
-      const config = createMockConfig({ autoAdd: true });
-      mockOnUpdate.mockResolvedValue(undefined);
-
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-        />
-      );
-
-      const autoAddSwitch = screen.getByRole('switch');
-      await user.click(autoAddSwitch);
-
-      expect(mockOnUpdate).toHaveBeenCalledWith({ autoAdd: false });
-    });
-
-    it('disables auto-add toggle when isUpdating is true', () => {
-      const config = createMockConfig();
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-          isUpdating={true}
-        />
-      );
-
-      const autoAddSwitch = screen.getByRole('switch');
-      expect(autoAddSwitch).toBeDisabled();
-    });
-
-    it('disables auto-add toggle when not configured', () => {
-      const config = createMockConfig({ isConfigured: false });
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-        />
-      );
-
-      const autoAddSwitch = screen.getByRole('switch');
-      expect(autoAddSwitch).toBeDisabled();
+      expect(screen.getByText('Credentials Error')).toBeInTheDocument();
     });
   });
 
@@ -235,7 +184,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -251,7 +199,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
           isSyncing={true}
         />
@@ -268,7 +215,6 @@ describe('SyncServiceCard', () => {
         <SyncServiceCard
           config={config}
           status={status}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -282,7 +228,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -298,7 +243,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
           isSyncing={true}
         />
@@ -314,7 +258,6 @@ describe('SyncServiceCard', () => {
         <SyncServiceCard
           config={config}
           status={status}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -327,58 +270,12 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
           isSyncing={false}
         />
       );
 
       expect(screen.getByText('Sync Now')).toBeInTheDocument();
-    });
-  });
-
-  describe('view details link', () => {
-    it('has view details link', () => {
-      const config = createMockConfig({ storefront: SyncStorefront.STEAM });
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-        />
-      );
-
-      const link = screen.getByRole('link', { name: /view details/i });
-      expect(link).toBeInTheDocument();
-      expect(link).toHaveAttribute('href', '/sync/steam');
-    });
-
-    it('creates correct details link for GOG platform', () => {
-      const config = createMockConfig({ storefront: SyncStorefront.GOG });
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-        />
-      );
-
-      const link = screen.getByRole('link', { name: /view details/i });
-      expect(link).toHaveAttribute('href', '/sync/gog');
-    });
-
-    it('creates correct details link for Epic platform', () => {
-      const config = createMockConfig({ storefront: SyncStorefront.EPIC });
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-        />
-      );
-
-      const link = screen.getByRole('link', { name: /view details/i });
-      expect(link).toHaveAttribute('href', '/sync/epic');
     });
   });
 
@@ -400,7 +297,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -415,7 +311,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -430,7 +325,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -445,7 +339,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -460,7 +353,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -481,7 +373,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -497,7 +388,6 @@ describe('SyncServiceCard', () => {
         render(
           <SyncServiceCard
             config={config}
-            onUpdate={mockOnUpdate}
             onTriggerSync={mockOnTriggerSync}
           />
         )
@@ -512,7 +402,6 @@ describe('SyncServiceCard', () => {
           <SyncServiceCard
             config={config}
             status={status}
-            onUpdate={mockOnUpdate}
             onTriggerSync={mockOnTriggerSync}
           />
         )
@@ -527,86 +416,10 @@ describe('SyncServiceCard', () => {
           <SyncServiceCard
             config={config}
             status={status}
-            onUpdate={mockOnUpdate}
             onTriggerSync={mockOnTriggerSync}
           />
         )
       ).not.toThrow();
-    });
-  });
-
-  describe('reset dialog', () => {
-    it('does not render the Reset button when onReset is omitted', () => {
-      const config = createMockConfig();
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-        />
-      );
-
-      expect(screen.queryByRole('button', { name: /^reset$/i })).not.toBeInTheDocument();
-    });
-
-    it('does not render the Reset button when not configured', () => {
-      const config = createMockConfig({ isConfigured: false });
-      const onReset = vi.fn();
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-          onReset={onReset}
-        />
-      );
-
-      expect(screen.queryByRole('button', { name: /^reset$/i })).not.toBeInTheDocument();
-    });
-
-    it('opens the confirmation dialog when the Reset button is clicked', async () => {
-      const user = userEvent.setup({ delay: null });
-      const config = createMockConfig();
-      const onReset = vi.fn().mockResolvedValue(undefined);
-
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-          onReset={onReset}
-        />
-      );
-
-      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-
-      await user.click(screen.getByRole('button', { name: /^reset$/i }));
-
-      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-      expect(screen.getByText(/reset sync data\?/i)).toBeInTheDocument();
-      expect(onReset).not.toHaveBeenCalled();
-    });
-
-    it('calls onReset when the dialog Reset button is clicked', async () => {
-      const user = userEvent.setup({ delay: null });
-      const config = createMockConfig();
-      const onReset = vi.fn().mockResolvedValue(undefined);
-
-      render(
-        <SyncServiceCard
-          config={config}
-          onUpdate={mockOnUpdate}
-          onTriggerSync={mockOnTriggerSync}
-          onReset={onReset}
-        />
-      );
-
-      await user.click(screen.getByRole('button', { name: /^reset$/i }));
-
-      const dialog = screen.getByRole('alertdialog');
-      await user.click(within(dialog).getByRole('button', { name: /^reset$/i }));
-
-      expect(onReset).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -617,7 +430,6 @@ describe('SyncServiceCard', () => {
         <SyncServiceCard
           config={config}
           pendingReviewCount={5}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -631,7 +443,6 @@ describe('SyncServiceCard', () => {
         <SyncServiceCard
           config={config}
           pendingReviewCount={0}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );
@@ -644,7 +455,6 @@ describe('SyncServiceCard', () => {
       render(
         <SyncServiceCard
           config={config}
-          onUpdate={mockOnUpdate}
           onTriggerSync={mockOnTriggerSync}
         />
       );

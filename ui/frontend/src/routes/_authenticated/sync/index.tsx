@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus, usePendingReviewCount, useResetSyncData, useSteamConnection, usePSNStatus, useEpicConnection, useGOGConnection } from '@/hooks';
+import { useSyncConfigs, useTriggerSync, useSyncStatus, usePendingReviewCount, useSteamConnection, usePSNStatus, useEpicConnection, useGOGConnection } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -7,7 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, Info, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { SUPPORTED_SYNC_STOREFRONTS, SyncStorefront, SyncFrequency } from '@/types';
-import type { SyncConfig, SyncConfigUpdateData } from '@/types';
+import type { SyncConfig } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/sync/')({
   component: SyncPage,
@@ -27,11 +27,6 @@ function SyncPageSkeleton() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </CardContent>
         </Card>
       </div>
     </div>
@@ -40,18 +35,14 @@ function SyncPageSkeleton() {
 
 function SyncServiceCardWithStatus({
   config,
-  onUpdate,
   onTriggerSync,
 }: {
   config: SyncConfig;
-  onUpdate: (storefront: SyncStorefront, data: SyncConfigUpdateData) => Promise<void>;
   onTriggerSync: (storefront: SyncStorefront) => Promise<void>;
 }) {
   const { data: status } = useSyncStatus(config.storefront);
   const { data: reviewData } = usePendingReviewCount();
-  const { isPending: isUpdating } = useUpdateSyncConfig();
   const { isPending: isSyncing } = useTriggerSync();
-  const { mutateAsync: resetSync, isPending: isResetting } = useResetSyncData();
 
   // Fetch storefront-specific connection data for credentials error state
   const { data: steamConnection } = useSteamConnection();
@@ -67,23 +58,8 @@ function SyncServiceCardWithStatus({
     (config.storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false));
 
-  const handleUpdate = async (data: SyncConfigUpdateData) => {
-    await onUpdate(config.storefront, data);
-  };
-
   const handleTriggerSync = async () => {
     await onTriggerSync(config.storefront);
-  };
-
-  const handleReset = async () => {
-    try {
-      await resetSync(config.storefront);
-      toast.success(`${config.storefront} sync data reset successfully`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to reset sync data';
-      toast.error(message);
-      throw err;
-    }
   };
 
   return (
@@ -92,19 +68,14 @@ function SyncServiceCardWithStatus({
       status={status}
       pendingReviewCount={pendingReviewCount}
       credentialsError={credentialsError}
-      onUpdate={handleUpdate}
       onTriggerSync={handleTriggerSync}
-      onReset={handleReset}
-      isUpdating={isUpdating}
       isSyncing={isSyncing}
-      isResetting={isResetting}
     />
   );
 }
 
 function SyncPage() {
   const { data: configs, isLoading, error } = useSyncConfigs();
-  const { mutateAsync: updateConfig } = useUpdateSyncConfig();
   const { mutateAsync: triggerSync } = useTriggerSync();
 
   // Create map of existing configs by storefront
@@ -127,17 +98,6 @@ function SyncPage() {
       isConfigured: false,
     };
   });
-
-  const handleUpdateConfig = async (storefront: SyncStorefront, data: SyncConfigUpdateData) => {
-    try {
-      await updateConfig({ storefront, data });
-      toast.success('Sync settings updated successfully');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update sync settings';
-      toast.error(message);
-      throw err;
-    }
-  };
 
   const handleTriggerSync = async (storefront: SyncStorefront) => {
     try {
@@ -187,7 +147,6 @@ function SyncPage() {
               <SyncServiceCardWithStatus
                 key={config.id}
                 config={config}
-                onUpdate={handleUpdateConfig}
                 onTriggerSync={handleTriggerSync}
               />
             ))}
@@ -204,8 +163,8 @@ function SyncPage() {
                 added.
               </p>
               <p>
-                Configure sync frequency and auto-add settings for each platform individually.
-                Manual sync is always available regardless of your settings.
+                Configure sync frequency for each platform individually from the platform detail
+                page. Manual sync is always available regardless of your settings.
               </p>
             </AlertDescription>
           </Alert>
