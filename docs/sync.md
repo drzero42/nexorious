@@ -364,7 +364,7 @@ The global navigation shows an aggregate count of `pending_review` items across 
 
 A grid of storefront cards — one per supported storefront. Each card shows:
 
-- Platform name and icon
+- Platform name and icon; the name links to that storefront's detail page
 - Connection status (Connected / Credentials Error / Not Configured)
 - Last synced timestamp
 - Pending review count badge; clicking it navigates to that storefront's detail page, anchoring to the Needs Review section where possible
