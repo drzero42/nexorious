@@ -1227,6 +1227,41 @@ func TestListExternalGames_AllStates(t *testing.T) {
 	}
 }
 
+func TestListExternalGames_ExcludesInFlight(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "eg-inflight")
+
+	insertExternalGame(t, testDB, "eg-stable", userID, "steam", "10", "Stable Game")
+	insertExternalGame(t, testDB, "eg-inflight-1", userID, "steam", "20", "In-Flight Game")
+	insertJob(t, testDB, "job-inflight", userID, "sync", "steam", "processing")
+
+	// pending job_item links eg-inflight-1 to the active job.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-inflight', 'job-inflight', ?, '20', 'In-Flight Game', 'eg-inflight-1', '{}', 'pending', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert in-flight job_item: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 game (in-flight excluded), got %d", len(resp))
+	}
+	if resp[0]["id"] != "eg-stable" {
+		t.Errorf("expected eg-stable in response, got %v", resp[0]["id"])
+	}
+}
+
 // ─── Epic connection-handler tests ────────────────────────────────────────────
 
 type stubEpicClient struct {

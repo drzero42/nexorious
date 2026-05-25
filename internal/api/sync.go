@@ -999,6 +999,11 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 		LEFT JOIN user_game_platforms ugp ON ugp.external_game_id = eg.id
 		LEFT JOIN games g ON g.id = eg.resolved_igdb_id
 		WHERE eg.user_id = ? AND eg.storefront = ?
+		  AND NOT EXISTS (
+		      SELECT 1 FROM job_items ji
+		      WHERE ji.external_game_id = eg.id
+		        AND ji.status IN ('pending', 'processing')
+		  )
 		ORDER BY eg.title ASC`,
 		userID, sf,
 	).Scan(ctx, &games)
