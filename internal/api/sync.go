@@ -122,10 +122,11 @@ type manualSyncTriggerResponse struct {
 }
 
 type syncStatusResponse struct {
-	Storefront   string     `json:"storefront"`
-	IsSyncing    bool       `json:"is_syncing"`
-	LastSyncedAt *time.Time `json:"last_synced_at"`
-	ActiveJobID  *string    `json:"active_job_id"`
+	Storefront        string     `json:"storefront"`
+	IsSyncing         bool       `json:"is_syncing"`
+	LastSyncedAt      *time.Time `json:"last_synced_at"`
+	ActiveJobID       *string    `json:"active_job_id"`
+	ExternalGameCount int        `json:"external_game_count"`
 }
 
 type externalGameResponse struct {
@@ -438,11 +439,21 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 		lastSyncedAt = cfg.LastSyncedAt
 	}
 
+	var externalGameCount int
+	if err := h.db.NewSelect().
+		TableExpr("external_games").
+		ColumnExpr("COUNT(*)").
+		Where("user_id = ? AND storefront = ? AND is_available = true", userID, sf).
+		Scan(ctx, &externalGameCount); err != nil {
+		externalGameCount = 0
+	}
+
 	return c.JSON(http.StatusOK, syncStatusResponse{
-		Storefront:   sf,
-		IsSyncing:    activeJobID != nil,
-		LastSyncedAt: lastSyncedAt,
-		ActiveJobID:  activeJobID,
+		Storefront:        sf,
+		IsSyncing:         activeJobID != nil,
+		LastSyncedAt:      lastSyncedAt,
+		ActiveJobID:       activeJobID,
+		ExternalGameCount: externalGameCount,
 	})
 }
 
