@@ -517,7 +517,7 @@ func (h *SyncHandler) HandleSteamVerify(c *echo.Context) error {
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if _, err := h.db.NewInsert().Model(row).
-		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, updated_at = EXCLUDED.updated_at").
+		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, credentials_error = false, updated_at = EXCLUDED.updated_at").
 		Exec(context.Background()); err != nil {
 		slog.Error("sync: persist steam credentials failed", "err", err, "user_id", userID)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Steam connection")
@@ -628,7 +628,7 @@ func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if _, err := h.db.NewInsert().Model(row).
-		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, updated_at = EXCLUDED.updated_at").
+		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, credentials_error = false, updated_at = EXCLUDED.updated_at").
 		Exec(context.Background()); err != nil {
 		slog.Error("psn: persist storefront credentials failed", "user_id", userID, "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist PSN connection")
@@ -742,6 +742,7 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 		 VALUES (?, ?, 'epic', 'manual', ?, ?, ?)
 		 ON CONFLICT (user_id, storefront) DO UPDATE SET
 		     storefront_credentials = EXCLUDED.storefront_credentials,
+		     credentials_error = false,
 		     updated_at = EXCLUDED.updated_at`,
 		uuid.NewString(), userID, stateCiphertext, now, now,
 	).Exec(context.Background()); err != nil {
@@ -1367,7 +1368,7 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 		UpdatedAt:             now,
 	}
 	if _, err := h.db.NewInsert().Model(row).
-		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, updated_at = EXCLUDED.updated_at").
+		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, credentials_error = false, updated_at = EXCLUDED.updated_at").
 		Exec(context.Background()); err != nil {
 		slog.Error("gog: persist credentials failed", "user_id", userID, "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist GOG connection")

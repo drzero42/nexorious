@@ -1934,6 +1934,67 @@ func TestGetEpicConnection_DBCredentialsErrorFlag(t *testing.T) {
 	}
 }
 
+func TestSteamVerify_ClearsCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubSteamClient{
+		summary: &api.SteamPlayerSummary{PersonaName: "TestUser", CommunityVisibilityState: 3},
+	}
+	e := newSyncTestApp(t, testDB, stub, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "sv-clear-cred")
+
+	// Seed a pre-existing row with credentials_error=true.
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'steam', 'manual', true, now(), now())`,
+		uuid.NewString(), userID,
+	)
+
+	body := `{"steam_id":"76561198000000001","web_api_key":"AABBCCDD00112233445566778899AABB"}`
+	rec := postAuth(t, e, "/api/sync/steam/verify", token, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var credsErr bool
+	_ = testDB.NewRaw(
+		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`,
+		userID,
+	).Scan(context.Background(), &credsErr)
+	if credsErr {
+		t.Error("expected credentials_error=false after successful Steam verify, got true")
+	}
+}
+
+func TestPSNConfigure_ClearsCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubPSNClient{
+		info: &api.PSNAccountInfo{OnlineID: "MyPSN", AccountID: "123", Region: "GB"},
+	}
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
+	userID, token := setupTagUser(t, testDB, e, "psn-clear-cred")
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'manual', true, now(), now())`,
+		uuid.NewString(), userID,
+	)
+
+	body := `{"npsso_token":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}`
+	rec := postAuth(t, e, "/api/sync/psn/configure", token, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var credsErr bool
+	_ = testDB.NewRaw(
+		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'psn'`,
+		userID,
+	).Scan(context.Background(), &credsErr)
+	if credsErr {
+		t.Error("expected credentials_error=false after PSN configure, got true")
+	}
+}
+
 func TestGetSteamConnection_CorruptedCredentials(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
