@@ -923,6 +923,17 @@ func TestRecentJobs_ReturnsProgressAndAddedItems(t *testing.T) {
 		}
 	}
 
+	if removedItems, ok := job["removed_items"].([]any); !ok {
+		t.Error("removed_items should be a JSON array (not null/missing)")
+	} else if len(removedItems) != 0 {
+		t.Errorf("expected 0 removed_items, got %d", len(removedItems))
+	}
+	if statusChangedItems, ok := job["status_changed_items"].([]any); !ok {
+		t.Error("status_changed_items should be a JSON array (not null/missing)")
+	} else if len(statusChangedItems) != 0 {
+		t.Errorf("expected 0 status_changed_items, got %d", len(statusChangedItems))
+	}
+
 	if _, ok := job["completed_items"]; ok {
 		t.Error("completed_items should not be present in response")
 	}

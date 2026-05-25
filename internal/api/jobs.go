@@ -354,6 +354,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	for _, j := range jobs {
 		progress, err := h.jobItemCounts(context.Background(), j.ID)
 		if err != nil {
+			slog.Error("HandleRecentJobs: failed to count job items", "job_id", j.ID, "err", err)
 			progress = map[string]any{
 				"pending": 0, "processing": 0, "completed": 0, "pending_review": 0,
 				"skipped": 0, "failed": 0, "total": 0, "percent": 0,
@@ -373,6 +374,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			ORDER BY created_at`,
 			j.ID,
 		).Scan(context.Background(), &allChanges); err != nil {
+			slog.Error("HandleRecentJobs: failed to query sync_changes", "job_id", j.ID, "err", err)
 			allChanges = nil
 		}
 
