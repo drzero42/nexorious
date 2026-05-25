@@ -14,9 +14,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
-	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
-	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/matching"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
@@ -34,92 +32,6 @@ type StorefrontAdapter = storefrontadapter.Adapter
 // ErrCredentials is returned by an adapter when credentials are invalid,
 // expired, or cannot be decrypted. DispatchSyncWorker marks the job failed on this error.
 var ErrCredentials = storefrontadapter.ErrCredentials
-
-// epicSubprocessClient is the subset of *epicsvc.Client that EpicClientAdapter
-// depends on. Declared as an interface so tests can substitute a fake without
-// invoking the real legendary subprocess.
-type epicSubprocessClient interface {
-	Configured() bool
-	RestoreSnapshot(userID string, snapshot map[string]string) error
-	GetLibrary(ctx context.Context, userID string, onBatch func([]epicsvc.ExternalGameEntry) error) error
-	CaptureSnapshot(userID string) (map[string]string, error)
-}
-
-// EpicClientAdapter implements StorefrontAdapter. It loads the legendary state
-// snapshot from the DB, restores it to disk, calls the epic.Client, then
-// captures and persists the updated snapshot.
-type EpicClientAdapter struct {
-	Client    epicSubprocessClient
-	DB        *bun.DB
-	Encrypter *crypto.Encrypter
-	UserID    string
-}
-
-func (a *EpicClientAdapter) GetLibrary(ctx context.Context, _ int, onBatch func([]ExternalGameEntry) error) error {
-	if !a.Client.Configured() {
-		return fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
-	}
-
-	// 1. Load snapshot from DB.
-	var ciphertextStr string
-	if err := a.DB.NewRaw(
-		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
-		a.UserID,
-	).Scan(ctx, &ciphertextStr); err != nil || ciphertextStr == "" {
-		return fmt.Errorf("%w: epic legendary state not found", ErrCredentials)
-	}
-	plainState, err := a.Encrypter.Decrypt(ciphertextStr)
-	if err != nil {
-		slog.Warn("epic: legendary state decrypt failed", "user_id", a.UserID, "err", err)
-		return fmt.Errorf("%w: epic legendary state decrypt failed", ErrCredentials)
-	}
-	var snapshot map[string]string
-	if err := json.Unmarshal(plainState, &snapshot); err != nil {
-		return fmt.Errorf("epic: unmarshal legendary state: %w", err)
-	}
-
-	// 2. Restore snapshot to disk.
-	if err := a.Client.RestoreSnapshot(a.UserID, snapshot); err != nil {
-		return fmt.Errorf("epic: restore snapshot: %w", err)
-	}
-
-	// 3. Fetch library, mapping epicsvc entries to ExternalGameEntry.
-	fetchErr := a.Client.GetLibrary(ctx, a.UserID, func(batch []epicsvc.ExternalGameEntry) error {
-		mapped := make([]ExternalGameEntry, 0, len(batch))
-		for _, e := range batch {
-			mapped = append(mapped, ExternalGameEntry{
-				ExternalID:      e.ExternalID,
-				Title:           e.Title,
-				PlaytimeHours:   0,
-				Platforms:       []string{"pc-windows"},
-				OwnershipStatus: e.OwnershipStatus,
-				IsSubscription:  false,
-			})
-		}
-		return onBatch(mapped)
-	})
-
-	// 4. Capture updated snapshot regardless of fetch error.
-	newSnapshot, captureErr := a.Client.CaptureSnapshot(a.UserID)
-	if captureErr != nil {
-		slog.Error("epic: capture snapshot after GetLibrary failed", "user_id", a.UserID, "err", captureErr)
-	} else if len(newSnapshot) > 0 {
-		newPlainJSON, _ := json.Marshal(newSnapshot)
-		newCiphertext, encErr := a.Encrypter.Encrypt(newPlainJSON)
-		if encErr != nil {
-			slog.Error("epic: encrypt updated snapshot failed", "user_id", a.UserID, "err", encErr)
-		} else {
-			if _, err := a.DB.NewRaw(
-				`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
-				newCiphertext, a.UserID,
-			).Exec(context.Background()); err != nil {
-				slog.Error("epic: persist updated snapshot failed", "user_id", a.UserID, "err", err)
-			}
-		}
-	}
-
-	return fetchErr
-}
 
 // ── DispatchSync ──────────────────────────────────────────────────────────────
 

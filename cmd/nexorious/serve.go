@@ -461,12 +461,31 @@ func buildAdapterFactory(
 			return gogsvc.NewAdapter(gogClient, newTok.AccessToken), nil
 
 		case "epic":
-			return &tasks.EpicClientAdapter{
-				Client:    epicClient,
-				DB:        db,
-				Encrypter: encrypter,
-				UserID:    cfg.UserID,
-			}, nil
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
+			if err != nil {
+				slog.Warn("adapter factory: epic decrypt failed", "user_id", cfg.UserID, "err", err)
+				return nil, fmt.Errorf("%w: epic decrypt failed", tasks.ErrCredentials)
+			}
+			var snapshot map[string]string
+			if err := json.Unmarshal(plain, &snapshot); err != nil {
+				return nil, tasks.ErrCredentials
+			}
+			onSnapshot := func(s map[string]string) error {
+				newJSON, _ := json.Marshal(s)
+				enc, encErr := encrypter.Encrypt(newJSON)
+				if encErr != nil {
+					return encErr
+				}
+				_, dbErr := db.NewRaw(
+					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
+					enc, cfg.UserID,
+				).Exec(context.Background())
+				return dbErr
+			}
+			return epicsvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot), nil
 
 		default:
 			return nil, fmt.Errorf("unknown storefront: %s", storefront)
