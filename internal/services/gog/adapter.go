@@ -59,7 +59,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 			mapped = append(mapped, storefrontadapter.ExternalGameEntry{
 				ExternalID:      e.ExternalID,
 				Title:           e.Title,
-				PlaytimeHours:   float64(e.PlaytimeHours),
+				PlaytimeHours:   e.PlaytimeHours,
 				Platforms:       e.Platforms,
 				OwnershipStatus: e.OwnershipStatus,
 				IsSubscription:  e.IsSubscription,

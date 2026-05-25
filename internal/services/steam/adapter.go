@@ -90,7 +90,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 			entries = append(entries, storefrontadapter.ExternalGameEntry{
 				ExternalID:      fmt.Sprintf("%d", og.AppID),
 				Title:           og.Title,
-				PlaytimeHours:   float64(og.PlaytimeHours),
+				PlaytimeHours:   og.PlaytimeHours,
 				Platforms:       platforms,
 				OwnershipStatus: "owned",
 				IsSubscription:  false,

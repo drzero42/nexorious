@@ -9,7 +9,7 @@ import (
 type ExternalGameEntry struct {
 	ExternalID      string
 	Title           string
-	PlaytimeHours   float64  // 0 when the storefront does not provide playtime
+	PlaytimeHours   int      // 0 when the storefront does not provide playtime
 	Platforms       []string // storefront-specific names; canonicalised to slugs by the worker
 	OwnershipStatus string   // "owned", "subscription", etc.
 	IsSubscription  bool
