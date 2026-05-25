@@ -477,6 +477,46 @@ func TestIgnored_SkipAndUnskip(t *testing.T) {
 	}
 }
 
+func TestSkipGame_MarksJobItemSkippedAndCompletesJob(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "skip-jobitem")
+	insertExternalGame(t, testDB, "eg-skip-ji", userID, "steam", "777", "Skip Me")
+	insertJob(t, testDB, "job-skip-ji", userID, "sync", "steam", "processing")
+	// Insert a pending_review job_item linked to the external_game.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-skip-1', 'job-skip-ji', ?, '777', 'Skip Me', 'eg-skip-ji', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	rec := postJSONAuth(t, e, "/api/sync/ignored/eg-skip-ji", nil, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	var itemStatus string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-skip-1'`).Scan(ctx, &itemStatus); err != nil {
+		t.Fatalf("scan job_item status: %v", err)
+	}
+	if itemStatus != "skipped" {
+		t.Errorf("expected job_item status=skipped, got %q", itemStatus)
+	}
+
+	var jobStatus string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = 'job-skip-ji'`).Scan(ctx, &jobStatus); err != nil {
+		t.Fatalf("scan job status: %v", err)
+	}
+	if jobStatus != "completed" {
+		t.Errorf("expected job status=completed after last item skipped, got %q", jobStatus)
+	}
+}
+
 func TestIgnored_404ForUnknown(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})

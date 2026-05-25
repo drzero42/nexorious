@@ -866,6 +866,29 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 		slog.Error("sync: skip game failed", "err", err, "external_game_id", id)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 	}
+
+	// Mark the most recent pending_review or pending job_item for this game as skipped,
+	// then check whether the job can now complete.
+	var jobItemRow struct {
+		ID    string `bun:"id"`
+		JobID string `bun:"job_id"`
+	}
+	if err := h.db.NewRaw(`
+		SELECT id, job_id FROM job_items
+		WHERE external_game_id = ? AND status IN ('pending_review', 'pending')
+		ORDER BY created_at DESC
+		LIMIT 1`, id,
+	).Scan(ctx, &jobItemRow); err == nil {
+		if _, err := h.db.NewRaw(
+			`UPDATE job_items SET status = 'skipped', processed_at = now() WHERE id = ?`,
+			jobItemRow.ID,
+		).Exec(ctx); err != nil {
+			slog.Error("sync: skip game: mark job_item skipped", "err", err, "job_item_id", jobItemRow.ID)
+		} else {
+			tasks.SyncCheckJobCompletion(ctx, h.db, jobItemRow.JobID)
+		}
+	}
+
 	return c.NoContent(http.StatusNoContent)
 }
 
