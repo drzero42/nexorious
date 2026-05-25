@@ -313,6 +313,13 @@ type recentJobItem struct {
 	UserGameID  *string `bun:"user_game_id" json:"user_game_id"`
 }
 
+// syncChangeItem is a summary of a sync_changes row for the recent jobs endpoint.
+type syncChangeItem struct {
+	Title     string  `bun:"title"      json:"title"`
+	OldStatus *string `bun:"old_status" json:"old_status,omitempty"`
+	NewStatus *string `bun:"new_status" json:"new_status,omitempty"`
+}
+
 // HandleRecentJobs handles GET /api/jobs/recent/:source.
 func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
@@ -346,9 +353,11 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 
 	type jobWithItems struct {
 		models.Job
-		CompletedItems []recentJobItem `json:"completed_items"`
-		SkippedItems   []recentJobItem `json:"skipped_items"`
-		FailedItems    []recentJobItem `json:"failed_items"`
+		CompletedItems     []recentJobItem  `json:"completed_items"`
+		SkippedItems       []recentJobItem  `json:"skipped_items"`
+		FailedItems        []recentJobItem  `json:"failed_items"`
+		RemovedItems       []syncChangeItem `json:"removed_items"`
+		StatusChangedItems []syncChangeItem `json:"status_changed_items"`
 	}
 
 	result := make([]jobWithItems, 0, len(jobs))
@@ -381,11 +390,43 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 				failedItems = append(failedItems, item)
 			}
 		}
+
+		var allChanges []struct {
+			ChangeType string  `bun:"change_type"`
+			Title      string  `bun:"title"`
+			OldStatus  *string `bun:"old_status"`
+			NewStatus  *string `bun:"new_status"`
+		}
+		if err := h.db.NewRaw(`
+			SELECT change_type, title, old_status, new_status
+			FROM sync_changes
+			WHERE job_id = ?
+			ORDER BY created_at`,
+			j.ID,
+		).Scan(context.Background(), &allChanges); err != nil {
+			allChanges = nil
+		}
+
+		removedItems := []syncChangeItem{}
+		statusChangedItems := []syncChangeItem{}
+		for _, sc := range allChanges {
+			switch sc.ChangeType {
+			case "removed":
+				removedItems = append(removedItems, syncChangeItem{Title: sc.Title})
+			case "status_changed":
+				statusChangedItems = append(statusChangedItems, syncChangeItem{
+					Title: sc.Title, OldStatus: sc.OldStatus, NewStatus: sc.NewStatus,
+				})
+			}
+		}
+
 		result = append(result, jobWithItems{
-			Job:            j,
-			CompletedItems: completedItems,
-			SkippedItems:   skippedItems,
-			FailedItems:    failedItems,
+			Job:                j,
+			CompletedItems:     completedItems,
+			SkippedItems:       skippedItems,
+			FailedItems:        failedItems,
+			RemovedItems:       removedItems,
+			StatusChangedItems: statusChangedItems,
 		})
 	}
 
