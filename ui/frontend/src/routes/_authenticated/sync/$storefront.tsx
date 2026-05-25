@@ -201,10 +201,22 @@ function SyncDetailPage() {
     (storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false));
 
-  // Connection section is open by default when not configured or when there's a credentials error
-  const [connectionSectionOpen, setConnectionSectionOpen] = useState(
-    () => !config?.isConfigured || credentialsError
-  );
+  const [connectionSectionOpen, setConnectionSectionOpen] = useState(false);
+  const connectionOpenInitialized = useRef(false);
+
+  useEffect(() => {
+    if (!connectionOpenInitialized.current && config !== undefined) {
+      connectionOpenInitialized.current = true;
+      setConnectionSectionOpen(!config.isConfigured || credentialsError);
+    }
+  }, [config, credentialsError]);
+
+  useEffect(() => {
+    if (!connectionOpenInitialized.current) return;
+    // Sync section state after initialization: close if configured and no error, open if error
+    const shouldBeOpen = !config?.isConfigured || credentialsError;
+    setConnectionSectionOpen(shouldBeOpen);
+  }, [config?.isConfigured, credentialsError]);
 
   const handleUpdateConfig = async (data: SyncConfigUpdateData) => {
     try {
