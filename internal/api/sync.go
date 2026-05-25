@@ -143,6 +143,8 @@ type externalGameResponse struct {
 	UserGameID                 *string `bun:"user_game_id"                   json:"user_game_id"`
 	IGDBTitle                  *string `bun:"igdb_title"                     json:"igdb_title"`
 	UserGameOtherPlatformCount int     `bun:"user_game_other_platform_count" json:"user_game_other_platform_count"`
+	SyncStatus                 string  `bun:"sync_status"                    json:"sync_status"`
+	FailedJobItemID            *string `bun:"failed_job_item_id"             json:"failed_job_item_id"`
 }
 
 type steamVerifyResponse struct {
@@ -211,6 +213,9 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	// "external-games" is a static prefix — must be registered before /:storefront (POST)
 	// per Echo v5 route ordering rules.
 	g.POST("/external-games/:id/rematch", h.HandleRematchExternalGame) // implemented in Task 4
+	// static route /:storefront/external-games/retry-failed registered before
+	// parameterised /:storefront routes per Echo v5 ordering rules.
+	g.POST("/:storefront/external-games/retry-failed", h.HandleRetryFailedExternalGames)
 	g.GET("/config", h.HandleListConfig)
 	g.GET("/config/:storefront", h.HandleGetConfig)
 	g.PUT("/config/:storefront", h.HandleUpdateConfig)
@@ -947,7 +952,26 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 				(SELECT COUNT(*) FROM user_game_platforms o
 				 WHERE o.user_game_id = ugp.user_game_id AND o.id != ugp.id),
 				0
-			) AS user_game_other_platform_count
+			) AS user_game_other_platform_count,
+			CASE
+				WHEN EXISTS (
+					SELECT 1 FROM job_items ji
+					WHERE ji.external_game_id = eg.id AND ji.status = 'pending_review'
+				) THEN 'needs_review'
+				WHEN EXISTS (
+					SELECT 1 FROM job_items ji
+					WHERE ji.external_game_id = eg.id AND ji.status = 'failed'
+				) THEN 'failed'
+				WHEN eg.is_skipped THEN 'skipped'
+				WHEN eg.resolved_igdb_id IS NOT NULL THEN 'matched'
+				ELSE 'unmatched'
+			END AS sync_status,
+			(
+				SELECT ji.id FROM job_items ji
+				WHERE ji.external_game_id = eg.id AND ji.status = 'failed'
+				ORDER BY ji.created_at DESC
+				LIMIT 1
+			) AS failed_job_item_id
 		FROM external_games eg
 		LEFT JOIN user_game_platforms ugp ON ugp.external_game_id = eg.id
 		LEFT JOIN games g ON g.id = eg.resolved_igdb_id
@@ -1150,6 +1174,49 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		}
 	}
 
+	return c.NoContent(http.StatusNoContent)
+}
+
+// HandleRetryFailedExternalGames re-enqueues all failed job_items for external
+// games belonging to this user+storefront.
+func (h *SyncHandler) HandleRetryFailedExternalGames(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	sf := c.Param("storefront")
+	if !validTriggerStorefronts[sf] {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	}
+	ctx := context.Background()
+
+	var items []struct {
+		ID string `bun:"id"`
+	}
+	if err := h.db.NewRaw(`
+		SELECT ji.id
+		FROM job_items ji
+		JOIN external_games eg ON eg.id = ji.external_game_id
+		WHERE eg.user_id = ? AND eg.storefront = ? AND ji.status = 'failed'`,
+		userID, sf,
+	).Scan(ctx, &items); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to query failed items")
+	}
+
+	for _, item := range items {
+		if _, err := h.db.NewRaw(
+			`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL WHERE id = ?`,
+			item.ID,
+		).Exec(ctx); err != nil {
+			slog.Error("sync: retry-failed: reset item", "id", item.ID, "err", err)
+			continue
+		}
+		if h.riverClient != nil {
+			if _, err := h.riverClient.Insert(ctx, tasks.IGDBMatchArgs{JobItemID: item.ID}, nil); err != nil {
+				slog.Error("sync: retry-failed: enqueue", "id", item.ID, "err", err)
+			}
+		}
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
