@@ -122,6 +122,9 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 		return nil, fmt.Errorf("steam network error: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrAPIKeyRejected
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("steam HTTP %d", resp.StatusCode)
 	}
@@ -154,6 +157,10 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 // HTTP 429 and a brief retry does not help. The caller should back off globally
 // before retrying the same request.
 var ErrRateLimited = errors.New("steam: rate limited (429)")
+
+// ErrAPIKeyRejected is returned by GetOwnedGames when the Steam API responds
+// with HTTP 401 or 403, indicating the API key is invalid or revoked.
+var ErrAPIKeyRejected = errors.New("steam: API key rejected")
 
 // GetAppDetailsPlatforms fetches platform availability for the given appID.
 // Returns (Platforms{}, nil) when success=false (removed/delisted app) — caller decides fallback.

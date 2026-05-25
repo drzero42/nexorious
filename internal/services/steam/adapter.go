@@ -30,6 +30,9 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		batchSize = 10
 	}
 	owned, err := a.client.GetOwnedGames(ctx, a.apiKey, a.steamID)
+	if errors.Is(err, ErrAPIKeyRejected) {
+		return fmt.Errorf("%w: steam API key rejected", storefrontadapter.ErrCredentials)
+	}
 	if err != nil {
 		return fmt.Errorf("steam: fetch owned games: %w", err)
 	}
