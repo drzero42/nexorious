@@ -213,7 +213,6 @@ function SyncDetailPage() {
 
   useEffect(() => {
     if (!connectionOpenInitialized.current) return;
-    // Sync section state after initialization: close if configured and no error, open if error
     const shouldBeOpen = !config?.isConfigured || credentialsError;
     setConnectionSectionOpen(shouldBeOpen);
   }, [config?.isConfigured, credentialsError]);
