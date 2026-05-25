@@ -340,10 +340,8 @@ function StatusSection({
   // Determine section behavior
   const isFailedSection = status === JobItemStatus.FAILED;
   const isPendingReviewSection = status === JobItemStatus.PENDING_REVIEW;
-  // Retry all: only for terminal failed jobs
   const canRetryAll = isFailedSection && isTerminal;
-  // Individual retry: only for terminal failed items
-  const canRetryItem = isFailedSection && isTerminal;
+  const canRetryItem = canRetryAll;
 
   const handleRetryAll = async () => {
     try {
