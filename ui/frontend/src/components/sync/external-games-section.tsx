@@ -45,7 +45,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { ExternalGame, IGDBGameCandidate, SyncStorefront } from '@/types';
 
 interface ExternalGamesSectionProps {
-  platform: SyncStorefront;
+  storefront: SyncStorefront;
 }
 
 interface PendingRematch {
@@ -53,8 +53,8 @@ interface PendingRematch {
   candidate: IGDBGameCandidate;
 }
 
-export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
-  const { data: games = [], isLoading } = useExternalGames(platform);
+export function ExternalGamesSection({ storefront }: ExternalGamesSectionProps) {
+  const { data: games = [], isLoading } = useExternalGames(storefront);
   const { mutate: skip, isPending: isSkipping } = useSkipExternalGame();
   const { mutate: unskip, isPending: isUnskipping } = useUnskipExternalGame();
   const { mutate: rematch, isPending: isRematching } = useRematchExternalGame();
@@ -79,7 +79,7 @@ export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
     setRetryingItemId(game.id);
     try {
       await retryJobItem(game.failed_job_item_id);
-      queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(platform) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(storefront) });
     } finally {
       setRetryingItemId(null);
     }
@@ -97,7 +97,7 @@ export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
 
   return (
     <>
-      <div className="space-y-4">
+      <div className="space-y-4" id="needs-review">
         {needsReview.length > 0 && (
           <Card>
             <CardHeader>
@@ -142,7 +142,7 @@ export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => retryAll(platform)}
+                onClick={() => retryAll(storefront)}
                 disabled={isRetryingAll}
               >
                 Retry All

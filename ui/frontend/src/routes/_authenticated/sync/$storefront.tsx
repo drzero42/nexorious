@@ -587,7 +587,7 @@ function SyncDetailPage() {
       </Card>
 
       {/* External Games Library */}
-      <ExternalGamesSection platform={storefront} />
+      <ExternalGamesSection storefront={storefront} />
 
       {/* Recent Sync Activity */}
       <RecentActivity platform={storefront} />
