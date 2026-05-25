@@ -367,10 +367,9 @@ A grid of storefront cards — one per supported storefront. Each card shows:
 - Platform name and icon; the name links to that storefront's detail page
 - Connection status (Connected / Credentials Error / Not Configured)
 - Last synced timestamp
+- Count of external games currently available on that storefront (`is_available = true`), including skipped games; shown as a simple number (e.g. "482 games")
 - Pending review count badge; clicking it navigates to that storefront's detail page, anchoring to the Needs Review section where possible
 - A Sync Now button to trigger a manual sync without navigating into the detail page
-
-No game-level details are shown on the hub page.
 
 ### Platform Detail Page
 
