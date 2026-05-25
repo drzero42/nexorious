@@ -71,9 +71,9 @@ function SyncChangeList({
 
 function formatSummary(job: RecentJobDetail): string {
   const parts: string[] = [];
-  if (job.completedCount > 0) parts.push(`${job.completedCount} matched`);
-  if (job.skippedCount > 0) parts.push(`${job.skippedCount} skipped`);
-  if (job.failedCount > 0) parts.push(`${job.failedCount} failed`);
+  if (job.addedItems.length > 0) parts.push(`${job.addedItems.length} added`);
+  if (job.removedItems.length > 0) parts.push(`${job.removedItems.length} removed`);
+  if (job.statusChangedItems.length > 0) parts.push(`${job.statusChangedItems.length} status changed`);
   return parts.join(' · ');
 }
 

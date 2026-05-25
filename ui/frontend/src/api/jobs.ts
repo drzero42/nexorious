@@ -144,9 +144,9 @@ interface RecentJobDetailApiResponse {
     total: number;
     percent: number;
   };
-  added_items?: SyncChangeItemApiResponse[];
-  removed_items?: SyncChangeItemApiResponse[];
-  status_changed_items?: SyncChangeItemApiResponse[];
+  added_items: SyncChangeItemApiResponse[];
+  removed_items: SyncChangeItemApiResponse[];
+  status_changed_items: SyncChangeItemApiResponse[];
 }
 
 interface RecentJobsApiResponse {
