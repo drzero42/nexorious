@@ -161,6 +161,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	adapter, err := w.Adapter(ctx, p.Storefront, cfg)
 	if errors.Is(err, ErrCredentials) {
 		failSyncJob(ctx, w.DB, p.JobID, "credentials error")
+		_, _ = w.DB.NewRaw(
+			`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
+			p.UserID, p.Storefront,
+		).Exec(ctx)
 		return nil
 	}
 	if err != nil {
@@ -198,6 +202,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	}); err != nil {
 		if errors.Is(err, ErrCredentials) {
 			failSyncJob(ctx, w.DB, p.JobID, "credentials error")
+			_, _ = w.DB.NewRaw(
+				`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
+				p.UserID, p.Storefront,
+			).Exec(ctx)
 			return nil
 		}
 		slog.Error("dispatch_sync: library fetch failed", "job_id", p.JobID, "err", err)
@@ -241,10 +249,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 	}
 
-	// 8. Update last_synced_at.
+	// 8. Update last_synced_at and clear any prior credentials_error flag.
 	syncedNow := time.Now().UTC()
 	if _, err := w.DB.NewRaw(
-		`UPDATE user_sync_configs SET last_synced_at = ?, updated_at = now() WHERE user_id = ? AND storefront = ?`,
+		`UPDATE user_sync_configs SET last_synced_at = ?, credentials_error = false, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 		syncedNow, p.UserID, p.Storefront,
 	).Exec(context.Background()); err != nil {
 		slog.Error("dispatch_sync: update last_synced_at failed", "err", err, "job_id", p.JobID)

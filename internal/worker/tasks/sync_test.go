@@ -1720,6 +1720,112 @@ func TestUserGameWorker_StatusChangedSyncChange(t *testing.T) {
 	}
 }
 
+func TestDispatchSync_FactoryCredentialsError_SetsFlag(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var credsErr bool
+	_ = testDB.NewRaw(
+		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`,
+		userID,
+	).Scan(ctx, &credsErr)
+	if !credsErr {
+		t.Error("expected credentials_error=true after factory ErrCredentials")
+	}
+}
+
+func TestDispatchSync_FetchCredentialsError_SetsFlag(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	w := &tasks.DispatchSyncWorker{
+		DB:          testDB,
+		Adapter:     fetchErrFactory(tasks.ErrCredentials),
+		RiverClient: nil,
+	}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var credsErr bool
+	_ = testDB.NewRaw(
+		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`,
+		userID,
+	).Scan(ctx, &credsErr)
+	if !credsErr {
+		t.Error("expected credentials_error=true after fetch ErrCredentials")
+	}
+}
+
+func TestDispatchSync_Success_ClearsCredentialsFlag(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, credentials_error)
+		 VALUES (?, ?, 'steam', 'daily', true)`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{}}
+	rc := newTestRiverClient(t)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var credsErr bool
+	_ = testDB.NewRaw(
+		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`,
+		userID,
+	).Scan(ctx, &credsErr)
+	if credsErr {
+		t.Error("expected credentials_error=false after successful sync")
+	}
+}
+
 func TestSyncCheckJobCompletion_FailedItemsYieldsCompleted(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
