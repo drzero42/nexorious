@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -130,20 +131,22 @@ type syncStatusResponse struct {
 }
 
 type externalGameResponse struct {
-	ID                         string  `bun:"id"                             json:"id"`
-	Storefront                 string  `bun:"storefront"                     json:"storefront"`
-	ExternalID                 string  `bun:"external_id"                    json:"external_id"`
-	Title                      string  `bun:"title"                          json:"title"`
-	ResolvedIGDBID             *int32  `bun:"resolved_igdb_id"               json:"resolved_igdb_id"`
-	IsSkipped                  bool    `bun:"is_skipped"                     json:"is_skipped"`
-	IsAvailable                bool    `bun:"is_available"                   json:"is_available"`
-	IsSubscription             bool    `bun:"is_subscription"                json:"is_subscription"`
-	HasUserGame                bool    `bun:"has_user_game"                  json:"has_user_game"`
-	UserGameID                 *string `bun:"user_game_id"                   json:"user_game_id"`
-	IGDBTitle                  *string `bun:"igdb_title"                     json:"igdb_title"`
-	UserGameOtherPlatformCount int     `bun:"user_game_other_platform_count" json:"user_game_other_platform_count"`
-	SyncStatus                 string  `bun:"sync_status"                    json:"sync_status"`
-	FailedJobItemID            *string `bun:"failed_job_item_id"             json:"failed_job_item_id"`
+	ID                         string   `bun:"id"                             json:"id"`
+	Storefront                 string   `bun:"storefront"                     json:"storefront"`
+	ExternalID                 string   `bun:"external_id"                    json:"external_id"`
+	Title                      string   `bun:"title"                          json:"title"`
+	ResolvedIGDBID             *int32   `bun:"resolved_igdb_id"               json:"resolved_igdb_id"`
+	IsSkipped                  bool     `bun:"is_skipped"                     json:"is_skipped"`
+	IsAvailable                bool     `bun:"is_available"                   json:"is_available"`
+	IsSubscription             bool     `bun:"is_subscription"                json:"is_subscription"`
+	HasUserGame                bool     `bun:"has_user_game"                  json:"has_user_game"`
+	UserGameID                 *string  `bun:"user_game_id"                   json:"user_game_id"`
+	IGDBTitle                  *string  `bun:"igdb_title"                     json:"igdb_title"`
+	UserGameOtherPlatformCount int      `bun:"user_game_other_platform_count" json:"user_game_other_platform_count"`
+	SyncStatus                 string   `bun:"sync_status"                    json:"sync_status"`
+	FailedJobItemID            *string  `bun:"failed_job_item_id"             json:"failed_job_item_id"`
+	PlatformsCSV               string   `bun:"platforms_csv"                  json:"-"`
+	Platforms                  []string `bun:"-"                              json:"platforms"`
 }
 
 type steamVerifyResponse struct {
@@ -996,7 +999,13 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 				WHERE ji.external_game_id = eg.id AND ji.status = 'failed'
 				ORDER BY ji.created_at DESC
 				LIMIT 1
-			) AS failed_job_item_id
+			) AS failed_job_item_id,
+			COALESCE(
+				(SELECT string_agg(egp.platform, ',' ORDER BY egp.platform)
+				 FROM external_game_platforms egp
+				 WHERE egp.external_game_id = eg.id),
+				''
+			) AS platforms_csv
 		FROM external_games eg
 		LEFT JOIN user_game_platforms ugp ON ugp.external_game_id = eg.id
 		LEFT JOIN games g ON g.id = eg.resolved_igdb_id
@@ -1014,6 +1023,13 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 	}
 	if games == nil {
 		games = []externalGameResponse{}
+	}
+	for i := range games {
+		if games[i].PlatformsCSV != "" {
+			games[i].Platforms = strings.Split(games[i].PlatformsCSV, ",")
+		} else {
+			games[i].Platforms = []string{}
+		}
 	}
 	return c.JSON(http.StatusOK, games)
 }

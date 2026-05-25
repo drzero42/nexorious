@@ -1259,6 +1259,74 @@ func TestListExternalGames_ExcludesInFlight(t *testing.T) {
 	}
 }
 
+func TestListExternalGames_ReturnsPlatforms(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "eg-plat")
+
+	insertExternalGame(t, testDB, "eg-p1", userID, "steam", "730", "CS2")
+
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+		 VALUES ('egp-1', 'eg-p1', 'pc-windows', 0, now()),
+		        ('egp-2', 'eg-p1', 'pc-linux', 0, now())`)
+	if err != nil {
+		t.Fatalf("insert platforms: %v", err)
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (8888, 'CS2', now(), now()) ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE external_games SET resolved_igdb_id = 8888 WHERE id = 'eg-p1'`)
+
+	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 game, got %d", len(resp))
+	}
+	plRaw, ok := resp[0]["platforms"]
+	if !ok {
+		t.Fatal("expected 'platforms' field in response")
+	}
+	platforms, _ := plRaw.([]any)
+	if len(platforms) != 2 {
+		t.Errorf("expected 2 platforms, got %v", plRaw)
+	}
+	platformStrs := make(map[string]bool)
+	for _, p := range platforms {
+		platformStrs[p.(string)] = true
+	}
+	if !platformStrs["pc-windows"] || !platformStrs["pc-linux"] {
+		t.Errorf("expected pc-windows and pc-linux, got %v", platforms)
+	}
+}
+
+func TestListExternalGames_NoPlatforms_ReturnsEmptyArray(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "eg-noplat")
+
+	insertExternalGame(t, testDB, "eg-np1", userID, "steam", "999", "Orphan Game")
+
+	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
+	var resp []map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 game, got %d", len(resp))
+	}
+	plRaw := resp[0]["platforms"]
+	platforms, _ := plRaw.([]any)
+	if len(platforms) != 0 {
+		t.Errorf("expected empty platforms array, got %v", plRaw)
+	}
+}
+
 // ─── Epic connection-handler tests ────────────────────────────────────────────
 
 type stubEpicClient struct {
