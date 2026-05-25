@@ -194,6 +194,7 @@ type UserSyncConfig struct {
 	Frequency             string     `bun:"frequency,notnull"       json:"frequency"`
 	StorefrontCredentials *string    `bun:"storefront_credentials"  json:"-"`
 	LastSyncedAt          *time.Time `bun:"last_synced_at"          json:"last_synced_at"`
+	CredentialsError      bool       `bun:"credentials_error"       json:"-"`
 	CreatedAt             time.Time  `bun:"created_at,notnull"      json:"created_at"`
 	UpdatedAt             time.Time  `bun:"updated_at,notnull"      json:"updated_at"`
 }

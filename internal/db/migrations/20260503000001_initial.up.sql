@@ -209,6 +209,7 @@ CREATE TABLE user_sync_configs (
     frequency              TEXT NOT NULL DEFAULT 'manual',
     storefront_credentials TEXT,
     last_synced_at         TIMESTAMPTZ,
+    credentials_error      BOOLEAN NOT NULL DEFAULT false,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(user_id, storefront)
