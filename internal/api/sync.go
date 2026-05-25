@@ -976,12 +976,22 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 			eg.is_skipped,
 			eg.is_available,
 			eg.is_subscription,
-			(ugp.user_game_id IS NOT NULL) AS has_user_game,
-			ugp.user_game_id,
+			EXISTS (
+				SELECT 1 FROM user_game_platforms ugp WHERE ugp.external_game_id = eg.id
+			) AS has_user_game,
+			(
+				SELECT ugp.user_game_id FROM user_game_platforms ugp
+				WHERE ugp.external_game_id = eg.id LIMIT 1
+			) AS user_game_id,
 			g.title AS igdb_title,
 			COALESCE(
-				(SELECT COUNT(*) FROM user_game_platforms o
-				 WHERE o.user_game_id = ugp.user_game_id AND o.id != ugp.id),
+				(SELECT COUNT(*)
+				 FROM user_game_platforms o
+				 WHERE o.user_game_id = (
+					 SELECT ugp.user_game_id FROM user_game_platforms ugp
+					 WHERE ugp.external_game_id = eg.id LIMIT 1
+				 )
+				 AND o.external_game_id IS DISTINCT FROM eg.id),
 				0
 			) AS user_game_other_platform_count,
 			CASE
@@ -1010,7 +1020,6 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 				''
 			) AS platforms_csv
 		FROM external_games eg
-		LEFT JOIN user_game_platforms ugp ON ugp.external_game_id = eg.id
 		LEFT JOIN games g ON g.id = eg.resolved_igdb_id
 		WHERE eg.user_id = ? AND eg.storefront = ?
 		  AND NOT EXISTS (
