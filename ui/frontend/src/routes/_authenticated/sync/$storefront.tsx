@@ -167,6 +167,7 @@ function SyncDetailPage() {
     if (activeJob?.isTerminal && activeJob.id !== invalidatedJobRef.current) {
       invalidatedJobRef.current = activeJob.id;
       queryClient.invalidateQueries({ queryKey: jobsKeys.recent(storefront) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(storefront) });
     }
   }, [activeJob?.isTerminal, activeJob?.id, storefront, queryClient]);
 
@@ -524,7 +525,7 @@ function SyncDetailPage() {
       )}
 
       {/* External Games Library */}
-      <ExternalGamesSection storefront={storefront} />
+      <ExternalGamesSection storefront={storefront} isSyncing={!!isSyncing} />
 
       {/* Recent Sync Activity */}
       <RecentActivity platform={storefront} />

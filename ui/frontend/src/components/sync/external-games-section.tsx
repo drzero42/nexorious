@@ -46,6 +46,7 @@ import type { ExternalGame, IGDBGameCandidate, SyncStorefront } from '@/types';
 
 interface ExternalGamesSectionProps {
   storefront: SyncStorefront;
+  isSyncing?: boolean;
 }
 
 interface PendingRematch {
@@ -53,8 +54,10 @@ interface PendingRematch {
   candidate: IGDBGameCandidate;
 }
 
-export function ExternalGamesSection({ storefront }: ExternalGamesSectionProps) {
-  const { data: games = [], isLoading } = useExternalGames(storefront);
+export function ExternalGamesSection({ storefront, isSyncing = false }: ExternalGamesSectionProps) {
+  const { data: games = [], isLoading } = useExternalGames(storefront, {
+    refetchInterval: isSyncing ? 5000 : undefined,
+  });
   const { mutate: skip, isPending: isSkipping } = useSkipExternalGame();
   const { mutate: unskip, isPending: isUnskipping } = useUnskipExternalGame();
   const { mutate: rematch, isPending: isRematching } = useRematchExternalGame();

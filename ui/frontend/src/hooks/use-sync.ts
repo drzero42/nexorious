@@ -360,10 +360,11 @@ export function useDisconnectPSN() {
 /**
  * Hook to fetch external games for a specific platform.
  */
-export function useExternalGames(platform: SyncStorefront) {
+export function useExternalGames(platform: SyncStorefront, options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: syncKeys.externalGames(platform),
     queryFn: () => syncApi.getExternalGames(platform),
+    refetchInterval: options?.refetchInterval,
   });
 }
 
