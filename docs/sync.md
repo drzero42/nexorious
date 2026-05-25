@@ -193,7 +193,7 @@ One `IGDBMatchWorker` job runs per game. River handles retries with exponential 
 3. **Already resolved?** If `resolved_igdb_id` is now set — either from a previous sync run or just inherited from a sibling — route directly to Stage 3. On subsequent syncs, most games will take this path
 4. **Search IGDB** for the game title; score each candidate using fuzzy title matching
 5. **Auto-resolve** if the best candidate scores ≥ 0.85 and has a clear margin (> 0.01) over the second-best: set `resolved_igdb_id` on the `external_game` and enqueue Stage 3
-6. **pending_review** if no clear winner is found, or if IGDB API calls fail after all River retries are exhausted: store the candidates in `job_item.igdb_candidates` and mark the item `pending_review` for the user to resolve
+6. **pending_review** if no clear winner is found, or if IGDB API calls fail after all River retries are exhausted: mark the item `pending_review` for the user to resolve
 
 ### Title matching
 
@@ -268,7 +268,7 @@ A job is complete only when every job_item is either `completed` or `skipped`. I
 
 ### Resolving a pending_review item
 
-The user can either select a game from the suggested `igdb_candidates` or perform their own IGDB search and choose any result. Once a match is chosen, the resolve endpoint sets `resolved_igdb_id` on the `job_item` and enqueues a Stage 3 job immediately. Stage 3 then propagates `resolved_igdb_id` from the `job_item` to the `external_game` as its first write step — the `external_game` is not updated at the time of the user's action, only when Stage 3 runs. Any unresolved siblings (same user, storefront, and title) are resolved with the same IGDB ID and also enqueued for Stage 3 at the time of the user's action.
+The user searches IGDB and selects a match. Once a match is chosen, the resolve endpoint sets `resolved_igdb_id` on the `job_item` and enqueues a Stage 3 job immediately. Stage 3 then propagates `resolved_igdb_id` from the `job_item` to the `external_game` as its first write step — the `external_game` is not updated at the time of the user's action, only when Stage 3 runs. Any unresolved siblings (same user, storefront, and title) are resolved with the same IGDB ID and also enqueued for Stage 3 at the time of the user's action.
 
 ### Skipping a game
 
