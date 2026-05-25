@@ -26,7 +26,6 @@ interface SyncConfigApiResponse {
   user_id: string;
   storefront: string;
   frequency: string;
-  auto_add: boolean;
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
@@ -71,7 +70,6 @@ function transformSyncConfig(apiConfig: SyncConfigApiResponse): SyncConfig {
     userId: apiConfig.user_id,
     storefront: apiConfig.storefront as SyncStorefront,
     frequency: apiConfig.frequency as SyncFrequency,
-    autoAdd: apiConfig.auto_add,
     lastSyncedAt: apiConfig.last_synced_at,
     createdAt: apiConfig.created_at,
     updatedAt: apiConfig.updated_at,
@@ -131,9 +129,6 @@ export async function updateSyncConfig(
 
   if (data.frequency !== undefined) {
     requestBody.frequency = data.frequency;
-  }
-  if (data.autoAdd !== undefined) {
-    requestBody.auto_add = data.autoAdd;
   }
 
   const response = await api.put<SyncConfigApiResponse>(

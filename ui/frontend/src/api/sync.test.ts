@@ -31,7 +31,6 @@ describe('syncApi', () => {
             user_id: 'user-1',
             storefront: 'steam',
             frequency: 'daily',
-            auto_add: true,
             last_synced_at: '2025-01-01T00:00:00Z',
             created_at: '2025-01-01T00:00:00Z',
             updated_at: '2025-01-01T00:00:00Z',
@@ -48,7 +47,6 @@ describe('syncApi', () => {
       expect(api.get).toHaveBeenCalledWith('/sync/config');
       expect(result.configs[0].storefront).toBe(SyncStorefront.STEAM);
       expect(result.configs[0].frequency).toBe(SyncFrequency.DAILY);
-      expect(result.configs[0].autoAdd).toBe(true);
       expect(result.configs[0].userId).toBe('user-1');
     });
   });
@@ -60,7 +58,6 @@ describe('syncApi', () => {
         user_id: 'user-1',
         storefront: 'steam',
         frequency: 'daily',
-        auto_add: true,
         last_synced_at: '2025-01-01T00:00:00Z',
         created_at: '2025-01-01T00:00:00Z',
         updated_at: '2025-01-01T00:00:00Z',
@@ -74,7 +71,6 @@ describe('syncApi', () => {
       expect(api.get).toHaveBeenCalledWith('/sync/config/steam');
       expect(result.storefront).toBe(SyncStorefront.STEAM);
       expect(result.frequency).toBe(SyncFrequency.DAILY);
-      expect(result.autoAdd).toBe(true);
       expect(result.userId).toBe('user-1');
     });
   });
@@ -86,7 +82,6 @@ describe('syncApi', () => {
         user_id: 'user-1',
         storefront: 'steam',
         frequency: 'weekly',
-        auto_add: false,
         last_synced_at: null,
         created_at: '2025-01-01T00:00:00Z',
         updated_at: '2025-01-01T00:00:00Z',
@@ -97,15 +92,12 @@ describe('syncApi', () => {
 
       const result = await syncApi.updateSyncConfig(SyncStorefront.STEAM, {
         frequency: SyncFrequency.WEEKLY,
-        autoAdd: false,
       });
 
       expect(api.put).toHaveBeenCalledWith('/sync/config/steam', {
         frequency: 'weekly',
-        auto_add: false,
       });
       expect(result.frequency).toBe(SyncFrequency.WEEKLY);
-      expect(result.autoAdd).toBe(false);
     });
   });
 

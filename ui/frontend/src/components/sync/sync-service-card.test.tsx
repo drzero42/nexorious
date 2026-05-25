@@ -11,7 +11,6 @@ const createMockConfig = (overrides: Partial<SyncConfig> = {}): SyncConfig => ({
   userId: 'user-1',
   storefront: SyncStorefront.STEAM,
   frequency: SyncFrequency.DAILY,
-  autoAdd: true,
   lastSyncedAt: '2024-01-01T12:00:00Z',
   createdAt: '2024-01-01T00:00:00Z',
   updatedAt: '2024-01-01T00:00:00Z',

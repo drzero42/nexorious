@@ -91,7 +91,6 @@ function SyncPage() {
       userId: '',
       storefront,
       frequency: SyncFrequency.MANUAL,
-      autoAdd: false,
       lastSyncedAt: null,
       createdAt: '',
       updatedAt: '',

@@ -192,7 +192,6 @@ type UserSyncConfig struct {
 	UserID                string     `bun:"user_id,notnull"         json:"user_id"`
 	Storefront            string     `bun:"storefront,notnull"      json:"storefront"`
 	Frequency             string     `bun:"frequency,notnull"       json:"frequency"`
-	AutoAdd               bool       `bun:"auto_add,notnull"        json:"auto_add"`
 	StorefrontCredentials *string    `bun:"storefront_credentials"  json:"-"`
 	LastSyncedAt          *time.Time `bun:"last_synced_at"          json:"last_synced_at"`
 	CreatedAt             time.Time  `bun:"created_at,notnull"      json:"created_at"`

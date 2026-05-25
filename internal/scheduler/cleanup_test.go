@@ -239,8 +239,8 @@ func TestCheckPendingSyncs_OverdueSyncDispatched(t *testing.T) {
 	configID := uuid.NewString()
 	lastSynced := time.Now().UTC().Add(-2 * 24 * time.Hour) // 2 days ago
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at)
-		 VALUES (?, ?, 'steam', 'daily', false, ?)`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at)
+		 VALUES (?, ?, 'steam', 'daily', ?)`,
 		configID, userID, lastSynced,
 	).Exec(ctx)
 	if err != nil {
@@ -272,8 +272,8 @@ func TestCheckPendingSyncs_NotOverdue_NotDispatched(t *testing.T) {
 	configID := uuid.NewString()
 	lastSynced := time.Now().UTC().Add(-1 * time.Hour)
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at)
-		 VALUES (?, ?, 'steam', 'daily', false, ?)`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at)
+		 VALUES (?, ?, 'steam', 'daily', ?)`,
 		configID, userID, lastSynced,
 	).Exec(ctx)
 	if err != nil {
@@ -300,8 +300,8 @@ func TestCheckPendingSyncs_NeverSynced_Dispatched(t *testing.T) {
 	// last_synced_at is NULL (never synced) — should always dispatch.
 	configID := uuid.NewString()
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add)
-		 VALUES (?, ?, 'steam', 'weekly', false)`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency)
+		 VALUES (?, ?, 'steam', 'weekly')`,
 		configID, userID,
 	).Exec(ctx)
 	if err != nil {
@@ -333,8 +333,8 @@ func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
 	configID := uuid.NewString()
 	lastSynced := time.Now().UTC().Add(-2 * 24 * time.Hour)
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at)
-		 VALUES (?, ?, 'steam', 'daily', false, ?)`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at)
+		 VALUES (?, ?, 'steam', 'daily', ?)`,
 		configID, userID, lastSynced,
 	).Exec(ctx)
 	if err != nil {
@@ -371,8 +371,8 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 	// manual frequency — should never be auto-dispatched.
 	configID := uuid.NewString()
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add)
-		 VALUES (?, ?, 'steam', 'manual', false)`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency)
+		 VALUES (?, ?, 'steam', 'manual')`,
 		configID, userID,
 	).Exec(ctx)
 	if err != nil {

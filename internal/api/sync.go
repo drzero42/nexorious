@@ -97,7 +97,6 @@ type syncConfigItem struct {
 	ID           string     `json:"id"`
 	Storefront   string     `json:"storefront"`
 	Frequency    string     `json:"frequency"`
-	AutoAdd      bool       `json:"auto_add"`
 	LastSyncedAt *time.Time `json:"last_synced_at"`
 	IsConfigured bool       `json:"is_configured"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -109,7 +108,6 @@ type syncConfigResponse struct {
 	UserID       string     `json:"user_id"`
 	Storefront   string     `json:"storefront"`
 	Frequency    string     `json:"frequency"`
-	AutoAdd      bool       `json:"auto_add"`
 	LastSyncedAt *time.Time `json:"last_synced_at"`
 	IsConfigured bool       `json:"is_configured"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -252,7 +250,6 @@ func (h *SyncHandler) HandleListConfig(c *echo.Context) error {
 				ID:           row.ID,
 				Storefront:   row.Storefront,
 				Frequency:    row.Frequency,
-				AutoAdd:      row.AutoAdd,
 				LastSyncedAt: row.LastSyncedAt,
 				IsConfigured: row.StorefrontCredentials != nil,
 				CreatedAt:    row.CreatedAt,
@@ -263,7 +260,6 @@ func (h *SyncHandler) HandleListConfig(c *echo.Context) error {
 				ID:           uuid.NewString(),
 				Storefront:   sf,
 				Frequency:    "manual",
-				AutoAdd:      false,
 				LastSyncedAt: nil,
 				IsConfigured: false,
 				CreatedAt:    now,
@@ -291,7 +287,7 @@ func (h *SyncHandler) HandleGetConfig(c *echo.Context) error {
 		now := time.Now().UTC()
 		return c.JSON(http.StatusOK, syncConfigResponse{
 			ID: uuid.NewString(), UserID: userID, Storefront: sf,
-			Frequency: "manual", AutoAdd: false, IsConfigured: false,
+			Frequency: "manual", IsConfigured: false,
 			CreatedAt: now, UpdatedAt: now,
 		})
 	}
@@ -300,7 +296,7 @@ func (h *SyncHandler) HandleGetConfig(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, syncConfigResponse{
 		ID: row.ID, UserID: row.UserID, Storefront: row.Storefront,
-		Frequency: row.Frequency, AutoAdd: row.AutoAdd,
+		Frequency:    row.Frequency,
 		LastSyncedAt: row.LastSyncedAt,
 		IsConfigured: row.StorefrontCredentials != nil,
 		CreatedAt:    row.CreatedAt, UpdatedAt: row.UpdatedAt,
@@ -319,7 +315,6 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 
 	var body struct {
 		Frequency *string `json:"frequency"`
-		AutoAdd   *bool   `json:"auto_add"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid body")
@@ -336,7 +331,6 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 			UserID:     userID,
 			Storefront: sf,
 			Frequency:  "manual",
-			AutoAdd:    false,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
@@ -347,13 +341,10 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 	if body.Frequency != nil {
 		row.Frequency = *body.Frequency
 	}
-	if body.AutoAdd != nil {
-		row.AutoAdd = *body.AutoAdd
-	}
 	row.UpdatedAt = now
 
 	_, err = h.db.NewInsert().Model(&row).
-		On("CONFLICT (user_id, storefront) DO UPDATE SET frequency = EXCLUDED.frequency, auto_add = EXCLUDED.auto_add, updated_at = EXCLUDED.updated_at").
+		On("CONFLICT (user_id, storefront) DO UPDATE SET frequency = EXCLUDED.frequency, updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save config")
@@ -361,7 +352,7 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, syncConfigResponse{
 		ID: row.ID, UserID: row.UserID, Storefront: row.Storefront,
-		Frequency: row.Frequency, AutoAdd: row.AutoAdd,
+		Frequency:    row.Frequency,
 		LastSyncedAt: row.LastSyncedAt,
 		IsConfigured: row.StorefrontCredentials != nil,
 		CreatedAt:    row.CreatedAt, UpdatedAt: row.UpdatedAt,

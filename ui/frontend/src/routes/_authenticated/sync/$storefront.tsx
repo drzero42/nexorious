@@ -30,7 +30,6 @@ import type { SyncConfigUpdateData } from '@/types';
 import { JobProgressCard, JobItemsDetails } from '@/components/jobs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -52,7 +51,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { RefreshCw, Loader2, AlertCircle, Settings, Clock, ChevronDown } from 'lucide-react';
+import { RefreshCw, Loader2, AlertCircle, Clock, ChevronDown } from 'lucide-react';
 import { config as envConfig } from '@/lib/env';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 
@@ -129,7 +128,6 @@ function SyncDetailPage() {
 
   // Local state for optimistic updates
   const [localFrequency, setLocalFrequency] = useState<SyncFrequency | null>(null);
-  const [localAutoAdd, setLocalAutoAdd] = useState<boolean | null>(null);
 
   const isValidPlatform = SUPPORTED_SYNC_STOREFRONTS.includes(storefront);
 
@@ -194,7 +192,6 @@ function SyncDetailPage() {
 
   // Use local state if set, otherwise use config values
   const effectiveFrequency = localFrequency ?? config?.frequency ?? SyncFrequency.DAILY;
-  const effectiveAutoAdd = localAutoAdd ?? config?.autoAdd ?? false;
 
   // Derive credentials error state from storefront-specific connection data
   const credentialsError =
@@ -217,18 +214,12 @@ function SyncDetailPage() {
       toast.error(message);
       // Reset local state on error
       if (data.frequency !== undefined) setLocalFrequency(null);
-      if (data.autoAdd !== undefined) setLocalAutoAdd(null);
     }
   };
 
   const handleFrequencyChange = async (frequency: SyncFrequency) => {
     setLocalFrequency(frequency);
     await handleUpdateConfig({ frequency });
-  };
-
-  const handleAutoAddChange = async (autoAdd: boolean) => {
-    setLocalAutoAdd(autoAdd);
-    await handleUpdateConfig({ autoAdd });
   };
 
   const handleTriggerSync = async () => {
@@ -494,6 +485,30 @@ function SyncDetailPage() {
               }}
             />
           )}
+          {config.isConfigured && (
+            <div className="flex items-center justify-between px-1">
+              <div>
+                <div className="font-medium">Sync Frequency</div>
+                <div className="text-sm text-muted-foreground">How often to automatically sync</div>
+              </div>
+              <Select
+                value={effectiveFrequency}
+                onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
+                disabled={isUpdating}
+              >
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.values(SyncFrequency).map((freq) => (
+                    <SelectItem key={freq} value={freq}>
+                      {getSyncFrequencyLabel(freq)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </CollapsibleContent>
       </Collapsible>
 
@@ -511,61 +526,6 @@ function SyncDetailPage() {
           )}
         </div>
       )}
-
-      {/* Configuration Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            Configuration
-          </CardTitle>
-          <CardDescription>
-            Configure how {platformInfo.name} syncs with your collection
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Frequency Select */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-medium">Sync Frequency</div>
-              <div className="text-sm text-muted-foreground">
-                How often to automatically sync
-              </div>
-            </div>
-            <Select
-              value={effectiveFrequency}
-              onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
-              disabled={isUpdating || !config.isConfigured}
-            >
-              <SelectTrigger className="w-[160px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.values(SyncFrequency).map((freq) => (
-                  <SelectItem key={freq} value={freq}>
-                    {getSyncFrequencyLabel(freq)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Auto-add Toggle */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-medium">Auto-add Games</div>
-              <div className="text-sm text-muted-foreground">
-                Automatically add matched games to your collection without review
-              </div>
-            </div>
-            <Switch
-              checked={effectiveAutoAdd}
-              onCheckedChange={handleAutoAddChange}
-              disabled={isUpdating || !config.isConfigured}
-            />
-          </div>
-        </CardContent>
-      </Card>
 
       {/* External Games Library */}
       <ExternalGamesSection storefront={storefront} />

@@ -207,7 +207,6 @@ CREATE TABLE user_sync_configs (
     user_id                TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     storefront             TEXT NOT NULL,
     frequency              TEXT NOT NULL DEFAULT 'manual',
-    auto_add               BOOLEAN NOT NULL DEFAULT false,
     storefront_credentials TEXT,
     last_synced_at         TIMESTAMPTZ,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),

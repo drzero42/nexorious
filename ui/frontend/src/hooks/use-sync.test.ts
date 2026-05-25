@@ -26,7 +26,6 @@ const mockSyncConfigApi = {
   user_id: 'user-1',
   storefront: 'steam',
   frequency: 'daily',
-  auto_add: true,
   last_synced_at: null,
   created_at: '2025-01-01T00:00:00Z',
   updated_at: '2025-01-01T00:00:00Z',
@@ -108,7 +107,6 @@ describe('use-sync hooks', () => {
       expect(result.current.data?.configs).toHaveLength(1);
       expect(result.current.data?.configs[0].storefront).toBe(SyncStorefront.STEAM);
       expect(result.current.data?.configs[0].frequency).toBe(SyncFrequency.DAILY);
-      expect(result.current.data?.configs[0].autoAdd).toBe(true);
       expect(result.current.data?.total).toBe(1);
     });
 
@@ -225,17 +223,14 @@ describe('use-sync hooks', () => {
       const updatedConfig = {
         ...mockSyncConfigApi,
         frequency: 'weekly',
-        auto_add: false,
       };
 
       server.use(
         http.put(`${API_URL}/sync/config/steam`, async ({ request }) => {
           const body = (await request.json()) as {
             frequency?: string;
-            auto_add?: boolean;
           };
           expect(body.frequency).toBe('weekly');
-          expect(body.auto_add).toBe(false);
           return HttpResponse.json(updatedConfig);
         })
       );
@@ -249,7 +244,6 @@ describe('use-sync hooks', () => {
           storefront: SyncStorefront.STEAM,
           data: {
             frequency: SyncFrequency.WEEKLY,
-            autoAdd: false,
           },
         });
       });
@@ -259,7 +253,6 @@ describe('use-sync hooks', () => {
       });
 
       expect(result.current.data?.frequency).toBe(SyncFrequency.WEEKLY);
-      expect(result.current.data?.autoAdd).toBe(false);
     });
 
     it('handles update error', async () => {
@@ -277,7 +270,7 @@ describe('use-sync hooks', () => {
         try {
           await result.current.mutateAsync({
             storefront: SyncStorefront.STEAM,
-            data: { autoAdd: false },
+            data: { frequency: SyncFrequency.WEEKLY },
           });
         } catch {
           // Expected error

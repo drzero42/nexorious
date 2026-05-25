@@ -88,7 +88,6 @@ func TestSyncConfig_Put_CreatesRow(t *testing.T) {
 
 	rec := putJSONAuth(t, e, "/api/sync/config/steam", map[string]any{
 		"frequency": "daily",
-		"auto_add":  true,
 	}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -99,9 +98,6 @@ func TestSyncConfig_Put_CreatesRow(t *testing.T) {
 	}
 	if resp["frequency"] != "daily" {
 		t.Fatalf("expected frequency=daily, got %v", resp["frequency"])
-	}
-	if resp["auto_add"].(bool) != true {
-		t.Fatalf("expected auto_add=true")
 	}
 }
 
@@ -538,7 +534,6 @@ func TestSyncListConfig_AfterPut(t *testing.T) {
 	// Create a steam config.
 	rec := putJSONAuth(t, e, "/api/sync/config/steam", map[string]any{
 		"frequency": "daily",
-		"auto_add":  false,
 	}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -603,7 +598,6 @@ func TestSyncGetConfig_AfterPut(t *testing.T) {
 	// Create a config first.
 	rec := putJSONAuth(t, e, "/api/sync/config/psn", map[string]any{
 		"frequency": "weekly",
-		"auto_add":  false,
 	}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -1084,8 +1078,8 @@ func TestResetSyncData_DeletesDataAndResetsTimestamp(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "reset-data")
 
 	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at, created_at, updated_at)
-		 VALUES (gen_random_uuid(), ?, 'steam', 'manual', false, now(), now(), now())`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at, created_at, updated_at)
+		 VALUES (gen_random_uuid(), ?, 'steam', 'manual', now(), now(), now())`,
 		userID,
 	)
 	insertExternalGame(t, testDB, "eg-reset-1", userID, "steam", "730", "CS2")

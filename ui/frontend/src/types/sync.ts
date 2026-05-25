@@ -28,7 +28,6 @@ export interface SyncConfig {
   userId: string;
   storefront: SyncStorefront;
   frequency: SyncFrequency;
-  autoAdd: boolean;
   lastSyncedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -37,7 +36,6 @@ export interface SyncConfig {
 
 export interface SyncConfigUpdateData {
   frequency?: SyncFrequency;
-  autoAdd?: boolean;
 }
 
 export interface SyncStatus {
