@@ -191,6 +191,7 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
                       <TableRow>
                         <TableHead>Storefront Title</TableHead>
                         <TableHead>IGDB Title</TableHead>
+                        <TableHead>Platform</TableHead>
                         <TableHead />
                       </TableRow>
                     </TableHeader>
@@ -199,6 +200,9 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
                         <TableRow key={game.id}>
                           <TableCell>{game.title}</TableCell>
                           <TableCell className="text-muted-foreground">{game.igdb_title}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {game.platforms.join(', ')}
+                          </TableCell>
                           <TableCell className="text-right">
                             <Button
                               size="sm"

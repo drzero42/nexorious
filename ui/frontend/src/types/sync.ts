@@ -191,11 +191,11 @@ export interface ExternalGame {
   is_skipped: boolean;
   is_available: boolean;
   is_subscription: boolean;
-  playtime_hours: number;
   has_user_game: boolean;
   user_game_id: string | null;
   igdb_title: string | null;
   user_game_other_platform_count: number;
   sync_status: 'needs_review' | 'failed' | 'matched' | 'skipped' | 'unmatched';
   failed_job_item_id: string | null;
+  platforms: string[];
 }
