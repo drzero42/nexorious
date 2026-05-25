@@ -977,6 +977,62 @@ func TestRematchExternalGame_RemoveOrphan(t *testing.T) {
 	}
 }
 
+func TestRematchExternalGame_ResolvesSiblings(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-siblings")
+
+	// Two PSN external_games for the same game title (PS4 + PS5 variants).
+	insertExternalGame(t, testDB, "eg-ps4", userID, "psn", "PPSA-001", "Spider-Man 2")
+	insertExternalGame(t, testDB, "eg-ps5", userID, "psn", "PPSA-002", "Spider-Man 2")
+
+	// A recent sync job for the sibling fallback path.
+	insertJob(t, testDB, "job-sib", userID, "sync", "psn", "processing")
+
+	// pending_review job_item for the primary (PS4).
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-ps4', 'job-sib', ?, 'PPSA-001', 'Spider-Man 2', 'eg-ps4', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert primary job_item: %v", err)
+	}
+
+	// No job_item for the sibling (PS5) — the fallback path will create one.
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (5555, 'Spider-Man 2', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-ps4/rematch",
+		map[string]any{"igdb_id": 5555}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	// Sibling (PS5) should now have resolved_igdb_id set.
+	var sibResolvedID *int32
+	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-ps5'`).Scan(ctx, &sibResolvedID); err != nil {
+		t.Fatalf("scan sibling resolved_igdb_id: %v", err)
+	}
+	if sibResolvedID == nil || *sibResolvedID != 5555 {
+		t.Errorf("expected sibling resolved_igdb_id=5555, got %v", sibResolvedID)
+	}
+
+	// A job_item for the sibling should have been created (fallback path).
+	var sibItemCount int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE external_game_id = 'eg-ps5'`,
+	).Scan(ctx, &sibItemCount); err != nil {
+		t.Fatalf("scan sibling job_item count: %v", err)
+	}
+	if sibItemCount != 1 {
+		t.Errorf("expected 1 job_item for sibling, got %d", sibItemCount)
+	}
+}
+
 // ─── TestUnskipGame_EnqueuesJobItem ───────────────────────────────────────────
 
 func TestUnskipGame_EnqueuesJobItem(t *testing.T) {

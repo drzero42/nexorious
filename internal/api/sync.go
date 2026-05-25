@@ -1197,6 +1197,61 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		}
 	}
 
+	// Resolve siblings: other external_games for the same (user, storefront, title) that are
+	// still unresolved. Each gets the same IGDB ID and its own Stage 3 job.
+	var siblings []struct {
+		ID         string `bun:"id"`
+		ExternalID string `bun:"external_id"`
+		Title      string `bun:"title"`
+	}
+	if err := h.db.NewRaw(`
+		SELECT id, external_id, title FROM external_games
+		WHERE user_id = ? AND storefront = ? AND title = ?
+		  AND id != ? AND resolved_igdb_id IS NULL AND is_skipped = false`,
+		userID, eg.Storefront, eg.Title, id,
+	).Scan(ctx, &siblings); err == nil {
+		for _, sib := range siblings {
+			if _, err := h.db.NewRaw(
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+				body.IGDBID, sib.ID,
+			).Exec(ctx); err != nil {
+				slog.Error("sync: rematch: resolve sibling", "err", err, "sibling_id", sib.ID)
+				continue
+			}
+			var sibItemID string
+			if err := h.db.NewRaw(`
+				SELECT id FROM job_items
+				WHERE external_game_id = ? AND status = 'pending_review'
+				ORDER BY created_at DESC LIMIT 1`, sib.ID,
+			).Scan(ctx, &sibItemID); err != nil || sibItemID == "" {
+				var recentJobID string
+				if err2 := h.db.NewRaw(`
+					SELECT id FROM jobs
+					WHERE user_id = ? AND source = ? AND job_type = 'sync'
+					ORDER BY created_at DESC LIMIT 1`,
+					userID, eg.Storefront,
+				).Scan(ctx, &recentJobID); err2 != nil {
+					slog.Error("sync: rematch: sibling no recent job", "sibling_id", sib.ID, "err", err2)
+					continue
+				}
+				sibItemID = uuid.NewString()
+				if _, err3 := h.db.NewRaw(`
+					INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+					VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
+					sibItemID, recentJobID, userID, sib.ExternalID, sib.Title, sib.ID,
+				).Exec(ctx); err3 != nil {
+					slog.Error("sync: rematch: create sibling job_item", "sibling_id", sib.ID, "err", err3)
+					continue
+				}
+			}
+			if h.riverClient != nil {
+				if _, err := h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: sibItemID}, nil); err != nil {
+					slog.Error("sync: rematch: enqueue sibling Stage 3", "sibling_id", sib.ID, "err", err)
+				}
+			}
+		}
+	}
+
 	return c.NoContent(http.StatusNoContent)
 }
 
