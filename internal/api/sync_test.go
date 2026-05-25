@@ -1320,7 +1320,13 @@ func TestListExternalGames_NoPlatforms_ReturnsEmptyArray(t *testing.T) {
 	if len(resp) != 1 {
 		t.Fatalf("expected 1 game, got %d", len(resp))
 	}
-	plRaw := resp[0]["platforms"]
+	plRaw, ok := resp[0]["platforms"]
+	if !ok {
+		t.Fatal("expected 'platforms' field in response")
+	}
+	if plRaw == nil {
+		t.Fatal("expected empty array [], got JSON null")
+	}
 	platforms, _ := plRaw.([]any)
 	if len(platforms) != 0 {
 		t.Errorf("expected empty platforms array, got %v", plRaw)
