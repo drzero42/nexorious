@@ -496,9 +496,6 @@ func checkJobCompletion(db *bun.DB, jobID string) {
 	}
 
 	finalStatus := models.JobStatusCompleted
-	if failedCount > 0 {
-		finalStatus = models.JobStatusCompletedWithErrors
-	}
 
 	now := time.Now().UTC()
 	_, err := db.NewRaw(

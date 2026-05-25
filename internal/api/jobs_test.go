@@ -810,7 +810,7 @@ func TestRetryFailed_RetriesFailedItems(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "retry-failed")
 
 	jobID := uuid.NewString()
-	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed_with_errors")
+	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed")
 
 	item1ID := uuid.NewString()
 	insertJobItem(t, testDB, item1ID, jobID, userID, "k1", "Game A", "failed")
@@ -842,13 +842,13 @@ func TestRetryFailed_RetriesFailedItems(t *testing.T) {
 	}
 }
 
-func TestRecentJobs_IncludesCompletedWithErrors(t *testing.T) {
+func TestRecentJobs_IncludesCompletedWithFailedItems(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "recent-cwe")
 
 	jobID := uuid.NewString()
-	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed_with_errors")
+	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed")
 
 	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
 	if rec.Code != http.StatusOK {
@@ -870,7 +870,7 @@ func TestRecentJobs_ReturnsSplitItemArrays(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "recent-split")
 
 	jobID := uuid.NewString()
-	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed_with_errors")
+	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed")
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k1", "Game A", "completed")
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k2", "Game B", "failed")
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k3", "Game C", "skipped")

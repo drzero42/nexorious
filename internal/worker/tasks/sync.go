@@ -720,8 +720,8 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 //
 // Once no active items remain:
 //   - pending_review items still exist: job stays processing (user must review).
-//   - Any failed items exist and no pending_review: marks job completed_with_errors.
-//   - No pending_review, no failed: marks job completed.
+//   - No pending_review items remain: marks job completed (individual item failures are
+//     surfaced via the job_items table, not the job status).
 func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 	var activeRemaining int
 	if err := db.NewRaw(
@@ -748,20 +748,8 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 		return
 	}
 
-	var failedCount int
-	if err := db.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'failed'`,
-		jobID,
-	).Scan(ctx, &failedCount); err != nil {
-		slog.Error("sync: SyncCheckJobCompletion failed count", "job_id", jobID, "err", err)
-		return
-	}
-
 	now := time.Now().UTC()
 	finalStatus := "completed"
-	if failedCount > 0 {
-		finalStatus = "completed_with_errors"
-	}
 	if _, err := db.NewRaw(
 		`UPDATE jobs SET status = ?, completed_at = ? WHERE id = ? AND status IN ('pending', 'processing')`,
 		finalStatus, now, jobID,

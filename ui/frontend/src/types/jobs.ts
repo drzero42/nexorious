@@ -27,7 +27,6 @@ export enum JobStatus {
   PENDING = 'pending',
   PROCESSING = 'processing',
   COMPLETED = 'completed',
-  COMPLETED_WITH_ERRORS = 'completed_with_errors',
   FAILED = 'failed',
   CANCELLED = 'cancelled',
 }
@@ -226,7 +225,6 @@ export function getJobStatusLabel(status: JobStatus): string {
     [JobStatus.PENDING]: 'Pending',
     [JobStatus.PROCESSING]: 'Processing',
     [JobStatus.COMPLETED]: 'Completed',
-    [JobStatus.COMPLETED_WITH_ERRORS]: 'Completed with Errors',
     [JobStatus.FAILED]: 'Failed',
     [JobStatus.CANCELLED]: 'Cancelled',
   };
@@ -242,8 +240,6 @@ export function getJobStatusVariant(
   switch (status) {
     case JobStatus.COMPLETED:
       return 'default';
-    case JobStatus.COMPLETED_WITH_ERRORS:
-      return 'secondary';
     case JobStatus.PROCESSING:
       return 'secondary';
     case JobStatus.FAILED:

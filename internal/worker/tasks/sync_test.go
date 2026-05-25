@@ -1719,3 +1719,32 @@ func TestUserGameWorker_StatusChangedSyncChange(t *testing.T) {
 		t.Errorf("new_status: want 'owned', got %v", sc.NewStatus)
 	}
 }
+
+func TestSyncCheckJobCompletion_FailedItemsYieldsCompleted(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	// Insert one failed item.
+	if _, err := testDB.NewRaw(`
+		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'failed', '{}', '[]', now())`,
+		jobID, userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if status != "completed" {
+		t.Errorf("expected status=completed, got %q", status)
+	}
+}

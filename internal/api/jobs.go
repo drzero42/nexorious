@@ -332,7 +332,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	var jobs []models.Job
 	err := h.db.NewRaw(`
 		SELECT * FROM jobs
-		WHERE user_id = ? AND source = ? AND status IN ('completed', 'failed', 'completed_with_errors')
+		WHERE user_id = ? AND source = ? AND status IN ('completed', 'failed')
 		ORDER BY created_at DESC
 		LIMIT ?`,
 		userID, source, limit,
