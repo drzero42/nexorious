@@ -23,6 +23,7 @@ const createMockStatus = (overrides: Partial<SyncStatus> = {}): SyncStatus => ({
   isSyncing: false,
   lastSyncedAt: '2024-01-01T12:00:00Z',
   activeJobId: null,
+  externalGameCount: 0,
   ...overrides,
 });
 

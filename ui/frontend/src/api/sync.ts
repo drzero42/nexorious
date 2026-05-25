@@ -42,6 +42,7 @@ interface SyncStatusApiResponse {
   is_syncing: boolean;
   last_synced_at: string | null;
   active_job_id: string | null;
+  external_game_count: number;
 }
 
 interface ManualSyncApiResponse {
@@ -83,6 +84,7 @@ function transformSyncStatus(apiStatus: SyncStatusApiResponse): SyncStatus {
     isSyncing: apiStatus.is_syncing,
     lastSyncedAt: apiStatus.last_synced_at,
     activeJobId: apiStatus.active_job_id,
+    externalGameCount: apiStatus.external_game_count ?? 0,
   };
 }
 

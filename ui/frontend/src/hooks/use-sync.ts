@@ -132,6 +132,7 @@ export function useTriggerSync() {
           isSyncing: true,
           lastSyncedAt: old?.lastSyncedAt ?? null,
           activeJobId: result.jobId,
+          externalGameCount: old?.externalGameCount ?? 0,
         })
       );
       // Also invalidate to get fresh data from server

@@ -45,6 +45,7 @@ export interface SyncStatus {
   activeJobId: string | null;
   requiresReauth?: boolean;
   authExpired?: boolean;
+  externalGameCount: number;
 }
 
 export interface ManualSyncResponse {
