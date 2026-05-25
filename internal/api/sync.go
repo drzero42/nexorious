@@ -1113,31 +1113,39 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update external game")
 	}
 
-	// Create a mini-job and job_item, then enqueue ProcessSyncItem.
-	jobID := uuid.NewString()
-	now := time.Now().UTC()
-	_, err = h.db.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-		 VALUES (?, ?, 'sync', ?, 'processing', 'high', 1, ?)`,
-		jobID, userID, eg.Storefront, now,
-	).Exec(ctx)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job")
-	}
-
-	itemID := uuid.NewString()
-	_, err = h.db.NewRaw(
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
-		itemID, jobID, userID, eg.ExternalID, eg.Title, eg.ID,
-	).Exec(ctx)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
+	// Find the existing pending_review job_item for this external game.
+	var jobItemID string
+	if err := h.db.NewRaw(`
+		SELECT id FROM job_items
+		WHERE external_game_id = ? AND status = 'pending_review'
+		ORDER BY created_at DESC
+		LIMIT 1`, id,
+	).Scan(ctx, &jobItemID); err != nil || jobItemID == "" {
+		// No pending_review item — create a minimal one attached to the
+		// most recent job for this user+storefront.
+		var recentJobID string
+		if err2 := h.db.NewRaw(`
+			SELECT id FROM jobs
+			WHERE user_id = ? AND source = ? AND job_type = 'sync'
+			ORDER BY created_at DESC LIMIT 1`,
+			userID, eg.Storefront,
+		).Scan(ctx, &recentJobID); err2 != nil {
+			slog.Error("sync: rematch — no recent job found", "user_id", userID, "storefront", eg.Storefront, "err", err2)
+			return echo.NewHTTPError(http.StatusInternalServerError, "no sync job context found")
+		}
+		jobItemID = uuid.NewString()
+		if _, err3 := h.db.NewRaw(`
+			INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
+			jobItemID, recentJobID, userID, eg.ExternalID, eg.Title, eg.ID,
+		).Exec(ctx); err3 != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
+		}
 	}
 
 	if h.riverClient != nil {
-		if _, err = h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: itemID}, nil); err != nil {
-			slog.Error("sync: enqueue user_game_write failed", "err", err, "job_item_id", itemID)
+		if _, err := h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: jobItemID}, nil); err != nil {
+			slog.Error("sync: enqueue user_game_write failed", "err", err, "job_item_id", jobItemID)
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 		}
 	}
