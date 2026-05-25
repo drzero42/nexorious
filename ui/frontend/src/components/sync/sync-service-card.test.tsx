@@ -462,4 +462,44 @@ describe('SyncServiceCard', () => {
       expect(screen.queryByText(/to review/)).not.toBeInTheDocument();
     });
   });
+
+  describe('external game count display', () => {
+    it('shows game count when externalGameCount > 0', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          externalGameCount={42}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.getByText('42 games')).toBeInTheDocument();
+    });
+
+    it('hides game count when externalGameCount is 0', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          externalGameCount={0}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.queryByText(/games/)).not.toBeInTheDocument();
+    });
+
+    it('hides game count when externalGameCount is undefined', () => {
+      const config = createMockConfig();
+      render(
+        <SyncServiceCard
+          config={config}
+          onTriggerSync={mockOnTriggerSync}
+        />
+      );
+
+      expect(screen.queryByText(/games/)).not.toBeInTheDocument();
+    });
+  });
 });

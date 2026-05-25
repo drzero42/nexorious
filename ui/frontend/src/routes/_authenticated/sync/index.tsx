@@ -70,7 +70,7 @@ function SyncServiceCardWithStatus({
       credentialsError={credentialsError}
       onTriggerSync={handleTriggerSync}
       isSyncing={isSyncing}
-      externalGameCount={status?.externalGameCount ?? 0}
+      externalGameCount={status?.externalGameCount}
     />
   );
 }
