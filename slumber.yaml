@@ -533,7 +533,6 @@ requests:
           type: json
           data:
             frequency: "daily"
-            auto_add: false
 
       steam_verify:
         name: Steam Verify

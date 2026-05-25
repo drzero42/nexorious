@@ -433,7 +433,7 @@ function SyncDetailPage() {
 
       {/* Connection Cards - collapsible, open by default when not configured or credentials error */}
       <Collapsible open={connectionSectionOpen} onOpenChange={setConnectionSectionOpen}>
-        <CollapsibleContent>
+        <CollapsibleContent className="space-y-4">
           {/* Steam Connection Card - only show for Steam storefront */}
           {storefront === SyncStorefront.STEAM && (
             <SteamConnectionCard
@@ -486,28 +486,30 @@ function SyncDetailPage() {
             />
           )}
           {config.isConfigured && (
-            <div className="flex items-center justify-between px-1">
-              <div>
-                <div className="font-medium">Sync Frequency</div>
-                <div className="text-sm text-muted-foreground">How often to automatically sync</div>
-              </div>
-              <Select
-                value={effectiveFrequency}
-                onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
-                disabled={isUpdating}
-              >
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.values(SyncFrequency).map((freq) => (
-                    <SelectItem key={freq} value={freq}>
-                      {getSyncFrequencyLabel(freq)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Card>
+              <CardContent className="flex items-center justify-between py-4">
+                <div>
+                  <div className="font-medium">Sync Frequency</div>
+                  <div className="text-sm text-muted-foreground">How often to automatically sync</div>
+                </div>
+                <Select
+                  value={effectiveFrequency}
+                  onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
+                  disabled={isUpdating}
+                >
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.values(SyncFrequency).map((freq) => (
+                      <SelectItem key={freq} value={freq}>
+                        {getSyncFrequencyLabel(freq)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
           )}
         </CollapsibleContent>
       </Collapsible>
