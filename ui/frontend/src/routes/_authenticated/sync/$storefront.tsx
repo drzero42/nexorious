@@ -13,6 +13,8 @@ import {
   useCancelJob,
   usePSNStatus,
   useSteamConnection,
+  useEpicConnection,
+  useGOGConnection,
   jobsKeys,
 } from '@/hooks';
 import { retryFailedItems } from '@/api/jobs';
@@ -51,8 +53,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { RefreshCw, Loader2, AlertCircle, Settings, Clock } from 'lucide-react';
+import { RefreshCw, Loader2, AlertCircle, Settings, Clock, ChevronDown } from 'lucide-react';
 import { config as envConfig } from '@/lib/env';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 
 export const Route = createFileRoute('/_authenticated/sync/$storefront')({
   component: SyncDetailPage,
@@ -153,6 +156,10 @@ function SyncDetailPage() {
   // Fetch Steam connection status
   const { data: steamConnection } = useSteamConnection();
 
+  // Fetch Epic and GOG connection status
+  const { data: epicConnection } = useEpicConnection();
+  const { data: gogConnection } = useGOGConnection();
+
   // Fetch job details if there's an active job
   const { data: activeJob } = useJob(status?.activeJobId ?? undefined, {
     enabled: !!status?.activeJobId,
@@ -190,6 +197,18 @@ function SyncDetailPage() {
   // Use local state if set, otherwise use config values
   const effectiveFrequency = localFrequency ?? config?.frequency ?? SyncFrequency.DAILY;
   const effectiveAutoAdd = localAutoAdd ?? config?.autoAdd ?? false;
+
+  // Derive credentials error state from storefront-specific connection data
+  const credentialsError =
+    (storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.PSN && (psnStatus?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false));
+
+  // Connection section is open by default when not configured or when there's a credentials error
+  const [connectionSectionOpen, setConnectionSectionOpen] = useState(
+    () => !config?.isConfigured || credentialsError
+  );
 
   const handleUpdateConfig = async (data: SyncConfigUpdateData) => {
     try {
@@ -400,71 +419,100 @@ function SyncDetailPage() {
             </div>
             <div className="ml-auto">
               <Badge
-                variant="outline"
+                variant={credentialsError ? 'destructive' : 'outline'}
                 className={
-                  config.isConfigured
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-muted text-muted-foreground'
+                  credentialsError
+                    ? 'cursor-pointer'
+                    : config.isConfigured
+                      ? 'cursor-pointer bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                      : 'cursor-pointer bg-muted text-muted-foreground'
                 }
+                onClick={() => setConnectionSectionOpen((o) => !o)}
               >
-                {config.isConfigured ? 'Configured' : 'Not Configured'}
+                {credentialsError ? (
+                  <>
+                    Credentials Error
+                    <ChevronDown
+                      className={`ml-1 h-3 w-3 transition-transform ${connectionSectionOpen ? 'rotate-180' : ''}`}
+                    />
+                  </>
+                ) : config.isConfigured ? (
+                  <>
+                    Connected
+                    <ChevronDown
+                      className={`ml-1 h-3 w-3 transition-transform ${connectionSectionOpen ? 'rotate-180' : ''}`}
+                    />
+                  </>
+                ) : (
+                  <>
+                    Not Configured
+                    <ChevronDown
+                      className={`ml-1 h-3 w-3 transition-transform ${connectionSectionOpen ? 'rotate-180' : ''}`}
+                    />
+                  </>
+                )}
               </Badge>
             </div>
           </div>
         </CardHeader>
       </Card>
 
-      {/* Steam Connection Card - only show for Steam storefront */}
-      {storefront === SyncStorefront.STEAM && (
-        <SteamConnectionCard
-          isConfigured={config.isConfigured}
-          credentialsError={steamConnection?.credentialsError ?? false}
-          steamId={steamConnection?.steamId}
-          steamUsername={steamConnection?.username}
-          onConnectionChange={() => {
-            // Invalidate queries to refresh data
-            queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
-            queryClient.invalidateQueries({ queryKey: syncKeys.steamConnection() });
-            queryClient.invalidateQueries({ queryKey: authKeys.me() });
-          }}
-        />
-      )}
+      {/* Connection Cards - collapsible, open by default when not configured or credentials error */}
+      <Collapsible open={connectionSectionOpen} onOpenChange={setConnectionSectionOpen}>
+        <CollapsibleContent>
+          {/* Steam Connection Card - only show for Steam storefront */}
+          {storefront === SyncStorefront.STEAM && (
+            <SteamConnectionCard
+              isConfigured={config.isConfigured}
+              credentialsError={steamConnection?.credentialsError ?? false}
+              steamId={steamConnection?.steamId}
+              steamUsername={steamConnection?.username}
+              onConnectionChange={() => {
+                // Invalidate queries to refresh data
+                queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
+                queryClient.invalidateQueries({ queryKey: syncKeys.steamConnection() });
+                queryClient.invalidateQueries({ queryKey: authKeys.me() });
+              }}
+            />
+          )}
 
-      {/* Epic Connection Card - only show for Epic storefront */}
-      {storefront === SyncStorefront.EPIC && (
-        <EpicConnectionCard
-          isConfigured={config.isConfigured}
-          onConnectionChange={() => {
-            queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
-            queryClient.invalidateQueries({ queryKey: authKeys.me() });
-          }}
-        />
-      )}
+          {/* Epic Connection Card - only show for Epic storefront */}
+          {storefront === SyncStorefront.EPIC && (
+            <EpicConnectionCard
+              isConfigured={config.isConfigured}
+              onConnectionChange={() => {
+                queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
+                queryClient.invalidateQueries({ queryKey: authKeys.me() });
+              }}
+            />
+          )}
 
-      {/* GOG Connection Card - only show for GOG storefront */}
-      {storefront === SyncStorefront.GOG && (
-        <GOGConnectionCard
-          isConfigured={!!config?.isConfigured}
-          onConnectionChange={() => {
-            queryClient.invalidateQueries({ queryKey: syncKeys.gogConnection() });
-          }}
-        />
-      )}
+          {/* GOG Connection Card - only show for GOG storefront */}
+          {storefront === SyncStorefront.GOG && (
+            <GOGConnectionCard
+              isConfigured={!!config?.isConfigured}
+              onConnectionChange={() => {
+                queryClient.invalidateQueries({ queryKey: syncKeys.gogConnection() });
+              }}
+            />
+          )}
 
-      {/* PSN Connection Card - only show for PSN storefront */}
-      {storefront === SyncStorefront.PSN && (
-        <PSNConnectionCard
-          isConfigured={config.isConfigured}
-          credentialsError={psnStatus?.credentialsError ?? false}
-          onlineId={psnPrefs?.online_id}
-          accountId={psnPrefs?.account_id}
-          onConnectionChange={() => {
-            queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
-            queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
-            queryClient.invalidateQueries({ queryKey: authKeys.me() });
-          }}
-        />
-      )}
+          {/* PSN Connection Card - only show for PSN storefront */}
+          {storefront === SyncStorefront.PSN && (
+            <PSNConnectionCard
+              isConfigured={config.isConfigured}
+              credentialsError={psnStatus?.credentialsError ?? false}
+              onlineId={psnPrefs?.online_id}
+              accountId={psnPrefs?.account_id}
+              onConnectionChange={() => {
+                queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
+                queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
+                queryClient.invalidateQueries({ queryKey: authKeys.me() });
+              }}
+            />
+          )}
+        </CollapsibleContent>
+      </Collapsible>
 
       {/* Active Sync Progress */}
       {isSyncing && activeJob && (

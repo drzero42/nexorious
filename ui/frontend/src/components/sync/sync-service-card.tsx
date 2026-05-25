@@ -25,6 +25,7 @@ interface SyncServiceCardProps {
   config: SyncConfig;
   status?: SyncStatus;
   pendingReviewCount?: number;
+  credentialsError?: boolean;
   onUpdate: (data: SyncConfigUpdateData) => Promise<void>;
   onTriggerSync: () => Promise<void>;
   onReset?: () => Promise<void>;
@@ -53,6 +54,7 @@ export function SyncServiceCard({
   config,
   status,
   pendingReviewCount,
+  credentialsError = false,
   onUpdate,
   onTriggerSync,
   onReset,
@@ -123,16 +125,20 @@ export function SyncServiceCard({
                 {pendingReviewCount}
               </Badge>
             )}
-            <Badge
-              variant={!config.isConfigured ? 'outline' : 'default'}
-              className={
-                !config.isConfigured
-                  ? 'bg-muted text-muted-foreground'
-                  : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-              }
-            >
-              {!config.isConfigured ? 'Not Configured' : 'Connected'}
-            </Badge>
+            {credentialsError ? (
+              <Badge variant="destructive">Credentials Error</Badge>
+            ) : config.isConfigured ? (
+              <Badge
+                variant="outline"
+                className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+              >
+                Connected
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="bg-muted text-muted-foreground">
+                Not Configured
+              </Badge>
+            )}
           </div>
         </div>
       </CardHeader>

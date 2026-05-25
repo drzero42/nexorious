@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus, usePendingReviewCount, useResetSyncData } from '@/hooks';
+import { useSyncConfigs, useUpdateSyncConfig, useTriggerSync, useSyncStatus, usePendingReviewCount, useResetSyncData, useSteamConnection, usePSNStatus, useEpicConnection, useGOGConnection } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -53,7 +53,19 @@ function SyncServiceCardWithStatus({
   const { isPending: isSyncing } = useTriggerSync();
   const { mutateAsync: resetSync, isPending: isResetting } = useResetSyncData();
 
+  // Fetch storefront-specific connection data for credentials error state
+  const { data: steamConnection } = useSteamConnection();
+  const { data: psnStatus } = usePSNStatus();
+  const { data: epicConnection } = useEpicConnection();
+  const { data: gogConnection } = useGOGConnection();
+
   const pendingReviewCount = reviewData?.countsBySource?.[config.storefront] ?? 0;
+
+  const credentialsError =
+    (config.storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
+    (config.storefront === SyncStorefront.PSN && (psnStatus?.credentialsError ?? false)) ||
+    (config.storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
+    (config.storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false));
 
   const handleUpdate = async (data: SyncConfigUpdateData) => {
     await onUpdate(config.storefront, data);
@@ -79,6 +91,7 @@ function SyncServiceCardWithStatus({
       config={config}
       status={status}
       pendingReviewCount={pendingReviewCount}
+      credentialsError={credentialsError}
       onUpdate={handleUpdate}
       onTriggerSync={handleTriggerSync}
       onReset={handleReset}
