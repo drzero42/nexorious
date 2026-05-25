@@ -17,7 +17,6 @@ import type {
   PendingReviewCountResponse,
   JobItemDetail,
   RetryFailedResponse,
-  JobItemSummary,
   SyncChangeItem,
   RecentJobDetail,
   RecentJobsResponse,
@@ -123,15 +122,6 @@ interface RetryFailedApiResponse {
   retried_count: number;
 }
 
-interface JobItemSummaryApiResponse {
-  source_title: string;
-  result_game_title: string | null;
-  result_igdb_id: number | null;
-  result_user_game_id: string | null;
-  error_message: string | null;
-  is_new_addition: boolean;
-}
-
 interface SyncChangeItemApiResponse {
   title: string;
   old_status?: string | null;
@@ -144,9 +134,17 @@ interface RecentJobDetailApiResponse {
   created_at: string;
   completed_at: string | null;
   total_items: number;
-  completed_items: JobItemSummaryApiResponse[];
-  skipped_items: JobItemSummaryApiResponse[];
-  failed_items: JobItemSummaryApiResponse[];
+  progress: {
+    completed: number;
+    skipped: number;
+    failed: number;
+    pending: number;
+    processing: number;
+    pending_review: number;
+    total: number;
+    percent: number;
+  };
+  added_items?: SyncChangeItemApiResponse[];
   removed_items?: SyncChangeItemApiResponse[];
   status_changed_items?: SyncChangeItemApiResponse[];
 }
@@ -220,17 +218,6 @@ function transformJobItemDetail(apiItem: JobItemDetailApiResponse): JobItemDetai
   };
 }
 
-function transformJobItemSummary(api: JobItemSummaryApiResponse): JobItemSummary {
-  return {
-    sourceTitle: api.source_title,
-    resultGameTitle: api.result_game_title,
-    resultIgdbId: api.result_igdb_id,
-    resultUserGameId: api.result_user_game_id,
-    errorMessage: api.error_message,
-    isNewAddition: api.is_new_addition,
-  };
-}
-
 function transformSyncChangeItem(sc: SyncChangeItemApiResponse): SyncChangeItem {
   return {
     title: sc.title,
@@ -240,21 +227,17 @@ function transformSyncChangeItem(sc: SyncChangeItemApiResponse): SyncChangeItem 
 }
 
 function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
-  const completedItems = (api.completed_items ?? []).map(transformJobItemSummary);
-  const skippedItems = (api.skipped_items ?? []).map(transformJobItemSummary);
-  const failedItems = (api.failed_items ?? []).map(transformJobItemSummary);
+  const p = api.progress ?? { completed: 0, skipped: 0, failed: 0, pending: 0, processing: 0, pending_review: 0, total: 0, percent: 0 };
   return {
     id: api.id,
     status: api.status,
     createdAt: api.created_at,
     completedAt: api.completed_at,
     totalItems: api.total_items,
-    completedCount: completedItems.length,
-    skippedCount: skippedItems.length,
-    failedCount: failedItems.length,
-    completedItems,
-    skippedItems,
-    failedItems,
+    completedCount: p.completed,
+    skippedCount: p.skipped,
+    failedCount: p.failed,
+    addedItems: (api.added_items ?? []).map(transformSyncChangeItem),
     removedItems: (api.removed_items ?? []).map(transformSyncChangeItem),
     statusChangedItems: (api.status_changed_items ?? []).map(transformSyncChangeItem),
   };

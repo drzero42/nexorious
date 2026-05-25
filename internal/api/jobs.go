@@ -304,15 +304,6 @@ func (h *JobsHandler) HandleActiveJob(c *echo.Context) error {
 	return c.JSON(http.StatusOK, toJobResponse(&job, progress))
 }
 
-// recentJobItem is a summary of a job item for the recent jobs endpoint.
-type recentJobItem struct {
-	SourceTitle string  `bun:"source_title" json:"source_title"`
-	Status      string  `bun:"status" json:"status"`
-	GameTitle   *string `bun:"game_title" json:"game_title"`
-	IsNewAdd    *bool   `bun:"is_new_addition" json:"is_new_addition"`
-	UserGameID  *string `bun:"user_game_id" json:"user_game_id"`
-}
-
 // syncChangeItem is a summary of a sync_changes row for the recent jobs endpoint.
 type syncChangeItem struct {
 	Title     string  `bun:"title"      json:"title"`
@@ -351,43 +342,21 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		jobs = []models.Job{}
 	}
 
-	type jobWithItems struct {
+	type jobWithChanges struct {
 		models.Job
-		CompletedItems     []recentJobItem  `json:"completed_items"`
-		SkippedItems       []recentJobItem  `json:"skipped_items"`
-		FailedItems        []recentJobItem  `json:"failed_items"`
+		Progress           map[string]any   `json:"progress"`
+		AddedItems         []syncChangeItem `json:"added_items"`
 		RemovedItems       []syncChangeItem `json:"removed_items"`
 		StatusChangedItems []syncChangeItem `json:"status_changed_items"`
 	}
 
-	result := make([]jobWithItems, 0, len(jobs))
+	result := make([]jobWithChanges, 0, len(jobs))
 	for _, j := range jobs {
-		var allItems []recentJobItem
-		err := h.db.NewRaw(`
-			SELECT source_title, status,
-			       result->>'game_title' AS game_title,
-			       (result->>'is_new_addition')::boolean AS is_new_addition,
-			       result->>'user_game_id' AS user_game_id
-			FROM job_items
-			WHERE job_id = ?
-			ORDER BY created_at`,
-			j.ID,
-		).Scan(context.Background(), &allItems)
+		progress, err := h.jobItemCounts(context.Background(), j.ID)
 		if err != nil {
-			allItems = nil
-		}
-
-		completedItems := []recentJobItem{}
-		skippedItems := []recentJobItem{}
-		failedItems := []recentJobItem{}
-		for _, item := range allItems {
-			switch item.Status {
-			case models.JobItemStatusCompleted:
-				completedItems = append(completedItems, item)
-			case models.JobItemStatusSkipped:
-				skippedItems = append(skippedItems, item)
-			case models.JobItemStatusFailed:
-				failedItems = append(failedItems, item)
+			progress = map[string]any{
+				"pending": 0, "processing": 0, "completed": 0, "pending_review": 0,
+				"skipped": 0, "failed": 0, "total": 0, "percent": 0,
 			}
 		}
 
@@ -407,10 +376,13 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			allChanges = nil
 		}
 
+		addedItems := []syncChangeItem{}
 		removedItems := []syncChangeItem{}
 		statusChangedItems := []syncChangeItem{}
 		for _, sc := range allChanges {
 			switch sc.ChangeType {
+			case "added":
+				addedItems = append(addedItems, syncChangeItem{Title: sc.Title})
 			case "removed":
 				removedItems = append(removedItems, syncChangeItem{Title: sc.Title})
 			case "status_changed":
@@ -420,11 +392,10 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			}
 		}
 
-		result = append(result, jobWithItems{
+		result = append(result, jobWithChanges{
 			Job:                j,
-			CompletedItems:     completedItems,
-			SkippedItems:       skippedItems,
-			FailedItems:        failedItems,
+			Progress:           progress,
+			AddedItems:         addedItems,
 			RemovedItems:       removedItems,
 			StatusChangedItems: statusChangedItems,
 		})

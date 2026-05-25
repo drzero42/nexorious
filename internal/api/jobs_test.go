@@ -864,16 +864,25 @@ func TestRecentJobs_IncludesCompletedWithFailedItems(t *testing.T) {
 	}
 }
 
-func TestRecentJobs_ReturnsSplitItemArrays(t *testing.T) {
+func TestRecentJobs_ReturnsProgressAndAddedItems(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "recent-split")
+	userID, token := setupTagUser(t, testDB, e, "recent-progress")
 
 	jobID := uuid.NewString()
 	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed")
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k1", "Game A", "completed")
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k2", "Game B", "failed")
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k3", "Game C", "skipped")
+
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO sync_changes (id, job_id, user_id, title, change_type, created_at)
+         VALUES (gen_random_uuid(), ?, ?, 'Game A', 'added', now())`,
+		jobID, userID,
+	)
+	if err != nil {
+		t.Fatalf("insert sync_changes: %v", err)
+	}
 
 	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
 	if rec.Code != http.StatusOK {
@@ -888,17 +897,40 @@ func TestRecentJobs_ReturnsSplitItemArrays(t *testing.T) {
 		t.Fatalf("expected 1 job, got %d", len(rawJobs))
 	}
 	job, _ := rawJobs[0].(map[string]any)
-	completedItems, _ := job["completed_items"].([]any)
-	skippedItems, _ := job["skipped_items"].([]any)
-	failedItems, _ := job["failed_items"].([]any)
-	if len(completedItems) != 1 {
-		t.Errorf("expected 1 completed_item, got %d", len(completedItems))
+
+	progress, _ := job["progress"].(map[string]any)
+	if progress == nil {
+		t.Fatal("expected progress object in response")
 	}
-	if len(skippedItems) != 1 {
-		t.Errorf("expected 1 skipped_item, got %d", len(skippedItems))
+	if progress["completed"].(float64) != 1 {
+		t.Errorf("expected completed=1, got %v", progress["completed"])
 	}
-	if len(failedItems) != 1 {
-		t.Errorf("expected 1 failed_item, got %d", len(failedItems))
+	if progress["failed"].(float64) != 1 {
+		t.Errorf("expected failed=1, got %v", progress["failed"])
+	}
+	if progress["skipped"].(float64) != 1 {
+		t.Errorf("expected skipped=1, got %v", progress["skipped"])
+	}
+
+	addedItems, _ := job["added_items"].([]any)
+	if len(addedItems) != 1 {
+		t.Errorf("expected 1 added_item, got %d", len(addedItems))
+	}
+	if len(addedItems) == 1 {
+		item, _ := addedItems[0].(map[string]any)
+		if item["title"] != "Game A" {
+			t.Errorf("expected title=Game A, got %v", item["title"])
+		}
+	}
+
+	if _, ok := job["completed_items"]; ok {
+		t.Error("completed_items should not be present in response")
+	}
+	if _, ok := job["skipped_items"]; ok {
+		t.Error("skipped_items should not be present in response")
+	}
+	if _, ok := job["failed_items"]; ok {
+		t.Error("failed_items should not be present in response")
 	}
 }
 

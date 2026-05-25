@@ -155,15 +155,6 @@ export interface JobItemDetail extends JobItem {
   resolvedAt: string | null;
 }
 
-export interface JobItemSummary {
-  sourceTitle: string;
-  resultGameTitle: string | null;
-  resultIgdbId: number | null;
-  resultUserGameId: string | null;
-  errorMessage: string | null;
-  isNewAddition: boolean;
-}
-
 export interface SyncChangeItem {
   title: string;
   oldStatus?: string | null;
@@ -179,9 +170,7 @@ export interface RecentJobDetail {
   completedCount: number;
   skippedCount: number;
   failedCount: number;
-  completedItems: JobItemSummary[];
-  skippedItems: JobItemSummary[];
-  failedItems: JobItemSummary[];
+  addedItems: SyncChangeItem[];
   removedItems: SyncChangeItem[];
   statusChangedItems: SyncChangeItem[];
 }
