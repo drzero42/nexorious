@@ -34,7 +34,6 @@ interface JobProgressApiResponse {
   pending_review: number;
   skipped: number;
   failed: number;
-  igdb_failed: number;
   total: number;
   percent: number;
 }
@@ -148,7 +147,6 @@ interface RecentJobDetailApiResponse {
   completed_items: JobItemSummaryApiResponse[];
   skipped_items: JobItemSummaryApiResponse[];
   failed_items: JobItemSummaryApiResponse[];
-  igdb_failed_items: JobItemSummaryApiResponse[];
   removed_items?: SyncChangeItemApiResponse[];
   status_changed_items?: SyncChangeItemApiResponse[];
 }
@@ -169,7 +167,6 @@ function transformProgress(apiProgress: JobProgressApiResponse): JobProgress {
     pendingReview: apiProgress.pending_review,
     skipped: apiProgress.skipped,
     failed: apiProgress.failed,
-    igdbFailed: apiProgress.igdb_failed ?? 0,
     total: apiProgress.total,
     percent: apiProgress.percent,
   };
@@ -246,7 +243,6 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
   const completedItems = (api.completed_items ?? []).map(transformJobItemSummary);
   const skippedItems = (api.skipped_items ?? []).map(transformJobItemSummary);
   const failedItems = (api.failed_items ?? []).map(transformJobItemSummary);
-  const igdbFailedItems = (api.igdb_failed_items ?? []).map(transformJobItemSummary);
   return {
     id: api.id,
     status: api.status,
@@ -256,11 +252,9 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
     completedCount: completedItems.length,
     skippedCount: skippedItems.length,
     failedCount: failedItems.length,
-    igdbFailedCount: igdbFailedItems.length,
     completedItems,
     skippedItems,
     failedItems,
-    igdbFailedItems,
     removedItems: (api.removed_items ?? []).map(transformSyncChangeItem),
     statusChangedItems: (api.status_changed_items ?? []).map(transformSyncChangeItem),
   };

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Collapsible,
@@ -21,8 +20,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
-import { useRecentJobs, jobsKeys } from '@/hooks';
-import { retryFailedItems } from '@/api/jobs';
+import { useRecentJobs } from '@/hooks';
 import type { RecentJobDetail, JobItemSummary, SyncChangeItem } from '@/types';
 
 interface RecentActivityProps {
@@ -38,7 +36,7 @@ function ItemsList({
   type,
 }: {
   items: JobItemSummary[];
-  type: 'completed' | 'skipped' | 'failed' | 'igdb_failed';
+  type: 'completed' | 'skipped' | 'failed';
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -48,14 +46,12 @@ function ItemsList({
     completed: <CheckCircle className="h-4 w-4 text-green-600" />,
     skipped: <SkipForward className="h-4 w-4 text-muted-foreground" />,
     failed: <AlertCircle className="h-4 w-4 text-red-600" />,
-    igdb_failed: <AlertCircle className="h-4 w-4 text-orange-500" />,
   };
 
   const labelMap = {
     completed: 'Completed',
     skipped: 'Skipped',
     failed: 'Failed',
-    igdb_failed: 'IGDB Error',
   };
 
   return (
@@ -110,14 +106,6 @@ function ItemsList({
                   )}
                 </div>
               )}
-              {type === 'igdb_failed' && (
-                <div>
-                  <span>{item.sourceTitle}</span>
-                  {item.errorMessage && (
-                    <span className="text-orange-600 text-xs ml-2">- {item.errorMessage}</span>
-                  )}
-                </div>
-              )}
             </div>
           ))}
         </div>
@@ -169,19 +157,6 @@ function SyncChangeList({
 
 function JobCard({ job }: { job: RecentJobDetail }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const queryClient = useQueryClient();
-
-  const handleRetry = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsRetrying(true);
-    try {
-      await retryFailedItems(job.id);
-      await queryClient.invalidateQueries({ queryKey: jobsKeys.all });
-    } finally {
-      setIsRetrying(false);
-    }
-  };
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -192,19 +167,6 @@ function JobCard({ job }: { job: RecentJobDetail }) {
             <span>{job.completedAt ? formatDate(job.completedAt) : 'In progress'}</span>
           </div>
           <div className="flex items-center gap-2">
-            {job.igdbFailedCount > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={handleRetry}
-                disabled={isRetrying}
-              >
-                {isRetrying
-                  ? 'Retrying…'
-                  : `Retry ${job.igdbFailedCount} IGDB ${job.igdbFailedCount === 1 ? 'error' : 'errors'}`}
-              </Button>
-            )}
             <Badge
               variant={job.status === 'completed' ? 'outline' : 'destructive'}
               className={
@@ -224,7 +186,6 @@ function JobCard({ job }: { job: RecentJobDetail }) {
           <ItemsList items={job.completedItems} type="completed" />
           <ItemsList items={job.skippedItems} type="skipped" />
           <ItemsList items={job.failedItems} type="failed" />
-          <ItemsList items={job.igdbFailedItems} type="igdb_failed" />
           <SyncChangeList
             items={job.removedItems ?? []}
             label="Removed from library"

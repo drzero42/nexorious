@@ -17,7 +17,6 @@ import {
   useGOGConnection,
   jobsKeys,
 } from '@/hooks';
-import { retryFailedItems } from '@/api/jobs';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
 import { SteamConnectionCard, EpicConnectionCard, GOGConnectionCard, PSNConnectionCard, RecentActivity, ExternalGamesSection } from '@/components/sync';
 import {
@@ -178,7 +177,6 @@ function SyncDetailPage() {
   const { mutateAsync: triggerSync, isPending: isTriggeringSyncPending } = useTriggerSync();
   const { mutateAsync: resetSync, isPending: isResetting } = useResetSyncData();
   const { mutateAsync: cancelJob, isPending: isCancelling } = useCancelJob();
-  const [isRetrying, setIsRetrying] = useState(false);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const wasResettingRef = useRef(false);
 
@@ -264,21 +262,6 @@ function SyncDetailPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to cancel sync';
       toast.error(message);
-    }
-  };
-
-  const handleRetryIGDBErrors = async () => {
-    if (!activeJob) return;
-    setIsRetrying(true);
-    try {
-      await retryFailedItems(activeJob.id);
-      await queryClient.invalidateQueries({ queryKey: jobsKeys.all });
-      toast.success('IGDB errors re-queued for retry');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to retry IGDB errors';
-      toast.error(message);
-    } finally {
-      setIsRetrying(false);
     }
   };
 
@@ -521,8 +504,6 @@ function SyncDetailPage() {
             job={activeJob}
             onCancel={handleCancelJob}
             isCancelling={isCancelling}
-            onRetry={handleRetryIGDBErrors}
-            isRetrying={isRetrying}
           />
 
           {activeJob.progress && (

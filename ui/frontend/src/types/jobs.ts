@@ -38,7 +38,6 @@ export enum JobItemStatus {
   PENDING_REVIEW = 'pending_review',
   SKIPPED = 'skipped',
   FAILED = 'failed',
-  IGDB_FAILED = 'igdb_failed',
 }
 
 export type JobPriority = 'low' | 'normal' | 'high';
@@ -57,7 +56,6 @@ export interface JobProgress {
   pendingReview: number;
   skipped: number;
   failed: number;
-  igdbFailed: number;
   total: number;
   percent: number;
 }
@@ -181,11 +179,9 @@ export interface RecentJobDetail {
   completedCount: number;
   skippedCount: number;
   failedCount: number;
-  igdbFailedCount: number;
   completedItems: JobItemSummary[];
   skippedItems: JobItemSummary[];
   failedItems: JobItemSummary[];
-  igdbFailedItems: JobItemSummary[];
   removedItems: SyncChangeItem[];
   statusChangedItems: SyncChangeItem[];
 }
@@ -333,7 +329,6 @@ export function getJobItemStatusLabel(status: JobItemStatus): string {
     [JobItemStatus.PENDING_REVIEW]: 'Needs Review',
     [JobItemStatus.SKIPPED]: 'Skipped',
     [JobItemStatus.FAILED]: 'Failed',
-    [JobItemStatus.IGDB_FAILED]: 'IGDB Error',
   };
   return labels[status];
 }
@@ -348,8 +343,6 @@ export function getJobItemStatusVariant(
     case JobItemStatus.COMPLETED:
       return 'default';
     case JobItemStatus.FAILED:
-      return 'destructive';
-    case JobItemStatus.IGDB_FAILED:
       return 'destructive';
     case JobItemStatus.PENDING_REVIEW:
       return 'secondary';
