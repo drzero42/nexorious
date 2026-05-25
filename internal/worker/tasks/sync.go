@@ -116,31 +116,24 @@ func upsertPlatforms(ctx context.Context, db *bun.DB, egID string, platforms []s
 	}
 }
 
-func insertJobItem(ctx context.Context, db *bun.DB, egID string, e ExternalGameEntry, p DispatchSyncArgs) {
-	if _, err := db.NewRaw(`
-		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())
-		ON CONFLICT (job_id, item_key) DO NOTHING`,
-		uuid.NewString(), p.JobID, p.UserID, e.ExternalID, e.Title, egID,
-	).Exec(ctx); err != nil {
-		slog.Error("dispatch_sync: insert job_item failed", "err", err, "job_id", p.JobID, "external_id", e.ExternalID)
-	}
-}
-
-func enqueueBatch(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], jobID string) {
-	var items []struct {
+func insertJobItem(ctx context.Context, db *bun.DB, egID string, e ExternalGameEntry, p DispatchSyncArgs) string {
+	var row struct {
 		ID string `bun:"id"`
 	}
-	if err := db.NewRaw(
-		`SELECT id FROM job_items WHERE job_id = ? AND status = 'pending'`,
-		jobID,
-	).Scan(ctx, &items); err != nil {
-		slog.Error("dispatch_sync: enqueueBatch query", "job_id", jobID, "err", err)
-		return
+	if err := db.NewRaw(`
+		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())
+		ON CONFLICT (job_id, item_key) DO NOTHING
+		RETURNING id`,
+		uuid.NewString(), p.JobID, p.UserID, e.ExternalID, e.Title, egID,
+	).Scan(ctx, &row); err != nil {
+		// sql.ErrNoRows means ON CONFLICT fired — item already exists; skip silently.
+		if !errors.Is(err, sql.ErrNoRows) {
+			slog.Error("dispatch_sync: insert job_item failed", "err", err, "job_id", p.JobID, "external_id", e.ExternalID)
+		}
+		return ""
 	}
-	for _, item := range items {
-		_ = EnqueueOrFail(ctx, db, rc, item.ID, IGDBMatchArgs{JobItemID: item.ID})
-	}
+	return row.ID
 }
 
 func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSyncArgs]) error {
@@ -178,9 +171,11 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	fetchedIDs := make(map[string]struct{})
 	seenPlatforms := make(map[string][]string)
 
-	// 4. Fetch library; upsert external_games + platforms; insert job_items.
+	// 4. Fetch library; upsert external_games + platforms; insert job_items;
+	//    enqueue Stage 2 (IGDBMatch) per batch as each batch completes.
 	slog.Info("dispatch_sync: starting library fetch", "job_id", p.JobID, "user_id", p.UserID, "storefront", p.Storefront)
 	if err := adapter.GetLibrary(ctx, 10, func(batch []ExternalGameEntry) error {
+		var batchItemIDs []string
 		for _, e := range batch {
 			fetchedIDs[e.ExternalID] = struct{}{}
 			platforms := resolvePlatforms(e.Platforms)
@@ -191,8 +186,13 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			seenPlatforms[egID] = append(seenPlatforms[egID], platforms...)
 			upsertPlatforms(ctx, w.DB, egID, platforms, e.PlaytimeHours)
 			if !isSkipped {
-				insertJobItem(ctx, w.DB, egID, e, p)
+				if itemID := insertJobItem(ctx, w.DB, egID, e, p); itemID != "" {
+					batchItemIDs = append(batchItemIDs, itemID)
+				}
 			}
+		}
+		for _, itemID := range batchItemIDs {
+			_ = EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, IGDBMatchArgs{JobItemID: itemID})
 		}
 		return nil
 	}); err != nil {
@@ -204,9 +204,6 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		failSyncJob(ctx, w.DB, p.JobID, err.Error())
 		return nil
 	}
-
-	// 5. Enqueue Stage 2 (IGDBMatch) for all pending items in this job (deferred pattern).
-	enqueueBatch(ctx, w.DB, w.RiverClient, p.JobID)
 
 	// 6. Stale platform sweep: remove platform rows no longer present upstream.
 	for egID, platforms := range seenPlatforms {

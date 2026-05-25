@@ -1432,6 +1432,57 @@ func TestIGDBMatchWorker_AutoResolve(t *testing.T) {
 // persistence now lives in the adapter factory (cmd/nexorious/serve.go) and is
 // covered by tests in the factory's package, not by DispatchSyncWorker tests.
 
+func TestDispatchSyncWorker_EnqueuesPerBatch(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	).Exec(ctx)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	rc := newTestRiverClient(t)
+
+	// Two separate batches: batch 1 has game-A, batch 2 has game-B.
+	adapter := &fakeStorefrontAdapter{
+		batches: [][]tasks.ExternalGameEntry{
+			{{ExternalID: "game-A", Title: "Game A", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
+			{{ExternalID: "game-B", Title: "Game B", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
+		},
+	}
+	w := &tasks.DispatchSyncWorker{
+		DB:          testDB,
+		Adapter:     adapterFactory(adapter),
+		RiverClient: rc,
+	}
+
+	job := &river.Job[tasks.DispatchSyncArgs]{Args: tasks.DispatchSyncArgs{
+		JobID: jobID, UserID: userID, Storefront: "steam",
+	}}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+
+	// Both games' job_items should have been enqueued (river_job rows exist).
+	var riverCount int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM river_job WHERE kind = 'igdb_match'`,
+	).Scan(ctx, &riverCount); err != nil {
+		t.Fatalf("query river_job: %v", err)
+	}
+	if riverCount != 2 {
+		t.Errorf("expected 2 igdb_match river jobs, got %d", riverCount)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // UserGameWorker — Stage 3 tests
 // ---------------------------------------------------------------------------
