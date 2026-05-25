@@ -27,7 +27,7 @@ import {
   getSyncFrequencyLabel,
 } from '@/types';
 import type { SyncConfigUpdateData } from '@/types';
-import { JobProgressCard, JobItemsDetails } from '@/components/jobs';
+import { JobProgressCard } from '@/components/jobs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -516,17 +516,11 @@ function SyncDetailPage() {
 
       {/* Active Sync Progress */}
       {isSyncing && activeJob && (
-        <div className="space-y-4">
-          <JobProgressCard
-            job={activeJob}
-            onCancel={handleCancelJob}
-            isCancelling={isCancelling}
-          />
-
-          {activeJob.progress && (
-            <JobItemsDetails jobId={activeJob.id} progress={activeJob.progress} isTerminal={activeJob.isTerminal} />
-          )}
-        </div>
+        <JobProgressCard
+          job={activeJob}
+          onCancel={handleCancelJob}
+          isCancelling={isCancelling}
+        />
       )}
 
       {/* External Games Library */}
