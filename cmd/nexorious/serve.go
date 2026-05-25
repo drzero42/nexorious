@@ -465,7 +465,7 @@ func buildAdapterFactory(
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
 				slog.Warn("adapter factory: epic decrypt failed", "user_id", cfg.UserID, "err", err)
-				return nil, fmt.Errorf("%w: epic decrypt failed", tasks.ErrCredentials)
+				return nil, tasks.ErrCredentials
 			}
 			var snapshot map[string]string
 			if err := json.Unmarshal(plain, &snapshot); err != nil {
