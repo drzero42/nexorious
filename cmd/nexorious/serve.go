@@ -439,26 +439,24 @@ func buildAdapterFactory(
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
-			gogClient := gogsvc.NewClient()
-			newTok, err := gogClient.RefreshToken(ctx, creds.RefreshToken)
-			if err != nil {
-				slog.Warn("adapter factory: gog token refresh failed", "user_id", cfg.UserID, "err", err)
-				return nil, tasks.ErrCredentials
-			}
-			creds.AccessToken = newTok.AccessToken
-			creds.RefreshToken = newTok.RefreshToken
-			if newCredsJSON, merr := json.Marshal(creds); merr == nil {
+			onNewTokens := func(accessToken, refreshToken string) error {
+				creds.AccessToken = accessToken
+				creds.RefreshToken = refreshToken
+				newCredsJSON, merr := json.Marshal(creds)
+				if merr != nil {
+					return merr
+				}
 				enc, encErr := encrypter.Encrypt(newCredsJSON)
 				if encErr != nil {
-					slog.Error("adapter factory: encrypt refreshed gog token failed", "err", encErr, "user_id", cfg.UserID)
-				} else if _, err := db.NewRaw(
+					return encErr
+				}
+				_, dbErr := db.NewRaw(
 					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'gog'`,
 					enc, cfg.UserID,
-				).Exec(ctx); err != nil {
-					slog.Error("adapter factory: persist refreshed gog token failed", "err", err, "user_id", cfg.UserID)
-				}
+				).Exec(context.Background())
+				return dbErr
 			}
-			return gogsvc.NewAdapter(gogClient, newTok.AccessToken), nil
+			return gogsvc.NewAdapter(gogsvc.NewClient(), creds.RefreshToken, onNewTokens), nil
 
 		case "epic":
 			if cfg.StorefrontCredentials == nil {
