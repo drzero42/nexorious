@@ -201,8 +201,8 @@ func TestSyncStatus_ReflectsActiveJob(t *testing.T) {
 	if status["is_syncing"].(bool) {
 		t.Fatal("expected is_syncing=false before trigger")
 	}
-	if _, ok := status["external_game_count"]; !ok {
-		t.Fatal("expected external_game_count in status response")
+	if count, ok := status["external_game_count"].(float64); !ok || count != 0 {
+		t.Fatalf("expected external_game_count=0, got %v", status["external_game_count"])
 	}
 
 	postJSONAuth(t, e, "/api/sync/steam", nil, token)

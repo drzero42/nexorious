@@ -233,6 +233,12 @@ Ownership statuses have a fixed rank. A stored status is never replaced by one o
 owned  >  borrowed / rented  >  subscription  >  no_longer_owned
 ```
 
+### Manually added games
+
+A user may add a game to their library by hand and associate it with a platform and storefront before that storefront has ever been synced. When Stage 3 later processes the same game from a sync run, it encounters an existing `user_game_platforms` row with a matching `(user_game_id, platform, storefront)` key. The behaviour is identical to any other conflict: the ownership rank guard applies and playtime is updated only if the incoming value is higher.
+
+Additionally, a manually added row has no `external_game_id` because it was not produced by a sync. Stage 3 fills this in: `external_game_id` is always set (or updated) to the `external_games` row that produced the platform entry, so the association is linked to the storefront record from that point forward.
+
 ---
 
 ## Job Lifecycle
