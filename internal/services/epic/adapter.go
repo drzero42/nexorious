@@ -2,6 +2,7 @@ package epic
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -80,5 +81,8 @@ func (a *Adapter) GetLibrary(ctx context.Context, _ int, onBatch func([]storefro
 		}
 	}
 
+	if errors.Is(fetchErr, ErrAuthFailed) {
+		return fmt.Errorf("%w: epic legendary auth failure", storefrontadapter.ErrCredentials)
+	}
 	return fetchErr
 }

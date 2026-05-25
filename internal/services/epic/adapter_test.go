@@ -141,6 +141,20 @@ func TestEpicAdapter_SkipsPersistWhenSnapshotEmpty(t *testing.T) {
 	}
 }
 
+func TestEpicAdapter_LegendaryAuthFailure_ReturnsErrCredentials(t *testing.T) {
+	fake := &fakeEpicClient{
+		configured:    true,
+		getLibraryErr: ErrAuthFailed,
+		captureSnapshot: map[string]string{},
+	}
+	a := NewAdapter(fake, "user1", map[string]string{}, nil)
+
+	err := a.GetLibrary(context.Background(), 10, func([]storefrontadapter.ExternalGameEntry) error { return nil })
+	if !errors.Is(err, storefrontadapter.ErrCredentials) {
+		t.Errorf("expected storefrontadapter.ErrCredentials, got %v", err)
+	}
+}
+
 func TestEpicAdapter_MapsEntriesToStorefrontFormat(t *testing.T) {
 	fake := &fakeEpicClient{
 		configured: true,
