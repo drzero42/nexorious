@@ -39,10 +39,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	backoffIdx := 0
 
 	for start := 0; start < len(owned); start += batchSize {
-		end := start + batchSize
-		if end > len(owned) {
-			end = len(owned)
-		}
+		end := min(start+batchSize, len(owned))
 
 		var entries []storefrontadapter.ExternalGameEntry
 		for _, og := range owned[start:end] {
