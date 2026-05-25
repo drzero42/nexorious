@@ -172,42 +172,6 @@ export function ExternalGamesSection({ storefront }: ExternalGamesSectionProps) 
           </Card>
         )}
 
-        {skipped.length > 0 && (
-          <Collapsible open={skippedOpen} onOpenChange={setSkippedOpen}>
-            <Card>
-              <CardHeader className="py-3">
-                <CollapsibleTrigger className="flex w-full items-center justify-between">
-                  <CardTitle className="text-base">Skipped ({skipped.length})</CardTitle>
-                  <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', skippedOpen && 'rotate-180')} />
-                </CollapsibleTrigger>
-              </CardHeader>
-              <CollapsibleContent>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableBody>
-                      {skipped.map((game) => (
-                        <TableRow key={game.id}>
-                          <TableCell>{game.title}</TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => unskip(game.id)}
-                              disabled={isUnskipping}
-                            >
-                              Unskip
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </CollapsibleContent>
-            </Card>
-          </Collapsible>
-        )}
-
         {matched.length > 0 && (
           <Collapsible open={matchedOpen} onOpenChange={setMatchedOpen}>
             <Card>
@@ -240,6 +204,42 @@ export function ExternalGamesSection({ storefront }: ExternalGamesSectionProps) 
                               disabled={isRematching}
                             >
                               Change Match
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
+
+        {skipped.length > 0 && (
+          <Collapsible open={skippedOpen} onOpenChange={setSkippedOpen}>
+            <Card>
+              <CardHeader className="py-3">
+                <CollapsibleTrigger className="flex w-full items-center justify-between">
+                  <CardTitle className="text-base">Skipped ({skipped.length})</CardTitle>
+                  <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', skippedOpen && 'rotate-180')} />
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableBody>
+                      {skipped.map((game) => (
+                        <TableRow key={game.id}>
+                          <TableCell>{game.title}</TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => unskip(game.id)}
+                              disabled={isUnskipping}
+                            >
+                              Unskip
                             </Button>
                           </TableCell>
                         </TableRow>
