@@ -197,4 +197,6 @@ export interface ExternalGame {
   user_game_id: string | null;
   igdb_title: string | null;
   user_game_other_platform_count: number;
+  sync_status: 'needs_review' | 'failed' | 'matched' | 'skipped' | 'unmatched';
+  failed_job_item_id: string | null;
 }

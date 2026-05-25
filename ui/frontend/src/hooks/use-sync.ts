@@ -401,6 +401,23 @@ export function useUnskipExternalGame() {
 }
 
 /**
+ * Hook to retry all failed external games for a storefront.
+ * Invalidates external games query on success.
+ */
+export function useRetryFailedExternalGames() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, SyncStorefront>({
+    mutationFn: (storefront) => syncApi.retryFailedExternalGames(storefront),
+    onSuccess: (_, storefront) => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(storefront) });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message ?? 'Failed to retry failed games');
+    },
+  });
+}
+
+/**
  * Hook to rematch an external game to a different IGDB entry.
  * Invalidates all sync queries on success.
  */

@@ -37,7 +37,11 @@ import {
   useSkipExternalGame,
   useUnskipExternalGame,
   useRematchExternalGame,
+  useRetryFailedExternalGames,
+  syncKeys,
 } from '@/hooks/use-sync';
+import { retryJobItem } from '@/api/jobs';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ExternalGame, IGDBGameCandidate, SyncStorefront } from '@/types';
 
 interface ExternalGamesSectionProps {
@@ -54,17 +58,32 @@ export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
   const { mutate: skip, isPending: isSkipping } = useSkipExternalGame();
   const { mutate: unskip, isPending: isUnskipping } = useUnskipExternalGame();
   const { mutate: rematch, isPending: isRematching } = useRematchExternalGame();
+  const { mutate: retryAll, isPending: isRetryingAll } = useRetryFailedExternalGames();
+  const queryClient = useQueryClient();
 
   const [matchingGame, setMatchingGame] = useState<ExternalGame | null>(null);
   const [pendingRematch, setPendingRematch] = useState<PendingRematch | null>(null);
   const [skippedOpen, setSkippedOpen] = useState(false);
   const [matchedOpen, setMatchedOpen] = useState(false);
+  const [retryingItemId, setRetryingItemId] = useState<string | null>(null);
 
   if (isLoading || games.length === 0) return null;
 
-  const unmatched = games.filter((g) => g.resolved_igdb_id === null && !g.is_skipped);
-  const skipped = games.filter((g) => g.is_skipped);
-  const matched = games.filter((g) => g.resolved_igdb_id !== null && !g.is_skipped);
+  const needsReview = games.filter((g) => g.sync_status === 'needs_review');
+  const failed = games.filter((g) => g.sync_status === 'failed');
+  const skipped = games.filter((g) => g.sync_status === 'skipped');
+  const matched = games.filter((g) => g.sync_status === 'matched');
+
+  async function handleRetryGame(game: ExternalGame) {
+    if (!game.failed_job_item_id) return;
+    setRetryingItemId(game.id);
+    try {
+      await retryJobItem(game.failed_job_item_id);
+      queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(platform) });
+    } finally {
+      setRetryingItemId(null);
+    }
+  }
 
   function handleSelect(game: ExternalGame, candidate: IGDBGameCandidate) {
     setMatchingGame(null);
@@ -79,15 +98,15 @@ export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
   return (
     <>
       <div className="space-y-4">
-        {unmatched.length > 0 && (
+        {needsReview.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Unmatched ({unmatched.length})</CardTitle>
+              <CardTitle className="text-base">Needs Review ({needsReview.length})</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableBody>
-                  {unmatched.map((game) => (
+                  {needsReview.map((game) => (
                     <TableRow key={game.id}>
                       <TableCell>{game.title}</TableCell>
                       <TableCell className="text-right space-x-2">
@@ -106,6 +125,43 @@ export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
                           disabled={isSkipping}
                         >
                           Skip
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {failed.length > 0 && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between py-3">
+              <CardTitle className="text-base">Failed ({failed.length})</CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => retryAll(platform)}
+                disabled={isRetryingAll}
+              >
+                Retry All
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableBody>
+                  {failed.map((game) => (
+                    <TableRow key={game.id}>
+                      <TableCell>{game.title}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRetryGame(game)}
+                          disabled={retryingItemId === game.id || !game.failed_job_item_id}
+                        >
+                          Retry
                         </Button>
                       </TableCell>
                     </TableRow>

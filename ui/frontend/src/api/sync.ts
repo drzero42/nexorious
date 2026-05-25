@@ -433,3 +433,7 @@ export async function rematchExternalGame(
 export async function resetSyncData(platform: SyncStorefront): Promise<void> {
   await api.delete(`/sync/${platform}/data`);
 }
+
+export async function retryFailedExternalGames(storefront: SyncStorefront): Promise<void> {
+  await api.post(`/sync/${storefront}/external-games/retry-failed`);
+}
