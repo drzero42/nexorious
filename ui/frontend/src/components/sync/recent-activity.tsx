@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -16,11 +17,13 @@ import {
   CheckCircle,
   SkipForward,
   AlertCircle,
+  XCircle,
+  ArrowRight,
 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { useRecentJobs, jobsKeys } from '@/hooks';
 import { retryFailedItems } from '@/api/jobs';
-import type { RecentJobDetail, JobItemSummary } from '@/types';
+import type { RecentJobDetail, JobItemSummary, SyncChangeItem } from '@/types';
 
 interface RecentActivityProps {
   platform: string;
@@ -123,6 +126,47 @@ function ItemsList({
   );
 }
 
+function SyncChangeList({
+  items,
+  label,
+  icon,
+}: {
+  items: SyncChangeItem[];
+  label: string;
+  icon: ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  if (items.length === 0) return null;
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" className="w-full justify-between h-8 px-2">
+          <div className="flex items-center gap-2">
+            {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {icon}
+            <span className="text-sm">{label}</span>
+          </div>
+          <Badge variant="secondary" className="h-5 text-xs">{items.length}</Badge>
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="ml-6 pl-2 border-l space-y-1 py-1">
+          {items.map((item, idx) => (
+            <div key={idx} className="text-sm py-1 text-muted-foreground">
+              {item.title}
+              {item.oldStatus && item.newStatus && (
+                <span className="ml-2 text-xs">
+                  {item.oldStatus} → {item.newStatus}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 function JobCard({ job }: { job: RecentJobDetail }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -161,6 +205,16 @@ function JobCard({ job }: { job: RecentJobDetail }) {
                   : `Retry ${job.igdbFailedCount} IGDB ${job.igdbFailedCount === 1 ? 'error' : 'errors'}`}
               </Button>
             )}
+            <Badge
+              variant={job.status === 'completed' ? 'outline' : 'destructive'}
+              className={
+                job.status === 'completed'
+                  ? 'h-5 text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                  : 'h-5 text-xs'
+              }
+            >
+              {job.status === 'completed' ? 'Completed' : 'Failed'}
+            </Badge>
             <Badge variant="outline">{job.totalItems} games processed</Badge>
           </div>
         </Button>
@@ -171,6 +225,16 @@ function JobCard({ job }: { job: RecentJobDetail }) {
           <ItemsList items={job.skippedItems} type="skipped" />
           <ItemsList items={job.failedItems} type="failed" />
           <ItemsList items={job.igdbFailedItems} type="igdb_failed" />
+          <SyncChangeList
+            items={job.removedItems ?? []}
+            label="Removed from library"
+            icon={<XCircle className="h-4 w-4 text-muted-foreground" />}
+          />
+          <SyncChangeList
+            items={job.statusChangedItems ?? []}
+            label="Status changed"
+            icon={<ArrowRight className="h-4 w-4 text-blue-500" />}
+          />
         </div>
       </CollapsibleContent>
     </Collapsible>

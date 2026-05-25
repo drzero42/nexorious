@@ -166,8 +166,15 @@ export interface JobItemSummary {
   isNewAddition: boolean;
 }
 
+export interface SyncChangeItem {
+  title: string;
+  oldStatus?: string | null;
+  newStatus?: string | null;
+}
+
 export interface RecentJobDetail {
   id: string;
+  status: string;
   createdAt: string;
   completedAt: string | null;
   totalItems: number;
@@ -179,6 +186,8 @@ export interface RecentJobDetail {
   skippedItems: JobItemSummary[];
   failedItems: JobItemSummary[];
   igdbFailedItems: JobItemSummary[];
+  removedItems: SyncChangeItem[];
+  statusChangedItems: SyncChangeItem[];
 }
 
 export interface RecentJobsResponse {

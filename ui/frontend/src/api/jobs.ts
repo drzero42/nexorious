@@ -18,6 +18,7 @@ import type {
   JobItemDetail,
   RetryFailedResponse,
   JobItemSummary,
+  SyncChangeItem,
   RecentJobDetail,
   RecentJobsResponse,
 } from '@/types';
@@ -132,8 +133,15 @@ interface JobItemSummaryApiResponse {
   is_new_addition: boolean;
 }
 
+interface SyncChangeItemApiResponse {
+  title: string;
+  old_status?: string | null;
+  new_status?: string | null;
+}
+
 interface RecentJobDetailApiResponse {
   id: string;
+  status: string;
   created_at: string;
   completed_at: string | null;
   total_items: number;
@@ -141,6 +149,8 @@ interface RecentJobDetailApiResponse {
   skipped_items: JobItemSummaryApiResponse[];
   failed_items: JobItemSummaryApiResponse[];
   igdb_failed_items: JobItemSummaryApiResponse[];
+  removed_items?: SyncChangeItemApiResponse[];
+  status_changed_items?: SyncChangeItemApiResponse[];
 }
 
 interface RecentJobsApiResponse {
@@ -224,6 +234,14 @@ function transformJobItemSummary(api: JobItemSummaryApiResponse): JobItemSummary
   };
 }
 
+function transformSyncChangeItem(sc: SyncChangeItemApiResponse): SyncChangeItem {
+  return {
+    title: sc.title,
+    oldStatus: sc.old_status ?? null,
+    newStatus: sc.new_status ?? null,
+  };
+}
+
 function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
   const completedItems = (api.completed_items ?? []).map(transformJobItemSummary);
   const skippedItems = (api.skipped_items ?? []).map(transformJobItemSummary);
@@ -231,6 +249,7 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
   const igdbFailedItems = (api.igdb_failed_items ?? []).map(transformJobItemSummary);
   return {
     id: api.id,
+    status: api.status,
     createdAt: api.created_at,
     completedAt: api.completed_at,
     totalItems: api.total_items,
@@ -242,6 +261,8 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
     skippedItems,
     failedItems,
     igdbFailedItems,
+    removedItems: (api.removed_items ?? []).map(transformSyncChangeItem),
+    statusChangedItems: (api.status_changed_items ?? []).map(transformSyncChangeItem),
   };
 }
 
