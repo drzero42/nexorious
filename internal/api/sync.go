@@ -859,9 +859,12 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	id := c.Param("id")
 	ctx := context.Background()
 
-	var ownerID string
-	err := h.db.NewRaw(`SELECT user_id FROM external_games WHERE id = ?`, id).Scan(ctx, &ownerID)
-	if errors.Is(err, sql.ErrNoRows) || ownerID != userID {
+	var ownerRow struct {
+		UserID string `bun:"user_id"`
+		Title  string `bun:"title"`
+	}
+	err := h.db.NewRaw(`SELECT user_id, title FROM external_games WHERE id = ?`, id).Scan(ctx, &ownerRow)
+	if errors.Is(err, sql.ErrNoRows) || ownerRow.UserID != userID {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
 	}
 	if err != nil {
@@ -893,6 +896,13 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 		).Exec(ctx); err != nil {
 			slog.Error("sync: skip game: mark job_item skipped", "err", err, "job_item_id", jobItemRow.ID)
 		} else {
+			if _, err := h.db.NewRaw(
+				`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+				 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
+				uuid.NewString(), jobItemRow.JobID, userID, id, ownerRow.Title,
+			).Exec(ctx); err != nil {
+				slog.Error("sync: skip game: insert sync_change (skipped)", "err", err)
+			}
 			tasks.SyncCheckJobCompletion(ctx, h.db, jobItemRow.JobID)
 		}
 	}
