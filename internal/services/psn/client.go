@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	psnsdk "github.com/sizovilya/go-psn-api"
+	"golang.org/x/time/rate"
 )
 
 // PSNAccountInfo is the psn-local type — does NOT import the api package.
@@ -36,6 +38,7 @@ type Client struct {
 	gamelistURL     string
 	graphqlURL      string
 	graphqlPageSize int
+	limiter         *rate.Limiter
 	// authFn overrides psnsdk authentication; used in tests only.
 	authFn func(ctx context.Context, npssoToken string) (string, error)
 }
@@ -47,6 +50,10 @@ func NewClient() *Client {
 		gamelistURL:     "https://m.np.playstation.com",
 		graphqlURL:      "https://web.np.playstation.com",
 		graphqlPageSize: 200,
+		// 5 req/sec, matching internal/services/steam/client.go.
+		// docs/sync.md § PSN requires a conservative request delay
+		// between pages; PSN has no published rate ceiling.
+		limiter: rate.NewLimiter(rate.Every(200*time.Millisecond), 1),
 	}
 }
 
@@ -157,6 +164,9 @@ func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[
 	result := make(map[string]ExternalGameEntry)
 
 	for offset := 0; ; offset += limit {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("psn: rate limiter wait: %w", err)
+		}
 		u := fmt.Sprintf(
 			"%s/api/gamelist/v2/users/me/titles?categories=ps4_game,ps5_native_game&limit=%d&offset=%d",
 			c.gamelistURL, limit, offset,
@@ -241,6 +251,9 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 	result := make(map[string]ExternalGameEntry)
 
 	for start := 0; ; start += size {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("psn: rate limiter wait: %w", err)
+		}
 		variables := fmt.Sprintf(`{"platform":["ps4","ps5"],"size":%d,"start":%d,"sortBy":"ACTIVE_DATE","sortDirection":"desc"}`, size, start)
 		extensions := fmt.Sprintf(`{"persistedQuery":{"version":1,"sha256Hash":"%s"}}`, graphqlHash)
 

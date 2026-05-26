@@ -8,6 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/time/rate"
 )
 
 func TestFetchPlayHistory_HappyPath(t *testing.T) {
@@ -144,6 +147,7 @@ func TestFetchPlayHistory_Pagination(t *testing.T) {
 	c := NewClient()
 	c.SetHTTPClient(srv.Client())
 	c.SetGamelistURL(srv.URL)
+	c.SetLimiter(rate.NewLimiter(rate.Inf, 1))
 
 	result, err := c.fetchPlayHistory(context.Background(), "test-token")
 	if err != nil {
@@ -276,6 +280,7 @@ func TestFetchPurchasedGames_Pagination(t *testing.T) {
 	c.SetHTTPClient(srv.Client())
 	c.SetGraphQLURL(srv.URL)
 	c.SetGraphQLPageSize(2)
+	c.SetLimiter(rate.NewLimiter(rate.Inf, 1))
 
 	result, err := c.fetchPurchasedGames(context.Background(), "test-token")
 	if err != nil {
@@ -461,5 +466,54 @@ func TestGetLibrary_GraphQLSchemaChanged_ReturnsSentinel(t *testing.T) {
 	err := c.GetLibrary(context.Background(), "npsso", 10, func([]ExternalGameEntry) error { return nil })
 	if !errors.Is(err, ErrPSNGraphQLSchemaChanged) {
 		t.Errorf("expected ErrPSNGraphQLSchemaChanged, got %v", err)
+	}
+}
+
+// TestFetchPurchasedGames_RateLimiterWaitsBetweenPages covers the spec
+// invariant from docs/sync.md § PSN: the adapter applies a conservative
+// request delay between pages. With a 50ms-per-token limiter and 3 page
+// fetches, the second and third calls each wait one token => total
+// elapsed time must be >= 100ms.
+func TestFetchPurchasedGames_RateLimiterWaitsBetweenPages(t *testing.T) {
+	// Server emits 2 games per call for the first two calls and 1 game for
+	// the third (so the < size condition breaks the loop after the third).
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		var body string
+		if callCount < 3 {
+			body = `{"data":{"purchasedTitlesRetrieve":{"games":[
+				{"titleId":"CUSA00001_00","name":"Game A","platform":"PS5","subscriptionService":"NONE"},
+				{"titleId":"CUSA00002_00","name":"Game B","platform":"PS5","subscriptionService":"NONE"}
+			]}}}`
+		} else {
+			body = `{"data":{"purchasedTitlesRetrieve":{"games":[
+				{"titleId":"CUSA00003_00","name":"Game C","platform":"PS5","subscriptionService":"NONE"}
+			]}}}`
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	c := NewClient()
+	c.SetHTTPClient(srv.Client())
+	c.SetGraphQLURL(srv.URL)
+	c.SetGraphQLPageSize(2)
+	c.SetLimiter(rate.NewLimiter(rate.Every(50*time.Millisecond), 1))
+
+	start := time.Now()
+	if _, err := c.fetchPurchasedGames(context.Background(), "test-token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	elapsed := time.Since(start)
+
+	if callCount != 3 {
+		t.Fatalf("expected 3 HTTP calls, got %d", callCount)
+	}
+	// First call passes through immediately (bucket starts full); the next
+	// two each wait ~50ms => >= 100ms total.
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("expected elapsed >= 100ms, got %v (limiter not consulted between pages?)", elapsed)
 	}
 }
