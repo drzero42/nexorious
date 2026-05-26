@@ -2050,3 +2050,76 @@ func TestSync_IGDBMatch_PassesPlatformIDsFromExternalGame(t *testing.T) {
 		t.Errorf("expected at least one IGDB request body to contain 'platforms = (3,6)'; got bodies: %v", bodies)
 	}
 }
+
+func TestUserGameWorker_AlreadyInLibrary_WritesSyncChange(t *testing.T) {
+	// A game whose user_games row already exists with no ownership upgrade
+	// must produce a sync_changes('already_in_library') row and no 'added' row.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING`)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(1001)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Existing Game', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	// Pre-seed user_games and user_game_platforms so the game is already in library.
+	ugID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at) VALUES (?, ?, ?, now(), now())`,
+		ugID, userID, igdbID,
+	)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_game_platforms (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, sync_from_source, created_at, updated_at)
+		 VALUES (?, ?, 'pc-windows', 'steam', true, 10.0, 'owned', true, now(), now())`,
+		uuid.NewString(), ugID,
+	)
+	egID := uuid.NewString()
+	igdbIDVal := igdbID
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, ownership_status, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', '1001', 'Existing Game', false, true, false, 'owned', ?)`,
+		egID, userID, igdbIDVal,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 10.0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '1001', 'Existing Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Must have exactly one already_in_library sync_change.
+	var alreadyCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM sync_changes WHERE job_id = ? AND change_type = 'already_in_library'`, jobID,
+	).Scan(ctx, &alreadyCount)
+	if alreadyCount != 1 {
+		t.Errorf("expected 1 already_in_library sync_change, got %d", alreadyCount)
+	}
+
+	// Must have zero 'added' rows.
+	var addedCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM sync_changes WHERE job_id = ? AND change_type = 'added'`, jobID,
+	).Scan(ctx, &addedCount)
+	if addedCount != 0 {
+		t.Errorf("expected 0 added sync_changes, got %d", addedCount)
+	}
+}

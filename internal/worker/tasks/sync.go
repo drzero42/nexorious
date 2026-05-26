@@ -628,6 +628,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		ownership = "subscription"
 	}
 
+	var platformUpgraded bool
 	for _, egp := range egPlatforms {
 		var existingID string
 		var existingOwnership *string
@@ -671,6 +672,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 				finalOwnership = *existingOwnership
 			}
 			if newRank > existingRank {
+				platformUpgraded = true
 				// Insert the status_changed sync_change BEFORE the UPDATE so
 				// that old_status reflects the pre-UPDATE value.
 				if _, err := w.DB.NewRaw(
@@ -712,6 +714,14 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
 		).Exec(ctx); err != nil {
 			slog.Error("user_game_write: insert sync_change (added)", "err", err)
+		}
+	} else if !platformUpgraded {
+		if _, err := w.DB.NewRaw(
+			`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			 VALUES (?, ?, ?, ?, 'already_in_library', ?, now())`,
+			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: insert sync_change (already_in_library)", "err", err)
 		}
 	}
 
