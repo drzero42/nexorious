@@ -355,6 +355,79 @@ func TestClient_SearchGames_EmptyFilteredResult_FallsBackUnfiltered(t *testing.T
 	}
 }
 
+// TestClient_SearchGames_PostFiltersWrongPlatformCandidates simulates IGDB
+// honouring the `where platforms = (...)` clause on the exact-name path but
+// ignoring it on the `search "..."` path (the actual observed IGDB behaviour
+// per issue #615 — the Arcade-only "Grid" leaking into Steam-EG candidates).
+// The post-filter in SearchGames must drop the wrong-platform candidate.
+func TestClient_SearchGames_PostFiltersWrongPlatformCandidates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		// Exact-name query: respect the where clause, return only the PC game.
+		if strings.Contains(string(body), `where name = "GRID"`) {
+			_ = json.NewEncoder(w).Encode([]igdbGameResponse{
+				{ID: 118871, Name: "GRID", Slug: "grid-pc", Platforms: []igdbPlatform{{ID: 6, Name: "PC (Microsoft Windows)"}}},
+			})
+			return
+		}
+		// search "..." query: ignore the where clause, return both PC and Arcade.
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
+			{ID: 118871, Name: "GRID", Slug: "grid-pc", Platforms: []igdbPlatform{{ID: 6, Name: "PC (Microsoft Windows)"}}},
+			{ID: 327878, Name: "Grid", Slug: "grid-arcade", Platforms: []igdbPlatform{{ID: 52, Name: "Arcade"}}},
+		})
+	}))
+	defer srv.Close()
+
+	client := testIGDBClient(t, srv)
+
+	results, err := client.SearchGames(context.Background(), "GRID", 10, []int{6})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, r := range results {
+		if r.IgdbID == 327878 {
+			t.Fatalf("Arcade-only candidate 327878 must be post-filtered out; got %#v", r)
+		}
+	}
+	// The PC GRID must survive.
+	foundPC := false
+	for _, r := range results {
+		if r.IgdbID == 118871 {
+			foundPC = true
+			break
+		}
+	}
+	if !foundPC {
+		t.Fatalf("expected PC GRID (118871) to survive the post-filter; got results %v", results)
+	}
+}
+
+// TestClient_SearchGames_KeepsCandidatesWithEmptyPlatforms verifies the
+// recall-preserving rule: when IGDB returns a candidate with no platforms
+// data, the post-filter keeps it rather than dropping (incomplete IGDB
+// tagging shouldn't cost a legitimate match).
+func TestClient_SearchGames_KeepsCandidatesWithEmptyPlatforms(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
+			{ID: 999, Name: "Title Without Platforms", Slug: "no-platforms"},
+		})
+	}))
+	defer srv.Close()
+
+	client := testIGDBClient(t, srv)
+
+	results, err := client.SearchGames(context.Background(), "Title Without Platforms", 10, []int{6})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected candidate with empty platforms to be kept")
+	}
+	if results[0].IgdbID != 999 {
+		t.Fatalf("expected IGDB ID 999, got %d", results[0].IgdbID)
+	}
+}
+
 func testIGDBClient(t *testing.T, srv *httptest.Server) *Client {
 	t.Helper()
 	return &Client{

@@ -111,7 +111,11 @@ type scoredCandidate struct {
 
 const (
 	// igdbGameFields is the common field list for all /games queries.
-	igdbGameFields = `name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name`
+	// platforms.id is requested explicitly so SearchGames' post-filter can
+	// intersect each candidate's platforms against the requested platformIDs
+	// (issue #615) — relying on IGDB's "id always returned for reference
+	// fields" default would be brittle.
+	igdbGameFields = `name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.id,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name`
 )
 
 // SearchGames implements the full IGDB search pipeline. When platformIDs is
@@ -204,6 +208,44 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int, platf
 		if score >= fuzzySearchThreshold {
 			candidates = append(candidates, scoredCandidate{metadata: md, score: score})
 		}
+	}
+
+	// Step 3.5: Post-filter by platform. IGDB's `where platforms = (...)` clause
+	// is honored on exact-name queries but ignored on `search "..."` queries —
+	// so the fuzzy half of our pipeline can leak wrong-platform candidates
+	// (issue #615). Drop them in Go. Candidates with no platforms data are
+	// kept (IGDB tagging is sometimes incomplete; same recall-preserving
+	// philosophy as the empty-result fallback below).
+	if len(platformIDs) > 0 {
+		wanted := make(map[int]bool, len(platformIDs))
+		for _, id := range platformIDs {
+			wanted[id] = true
+		}
+		filtered := candidates[:0]
+		dropped := 0
+		for _, sc := range candidates {
+			if len(sc.metadata.PlatformIDs) == 0 {
+				filtered = append(filtered, sc)
+				continue
+			}
+			match := false
+			for _, pid := range sc.metadata.PlatformIDs {
+				if wanted[pid] {
+					match = true
+					break
+				}
+			}
+			if match {
+				filtered = append(filtered, sc)
+			} else {
+				dropped++
+			}
+		}
+		if dropped > 0 {
+			slog.Debug("igdb: post-filter dropped wrong-platform candidates",
+				"query", query, "platform_ids", platformIDs, "dropped", dropped, "kept", len(filtered))
+		}
+		candidates = filtered
 	}
 
 	sortByScore(candidates)
