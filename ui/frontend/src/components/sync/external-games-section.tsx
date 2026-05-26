@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { useRouterState } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -63,6 +64,7 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
   const { mutate: rematch, isPending: isRematching } = useRematchExternalGame();
   const { mutate: retryAll, isPending: isRetryingAll } = useRetryFailedExternalGames();
   const queryClient = useQueryClient();
+  const hash = useRouterState({ select: (s) => s.location.hash });
 
   const [matchingGame, setMatchingGame] = useState<ExternalGame | null>(null);
   const [pendingRematch, setPendingRematch] = useState<PendingRematch | null>(null);
@@ -70,12 +72,21 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
   const [matchedOpen, setMatchedOpen] = useState(false);
   const [retryingItemId, setRetryingItemId] = useState<string | null>(null);
 
-  if (isLoading || games.length === 0) return null;
-
   const needsReview = games.filter((g) => g.sync_status === 'needs_review');
   const failed = games.filter((g) => g.sync_status === 'failed');
   const skipped = games.filter((g) => g.sync_status === 'skipped');
   const matched = games.filter((g) => g.sync_status === 'matched');
+
+  // Initial hash navigation fires before the games query resolves, so the
+  // browser can't find #needs-review on first paint. Re-trigger the scroll
+  // once the section has rendered.
+  useEffect(() => {
+    if (hash === 'needs-review' && needsReview.length > 0) {
+      document.getElementById('needs-review')?.scrollIntoView();
+    }
+  }, [hash, needsReview.length]);
+
+  if (isLoading || games.length === 0) return null;
 
   async function handleRetryGame(game: ExternalGame) {
     if (!game.failed_job_item_id) return;
@@ -100,9 +111,9 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
 
   return (
     <>
-      <div className="space-y-4" id="needs-review">
+      <div className="space-y-4">
         {needsReview.length > 0 && (
-          <Card>
+          <Card id="needs-review" className="scroll-mt-4">
             <CardHeader>
               <CardTitle className="text-base">Needs Review ({needsReview.length})</CardTitle>
             </CardHeader>
