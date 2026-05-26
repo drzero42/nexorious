@@ -93,6 +93,7 @@ interface JobItemApiResponse {
   created_at: string;
   processed_at: string | null;
   igdb_candidates_json?: string;  // Optional - present for PENDING_REVIEW items
+  external_game_id: string | null;
 }
 
 interface JobItemListApiResponse {
@@ -190,7 +191,7 @@ function transformJob(apiJob: JobApiResponse): Job {
   };
 }
 
-function transformJobItem(apiItem: JobItemApiResponse): JobItem {
+export function transformJobItem(apiItem: JobItemApiResponse): JobItem {
   return {
     id: apiItem.id,
     jobId: apiItem.job_id,
@@ -204,6 +205,7 @@ function transformJobItem(apiItem: JobItemApiResponse): JobItem {
     createdAt: apiItem.created_at,
     processedAt: apiItem.processed_at,
     igdbCandidatesJson: apiItem.igdb_candidates_json,
+    externalGameId: apiItem.external_game_id,
   };
 }
 

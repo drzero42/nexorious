@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as jobsApi from './jobs';
+import { transformJobItem } from './jobs';
 import { api } from './client';
 import { JobType, JobSource, JobStatus } from '@/types';
 
@@ -269,6 +270,7 @@ describe('jobsApi', () => {
         error_message: null,
         result_game_title: null,
         result_igdb_id: null,
+        result_user_game_id: null,
         created_at: '2024-01-01T00:00:00Z',
         processed_at: null,
         source_metadata_json: '{}',
@@ -276,6 +278,7 @@ describe('jobsApi', () => {
         igdb_candidates_json: '[]',
         resolved_igdb_id: null,
         resolved_at: null,
+        external_game_id: null,
       };
 
       vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
@@ -285,5 +288,45 @@ describe('jobsApi', () => {
       expect(api.post).toHaveBeenCalledWith('/job-items/item-123/retry');
       expect(result.status).toBe('pending');
     });
+  });
+});
+
+describe('transformJobItem external_game_id mapping', () => {
+  it('maps external_game_id to externalGameId (non-null)', () => {
+    const apiItem = {
+      id: 'item-1',
+      job_id: 'job-1',
+      item_key: 'k',
+      source_title: 'Test',
+      status: 'pending_review',
+      error_message: null,
+      result_game_title: null,
+      result_igdb_id: null,
+      result_user_game_id: null,
+      created_at: '2026-05-26T00:00:00Z',
+      processed_at: null,
+      external_game_id: 'eg-123',
+    };
+    const result = transformJobItem(apiItem);
+    expect(result.externalGameId).toBe('eg-123');
+  });
+
+  it('maps external_game_id null to externalGameId null', () => {
+    const apiItem = {
+      id: 'item-2',
+      job_id: 'job-1',
+      item_key: 'k',
+      source_title: 'Test',
+      status: 'completed',
+      error_message: null,
+      result_game_title: null,
+      result_igdb_id: null,
+      result_user_game_id: null,
+      created_at: '2026-05-26T00:00:00Z',
+      processed_at: null,
+      external_game_id: null,
+    };
+    const result = transformJobItem(apiItem);
+    expect(result.externalGameId).toBeNull();
   });
 });
