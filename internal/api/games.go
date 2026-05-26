@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/services/platformresolution"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -63,8 +65,9 @@ type IGDBSearchResponse struct {
 
 // IGDBSearchRequest is the request body for POST /api/games/search/igdb.
 type IGDBSearchRequest struct {
-	Query string `json:"query"`
-	Limit int    `json:"limit"`
+	Query          string  `json:"query"`
+	Limit          int     `json:"limit"`
+	ExternalGameID *string `json:"external_game_id,omitempty"`
 }
 
 // IGDBImportRequest is the request body for POST /api/games/igdb-import.
@@ -201,7 +204,34 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 		req.Limit = 50
 	}
 
-	results, err := h.igdb.SearchGames(c.Request().Context(), req.Query, req.Limit, nil)
+	ctx := c.Request().Context()
+
+	var platformIDs []int
+	if req.ExternalGameID != nil && *req.ExternalGameID != "" {
+		userID := auth.UserIDFromContext(c)
+		if userID == "" {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		}
+		var exists bool
+		if err := h.db.NewRaw(
+			`SELECT EXISTS(SELECT 1 FROM external_games WHERE id = ? AND user_id = ?)`,
+			*req.ExternalGameID, userID,
+		).Scan(ctx, &exists); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "ownership check failed"})
+		}
+		if !exists {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "external_game not found or not owned by user"})
+		}
+
+		if ids, perErr := platformresolution.IGDBPlatformIDsForExternalGame(ctx, h.db, *req.ExternalGameID); perErr == nil {
+			platformIDs = ids
+		} else {
+			slog.Debug("HandleSearchIGDB: platform resolution failed, falling back to unfiltered",
+				"external_game_id", *req.ExternalGameID, "err", perErr)
+		}
+	}
+
+	results, err := h.igdb.SearchGames(ctx, req.Query, req.Limit, platformIDs)
 	if err != nil {
 		return h.mapIGDBError(c, err)
 	}
@@ -210,7 +240,6 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 	for i, md := range results {
 		candidates[i] = metadataToCandidate(md)
 	}
-
 	return c.JSON(http.StatusOK, IGDBSearchResponse{
 		Games: candidates,
 		Total: len(candidates),

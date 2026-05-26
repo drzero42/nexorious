@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,9 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/api"
+	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/ratelimit"
@@ -271,5 +274,161 @@ func TestImportFromIGDB_MissingIGDBID(t *testing.T) {
 	rec := postAuth(t, e, "/api/games/igdb-import", token, body)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for missing igdb_id, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ─── newTestEchoWithLiveIGDB / EG helpers ────────────────────────────────────
+
+// newTestEchoWithLiveIGDB builds a test Echo instance with a configured IGDB
+// client pointing at srvURL (both token endpoint and API endpoint). Use this
+// when tests need to intercept outbound IGDB calls.
+func newTestEchoWithLiveIGDB(t *testing.T, db *bun.DB, srvURL string) interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+} {
+	t.Helper()
+	cfg := &config.Config{
+		SecretKey:                "test-secret-key-at-least-32-bytes!",
+		DBEncryptionKey:          "test-db-encryption-key-32-bytes!!",
+		AccessTokenExpireMinutes: 15,
+		RefreshTokenExpireDays:   30,
+		Port:                     8000,
+		IGDBClientID:             "test-client-id",
+		IGDBClientSecret:         "test-client-secret",
+		IGDBAccessToken:          "test-access-token",
+	}
+	igdbClient := igdb.NewClientWithTokenURL(cfg, srvURL+"/oauth2/token", ratelimit.NewLocal(100, 100))
+	igdbClient.SetAPIURLForTest(srvURL)
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, nil)
+}
+
+// insertTestExternalGameForUser inserts a minimal external_game row owned by
+// userID and returns its generated ID.
+func insertTestExternalGameForUser(t *testing.T, db *bun.DB, userID, storefront, title string) string {
+	t.Helper()
+	id := uuid.NewString()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, ?, ?, ?, false, true, false)`,
+		id, userID, storefront, uuid.NewString(), title,
+	)
+	if err != nil {
+		t.Fatalf("insertTestExternalGameForUser: %v", err)
+	}
+	return id
+}
+
+// insertTestExternalGamePlatformForUser inserts an external_game_platforms row
+// linking externalGameID to platformSlug (must match a platforms.name seed value).
+func insertTestExternalGamePlatformForUser(t *testing.T, db *bun.DB, externalGameID, platformSlug string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played)
+		 VALUES (?, ?, ?, 0)`,
+		uuid.NewString(), externalGameID, platformSlug,
+	)
+	if err != nil {
+		t.Fatalf("insertTestExternalGamePlatformForUser: %v", err)
+	}
+}
+
+// ─── ExternalGameID ownership / filter tests ─────────────────────────────────
+
+func TestSearchIGDB_ExternalGameID_CrossUserReturns403(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithIGDB(t, testDB) // unconfigured IGDB client; 403 fires before IGDB is called
+
+	// Owning user.
+	insertAuthTestUser(t, testDB, "u-owner", "owner", "pass123", true, false)
+	otherEGID := insertTestExternalGameForUser(t, testDB, "u-owner", "steam", "Owner's Game")
+
+	// Calling user.
+	insertAuthTestUser(t, testDB, "u-caller", "caller", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-caller", "access-caller", "refresh-caller", 1)
+	token := loginAndGetToken(t, e, "caller", "pass123")
+
+	body := fmt.Sprintf(`{"query": "x", "limit": 10, "external_game_id": %q}`, otherEGID)
+	rec := postAuth(t, e, "/api/games/search/igdb", token, body)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for cross-user external_game_id, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSearchIGDB_ExternalGameID_NonExistentReturns403(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithIGDB(t, testDB)
+
+	insertAuthTestUser(t, testDB, "u-caller-2", "caller2", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-caller-2", "access-caller-2", "refresh-caller-2", 1)
+	token := loginAndGetToken(t, e, "caller2", "pass123")
+
+	body := `{"query": "x", "limit": 10, "external_game_id": "ghost-id-does-not-exist"}`
+	rec := postAuth(t, e, "/api/games/search/igdb", token, body)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for non-existent external_game_id, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSearchIGDB_ExternalGameID_OwnedPassesPlatformIDs(t *testing.T) {
+	truncateAllTables(t)
+
+	var capturedBodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		capturedBodies = append(capturedBodies, string(body))
+		_ = json.NewEncoder(w).Encode([]map[string]any{}) // empty result; we only assert on the request body
+	}))
+	defer srv.Close()
+
+	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
+
+	insertAuthTestUser(t, testDB, "u-caller-3", "caller3", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-caller-3", "access-caller-3", "refresh-caller-3", 1)
+	token := loginAndGetToken(t, e, "caller3", "pass123")
+	egID := insertTestExternalGameForUser(t, testDB, "u-caller-3", "steam", "Owned Title")
+	insertTestExternalGamePlatformForUser(t, testDB, egID, "pc-windows")
+
+	body := fmt.Sprintf(`{"query": "x", "limit": 10, "external_game_id": %q}`, egID)
+	rec := postAuth(t, e, "/api/games/search/igdb", token, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	// At least one captured IGDB request body must contain the platform clause for pc-windows (igdb_platform_id=6).
+	found := false
+	for _, b := range capturedBodies {
+		if strings.Contains(b, "platforms = (6)") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected at least one IGDB request body to contain 'platforms = (6)'; got %v", capturedBodies)
+	}
+}
+
+func TestSearchIGDB_NoExternalGameID_UnfilteredCall(t *testing.T) {
+	truncateAllTables(t)
+	var capturedBodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		capturedBodies = append(capturedBodies, string(body))
+		_ = json.NewEncoder(w).Encode([]map[string]any{})
+	}))
+	defer srv.Close()
+
+	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
+	insertAuthTestUser(t, testDB, "u-caller-4", "caller4", "pass123", true, false)
+	insertAuthTestSession(t, testDB, "u-caller-4", "access-caller-4", "refresh-caller-4", 1)
+	token := loginAndGetToken(t, e, "caller4", "pass123")
+
+	body := `{"query": "x", "limit": 10}`
+	rec := postAuth(t, e, "/api/games/search/igdb", token, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	for _, b := range capturedBodies {
+		if strings.Contains(b, "platforms = (") {
+			t.Fatalf("body without external_game_id must produce unfiltered IGDB calls; got %q", b)
+		}
 	}
 }
