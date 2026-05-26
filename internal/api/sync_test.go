@@ -1031,6 +1031,90 @@ func TestRematchExternalGame_ResolvesSiblings(t *testing.T) {
 	}
 }
 
+// TestRematchExternalGame_UpdatesJobItemStatusToPending verifies that a
+// pending_review job_item is immediately set to pending when rematch is called,
+// so the game disappears from the needs-review list without waiting for River.
+func TestRematchExternalGame_UpdatesJobItemStatusToPending(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-status")
+	insertExternalGame(t, testDB, "eg-status-1", userID, "steam", "111", "Portal 2")
+	insertJob(t, testDB, "job-status-1", userID, "sync", "steam", "processing")
+
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-status-1', 'job-status-1', ?, '111', 'Portal 2', 'eg-status-1', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (6001, 'Portal 2', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-status-1/rematch",
+		map[string]any{"igdb_id": 6001}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-status-1'`).Scan(context.Background(), &status); err != nil {
+		t.Fatalf("scan job_item status: %v", err)
+	}
+	if status != "pending" {
+		t.Errorf("expected job_item status=pending after rematch, got %q", status)
+	}
+}
+
+// TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending verifies that
+// pending_review job_items for sibling external_games are also immediately set
+// to pending when a rematch resolves the whole sibling group.
+func TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-sib-status")
+
+	insertExternalGame(t, testDB, "eg-sib-s1", userID, "psn", "PPSA-101", "God of War")
+	insertExternalGame(t, testDB, "eg-sib-s2", userID, "psn", "PPSA-102", "God of War")
+	insertJob(t, testDB, "job-sib-s", userID, "sync", "psn", "processing")
+
+	for _, row := range []struct{ id, egID, extID string }{
+		{"ji-sib-s1", "eg-sib-s1", "PPSA-101"},
+		{"ji-sib-s2", "eg-sib-s2", "PPSA-102"},
+	} {
+		_, err := testDB.ExecContext(context.Background(),
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+			 VALUES (?, 'job-sib-s', ?, ?, 'God of War', ?, '{}', 'pending_review', '{}', '[]', now())`,
+			row.id, userID, row.extID, row.egID,
+		)
+		if err != nil {
+			t.Fatalf("insert job_item %s: %v", row.id, err)
+		}
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (6002, 'God of War', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-sib-s1/rematch",
+		map[string]any{"igdb_id": 6002}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+	var count int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE id IN ('ji-sib-s1', 'ji-sib-s2') AND status = 'pending'`,
+	).Scan(ctx, &count); err != nil {
+		t.Fatalf("scan job_item status count: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected both job_items to have status=pending after rematch, got count=%d", count)
+	}
+}
+
 // ─── TestUnskipGame_EnqueuesJobItem ───────────────────────────────────────────
 
 func TestUnskipGame_EnqueuesJobItem(t *testing.T) {

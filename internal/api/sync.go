@@ -1223,6 +1223,13 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		).Exec(ctx); err3 != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
+	} else {
+		if _, err := h.db.NewRaw(
+			`UPDATE job_items SET status = 'pending' WHERE id = ?`, jobItemID,
+		).Exec(ctx); err != nil {
+			slog.Error("sync: rematch: update job_item status failed", "err", err, "job_item_id", jobItemID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update job item")
+		}
 	}
 
 	if h.riverClient != nil {
@@ -1277,6 +1284,12 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 				).Exec(ctx); err3 != nil {
 					slog.Error("sync: rematch: create sibling job_item", "sibling_id", sib.ID, "err", err3)
 					continue
+				}
+			} else {
+				if _, err := h.db.NewRaw(
+					`UPDATE job_items SET status = 'pending' WHERE id = ?`, sibItemID,
+				).Exec(ctx); err != nil {
+					slog.Error("sync: rematch: update sibling job_item status", "sibling_id", sib.ID, "err", err)
 				}
 			}
 			if h.riverClient != nil {
