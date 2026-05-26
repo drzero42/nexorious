@@ -47,7 +47,7 @@ func NewAdapter(
 }
 
 // GetLibrary implements storefrontadapter.Adapter.
-func (a *Adapter) GetLibrary(ctx context.Context, _ int, onBatch func([]storefrontadapter.ExternalGameEntry) error) error {
+func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]storefrontadapter.ExternalGameEntry) error) error {
 	if !a.client.Configured() {
 		return fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
 	}
@@ -56,19 +56,35 @@ func (a *Adapter) GetLibrary(ctx context.Context, _ int, onBatch func([]storefro
 		return fmt.Errorf("epic: restore snapshot: %w", err)
 	}
 
+	// Per docs/sync.md § Epic, the adapter chunks the client's single big
+	// batch into batches of ≤10 before invoking the outer onBatch.
+	chunkSize := batchSize
+	if chunkSize <= 0 || chunkSize > 10 {
+		chunkSize = 10
+	}
+
 	fetchErr := a.client.GetLibrary(ctx, a.userID, func(batch []ExternalGameEntry) error {
-		mapped := make([]storefrontadapter.ExternalGameEntry, 0, len(batch))
-		for _, e := range batch {
-			mapped = append(mapped, storefrontadapter.ExternalGameEntry{
-				ExternalID:      e.ExternalID,
-				Title:           e.Title,
-				PlaytimeHours:   0,
-				Platforms:       []string{"pc-windows"},
-				OwnershipStatus: e.OwnershipStatus,
-				IsSubscription:  false,
-			})
+		for start := 0; start < len(batch); start += chunkSize {
+			end := start + chunkSize
+			if end > len(batch) {
+				end = len(batch)
+			}
+			mapped := make([]storefrontadapter.ExternalGameEntry, 0, end-start)
+			for _, e := range batch[start:end] {
+				mapped = append(mapped, storefrontadapter.ExternalGameEntry{
+					ExternalID:      e.ExternalID,
+					Title:           e.Title,
+					PlaytimeHours:   0,
+					Platforms:       []string{"pc-windows"},
+					OwnershipStatus: e.OwnershipStatus,
+					IsSubscription:  false,
+				})
+			}
+			if err := onBatch(mapped); err != nil {
+				return err
+			}
 		}
-		return onBatch(mapped)
+		return nil
 	})
 
 	// Capture updated snapshot regardless of fetch error.

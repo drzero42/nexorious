@@ -3,6 +3,7 @@ package epic
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
@@ -184,5 +185,44 @@ func TestEpicAdapter_MapsEntriesToStorefrontFormat(t *testing.T) {
 	}
 	if got.PlaytimeHours != 0 {
 		t.Errorf("expected 0 playtime, got %v", got.PlaytimeHours)
+	}
+}
+
+// TestEpicAdapter_ChunksLibraryIntoBatches covers the spec invariant from
+// docs/sync.md § Epic: the adapter must re-chunk the client's single big
+// batch into chunks of ≤10 before invoking the outer onBatch.
+func TestEpicAdapter_ChunksLibraryIntoBatches(t *testing.T) {
+	// Build one client-side batch of 25 entries.
+	big := make([]ExternalGameEntry, 25)
+	for i := range big {
+		big[i] = ExternalGameEntry{
+			ExternalID:      fmt.Sprintf("game-%02d", i),
+			Title:           fmt.Sprintf("Game %02d", i),
+			OwnershipStatus: "owned",
+		}
+	}
+	fake := &fakeEpicClient{
+		configured:      true,
+		libraryBatches:  [][]ExternalGameEntry{big},
+		captureSnapshot: map[string]string{},
+	}
+	a := NewAdapter(fake, "user1", map[string]string{}, nil)
+
+	var receivedSizes []int
+	if err := a.GetLibrary(context.Background(), 10, func(batch []storefrontadapter.ExternalGameEntry) error {
+		receivedSizes = append(receivedSizes, len(batch))
+		return nil
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wantSizes := []int{10, 10, 5}
+	if len(receivedSizes) != len(wantSizes) {
+		t.Fatalf("expected %d outer onBatch calls, got %d (sizes=%v)", len(wantSizes), len(receivedSizes), receivedSizes)
+	}
+	for i, got := range receivedSizes {
+		if got != wantSizes[i] {
+			t.Errorf("batch %d size: want %d, got %d", i, wantSizes[i], got)
+		}
 	}
 }
