@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -372,10 +373,15 @@ func TestSearchIGDB_ExternalGameID_NonExistentReturns403(t *testing.T) {
 func TestSearchIGDB_ExternalGameID_OwnedPassesPlatformIDs(t *testing.T) {
 	truncateAllTables(t)
 
-	var capturedBodies []string
+	var (
+		capturedBodies []string
+		mu             sync.Mutex
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
 		capturedBodies = append(capturedBodies, string(body))
+		mu.Unlock()
 		_ = json.NewEncoder(w).Encode([]map[string]any{}) // empty result; we only assert on the request body
 	}))
 	defer srv.Close()
@@ -394,6 +400,8 @@ func TestSearchIGDB_ExternalGameID_OwnedPassesPlatformIDs(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	// At least one captured IGDB request body must contain the platform clause for pc-windows (igdb_platform_id=6).
+	mu.Lock()
+	defer mu.Unlock()
 	found := false
 	for _, b := range capturedBodies {
 		if strings.Contains(b, "platforms = (6)") {
@@ -408,10 +416,15 @@ func TestSearchIGDB_ExternalGameID_OwnedPassesPlatformIDs(t *testing.T) {
 
 func TestSearchIGDB_NoExternalGameID_UnfilteredCall(t *testing.T) {
 	truncateAllTables(t)
-	var capturedBodies []string
+	var (
+		capturedBodies []string
+		mu             sync.Mutex
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
 		capturedBodies = append(capturedBodies, string(body))
+		mu.Unlock()
 		_ = json.NewEncoder(w).Encode([]map[string]any{})
 	}))
 	defer srv.Close()
@@ -426,6 +439,8 @@ func TestSearchIGDB_NoExternalGameID_UnfilteredCall(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	for _, b := range capturedBodies {
 		if strings.Contains(b, "platforms = (") {
 			t.Fatalf("body without external_game_id must produce unfiltered IGDB calls; got %q", b)

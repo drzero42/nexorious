@@ -2036,14 +2036,17 @@ func TestSync_IGDBMatch_PassesPlatformIDsFromExternalGame(t *testing.T) {
 		t.Fatal("no requests reached the IGDB mock server")
 	}
 
+	// With the resolver's ORDER BY p.igdb_platform_id, the clause is built as
+	// platforms = (3,6) (ascending). Assert on the exact clause to avoid
+	// substring collisions with e.g. `limit 6;`.
 	foundPlatformFilter := false
 	for _, b := range bodies {
-		if strings.Contains(b, "6") && strings.Contains(b, "3") && strings.Contains(b, "platforms") {
+		if strings.Contains(b, "platforms = (3,6)") {
 			foundPlatformFilter = true
 			break
 		}
 	}
 	if !foundPlatformFilter {
-		t.Errorf("expected at least one IGDB request body to contain 'platforms' with IDs 6 and 3; got bodies: %v", bodies)
+		t.Errorf("expected at least one IGDB request body to contain 'platforms = (3,6)'; got bodies: %v", bodies)
 	}
 }
