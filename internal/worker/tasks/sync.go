@@ -178,8 +178,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	// 4. Fetch library; upsert external_games + platforms; insert job_items;
 	//    enqueue Stage 2 (IGDBMatch) per batch as each batch completes.
 	slog.Info("dispatch_sync: starting library fetch", "job_id", p.JobID, "user_id", p.UserID, "storefront", p.Storefront)
+	totalProcessed := 0
 	if err := adapter.GetLibrary(ctx, 10, func(batch []ExternalGameEntry) error {
 		var batchItemIDs []string
+		skippedInBatch := 0
 		for _, e := range batch {
 			fetchedIDs[e.ExternalID] = struct{}{}
 			platforms := resolvePlatforms(e.Platforms)
@@ -189,12 +191,24 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			}
 			seenPlatforms[egID] = append(seenPlatforms[egID], platforms...)
 			upsertPlatforms(ctx, w.DB, egID, platforms, e.PlaytimeHours)
-			if !isSkipped {
+			if isSkipped {
+				skippedInBatch++
+				slog.Debug("dispatch_sync: game is user-skipped, not enqueuing for matching",
+					"job_id", p.JobID, "external_id", e.ExternalID, "title", e.Title)
+			} else {
 				if itemID := insertJobItem(ctx, w.DB, egID, e, p); itemID != "" {
 					batchItemIDs = append(batchItemIDs, itemID)
 				}
 			}
 		}
+		totalProcessed += len(batch)
+		slog.Debug("dispatch_sync: batch complete",
+			"job_id", p.JobID,
+			"batch_size", len(batch),
+			"enqueued_for_matching", len(batchItemIDs),
+			"skipped_by_user", skippedInBatch,
+			"total_processed_so_far", totalProcessed,
+		)
 		for _, itemID := range batchItemIDs {
 			_ = EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, IGDBMatchArgs{JobItemID: itemID})
 		}
@@ -337,13 +351,24 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		return nil
 	}
 
+	slog.Debug("igdb_match: processing",
+		"item_id", p.JobItemID,
+		"title", eg.Title,
+		"storefront", eg.Storefront,
+		"external_game_id", eg.ID,
+		"attempt", job.Attempt,
+	)
+
 	// Fast-path: skipped games go straight to UserGameWorker.
 	if eg.IsSkipped {
+		slog.Debug("igdb_match: game is skipped, fast-path to user_game_write", "item_id", p.JobItemID, "title", eg.Title)
 		return w.enqueueUserGame(ctx, item.ID, item.JobID)
 	}
 
 	// Fast-path: already resolved (manual or prior run).
 	if eg.ResolvedIGDBID != nil {
+		slog.Debug("igdb_match: already resolved, fast-path to user_game_write",
+			"item_id", p.JobItemID, "title", eg.Title, "igdb_id", *eg.ResolvedIGDBID)
 		return w.enqueueUserGame(ctx, item.ID, item.JobID)
 	}
 
@@ -355,6 +380,8 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		Limit(1).
 		Scan(ctx); err == nil && sibling.ResolvedIGDBID != nil {
 		igdbID := *sibling.ResolvedIGDBID
+		slog.Debug("igdb_match: sibling match, inheriting resolution",
+			"item_id", p.JobItemID, "title", eg.Title, "igdb_id", igdbID, "sibling_id", sibling.ID)
 		if _, err := w.DB.NewRaw(
 			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 			igdbID, eg.Title,
@@ -398,9 +425,20 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			}
 		}
 
+		slog.Debug("igdb_match: search results",
+			"item_id", p.JobItemID,
+			"title", eg.Title,
+			"candidate_count", len(candidates),
+			"best_score", bestScore,
+			"second_best_score", secondBestScore,
+			"best_igdb_id", bestID,
+		)
+
 		const autoResolveThreshold = 0.85
 		const tieEpsilon = 0.01
 		if bestScore >= autoResolveThreshold && (bestScore-secondBestScore) > tieEpsilon {
+			slog.Debug("igdb_match: auto-resolved",
+				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", bestID, "score", bestScore)
 			if _, err := w.DB.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 				bestID, eg.Title,
@@ -416,7 +454,15 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			return w.enqueueUserGame(ctx, item.ID, item.JobID)
 		}
 
-		// Low confidence — store candidates, mark pending_review.
+		// Low confidence or tie — store candidates, mark pending_review.
+		slog.Debug("igdb_match: low confidence, marking pending_review",
+			"item_id", p.JobItemID,
+			"title", eg.Title,
+			"best_score", bestScore,
+			"threshold", autoResolveThreshold,
+			"tie_gap", bestScore-secondBestScore,
+			"candidate_count", len(candidates),
+		)
 		candidatesJSON, _ := json.Marshal(candidates)
 		item.IGDBCandidates = candidatesJSON
 		item.MatchConfidence = &bestScore
@@ -426,6 +472,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 	}
 
 	// No IGDB client configured — mark pending_review.
+	slog.Debug("igdb_match: no IGDB client configured, marking pending_review", "item_id", p.JobItemID, "title", eg.Title)
 	syncMarkItemPendingReview(ctx, w.DB, &item)
 	SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 	return nil

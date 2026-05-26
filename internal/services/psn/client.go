@@ -210,6 +210,9 @@ func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[
 			}
 		}
 
+		slog.Debug("psn: play history page fetched",
+			"offset", offset, "page_count", len(body.Titles), "total", body.TotalItemCount, "running_total", len(result))
+
 		if offset+limit >= body.TotalItemCount {
 			break
 		}
@@ -302,6 +305,9 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 				IsSubscription:  isSub,
 			}
 		}
+
+		slog.Debug("psn: purchased games page fetched",
+			"start", start, "page_count", len(games), "running_total", len(result))
 
 		if len(games) < size {
 			break
