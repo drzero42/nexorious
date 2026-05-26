@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { LogOut, User, ChevronDown, ArrowLeftRight } from 'lucide-react';
+import { LogOut, User, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -60,12 +60,6 @@ export function Sidebar() {
               <Link to="/profile">
                 <User className="mr-2 h-4 w-4" />
                 <span>Profile</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link to="/import-export">
-                <ArrowLeftRight className="mr-2 h-4 w-4" />
-                <span>Import / Export</span>
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={logout} className="cursor-pointer">
