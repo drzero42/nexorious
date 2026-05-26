@@ -43,6 +43,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	backoffs := []time.Duration{2 * time.Minute, 5 * time.Minute}
 	backoffIdx := 0
 	skippedCount := 0
+	processedCount := 0
 
 	for start := 0; start < len(owned); start += batchSize {
 		end := min(start+batchSize, len(owned))
@@ -96,6 +97,10 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				platforms = append(platforms, "pc-linux")
 			}
 			if len(platforms) == 0 {
+				slog.Debug("steam: appdetails returned no platforms (delisted/removed), defaulting to pc-windows",
+					"appid", og.AppID,
+					"title", og.Title,
+				)
 				platforms = []string{"pc-windows"}
 			}
 
@@ -107,6 +112,16 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				OwnershipStatus: "owned",
 				IsSubscription:  false,
 			})
+			processedCount++
+			if processedCount%50 == 0 {
+				slog.Debug("steam: sync progress",
+					"processed", processedCount,
+					"total", len(owned),
+					"skipped", skippedCount,
+					"backoff_slots_used", backoffIdx,
+					"steam_id", a.steamID,
+				)
+			}
 		}
 
 		if len(entries) > 0 {

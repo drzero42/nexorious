@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -195,6 +196,7 @@ func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platfor
 			_ = resp.Body.Close()
 			if attempt == 0 {
 				d := steamRetryAfterDelay(resp.Header.Get("Retry-After"))
+				slog.Debug("steam appdetails: 429 rate limited, waiting before retry", "appid", appID, "wait", d)
 				if sleepErr := steamSleepCtx(ctx, d); sleepErr != nil {
 					return Platforms{}, sleepErr
 				}
@@ -232,6 +234,7 @@ func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platfor
 		if !entry.Success {
 			// Steam has no current store data for this appid (removed/delisted games still
 			// present in the user's library). Caller falls back to a default platform.
+			slog.Debug("steam appdetails: success=false (delisted/removed game)", "appid", appID)
 			return Platforms{}, nil
 		}
 		return Platforms{

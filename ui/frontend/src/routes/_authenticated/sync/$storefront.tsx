@@ -397,7 +397,14 @@ function SyncDetailPage() {
               />
             </div>
             <div>
-              <CardTitle className="text-2xl">{platformInfo.name}</CardTitle>
+              <CardTitle className="text-2xl">
+                {platformInfo.name}
+                {(status?.externalGameCount ?? 0) > 0 && (
+                  <span className="ml-2 text-base font-normal text-muted-foreground">
+                    {status!.externalGameCount} games
+                  </span>
+                )}
+              </CardTitle>
               <CardDescription className="flex items-center gap-2 mt-1">
                 <Clock className="h-4 w-4" />
                 Last synced: {formatLastSync(config.lastSyncedAt)}
