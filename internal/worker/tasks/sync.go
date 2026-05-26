@@ -649,14 +649,24 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		case err != nil:
 			slog.Error("user_game_write: select existing ugp", "err", err, "item_id", p.JobItemID)
 		default:
+			// Resolve final ownership and hours in Go, then write a single
+			// unconditional UPDATE. This collapses the previous three branches
+			// (ownership upgrade / hours-only / no-op) and guarantees that
+			// external_game_id is always backfilled — see docs/sync.md
+			// § "Manually added games".
 			existingRank := 0
 			if existingOwnership != nil {
 				existingRank = ownershipRank(*existingOwnership)
 			}
 			newRank := ownershipRank(ownership)
 
+			finalOwnership := ownership
+			if existingOwnership != nil {
+				finalOwnership = *existingOwnership
+			}
 			if newRank > existingRank {
-				// Ownership upgrade — write status_changed sync_change.
+				// Insert the status_changed sync_change BEFORE the UPDATE so
+				// that old_status reflects the pre-UPDATE value.
 				if _, err := w.DB.NewRaw(
 					`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, old_status, new_status, created_at)
 					 VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?, now())`,
@@ -664,26 +674,19 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 				).Exec(ctx); err != nil {
 					slog.Error("user_game_write: insert sync_change (status_changed)", "err", err)
 				}
-				newHours := egp.HoursPlayed
-				if existingHours != nil && *existingHours > egp.HoursPlayed {
-					newHours = *existingHours
-				}
-				if _, err := w.DB.NewRaw(
-					`UPDATE user_game_platforms SET ownership_status = ?, hours_played = ?, updated_at = now() WHERE id = ?`,
-					ownership, newHours, existingID,
-				).Exec(ctx); err != nil {
-					slog.Error("user_game_write: update ugp ownership", "err", err, "item_id", p.JobItemID)
-				}
-			} else {
-				// No ownership change — only update hours if higher.
-				if egp.HoursPlayed > 0 && (existingHours == nil || egp.HoursPlayed > *existingHours) {
-					if _, err := w.DB.NewRaw(
-						`UPDATE user_game_platforms SET hours_played = ?, updated_at = now() WHERE id = ?`,
-						egp.HoursPlayed, existingID,
-					).Exec(ctx); err != nil {
-						slog.Error("user_game_write: update ugp hours", "err", err, "item_id", p.JobItemID)
-					}
-				}
+				finalOwnership = ownership
+			}
+
+			finalHours := egp.HoursPlayed
+			if existingHours != nil && *existingHours > finalHours {
+				finalHours = *existingHours
+			}
+
+			if _, err := w.DB.NewRaw(
+				`UPDATE user_game_platforms SET ownership_status = ?, hours_played = ?, external_game_id = ?, updated_at = now() WHERE id = ?`,
+				finalOwnership, finalHours, eg.ID, existingID,
+			).Exec(ctx); err != nil {
+				slog.Error("user_game_write: update ugp", "err", err, "item_id", p.JobItemID)
 			}
 		}
 	}

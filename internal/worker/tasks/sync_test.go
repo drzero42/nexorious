@@ -1854,3 +1854,92 @@ func TestSyncCheckJobCompletion_FailedItemsYieldsCompleted(t *testing.T) {
 		t.Errorf("expected status=completed, got %q", status)
 	}
 }
+
+// TestUserGameWorker_BackfillsExternalGameID covers the spec invariant from
+// docs/sync.md § "Manually added games": Stage 3 must always set
+// external_game_id on user_game_platforms, even when the row pre-existed
+// (e.g. manually added by the user) and the incoming sync brings neither an
+// ownership rank upgrade nor a higher playtime. This is the no-op sub-case
+// of the conflict branch — the one most prone to silently leaving
+// external_game_id NULL forever.
+func TestUserGameWorker_BackfillsExternalGameID(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(1100)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Hades', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	// Pre-create a "manually added" user_game + user_game_platforms row:
+	// external_game_id = NULL, ownership = 'owned', hours_played = 50.
+	ugID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at) VALUES (?, ?, ?, now(), now())`,
+		ugID, userID, igdbID,
+	)
+	ugpID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_game_platforms (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, sync_from_source, created_at, updated_at)
+		 VALUES (?, ?, 'pc-windows', 'steam', true, 50.0, 'owned', false, now(), now())`,
+		ugpID, ugID,
+	)
+
+	// Incoming sync: same ownership rank ('owned'), lower hours (30 < 50) — the no-op sub-case.
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, ownership_status, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', '1145360', 'Hades', false, true, false, 'owned', ?)`,
+		egID, userID, igdbID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 30.0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '1145360', 'Hades', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// external_game_id must now point at the synced external_games row.
+	var gotEGID *string
+	_ = testDB.NewRaw(
+		`SELECT external_game_id FROM user_game_platforms WHERE id = ?`, ugpID,
+	).Scan(ctx, &gotEGID)
+	if gotEGID == nil || *gotEGID != egID {
+		t.Errorf("external_game_id: want %q, got %v", egID, gotEGID)
+	}
+
+	// ownership_status unchanged (no upgrade).
+	var gotOwnership string
+	_ = testDB.NewRaw(
+		`SELECT ownership_status FROM user_game_platforms WHERE id = ?`, ugpID,
+	).Scan(ctx, &gotOwnership)
+	if gotOwnership != "owned" {
+		t.Errorf("ownership_status: want 'owned', got %q", gotOwnership)
+	}
+
+	// hours_played unchanged (incoming was lower).
+	var gotHours float64
+	_ = testDB.NewRaw(
+		`SELECT hours_played FROM user_game_platforms WHERE id = ?`, ugpID,
+	).Scan(ctx, &gotHours)
+	if gotHours != 50.0 {
+		t.Errorf("hours_played: want 50.0 (preserved), got %v", gotHours)
+	}
+}
