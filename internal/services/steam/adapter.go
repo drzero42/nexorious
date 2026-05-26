@@ -15,11 +15,22 @@ type Adapter struct {
 	client  *Client
 	apiKey  string
 	steamID string
+	backoffs []time.Duration
 }
 
 // NewAdapter returns a storefrontadapter.Adapter for Steam.
 func NewAdapter(client *Client, apiKey, steamID string) storefrontadapter.Adapter {
-	return &Adapter{client: client, apiKey: apiKey, steamID: steamID}
+	return &Adapter{
+		client:   client,
+		apiKey:   apiKey,
+		steamID:  steamID,
+		backoffs: []time.Duration{2 * time.Minute, 5 * time.Minute},
+	}
+}
+
+// NewAdapterForTests returns an Adapter with custom backoff durations. Only for use in tests.
+func NewAdapterForTests(client *Client, apiKey, steamID string, backoffs []time.Duration) storefrontadapter.Adapter {
+	return &Adapter{client: client, apiKey: apiKey, steamID: steamID, backoffs: backoffs}
 }
 
 // GetLibrary fetches the user's Steam library and streams results in batches of batchSize.
@@ -40,9 +51,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	slog.Debug("steam: GetOwnedGames returned", "total_games", len(owned), "steam_id", a.steamID)
 
 	// Global backoff state shared across the game loop.
-	backoffs := []time.Duration{2 * time.Minute, 5 * time.Minute}
 	backoffIdx := 0
-	skippedCount := 0
 	processedCount := 0
 
 	for start := 0; start < len(owned); start += batchSize {
@@ -64,8 +73,8 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				if errors.Is(detErr, ErrRateLimited) && backoffIdx < len(backoffs) {
-					d := backoffs[backoffIdx]
+				if errors.Is(detErr, ErrRateLimited) && backoffIdx < len(a.backoffs) {
+					d := a.backoffs[backoffIdx]
 					backoffIdx++
 					slog.Warn("steam: rate limited, backing off",
 						"wait", d,
@@ -92,17 +101,41 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 					if ctx.Err() != nil {
 						return ctx.Err()
 					}
-					skippedCount++
-					slog.Warn("steam: appdetails failed, skipping game",
-						"appid", og.AppID,
-						"title", og.Title,
-						"game_index", gameIdx,
-						"err", detErr,
-						"skipped_so_far", skippedCount,
-						"total_owned", len(owned),
-						"backoff_budget_exhausted", backoffIdx >= len(backoffs),
-					)
-					continue
+					if !errors.Is(detErr, ErrRateLimited) {
+						return fmt.Errorf("steam: appdetails failed for game %d/%d (%s, appid %d): %w",
+							gameIdx, len(owned), og.Title, og.AppID, detErr)
+					}
+					// Still rate-limited after the initial backoff (or budget already exhausted).
+					// Retry indefinitely with the last backoff duration until success or
+					// context cancellation — we must not silently drop library entries.
+					for {
+						d := a.backoffs[len(a.backoffs)-1]
+						slog.Warn("steam: rate limited (budget exhausted), retrying",
+							"wait", d,
+							"appid", og.AppID,
+							"title", og.Title,
+							"game_index", gameIdx,
+						)
+						if err := steamSleepCtx(ctx, d); err != nil {
+							return err
+						}
+						slog.Debug("steam: retry after rate-limit backoff",
+							"appid", og.AppID,
+							"title", og.Title,
+							"game_index", gameIdx,
+						)
+						pl, detErr = a.client.GetAppDetailsPlatforms(ctx, og.AppID)
+						if detErr == nil {
+							break
+						}
+						if ctx.Err() != nil {
+							return ctx.Err()
+						}
+						if !errors.Is(detErr, ErrRateLimited) {
+							return fmt.Errorf("steam: appdetails failed for game %d/%d (%s, appid %d): %w",
+								gameIdx, len(owned), og.Title, og.AppID, detErr)
+						}
+					}
 				}
 			}
 
@@ -138,7 +171,6 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				slog.Debug("steam: sync progress",
 					"processed", processedCount,
 					"total", len(owned),
-					"skipped", skippedCount,
 					"backoff_slots_used", backoffIdx,
 					"steam_id", a.steamID,
 				)
@@ -154,8 +186,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 
 	slog.Debug("steam: library fetch complete",
 		"total_owned", len(owned),
-		"skipped", skippedCount,
-		"processed", len(owned)-skippedCount,
+		"processed", processedCount,
 		"steam_id", a.steamID,
 	)
 	return nil

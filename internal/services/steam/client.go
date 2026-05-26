@@ -250,7 +250,7 @@ func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platfor
 // It honors a Retry-After header (integer seconds); otherwise defaults to 10s.
 func steamRetryAfterDelay(header string) time.Duration {
 	if header != "" {
-		if secs, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && secs > 0 {
+		if secs, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && secs >= 0 {
 			return time.Duration(secs) * time.Second
 		}
 	}
