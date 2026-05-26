@@ -36,8 +36,8 @@ type EpicAccountInfo struct {
 	AccountID   string
 }
 
-// ExternalLibraryEntry is a normalised game entry from the Epic library.
-type ExternalLibraryEntry struct {
+// ExternalGameEntry is a normalised game entry from the Epic library.
+type ExternalGameEntry struct {
 	ExternalID      string // legendary app_name
 	Title           string
 	Namespace       string
@@ -86,12 +86,15 @@ func (c *Client) Authenticate(ctx context.Context, userID, authCode string) (*Ep
 // GetLibrary runs `legendary list --json`, parses the output, skips DLC entries,
 // and streams results to onBatch. The caller is responsible for restoring the
 // snapshot before calling this method and capturing it afterward.
-func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]ExternalLibraryEntry) error) error {
+func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]ExternalGameEntry) error) error {
 	if !c.Configured() {
 		return fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
 	}
 	out, err := c.runLegendary(ctx, userID, "list", "--json")
 	if err != nil {
+		if isAuthError(err) {
+			return ErrAuthFailed
+		}
 		return err
 	}
 
@@ -106,12 +109,12 @@ func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]E
 		return fmt.Errorf("epic: parse legendary list output: %w", err)
 	}
 
-	entries := make([]ExternalLibraryEntry, 0, len(raw))
+	entries := make([]ExternalGameEntry, 0, len(raw))
 	for _, r := range raw {
 		if r.MainGameAppName != "" {
 			continue // skip DLC
 		}
-		entries = append(entries, ExternalLibraryEntry{
+		entries = append(entries, ExternalGameEntry{
 			ExternalID:      r.AppName,
 			Title:           r.AppTitle,
 			Namespace:       r.Namespace,
@@ -190,6 +193,20 @@ func (c *Client) CaptureSnapshot(userID string) (map[string]string, error) {
 		return nil, fmt.Errorf("epic: capture snapshot walk: %w", err)
 	}
 	return snapshot, nil
+}
+
+// ErrAuthFailed is returned by GetLibrary when the legendary CLI exits with
+// an authentication-related error (session expired, not logged in, token refresh failed).
+var ErrAuthFailed = errors.New("epic: legendary authentication failed")
+
+// isAuthError reports whether the error from a legendary subprocess indicates
+// an authentication failure. Best-effort based on known legendary patterns.
+func isAuthError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not logged in") ||
+		strings.Contains(msg, "login session") ||
+		strings.Contains(msg, "token failed") ||
+		strings.Contains(msg, "please login")
 }
 
 // runLegendary executes legendary with the given args, setting XDG_CONFIG_HOME

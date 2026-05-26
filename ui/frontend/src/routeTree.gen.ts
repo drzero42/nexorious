@@ -22,7 +22,7 @@ import { Route as AuthenticatedSyncIndexRouteImport } from './routes/_authentica
 import { Route as AuthenticatedJobsIndexRouteImport } from './routes/_authenticated/jobs/index'
 import { Route as AuthenticatedGamesIndexRouteImport } from './routes/_authenticated/games/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
-import { Route as AuthenticatedSyncPlatformRouteImport } from './routes/_authenticated/sync/$platform'
+import { Route as AuthenticatedSyncStorefrontRouteImport } from './routes/_authenticated/sync/$storefront'
 import { Route as AuthenticatedJobsIdRouteImport } from './routes/_authenticated/jobs/$id'
 import { Route as AuthenticatedGamesAddRouteImport } from './routes/_authenticated/games/add'
 import { Route as AuthenticatedGamesIdRouteImport } from './routes/_authenticated/games/$id'
@@ -100,10 +100,10 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedSyncPlatformRoute =
-  AuthenticatedSyncPlatformRouteImport.update({
-    id: '/sync/$platform',
-    path: '/sync/$platform',
+const AuthenticatedSyncStorefrontRoute =
+  AuthenticatedSyncStorefrontRouteImport.update({
+    id: '/sync/$storefront',
+    path: '/sync/$storefront',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedJobsIdRoute = AuthenticatedJobsIdRouteImport.update({
@@ -189,7 +189,7 @@ export interface FileRoutesByFullPath {
   '/games/$id': typeof AuthenticatedGamesIdRouteWithChildren
   '/games/add': typeof AuthenticatedGamesAddRouteWithChildren
   '/jobs/$id': typeof AuthenticatedJobsIdRoute
-  '/sync/$platform': typeof AuthenticatedSyncPlatformRoute
+  '/sync/$storefront': typeof AuthenticatedSyncStorefrontRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/games/': typeof AuthenticatedGamesIndexRoute
   '/jobs/': typeof AuthenticatedJobsIndexRoute
@@ -213,7 +213,7 @@ export interface FileRoutesByTo {
   '/admin/backups': typeof AuthenticatedAdminBackupsRoute
   '/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
   '/jobs/$id': typeof AuthenticatedJobsIdRoute
-  '/sync/$platform': typeof AuthenticatedSyncPlatformRoute
+  '/sync/$storefront': typeof AuthenticatedSyncStorefrontRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/games': typeof AuthenticatedGamesIndexRoute
   '/jobs': typeof AuthenticatedJobsIndexRoute
@@ -242,7 +242,7 @@ export interface FileRoutesById {
   '/_authenticated/games/$id': typeof AuthenticatedGamesIdRouteWithChildren
   '/_authenticated/games/add': typeof AuthenticatedGamesAddRouteWithChildren
   '/_authenticated/jobs/$id': typeof AuthenticatedJobsIdRoute
-  '/_authenticated/sync/$platform': typeof AuthenticatedSyncPlatformRoute
+  '/_authenticated/sync/$storefront': typeof AuthenticatedSyncStorefrontRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/games/': typeof AuthenticatedGamesIndexRoute
   '/_authenticated/jobs/': typeof AuthenticatedJobsIndexRoute
@@ -270,7 +270,7 @@ export interface FileRouteTypes {
     | '/games/$id'
     | '/games/add'
     | '/jobs/$id'
-    | '/sync/$platform'
+    | '/sync/$storefront'
     | '/admin/'
     | '/games/'
     | '/jobs/'
@@ -294,7 +294,7 @@ export interface FileRouteTypes {
     | '/admin/backups'
     | '/admin/maintenance'
     | '/jobs/$id'
-    | '/sync/$platform'
+    | '/sync/$storefront'
     | '/admin'
     | '/games'
     | '/jobs'
@@ -322,7 +322,7 @@ export interface FileRouteTypes {
     | '/_authenticated/games/$id'
     | '/_authenticated/games/add'
     | '/_authenticated/jobs/$id'
-    | '/_authenticated/sync/$platform'
+    | '/_authenticated/sync/$storefront'
     | '/_authenticated/admin/'
     | '/_authenticated/games/'
     | '/_authenticated/jobs/'
@@ -435,11 +435,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/sync/$platform': {
-      id: '/_authenticated/sync/$platform'
-      path: '/sync/$platform'
-      fullPath: '/sync/$platform'
-      preLoaderRoute: typeof AuthenticatedSyncPlatformRouteImport
+    '/_authenticated/sync/$storefront': {
+      id: '/_authenticated/sync/$storefront'
+      path: '/sync/$storefront'
+      fullPath: '/sync/$storefront'
+      preLoaderRoute: typeof AuthenticatedSyncStorefrontRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/jobs/$id': {
@@ -568,7 +568,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedGamesIdRoute: typeof AuthenticatedGamesIdRouteWithChildren
   AuthenticatedGamesAddRoute: typeof AuthenticatedGamesAddRouteWithChildren
   AuthenticatedJobsIdRoute: typeof AuthenticatedJobsIdRoute
-  AuthenticatedSyncPlatformRoute: typeof AuthenticatedSyncPlatformRoute
+  AuthenticatedSyncStorefrontRoute: typeof AuthenticatedSyncStorefrontRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedGamesIndexRoute: typeof AuthenticatedGamesIndexRoute
   AuthenticatedJobsIndexRoute: typeof AuthenticatedJobsIndexRoute
@@ -589,7 +589,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedGamesIdRoute: AuthenticatedGamesIdRouteWithChildren,
   AuthenticatedGamesAddRoute: AuthenticatedGamesAddRouteWithChildren,
   AuthenticatedJobsIdRoute: AuthenticatedJobsIdRoute,
-  AuthenticatedSyncPlatformRoute: AuthenticatedSyncPlatformRoute,
+  AuthenticatedSyncStorefrontRoute: AuthenticatedSyncStorefrontRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedGamesIndexRoute: AuthenticatedGamesIndexRoute,
   AuthenticatedJobsIndexRoute: AuthenticatedJobsIndexRoute,

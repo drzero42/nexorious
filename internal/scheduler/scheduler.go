@@ -148,10 +148,6 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 	}
 
 	for _, cfg := range configs {
-		if cfg.Storefront == "epic" {
-			continue
-		}
-
 		needsSync := false
 		if cfg.LastSyncedAt == nil {
 			needsSync = true
@@ -191,6 +187,40 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 		}
 	}
 	return nil
+}
+
+// ── CleanupSyncChanges ────────────────────────────────────────────────────────
+
+type CleanupSyncChangesArgs struct {
+	RetentionDays int `json:"retention_days"`
+}
+
+func (CleanupSyncChangesArgs) Kind() string { return "cleanup_sync_changes" }
+
+type CleanupSyncChangesWorker struct {
+	river.WorkerDefaults[CleanupSyncChangesArgs]
+	DB *bun.DB
+}
+
+func (w *CleanupSyncChangesWorker) Work(ctx context.Context, job *river.Job[CleanupSyncChangesArgs]) error {
+	CleanupSyncChanges(ctx, w.DB, job.Args.RetentionDays)
+	return nil
+}
+
+// CleanupSyncChanges deletes sync_changes rows older than retentionDays days.
+func CleanupSyncChanges(ctx context.Context, db *bun.DB, retentionDays int) {
+	result, err := db.NewRaw(
+		`DELETE FROM sync_changes WHERE created_at < now() - make_interval(days => ?)`,
+		retentionDays,
+	).Exec(ctx)
+	if err != nil {
+		slog.Error("cleanup: failed to delete old sync_changes", "err", err)
+		return
+	}
+	rows, _ := result.RowsAffected()
+	if rows > 0 {
+		slog.Info("cleanup: deleted old sync_changes", "count", rows)
+	}
 }
 
 // ── BuildPeriodicJobs ─────────────────────────────────────────────────────────
@@ -251,6 +281,13 @@ func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*rive
 		river.NewPeriodicJob(
 			mustCron("*/30 * * * *"),
 			func() (river.JobArgs, *river.InsertOpts) { return RescueOrphanedPendingItemsArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			mustCron("0 2 * * *"),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return CleanupSyncChangesArgs{RetentionDays: cfg.SyncHistoryRetentionDays}, nil
+			},
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 		river.NewPeriodicJob(

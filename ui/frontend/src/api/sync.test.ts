@@ -6,7 +6,7 @@ import {
   disconnectEpic,
 } from './sync';
 import { api } from './client';
-import { SyncPlatform, SyncFrequency } from '@/types';
+import { SyncStorefront, SyncFrequency } from '@/types';
 
 vi.mock('./client', () => ({
   api: {
@@ -31,7 +31,6 @@ describe('syncApi', () => {
             user_id: 'user-1',
             storefront: 'steam',
             frequency: 'daily',
-            auto_add: true,
             last_synced_at: '2025-01-01T00:00:00Z',
             created_at: '2025-01-01T00:00:00Z',
             updated_at: '2025-01-01T00:00:00Z',
@@ -46,9 +45,8 @@ describe('syncApi', () => {
       const result = await syncApi.getSyncConfigs();
 
       expect(api.get).toHaveBeenCalledWith('/sync/config');
-      expect(result.configs[0].platform).toBe(SyncPlatform.STEAM);
+      expect(result.configs[0].storefront).toBe(SyncStorefront.STEAM);
       expect(result.configs[0].frequency).toBe(SyncFrequency.DAILY);
-      expect(result.configs[0].autoAdd).toBe(true);
       expect(result.configs[0].userId).toBe('user-1');
     });
   });
@@ -60,7 +58,6 @@ describe('syncApi', () => {
         user_id: 'user-1',
         storefront: 'steam',
         frequency: 'daily',
-        auto_add: true,
         last_synced_at: '2025-01-01T00:00:00Z',
         created_at: '2025-01-01T00:00:00Z',
         updated_at: '2025-01-01T00:00:00Z',
@@ -69,12 +66,11 @@ describe('syncApi', () => {
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await syncApi.getSyncConfig(SyncPlatform.STEAM);
+      const result = await syncApi.getSyncConfig(SyncStorefront.STEAM);
 
       expect(api.get).toHaveBeenCalledWith('/sync/config/steam');
-      expect(result.platform).toBe(SyncPlatform.STEAM);
+      expect(result.storefront).toBe(SyncStorefront.STEAM);
       expect(result.frequency).toBe(SyncFrequency.DAILY);
-      expect(result.autoAdd).toBe(true);
       expect(result.userId).toBe('user-1');
     });
   });
@@ -86,7 +82,6 @@ describe('syncApi', () => {
         user_id: 'user-1',
         storefront: 'steam',
         frequency: 'weekly',
-        auto_add: false,
         last_synced_at: null,
         created_at: '2025-01-01T00:00:00Z',
         updated_at: '2025-01-01T00:00:00Z',
@@ -95,17 +90,14 @@ describe('syncApi', () => {
 
       vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
-      const result = await syncApi.updateSyncConfig(SyncPlatform.STEAM, {
+      const result = await syncApi.updateSyncConfig(SyncStorefront.STEAM, {
         frequency: SyncFrequency.WEEKLY,
-        autoAdd: false,
       });
 
       expect(api.put).toHaveBeenCalledWith('/sync/config/steam', {
         frequency: 'weekly',
-        auto_add: false,
       });
       expect(result.frequency).toBe(SyncFrequency.WEEKLY);
-      expect(result.autoAdd).toBe(false);
     });
   });
 
@@ -120,11 +112,11 @@ describe('syncApi', () => {
 
       vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
 
-      const result = await syncApi.triggerSync(SyncPlatform.STEAM);
+      const result = await syncApi.triggerSync(SyncStorefront.STEAM);
 
       expect(api.post).toHaveBeenCalledWith('/sync/steam');
       expect(result.jobId).toBe('job-123');
-      expect(result.platform).toBe('steam');
+      expect(result.storefront).toBe('steam');
     });
   });
 
@@ -139,7 +131,7 @@ describe('syncApi', () => {
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await syncApi.getSyncStatus(SyncPlatform.STEAM);
+      const result = await syncApi.getSyncStatus(SyncStorefront.STEAM);
 
       expect(api.get).toHaveBeenCalledWith('/sync/steam/status');
       expect(result.isSyncing).toBe(true);

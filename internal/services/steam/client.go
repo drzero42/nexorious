@@ -3,8 +3,12 @@ package steam
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -119,6 +123,9 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 		return nil, fmt.Errorf("steam network error: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrAPIKeyRejected
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("steam HTTP %d", resp.StatusCode)
 	}
@@ -147,53 +154,116 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 	return games, nil
 }
 
+// ErrRateLimited is returned by GetAppDetailsPlatforms when Steam responds with
+// HTTP 429 and a brief retry does not help. The caller should back off globally
+// before retrying the same request.
+var ErrRateLimited = errors.New("steam: rate limited (429)")
+
+// ErrAPIKeyRejected is returned by GetOwnedGames when the Steam API responds
+// with HTTP 401 or 403, indicating the API key is invalid or revoked.
+var ErrAPIKeyRejected = errors.New("steam: API key rejected")
+
 // GetAppDetailsPlatforms fetches platform availability for the given appID.
-// Returns (Platforms{}, nil) when success=false (removed/delisted app) or all platforms are false — caller decides fallback.
-// Returns (Platforms{}, error) for non-200, decode error, or missing key.
+// Returns (Platforms{}, nil) when success=false (removed/delisted app) — caller decides fallback.
+// Returns (Platforms{}, ErrRateLimited) on 429 after a brief retry.
+// Returns (Platforms{}, error) for network errors, decode errors, or missing key.
 func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platforms, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
 		return Platforms{}, err
 	}
 	url := fmt.Sprintf("%s/api/appdetails?appids=%d&filters=platforms", c.appDetailsBase, appID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return Platforms{}, fmt.Errorf("steam appdetails: build request: %w", err)
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return Platforms{}, fmt.Errorf("steam appdetails network error: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return Platforms{}, fmt.Errorf("steam appdetails HTTP %d for appid %d", resp.StatusCode, appID)
-	}
 
-	var body map[string]struct {
-		Success bool `json:"success"`
-		Data    struct {
-			Platforms struct {
-				Windows bool `json:"windows"`
-				Mac     bool `json:"mac"`
-				Linux   bool `json:"linux"`
-			} `json:"platforms"`
-		} `json:"data"`
+	for attempt := 0; attempt <= 1; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return Platforms{}, fmt.Errorf("steam appdetails: build request: %w", err)
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return Platforms{}, ctx.Err()
+			}
+			if attempt == 0 {
+				if sleepErr := steamSleepCtx(ctx, 2*time.Second); sleepErr != nil {
+					return Platforms{}, sleepErr
+				}
+				continue
+			}
+			return Platforms{}, fmt.Errorf("steam appdetails network error: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			_ = resp.Body.Close()
+			if attempt == 0 {
+				d := steamRetryAfterDelay(resp.Header.Get("Retry-After"))
+				slog.Debug("steam appdetails: 429 rate limited, waiting before retry", "appid", appID, "wait", d)
+				if sleepErr := steamSleepCtx(ctx, d); sleepErr != nil {
+					return Platforms{}, sleepErr
+				}
+				continue
+			}
+			return Platforms{}, ErrRateLimited
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return Platforms{}, fmt.Errorf("steam appdetails HTTP %d for appid %d", resp.StatusCode, appID)
+		}
+
+		var body map[string]struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Platforms struct {
+					Windows bool `json:"windows"`
+					Mac     bool `json:"mac"`
+					Linux   bool `json:"linux"`
+				} `json:"platforms"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			_ = resp.Body.Close()
+			return Platforms{}, fmt.Errorf("steam appdetails decode error: %w", err)
+		}
+		_ = resp.Body.Close()
+
+		key := fmt.Sprintf("%d", appID)
+		entry, ok := body[key]
+		if !ok {
+			return Platforms{}, fmt.Errorf("steam appdetails: missing key %q in response", key)
+		}
+		if !entry.Success {
+			// Steam has no current store data for this appid (removed/delisted games still
+			// present in the user's library). Caller falls back to a default platform.
+			slog.Debug("steam appdetails: success=false (delisted/removed game)", "appid", appID)
+			return Platforms{}, nil
+		}
+		return Platforms{
+			Windows: entry.Data.Platforms.Windows,
+			Mac:     entry.Data.Platforms.Mac,
+			Linux:   entry.Data.Platforms.Linux,
+		}, nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return Platforms{}, fmt.Errorf("steam appdetails decode error: %w", err)
+	return Platforms{}, ErrRateLimited
+}
+
+// steamRetryAfterDelay returns how long to wait before the one brief 429 retry.
+// It honors a Retry-After header (integer seconds); otherwise defaults to 10s.
+func steamRetryAfterDelay(header string) time.Duration {
+	if header != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && secs >= 0 {
+			return time.Duration(secs) * time.Second
+		}
 	}
-	key := fmt.Sprintf("%d", appID)
-	entry, ok := body[key]
-	if !ok {
-		return Platforms{}, fmt.Errorf("steam appdetails: missing key %q in response", key)
+	return 10 * time.Second
+}
+
+func steamSleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	if !entry.Success {
-		// Steam has no current store data for this appid (removed/delisted games still
-		// present in the user's library). Caller falls back to a default platform.
-		return Platforms{}, nil
-	}
-	return Platforms{
-		Windows: entry.Data.Platforms.Windows,
-		Mac:     entry.Data.Platforms.Mac,
-		Linux:   entry.Data.Platforms.Linux,
-	}, nil
 }

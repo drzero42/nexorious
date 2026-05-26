@@ -27,7 +27,6 @@ export enum JobStatus {
   PENDING = 'pending',
   PROCESSING = 'processing',
   COMPLETED = 'completed',
-  COMPLETED_WITH_ERRORS = 'completed_with_errors',
   FAILED = 'failed',
   CANCELLED = 'cancelled',
 }
@@ -39,7 +38,6 @@ export enum JobItemStatus {
   PENDING_REVIEW = 'pending_review',
   SKIPPED = 'skipped',
   FAILED = 'failed',
-  IGDB_FAILED = 'igdb_failed',
 }
 
 export type JobPriority = 'low' | 'normal' | 'high';
@@ -58,7 +56,6 @@ export interface JobProgress {
   pendingReview: number;
   skipped: number;
   failed: number;
-  igdbFailed: number;
   total: number;
   percent: number;
 }
@@ -158,28 +155,24 @@ export interface JobItemDetail extends JobItem {
   resolvedAt: string | null;
 }
 
-export interface JobItemSummary {
-  sourceTitle: string;
-  resultGameTitle: string | null;
-  resultIgdbId: number | null;
-  resultUserGameId: string | null;
-  errorMessage: string | null;
-  isNewAddition: boolean;
+export interface SyncChangeItem {
+  title: string;
+  oldStatus?: string | null;
+  newStatus?: string | null;
 }
 
 export interface RecentJobDetail {
   id: string;
+  status: string;
   createdAt: string;
   completedAt: string | null;
   totalItems: number;
   completedCount: number;
   skippedCount: number;
   failedCount: number;
-  igdbFailedCount: number;
-  completedItems: JobItemSummary[];
-  skippedItems: JobItemSummary[];
-  failedItems: JobItemSummary[];
-  igdbFailedItems: JobItemSummary[];
+  addedItems: SyncChangeItem[];
+  removedItems: SyncChangeItem[];
+  statusChangedItems: SyncChangeItem[];
 }
 
 export interface RecentJobsResponse {
@@ -226,7 +219,6 @@ export function getJobStatusLabel(status: JobStatus): string {
     [JobStatus.PENDING]: 'Pending',
     [JobStatus.PROCESSING]: 'Processing',
     [JobStatus.COMPLETED]: 'Completed',
-    [JobStatus.COMPLETED_WITH_ERRORS]: 'Completed with Errors',
     [JobStatus.FAILED]: 'Failed',
     [JobStatus.CANCELLED]: 'Cancelled',
   };
@@ -242,8 +234,6 @@ export function getJobStatusVariant(
   switch (status) {
     case JobStatus.COMPLETED:
       return 'default';
-    case JobStatus.COMPLETED_WITH_ERRORS:
-      return 'secondary';
     case JobStatus.PROCESSING:
       return 'secondary';
     case JobStatus.FAILED:
@@ -297,7 +287,7 @@ export function formatRelativeTime(dateStr: string | null): string {
  * Check if a job is currently in progress (not terminal).
  */
 export function isJobInProgress(job: Job): boolean {
-  return !job.isTerminal && job.status !== JobStatus.PENDING;
+  return !job.isTerminal;
 }
 
 /**
@@ -328,7 +318,6 @@ export function getJobItemStatusLabel(status: JobItemStatus): string {
     [JobItemStatus.PENDING_REVIEW]: 'Needs Review',
     [JobItemStatus.SKIPPED]: 'Skipped',
     [JobItemStatus.FAILED]: 'Failed',
-    [JobItemStatus.IGDB_FAILED]: 'IGDB Error',
   };
   return labels[status];
 }
@@ -343,8 +332,6 @@ export function getJobItemStatusVariant(
     case JobItemStatus.COMPLETED:
       return 'default';
     case JobItemStatus.FAILED:
-      return 'destructive';
-    case JobItemStatus.IGDB_FAILED:
       return 'destructive';
     case JobItemStatus.PENDING_REVIEW:
       return 'secondary';

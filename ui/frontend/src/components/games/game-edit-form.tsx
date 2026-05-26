@@ -30,7 +30,7 @@ import {
   useCreateOrGetTag,
   useSyncConfig,
 } from '@/hooks';
-import { SyncPlatform, SyncFrequency } from '@/types/sync';
+import { SyncStorefront, SyncFrequency } from '@/types/sync';
 import { config } from '@/lib/env';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame } from '@/types';
@@ -109,7 +109,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
   // Data fetching
   const { data: platforms = [], isLoading: platformsLoading } = useAllPlatforms();
   const { data: tags = [], isLoading: tagsLoading } = useAllTags();
-  const { data: steamSyncConfig } = useSyncConfig(SyncPlatform.STEAM);
+  const { data: steamSyncConfig } = useSyncConfig(SyncStorefront.STEAM);
 
   // Check if Steam sync is enabled (non-manual frequency when configured)
   const isSteamSyncEnabled =

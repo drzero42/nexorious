@@ -1,21 +1,20 @@
 -- Users table
 CREATE TABLE users (
-    id            TEXT PRIMARY KEY,               -- UUID v4
+    id            TEXT PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     is_active     BOOLEAN NOT NULL DEFAULT true,
     is_admin      BOOLEAN NOT NULL DEFAULT false,
-    preferences   TEXT NOT NULL DEFAULT '{}',     -- JSON
+    preferences   TEXT NOT NULL DEFAULT '{}',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX users_username_idx ON users (username);
 CREATE INDEX users_is_active_idx ON users (is_active) WHERE is_active = true;
 
 -- User sessions table
 CREATE TABLE user_sessions (
-    id                 TEXT PRIMARY KEY,           -- UUID v4
+    id                 TEXT PRIMARY KEY,
     user_id            TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash         TEXT NOT NULL,
     refresh_token_hash TEXT NOT NULL,
@@ -31,7 +30,7 @@ CREATE INDEX user_sessions_expires_at_idx ON user_sessions (expires_at);
 
 -- Games table (IGDB catalog)
 CREATE TABLE games (
-    id                          INTEGER PRIMARY KEY,  -- IGDB ID used directly
+    id                          INTEGER PRIMARY KEY,
     title                       TEXT NOT NULL,
     description                 TEXT,
     genre                       TEXT,
@@ -41,16 +40,16 @@ CREATE TABLE games (
     cover_art_url               TEXT,
     rating_average              NUMERIC(5,2),
     rating_count                INTEGER,
-    howlongtobeat_main          NUMERIC(6,2),         -- hours (mapped from IGDB 'hastily')
-    howlongtobeat_extra         NUMERIC(6,2),         -- hours (mapped from IGDB 'normally')
-    howlongtobeat_completionist NUMERIC(6,2),         -- hours (mapped from IGDB 'completely')
+    howlongtobeat_main          NUMERIC(6,2),
+    howlongtobeat_extra         NUMERIC(6,2),
+    howlongtobeat_completionist NUMERIC(6,2),
     igdb_slug                   TEXT,
-    igdb_platform_ids           TEXT,                 -- JSON array as text
-    igdb_platform_names         TEXT,                 -- JSON array as text
-    game_modes                  TEXT,                 -- comma-separated
-    themes                      TEXT,                 -- comma-separated
-    player_perspectives         TEXT,                 -- comma-separated
-    game_metadata               TEXT,                 -- JSON object as text
+    igdb_platform_ids           TEXT,
+    igdb_platform_names         TEXT,
+    game_modes                  TEXT,
+    themes                      TEXT,
+    player_perspectives         TEXT,
+    game_metadata               TEXT,
     last_updated                TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -61,20 +60,20 @@ CREATE INDEX games_developer_idx ON games (developer);
 CREATE INDEX games_publisher_idx ON games (publisher);
 CREATE INDEX games_release_date_idx ON games (release_date);
 
--- Platforms table (TEXT slug as PK)
+-- Platforms table
 CREATE TABLE platforms (
-    name               TEXT PRIMARY KEY,   -- slug: "pc-windows", "ps5", etc.
+    name               TEXT PRIMARY KEY,
     display_name       TEXT NOT NULL,
-    icon               TEXT,              -- light-variant filename, e.g. "pc-windows-icon-light.svg"; NULL if no logo
-    igdb_platform_id   INTEGER,           -- nullable; IGDB's numeric platform ID
-    default_storefront TEXT               -- FK → storefronts.name (added after storefronts)
+    icon               TEXT,
+    igdb_platform_id   INTEGER,
+    default_storefront TEXT
 );
 
--- Storefronts table (TEXT slug as PK)
+-- Storefronts table
 CREATE TABLE storefronts (
-    name         TEXT PRIMARY KEY,   -- slug: "steam", "epic-games-store", etc.
+    name         TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
-    icon         TEXT,              -- light-variant filename, e.g. "steam-icon-light.svg"; NULL if no logo
+    icon         TEXT,
     base_url     TEXT
 );
 
@@ -85,21 +84,19 @@ CREATE TABLE platform_storefronts (
     PRIMARY KEY (platform, storefront)
 );
 
--- Add FK constraint for platforms.default_storefront (deferred until after storefronts exists)
 ALTER TABLE platforms
     ADD CONSTRAINT platforms_default_storefront_fkey
     FOREIGN KEY (default_storefront)
     REFERENCES storefronts(name);
 
--- User games (user's personal collection entries)
+-- User games
 CREATE TABLE user_games (
-    id              TEXT PRIMARY KEY,              -- UUID v4
+    id              TEXT PRIMARY KEY,
     user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     game_id         INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    play_status     TEXT,                          -- 'not_started', 'playing', 'completed', etc.
-    personal_rating INTEGER,                       -- 1-10
+    play_status     TEXT,
+    personal_rating INTEGER,
     is_loved        BOOLEAN NOT NULL DEFAULT false,
-    hours_played    NUMERIC(10,2),
     personal_notes  TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -111,42 +108,39 @@ CREATE INDEX user_games_game_id_idx ON user_games (game_id);
 CREATE INDEX user_games_play_status_idx ON user_games (play_status);
 CREATE INDEX user_games_is_loved_idx ON user_games (is_loved) WHERE is_loved = true;
 
--- User game platforms (which platforms/storefronts a user owns a game on)
+-- User game platforms
 CREATE TABLE user_game_platforms (
-    id                       TEXT PRIMARY KEY,     -- UUID v4
+    id                       TEXT PRIMARY KEY,
     user_game_id             TEXT NOT NULL REFERENCES user_games(id) ON DELETE CASCADE,
     platform                 TEXT NOT NULL REFERENCES platforms(name) ON DELETE RESTRICT,
-    storefront               TEXT      REFERENCES storefronts(name) ON DELETE RESTRICT,  -- nullable: physical/direct purchases have no storefront
-    store_game_id            TEXT,                 -- external platform's game ID
+    storefront               TEXT REFERENCES storefronts(name) ON DELETE RESTRICT,
+    store_game_id            TEXT,
     store_url                TEXT,
     is_available             BOOLEAN NOT NULL DEFAULT true,
     hours_played             NUMERIC(10,2),
-    ownership_status         TEXT,                 -- 'owned', 'subscription', etc.
+    ownership_status         TEXT,
     acquired_date            DATE,
-    original_platform_name   TEXT,                 -- raw name from sync source
-    original_storefront_name TEXT,                 -- raw name from sync source
-    external_game_id         TEXT,                 -- FK to external_games (added after that table)
+    original_platform_name   TEXT,
+    original_storefront_name TEXT,
+    external_game_id         TEXT,
     sync_from_source         BOOLEAN NOT NULL DEFAULT false,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- NULLS NOT DISTINCT ensures (user_game_id, platform, NULL) is also treated as unique,
--- so a game can have at most one storefront-less entry per platform.
 CREATE UNIQUE INDEX user_game_platforms_uniq
     ON user_game_platforms (user_game_id, platform, storefront) NULLS NOT DISTINCT;
 
-CREATE INDEX user_game_platforms_user_game_id_idx ON user_game_platforms (user_game_id);
 CREATE INDEX user_game_platforms_platform_idx ON user_game_platforms (platform);
 CREATE INDEX user_game_platforms_storefront_idx ON user_game_platforms (storefront);
 CREATE INDEX user_game_platforms_external_game_id_idx ON user_game_platforms (external_game_id);
 
--- Tags (user-created labels for organizing games)
+-- Tags
 CREATE TABLE tags (
-    id         TEXT PRIMARY KEY,                   -- UUID v4
+    id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name       TEXT NOT NULL,
-    color      TEXT,                               -- hex color code
+    color      TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(user_id, name)
@@ -154,9 +148,9 @@ CREATE TABLE tags (
 
 CREATE INDEX tags_user_id_idx ON tags (user_id);
 
--- User game tags (many-to-many join)
+-- User game tags
 CREATE TABLE user_game_tags (
-    id           TEXT PRIMARY KEY,                 -- UUID v4
+    id           TEXT PRIMARY KEY,
     user_game_id TEXT NOT NULL REFERENCES user_games(id) ON DELETE CASCADE,
     tag_id       TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -166,18 +160,17 @@ CREATE TABLE user_game_tags (
 CREATE INDEX user_game_tags_user_game_id_idx ON user_game_tags (user_game_id);
 CREATE INDEX user_game_tags_tag_id_idx ON user_game_tags (tag_id);
 
--- External games (tracks games from sync sources before/after IGDB matching)
+-- External games: one row per (user_id, storefront, external_id)
 CREATE TABLE external_games (
-    id               TEXT PRIMARY KEY,             -- UUID v4
+    id               TEXT PRIMARY KEY,
     user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     storefront       TEXT NOT NULL,
-    external_id      TEXT NOT NULL,                -- platform's game ID
+    external_id      TEXT NOT NULL,
     title            TEXT NOT NULL,
     resolved_igdb_id INTEGER REFERENCES games(id) ON DELETE SET NULL,
     is_skipped       BOOLEAN NOT NULL DEFAULT false,
     is_available     BOOLEAN NOT NULL DEFAULT true,
     is_subscription  BOOLEAN NOT NULL DEFAULT false,
-    playtime_hours   INTEGER NOT NULL DEFAULT 0,
     ownership_status TEXT,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -189,22 +182,34 @@ CREATE INDEX external_games_storefront_idx ON external_games (storefront);
 CREATE INDEX external_games_resolved_igdb_id_idx ON external_games (resolved_igdb_id);
 CREATE INDEX external_games_is_skipped_idx ON external_games (is_skipped) WHERE is_skipped = true;
 
--- Add FK from user_game_platforms to external_games (deferred until after external_games exists)
+-- External game platforms: one row per resolved canonical platform per game
+CREATE TABLE external_game_platforms (
+    id               TEXT PRIMARY KEY,
+    external_game_id TEXT NOT NULL REFERENCES external_games(id) ON DELETE CASCADE,
+    platform         TEXT NOT NULL,
+    hours_played     NUMERIC(10,2) NOT NULL DEFAULT 0,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(external_game_id, platform)
+);
+
+CREATE INDEX external_game_platforms_external_game_id_idx ON external_game_platforms (external_game_id);
+
+-- Add FK from user_game_platforms to external_games
 ALTER TABLE user_game_platforms
     ADD CONSTRAINT user_game_platforms_external_game_id_fkey
     FOREIGN KEY (external_game_id)
     REFERENCES external_games(id)
     ON DELETE SET NULL;
 
--- User sync configs (per-user, per-platform sync settings and credentials)
+-- User sync configs
 CREATE TABLE user_sync_configs (
     id                     TEXT PRIMARY KEY,
     user_id                TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     storefront             TEXT NOT NULL,
     frequency              TEXT NOT NULL DEFAULT 'manual',
-    auto_add               BOOLEAN NOT NULL DEFAULT false,
     storefront_credentials TEXT,
     last_synced_at         TIMESTAMPTZ,
+    credentials_error      BOOLEAN NOT NULL DEFAULT false,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(user_id, storefront)
@@ -213,7 +218,7 @@ CREATE TABLE user_sync_configs (
 CREATE INDEX user_sync_configs_user_id_idx    ON user_sync_configs (user_id);
 CREATE INDEX user_sync_configs_storefront_idx ON user_sync_configs (storefront);
 
--- Jobs (user-visible background task tracking)
+-- Jobs
 CREATE TABLE jobs (
     id              TEXT PRIMARY KEY,
     user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -234,11 +239,12 @@ CREATE INDEX jobs_job_type_idx ON jobs (job_type);
 CREATE INDEX jobs_source_idx ON jobs (source);
 CREATE INDEX jobs_status_idx ON jobs (status);
 
--- Job items (individual items within a job)
+-- Job items
 CREATE TABLE job_items (
     id                  TEXT PRIMARY KEY,
     job_id              TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    external_game_id    TEXT REFERENCES external_games(id) ON DELETE SET NULL,
     item_key            TEXT NOT NULL,
     source_title        TEXT NOT NULL,
     source_metadata     JSONB NOT NULL DEFAULT '{}',
@@ -256,19 +262,36 @@ CREATE TABLE job_items (
 CREATE INDEX job_items_job_id_idx ON job_items (job_id);
 CREATE INDEX job_items_user_id_idx ON job_items (user_id);
 CREATE INDEX job_items_status_idx ON job_items (status);
+CREATE INDEX job_items_external_game_id_idx ON job_items (external_game_id);
 
--- Backup config (singleton table — always id=1)
+-- Sync changes: one row per library event per sync run (backs the Sync History UI)
+CREATE TABLE sync_changes (
+    id               TEXT PRIMARY KEY,
+    job_id           TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    external_game_id TEXT REFERENCES external_games(id) ON DELETE SET NULL,
+    change_type      TEXT NOT NULL,
+    title            TEXT NOT NULL,
+    old_status       TEXT,
+    new_status       TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX sync_changes_job_id_idx    ON sync_changes (job_id);
+CREATE INDEX sync_changes_user_id_idx   ON sync_changes (user_id);
+CREATE INDEX sync_changes_created_at_idx ON sync_changes (created_at);
+
+-- Backup config
 CREATE TABLE backup_config (
     id              INTEGER PRIMARY KEY CHECK (id = 1),
-    schedule_cron   TEXT NOT NULL DEFAULT '',      -- standard 5-field cron; empty = disabled
-    retention_mode  TEXT NOT NULL DEFAULT 'days',  -- 'days' | 'count'
+    schedule_cron   TEXT NOT NULL DEFAULT '',
+    retention_mode  TEXT NOT NULL DEFAULT 'days',
     retention_value INTEGER NOT NULL DEFAULT 30,
     last_backup_at  TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Seed the singleton row (daily at 2 AM UTC)
 INSERT INTO backup_config (id, schedule_cron, retention_mode, retention_value)
 VALUES (1, '0 2 * * *', 'days', 30);
 
@@ -290,7 +313,6 @@ INSERT INTO storefronts (name, display_name, icon, base_url) VALUES
     ('gamersgate',        'GamersGate',        NULL,                               'https://www.gamersgate.com');
 
 -- Reference data: platforms
--- icon is NULL for platforms with no logo file (playstation-vita, playstation-psp)
 INSERT INTO platforms (name, display_name, icon, default_storefront) VALUES
     ('pc-windows',        'PC (Windows)',               'pc-windows-icon-light.svg',        'steam'),
     ('playstation-5',     'PlayStation 5',              'playstation-5-icon-light.svg',      'playstation-store'),
@@ -314,7 +336,6 @@ INSERT INTO platforms (name, display_name, icon, default_storefront) VALUES
 
 -- Reference data: platform-storefront associations
 INSERT INTO platform_storefronts (platform, storefront) VALUES
-    -- PC (Windows)
     ('pc-windows',        'steam'),
     ('pc-windows',        'epic-games-store'),
     ('pc-windows',        'gog'),
@@ -323,60 +344,43 @@ INSERT INTO platform_storefronts (platform, storefront) VALUES
     ('pc-windows',        'itch-io'),
     ('pc-windows',        'gamersgate'),
     ('pc-windows',        'physical'),
-    -- PlayStation 5
     ('playstation-5',     'playstation-store'),
     ('playstation-5',     'physical'),
-    -- PlayStation 4
     ('playstation-4',     'playstation-store'),
     ('playstation-4',     'physical'),
-    -- PlayStation 3
     ('playstation-3',     'playstation-store'),
     ('playstation-3',     'physical'),
-    -- PlayStation Vita
     ('playstation-vita',  'playstation-store'),
     ('playstation-vita',  'physical'),
-    -- PlayStation Portable (PSP)
     ('playstation-psp',   'playstation-store'),
     ('playstation-psp',   'physical'),
-    -- Xbox Series X/S
     ('xbox-series',       'microsoft-store'),
     ('xbox-series',       'physical'),
-    -- Xbox One
     ('xbox-one',          'microsoft-store'),
     ('xbox-one',          'physical'),
-    -- Xbox 360
     ('xbox-360',          'microsoft-store'),
     ('xbox-360',          'physical'),
-    -- Nintendo Switch
     ('nintendo-switch',   'nintendo-eshop'),
     ('nintendo-switch',   'physical'),
-    -- Nintendo Wii
     ('nintendo-wii',      'nintendo-eshop'),
     ('nintendo-wii',      'physical'),
-    -- iOS
     ('ios',               'apple-app-store'),
     ('ios',               'epic-games-store'),
-    -- Android
     ('android',           'google-play-store'),
     ('android',           'epic-games-store'),
-    -- PC (Linux)
     ('pc-linux',          'steam'),
     ('pc-linux',          'gog'),
     ('pc-linux',          'humble-bundle'),
-    -- PlayStation 2
     ('playstation-2',     'physical'),
-    -- PlayStation
     ('playstation',       'physical'),
-    -- Nintendo Wii U
     ('nintendo-wii-u',    'nintendo-eshop'),
     ('nintendo-wii-u',    'physical'),
-    -- Nintendo Switch 2
     ('nintendo-switch-2', 'nintendo-eshop'),
     ('nintendo-switch-2', 'physical'),
-    -- Mac
-    ('mac',               'steam');
+    ('mac',               'steam'),
+    ('mac',               'gog');
 
--- Rate limiter tokens (used by the PostgreSQL rate-limiter backend)
+-- Rate limiter tokens
 CREATE TABLE rate_limiter_tokens (
     key         TEXT PRIMARY KEY,
     tokens      DOUBLE PRECISION NOT NULL,

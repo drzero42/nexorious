@@ -24,7 +24,7 @@ func TestEnqueueOrFail_NilRiverClient_MarksItemFailed(t *testing.T) {
 	itemID := insertTestJobItem(t, testDB, jobID, userID, map[string]any{})
 
 	err := tasks.EnqueueOrFail(ctx, testDB, nil, itemID,
-		tasks.ProcessSyncItemArgs{JobItemID: itemID})
+		tasks.IGDBMatchArgs{JobItemID: itemID})
 	if !errors.Is(err, tasks.ErrNilRiverClient) {
 		t.Fatalf("expected ErrNilRiverClient, got %v", err)
 	}
@@ -55,7 +55,7 @@ func TestEnqueueOrFail_Success_LeavesItemPending(t *testing.T) {
 
 	rc := newTestRiverClient(t)
 	if err := tasks.EnqueueOrFail(ctx, testDB, rc, itemID,
-		tasks.ProcessSyncItemArgs{JobItemID: itemID}); err != nil {
+		tasks.IGDBMatchArgs{JobItemID: itemID}); err != nil {
 		t.Fatalf("EnqueueOrFail returned %v, want nil", err)
 	}
 
@@ -67,7 +67,7 @@ func TestEnqueueOrFail_Success_LeavesItemPending(t *testing.T) {
 
 	var count int
 	_ = testDB.NewRaw(
-		`SELECT count(*) FROM river_job WHERE args->>'job_item_id' = ? AND kind = 'process_sync_item'`,
+		`SELECT count(*) FROM river_job WHERE args->>'job_item_id' = ? AND kind = 'igdb_match'`,
 		itemID,
 	).Scan(ctx, &count)
 	if count != 1 {
@@ -91,7 +91,7 @@ func TestEnqueueOrFail_NilClient_OnlyTouchesPendingRows(t *testing.T) {
 	).Exec(ctx)
 
 	_ = tasks.EnqueueOrFail(ctx, testDB, nil, itemID,
-		tasks.ProcessSyncItemArgs{JobItemID: itemID})
+		tasks.IGDBMatchArgs{JobItemID: itemID})
 
 	var status string
 	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)

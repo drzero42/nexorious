@@ -53,7 +53,7 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		var args river.JobArgs
 		switch o.JobType {
 		case "sync":
-			args = tasks.ProcessSyncItemArgs{JobItemID: o.ID}
+			args = tasks.IGDBMatchArgs{JobItemID: o.ID}
 		case "import":
 			args = tasks.ImportItemArgs{JobItemID: o.ID}
 		case "metadata_refresh":

@@ -106,8 +106,8 @@ func TestGetLibrary_MacGameEmitsMacEntry(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
@@ -146,7 +146,7 @@ In `internal/services/gog/library.go`, in `fetchPage`, add after the Linux block
 
 ```go
 if p.WorksOn.Mac {
-	entries = append(entries, ExternalLibraryEntry{
+	entries = append(entries, ExternalGameEntry{
 		ExternalID:      id,
 		Title:           p.Title,
 		RawPlatform:     "pc-mac",
@@ -157,7 +157,7 @@ if p.WorksOn.Mac {
 }
 ```
 
-Also update the `RawPlatform` doc comment on `ExternalLibraryEntry`:
+Also update the `RawPlatform` doc comment on `ExternalGameEntry`:
 ```go
 RawPlatform     string // "pc-windows", "pc-mac", or "pc-linux"
 ```
@@ -221,7 +221,7 @@ git commit -m "feat(migrations): add mac/gog platform_storefronts entry"
 
 ### Task 4: Refactor steam client and update consumers atomically
 
-Changing `GetOwnedGames`'s return type from `[]ExternalLibraryEntry` to `[]OwnedGame` breaks `sync.go` and `sync_test.go`. All three files must be updated together to keep the build green. This task also adds `GetAppDetailsPlatforms`, the rate limiter, and base-URL fields for test injection, plus creates `client_test.go`.
+Changing `GetOwnedGames`'s return type from `[]ExternalGameEntry` to `[]OwnedGame` breaks `sync.go` and `sync_test.go`. All three files must be updated together to keep the build green. This task also adds `GetAppDetailsPlatforms`, the rate limiter, and base-URL fields for test injection, plus creates `client_test.go`.
 
 **Files:**
 - Modify: `internal/services/steam/client.go`
@@ -611,7 +611,7 @@ Replace lines 27–30 (the `SteamLibraryAdapter` interface declaration):
 // Before:
 // SteamLibraryAdapter fetches the Steam game library.
 type SteamLibraryAdapter interface {
-	GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]steamsvc.ExternalLibraryEntry, error)
+	GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]steamsvc.ExternalGameEntry, error)
 }
 
 // After:
@@ -670,7 +670,7 @@ In `TestDispatchSync_SteamSuccess`, change the `games` slice:
 ```go
 // Before:
 adapter := &fakeSteamAdapter{
-	games: []steamsvc.ExternalLibraryEntry{
+	games: []steamsvc.ExternalGameEntry{
 		{ExternalID: "730", Title: "Counter-Strike 2", RawPlatform: "PC", PlaytimeHours: 100, OwnershipStatus: "owned"},
 	},
 }

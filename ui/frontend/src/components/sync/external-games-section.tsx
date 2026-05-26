@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { useRouterState } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -37,11 +38,16 @@ import {
   useSkipExternalGame,
   useUnskipExternalGame,
   useRematchExternalGame,
+  useRetryFailedExternalGames,
+  syncKeys,
 } from '@/hooks/use-sync';
-import type { ExternalGame, IGDBGameCandidate, SyncPlatform } from '@/types';
+import { retryJobItem } from '@/api/jobs';
+import { useQueryClient } from '@tanstack/react-query';
+import type { ExternalGame, IGDBGameCandidate, SyncStorefront } from '@/types';
 
 interface ExternalGamesSectionProps {
-  platform: SyncPlatform;
+  storefront: SyncStorefront;
+  isSyncing?: boolean;
 }
 
 interface PendingRematch {
@@ -49,22 +55,49 @@ interface PendingRematch {
   candidate: IGDBGameCandidate;
 }
 
-export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
-  const { data: games = [], isLoading } = useExternalGames(platform);
+export function ExternalGamesSection({ storefront, isSyncing = false }: ExternalGamesSectionProps) {
+  const { data: games = [], isLoading } = useExternalGames(storefront, {
+    refetchInterval: isSyncing ? 5000 : undefined,
+  });
   const { mutate: skip, isPending: isSkipping } = useSkipExternalGame();
   const { mutate: unskip, isPending: isUnskipping } = useUnskipExternalGame();
   const { mutate: rematch, isPending: isRematching } = useRematchExternalGame();
+  const { mutate: retryAll, isPending: isRetryingAll } = useRetryFailedExternalGames();
+  const queryClient = useQueryClient();
+  const hash = useRouterState({ select: (s) => s.location.hash });
 
   const [matchingGame, setMatchingGame] = useState<ExternalGame | null>(null);
   const [pendingRematch, setPendingRematch] = useState<PendingRematch | null>(null);
   const [skippedOpen, setSkippedOpen] = useState(false);
   const [matchedOpen, setMatchedOpen] = useState(false);
+  const [retryingItemId, setRetryingItemId] = useState<string | null>(null);
+
+  const needsReview = games.filter((g) => g.sync_status === 'needs_review');
+  const failed = games.filter((g) => g.sync_status === 'failed');
+  const skipped = games.filter((g) => g.sync_status === 'skipped');
+  const matched = games.filter((g) => g.sync_status === 'matched');
+
+  // Initial hash navigation fires before the games query resolves, so the
+  // browser can't find #needs-review on first paint. Re-trigger the scroll
+  // once the section has rendered.
+  useEffect(() => {
+    if (hash === 'needs-review' && needsReview.length > 0) {
+      document.getElementById('needs-review')?.scrollIntoView();
+    }
+  }, [hash, needsReview.length]);
 
   if (isLoading || games.length === 0) return null;
 
-  const unmatched = games.filter((g) => g.resolved_igdb_id === null && !g.is_skipped);
-  const skipped = games.filter((g) => g.is_skipped);
-  const matched = games.filter((g) => g.resolved_igdb_id !== null && !g.is_skipped);
+  async function handleRetryGame(game: ExternalGame) {
+    if (!game.failed_job_item_id) return;
+    setRetryingItemId(game.id);
+    try {
+      await retryJobItem(game.failed_job_item_id);
+      queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(storefront) });
+    } finally {
+      setRetryingItemId(null);
+    }
+  }
 
   function handleSelect(game: ExternalGame, candidate: IGDBGameCandidate) {
     setMatchingGame(null);
@@ -79,15 +112,15 @@ export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
   return (
     <>
       <div className="space-y-4">
-        {unmatched.length > 0 && (
-          <Card>
+        {needsReview.length > 0 && (
+          <Card id="needs-review" className="scroll-mt-4">
             <CardHeader>
-              <CardTitle className="text-base">Unmatched ({unmatched.length})</CardTitle>
+              <CardTitle className="text-base">Needs Review ({needsReview.length})</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableBody>
-                  {unmatched.map((game) => (
+                  {needsReview.map((game) => (
                     <TableRow key={game.id}>
                       <TableCell>{game.title}</TableCell>
                       <TableCell className="text-right space-x-2">
@@ -116,6 +149,91 @@ export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
           </Card>
         )}
 
+        {failed.length > 0 && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between py-3">
+              <CardTitle className="text-base">Failed ({failed.length})</CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => retryAll(storefront)}
+                disabled={isRetryingAll}
+              >
+                Retry All
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableBody>
+                  {failed.map((game) => (
+                    <TableRow key={game.id}>
+                      <TableCell>{game.title}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRetryGame(game)}
+                          disabled={retryingItemId === game.id || !game.failed_job_item_id}
+                        >
+                          Retry
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {matched.length > 0 && (
+          <Collapsible open={matchedOpen} onOpenChange={setMatchedOpen}>
+            <Card>
+              <CardHeader className="py-3">
+                <CollapsibleTrigger className="flex w-full items-center justify-between">
+                  <CardTitle className="text-base">Matched ({matched.length})</CardTitle>
+                  <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', matchedOpen && 'rotate-180')} />
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Storefront Title</TableHead>
+                        <TableHead>IGDB Title</TableHead>
+                        <TableHead>Platform</TableHead>
+                        <TableHead />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {matched.map((game) => (
+                        <TableRow key={game.id}>
+                          <TableCell>{game.title}</TableCell>
+                          <TableCell className="text-muted-foreground">{game.igdb_title}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {game.platforms.join(', ')}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setMatchingGame(game)}
+                              disabled={isRematching}
+                            >
+                              Change Match
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        )}
+
         {skipped.length > 0 && (
           <Collapsible open={skippedOpen} onOpenChange={setSkippedOpen}>
             <Card>
@@ -140,50 +258,6 @@ export function ExternalGamesSection({ platform }: ExternalGamesSectionProps) {
                               disabled={isUnskipping}
                             >
                               Unskip
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </CollapsibleContent>
-            </Card>
-          </Collapsible>
-        )}
-
-        {matched.length > 0 && (
-          <Collapsible open={matchedOpen} onOpenChange={setMatchedOpen}>
-            <Card>
-              <CardHeader className="py-3">
-                <CollapsibleTrigger className="flex w-full items-center justify-between">
-                  <CardTitle className="text-base">Matched ({matched.length})</CardTitle>
-                  <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', matchedOpen && 'rotate-180')} />
-                </CollapsibleTrigger>
-              </CardHeader>
-              <CollapsibleContent>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Storefront Title</TableHead>
-                        <TableHead>IGDB Title</TableHead>
-                        <TableHead />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {matched.map((game) => (
-                        <TableRow key={game.id}>
-                          <TableCell>{game.title}</TableCell>
-                          <TableCell className="text-muted-foreground">{game.igdb_title}</TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setMatchingGame(game)}
-                              disabled={isRematching}
-                            >
-                              Change Match
                             </Button>
                           </TableCell>
                         </TableRow>

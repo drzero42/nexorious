@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/crypto"
+	"github.com/drzero42/nexorious/internal/db/models"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	"github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/ratelimit"
@@ -169,13 +171,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		staleThreshold = 4 * time.Hour
 	}
 
+	epicClient := epicsvc.NewClient(cfg.LegendaryWorkDir)
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
-		DB:        db,
-		Encrypter: encrypter,
-		Steam:     steamsvc.NewClient(),
-		PSN:       psnsvc.NewClient(),
-		Epic:      &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: db, Encrypter: encrypter},
-		GOG:       gogsvc.NewClient(),
+		DB:      db,
+		Adapter: buildAdapterFactory(db, encrypter, epicClient),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
@@ -183,14 +182,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	checkPendingSyncsWorker := &scheduler.CheckPendingSyncsWorker{DB: db}
 	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
-	processSyncItemWorker := &tasks.ProcessSyncItemWorker{DB: db, IGDBClient: igdbClient}
+	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, IGDBClient: igdbClient}
+	userGameWorker := &tasks.UserGameWorker{DB: db}
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.ExportJSONWorker{DB: db, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.ExportCSVWorker{DB: db, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, dispatchSyncWorker)
-	river.AddWorker(workers, processSyncItemWorker)
+	river.AddWorker(workers, igdbMatchWorker)
+	river.AddWorker(workers, userGameWorker)
 	river.AddWorker(workers, metaDispatchWorker)
 	river.AddWorker(workers, &tasks.MetadataRefreshItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &scheduler.CleanupOldJobsWorker{DB: db})
@@ -198,6 +199,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, &scheduler.CleanupUnreferencedGamesWorker{DB: db})
 	river.AddWorker(workers, &scheduler.CleanupExpiredSessionsWorker{DB: db})
 	river.AddWorker(workers, &scheduler.CleanupStaleJobsWorker{DB: db})
+	river.AddWorker(workers, &scheduler.CleanupSyncChangesWorker{DB: db})
 	river.AddWorker(workers, checkPendingSyncsWorker)
 	river.AddWorker(workers, rescueOrphanedWorker)
 	river.AddWorker(workers, &scheduler.CheckScheduledBackupWorker{DB: db, BackupSvc: backupSvc})
@@ -216,10 +218,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	metaDispatchWorker.RiverClient = riverClient
 	checkPendingSyncsWorker.RiverClient = riverClient
 	rescueOrphanedWorker.RiverClient = riverClient
-	// ProcessSyncItem re-enqueues itself for the one-shot auto-retry of
-	// igdb_failed items in syncCheckJobCompletion; without this wiring the
-	// reset items sit in 'pending' forever with no backing river_job.
-	processSyncItemWorker.RiverClient = riverClient
+	igdbMatchWorker.RiverClient = riverClient
+	userGameWorker.RiverClient = riverClient
 
 	// -------------------------------------------------------------------------
 	// HTTP server
@@ -247,13 +247,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				return fmt.Errorf("RebuildServices: pgxpool: %w", err)
 			}
 
+			newEpicClient := epicsvc.NewClient(cfg.LegendaryWorkDir)
 			newDispatchSync := &tasks.DispatchSyncWorker{
-				DB:        newDB,
-				Encrypter: encrypter,
-				Steam:     steamsvc.NewClient(),
-				PSN:       psnsvc.NewClient(),
-				Epic:      &tasks.EpicClientAdapter{Client: epicsvc.NewClient(cfg.LegendaryWorkDir), DB: newDB, Encrypter: encrypter},
-				GOG:       gogsvc.NewClient(),
+				DB:      newDB,
+				Adapter: buildAdapterFactory(newDB, encrypter, newEpicClient),
 			}
 			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
 				DB:         newDB,
@@ -261,14 +258,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			}
 			newCheckSyncs := &scheduler.CheckPendingSyncsWorker{DB: newDB}
 			newRescueOrphaned := &scheduler.RescueOrphanedPendingItemsWorker{DB: newDB}
-			newProcessSyncItem := &tasks.ProcessSyncItemWorker{DB: newDB, IGDBClient: igdbClient}
+			newIGDBMatch := &tasks.IGDBMatchWorker{DB: newDB, IGDBClient: igdbClient}
+			newUserGame := &tasks.UserGameWorker{DB: newDB}
 
 			newWorkers := river.NewWorkers()
 			river.AddWorker(newWorkers, &tasks.ImportItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &tasks.ExportJSONWorker{DB: newDB, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &tasks.ExportCSVWorker{DB: newDB, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, newDispatchSync)
-			river.AddWorker(newWorkers, newProcessSyncItem)
+			river.AddWorker(newWorkers, newIGDBMatch)
+			river.AddWorker(newWorkers, newUserGame)
 			river.AddWorker(newWorkers, newMetaDispatch)
 			river.AddWorker(newWorkers, &tasks.MetadataRefreshItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &scheduler.CleanupOldJobsWorker{DB: newDB})
@@ -276,6 +275,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			river.AddWorker(newWorkers, &scheduler.CleanupUnreferencedGamesWorker{DB: newDB})
 			river.AddWorker(newWorkers, &scheduler.CleanupExpiredSessionsWorker{DB: newDB})
 			river.AddWorker(newWorkers, &scheduler.CleanupStaleJobsWorker{DB: newDB})
+			river.AddWorker(newWorkers, &scheduler.CleanupSyncChangesWorker{DB: newDB})
 			river.AddWorker(newWorkers, newCheckSyncs)
 			river.AddWorker(newWorkers, newRescueOrphaned)
 			river.AddWorker(newWorkers, &scheduler.CheckScheduledBackupWorker{DB: newDB, BackupSvc: backupSvc})
@@ -293,7 +293,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newMetaDispatch.RiverClient = newClient
 			newCheckSyncs.RiverClient = newClient
 			newRescueOrphaned.RiverClient = newClient
-			newProcessSyncItem.RiverClient = newClient
+			newIGDBMatch.RiverClient = newClient
+			newUserGame.RiverClient = newClient
 
 			if err := newClient.Start(shutdownCtx); err != nil {
 				return fmt.Errorf("RebuildServices: River start: %w", err)
@@ -375,5 +376,117 @@ func parseSlogLevel(s string) slog.Level {
 		return slog.LevelError
 	default:
 		return slog.LevelInfo
+	}
+}
+
+func buildAdapterFactory(
+	db *bun.DB,
+	encrypter *crypto.Encrypter,
+	epicClient *epicsvc.Client,
+) func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+	return func(ctx context.Context, storefront string, cfg models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+		switch storefront {
+		case "steam":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
+			if err != nil {
+				slog.Warn("adapter factory: steam decrypt failed", "user_id", cfg.UserID, "err", err)
+				return nil, tasks.ErrCredentials
+			}
+			var creds struct {
+				WebAPIKey string `json:"web_api_key"`
+				SteamID   string `json:"steam_id"`
+			}
+			if err := json.Unmarshal(plain, &creds); err != nil {
+				return nil, tasks.ErrCredentials
+			}
+			return steamsvc.NewAdapter(steamsvc.NewClient(), creds.WebAPIKey, creds.SteamID), nil
+
+		case "psn":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
+			if err != nil {
+				slog.Warn("adapter factory: psn decrypt failed", "user_id", cfg.UserID, "err", err)
+				return nil, tasks.ErrCredentials
+			}
+			var creds struct {
+				NPSSOToken string `json:"npsso_token"`
+			}
+			if err := json.Unmarshal(plain, &creds); err != nil {
+				return nil, tasks.ErrCredentials
+			}
+			return psnsvc.NewAdapter(psnsvc.NewClient(), creds.NPSSOToken), nil
+
+		case "gog":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
+			if err != nil {
+				slog.Warn("adapter factory: gog decrypt failed", "user_id", cfg.UserID, "err", err)
+				return nil, tasks.ErrCredentials
+			}
+			var creds struct {
+				AccessToken  string `json:"access_token"`
+				RefreshToken string `json:"refresh_token"`
+				UserID       string `json:"user_id"`
+				Username     string `json:"username"`
+			}
+			if err := json.Unmarshal(plain, &creds); err != nil {
+				return nil, tasks.ErrCredentials
+			}
+			onNewTokens := func(accessToken, refreshToken string) error {
+				creds.AccessToken = accessToken
+				creds.RefreshToken = refreshToken
+				newCredsJSON, merr := json.Marshal(creds)
+				if merr != nil {
+					return merr
+				}
+				enc, encErr := encrypter.Encrypt(newCredsJSON)
+				if encErr != nil {
+					return encErr
+				}
+				_, dbErr := db.NewRaw(
+					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'gog'`,
+					enc, cfg.UserID,
+				).Exec(context.Background())
+				return dbErr
+			}
+			return gogsvc.NewAdapter(gogsvc.NewClient(), creds.RefreshToken, onNewTokens), nil
+
+		case "epic":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
+			if err != nil {
+				slog.Warn("adapter factory: epic decrypt failed", "user_id", cfg.UserID, "err", err)
+				return nil, tasks.ErrCredentials
+			}
+			var snapshot map[string]string
+			if err := json.Unmarshal(plain, &snapshot); err != nil {
+				return nil, tasks.ErrCredentials
+			}
+			onSnapshot := func(s map[string]string) error {
+				newJSON, _ := json.Marshal(s)
+				enc, encErr := encrypter.Encrypt(newJSON)
+				if encErr != nil {
+					return encErr
+				}
+				_, dbErr := db.NewRaw(
+					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
+					enc, cfg.UserID,
+				).Exec(context.Background())
+				return dbErr
+			}
+			return epicsvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot), nil
+
+		default:
+			return nil, fmt.Errorf("unknown storefront: %s", storefront)
+		}
 	}
 }

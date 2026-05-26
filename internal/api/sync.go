@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -97,7 +98,6 @@ type syncConfigItem struct {
 	ID           string     `json:"id"`
 	Storefront   string     `json:"storefront"`
 	Frequency    string     `json:"frequency"`
-	AutoAdd      bool       `json:"auto_add"`
 	LastSyncedAt *time.Time `json:"last_synced_at"`
 	IsConfigured bool       `json:"is_configured"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -109,7 +109,6 @@ type syncConfigResponse struct {
 	UserID       string     `json:"user_id"`
 	Storefront   string     `json:"storefront"`
 	Frequency    string     `json:"frequency"`
-	AutoAdd      bool       `json:"auto_add"`
 	LastSyncedAt *time.Time `json:"last_synced_at"`
 	IsConfigured bool       `json:"is_configured"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -124,26 +123,30 @@ type manualSyncTriggerResponse struct {
 }
 
 type syncStatusResponse struct {
-	Storefront   string     `json:"storefront"`
-	IsSyncing    bool       `json:"is_syncing"`
-	LastSyncedAt *time.Time `json:"last_synced_at"`
-	ActiveJobID  *string    `json:"active_job_id"`
+	Storefront        string     `json:"storefront"`
+	IsSyncing         bool       `json:"is_syncing"`
+	LastSyncedAt      *time.Time `json:"last_synced_at"`
+	ActiveJobID       *string    `json:"active_job_id"`
+	ExternalGameCount int        `json:"external_game_count"`
 }
 
 type externalGameResponse struct {
-	ID                         string  `bun:"id"                             json:"id"`
-	Storefront                 string  `bun:"storefront"                     json:"storefront"`
-	ExternalID                 string  `bun:"external_id"                    json:"external_id"`
-	Title                      string  `bun:"title"                          json:"title"`
-	ResolvedIGDBID             *int32  `bun:"resolved_igdb_id"               json:"resolved_igdb_id"`
-	IsSkipped                  bool    `bun:"is_skipped"                     json:"is_skipped"`
-	IsAvailable                bool    `bun:"is_available"                   json:"is_available"`
-	IsSubscription             bool    `bun:"is_subscription"                json:"is_subscription"`
-	PlaytimeHours              int     `bun:"playtime_hours"                 json:"playtime_hours"`
-	HasUserGame                bool    `bun:"has_user_game"                  json:"has_user_game"`
-	UserGameID                 *string `bun:"user_game_id"                   json:"user_game_id"`
-	IGDBTitle                  *string `bun:"igdb_title"                     json:"igdb_title"`
-	UserGameOtherPlatformCount int     `bun:"user_game_other_platform_count" json:"user_game_other_platform_count"`
+	ID                         string   `bun:"id"                             json:"id"`
+	Storefront                 string   `bun:"storefront"                     json:"storefront"`
+	ExternalID                 string   `bun:"external_id"                    json:"external_id"`
+	Title                      string   `bun:"title"                          json:"title"`
+	ResolvedIGDBID             *int32   `bun:"resolved_igdb_id"               json:"resolved_igdb_id"`
+	IsSkipped                  bool     `bun:"is_skipped"                     json:"is_skipped"`
+	IsAvailable                bool     `bun:"is_available"                   json:"is_available"`
+	IsSubscription             bool     `bun:"is_subscription"                json:"is_subscription"`
+	HasUserGame                bool     `bun:"has_user_game"                  json:"has_user_game"`
+	UserGameID                 *string  `bun:"user_game_id"                   json:"user_game_id"`
+	IGDBTitle                  *string  `bun:"igdb_title"                     json:"igdb_title"`
+	UserGameOtherPlatformCount int      `bun:"user_game_other_platform_count" json:"user_game_other_platform_count"`
+	SyncStatus                 string   `bun:"sync_status"                    json:"sync_status"`
+	FailedJobItemID            *string  `bun:"failed_job_item_id"             json:"failed_job_item_id"`
+	PlatformsCSV               string   `bun:"platforms_csv"                  json:"-"`
+	Platforms                  []string `bun:"-"                              json:"platforms"`
 }
 
 type steamVerifyResponse struct {
@@ -212,6 +215,9 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	// "external-games" is a static prefix — must be registered before /:storefront (POST)
 	// per Echo v5 route ordering rules.
 	g.POST("/external-games/:id/rematch", h.HandleRematchExternalGame) // implemented in Task 4
+	// static route /:storefront/external-games/retry-failed registered before
+	// parameterised /:storefront routes per Echo v5 ordering rules.
+	g.POST("/:storefront/external-games/retry-failed", h.HandleRetryFailedExternalGames)
 	g.GET("/config", h.HandleListConfig)
 	g.GET("/config/:storefront", h.HandleGetConfig)
 	g.PUT("/config/:storefront", h.HandleUpdateConfig)
@@ -248,7 +254,6 @@ func (h *SyncHandler) HandleListConfig(c *echo.Context) error {
 				ID:           row.ID,
 				Storefront:   row.Storefront,
 				Frequency:    row.Frequency,
-				AutoAdd:      row.AutoAdd,
 				LastSyncedAt: row.LastSyncedAt,
 				IsConfigured: row.StorefrontCredentials != nil,
 				CreatedAt:    row.CreatedAt,
@@ -259,7 +264,6 @@ func (h *SyncHandler) HandleListConfig(c *echo.Context) error {
 				ID:           uuid.NewString(),
 				Storefront:   sf,
 				Frequency:    "manual",
-				AutoAdd:      false,
 				LastSyncedAt: nil,
 				IsConfigured: false,
 				CreatedAt:    now,
@@ -287,7 +291,7 @@ func (h *SyncHandler) HandleGetConfig(c *echo.Context) error {
 		now := time.Now().UTC()
 		return c.JSON(http.StatusOK, syncConfigResponse{
 			ID: uuid.NewString(), UserID: userID, Storefront: sf,
-			Frequency: "manual", AutoAdd: false, IsConfigured: false,
+			Frequency: "manual", IsConfigured: false,
 			CreatedAt: now, UpdatedAt: now,
 		})
 	}
@@ -296,7 +300,7 @@ func (h *SyncHandler) HandleGetConfig(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, syncConfigResponse{
 		ID: row.ID, UserID: row.UserID, Storefront: row.Storefront,
-		Frequency: row.Frequency, AutoAdd: row.AutoAdd,
+		Frequency:    row.Frequency,
 		LastSyncedAt: row.LastSyncedAt,
 		IsConfigured: row.StorefrontCredentials != nil,
 		CreatedAt:    row.CreatedAt, UpdatedAt: row.UpdatedAt,
@@ -315,7 +319,6 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 
 	var body struct {
 		Frequency *string `json:"frequency"`
-		AutoAdd   *bool   `json:"auto_add"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid body")
@@ -332,7 +335,6 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 			UserID:     userID,
 			Storefront: sf,
 			Frequency:  "manual",
-			AutoAdd:    false,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
@@ -343,13 +345,10 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 	if body.Frequency != nil {
 		row.Frequency = *body.Frequency
 	}
-	if body.AutoAdd != nil {
-		row.AutoAdd = *body.AutoAdd
-	}
 	row.UpdatedAt = now
 
 	_, err = h.db.NewInsert().Model(&row).
-		On("CONFLICT (user_id, storefront) DO UPDATE SET frequency = EXCLUDED.frequency, auto_add = EXCLUDED.auto_add, updated_at = EXCLUDED.updated_at").
+		On("CONFLICT (user_id, storefront) DO UPDATE SET frequency = EXCLUDED.frequency, updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save config")
@@ -357,7 +356,7 @@ func (h *SyncHandler) HandleUpdateConfig(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, syncConfigResponse{
 		ID: row.ID, UserID: row.UserID, Storefront: row.Storefront,
-		Frequency: row.Frequency, AutoAdd: row.AutoAdd,
+		Frequency:    row.Frequency,
 		LastSyncedAt: row.LastSyncedAt,
 		IsConfigured: row.StorefrontCredentials != nil,
 		CreatedAt:    row.CreatedAt, UpdatedAt: row.UpdatedAt,
@@ -443,11 +442,21 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 		lastSyncedAt = cfg.LastSyncedAt
 	}
 
+	var externalGameCount int
+	if err := h.db.NewSelect().
+		TableExpr("external_games").
+		ColumnExpr("COUNT(*)").
+		Where("user_id = ? AND storefront = ? AND is_available = true", userID, sf).
+		Scan(ctx, &externalGameCount); err != nil {
+		externalGameCount = 0
+	}
+
 	return c.JSON(http.StatusOK, syncStatusResponse{
-		Storefront:   sf,
-		IsSyncing:    activeJobID != nil,
-		LastSyncedAt: lastSyncedAt,
-		ActiveJobID:  activeJobID,
+		Storefront:        sf,
+		IsSyncing:         activeJobID != nil,
+		LastSyncedAt:      lastSyncedAt,
+		ActiveJobID:       activeJobID,
+		ExternalGameCount: externalGameCount,
 	})
 }
 
@@ -508,7 +517,7 @@ func (h *SyncHandler) HandleSteamVerify(c *echo.Context) error {
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if _, err := h.db.NewInsert().Model(row).
-		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, updated_at = EXCLUDED.updated_at").
+		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, credentials_error = false, updated_at = EXCLUDED.updated_at").
 		Exec(context.Background()); err != nil {
 		slog.Error("sync: persist steam credentials failed", "err", err, "user_id", userID)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Steam connection")
@@ -568,9 +577,10 @@ func (h *SyncHandler) HandleGetSteamConnection(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, steamConnectionResponse{
-		Connected: true,
-		SteamID:   creds.SteamID,
-		Username:  creds.DisplayName,
+		Connected:        true,
+		SteamID:          creds.SteamID,
+		Username:         creds.DisplayName,
+		CredentialsError: row.CredentialsError,
 	})
 }
 
@@ -618,7 +628,7 @@ func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if _, err := h.db.NewInsert().Model(row).
-		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, updated_at = EXCLUDED.updated_at").
+		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, credentials_error = false, updated_at = EXCLUDED.updated_at").
 		Exec(context.Background()); err != nil {
 		slog.Error("psn: persist storefront credentials failed", "user_id", userID, "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist PSN connection")
@@ -669,7 +679,7 @@ func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, psnStatusResponse{
 		IsConfigured:     true,
-		CredentialsError: !creds.IsVerified,
+		CredentialsError: row.CredentialsError,
 		OnlineID:         creds.OnlineID,
 		AccountID:        creds.AccountID,
 		Region:           creds.Region,
@@ -717,19 +727,6 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "epic: user.json missing after auth")
 	}
 
-	creds := map[string]string{
-		"display_name": info.DisplayName,
-		"account_id":   info.AccountID,
-	}
-	credsJSON, err := json.Marshal(creds)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
-	}
-	credsCiphertext, err := h.encrypter.Encrypt(credsJSON)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
-	}
-
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -738,23 +735,17 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "internal error"})
 	}
-	// epic_legendary_state is a JSONB column; store the ciphertext as a JSON string scalar.
-	stateJSON, _ := json.Marshal(stateCiphertext)
 	now := time.Now().UTC()
 
-	row := &models.UserSyncConfig{
-		ID:                    uuid.NewString(),
-		UserID:                userID,
-		Storefront:            "epic",
-		Frequency:             "manual",
-		StorefrontCredentials: &credsCiphertext,
-		EpicLegendaryState:    stateJSON,
-		CreatedAt:             now,
-		UpdatedAt:             now,
-	}
-	if _, err := h.db.NewInsert().Model(row).
-		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, epic_legendary_state = EXCLUDED.epic_legendary_state, updated_at = EXCLUDED.updated_at").
-		Exec(context.Background()); err != nil {
+	if _, err := h.db.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?, ?, ?)
+		 ON CONFLICT (user_id, storefront) DO UPDATE SET
+		     storefront_credentials = EXCLUDED.storefront_credentials,
+		     credentials_error = false,
+		     updated_at = EXCLUDED.updated_at`,
+		uuid.NewString(), userID, stateCiphertext, now, now,
+	).Exec(context.Background()); err != nil {
 		slog.Error("epic: persist storefront credentials failed", "user_id", userID, "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Epic connection")
 	}
@@ -774,7 +765,7 @@ func (h *SyncHandler) HandleEpicDisconnect(c *echo.Context) error {
 	}
 	ctx := context.Background()
 	if _, err := h.db.NewRaw(
-		`UPDATE user_sync_configs SET storefront_credentials = NULL, epic_legendary_state = NULL, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
+		`UPDATE user_sync_configs SET storefront_credentials = NULL, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
 		userID,
 	).Exec(ctx); err != nil {
 		slog.Error("sync: epic disconnect failed", "err", err, "user_id", userID)
@@ -833,10 +824,11 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"connected":    true,
-		"disabled":     false,
-		"display_name": creds.DisplayName,
-		"account_id":   creds.AccountID,
+		"connected":        true,
+		"disabled":         false,
+		"credentials_error": row.CredentialsError,
+		"display_name":     creds.DisplayName,
+		"account_id":       creds.AccountID,
 	})
 }
 
@@ -882,6 +874,29 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 		slog.Error("sync: skip game failed", "err", err, "external_game_id", id)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 	}
+
+	// Mark the most recent pending_review or pending job_item for this game as skipped,
+	// then check whether the job can now complete.
+	var jobItemRow struct {
+		ID    string `bun:"id"`
+		JobID string `bun:"job_id"`
+	}
+	if err := h.db.NewRaw(`
+		SELECT id, job_id FROM job_items
+		WHERE external_game_id = ? AND status IN ('pending_review', 'pending')
+		ORDER BY created_at DESC
+		LIMIT 1`, id,
+	).Scan(ctx, &jobItemRow); err == nil {
+		if _, err := h.db.NewRaw(
+			`UPDATE job_items SET status = 'skipped', processed_at = now() WHERE id = ?`,
+			jobItemRow.ID,
+		).Exec(ctx); err != nil {
+			slog.Error("sync: skip game: mark job_item skipped", "err", err, "job_item_id", jobItemRow.ID)
+		} else {
+			tasks.SyncCheckJobCompletion(ctx, h.db, jobItemRow.JobID)
+		}
+	}
+
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -919,22 +934,18 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		jobID, userID, eg.Storefront, now,
 	).Exec(ctx)
 	if jerr == nil {
-		meta, _ := json.Marshal(map[string]string{
-			"external_game_id": eg.ID,
-			"raw_platform":     eg.RawPlatform,
-		})
 		itemID := uuid.NewString()
 		if _, err := h.db.NewRaw(
-			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-			itemID, jobID, userID, eg.ExternalID, eg.Title, string(meta),
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
+			itemID, jobID, userID, eg.ExternalID, eg.Title, eg.ID,
 		).Exec(ctx); err != nil {
 			slog.Error("sync: insert job_item for unskip failed", "err", err, "external_game_id", eg.ID)
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
 		if h.riverClient != nil {
-			if _, err := h.riverClient.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: itemID}, nil); err != nil {
-				slog.Error("sync: enqueue process_sync_item failed", "err", err, "job_item_id", itemID)
+			if _, err := h.riverClient.Insert(ctx, tasks.IGDBMatchArgs{JobItemID: itemID}, nil); err != nil {
+				slog.Error("sync: enqueue igdb_match failed", "err", err, "job_item_id", itemID)
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 			}
 		}
@@ -965,19 +976,57 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 			eg.is_skipped,
 			eg.is_available,
 			eg.is_subscription,
-			eg.playtime_hours,
-			(ugp.user_game_id IS NOT NULL) AS has_user_game,
-			ugp.user_game_id,
+			EXISTS (
+				SELECT 1 FROM user_game_platforms ugp WHERE ugp.external_game_id = eg.id
+			) AS has_user_game,
+			(
+				SELECT ugp.user_game_id FROM user_game_platforms ugp
+				WHERE ugp.external_game_id = eg.id LIMIT 1
+			) AS user_game_id,
 			g.title AS igdb_title,
 			COALESCE(
-				(SELECT COUNT(*) FROM user_game_platforms o
-				 WHERE o.user_game_id = ugp.user_game_id AND o.id != ugp.id),
+				(SELECT COUNT(*)
+				 FROM user_game_platforms o
+				 WHERE o.user_game_id = (
+					 SELECT ugp.user_game_id FROM user_game_platforms ugp
+					 WHERE ugp.external_game_id = eg.id LIMIT 1
+				 )
+				 AND o.external_game_id IS DISTINCT FROM eg.id),
 				0
-			) AS user_game_other_platform_count
+			) AS user_game_other_platform_count,
+			CASE
+				WHEN EXISTS (
+					SELECT 1 FROM job_items ji
+					WHERE ji.external_game_id = eg.id AND ji.status = 'pending_review'
+				) THEN 'needs_review'
+				WHEN EXISTS (
+					SELECT 1 FROM job_items ji
+					WHERE ji.external_game_id = eg.id AND ji.status = 'failed'
+				) THEN 'failed'
+				WHEN eg.is_skipped THEN 'skipped'
+				WHEN eg.resolved_igdb_id IS NOT NULL THEN 'matched'
+				ELSE 'unmatched'
+			END AS sync_status,
+			(
+				SELECT ji.id FROM job_items ji
+				WHERE ji.external_game_id = eg.id AND ji.status = 'failed'
+				ORDER BY ji.created_at DESC
+				LIMIT 1
+			) AS failed_job_item_id,
+			COALESCE(
+				(SELECT string_agg(egp.platform, ',' ORDER BY egp.platform)
+				 FROM external_game_platforms egp
+				 WHERE egp.external_game_id = eg.id),
+				''
+			) AS platforms_csv
 		FROM external_games eg
-		LEFT JOIN user_game_platforms ugp ON ugp.external_game_id = eg.id
 		LEFT JOIN games g ON g.id = eg.resolved_igdb_id
 		WHERE eg.user_id = ? AND eg.storefront = ?
+		  AND NOT EXISTS (
+		      SELECT 1 FROM job_items ji
+		      WHERE ji.external_game_id = eg.id
+		        AND ji.status IN ('pending', 'processing')
+		  )
 		ORDER BY eg.title ASC`,
 		userID, sf,
 	).Scan(ctx, &games)
@@ -986,6 +1035,13 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 	}
 	if games == nil {
 		games = []externalGameResponse{}
+	}
+	for i := range games {
+		if games[i].PlatformsCSV != "" {
+			games[i].Platforms = strings.Split(games[i].PlatformsCSV, ",")
+		} else {
+			games[i].Platforms = []string{}
+		}
 	}
 	return c.JSON(http.StatusOK, games)
 }
@@ -1139,39 +1195,154 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update external game")
 	}
 
-	// Create a mini-job and job_item, then enqueue ProcessSyncItem.
-	jobID := uuid.NewString()
-	now := time.Now().UTC()
-	_, err = h.db.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-		 VALUES (?, ?, 'sync', ?, 'processing', 'high', 1, ?)`,
-		jobID, userID, eg.Storefront, now,
-	).Exec(ctx)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job")
-	}
-
-	meta, _ := json.Marshal(map[string]string{
-		"external_game_id": eg.ID,
-		"raw_platform":     eg.RawPlatform,
-	})
-	itemID := uuid.NewString()
-	_, err = h.db.NewRaw(
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-		itemID, jobID, userID, eg.ExternalID, eg.Title, string(meta),
-	).Exec(ctx)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
+	// Find the existing pending_review job_item for this external game.
+	var jobItemID string
+	if err := h.db.NewRaw(`
+		SELECT id FROM job_items
+		WHERE external_game_id = ? AND status = 'pending_review'
+		ORDER BY created_at DESC
+		LIMIT 1`, id,
+	).Scan(ctx, &jobItemID); err != nil || jobItemID == "" {
+		// No pending_review item — create a minimal one attached to the
+		// most recent job for this user+storefront.
+		var recentJobID string
+		if err2 := h.db.NewRaw(`
+			SELECT id FROM jobs
+			WHERE user_id = ? AND source = ? AND job_type = 'sync'
+			ORDER BY created_at DESC LIMIT 1`,
+			userID, eg.Storefront,
+		).Scan(ctx, &recentJobID); err2 != nil {
+			slog.Error("sync: rematch — no recent job found", "user_id", userID, "storefront", eg.Storefront, "err", err2)
+			return echo.NewHTTPError(http.StatusInternalServerError, "no sync job context found")
+		}
+		jobItemID = uuid.NewString()
+		if _, err3 := h.db.NewRaw(`
+			INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
+			jobItemID, recentJobID, userID, eg.ExternalID, eg.Title, eg.ID,
+		).Exec(ctx); err3 != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
+		}
+	} else {
+		if _, err := h.db.NewRaw(
+			`UPDATE job_items SET status = 'pending' WHERE id = ?`, jobItemID,
+		).Exec(ctx); err != nil {
+			slog.Error("sync: rematch: update job_item status failed", "err", err, "job_item_id", jobItemID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update job item")
+		}
 	}
 
 	if h.riverClient != nil {
-		if _, err = h.riverClient.Insert(ctx, tasks.ProcessSyncItemArgs{JobItemID: itemID}, nil); err != nil {
-			slog.Error("sync: enqueue process_sync_item failed", "err", err, "job_item_id", itemID)
+		if _, err := h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: jobItemID}, nil); err != nil {
+			slog.Error("sync: enqueue user_game_write failed", "err", err, "job_item_id", jobItemID)
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 		}
 	}
 
+	// Resolve siblings: other external_games for the same (user, storefront, title) that are
+	// still unresolved. Each gets the same IGDB ID and its own Stage 3 job.
+	var siblings []struct {
+		ID         string `bun:"id"`
+		ExternalID string `bun:"external_id"`
+		Title      string `bun:"title"`
+	}
+	if err := h.db.NewRaw(`
+		SELECT id, external_id, title FROM external_games
+		WHERE user_id = ? AND storefront = ? AND title = ?
+		  AND id != ? AND resolved_igdb_id IS NULL AND is_skipped = false`,
+		userID, eg.Storefront, eg.Title, id,
+	).Scan(ctx, &siblings); err == nil {
+		for _, sib := range siblings {
+			if _, err := h.db.NewRaw(
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+				body.IGDBID, sib.ID,
+			).Exec(ctx); err != nil {
+				slog.Error("sync: rematch: resolve sibling", "err", err, "sibling_id", sib.ID)
+				continue
+			}
+			var sibItemID string
+			if err := h.db.NewRaw(`
+				SELECT id FROM job_items
+				WHERE external_game_id = ? AND status = 'pending_review'
+				ORDER BY created_at DESC LIMIT 1`, sib.ID,
+			).Scan(ctx, &sibItemID); err != nil || sibItemID == "" {
+				var recentJobID string
+				if err2 := h.db.NewRaw(`
+					SELECT id FROM jobs
+					WHERE user_id = ? AND source = ? AND job_type = 'sync'
+					ORDER BY created_at DESC LIMIT 1`,
+					userID, eg.Storefront,
+				).Scan(ctx, &recentJobID); err2 != nil {
+					slog.Error("sync: rematch: sibling no recent job", "sibling_id", sib.ID, "err", err2)
+					continue
+				}
+				sibItemID = uuid.NewString()
+				if _, err3 := h.db.NewRaw(`
+					INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+					VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
+					sibItemID, recentJobID, userID, sib.ExternalID, sib.Title, sib.ID,
+				).Exec(ctx); err3 != nil {
+					slog.Error("sync: rematch: create sibling job_item", "sibling_id", sib.ID, "err", err3)
+					continue
+				}
+			} else {
+				if _, err := h.db.NewRaw(
+					`UPDATE job_items SET status = 'pending' WHERE id = ?`, sibItemID,
+				).Exec(ctx); err != nil {
+					slog.Error("sync: rematch: update sibling job_item status", "sibling_id", sib.ID, "err", err)
+				}
+			}
+			if h.riverClient != nil {
+				if _, err := h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: sibItemID}, nil); err != nil {
+					slog.Error("sync: rematch: enqueue sibling Stage 3", "sibling_id", sib.ID, "err", err)
+				}
+			}
+		}
+	}
+
+	return c.NoContent(http.StatusNoContent)
+}
+
+// HandleRetryFailedExternalGames re-enqueues all failed job_items for external
+// games belonging to this user+storefront.
+func (h *SyncHandler) HandleRetryFailedExternalGames(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	sf := c.Param("storefront")
+	if !validTriggerStorefronts[sf] {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid storefront")
+	}
+	ctx := context.Background()
+
+	var items []struct {
+		ID string `bun:"id"`
+	}
+	if err := h.db.NewRaw(`
+		SELECT ji.id
+		FROM job_items ji
+		JOIN external_games eg ON eg.id = ji.external_game_id
+		WHERE eg.user_id = ? AND eg.storefront = ? AND ji.status = 'failed'`,
+		userID, sf,
+	).Scan(ctx, &items); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to query failed items")
+	}
+
+	for _, item := range items {
+		if _, err := h.db.NewRaw(
+			`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL WHERE id = ?`,
+			item.ID,
+		).Exec(ctx); err != nil {
+			slog.Error("sync: retry-failed: reset item", "id", item.ID, "err", err)
+			continue
+		}
+		if h.riverClient != nil {
+			if _, err := h.riverClient.Insert(ctx, tasks.IGDBMatchArgs{JobItemID: item.ID}, nil); err != nil {
+				slog.Error("sync: retry-failed: enqueue", "id", item.ID, "err", err)
+			}
+		}
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -1219,7 +1390,7 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 		UpdatedAt:             now,
 	}
 	if _, err := h.db.NewInsert().Model(row).
-		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, updated_at = EXCLUDED.updated_at").
+		On("CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = EXCLUDED.storefront_credentials, credentials_error = false, updated_at = EXCLUDED.updated_at").
 		Exec(context.Background()); err != nil {
 		slog.Error("gog: persist credentials failed", "user_id", userID, "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist GOG connection")
@@ -1286,9 +1457,10 @@ func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"connected": true,
-		"username":  creds.Username,
-		"user_id":   creds.UserID,
-		"auth_url":  authURL,
+		"connected":        true,
+		"credentials_error": row.CredentialsError,
+		"username":         creds.Username,
+		"user_id":          creds.UserID,
+		"auth_url":         authURL,
 	})
 }

@@ -4,7 +4,7 @@ import type {
   SyncConfigUpdateData,
   SyncStatus,
   ManualSyncResponse,
-  SyncPlatform,
+  SyncStorefront,
   SyncFrequency,
   SteamVerifyResponse,
   SteamConnectionData,
@@ -26,7 +26,6 @@ interface SyncConfigApiResponse {
   user_id: string;
   storefront: string;
   frequency: string;
-  auto_add: boolean;
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
@@ -43,6 +42,7 @@ interface SyncStatusApiResponse {
   is_syncing: boolean;
   last_synced_at: string | null;
   active_job_id: string | null;
+  external_game_count: number;
 }
 
 interface ManualSyncApiResponse {
@@ -69,9 +69,8 @@ function transformSyncConfig(apiConfig: SyncConfigApiResponse): SyncConfig {
   return {
     id: apiConfig.id,
     userId: apiConfig.user_id,
-    platform: apiConfig.storefront as SyncPlatform,
+    storefront: apiConfig.storefront as SyncStorefront,
     frequency: apiConfig.frequency as SyncFrequency,
-    autoAdd: apiConfig.auto_add,
     lastSyncedAt: apiConfig.last_synced_at,
     createdAt: apiConfig.created_at,
     updatedAt: apiConfig.updated_at,
@@ -81,10 +80,11 @@ function transformSyncConfig(apiConfig: SyncConfigApiResponse): SyncConfig {
 
 function transformSyncStatus(apiStatus: SyncStatusApiResponse): SyncStatus {
   return {
-    platform: apiStatus.storefront as SyncPlatform,
+    storefront: apiStatus.storefront as SyncStorefront,
     isSyncing: apiStatus.is_syncing,
     lastSyncedAt: apiStatus.last_synced_at,
     activeJobId: apiStatus.active_job_id,
+    externalGameCount: apiStatus.external_game_count ?? 0,
   };
 }
 
@@ -92,7 +92,7 @@ function transformManualSyncResponse(apiResponse: ManualSyncApiResponse): Manual
   return {
     message: apiResponse.message,
     jobId: apiResponse.job_id,
-    platform: apiResponse.storefront,
+    storefront: apiResponse.storefront,
     status: apiResponse.status,
   };
 }
@@ -115,7 +115,7 @@ export async function getSyncConfigs(): Promise<SyncConfigsResponse> {
 /**
  * Get sync configuration for a specific platform.
  */
-export async function getSyncConfig(platform: SyncPlatform): Promise<SyncConfig> {
+export async function getSyncConfig(platform: SyncStorefront): Promise<SyncConfig> {
   const response = await api.get<SyncConfigApiResponse>(`/sync/config/${platform}`);
   return transformSyncConfig(response);
 }
@@ -124,16 +124,13 @@ export async function getSyncConfig(platform: SyncPlatform): Promise<SyncConfig>
  * Update sync configuration for a specific platform.
  */
 export async function updateSyncConfig(
-  platform: SyncPlatform,
+  platform: SyncStorefront,
   data: SyncConfigUpdateData
 ): Promise<SyncConfig> {
   const requestBody: Record<string, unknown> = {};
 
   if (data.frequency !== undefined) {
     requestBody.frequency = data.frequency;
-  }
-  if (data.autoAdd !== undefined) {
-    requestBody.auto_add = data.autoAdd;
   }
 
   const response = await api.put<SyncConfigApiResponse>(
@@ -146,7 +143,7 @@ export async function updateSyncConfig(
 /**
  * Trigger a manual sync for a specific platform.
  */
-export async function triggerSync(platform: SyncPlatform): Promise<ManualSyncResponse> {
+export async function triggerSync(platform: SyncStorefront): Promise<ManualSyncResponse> {
   const response = await api.post<ManualSyncApiResponse>(`/sync/${platform}`);
   return transformManualSyncResponse(response);
 }
@@ -154,7 +151,7 @@ export async function triggerSync(platform: SyncPlatform): Promise<ManualSyncRes
 /**
  * Get the current sync status for a platform.
  */
-export async function getSyncStatus(platform: SyncPlatform): Promise<SyncStatus> {
+export async function getSyncStatus(platform: SyncStorefront): Promise<SyncStatus> {
   const response = await api.get<SyncStatusApiResponse>(`/sync/${platform}/status`);
   return transformSyncStatus(response);
 }
@@ -406,7 +403,7 @@ export async function disconnectPSN(): Promise<void> {
 // External Games
 // ============================================================================
 
-export async function getExternalGames(platform: SyncPlatform): Promise<ExternalGame[]> {
+export async function getExternalGames(platform: SyncStorefront): Promise<ExternalGame[]> {
   const response = await api.get<ExternalGame[]>(`/sync/${platform}/external-games`);
   return response;
 }
@@ -430,6 +427,10 @@ export async function rematchExternalGame(
   });
 }
 
-export async function resetSyncData(platform: SyncPlatform): Promise<void> {
+export async function resetSyncData(platform: SyncStorefront): Promise<void> {
   await api.delete(`/sync/${platform}/data`);
+}
+
+export async function retryFailedExternalGames(storefront: SyncStorefront): Promise<void> {
+  await api.post(`/sync/${storefront}/external-games/retry-failed`);
 }

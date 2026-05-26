@@ -64,8 +64,8 @@ func TestGetLibrary_SinglePage(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
@@ -81,8 +81,8 @@ func TestGetLibrary_SinglePage(t *testing.T) {
 	if entries[0].Title != "Game A" {
 		t.Errorf("Title: got %q", entries[0].Title)
 	}
-	if entries[0].RawPlatform != "pc-windows" {
-		t.Errorf("RawPlatform: got %q", entries[0].RawPlatform)
+	if len(entries[0].Platforms) == 0 || entries[0].Platforms[0] != "pc-windows" {
+		t.Errorf("Platforms: got %v", entries[0].Platforms)
 	}
 }
 
@@ -95,8 +95,8 @@ func TestGetLibrary_MultiPage(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
@@ -108,36 +108,36 @@ func TestGetLibrary_MultiPage(t *testing.T) {
 	}
 }
 
-func TestGetLibrary_DualPlatform_EmitsTwoEntries(t *testing.T) {
+func TestGetLibrary_DualPlatform_EmitsOneEntryWithAllPlatforms(t *testing.T) {
 	srv := makeProductsServer(t, [][]map[string]any{
 		{product(2001, "Linux Game", true, false, true)},
 	})
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("GetLibrary: %v", err)
 	}
-	if len(entries) != 2 {
-		t.Fatalf("want 2 entries for dual-platform game, got %d", len(entries))
+	if len(entries) != 1 {
+		t.Fatalf("want 1 entry for dual-platform game, got %d", len(entries))
+	}
+	if entries[0].ExternalID != "2001" {
+		t.Errorf("unexpected ExternalID %q", entries[0].ExternalID)
 	}
 	platforms := map[string]bool{}
-	for _, e := range entries {
-		if e.ExternalID != "2001" {
-			t.Errorf("unexpected ExternalID %q", e.ExternalID)
-		}
-		platforms[e.RawPlatform] = true
+	for _, p := range entries[0].Platforms {
+		platforms[p] = true
 	}
 	if !platforms["pc-windows"] {
-		t.Error("expected pc-windows entry")
+		t.Error("expected pc-windows in Platforms")
 	}
 	if !platforms["pc-linux"] {
-		t.Error("expected pc-linux entry")
+		t.Error("expected pc-linux in Platforms")
 	}
 }
 
@@ -148,16 +148,16 @@ func TestGetLibrary_WindowsOnlyEmitsOneEntry(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	_ = c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	_ = c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
 	if len(entries) != 1 {
 		t.Fatalf("want 1 entry for Windows-only game, got %d", len(entries))
 	}
-	if entries[0].RawPlatform != "pc-windows" {
-		t.Errorf("RawPlatform: got %q", entries[0].RawPlatform)
+	if len(entries[0].Platforms) == 0 || entries[0].Platforms[0] != "pc-windows" {
+		t.Errorf("Platforms: got %v", entries[0].Platforms)
 	}
 }
 
@@ -168,8 +168,8 @@ func TestGetLibrary_PlaytimeAlwaysZero(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	_ = c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	_ = c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
@@ -188,8 +188,8 @@ func TestGetLibrary_MacGameEmitsMacEntry(t *testing.T) {
 	defer srv.Close()
 
 	c := gog.NewClientWithURLs(srv.URL, srv.URL)
-	var entries []gog.ExternalLibraryEntry
-	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalLibraryEntry) error {
+	var entries []gog.ExternalGameEntry
+	err := c.GetLibrary(context.Background(), "token", 50, func(batch []gog.ExternalGameEntry) error {
 		entries = append(entries, batch...)
 		return nil
 	})
@@ -205,7 +205,7 @@ func TestGetLibrary_MacGameEmitsMacEntry(t *testing.T) {
 	if entries[0].Title != "Mac Game" {
 		t.Errorf("Title: got %q", entries[0].Title)
 	}
-	if entries[0].RawPlatform != "pc-mac" {
-		t.Errorf("RawPlatform: got %q", entries[0].RawPlatform)
+	if len(entries[0].Platforms) == 0 || entries[0].Platforms[0] != "pc-mac" {
+		t.Errorf("Platforms: got %v", entries[0].Platforms)
 	}
 }

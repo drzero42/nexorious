@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import * as syncApi from '@/api/sync';
-import { SyncPlatform } from '@/types';
+import { SyncStorefront } from '@/types';
 import type {
   SyncConfig,
   SyncConfigUpdateData,
@@ -24,14 +24,14 @@ import type {
 export const syncKeys = {
   all: ['sync'] as const,
   configs: () => [...syncKeys.all, 'configs'] as const,
-  config: (platform: SyncPlatform) => [...syncKeys.configs(), platform] as const,
+  config: (platform: SyncStorefront) => [...syncKeys.configs(), platform] as const,
   statuses: () => [...syncKeys.all, 'statuses'] as const,
-  status: (platform: SyncPlatform) => [...syncKeys.statuses(), platform] as const,
+  status: (platform: SyncStorefront) => [...syncKeys.statuses(), platform] as const,
   steamConnection: () => [...syncKeys.all, 'steamConnection'] as const,
   epicConnection: () => [...syncKeys.all, 'epicConnection'] as const,
   gogConnection: () => [...syncKeys.all, 'gogConnection'] as const,
   psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
-  externalGames: (platform: SyncPlatform) => [...syncKeys.all, 'external-games', platform] as const,
+  externalGames: (platform: SyncStorefront) => [...syncKeys.all, 'external-games', platform] as const,
 };
 
 // ============================================================================
@@ -51,7 +51,7 @@ export function useSyncConfigs() {
 /**
  * Hook to fetch sync configuration for a specific platform.
  */
-export function useSyncConfig(platform: SyncPlatform) {
+export function useSyncConfig(platform: SyncStorefront) {
   return useQuery({
     queryKey: syncKeys.config(platform),
     queryFn: () => syncApi.getSyncConfig(platform),
@@ -61,7 +61,7 @@ export function useSyncConfig(platform: SyncPlatform) {
 /**
  * Hook to fetch sync status for a specific platform.
  */
-export function useSyncStatus(platform: SyncPlatform) {
+export function useSyncStatus(platform: SyncStorefront) {
   return useQuery({
     queryKey: syncKeys.status(platform),
     queryFn: () => syncApi.getSyncStatus(platform),
@@ -81,8 +81,8 @@ export function useSyncStatus(platform: SyncPlatform) {
 export function useSyncStatuses() {
   return {
     steam: useQuery({
-      queryKey: syncKeys.status(SyncPlatform.STEAM),
-      queryFn: () => syncApi.getSyncStatus(SyncPlatform.STEAM),
+      queryKey: syncKeys.status(SyncStorefront.STEAM),
+      queryFn: () => syncApi.getSyncStatus(SyncStorefront.STEAM),
       refetchInterval: 10000,
     }),
   };
@@ -101,12 +101,12 @@ export function useUpdateSyncConfig() {
   return useMutation<
     SyncConfig,
     Error,
-    { platform: SyncPlatform; data: SyncConfigUpdateData }
+    { storefront: SyncStorefront; data: SyncConfigUpdateData }
   >({
-    mutationFn: ({ platform, data }) => syncApi.updateSyncConfig(platform, data),
-    onSuccess: (updatedConfig, { platform }) => {
+    mutationFn: ({ storefront, data }) => syncApi.updateSyncConfig(storefront, data),
+    onSuccess: (updatedConfig, { storefront }) => {
       // Update the specific config in cache
-      queryClient.setQueryData(syncKeys.config(platform), updatedConfig);
+      queryClient.setQueryData(syncKeys.config(storefront), updatedConfig);
       // Invalidate the configs list to refetch
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
     },
@@ -119,7 +119,7 @@ export function useUpdateSyncConfig() {
 export function useTriggerSync() {
   const queryClient = useQueryClient();
 
-  return useMutation<ManualSyncResponse, Error, SyncPlatform>({
+  return useMutation<ManualSyncResponse, Error, SyncStorefront>({
     mutationFn: (platform) => syncApi.triggerSync(platform),
     onSuccess: (result, platform) => {
       // Optimistically set isSyncing to true and include the jobId from the response
@@ -128,10 +128,11 @@ export function useTriggerSync() {
       queryClient.setQueryData(
         syncKeys.status(platform),
         (old: SyncStatus | undefined) => ({
-          platform: old?.platform ?? platform,
+          storefront: old?.storefront ?? platform,
           isSyncing: true,
           lastSyncedAt: old?.lastSyncedAt ?? null,
           activeJobId: result.jobId,
+          externalGameCount: old?.externalGameCount ?? 0,
         })
       );
       // Also invalidate to get fresh data from server
@@ -185,7 +186,7 @@ export function useSteamConnection() {
 export function useResetSyncData() {
   const queryClient = useQueryClient();
 
-  return useMutation<void, Error, SyncPlatform>({
+  return useMutation<void, Error, SyncStorefront>({
     mutationFn: (platform) => syncApi.resetSyncData(platform),
     onSuccess: (_, platform) => {
       queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(platform) });
@@ -225,7 +226,7 @@ export function useConnectEpic() {
     mutationFn: (authCode: string) => syncApi.connectEpic(authCode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.EPIC) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.EPIC) });
       queryClient.invalidateQueries({ queryKey: syncKeys.epicConnection() });
     },
   });
@@ -242,7 +243,7 @@ export function useDisconnectEpic() {
     mutationFn: syncApi.disconnectEpic,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.EPIC) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.EPIC) });
       queryClient.invalidateQueries({ queryKey: syncKeys.epicConnection() });
     },
     onError: (error) => {
@@ -271,7 +272,7 @@ export function useConnectGOG() {
     mutationFn: (authCode: string) => syncApi.connectGOG(authCode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.GOG) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.GOG) });
       queryClient.invalidateQueries({ queryKey: syncKeys.gogConnection() });
     },
   });
@@ -284,7 +285,7 @@ export function useDisconnectGOG() {
     mutationFn: syncApi.disconnectGOG,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.GOG) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.GOG) });
       queryClient.invalidateQueries({ queryKey: syncKeys.gogConnection() });
     },
     onError: (error) => {
@@ -309,7 +310,7 @@ export function useConfigurePSN() {
     onSuccess: () => {
       // Invalidate sync configs to refresh connection status
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.PSN) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.PSN) });
       queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
     },
     onError: (error) => {
@@ -343,7 +344,7 @@ export function useDisconnectPSN() {
     onSuccess: () => {
       // Invalidate all PSN-related queries
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncPlatform.PSN) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.PSN) });
       queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
     },
     onError: (error) => {
@@ -359,10 +360,11 @@ export function useDisconnectPSN() {
 /**
  * Hook to fetch external games for a specific platform.
  */
-export function useExternalGames(platform: SyncPlatform) {
+export function useExternalGames(platform: SyncStorefront, options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: syncKeys.externalGames(platform),
     queryFn: () => syncApi.getExternalGames(platform),
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -396,6 +398,23 @@ export function useUnskipExternalGame() {
     },
     onError: (err: Error) => {
       toast.error(err.message ?? 'Failed to unskip game');
+    },
+  });
+}
+
+/**
+ * Hook to retry all failed external games for a storefront.
+ * Invalidates external games query on success.
+ */
+export function useRetryFailedExternalGames() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, SyncStorefront>({
+    mutationFn: (storefront) => syncApi.retryFailedExternalGames(storefront),
+    onSuccess: (_, storefront) => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(storefront) });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message ?? 'Failed to retry failed games');
     },
   });
 }

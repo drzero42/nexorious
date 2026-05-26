@@ -1,36 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Loader2, RefreshCw, History } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { config as envConfig } from '@/lib/env';
-import type { SyncConfig, SyncStatus, SyncConfigUpdateData } from '@/types';
-import { SyncFrequency, getSyncFrequencyLabel, getPlatformDisplayInfo } from '@/types';
+import type { SyncConfig, SyncStatus } from '@/types';
+import { getStorefrontDisplayInfo } from '@/types';
 
 interface SyncServiceCardProps {
   config: SyncConfig;
   status?: SyncStatus;
   pendingReviewCount?: number;
-  onUpdate: (data: SyncConfigUpdateData) => Promise<void>;
+  credentialsError?: boolean;
   onTriggerSync: () => Promise<void>;
-  onReset?: () => Promise<void>;
-  isUpdating?: boolean;
   isSyncing?: boolean;
-  isResetting?: boolean;
+  externalGameCount?: number;
 }
 
 function formatLastSync(dateStr: string | null): string {
@@ -53,45 +37,13 @@ export function SyncServiceCard({
   config,
   status,
   pendingReviewCount,
-  onUpdate,
+  credentialsError = false,
   onTriggerSync,
-  onReset,
-  isUpdating = false,
   isSyncing = false,
-  isResetting = false,
+  externalGameCount,
 }: SyncServiceCardProps) {
-  const [localFrequency, setLocalFrequency] = useState(config.frequency);
-  const [localAutoAdd, setLocalAutoAdd] = useState(config.autoAdd);
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
-  const wasResettingRef = useRef(false);
-
-  // Close the confirmation dialog once the reset mutation has settled.
-  useEffect(() => {
-    if (wasResettingRef.current && !isResetting) {
-      setResetDialogOpen(false);
-    }
-    wasResettingRef.current = isResetting;
-  }, [isResetting]);
-
-  const handleResetClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    // Prevent Radix from auto-closing the dialog — useEffect closes it
-    // after the mutation settles instead.
-    event.preventDefault();
-    void onReset?.();
-  };
-
-  const platformInfo = getPlatformDisplayInfo(config.platform);
+  const platformInfo = getStorefrontDisplayInfo(config.storefront);
   const isCurrentlySyncing = isSyncing || status?.isSyncing;
-
-  const handleFrequencyChange = async (frequency: SyncFrequency) => {
-    setLocalFrequency(frequency);
-    await onUpdate({ frequency });
-  };
-
-  const handleAutoAddChange = async (autoAdd: boolean) => {
-    setLocalAutoAdd(autoAdd);
-    await onUpdate({ autoAdd });
-  };
 
   return (
     <Card className="overflow-hidden">
@@ -111,137 +63,71 @@ export function SyncServiceCard({
               />
             </div>
             <div>
-              <CardTitle className="text-lg">{platformInfo.name}</CardTitle>
+              <CardTitle className="text-lg">
+                <Link
+                  to="/sync/$storefront"
+                  params={{ storefront: config.storefront }}
+                  className="hover:underline"
+                >
+                  {platformInfo.name}
+                </Link>
+              </CardTitle>
               <p className="text-sm text-muted-foreground">
                 Last synced: {formatLastSync(config.lastSyncedAt)}
               </p>
+              {externalGameCount !== undefined && externalGameCount > 0 && (
+                <p className="text-sm text-muted-foreground">{externalGameCount} games</p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
             {pendingReviewCount !== undefined && pendingReviewCount > 0 && (
-              <Badge variant="destructive">
-                {pendingReviewCount}
+              <Link
+                to="/sync/$storefront"
+                params={{ storefront: config.storefront }}
+                hash="needs-review"
+              >
+                <Badge variant="destructive">
+                  {pendingReviewCount}
+                </Badge>
+              </Link>
+            )}
+            {credentialsError ? (
+              <Badge variant="destructive">Credentials Error</Badge>
+            ) : config.isConfigured ? (
+              <Badge
+                variant="outline"
+                className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+              >
+                Connected
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="bg-muted text-muted-foreground">
+                Not Configured
               </Badge>
             )}
-            <Badge
-              variant={!config.isConfigured ? 'outline' : 'default'}
-              className={
-                !config.isConfigured
-                  ? 'bg-muted text-muted-foreground'
-                  : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-              }
-            >
-              {!config.isConfigured ? 'Not Configured' : 'Connected'}
-            </Badge>
           </div>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        {/* Frequency Select */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Sync frequency</span>
-          <Select
-            value={localFrequency}
-            onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
-            disabled={isUpdating || !config.isConfigured}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.values(SyncFrequency).map((freq) => (
-                <SelectItem key={freq} value={freq}>
-                  {getSyncFrequencyLabel(freq)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Auto-add Toggle */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Auto-add games</span>
-          <Switch
-            checked={localAutoAdd}
-            onCheckedChange={handleAutoAddChange}
-            disabled={isUpdating || !config.isConfigured}
-          />
-        </div>
-      </CardContent>
-
-      <CardFooter className="flex items-center justify-between border-t bg-muted/50 px-6 py-4">
-        <Link
-          to="/sync/$platform" params={{ platform: config.platform }}
-          className="flex items-center gap-1 text-sm text-primary hover:underline"
+      <CardFooter className="flex items-center justify-end border-t bg-muted/50 px-6 py-4">
+        <Button
+          onClick={onTriggerSync}
+          disabled={isCurrentlySyncing || !config.isConfigured}
+          size="sm"
         >
-          <History className="h-4 w-4" />
-          View details
-        </Link>
-        <div className="flex items-center gap-2">
-          {onReset && config.isConfigured && (
-            <AlertDialog
-              open={resetDialogOpen}
-              onOpenChange={(open) => {
-                // Block external close attempts (overlay click, Esc) while resetting.
-                if (!open && isResetting) return;
-                setResetDialogOpen(open);
-              }}
-            >
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={isResetting}
-                >
-                  Reset
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Reset sync data?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will remove all imported games and match history for {platformInfo.name}.
-                    Your game library entries will not be deleted. This cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={isResetting}>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleResetClick}
-                    disabled={isResetting}
-                  >
-                    {isResetting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Resetting...
-                      </>
-                    ) : (
-                      'Reset'
-                    )}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+          {isCurrentlySyncing ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Syncing...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Sync Now
+            </>
           )}
-          <Button
-            onClick={onTriggerSync}
-            disabled={isCurrentlySyncing || !config.isConfigured}
-            size="sm"
-          >
-            {isCurrentlySyncing ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Syncing...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Sync Now
-              </>
-            )}
-          </Button>
-        </div>
+        </Button>
       </CardFooter>
     </Card>
   );

@@ -20,7 +20,6 @@ const mockJob: Job = {
     pendingReview: 3,
     skipped: 2,
     failed: 0,
-    igdbFailed: 0,
     total: 100,
     percent: 50,
   },

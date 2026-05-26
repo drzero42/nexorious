@@ -65,9 +65,6 @@ func TestImportItem_BasicGame(t *testing.T) {
 	if ug.PersonalRating == nil || *ug.PersonalRating != 9 {
 		t.Errorf("personal_rating = %v, want 9", ug.PersonalRating)
 	}
-	if ug.HoursPlayed == nil || *ug.HoursPlayed != 42.5 {
-		t.Errorf("hours_played = %v, want 42.5", ug.HoursPlayed)
-	}
 
 	// Verify JobItem is completed.
 	var item models.JobItem
@@ -550,8 +547,8 @@ func TestImportItem_PartialJobCompletion(t *testing.T) {
 	}
 }
 
-// TestImportItem_CompletedWithErrors exercises the "completed_with_errors" branch in checkJobCompletion.
-func TestImportItem_CompletedWithErrors(t *testing.T) {
+// TestImportItem_FailedItemsYieldsCompleted verifies that a job with failed items still reaches "completed".
+func TestImportItem_FailedItemsYieldsCompleted(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 
@@ -583,13 +580,13 @@ func TestImportItem_CompletedWithErrors(t *testing.T) {
 		t.Fatalf("handler error: %v", err)
 	}
 
-	// Job should be "completed_with_errors" since one item failed.
+	// Job should be "completed" — individual item failures are surfaced via job_items.
 	var jobStatus string
 	if err := testDB.QueryRowContext(ctx, "SELECT status FROM jobs WHERE id = ?", jobID).Scan(&jobStatus); err != nil {
 		t.Fatalf("query job: %v", err)
 	}
-	if jobStatus != "completed_with_errors" {
-		t.Errorf("expected completed_with_errors, got %q", jobStatus)
+	if jobStatus != "completed" {
+		t.Errorf("expected completed, got %q", jobStatus)
 	}
 }
 

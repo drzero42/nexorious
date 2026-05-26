@@ -21,6 +21,9 @@ storage
 coverage.out
 coverage.html
 
+# Log files
+*.log
+
 # Legendary per-user working directories
 .legendary-work/
 

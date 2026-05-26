@@ -145,21 +145,30 @@ export const api = {
       ...options,
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
-    }).then((r) => r.json()),
+    }).then((r) => {
+      if (r.status === 204) return undefined as T;
+      return r.json();
+    }),
 
   put: <T = unknown>(path: string, data?: unknown, options?: Omit<ApiCallOptions, 'method' | 'body'>): Promise<T> =>
     apiCall(path, {
       ...options,
       method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,
-    }).then((r) => r.json()),
+    }).then((r) => {
+      if (r.status === 204) return undefined as T;
+      return r.json();
+    }),
 
   patch: <T = unknown>(path: string, data?: unknown, options?: Omit<ApiCallOptions, 'method' | 'body'>): Promise<T> =>
     apiCall(path, {
       ...options,
       method: 'PATCH',
       body: data ? JSON.stringify(data) : undefined,
-    }).then((r) => r.json()),
+    }).then((r) => {
+      if (r.status === 204) return undefined as T;
+      return r.json();
+    }),
 
   delete: <T = void>(path: string, options?: Omit<ApiCallOptions, 'method'>): Promise<T> =>
     apiCall(path, { ...options, method: 'DELETE' }).then((r) => {

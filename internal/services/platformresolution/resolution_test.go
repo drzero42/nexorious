@@ -16,8 +16,8 @@ func TestStorefrontToCollectionSlug_Epic(t *testing.T) {
 	}
 }
 
-func TestRawPlatformToSlug_PCLinux(t *testing.T) {
-	slug, ok := platformresolution.RawPlatformToSlug("pc-linux")
+func TestPlatformToSlug_PCLinux(t *testing.T) {
+	slug, ok := platformresolution.PlatformToSlug("pc-linux")
 	if !ok {
 		t.Fatal("expected pc-linux to resolve")
 	}
@@ -36,3 +36,22 @@ func TestStorefrontToCollectionSlug_GOG(t *testing.T) {
 	}
 }
 
+func TestPlatformToSlug_PSN4(t *testing.T) {
+	slug, ok := platformresolution.PlatformToSlug("playstation-4")
+	if !ok {
+		t.Fatal("expected playstation-4 to resolve")
+	}
+	if slug != "playstation-4" {
+		t.Errorf("got %q, want %q", slug, "playstation-4")
+	}
+}
+
+func TestPlatformToSlug_PSN5(t *testing.T) {
+	slug, ok := platformresolution.PlatformToSlug("playstation-5")
+	if !ok {
+		t.Fatal("expected playstation-5 to resolve")
+	}
+	if slug != "playstation-5" {
+		t.Errorf("got %q, want %q", slug, "playstation-5")
+	}
+}

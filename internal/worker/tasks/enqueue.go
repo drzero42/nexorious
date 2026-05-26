@@ -57,7 +57,7 @@ func EnqueueOrFail(
 func ArgsForJobType(jobType, jobItemID string) (river.JobArgs, error) {
 	switch jobType {
 	case models.JobTypeSync:
-		return ProcessSyncItemArgs{JobItemID: jobItemID}, nil
+		return IGDBMatchArgs{JobItemID: jobItemID}, nil
 	case models.JobTypeImport:
 		return ImportItemArgs{JobItemID: jobItemID}, nil
 	case models.JobTypeMetadataRefresh:

@@ -38,12 +38,11 @@ func NewUserGamesHandler(db *bun.DB, cfg *config.Config) *UserGamesHandler {
 
 // createUserGameRequest is the body for POST /api/user-games.
 type createUserGameRequest struct {
-	GameID         int32    `json:"game_id"`
-	PlayStatus     *string  `json:"play_status"`
-	PersonalRating *int32   `json:"personal_rating"`
-	IsLoved        bool     `json:"is_loved"`
-	HoursPlayed    *float64 `json:"hours_played"`
-	PersonalNotes  *string  `json:"personal_notes"`
+	GameID         int32   `json:"game_id"`
+	PlayStatus     *string `json:"play_status"`
+	PersonalRating *int32  `json:"personal_rating"`
+	IsLoved        bool    `json:"is_loved"`
+	PersonalNotes  *string `json:"personal_notes"`
 }
 
 // userGamePlatformResponse is the API DTO for a user game platform entry with nested detail objects.
@@ -131,7 +130,6 @@ var allowedUserGameSortFields = map[string]string{
 	"play_status":     "ug.play_status",
 	"personal_rating": "ug.personal_rating",
 	"is_loved":        "ug.is_loved",
-	"hours_played":    "ug.hours_played",
 	"release_date":    "g.release_date",
 }
 
@@ -358,7 +356,6 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		PlayStatus:     req.PlayStatus,
 		PersonalRating: req.PersonalRating,
 		IsLoved:        req.IsLoved,
-		HoursPlayed:    req.HoursPlayed,
 		PersonalNotes:  req.PersonalNotes,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -426,7 +423,6 @@ var allowedUpdateFields = map[string]bool{
 	"play_status":     true,
 	"personal_rating": true,
 	"is_loved":        true,
-	"hours_played":    true,
 	"personal_notes":  true,
 }
 
@@ -486,7 +482,6 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 		"play_status":     "play_status",
 		"personal_rating": "personal_rating",
 		"is_loved":        "is_loved",
-		"hours_played":    "hours_played",
 		"personal_notes":  "personal_notes",
 	}
 
@@ -500,7 +495,7 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 
 	query := fmt.Sprintf(
 		`UPDATE user_games SET %s WHERE id = ? AND user_id = ?
-		 RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, hours_played, personal_notes, created_at, updated_at`,
+		 RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, created_at, updated_at`,
 		strings.Join(setClauses, ", "),
 	)
 	args = append(args, id, userID)
@@ -558,8 +553,7 @@ func (h *UserGamesHandler) HandleDeleteUserGame(c *echo.Context) error {
 }
 
 type updateProgressRequest struct {
-	HoursPlayed *float64 `json:"hours_played"`
-	PlayStatus  *string  `json:"play_status"`
+	PlayStatus *string `json:"play_status"`
 }
 
 func (h *UserGamesHandler) HandleUpdateProgress(c *echo.Context) error {
@@ -574,34 +568,17 @@ func (h *UserGamesHandler) HandleUpdateProgress(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	if req.HoursPlayed == nil && req.PlayStatus == nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "at least one of hours_played or play_status is required")
+	if req.PlayStatus == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "play_status is required")
 	}
 
-	if req.PlayStatus != nil {
-		if !enum.PlayStatus(*req.PlayStatus).Valid() {
-			return echo.NewHTTPError(http.StatusBadRequest, "invalid play_status")
-		}
+	if !enum.PlayStatus(*req.PlayStatus).Valid() {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid play_status")
 	}
 
-	setClauses := []string{"updated_at = ?"}
-	args := []any{time.Now().UTC()}
+	args := []any{time.Now().UTC(), *req.PlayStatus, id, userID}
 
-	if req.HoursPlayed != nil {
-		setClauses = append(setClauses, "hours_played = ?")
-		args = append(args, *req.HoursPlayed)
-	}
-	if req.PlayStatus != nil {
-		setClauses = append(setClauses, "play_status = ?")
-		args = append(args, *req.PlayStatus)
-	}
-
-	args = append(args, id, userID)
-
-	query := fmt.Sprintf(
-		`UPDATE user_games SET %s WHERE id = ? AND user_id = ? RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, hours_played, personal_notes, created_at, updated_at`,
-		strings.Join(setClauses, ", "),
-	)
+	query := `UPDATE user_games SET updated_at = ?, play_status = ? WHERE id = ? AND user_id = ? RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, created_at, updated_at`
 
 	ctx := context.Background()
 	var ug models.UserGame
@@ -1421,31 +1398,16 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.AverageRating = &v
 	}
 
-	// 9. total_hours_played
-	type hoursRow struct {
-		UserGameID    string          `bun:"id"`
-		LegacyHours   sql.NullFloat64 `bun:"hours_played"`
-		PlatformHours sql.NullFloat64 `bun:"platform_hours"`
-	}
-	var hoursRows []hoursRow
+	// 9. total_hours_played — sum platform hours across all user_game_platforms
+	var totalHours float64
 	err = h.db.NewSelect().
 		TableExpr("user_games AS ug").
-		ColumnExpr("ug.id, ug.hours_played, COALESCE(SUM(ugp.hours_played), 0) AS platform_hours").
+		ColumnExpr("COALESCE(SUM(ugp.hours_played), 0)").
 		Join("LEFT JOIN user_game_platforms AS ugp ON ugp.user_game_id = ug.id").
 		Where("ug.user_id = ?", userID).
-		GroupExpr("ug.id, ug.hours_played").
-		Scan(ctx, &hoursRows)
+		Scan(ctx, &totalHours)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-	}
-	var totalHours float64
-	for _, hr := range hoursRows {
-		ph := hr.PlatformHours.Float64
-		if ph > 0 {
-			totalHours += ph
-		} else if hr.LegacyHours.Valid {
-			totalHours += hr.LegacyHours.Float64
-		}
 	}
 	resp.TotalHoursPlayed = totalHours
 

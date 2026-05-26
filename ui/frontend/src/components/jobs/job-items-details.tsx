@@ -49,7 +49,6 @@ interface JobItemsDetailsProps {
     pendingReview: number;
     skipped: number;
     failed: number;
-    igdbFailed: number;
   };
   isTerminal: boolean;
 }
@@ -340,12 +339,9 @@ function StatusSection({
 
   // Determine section behavior
   const isFailedSection = status === JobItemStatus.FAILED;
-  const isIGDBFailedSection = status === JobItemStatus.IGDB_FAILED;
   const isPendingReviewSection = status === JobItemStatus.PENDING_REVIEW;
-  // Retry all: only for terminal jobs (active jobs use the progress card button)
-  const canRetryAll = (isFailedSection || isIGDBFailedSection) && isTerminal;
-  // Individual retry: always available for igdb_failed; only terminal for regular failed
-  const canRetryItem = (isFailedSection && isTerminal) || isIGDBFailedSection;
+  const canRetryAll = isFailedSection && isTerminal;
+  const canRetryItem = canRetryAll;
 
   const handleRetryAll = async () => {
     try {
@@ -383,7 +379,6 @@ function StatusSection({
     ),
     [JobItemStatus.SKIPPED]: <Clock className="h-4 w-4 text-muted-foreground" />,
     [JobItemStatus.FAILED]: <AlertCircle className="h-4 w-4 text-red-600" />,
-    [JobItemStatus.IGDB_FAILED]: <AlertCircle className="h-4 w-4 text-orange-500" />,
   };
 
   return (
@@ -463,7 +458,7 @@ function StatusSection({
                         <div className="font-medium truncate">{item.resultGameTitle || item.sourceTitle}</div>
                       )}
                       {item.errorMessage && (
-                        <div className={`text-xs mt-1 ${isIGDBFailedSection ? 'text-orange-600' : 'text-red-600'}`}>
+                        <div className="text-xs mt-1 text-red-600">
                           {item.errorMessage}
                         </div>
                       )}
@@ -519,17 +514,12 @@ function StatusSection({
 }
 
 export function JobItemsDetails({ jobId, progress, isTerminal }: JobItemsDetailsProps) {
-  // Order sections: needs review first (action required), then igdb_failed, then failed, then others
+  // Order sections: needs review first (action required), then failed, then others
   const sections = [
     {
       status: JobItemStatus.PENDING_REVIEW,
       count: progress.pendingReview,
       defaultOpen: progress.pendingReview > 0,
-    },
-    {
-      status: JobItemStatus.IGDB_FAILED,
-      count: progress.igdbFailed,
-      defaultOpen: progress.igdbFailed > 0,
     },
     { status: JobItemStatus.FAILED, count: progress.failed, defaultOpen: progress.failed > 0 },
     { status: JobItemStatus.PROCESSING, count: progress.processing, defaultOpen: false },

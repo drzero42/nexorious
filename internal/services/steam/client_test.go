@@ -3,6 +3,7 @@ package steam_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -188,5 +189,31 @@ func TestGetAppDetailsPlatforms_MissingAppIDKey_ReturnsError(t *testing.T) {
 	_, err := c.GetAppDetailsPlatforms(context.Background(), 730)
 	if err == nil {
 		t.Fatal("expected error for missing appid key in response, got nil")
+	}
+}
+
+func TestGetOwnedGames_403_ReturnsErrAPIKeyRejected(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
+	_, err := c.GetOwnedGames(context.Background(), "badkey", "steamid")
+	if !errors.Is(err, steam.ErrAPIKeyRejected) {
+		t.Errorf("expected ErrAPIKeyRejected on 403, got %v", err)
+	}
+}
+
+func TestGetOwnedGames_401_ReturnsErrAPIKeyRejected(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
+	_, err := c.GetOwnedGames(context.Background(), "badkey", "steamid")
+	if !errors.Is(err, steam.ErrAPIKeyRejected) {
+		t.Errorf("expected ErrAPIKeyRejected on 401, got %v", err)
 	}
 }
