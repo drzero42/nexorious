@@ -31,6 +31,13 @@ export interface IGDBSearchProps {
   autoFocus?: boolean;
   /** Pre-fill the search field with this query */
   initialQuery?: string;
+  /**
+   * When set, the search is scoped to platforms IGDB tags for the given
+   * external_game (issue #615). Used by the sync pending-review manual-match
+   * dialog. The generic "Add game from IGDB" page leaves this undefined for
+   * unfiltered behaviour.
+   */
+  externalGameId?: string;
 }
 
 // ============================================================================
@@ -133,11 +140,12 @@ export function IGDBSearch({
   className,
   autoFocus = false,
   initialQuery = '',
+  externalGameId,
 }: IGDBSearchProps) {
   const [query, setQuery] = React.useState(initialQuery);
   const debouncedQuery = useDebounce(query, 300);
 
-  const { data: results, isLoading, isFetching, error } = useSearchIGDB(debouncedQuery);
+  const { data: results, isLoading, isFetching, error } = useSearchIGDB(debouncedQuery, { externalGameId });
 
   React.useEffect(() => {
     if (error instanceof ApiErrorException && error.status === 503) {

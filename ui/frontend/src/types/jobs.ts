@@ -109,6 +109,7 @@ export interface JobItem {
   createdAt: string;
   processedAt: string | null;
   igdbCandidatesJson?: string;  // Optional - present for PENDING_REVIEW items
+  externalGameId: string | null;
 }
 
 export interface JobItemListResponse {

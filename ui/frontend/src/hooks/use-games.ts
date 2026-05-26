@@ -74,17 +74,22 @@ function parseIGDBIdFromQuery(query: string): number | null {
  * 1. Direct ID lookup: Use "igdb:12345" format (case-insensitive)
  * 2. Name search: Any other query (requires 3+ characters)
  */
-export function useSearchIGDB(query: string, limit?: number) {
+export function useSearchIGDB(
+  query: string,
+  options?: { limit?: number; externalGameId?: string },
+) {
+  const limit = options?.limit;
+  const externalGameId = options?.externalGameId;
   const igdbId = parseIGDBIdFromQuery(query);
   const isIdLookup = igdbId !== null;
 
   return useQuery<IGDBGameCandidate[], Error>({
-    queryKey: gameKeys.igdbSearch(query),
+    queryKey: [...gameKeys.igdbSearch(query), externalGameId ?? null] as const,
     queryFn: () => {
       if (isIdLookup) {
         return gamesApi.getGameByIGDBId(igdbId);
       }
-      return gamesApi.searchIGDB(query, limit);
+      return gamesApi.searchIGDB(query, limit, externalGameId);
     },
     // ID lookup: always enabled (no min chars)
     // Name search: require 3+ characters

@@ -313,26 +313,26 @@ INSERT INTO storefronts (name, display_name, icon, base_url) VALUES
     ('gamersgate',        'GamersGate',        NULL,                               'https://www.gamersgate.com');
 
 -- Reference data: platforms
-INSERT INTO platforms (name, display_name, icon, default_storefront) VALUES
-    ('pc-windows',        'PC (Windows)',               'pc-windows-icon-light.svg',        'steam'),
-    ('playstation-5',     'PlayStation 5',              'playstation-5-icon-light.svg',      'playstation-store'),
-    ('playstation-4',     'PlayStation 4',              'playstation-4-icon-light.svg',      'playstation-store'),
-    ('playstation-3',     'PlayStation 3',              'playstation-3-icon-light.svg',      'playstation-store'),
-    ('playstation-vita',  'PlayStation Vita',           NULL,                                'playstation-store'),
-    ('playstation-psp',   'PlayStation Portable (PSP)', NULL,                                'playstation-store'),
-    ('xbox-series',       'Xbox Series X/S',            'xbox-series-icon-light.svg',        'microsoft-store'),
-    ('xbox-one',          'Xbox One',                   'xbox-one-icon-light.svg',           'microsoft-store'),
-    ('xbox-360',          'Xbox 360',                   'xbox-360-icon-light.svg',           'microsoft-store'),
-    ('nintendo-switch',   'Nintendo Switch',            'nintendo-switch-icon-light.svg',    'nintendo-eshop'),
-    ('nintendo-wii',      'Nintendo Wii',               'nintendo-wii-icon-light.svg',       'nintendo-eshop'),
-    ('ios',               'iOS',                        'ios-icon-light.svg',                'apple-app-store'),
-    ('android',           'Android',                    'android-icon-light.svg',            'google-play-store'),
-    ('playstation-2',     'PlayStation 2',              'playstation-2-icon-light.svg',      'physical'),
-    ('playstation',       'PlayStation',                'playstation-icon-light.svg',        'physical'),
-    ('nintendo-wii-u',    'Nintendo Wii U',             'nintendo-wii-u-icon-light.svg',     'nintendo-eshop'),
-    ('pc-linux',          'PC (Linux)',                 'pc-linux-icon-light.svg',           'steam'),
-    ('mac',               'Mac',                        'mac-icon-light.svg',                'steam'),
-    ('nintendo-switch-2', 'Nintendo Switch 2',          'nintendo-switch-2-icon-light.svg',  'nintendo-eshop');
+INSERT INTO platforms (name, display_name, icon, igdb_platform_id, default_storefront) VALUES
+    ('pc-windows',        'PC (Windows)',               'pc-windows-icon-light.svg',        6,   'steam'),
+    ('playstation-5',     'PlayStation 5',              'playstation-5-icon-light.svg',     167, 'playstation-store'),
+    ('playstation-4',     'PlayStation 4',              'playstation-4-icon-light.svg',     48,  'playstation-store'),
+    ('playstation-3',     'PlayStation 3',              'playstation-3-icon-light.svg',     9,   'playstation-store'),
+    ('playstation-vita',  'PlayStation Vita',           NULL,                               46,  'playstation-store'),
+    ('playstation-psp',   'PlayStation Portable (PSP)', NULL,                               38,  'playstation-store'),
+    ('xbox-series',       'Xbox Series X/S',            'xbox-series-icon-light.svg',       169, 'microsoft-store'),
+    ('xbox-one',          'Xbox One',                   'xbox-one-icon-light.svg',           49,  'microsoft-store'),
+    ('xbox-360',          'Xbox 360',                   'xbox-360-icon-light.svg',           12,  'microsoft-store'),
+    ('nintendo-switch',   'Nintendo Switch',            'nintendo-switch-icon-light.svg',   130, 'nintendo-eshop'),
+    ('nintendo-wii',      'Nintendo Wii',               'nintendo-wii-icon-light.svg',      5,   'nintendo-eshop'),
+    ('ios',               'iOS',                        'ios-icon-light.svg',               39,  'apple-app-store'),
+    ('android',           'Android',                    'android-icon-light.svg',           34,  'google-play-store'),
+    ('playstation-2',     'PlayStation 2',              'playstation-2-icon-light.svg',     8,   'physical'),
+    ('playstation',       'PlayStation',                'playstation-icon-light.svg',       7,   'physical'),
+    ('nintendo-wii-u',    'Nintendo Wii U',             'nintendo-wii-u-icon-light.svg',    41,  'nintendo-eshop'),
+    ('pc-linux',          'PC (Linux)',                 'pc-linux-icon-light.svg',           3,   'steam'),
+    ('mac',               'Mac',                        'mac-icon-light.svg',               14,  'steam'),
+    ('nintendo-switch-2', 'Nintendo Switch 2',          'nintendo-switch-2-icon-light.svg', 508, 'nintendo-eshop');
 
 -- Reference data: platform-storefront associations
 INSERT INTO platform_storefronts (platform, storefront) VALUES

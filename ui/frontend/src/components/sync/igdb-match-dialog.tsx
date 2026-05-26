@@ -13,6 +13,12 @@ interface IGDBMatchDialogProps {
   initialQuery?: string;
   onClose: () => void;
   onSelect: (candidate: IGDBGameCandidate) => void;
+  /**
+   * When set, scopes the IGDB search to platforms IGDB tags for the given
+   * external_game. Used by the sync pending-review manual-match flow
+   * (issue #615).
+   */
+  externalGameId?: string;
 }
 
 export function IGDBMatchDialog({
@@ -21,6 +27,7 @@ export function IGDBMatchDialog({
   initialQuery,
   onClose,
   onSelect,
+  externalGameId,
 }: IGDBMatchDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -28,7 +35,7 @@ export function IGDBMatchDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <IGDBSearch onSelect={onSelect} autoFocus initialQuery={initialQuery} />
+        <IGDBSearch onSelect={onSelect} autoFocus initialQuery={initialQuery} externalGameId={externalGameId} />
       </DialogContent>
     </Dialog>
   );

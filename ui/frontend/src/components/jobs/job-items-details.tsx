@@ -125,7 +125,9 @@ function ReviewItemWidget({
 
   const resolveMutation = useResolveJobItem();
   const skipMutation = useSkipJobItem();
-  const { data: searchResults, isLoading: isSearching } = useSearchIGDB(searchQuery);
+  const { data: searchResults, isLoading: isSearching } = useSearchIGDB(searchQuery, {
+    externalGameId: item.externalGameId ?? undefined,
+  });
 
   // Parse IGDB candidates from the item
   const candidates: IGDBGameCandidate[] = (() => {

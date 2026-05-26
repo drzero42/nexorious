@@ -505,12 +505,17 @@ export async function deleteUserGame(id: string): Promise<void> {
  */
 export async function searchIGDB(
   query: string,
-  limit?: number
+  limit?: number,
+  externalGameId?: string,
 ): Promise<IGDBGameCandidate[]> {
-  const response = await api.post<IGDBSearchApiResponse>('/games/search/igdb', {
+  const body: { query: string; limit: number; external_game_id?: string } = {
     query,
     limit: limit ?? 10,
-  });
+  };
+  if (externalGameId) {
+    body.external_game_id = externalGameId;
+  }
+  const response = await api.post<IGDBSearchApiResponse>('/games/search/igdb', body);
 
   return response.games.map(transformIGDBGameCandidate);
 }

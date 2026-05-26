@@ -378,7 +378,7 @@ func TestSearchIGDB_NonOKStatus(t *testing.T) {
 
 func TestClient_SearchGames_NotConfigured(t *testing.T) {
 	c := &Client{configured: false}
-	_, err := c.SearchGames(context.Background(), "anything", 10)
+	_, err := c.SearchGames(context.Background(), "anything", 10, nil)
 	if err != ErrIGDBNotConfigured {
 		t.Errorf("expected ErrIGDBNotConfigured, got %v", err)
 	}

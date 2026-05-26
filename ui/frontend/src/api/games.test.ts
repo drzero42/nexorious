@@ -634,6 +634,38 @@ describe('games.ts', () => {
     });
   });
 
+  describe('searchIGDB external_game_id', () => {
+    it('sends external_game_id in the request body when provided', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post(`${API_URL}/games/search/igdb`, async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ games: [], total: 0 });
+        }),
+      );
+
+      await searchIGDB('zelda', 10, 'eg-abc-123');
+
+      expect(capturedBody).not.toBeNull();
+      expect(capturedBody!.external_game_id).toBe('eg-abc-123');
+    });
+
+    it('omits external_game_id when not provided', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post(`${API_URL}/games/search/igdb`, async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ games: [], total: 0 });
+        }),
+      );
+
+      await searchIGDB('zelda');
+
+      expect(capturedBody).not.toBeNull();
+      expect('external_game_id' in capturedBody!).toBe(false);
+    });
+  });
+
   describe('getGameByIGDBId', () => {
     it('fetches game by IGDB ID successfully', async () => {
       server.use(

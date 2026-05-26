@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1941,5 +1944,109 @@ func TestUserGameWorker_BackfillsExternalGameID(t *testing.T) {
 	).Scan(ctx, &gotHours)
 	if gotHours != 50.0 {
 		t.Errorf("hours_played: want 50.0 (preserved), got %v", gotHours)
+	}
+}
+
+// TestSync_IGDBMatch_PassesPlatformIDsFromExternalGame verifies that the
+// IGDBMatchWorker resolves the external_game's platforms to IGDB IDs and passes
+// them to SearchGames. The IGDB httptest server captures every request body; the
+// test asserts that at least one body contains both platform IDs 6 (pc-windows)
+// and 3 (pc-linux) in a "platforms = (...)" clause.
+func TestSync_IGDBMatch_PassesPlatformIDsFromExternalGame(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	// Capture every Apicalypse body the IGDB client sends.
+	var mu sync.Mutex
+	var capturedBodies []string
+
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "tok", "expires_in": 3600, "token_type": "bearer"})
+	}))
+	defer tokenSrv.Close()
+
+	const igdbID = int32(777)
+	igdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBodies = append(capturedBodies, string(raw))
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": igdbID, "name": "Test Game", "slug": "test-game"},
+		})
+	}))
+	defer igdbSrv.Close()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+
+	// Seed platforms with their IGDB IDs (truncateAllTables clears the platforms
+	// table, so we can't rely on the migration seed data).
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO platforms (name, display_name, igdb_platform_id) VALUES ('pc-windows', 'PC (Windows)', 6) ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO platforms (name, display_name, igdb_platform_id) VALUES ('pc-linux', 'PC (Linux)', 3) ON CONFLICT DO NOTHING`)
+
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '999', 'Test Game', false, true, false)`,
+		egID, userID,
+	)
+	// Attach two platforms whose igdb_platform_id values were seeded above.
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-linux', 0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+
+	rc := newTestRiverClient(t)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '999', 'Test Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	igdbClient := newIGDBClientForTests(t, tokenSrv.URL, igdbSrv.URL)
+	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
+	job := &river.Job[tasks.IGDBMatchArgs]{
+		JobRow: &rivertype.JobRow{MaxAttempts: 5},
+		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// At least one request body must contain both IGDB platform IDs 6 and 3.
+	mu.Lock()
+	bodies := capturedBodies
+	mu.Unlock()
+
+	if len(bodies) == 0 {
+		t.Fatal("no requests reached the IGDB mock server")
+	}
+
+	// With the resolver's ORDER BY p.igdb_platform_id, the clause is built as
+	// platforms = (3,6) (ascending). Assert on the exact clause to avoid
+	// substring collisions with e.g. `limit 6;`.
+	foundPlatformFilter := false
+	for _, b := range bodies {
+		if strings.Contains(b, "platforms = (3,6)") {
+			foundPlatformFilter = true
+			break
+		}
+	}
+	if !foundPlatformFilter {
+		t.Errorf("expected at least one IGDB request body to contain 'platforms = (3,6)'; got bodies: %v", bodies)
 	}
 }
