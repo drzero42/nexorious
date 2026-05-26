@@ -162,14 +162,16 @@ function SyncDetailPage() {
     enabled: !!status?.activeJobId,
   });
 
-  const invalidatedJobRef = useRef<string | undefined>(undefined);
+  const previousActiveJobIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (activeJob?.isTerminal && activeJob.id !== invalidatedJobRef.current) {
-      invalidatedJobRef.current = activeJob.id;
+    const previous = previousActiveJobIdRef.current;
+    const current = status?.activeJobId ?? null;
+    previousActiveJobIdRef.current = current;
+    if (previous && !current) {
       queryClient.invalidateQueries({ queryKey: jobsKeys.recent(storefront) });
       queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(storefront) });
     }
-  }, [activeJob?.isTerminal, activeJob?.id, storefront, queryClient]);
+  }, [status?.activeJobId, storefront, queryClient]);
 
   // Mutations
   const { mutateAsync: updateConfig, isPending: isUpdating } = useUpdateSyncConfig();
