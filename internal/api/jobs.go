@@ -344,10 +344,12 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 
 	type jobWithChanges struct {
 		models.Job
-		Progress           map[string]any   `json:"progress"`
-		AddedItems         []syncChangeItem `json:"added_items"`
-		RemovedItems       []syncChangeItem `json:"removed_items"`
-		StatusChangedItems []syncChangeItem `json:"status_changed_items"`
+		Progress                map[string]any   `json:"progress"`
+		AddedItems              []syncChangeItem `json:"added_items"`
+		RemovedItems            []syncChangeItem `json:"removed_items"`
+		StatusChangedItems      []syncChangeItem `json:"status_changed_items"`
+		SkippedItems            []syncChangeItem `json:"skipped_items"`
+		AlreadyInLibraryItems   []syncChangeItem `json:"already_in_library_items"`
 	}
 
 	result := make([]jobWithChanges, 0, len(jobs))
@@ -381,6 +383,8 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		addedItems := []syncChangeItem{}
 		removedItems := []syncChangeItem{}
 		statusChangedItems := []syncChangeItem{}
+		skippedItems := []syncChangeItem{}
+		alreadyInLibraryItems := []syncChangeItem{}
 		for _, sc := range allChanges {
 			switch sc.ChangeType {
 			case "added":
@@ -391,15 +395,21 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 				statusChangedItems = append(statusChangedItems, syncChangeItem{
 					Title: sc.Title, OldStatus: sc.OldStatus, NewStatus: sc.NewStatus,
 				})
+			case "skipped":
+				skippedItems = append(skippedItems, syncChangeItem{Title: sc.Title})
+			case "already_in_library":
+				alreadyInLibraryItems = append(alreadyInLibraryItems, syncChangeItem{Title: sc.Title})
 			}
 		}
 
 		result = append(result, jobWithChanges{
-			Job:                j,
-			Progress:           progress,
-			AddedItems:         addedItems,
-			RemovedItems:       removedItems,
-			StatusChangedItems: statusChangedItems,
+			Job:                   j,
+			Progress:              progress,
+			AddedItems:            addedItems,
+			RemovedItems:          removedItems,
+			StatusChangedItems:    statusChangedItems,
+			SkippedItems:          skippedItems,
+			AlreadyInLibraryItems: alreadyInLibraryItems,
 		})
 	}
 

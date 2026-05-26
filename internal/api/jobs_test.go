@@ -933,12 +933,19 @@ func TestRecentJobs_ReturnsProgressAndAddedItems(t *testing.T) {
 	} else if len(statusChangedItems) != 0 {
 		t.Errorf("expected 0 status_changed_items, got %d", len(statusChangedItems))
 	}
+	if skippedItems, ok := job["skipped_items"].([]any); !ok {
+		t.Error("skipped_items should be a JSON array (not null/missing)")
+	} else if len(skippedItems) != 0 {
+		t.Errorf("expected 0 skipped_items, got %d", len(skippedItems))
+	}
+	if alreadyInLibraryItems, ok := job["already_in_library_items"].([]any); !ok {
+		t.Error("already_in_library_items should be a JSON array (not null/missing)")
+	} else if len(alreadyInLibraryItems) != 0 {
+		t.Errorf("expected 0 already_in_library_items, got %d", len(alreadyInLibraryItems))
+	}
 
 	if _, ok := job["completed_items"]; ok {
 		t.Error("completed_items should not be present in response")
-	}
-	if _, ok := job["skipped_items"]; ok {
-		t.Error("skipped_items should not be present in response")
 	}
 	if _, ok := job["failed_items"]; ok {
 		t.Error("failed_items should not be present in response")
