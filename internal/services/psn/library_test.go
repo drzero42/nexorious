@@ -412,6 +412,7 @@ func TestGetLibrary_MergesResults(t *testing.T) {
 	c.SetGamelistURL(srv.URL)
 	c.SetGraphQLURL(srv.URL)
 	c.SetAuthFn(func(_ context.Context, _ string) (string, error) { return "test-token", nil })
+	c.SetLimiter(rate.NewLimiter(rate.Inf, 1))
 
 	var total int
 	err := c.GetLibrary(context.Background(), "fake-npsso", 10, func(batch []ExternalGameEntry) error {
@@ -462,6 +463,7 @@ func TestGetLibrary_GraphQLSchemaChanged_ReturnsSentinel(t *testing.T) {
 	c.SetGamelistURL(srv.URL)
 	c.SetGraphQLURL(srv.URL)
 	c.SetAuthFn(func(_ context.Context, _ string) (string, error) { return "tok", nil })
+	c.SetLimiter(rate.NewLimiter(rate.Inf, 1))
 
 	err := c.GetLibrary(context.Background(), "npsso", 10, func([]ExternalGameEntry) error { return nil })
 	if !errors.Is(err, ErrPSNGraphQLSchemaChanged) {
