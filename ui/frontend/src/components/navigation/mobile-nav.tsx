@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Menu, LogOut, ArrowLeftRight } from 'lucide-react';
+import { Menu, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -90,16 +90,6 @@ export function MobileNav() {
                         </AvatarFallback>
                       </Avatar>
                       <span>{user?.username}</span>
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
-                      to="/import-export"
-                      onClick={handleNavigate}
-                      className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
-                    >
-                      <ArrowLeftRight className="h-4 w-4" />
-                      <span>Import / Export</span>
                     </Link>
                   </li>
                   <li>
