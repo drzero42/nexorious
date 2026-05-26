@@ -386,7 +386,7 @@ describe('use-games hooks', () => {
         })
       );
 
-      const { result } = renderHook(() => useSearchIGDB('zelda', 5), {
+      const { result } = renderHook(() => useSearchIGDB('zelda', { limit: 5 }), {
         wrapper: QueryWrapper,
       });
 
@@ -500,6 +500,42 @@ describe('use-games hooks', () => {
       });
 
       expect(fetchSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('useSearchIGDB with externalGameId', () => {
+    it('forwards externalGameId to the API client', async () => {
+      let capturedBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post(`${API_URL}/games/search/igdb`, async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ games: [], total: 0 });
+        }),
+      );
+
+      const { result } = renderHook(
+        () => useSearchIGDB('zelda', { externalGameId: 'eg-xyz' }),
+        { wrapper: QueryWrapper },
+      );
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(capturedBody).not.toBeNull();
+      expect(capturedBody!.external_game_id).toBe('eg-xyz');
+    });
+
+    it('produces a different cache key when externalGameId changes', async () => {
+      let calls = 0;
+      server.use(
+        http.post(`${API_URL}/games/search/igdb`, () => {
+          calls++;
+          return HttpResponse.json({ games: [], total: 0 });
+        }),
+      );
+
+      renderHook(() => useSearchIGDB('zelda', { externalGameId: 'eg-a' }), { wrapper: QueryWrapper });
+      renderHook(() => useSearchIGDB('zelda', { externalGameId: 'eg-b' }), { wrapper: QueryWrapper });
+
+      await waitFor(() => expect(calls).toBe(2));
     });
   });
 
