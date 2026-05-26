@@ -65,10 +65,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 
 	fetchErr := a.client.GetLibrary(ctx, a.userID, func(batch []ExternalGameEntry) error {
 		for start := 0; start < len(batch); start += chunkSize {
-			end := start + chunkSize
-			if end > len(batch) {
-				end = len(batch)
-			}
+			end := min(start+chunkSize, len(batch))
 			mapped := make([]storefrontadapter.ExternalGameEntry, 0, end-start)
 			for _, e := range batch[start:end] {
 				mapped = append(mapped, storefrontadapter.ExternalGameEntry{
