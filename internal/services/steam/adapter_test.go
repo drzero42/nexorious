@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"golang.org/x/time/rate"
 
@@ -31,9 +30,9 @@ func TestSteamAdapter_APIKeyRejected_ReturnsErrCredentials(t *testing.T) {
 	}
 }
 
-// TestSteamAdapter_RateLimitExhausted_RetriesUntilSuccess verifies that when the
-// global backoff budget is exhausted and a game still returns 429, GetLibrary keeps
-// retrying instead of silently dropping the game.
+// TestSteamAdapter_RateLimitExhausted_RetriesUntilSuccess verifies that an appid
+// repeatedly rate-limited by Steam is retried until it succeeds — we never
+// silently drop a game.
 func TestSteamAdapter_RateLimitExhausted_RetriesUntilSuccess(t *testing.T) {
 	ownedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -41,9 +40,9 @@ func TestSteamAdapter_RateLimitExhausted_RetriesUntilSuccess(t *testing.T) {
 	}))
 	defer ownedSrv.Close()
 
-	// appdetails returns 429 for the first 4 calls (forcing ErrRateLimited twice,
-	// exhausting the single-slot budget), then succeeds on call 5.
-	// Retry-After: 0 makes the client's internal per-attempt retry instant.
+	// appdetails returns 429 for the first 4 calls (the adapter sees 2 ErrRateLimited
+	// because the client retries inline once before returning), then succeeds on
+	// call 5. Retry-After: 0 makes the client's inline retry instant.
 	var callCount atomic.Int32
 	detailsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		n := callCount.Add(1)
@@ -58,7 +57,7 @@ func TestSteamAdapter_RateLimitExhausted_RetriesUntilSuccess(t *testing.T) {
 	defer detailsSrv.Close()
 
 	c := steam.NewClientForTests(ownedSrv.Client(), rate.NewLimiter(rate.Inf, 1), ownedSrv.URL, detailsSrv.URL)
-	a := steam.NewAdapterForTests(c, "key", "steamid", []time.Duration{0})
+	a := steam.NewAdapterForTests(c, "key", "steamid", 0)
 
 	var got []storefrontadapter.ExternalGameEntry
 	err := a.GetLibrary(context.Background(), 10, func(batch []storefrontadapter.ExternalGameEntry) error {
@@ -92,7 +91,7 @@ func TestSteamAdapter_AppdetailsHardError_FailsSync(t *testing.T) {
 	defer detailsSrv.Close()
 
 	c := steam.NewClientForTests(ownedSrv.Client(), rate.NewLimiter(rate.Inf, 1), ownedSrv.URL, detailsSrv.URL)
-	a := steam.NewAdapterForTests(c, "key", "steamid", []time.Duration{0})
+	a := steam.NewAdapterForTests(c, "key", "steamid", 0)
 
 	err := a.GetLibrary(context.Background(), 10, func([]storefrontadapter.ExternalGameEntry) error { return nil })
 	if err == nil {

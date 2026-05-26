@@ -10,32 +10,47 @@ import (
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
 )
 
+// defaultRateLimitRetryWait is how long we sleep between retries after a 429 from
+// the Steam Store API. Short enough to resume promptly once Steam's sliding-window
+// limit clears, long enough that we are not spamming during the cooldown.
+const defaultRateLimitRetryWait = 10 * time.Second
+
 // Adapter wraps a Client with pre-configured credentials and implements storefrontadapter.Adapter.
 type Adapter struct {
-	client  *Client
-	apiKey  string
-	steamID string
-	backoffs []time.Duration
+	client    *Client
+	apiKey    string
+	steamID   string
+	retryWait time.Duration
 }
 
 // NewAdapter returns a storefrontadapter.Adapter for Steam.
 func NewAdapter(client *Client, apiKey, steamID string) storefrontadapter.Adapter {
 	return &Adapter{
-		client:   client,
-		apiKey:   apiKey,
-		steamID:  steamID,
-		backoffs: []time.Duration{2 * time.Minute, 5 * time.Minute},
+		client:    client,
+		apiKey:    apiKey,
+		steamID:   steamID,
+		retryWait: defaultRateLimitRetryWait,
 	}
 }
 
-// NewAdapterForTests returns an Adapter with custom backoff durations. Only for use in tests.
-func NewAdapterForTests(client *Client, apiKey, steamID string, backoffs []time.Duration) storefrontadapter.Adapter {
-	return &Adapter{client: client, apiKey: apiKey, steamID: steamID, backoffs: backoffs}
+// NewAdapterForTests returns an Adapter with a custom rate-limit retry wait. Pass 0
+// for instant retries to keep tests fast.
+func NewAdapterForTests(client *Client, apiKey, steamID string, retryWait time.Duration) storefrontadapter.Adapter {
+	return &Adapter{
+		client:    client,
+		apiKey:    apiKey,
+		steamID:   steamID,
+		retryWait: retryWait,
+	}
 }
 
 // GetLibrary fetches the user's Steam library and streams results in batches of batchSize.
 // PlaytimeHours in each ExternalGameEntry holds the total for the game; the worker assigns
 // it to the first platform row only.
+//
+// On HTTP 429 from the Steam Store API, GetLibrary sleeps a fixed duration and retries
+// the same appid indefinitely until success or context cancellation — we must not silently
+// drop any entries.
 func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]storefrontadapter.ExternalGameEntry) error) error {
 	if batchSize <= 0 {
 		batchSize = 10
@@ -47,11 +62,8 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	if err != nil {
 		return fmt.Errorf("steam: fetch owned games: %w", err)
 	}
-
 	slog.Debug("steam: GetOwnedGames returned", "total_games", len(owned), "steam_id", a.steamID)
 
-	// Global backoff state shared across the game loop.
-	backoffIdx := 0
 	processedCount := 0
 
 	for start := 0; start < len(owned); start += batchSize {
@@ -59,7 +71,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 
 		var entries []storefrontadapter.ExternalGameEntry
 		for i, og := range owned[start:end] {
-			gameIdx := start + i + 1 // 1-based position across all owned games
+			gameIdx := start + i + 1
 
 			slog.Debug("steam: fetching appdetails",
 				"game_index", gameIdx,
@@ -68,75 +80,9 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				"title", og.Title,
 			)
 
-			pl, detErr := a.client.GetAppDetailsPlatforms(ctx, og.AppID)
-			if detErr != nil {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				if errors.Is(detErr, ErrRateLimited) && backoffIdx < len(a.backoffs) {
-					d := a.backoffs[backoffIdx]
-					backoffIdx++
-					slog.Warn("steam: rate limited, backing off",
-						"wait", d,
-						"appid", og.AppID,
-						"title", og.Title,
-						"game_index", gameIdx,
-						"backoff_slot", backoffIdx,
-					)
-					timer := time.NewTimer(d)
-					select {
-					case <-timer.C:
-					case <-ctx.Done():
-						timer.Stop()
-						return ctx.Err()
-					}
-					slog.Debug("steam: backoff complete, retrying appdetails",
-						"appid", og.AppID,
-						"title", og.Title,
-						"game_index", gameIdx,
-					)
-					pl, detErr = a.client.GetAppDetailsPlatforms(ctx, og.AppID)
-				}
-				if detErr != nil {
-					if ctx.Err() != nil {
-						return ctx.Err()
-					}
-					if !errors.Is(detErr, ErrRateLimited) {
-						return fmt.Errorf("steam: appdetails failed for game %d/%d (%s, appid %d): %w",
-							gameIdx, len(owned), og.Title, og.AppID, detErr)
-					}
-					// Still rate-limited after the initial backoff (or budget already exhausted).
-					// Retry indefinitely with the last backoff duration until success or
-					// context cancellation — we must not silently drop library entries.
-					for {
-						d := a.backoffs[len(a.backoffs)-1]
-						slog.Warn("steam: rate limited (budget exhausted), retrying",
-							"wait", d,
-							"appid", og.AppID,
-							"title", og.Title,
-							"game_index", gameIdx,
-						)
-						if err := steamSleepCtx(ctx, d); err != nil {
-							return err
-						}
-						slog.Debug("steam: retry after rate-limit backoff",
-							"appid", og.AppID,
-							"title", og.Title,
-							"game_index", gameIdx,
-						)
-						pl, detErr = a.client.GetAppDetailsPlatforms(ctx, og.AppID)
-						if detErr == nil {
-							break
-						}
-						if ctx.Err() != nil {
-							return ctx.Err()
-						}
-						if !errors.Is(detErr, ErrRateLimited) {
-							return fmt.Errorf("steam: appdetails failed for game %d/%d (%s, appid %d): %w",
-								gameIdx, len(owned), og.Title, og.AppID, detErr)
-						}
-					}
-				}
+			pl, err := a.fetchAppDetailsWithRetry(ctx, og, gameIdx, len(owned))
+			if err != nil {
+				return err
 			}
 
 			var platforms []string
@@ -151,10 +97,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 			}
 			if len(platforms) == 0 {
 				slog.Debug("steam: appdetails returned no platforms (delisted/removed), defaulting to pc-windows",
-					"appid", og.AppID,
-					"title", og.Title,
-					"game_index", gameIdx,
-				)
+					"appid", og.AppID, "title", og.Title, "game_index", gameIdx)
 				platforms = []string{"pc-windows"}
 			}
 
@@ -171,7 +114,6 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				slog.Debug("steam: sync progress",
 					"processed", processedCount,
 					"total", len(owned),
-					"backoff_slots_used", backoffIdx,
 					"steam_id", a.steamID,
 				)
 			}
@@ -190,4 +132,52 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		"steam_id", a.steamID,
 	)
 	return nil
+}
+
+// fetchAppDetailsWithRetry calls GetAppDetailsPlatforms for one appid, retrying
+// indefinitely on ErrRateLimited with a fixed sleep between attempts. The first 429
+// for a given appid logs at WARN; subsequent retries log at DEBUG so we don't spam
+// the log while waiting out a sliding-window cooldown.
+func (a *Adapter) fetchAppDetailsWithRetry(ctx context.Context, og OwnedGame, gameIdx, totalGames int) (Platforms, error) {
+	for attempt := 1; ; attempt++ {
+		pl, err := a.client.GetAppDetailsPlatforms(ctx, og.AppID)
+		if err == nil {
+			if attempt > 1 {
+				slog.Debug("steam: appdetails succeeded after retry",
+					"appid", og.AppID,
+					"title", og.Title,
+					"game_index", gameIdx,
+					"attempt", attempt,
+				)
+			}
+			return pl, nil
+		}
+		if ctx.Err() != nil {
+			return Platforms{}, ctx.Err()
+		}
+		if !errors.Is(err, ErrRateLimited) {
+			return Platforms{}, fmt.Errorf("steam: appdetails failed for game %d/%d (%s, appid %d): %w",
+				gameIdx, totalGames, og.Title, og.AppID, err)
+		}
+		if attempt == 1 {
+			slog.Warn("steam: rate limited, sleeping before retry",
+				"wait", a.retryWait,
+				"appid", og.AppID,
+				"title", og.Title,
+				"game_index", gameIdx,
+				"attempt", attempt,
+			)
+		} else {
+			slog.Debug("steam: rate limited, sleeping before retry",
+				"wait", a.retryWait,
+				"appid", og.AppID,
+				"title", og.Title,
+				"game_index", gameIdx,
+				"attempt", attempt,
+			)
+		}
+		if err := steamSleepCtx(ctx, a.retryWait); err != nil {
+			return Platforms{}, err
+		}
+	}
 }
