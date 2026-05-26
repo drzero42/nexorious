@@ -287,7 +287,7 @@ export function formatRelativeTime(dateStr: string | null): string {
  * Check if a job is currently in progress (not terminal).
  */
 export function isJobInProgress(job: Job): boolean {
-  return !job.isTerminal && job.status !== JobStatus.PENDING;
+  return !job.isTerminal;
 }
 
 /**

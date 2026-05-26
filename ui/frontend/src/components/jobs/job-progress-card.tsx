@@ -54,7 +54,7 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {showProgress && job.progress && (
+          {showProgress && job.progress && job.progress.total > 0 && (
             <div>
               <div className="mb-2 flex justify-between text-sm text-muted-foreground">
                 <span>Progress</span>

@@ -37,9 +37,12 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		return fmt.Errorf("steam: fetch owned games: %w", err)
 	}
 
+	slog.Debug("steam: GetOwnedGames returned", "total_games", len(owned), "steam_id", a.steamID)
+
 	// Global backoff state shared across the game loop.
 	backoffs := []time.Duration{2 * time.Minute, 5 * time.Minute}
 	backoffIdx := 0
+	skippedCount := 0
 
 	for start := 0; start < len(owned); start += batchSize {
 		end := min(start+batchSize, len(owned))
@@ -54,7 +57,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				if errors.Is(detErr, ErrRateLimited) && backoffIdx < len(backoffs) {
 					d := backoffs[backoffIdx]
 					backoffIdx++
-					slog.Warn("steam: rate limited, backing off", "wait", d, "appid", og.AppID)
+					slog.Warn("steam: rate limited, backing off", "wait", d, "appid", og.AppID, "backoff_slot", backoffIdx)
 					timer := time.NewTimer(d)
 					select {
 					case <-timer.C:
@@ -68,7 +71,16 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 					if ctx.Err() != nil {
 						return ctx.Err()
 					}
-					slog.Warn("steam: appdetails failed, skipping platform update", "appid", og.AppID, "err", detErr)
+					skippedCount++
+					slog.Warn("steam: appdetails failed, skipping game",
+						"appid", og.AppID,
+						"title", og.Title,
+						"err", detErr,
+						"skipped_so_far", skippedCount,
+						"processed_so_far", start+len(entries),
+						"total_owned", len(owned),
+						"backoff_budget_exhausted", backoffIdx >= len(backoffs),
+					)
 					continue
 				}
 			}
@@ -103,5 +115,12 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 			}
 		}
 	}
+
+	slog.Debug("steam: library fetch complete",
+		"total_owned", len(owned),
+		"skipped", skippedCount,
+		"processed", len(owned)-skippedCount,
+		"steam_id", a.steamID,
+	)
 	return nil
 }
