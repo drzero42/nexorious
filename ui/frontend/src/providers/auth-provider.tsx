@@ -114,6 +114,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const newAccessToken = response.access_token;
         const newRefreshToken = response.refresh_token || currentRefreshToken;
 
+        // Update ref immediately so the retry-after-refresh in apiCall sees
+        // the new token (setState is async, ref update is sync).
+        tokensRef.current = { accessToken: newAccessToken, refreshToken: newRefreshToken };
         setAccessToken(newAccessToken);
         setRefreshToken(newRefreshToken);
 
