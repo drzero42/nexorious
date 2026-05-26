@@ -276,8 +276,6 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		jih := NewJobItemsHandler(db, riverClient)
 		jobItemsGroup := e.Group("/api/job-items", auth.JWTMiddleware(cfg.SecretKey, db))
 		jobItemsGroup.GET("/:id", jih.HandleGetJobItem)
-		jobItemsGroup.POST("/:id/resolve", jih.HandleResolveItem)
-		jobItemsGroup.POST("/:id/skip", jih.HandleSkipItem)
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
 
 		// Import routes (all JWT-protected)

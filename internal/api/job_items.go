@@ -4,9 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
@@ -15,7 +13,6 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
-	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 type JobItemsHandler struct {
@@ -47,164 +44,6 @@ func (h *JobItemsHandler) HandleGetJobItem(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, item)
-}
-
-// HandleResolveItem handles POST /api/job-items/:id/resolve.
-func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
-	itemID := c.Param("id")
-
-	var body struct {
-		IGDBID int `json:"igdb_id"`
-	}
-	if err := c.Bind(&body); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
-	}
-
-	var item models.JobItem
-	err := h.db.NewRaw(`SELECT * FROM job_items WHERE id = ? AND user_id = ?`, itemID, userID).
-		Scan(context.Background(), &item)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "not found")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job item")
-	}
-
-	if item.Status != models.JobItemStatusPendingReview {
-		return echo.NewHTTPError(http.StatusConflict, "item is not pending review")
-	}
-
-	now := time.Now().UTC()
-	_, err = h.db.NewRaw(`
-		UPDATE job_items
-		SET resolved_igdb_id = ?, resolved_at = ?, status = ?
-		WHERE id = ?`,
-		body.IGDBID, now, models.JobItemStatusPending, itemID,
-	).Exec(context.Background())
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve item")
-	}
-
-	// Propagate the resolution to external_games and to same-title sibling SKUs.
-	if item.ExternalGameID != nil && *item.ExternalGameID != "" {
-		var eg models.ExternalGame
-		if egErr := h.db.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(context.Background()); egErr == nil {
-			// Ensure the games row exists (FK on external_games.resolved_igdb_id for siblings).
-			if _, err := h.db.NewRaw(
-				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
-				body.IGDBID, eg.Title,
-			).Exec(context.Background()); err != nil {
-				slog.Error("job_items: ensure game row failed", "err", err, "igdb_id", body.IGDBID)
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve game")
-			}
-			// NOTE: Do NOT update the primary external_game.resolved_igdb_id here.
-			// Stage 3 (UserGameWorker) reads job_item.resolved_igdb_id and applies it.
-			// Find sibling external_games (same user/storefront/title, different SKU, still unresolved).
-			var siblings []models.ExternalGame
-			if err := h.db.NewSelect().Model(&siblings).
-				Where("user_id = ? AND storefront = ? AND title = ? AND id != ? AND resolved_igdb_id IS NULL",
-					eg.UserID, eg.Storefront, eg.Title, eg.ID).
-				Scan(context.Background()); err != nil {
-				slog.Error("job_items: query siblings failed", "err", err, "external_game_id", eg.ID)
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to query sibling games")
-			}
-			for _, sib := range siblings {
-				// Resolve the sibling external_game so step 3.6 in the worker skips IGDB search.
-				if _, err := h.db.NewRaw(
-					`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
-					body.IGDBID, sib.ID,
-				).Exec(context.Background()); err != nil {
-					slog.Error("job_items: resolve sibling external_game failed", "err", err, "sibling_id", sib.ID)
-					return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve sibling game")
-				}
-				// Re-queue any pending_review job_items for this sibling.
-				var sibItems []models.JobItem
-				if err := h.db.NewRaw(
-					`SELECT * FROM job_items WHERE user_id = ? AND status = 'pending_review' AND external_game_id = ?`,
-					eg.UserID, sib.ID,
-				).Scan(context.Background(), &sibItems); err != nil {
-					slog.Error("job_items: query sibling job_items failed", "err", err, "sibling_id", sib.ID)
-					return echo.NewHTTPError(http.StatusInternalServerError, "failed to query sibling items")
-				}
-				for _, si := range sibItems {
-					if _, err := h.db.NewRaw(
-						`UPDATE job_items SET status = 'pending' WHERE id = ?`, si.ID,
-					).Exec(context.Background()); err != nil {
-						slog.Error("job_items: re-queue sibling job_item failed", "err", err, "job_item_id", si.ID)
-						return echo.NewHTTPError(http.StatusInternalServerError, "failed to re-queue sibling item")
-					}
-					if err := tasks.EnqueueOrFail(context.Background(), h.db, h.riverClient, si.ID, tasks.UserGameArgs{JobItemID: si.ID}); err != nil {
-						slog.Error("job_items: enqueue sibling Stage 3 failed", "err", err, "job_item_id", si.ID)
-					}
-				}
-			}
-		}
-	}
-
-	if err := tasks.EnqueueOrFail(context.Background(), h.db, h.riverClient, itemID, tasks.UserGameArgs{JobItemID: itemID}); err != nil {
-		slog.Error("job_items: enqueue Stage 3 failed", "err", err, "job_item_id", itemID)
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue processing")
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
-}
-
-// HandleSkipItem handles POST /api/job-items/:id/skip.
-func (h *JobItemsHandler) HandleSkipItem(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
-	itemID := c.Param("id")
-
-	var body struct {
-		Reason string `json:"reason"`
-	}
-	_ = c.Bind(&body) // optional body
-
-	var item models.JobItem
-	err := h.db.NewRaw(`SELECT * FROM job_items WHERE id = ? AND user_id = ?`, itemID, userID).
-		Scan(context.Background(), &item)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "not found")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job item")
-	}
-
-	if item.Status != models.JobItemStatusPendingReview {
-		return echo.NewHTTPError(http.StatusConflict, "item is not pending review")
-	}
-
-	_, err = h.db.NewRaw(`
-		UPDATE job_items SET status = ? WHERE id = ?`,
-		models.JobItemStatusSkipped, itemID,
-	).Exec(context.Background())
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip item")
-	}
-
-	// For sync items, mark the external game as skipped so it won't be
-	// re-queued on the next sync run.
-	if item.ExternalGameID != nil && *item.ExternalGameID != "" {
-		if _, err := h.db.NewRaw(
-			`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ? AND user_id = ?`,
-			*item.ExternalGameID, userID,
-		).Exec(context.Background()); err != nil {
-			slog.Error("job_items: mark external_game skipped failed", "err", err, "external_game_id", *item.ExternalGameID)
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
-		}
-	}
-
-	tasks.SyncCheckJobCompletion(context.Background(), h.db, item.JobID)
-
-	return c.JSON(http.StatusOK, map[string]string{"status": "skipped"})
 }
 
 // HandleRetryItem handles POST /api/job-items/:id/retry.
