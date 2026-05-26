@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -182,7 +183,7 @@ func TestClient_SearchGames(t *testing.T) {
 		configured: true,
 	}
 
-	results, err := client.SearchGames(context.Background(), "The Witcher 3", 10)
+	results, err := client.SearchGames(context.Background(), "The Witcher 3", 10, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -257,5 +258,117 @@ func TestClient_GetGameByID_NotFound(t *testing.T) {
 	}
 	if !errors.Is(err, ErrGameNotFound) {
 		t.Fatalf("expected ErrGameNotFound, got %v", err)
+	}
+}
+
+func TestClient_SearchGames_EmptyPlatformIDs_NoClause(t *testing.T) {
+	var receivedBodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		receivedBodies = append(receivedBodies, string(body))
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
+			{ID: 1, Name: "X", Slug: "x"},
+		})
+	}))
+	defer srv.Close()
+
+	client := testIGDBClient(t, srv)
+
+	_, err := client.SearchGames(context.Background(), "x", 10, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The field list contains "platforms.name" (we request platforms in results).
+	// What we want to assert is that no platform-FILTER clause is present.
+	for _, b := range receivedBodies {
+		if strings.Contains(b, "platforms = (") {
+			t.Fatalf("nil platformIDs must not add a 'platforms = (...)' clause; got %q", b)
+		}
+	}
+}
+
+func TestClient_SearchGames_NonEmptyPlatformIDs_AppendsClause(t *testing.T) {
+	var receivedBodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		receivedBodies = append(receivedBodies, string(body))
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
+			{ID: 1, Name: "X", Slug: "x"},
+		})
+	}))
+	defer srv.Close()
+
+	client := testIGDBClient(t, srv)
+
+	_, err := client.SearchGames(context.Background(), "x", 10, []int{6, 14, 3})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(receivedBodies) == 0 {
+		t.Fatal("no IGDB requests captured")
+	}
+	for _, b := range receivedBodies {
+		if !strings.Contains(b, "platforms = (6,14,3)") {
+			t.Fatalf("body must contain 'platforms = (6,14,3)'; got %q", b)
+		}
+	}
+}
+
+func TestClient_SearchGames_EmptyFilteredResult_FallsBackUnfiltered(t *testing.T) {
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(body))
+		if strings.Contains(string(body), "platforms = (") {
+			_ = json.NewEncoder(w).Encode([]igdbGameResponse{})
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
+			{ID: 42, Name: "Fallback Hit", Slug: "fallback-hit"},
+		})
+	}))
+	defer srv.Close()
+
+	client := testIGDBClient(t, srv)
+
+	results, err := client.SearchGames(context.Background(), "fallback hit", 10, []int{6})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected fallback to return at least one result")
+	}
+	if results[0].IgdbID != 42 {
+		t.Fatalf("expected fallback result IGDB ID 42, got %d", results[0].IgdbID)
+	}
+
+	var sawFiltered, sawUnfiltered bool
+	for _, b := range bodies {
+		if strings.Contains(b, "platforms = (") {
+			sawFiltered = true
+		} else {
+			sawUnfiltered = true
+		}
+	}
+	if !sawFiltered || !sawUnfiltered {
+		t.Fatalf("expected both filtered and unfiltered request bodies; filtered=%v unfiltered=%v bodies=%v", sawFiltered, sawUnfiltered, bodies)
+	}
+}
+
+func testIGDBClient(t *testing.T, srv *httptest.Server) *Client {
+	t.Helper()
+	return &Client{
+		httpClient: srv.Client(),
+		auth: &AuthManager{
+			accessToken:  "test-token",
+			expiresAt:    time.Now().Add(1 * time.Hour),
+			clientID:     "test",
+			clientSecret: "test",
+			httpClient:   srv.Client(),
+			tokenURL:     srv.URL,
+		},
+		limiter:    rate.NewLimiter(rate.Inf, 1),
+		apiURL:     srv.URL,
+		configured: true,
 	}
 }

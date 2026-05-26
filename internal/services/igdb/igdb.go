@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -113,11 +114,16 @@ const (
 	igdbGameFields = `name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name`
 )
 
-// SearchGames implements the full IGDB search pipeline.
-func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]GameMetadata, error) {
+// SearchGames implements the full IGDB search pipeline. When platformIDs is
+// non-empty, every IGDB query is scoped to those platforms; if the filtered
+// search returns zero candidates, SearchGames retries once unfiltered (IGDB's
+// platform tagging is incomplete and some legitimate titles lack PC tags).
+func (c *Client) SearchGames(ctx context.Context, query string, limit int, platformIDs []int) ([]GameMetadata, error) {
 	if !c.configured {
 		return nil, ErrIGDBNotConfigured
 	}
+
+	whereSuffix, searchTail := buildPlatformsClause(platformIDs)
 
 	queries := expandQueries(query)
 	original := queries[0]
@@ -131,13 +137,13 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 
 	g.Go(func() error {
 		var err error
-		fuzzyResults, err = c.searchIGDB(gctx, fmt.Sprintf(`search "%s"; fields %s; limit %d;`, escapeIGDB(original), igdbGameFields, limit))
+		fuzzyResults, err = c.searchIGDB(gctx, fmt.Sprintf(`search "%s"; fields %s; limit %d;%s`, escapeIGDB(original), igdbGameFields, limit, searchTail))
 		return err
 	})
 
 	g.Go(func() error {
 		var err error
-		exactResults, err = c.searchIGDB(gctx, fmt.Sprintf(`fields %s; where name = "%s"; limit %d;`, igdbGameFields, escapeIGDB(original), limit))
+		exactResults, err = c.searchIGDB(gctx, fmt.Sprintf(`fields %s; where name = "%s"%s; limit %d;`, igdbGameFields, escapeIGDB(original), whereSuffix, limit))
 		return err
 	})
 
@@ -167,7 +173,7 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 	// "Batman: Arkham Knight", whose exact search finds the base game (score 1.0)
 	// and beats DLC skins (score 0.88) in post-ranking.
 	for _, expandedQuery := range queries[1:] {
-		exactExp, err := c.searchIGDB(ctx, fmt.Sprintf(`fields %s; where name = "%s"; limit %d;`, igdbGameFields, escapeIGDB(expandedQuery), limit))
+		exactExp, err := c.searchIGDB(ctx, fmt.Sprintf(`fields %s; where name = "%s"%s; limit %d;`, igdbGameFields, escapeIGDB(expandedQuery), whereSuffix, limit))
 		if err == nil {
 			for _, game := range exactExp {
 				if !seen[game.ID] {
@@ -176,7 +182,7 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 				}
 			}
 		}
-		fuzzyExp, err := c.searchIGDB(ctx, fmt.Sprintf(`search "%s"; fields %s; limit %d;`, escapeIGDB(expandedQuery), igdbGameFields, limit))
+		fuzzyExp, err := c.searchIGDB(ctx, fmt.Sprintf(`search "%s"; fields %s; limit %d;%s`, escapeIGDB(expandedQuery), igdbGameFields, limit, searchTail))
 		if err == nil {
 			for _, game := range fuzzyExp {
 				if !seen[game.ID] {
@@ -200,10 +206,7 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 		}
 	}
 
-	// Sort by score descending
 	sortByScore(candidates)
-
-	// Truncate to limit
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
 	}
@@ -212,6 +215,16 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 	for i, c := range candidates {
 		results[i] = c.metadata
 	}
+
+	// Empty-result fallback: if a platform filter was applied and produced no
+	// candidates, retry once without the filter. IGDB's platform tagging is
+	// incomplete; legitimate Steam games occasionally lack a PC platform tag.
+	if len(results) == 0 && len(platformIDs) > 0 {
+		slog.Debug("igdb: platform-filtered search returned 0 candidates, retrying unfiltered",
+			"query", query, "platform_ids", platformIDs)
+		return c.SearchGames(ctx, query, limit, nil)
+	}
+
 	return results, nil
 }
 
@@ -556,6 +569,30 @@ func namedItemNames(items []igdbNamedItem) string {
 
 func escapeIGDB(s string) string {
 	return strings.ReplaceAll(s, `"`, `\"`)
+}
+
+// buildPlatformsClause builds Apicalypse fragments that scope a query to a
+// platform set. Returns ("", "") when platformIDs is empty.
+//
+// For queries that already carry a `where ... = "..."` clause (exact-name
+// lookups), the caller appends whereSuffix — " & platforms = (6,14,3)" — to
+// the existing where (Apicalypse AND-joins with &).
+//
+// For `search "..."; fields ...` queries (which take an optional standalone
+// `where` placed after fields), the caller appends searchTail — a fully-formed
+// ` where platforms = (6,14,3);` statement.
+func buildPlatformsClause(platformIDs []int) (whereSuffix, searchTail string) {
+	if len(platformIDs) == 0 {
+		return "", ""
+	}
+	parts := make([]string, len(platformIDs))
+	for i, id := range platformIDs {
+		parts[i] = strconv.Itoa(id)
+	}
+	csv := strings.Join(parts, ",")
+	whereSuffix = " & platforms = (" + csv + ")"
+	searchTail = " where platforms = (" + csv + ");"
+	return
 }
 
 // sortByScore sorts candidates by score descending (insertion sort — lists are small).

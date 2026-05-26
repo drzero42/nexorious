@@ -399,7 +399,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 
 	// IGDB search.
 	if w.IGDBClient != nil && w.IGDBClient.Configured() {
-		candidates, err := w.IGDBClient.SearchGames(ctx, eg.Title, 10)
+		candidates, err := w.IGDBClient.SearchGames(ctx, eg.Title, 10, nil)
 		if err != nil {
 			if job.Attempt >= job.MaxAttempts {
 				slog.Warn("igdb_match: IGDB failed on final attempt, marking pending_review",

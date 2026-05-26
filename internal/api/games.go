@@ -201,7 +201,7 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 		req.Limit = 50
 	}
 
-	results, err := h.igdb.SearchGames(c.Request().Context(), req.Query, req.Limit)
+	results, err := h.igdb.SearchGames(c.Request().Context(), req.Query, req.Limit, nil)
 	if err != nil {
 		return h.mapIGDBError(c, err)
 	}
