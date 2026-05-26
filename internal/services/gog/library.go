@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 )
@@ -41,17 +42,21 @@ type product struct {
 // account/getFilteredProducts. Each product is emitted as a single entry whose
 // Platforms slice holds all supported platforms. onBatch is called once per page.
 func (c *Client) GetLibrary(ctx context.Context, accessToken string, _ int, onBatch func([]ExternalGameEntry) error) error {
+	totalFetched := 0
 	for page := 1; ; page++ {
 		entries, numPages, err := c.fetchPage(ctx, accessToken, page)
 		if err != nil {
 			return err
 		}
+		slog.Debug("gog: fetched page", "page", page, "numPages", numPages, "entriesOnPage", len(entries))
+		totalFetched += len(entries)
 		if len(entries) > 0 {
 			if err := onBatch(entries); err != nil {
 				return err
 			}
 		}
 		if page >= numPages {
+			slog.Debug("gog: library fetch complete", "totalFetched", totalFetched, "lastPage", page, "numPages", numPages)
 			break
 		}
 	}
@@ -84,7 +89,22 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 		return nil, 0, fmt.Errorf("gog: decode library response: %w", err)
 	}
 
-	numPages := max(body.NumPages, 1)
+	slog.Debug("gog: page response metadata",
+		"requestedPage", page,
+		"responsePage", body.Page,
+		"totalProducts", body.TotalProducts,
+		"numPages", body.NumPages,
+		"productsPerPage", body.ProductsPerPage,
+		"productsInResponse", len(body.Products),
+	)
+
+	// GOG sometimes returns numPages: 0 even when totalProducts > productsPerPage.
+	// Fall back to ceiling division so all pages are fetched.
+	numPages := body.NumPages
+	if numPages == 0 && body.ProductsPerPage > 0 {
+		numPages = (body.TotalProducts + body.ProductsPerPage - 1) / body.ProductsPerPage
+	}
+	numPages = max(numPages, 1)
 
 	entries := make([]ExternalGameEntry, 0, len(body.Products))
 	for _, p := range body.Products {
