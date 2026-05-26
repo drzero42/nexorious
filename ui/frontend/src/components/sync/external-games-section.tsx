@@ -276,6 +276,7 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
           open
           title={`Match "${matchingGame.title}"`}
           initialQuery={matchingGame.title}
+          externalGameId={matchingGame.id}
           onClose={() => setMatchingGame(null)}
           onSelect={(candidate) => handleSelect(matchingGame, candidate)}
         />
