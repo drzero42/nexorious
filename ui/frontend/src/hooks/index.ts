@@ -96,8 +96,6 @@ export {
   useDeleteJob,
   usePendingReviewCount,
   useRecentJobs,
-  useResolveJobItem,
-  useSkipJobItem,
   useRetryFailedItems,
   useRetryJobItem,
 } from './use-jobs';

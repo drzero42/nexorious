@@ -196,36 +196,6 @@ export function useDeleteJob() {
 }
 
 /**
- * Hook to resolve a job item to an IGDB ID.
- */
-export function useResolveJobItem() {
-  const queryClient = useQueryClient();
-
-  return useMutation<JobItemDetail, Error, { itemId: string; igdbId: number }>({
-    mutationFn: ({ itemId, igdbId }) => jobsApi.resolveJobItem(itemId, igdbId),
-    onSuccess: () => {
-      // Invalidate job queries to refresh progress counts
-      queryClient.invalidateQueries({ queryKey: jobsKeys.all });
-    },
-  });
-}
-
-/**
- * Hook to skip a job item.
- */
-export function useSkipJobItem() {
-  const queryClient = useQueryClient();
-
-  return useMutation<JobItemDetail, Error, { itemId: string; reason?: string }>({
-    mutationFn: ({ itemId, reason }) => jobsApi.skipJobItem(itemId, reason),
-    onSuccess: () => {
-      // Invalidate job queries to refresh progress counts
-      queryClient.invalidateQueries({ queryKey: jobsKeys.all });
-    },
-  });
-}
-
-/**
  * Hook to retry all failed items in a job.
  */
 export function useRetryFailedItems() {

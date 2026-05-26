@@ -371,28 +371,6 @@ export async function getPendingReviewCount(): Promise<PendingReviewCountRespons
 }
 
 /**
- * Resolve a job item to an IGDB game.
- */
-export async function resolveJobItem(itemId: string, igdbId: number): Promise<JobItemDetail> {
-  const response = await api.post<JobItemDetailApiResponse>(
-    `/job-items/${itemId}/resolve`,
-    { igdb_id: igdbId }
-  );
-  return transformJobItemDetail(response);
-}
-
-/**
- * Skip a job item without matching.
- */
-export async function skipJobItem(itemId: string, reason?: string): Promise<JobItemDetail> {
-  const response = await api.post<JobItemDetailApiResponse>(
-    `/job-items/${itemId}/skip`,
-    { reason }
-  );
-  return transformJobItemDetail(response);
-}
-
-/**
  * Retry all failed items in a job.
  */
 export async function retryFailedItems(jobId: string): Promise<RetryFailedResponse> {

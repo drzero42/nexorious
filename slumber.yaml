@@ -286,26 +286,6 @@ requests:
         url: "{{base_url}}/api/job-items/{{prompt(message='Job Item ID')}}"
         $ref: "#/.authenticated"
 
-      resolve_item:
-        name: Resolve Item
-        method: POST
-        url: "{{base_url}}/api/job-items/{{prompt(message='Job Item ID')}}/resolve"
-        $ref: "#/.authenticated"
-        body:
-          type: json
-          data:
-            igdb_id: "{{prompt(message='IGDB ID to resolve to') | json_parse()}}"
-
-      skip_item:
-        name: Skip Item
-        method: POST
-        url: "{{base_url}}/api/job-items/{{prompt(message='Job Item ID')}}/skip"
-        $ref: "#/.authenticated"
-        body:
-          type: json
-          data:
-            reason: "{{prompt(message='Skip reason')}}"
-
       retry_item:
         name: Retry Item
         method: POST
