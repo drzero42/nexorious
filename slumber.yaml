@@ -492,6 +492,18 @@ requests:
             query: "{{prompt(message='IGDB search query')}}"
             limit: 10
 
+      search_igdb_filtered:
+        name: Search IGDB (platform-filtered)
+        method: POST
+        url: "{{base_url}}/api/games/search/igdb"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            query: "{{prompt(message='IGDB search query')}}"
+            limit: 10
+            external_game_id: "{{prompt(message='External game ID (from pending_review)')}}"
+
       get_igdb_game:
         name: Get IGDB Game
         method: GET
