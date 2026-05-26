@@ -27,7 +27,10 @@ export const jobsKeys = {
   items: (jobId: string, status?: JobItemStatus, page?: number) =>
     [...jobsKeys.detail(jobId), 'items', { status, page }] as const,
   active: (jobType: JobType) => [...jobsKeys.all, 'active', jobType] as const,
-  recent: (source: string, limit?: number) => [...jobsKeys.all, 'recent', source, limit] as const,
+  recent: (source: string, limit?: number) =>
+    limit !== undefined
+      ? ([...jobsKeys.all, 'recent', source, limit] as const)
+      : ([...jobsKeys.all, 'recent', source] as const),
 };
 
 // ============================================================================
