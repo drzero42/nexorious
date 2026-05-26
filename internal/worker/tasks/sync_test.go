@@ -2123,3 +2123,56 @@ func TestUserGameWorker_AlreadyInLibrary_WritesSyncChange(t *testing.T) {
 		t.Errorf("expected 0 added sync_changes, got %d", addedCount)
 	}
 }
+
+func TestUserGameWorker_WorkerAutoSkip_WritesSyncChange(t *testing.T) {
+	// When eg.IsSkipped=true, the worker must write sync_changes('skipped')
+	// before marking the job_item skipped.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '999', 'Skipped Game', true, true, false)`,
+		egID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '999', 'Skipped Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// sync_changes('skipped') must exist with the correct title.
+	var sc struct {
+		ChangeType string `bun:"change_type"`
+		Title      string `bun:"title"`
+	}
+	if err := testDB.NewRaw(
+		`SELECT change_type, title FROM sync_changes WHERE job_id = ?`, jobID,
+	).Scan(ctx, &sc); err != nil {
+		t.Fatalf("scan sync_change: %v", err)
+	}
+	if sc.ChangeType != "skipped" {
+		t.Errorf("change_type: want 'skipped', got %q", sc.ChangeType)
+	}
+	if sc.Title != "Skipped Game" {
+		t.Errorf("title: want 'Skipped Game', got %q", sc.Title)
+	}
+}

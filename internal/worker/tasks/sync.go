@@ -533,12 +533,19 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		return nil
 	}
 
-	// Skipped games: mark the item skipped and check completion.
+	// Skipped games: record the outcome, mark the item skipped, and check completion.
 	if eg.IsSkipped {
 		if _, err := w.DB.NewRaw(
 			`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
 		).Exec(ctx); err != nil {
 			slog.Error("user_game_write: update external_game updated_at (skipped)", "err", err)
+		}
+		if _, err := w.DB.NewRaw(
+			`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
+			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: insert sync_change (skipped)", "err", err)
 		}
 		syncMarkItemSkipped(ctx, w.DB, &item)
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
