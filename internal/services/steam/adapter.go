@@ -49,7 +49,16 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		end := min(start+batchSize, len(owned))
 
 		var entries []storefrontadapter.ExternalGameEntry
-		for _, og := range owned[start:end] {
+		for i, og := range owned[start:end] {
+			gameIdx := start + i + 1 // 1-based position across all owned games
+
+			slog.Debug("steam: fetching appdetails",
+				"game_index", gameIdx,
+				"total_games", len(owned),
+				"appid", og.AppID,
+				"title", og.Title,
+			)
+
 			pl, detErr := a.client.GetAppDetailsPlatforms(ctx, og.AppID)
 			if detErr != nil {
 				if ctx.Err() != nil {
@@ -58,7 +67,13 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				if errors.Is(detErr, ErrRateLimited) && backoffIdx < len(backoffs) {
 					d := backoffs[backoffIdx]
 					backoffIdx++
-					slog.Warn("steam: rate limited, backing off", "wait", d, "appid", og.AppID, "backoff_slot", backoffIdx)
+					slog.Warn("steam: rate limited, backing off",
+						"wait", d,
+						"appid", og.AppID,
+						"title", og.Title,
+						"game_index", gameIdx,
+						"backoff_slot", backoffIdx,
+					)
 					timer := time.NewTimer(d)
 					select {
 					case <-timer.C:
@@ -66,6 +81,11 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 						timer.Stop()
 						return ctx.Err()
 					}
+					slog.Debug("steam: backoff complete, retrying appdetails",
+						"appid", og.AppID,
+						"title", og.Title,
+						"game_index", gameIdx,
+					)
 					pl, detErr = a.client.GetAppDetailsPlatforms(ctx, og.AppID)
 				}
 				if detErr != nil {
@@ -76,9 +96,9 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 					slog.Warn("steam: appdetails failed, skipping game",
 						"appid", og.AppID,
 						"title", og.Title,
+						"game_index", gameIdx,
 						"err", detErr,
 						"skipped_so_far", skippedCount,
-						"processed_so_far", start+len(entries),
 						"total_owned", len(owned),
 						"backoff_budget_exhausted", backoffIdx >= len(backoffs),
 					)
@@ -100,6 +120,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				slog.Debug("steam: appdetails returned no platforms (delisted/removed), defaulting to pc-windows",
 					"appid", og.AppID,
 					"title", og.Title,
+					"game_index", gameIdx,
 				)
 				platforms = []string{"pc-windows"}
 			}
