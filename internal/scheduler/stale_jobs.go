@@ -41,7 +41,7 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 		slog.Error("cleanup_stale_jobs: failed", "err", err)
 		return
 	}
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
 		slog.Info("cleanup_stale_jobs: marked stale jobs failed", "count", rows)
 	}
