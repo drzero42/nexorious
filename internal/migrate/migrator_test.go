@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -351,6 +352,18 @@ func TestRunMigrations_FailureTransitionsToFailedWithError(t *testing.T) {
 	}
 	if m.LastError() == "" {
 		t.Errorf("LastError is empty, want non-empty")
+	}
+
+	// The Lock-failure path must emit a log line before closing the SSE
+	// channel, matching the other failure paths (issue #590). RunMigrations
+	// has returned, so the channel is buffered, written, and closed: this
+	// range drains and terminates without blocking.
+	var logged strings.Builder
+	for line := range m.LogCh() {
+		logged.WriteString(line)
+	}
+	if !strings.Contains(logged.String(), "migration failed") {
+		t.Errorf("expected a log line emitted on Lock failure, got %q", logged.String())
 	}
 }
 
