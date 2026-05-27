@@ -148,6 +148,8 @@ interface RecentJobDetailApiResponse {
   added_items: SyncChangeItemApiResponse[];
   removed_items: SyncChangeItemApiResponse[];
   status_changed_items: SyncChangeItemApiResponse[];
+  skipped_items?: SyncChangeItemApiResponse[];
+  already_in_library_items?: SyncChangeItemApiResponse[];
 }
 
 interface RecentJobsApiResponse {
@@ -242,6 +244,8 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
     addedItems: (api.added_items ?? []).map(transformSyncChangeItem),
     removedItems: (api.removed_items ?? []).map(transformSyncChangeItem),
     statusChangedItems: (api.status_changed_items ?? []).map(transformSyncChangeItem),
+    skippedItems: (api.skipped_items ?? []).map(transformSyncChangeItem),
+    alreadyInLibraryItems: (api.already_in_library_items ?? []).map(transformSyncChangeItem),
   };
 }
 

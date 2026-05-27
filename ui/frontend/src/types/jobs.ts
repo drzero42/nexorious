@@ -174,6 +174,8 @@ export interface RecentJobDetail {
   addedItems: SyncChangeItem[];
   removedItems: SyncChangeItem[];
   statusChangedItems: SyncChangeItem[];
+  skippedItems: SyncChangeItem[];
+  alreadyInLibraryItems: SyncChangeItem[];
 }
 
 export interface RecentJobsResponse {
