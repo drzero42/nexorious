@@ -240,7 +240,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			return db, nil
 		},
 		RebuildServices: func(newDB *bun.DB) error {
-			_ = riverClient.Stop(context.Background())
+			_ = riverClient.Stop(context.Background()) //nolint:errcheck // best-effort stop during DB rebuild; nowhere to surface
 			pgxPool.Close()
 
 			newPgxPool, err := openPgxPool(context.Background(), resolvedDatabaseURL)
@@ -474,7 +474,7 @@ func buildAdapterFactory(
 				return nil, tasks.ErrCredentials
 			}
 			onSnapshot := func(s map[string]string) error {
-				newJSON, _ := json.Marshal(s)
+				newJSON, _ := json.Marshal(s) //nolint:errcheck // marshaling a map[string]string cannot fail
 				enc, encErr := encrypter.Encrypt(newJSON)
 				if encErr != nil {
 					return encErr
