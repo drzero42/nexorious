@@ -16,6 +16,7 @@
     go-task
     golangci-lint
     imagemagick
+    jq
     inputs.drzero42.packages.${system}.slumber
     legendary-gl
     librsvg
@@ -44,6 +45,30 @@
     enable = true;
     package = pkgs.postgresql_18;
     initialDatabases = [{ name = "nexorious"; }];
+  };
+
+  # https://devenv.sh/git-hooks/
+  # The full test suites run at `git push` (pre-push) so quick commits stay
+  # fast; the lighter format/lint/build checks are handled by Claude Code hooks
+  # (.claude/hooks/). These install/refresh whenever the devenv shell is
+  # re-entered, and each is scoped to run only when its files are in the push.
+  git-hooks.hooks = {
+    go-test = {
+      enable = true;
+      name = "go test ./...";
+      entry = "go test -timeout 600s ./...";
+      types = [ "go" ];
+      pass_filenames = false;
+      stages = [ "pre-push" ];
+    };
+    frontend-check = {
+      enable = true;
+      name = "frontend check + knip + test";
+      entry = "bash -c 'cd ui/frontend && npm run check && npm run knip && npm run test'";
+      files = "^ui/frontend/";
+      pass_filenames = false;
+      stages = [ "pre-push" ];
+    };
   };
 
   # https://devenv.sh/tasks/
