@@ -1,9 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IGDBSearch } from '@/components/games/igdb-search';
 import type { IGDBGameCandidate } from '@/types';
 
@@ -30,12 +25,22 @@ export function IGDBMatchDialog({
   externalGameId,
 }: IGDBMatchDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <IGDBSearch onSelect={onSelect} autoFocus initialQuery={initialQuery} externalGameId={externalGameId} />
+        <IGDBSearch
+          onSelect={onSelect}
+          autoFocus
+          initialQuery={initialQuery}
+          externalGameId={externalGameId}
+        />
       </DialogContent>
     </Dialog>
   );

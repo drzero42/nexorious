@@ -28,7 +28,7 @@ describe('formatIgdbRating', () => {
     expect(formatIgdbRating(85.42)).toBe('8.5');
   });
   it('converts 72.10 to "7.2"', () => {
-    expect(formatIgdbRating(72.10)).toBe('7.2');
+    expect(formatIgdbRating(72.1)).toBe('7.2');
   });
   it('converts 100 to "10.0"', () => {
     expect(formatIgdbRating(100)).toBe('10.0');

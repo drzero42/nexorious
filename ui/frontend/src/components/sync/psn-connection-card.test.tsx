@@ -39,7 +39,7 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('Not Configured')).toBeInTheDocument();
@@ -53,7 +53,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('Connected')).toBeInTheDocument();
@@ -67,7 +67,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('Credentials Error')).toBeInTheDocument();
@@ -81,7 +81,7 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByLabelText('NPSSO Token')).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByRole('button', { name: 'Configure PSN' })).toBeInTheDocument();
@@ -105,7 +105,7 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('How do I get my NPSSO token?')).toBeInTheDocument();
@@ -117,11 +117,11 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(
-        screen.getByText('Connect your PlayStation Network account to sync your game library')
+        screen.getByText('Connect your PlayStation Network account to sync your game library'),
       ).toBeInTheDocument();
     });
   });
@@ -135,7 +135,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('Connected as TestPSNUser')).toBeInTheDocument();
@@ -149,7 +149,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('test-account-id')).toBeInTheDocument();
@@ -163,7 +163,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
@@ -177,7 +177,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('Your PlayStation Network account is connected')).toBeInTheDocument();
@@ -191,7 +191,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.queryByLabelText('NPSSO Token')).not.toBeInTheDocument();
@@ -207,7 +207,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText(/Your NPSSO token has expired/)).toBeInTheDocument();
@@ -221,7 +221,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByLabelText('NPSSO Token')).toBeInTheDocument();
@@ -238,7 +238,7 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const tokenInput = screen.getByLabelText('NPSSO Token');
@@ -260,7 +260,7 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const tokenInput = screen.getByLabelText('NPSSO Token');
@@ -282,18 +282,23 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const tokenInput = screen.getByLabelText('NPSSO Token');
       // Exactly 64 characters but contains invalid characters (hyphens)
-      await user.type(tokenInput, 'abcd1234-fgh5678-jkl9012-nop3456-rst7890-vwx1234-zab5678-1234567');
+      await user.type(
+        tokenInput,
+        'abcd1234-fgh5678-jkl9012-nop3456-rst7890-vwx1234-zab5678-1234567',
+      );
 
       const submitButton = screen.getByRole('button', { name: 'Configure PSN' });
       await user.click(submitButton);
 
       await waitFor(() => {
-        expect(screen.getByText('NPSSO token must contain only alphanumeric characters')).toBeInTheDocument();
+        expect(
+          screen.getByText('NPSSO token must contain only alphanumeric characters'),
+        ).toBeInTheDocument();
       });
     });
 
@@ -311,7 +316,7 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const tokenInput = screen.getByLabelText('NPSSO Token');
@@ -342,7 +347,7 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const tokenInput = screen.getByLabelText('NPSSO Token');
@@ -372,7 +377,7 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const tokenInput = screen.getByLabelText('NPSSO Token');
@@ -398,7 +403,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const disconnectButton = screen.getByRole('button', { name: 'Disconnect' });
@@ -407,8 +412,8 @@ describe('PSNConnectionCard', () => {
       expect(screen.getByText('Disconnect PlayStation Network?')).toBeInTheDocument();
       expect(
         screen.getByText(
-          'Your sync settings will be preserved but syncing will stop until you reconnect.'
-        )
+          'Your sync settings will be preserved but syncing will stop until you reconnect.',
+        ),
       ).toBeInTheDocument();
     });
 
@@ -423,7 +428,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const disconnectButton = screen.getByRole('button', { name: 'Disconnect' });
@@ -454,7 +459,7 @@ describe('PSNConnectionCard', () => {
           accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const disconnectButton = screen.getByRole('button', { name: 'Disconnect' });
@@ -478,16 +483,14 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const tokenHelp = screen.getByText('How do I get my NPSSO token?');
       await user.click(tokenHelp);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/Your NPSSO token is a session cookie/)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/Your NPSSO token is a session cookie/)).toBeInTheDocument();
       });
     });
 
@@ -499,16 +502,14 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const tokenHelp = screen.getByText('How do I get my NPSSO token?');
       await user.click(tokenHelp);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/expires approximately every 2 months/)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/expires approximately every 2 months/)).toBeInTheDocument();
       });
     });
 
@@ -520,16 +521,14 @@ describe('PSNConnectionCard', () => {
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const tokenHelp = screen.getByText('How do I get my NPSSO token?');
       await user.click(tokenHelp);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/PS3 games cannot be synced/)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/PS3 games cannot be synced/)).toBeInTheDocument();
       });
     });
   });

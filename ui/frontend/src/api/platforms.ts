@@ -120,9 +120,7 @@ function transformPlatform(apiPlatform: PlatformApiResponse): Platform {
 /**
  * Get a paginated list of platforms.
  */
-export async function getPlatforms(
-  params?: GetPlatformsParams
-): Promise<PlatformsListResponse> {
+export async function getPlatforms(params?: GetPlatformsParams): Promise<PlatformsListResponse> {
   const queryParams: Record<string, string | number | boolean | undefined> = {
     active_only: params?.activeOnly ?? true,
     source: params?.source,
@@ -147,7 +145,7 @@ export async function getPlatforms(
  * Get all platforms (convenience function that fetches all pages).
  */
 export async function getAllPlatforms(
-  params?: Omit<GetPlatformsParams, 'page' | 'perPage'>
+  params?: Omit<GetPlatformsParams, 'page' | 'perPage'>,
 ): Promise<Platform[]> {
   const response = await getPlatforms({
     ...params,
@@ -170,7 +168,7 @@ export async function getPlatform(name: string): Promise<Platform> {
  */
 export async function getPlatformStorefronts(
   platform: string,
-  activeOnly?: boolean
+  activeOnly?: boolean,
 ): Promise<Storefront[]> {
   const response = await api.get<{
     platform: string;
@@ -188,7 +186,7 @@ export async function getPlatformStorefronts(
  * Get a paginated list of storefronts.
  */
 export async function getStorefronts(
-  params?: GetStorefrontsParams
+  params?: GetStorefrontsParams,
 ): Promise<StorefrontsListResponse> {
   const queryParams: Record<string, string | number | boolean | undefined> = {
     active_only: params?.activeOnly ?? true,
@@ -197,12 +195,9 @@ export async function getStorefronts(
     per_page: params?.perPage ?? 100, // Default to 100 for dropdown use cases
   };
 
-  const response = await api.get<StorefrontListApiResponse>(
-    '/platforms/storefronts',
-    {
-      params: queryParams,
-    }
-  );
+  const response = await api.get<StorefrontListApiResponse>('/platforms/storefronts', {
+    params: queryParams,
+  });
 
   return {
     storefronts: response.storefronts.map(transformStorefront),
@@ -217,7 +212,7 @@ export async function getStorefronts(
  * Get all storefronts (convenience function that fetches all pages).
  */
 export async function getAllStorefronts(
-  params?: Omit<GetStorefrontsParams, 'page' | 'perPage'>
+  params?: Omit<GetStorefrontsParams, 'page' | 'perPage'>,
 ): Promise<Storefront[]> {
   const response = await getStorefronts({
     ...params,
@@ -231,9 +226,7 @@ export async function getAllStorefronts(
  * Get a single storefront by name (slug).
  */
 export async function getStorefront(name: string): Promise<Storefront> {
-  const response = await api.get<StorefrontApiResponse>(
-    `/platforms/storefronts/${name}`
-  );
+  const response = await api.get<StorefrontApiResponse>(`/platforms/storefronts/${name}`);
   return transformStorefront(response);
 }
 

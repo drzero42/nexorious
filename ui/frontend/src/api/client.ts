@@ -1,11 +1,10 @@
 import { config } from '@/lib/env';
 
-
 export class ApiErrorException extends Error {
   constructor(
     public override message: string,
     public status: number,
-    public details?: unknown
+    public details?: unknown,
   ) {
     super(message);
     this.name = 'ApiErrorException';
@@ -29,14 +28,17 @@ let refreshPromise: Promise<boolean> | null = null;
 export function setAuthHandlers(
   tokenGetter: TokenGetter,
   tokenRefresher: TokenRefresher,
-  logoutHandler: LogoutHandler
+  logoutHandler: LogoutHandler,
 ) {
   getAccessToken = tokenGetter;
   refreshTokens = tokenRefresher;
   handleLogout = logoutHandler;
 }
 
-function buildUrl(path: string, params?: Record<string, string | number | boolean | undefined>): string {
+function buildUrl(
+  path: string,
+  params?: Record<string, string | number | boolean | undefined>,
+): string {
   const baseUrl = `${config.apiUrl}${path.startsWith('/') ? path : `/${path}`}`;
 
   if (!params) return baseUrl;
@@ -85,10 +87,7 @@ async function handleTokenRefresh(): Promise<boolean> {
   return result;
 }
 
-export async function apiCall(
-  path: string,
-  options: ApiCallOptions = {}
-): Promise<Response> {
+export async function apiCall(path: string, options: ApiCallOptions = {}): Promise<Response> {
   const { skipAuth = false, params, ...fetchOptions } = options;
 
   const headers: Record<string, string> = {
@@ -140,7 +139,11 @@ export const api = {
   get: <T = unknown>(path: string, options?: Omit<ApiCallOptions, 'method'>): Promise<T> =>
     apiCall(path, { ...options, method: 'GET' }).then((r) => r.json()),
 
-  post: <T = unknown>(path: string, data?: unknown, options?: Omit<ApiCallOptions, 'method' | 'body'>): Promise<T> =>
+  post: <T = unknown>(
+    path: string,
+    data?: unknown,
+    options?: Omit<ApiCallOptions, 'method' | 'body'>,
+  ): Promise<T> =>
     apiCall(path, {
       ...options,
       method: 'POST',
@@ -150,7 +153,11 @@ export const api = {
       return r.json();
     }),
 
-  put: <T = unknown>(path: string, data?: unknown, options?: Omit<ApiCallOptions, 'method' | 'body'>): Promise<T> =>
+  put: <T = unknown>(
+    path: string,
+    data?: unknown,
+    options?: Omit<ApiCallOptions, 'method' | 'body'>,
+  ): Promise<T> =>
     apiCall(path, {
       ...options,
       method: 'PUT',
@@ -160,7 +167,11 @@ export const api = {
       return r.json();
     }),
 
-  patch: <T = unknown>(path: string, data?: unknown, options?: Omit<ApiCallOptions, 'method' | 'body'>): Promise<T> =>
+  patch: <T = unknown>(
+    path: string,
+    data?: unknown,
+    options?: Omit<ApiCallOptions, 'method' | 'body'>,
+  ): Promise<T> =>
     apiCall(path, {
       ...options,
       method: 'PATCH',
@@ -184,7 +195,7 @@ export const api = {
 export async function apiUploadFile<T>(
   path: string,
   file: File,
-  fieldName: string = 'file'
+  fieldName: string = 'file',
 ): Promise<T> {
   const token = getAccessToken();
   if (!token) {
@@ -236,9 +247,7 @@ export async function apiUploadFile<T>(
  * Download a file from the API.
  * Returns the blob and extracts filename from Content-Disposition header.
  */
-export async function apiDownloadFile(
-  path: string
-): Promise<{ blob: Blob; filename: string }> {
+export async function apiDownloadFile(path: string): Promise<{ blob: Blob; filename: string }> {
   const token = getAccessToken();
   if (!token) {
     throw new ApiErrorException('Not authenticated', 401);

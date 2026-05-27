@@ -8,7 +8,14 @@ import type {
   BulkUpdateData,
   FilterOptions,
 } from '@/api/games';
-import type { UserGame, IGDBGameCandidate, Game, GameId, UserGamePlatform, PlayStatus } from '@/types';
+import type {
+  UserGame,
+  IGDBGameCandidate,
+  Game,
+  GameId,
+  UserGamePlatform,
+  PlayStatus,
+} from '@/types';
 
 // ============================================================================
 // Query Keys
@@ -197,11 +204,7 @@ export function useCreateUserGame() {
 export function useUpdateUserGame() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    UserGame,
-    Error,
-    { id: string; data: UserGameUpdateData }
-  >({
+  return useMutation<UserGame, Error, { id: string; data: UserGameUpdateData }>({
     mutationFn: ({ id, data }) => gamesApi.updateUserGame(id, data),
     onSuccess: (updatedGame, { id }) => {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
@@ -238,8 +241,7 @@ export function useDeleteUserGame() {
  */
 export function useImportFromIGDB() {
   return useMutation<Game, Error, { igdbId: GameId; downloadCoverArt?: boolean }>({
-    mutationFn: ({ igdbId, downloadCoverArt }) =>
-      gamesApi.importFromIGDB(igdbId, downloadCoverArt),
+    mutationFn: ({ igdbId, downloadCoverArt }) => gamesApi.importFromIGDB(igdbId, downloadCoverArt),
   });
 }
 
@@ -296,8 +298,7 @@ export function useAddPlatformToUserGame() {
     Error,
     { userGameId: string; data: gamesApi.UserGamePlatformData }
   >({
-    mutationFn: ({ userGameId, data }) =>
-      gamesApi.addPlatformToUserGame(userGameId, data),
+    mutationFn: ({ userGameId, data }) => gamesApi.addPlatformToUserGame(userGameId, data),
     onSuccess: (_result, { userGameId }) => {
       queryClient.invalidateQueries({ queryKey: gameKeys.detail(userGameId) });
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
@@ -334,11 +335,7 @@ export function useUpdatePlatformAssociation() {
 export function useRemovePlatformFromUserGame() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    void,
-    Error,
-    { userGameId: string; platformAssociationId: string }
-  >({
+  return useMutation<void, Error, { userGameId: string; platformAssociationId: string }>({
     mutationFn: ({ userGameId, platformAssociationId }) =>
       gamesApi.removePlatformFromUserGame(userGameId, platformAssociationId),
     onSuccess: (_result, { userGameId }) => {

@@ -1,13 +1,8 @@
-
 import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useJobs } from '@/hooks';
 import { JobItemsDetails } from './job-items-details';
 import type { Job, JobType as JobTypeEnum } from '@/types';
@@ -20,13 +15,7 @@ import {
   formatRelativeTime,
   formatDuration,
 } from '@/types';
-import {
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  History,
-  Inbox,
-} from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, History, Inbox } from 'lucide-react';
 
 interface RecentActivityProps {
   /** Job types to show (defaults to import and export) */
@@ -200,7 +189,9 @@ function JobActivityItem({ job, isExpanded, onToggle }: JobActivityItemProps) {
               )}
 
               {/* Time ago */}
-              <span className="text-xs">{formatRelativeTime(job.completedAt || job.createdAt)}</span>
+              <span className="text-xs">
+                {formatRelativeTime(job.completedAt || job.createdAt)}
+              </span>
 
               {/* Expand icon */}
               {isExpanded ? (

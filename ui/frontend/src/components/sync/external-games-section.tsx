@@ -2,17 +2,8 @@ import { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useRouterState } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import {
   Table,
@@ -192,7 +183,12 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
               <CardHeader className="py-3">
                 <CollapsibleTrigger className="flex w-full items-center justify-between">
                   <CardTitle className="text-base">Matched ({matched.length})</CardTitle>
-                  <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', matchedOpen && 'rotate-180')} />
+                  <ChevronDown
+                    className={cn(
+                      'h-4 w-4 text-muted-foreground transition-transform',
+                      matchedOpen && 'rotate-180',
+                    )}
+                  />
                 </CollapsibleTrigger>
               </CardHeader>
               <CollapsibleContent>
@@ -240,7 +236,12 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
               <CardHeader className="py-3">
                 <CollapsibleTrigger className="flex w-full items-center justify-between">
                   <CardTitle className="text-base">Skipped ({skipped.length})</CardTitle>
-                  <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', skippedOpen && 'rotate-180')} />
+                  <ChevronDown
+                    className={cn(
+                      'h-4 w-4 text-muted-foreground transition-transform',
+                      skippedOpen && 'rotate-180',
+                    )}
+                  />
                 </CollapsibleTrigger>
               </CardHeader>
               <CollapsibleContent>
@@ -283,7 +284,12 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
       )}
 
       {pendingRematch && (
-        <AlertDialog open onOpenChange={(o) => { if (!o) setPendingRematch(null); }}>
+        <AlertDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setPendingRematch(null);
+          }}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Storefront link will be removed</AlertDialogTitle>
@@ -297,7 +303,11 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
               <AlertDialogAction
                 className="border border-input bg-background text-foreground shadow-sm hover:bg-accent hover:text-accent-foreground"
                 onClick={() => {
-                  rematch({ id: pendingRematch.game.id, igdbId: pendingRematch.candidate.igdb_id, orphanAction: 'keep' });
+                  rematch({
+                    id: pendingRematch.game.id,
+                    igdbId: pendingRematch.candidate.igdb_id,
+                    orphanAction: 'keep',
+                  });
                   setPendingRematch(null);
                 }}
               >
@@ -306,7 +316,11 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90"
                 onClick={() => {
-                  rematch({ id: pendingRematch.game.id, igdbId: pendingRematch.candidate.igdb_id, orphanAction: 'remove' });
+                  rematch({
+                    id: pendingRematch.game.id,
+                    igdbId: pendingRematch.candidate.igdb_id,
+                    orphanAction: 'remove',
+                  });
                   setPendingRematch(null);
                 }}
               >

@@ -1,4 +1,3 @@
-
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -184,8 +183,7 @@ export function PSNConnectionCard({
                               rel="noopener noreferrer"
                               className="text-primary hover:underline"
                             >
-                              Sony SSO Cookie Page{' '}
-                              <ExternalLink className="inline h-3 w-3" />
+                              Sony SSO Cookie Page <ExternalLink className="inline h-3 w-3" />
                             </a>
                           </li>
                           <li>Sign in with your PlayStation Network account if prompted</li>
@@ -198,13 +196,12 @@ export function PSNConnectionCard({
                         <div className="mt-2 space-y-2">
                           <div className="rounded border border-yellow-200 bg-yellow-50 p-2 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
                             <strong>Security Note:</strong> Your NPSSO token expires approximately
-                            every 2 months. You&apos;ll need to get a new token when it expires.
-                            The token is stored securely and only used to sync your library.
+                            every 2 months. You&apos;ll need to get a new token when it expires. The
+                            token is stored securely and only used to sync your library.
                           </div>
                           <div className="rounded border border-blue-200 bg-blue-50 p-2 text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
                             <strong>Note:</strong> PS3 games cannot be synced due to PlayStation
-                            Network API limitations. Only PS4, PS5, and PS Vita games are
-                            supported.
+                            Network API limitations. Only PS4, PS5, and PS Vita games are supported.
                           </div>
                         </div>
                       </div>

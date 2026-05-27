@@ -141,7 +141,7 @@ describe('games.ts', () => {
             per_page: 20,
             pages: 1,
           });
-        })
+        }),
       );
 
       const result = await getUserGames();
@@ -186,7 +186,7 @@ describe('games.ts', () => {
             per_page: 50,
             pages: 0,
           });
-        })
+        }),
       );
 
       await getUserGames({
@@ -227,7 +227,7 @@ describe('games.ts', () => {
             per_page: 20,
             pages: 0,
           });
-        })
+        }),
       );
 
       const result = await getUserGames({
@@ -251,7 +251,7 @@ describe('games.ts', () => {
             per_page: 20,
             pages: 0,
           });
-        })
+        }),
       );
 
       const result = await getUserGames({
@@ -275,7 +275,7 @@ describe('games.ts', () => {
             per_page: 20,
             pages: 0,
           });
-        })
+        }),
       );
 
       const result = await getUserGames({
@@ -299,7 +299,7 @@ describe('games.ts', () => {
             per_page: 20,
             pages: 0,
           });
-        })
+        }),
       );
 
       const result = await getUserGames({
@@ -324,7 +324,7 @@ describe('games.ts', () => {
             per_page: 20,
             pages: 0,
           });
-        })
+        }),
       );
 
       const result = await getUserGames({
@@ -351,7 +351,7 @@ describe('games.ts', () => {
             per_page: 20,
             pages: 0,
           });
-        })
+        }),
       );
 
       const result = await getUserGames({
@@ -369,7 +369,7 @@ describe('games.ts', () => {
       server.use(
         http.get(`${API_URL}/user-games/user-game-123`, () => {
           return HttpResponse.json(mockUserGameApi);
-        })
+        }),
       );
 
       const result = await getUserGame('user-game-123');
@@ -383,7 +383,7 @@ describe('games.ts', () => {
       server.use(
         http.get(`${API_URL}/user-games/non-existent`, () => {
           return HttpResponse.json({ detail: 'User game not found' }, { status: 404 });
-        })
+        }),
       );
 
       await expect(getUserGame('non-existent')).rejects.toMatchObject({
@@ -402,7 +402,7 @@ describe('games.ts', () => {
           expect(body.play_status).toBe(PlayStatus.NOT_STARTED);
 
           return HttpResponse.json(mockUserGameApi);
-        })
+        }),
       );
 
       const result = await createUserGame({
@@ -431,7 +431,7 @@ describe('games.ts', () => {
           expect(body.platforms?.[0].is_available).toBe(true);
 
           return HttpResponse.json(mockUserGameApi);
-        })
+        }),
       );
 
       await createUserGame({
@@ -456,7 +456,7 @@ describe('games.ts', () => {
           expect(body.personal_notes).toBe('Starting!');
 
           return HttpResponse.json(mockUserGameApi);
-        })
+        }),
       );
 
       await createUserGame({
@@ -483,7 +483,7 @@ describe('games.ts', () => {
           expect(body.platforms?.[0].acquired_date).toBe('2024-06-01');
 
           return HttpResponse.json(mockUserGameApi);
-        })
+        }),
       );
 
       await createUserGame({
@@ -512,7 +512,7 @@ describe('games.ts', () => {
             play_status: PlayStatus.COMPLETED,
             personal_rating: 10,
           });
-        })
+        }),
       );
 
       const result = await updateUserGame('user-game-123', {
@@ -536,7 +536,7 @@ describe('games.ts', () => {
             ...mockUserGameApi,
             hours_played: 100,
           });
-        })
+        }),
       );
 
       await updateUserGame('user-game-123', { hoursPlayed: 100 });
@@ -552,7 +552,7 @@ describe('games.ts', () => {
             ...mockUserGameApi,
             personal_rating: null,
           });
-        })
+        }),
       );
 
       await updateUserGame('user-game-123', { personalRating: null });
@@ -564,7 +564,7 @@ describe('games.ts', () => {
       server.use(
         http.delete(`${API_URL}/user-games/user-game-123`, () => {
           return new HttpResponse(null, { status: 204 });
-        })
+        }),
       );
 
       await expect(deleteUserGame('user-game-123')).resolves.toBeUndefined();
@@ -574,7 +574,7 @@ describe('games.ts', () => {
       server.use(
         http.delete(`${API_URL}/user-games/non-existent`, () => {
           return HttpResponse.json({ detail: 'User game not found' }, { status: 404 });
-        })
+        }),
       );
 
       await expect(deleteUserGame('non-existent')).rejects.toMatchObject({
@@ -609,7 +609,7 @@ describe('games.ts', () => {
             ],
             total: 1,
           });
-        })
+        }),
       );
 
       const result = await searchIGDB('zelda');
@@ -627,7 +627,7 @@ describe('games.ts', () => {
           expect(body.limit).toBe(5);
 
           return HttpResponse.json({ games: [], total: 0 });
-        })
+        }),
       );
 
       await searchIGDB('test', 5);
@@ -674,7 +674,7 @@ describe('games.ts', () => {
             games: [mockIGDBGameApi],
             total: 1,
           });
-        })
+        }),
       );
 
       const result = await getGameByIGDBId(12345);
@@ -691,7 +691,7 @@ describe('games.ts', () => {
             games: [],
             total: 0,
           });
-        })
+        }),
       );
 
       const result = await getGameByIGDBId(99999999);
@@ -710,7 +710,7 @@ describe('games.ts', () => {
           expect(url.searchParams.get('download_cover_art')).toBe('true');
 
           return HttpResponse.json(mockGameApi);
-        })
+        }),
       );
 
       const result = await importFromIGDB(54321 as GameId);
@@ -726,7 +726,7 @@ describe('games.ts', () => {
           expect(url.searchParams.get('download_cover_art')).toBe('false');
 
           return HttpResponse.json(mockGameApi);
-        })
+        }),
       );
 
       await importFromIGDB(54321 as GameId, false);
@@ -751,7 +751,7 @@ describe('games.ts', () => {
             updated_count: 3,
             failed_count: 0,
           });
-        })
+        }),
       );
 
       const result = await bulkUpdateUserGames(['game-1', 'game-2', 'game-3'], {
@@ -777,7 +777,7 @@ describe('games.ts', () => {
             deleted_count: 2,
             failed_count: 0,
           });
-        })
+        }),
       );
 
       const result = await bulkDeleteUserGames(['game-1', 'game-2']);
@@ -818,7 +818,7 @@ describe('games.ts', () => {
             average_rating: 8.2,
             total_hours_played: 500,
           });
-        })
+        }),
       );
 
       const result = await getCollectionStats();
@@ -848,7 +848,7 @@ describe('games.ts', () => {
           expect(body.is_available).toBe(true);
 
           return HttpResponse.json(mockUserGamePlatformApi);
-        })
+        }),
       );
 
       const result = await addPlatformToUserGame('user-game-123', {
@@ -876,7 +876,7 @@ describe('games.ts', () => {
             ...mockUserGamePlatformApi,
             platform: 'playstation-5',
           });
-        })
+        }),
       );
 
       const result = await updatePlatformAssociation('user-game-123', 'ugp-1', {
@@ -892,12 +892,10 @@ describe('games.ts', () => {
       server.use(
         http.delete(`${API_URL}/user-games/user-game-123/platforms/ugp-1`, () => {
           return new HttpResponse(null, { status: 204 });
-        })
+        }),
       );
 
-      await expect(
-        removePlatformFromUserGame('user-game-123', 'ugp-1')
-      ).resolves.toBeUndefined();
+      await expect(removePlatformFromUserGame('user-game-123', 'ugp-1')).resolves.toBeUndefined();
     });
   });
 
@@ -906,7 +904,7 @@ describe('games.ts', () => {
       server.use(
         http.get(`${API_URL}/user-games/genres`, () => {
           return HttpResponse.json({ genres: ['Action', 'Adventure', 'RPG'] });
-        })
+        }),
       );
 
       const genres = await getUserGameGenres();
@@ -919,7 +917,7 @@ describe('games.ts', () => {
       server.use(
         http.get(`${API_URL}/user-games/genres`, () => {
           return HttpResponse.json({ genres: [] });
-        })
+        }),
       );
 
       const genres = await getUserGameGenres();
@@ -933,7 +931,7 @@ describe('games.ts', () => {
       server.use(
         http.get(`${API_URL}/user-games/ids`, () => {
           return HttpResponse.json({ ids: ['game-1', 'game-2', 'game-3'] });
-        })
+        }),
       );
 
       const ids = await getUserGameIds();
@@ -949,7 +947,7 @@ describe('games.ts', () => {
           expect(platforms).toEqual(['windows', 'playstation_5']);
 
           return HttpResponse.json({ ids: ['game-1', 'game-2'] });
-        })
+        }),
       );
 
       const ids = await getUserGameIds({
@@ -966,7 +964,7 @@ describe('games.ts', () => {
           expect(genres).toEqual(['RPG', 'Action']);
 
           return HttpResponse.json({ ids: ['game-1'] });
-        })
+        }),
       );
 
       const ids = await getUserGameIds({
@@ -983,7 +981,7 @@ describe('games.ts', () => {
           expect(tags).toEqual(['tag-id-1', 'tag-id-2']);
 
           return HttpResponse.json({ ids: ['game-1', 'game-2'] });
-        })
+        }),
       );
 
       const ids = await getUserGameIds({

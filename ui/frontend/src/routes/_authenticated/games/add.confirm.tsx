@@ -75,7 +75,7 @@ function isPlatformInIGDB(platform: Platform, igdbPlatforms: string[]): boolean 
   return igdbPlatforms.some(
     (igdbPlatform) =>
       igdbPlatform.toLowerCase() === platform.display_name.toLowerCase() ||
-      igdbPlatform.toLowerCase() === platform.name.toLowerCase()
+      igdbPlatform.toLowerCase() === platform.name.toLowerCase(),
   );
 }
 
@@ -141,9 +141,7 @@ function GamePreviewCard({ game }: GamePreviewProps) {
             {game.platforms.length > 0 && (
               <div className="flex items-start gap-2 text-sm">
                 <Monitor className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                <span className="text-muted-foreground">
-                  {game.platforms.join(', ')}
-                </span>
+                <span className="text-muted-foreground">{game.platforms.join(', ')}</span>
               </div>
             )}
 
@@ -176,9 +174,7 @@ function GamePreviewCard({ game }: GamePreviewProps) {
 
             {/* Description */}
             {game.description && (
-              <p className="text-sm text-muted-foreground line-clamp-4">
-                {game.description}
-              </p>
+              <p className="text-sm text-muted-foreground line-clamp-4">{game.description}</p>
             )}
           </div>
         </div>
@@ -207,11 +203,11 @@ function PlatformSelectionSection({
   // Filter platforms based on IGDB data
   const igdbPlatforms = React.useMemo(
     () => getIGDBPlatforms(platforms, igdbPlatformNames),
-    [platforms, igdbPlatformNames]
+    [platforms, igdbPlatformNames],
   );
   const otherPlatforms = React.useMemo(
     () => getOtherPlatforms(platforms, igdbPlatformNames),
-    [platforms, igdbPlatformNames]
+    [platforms, igdbPlatformNames],
   );
 
   const hasIGDBPlatforms = igdbPlatforms.length > 0;
@@ -285,9 +281,7 @@ function PlatformSelectionSection({
             >
               <Monitor className="h-4 w-4" />
               <span>Other platforms ({otherPlatforms.length})</span>
-              <span className="ml-auto text-xs">
-                {showOtherPlatforms ? '▼' : '▶'}
-              </span>
+              <span className="ml-auto text-xs">{showOtherPlatforms ? '▼' : '▶'}</span>
             </button>
             {showOtherPlatforms && (
               <PlatformSelectorCompact
@@ -396,9 +390,7 @@ function GameConfirmPage() {
   }, [igdbIdParam]);
 
   // State for platform selection and game data
-  const [selectedPlatforms, setSelectedPlatforms] = React.useState<
-    PlatformSelection[]
-  >([]);
+  const [selectedPlatforms, setSelectedPlatforms] = React.useState<PlatformSelection[]>([]);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // Read game data from sessionStorage on first render — lazy initializer avoids an effect.
@@ -471,8 +463,7 @@ function GameConfirmPage() {
       // Navigate to the newly created user game
       navigate({ to: '/games/$id', params: { id: userGame.id } });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to add game to library';
+      const message = error instanceof Error ? error.message : 'Failed to add game to library';
       toast.error(message);
       setIsSubmitting(false);
     }
@@ -487,7 +478,9 @@ function GameConfirmPage() {
   if (gameLoadError || !game) {
     return (
       <ErrorState
-        message={gameLoadError ?? 'The selected game could not be found. Please try searching again.'}
+        message={
+          gameLoadError ?? 'The selected game could not be found. Please try searching again.'
+        }
         onBack={handleBack}
       />
     );
@@ -505,9 +498,7 @@ function GameConfirmPage() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold">Confirm Game</h1>
-          <p className="text-muted-foreground">
-            Review the game details and select your platforms
-          </p>
+          <p className="text-muted-foreground">Review the game details and select your platforms</p>
         </div>
       </div>
 
@@ -525,11 +516,7 @@ function GameConfirmPage() {
 
       {/* Action Buttons */}
       <div className="flex justify-end gap-3 pt-2">
-        <Button
-          variant="outline"
-          onClick={handleBack}
-          disabled={isSubmitting}
-        >
+        <Button variant="outline" onClick={handleBack} disabled={isSubmitting}>
           Cancel
         </Button>
         <Button onClick={handleAddToLibrary} disabled={isSubmitting}>

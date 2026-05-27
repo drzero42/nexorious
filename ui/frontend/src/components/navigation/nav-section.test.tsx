@@ -51,13 +51,7 @@ describe('NavSectionCollapsible', () => {
 
   describe('needsAttention behavior', () => {
     it('should auto-expand when needsAttention is true', () => {
-      render(
-        <NavSectionCollapsible
-          {...defaultProps}
-          defaultOpen={false}
-          needsAttention={true}
-        />
-      );
+      render(<NavSectionCollapsible {...defaultProps} defaultOpen={false} needsAttention={true} />);
 
       // Content should be visible because needsAttention overrides defaultOpen
       expect(screen.getByText('Tags')).toBeInTheDocument();
@@ -65,11 +59,7 @@ describe('NavSectionCollapsible', () => {
 
     it('should stay collapsed when needsAttention is false and defaultOpen is false', () => {
       render(
-        <NavSectionCollapsible
-          {...defaultProps}
-          defaultOpen={false}
-          needsAttention={false}
-        />
+        <NavSectionCollapsible {...defaultProps} defaultOpen={false} needsAttention={false} />,
       );
 
       // Content should not be visible
@@ -78,11 +68,7 @@ describe('NavSectionCollapsible', () => {
 
     it('should expand when needsAttention changes from false to true', async () => {
       const { rerender } = render(
-        <NavSectionCollapsible
-          {...defaultProps}
-          defaultOpen={false}
-          needsAttention={false}
-        />
+        <NavSectionCollapsible {...defaultProps} defaultOpen={false} needsAttention={false} />,
       );
 
       // Initially collapsed
@@ -90,11 +76,7 @@ describe('NavSectionCollapsible', () => {
 
       // Rerender with needsAttention=true
       rerender(
-        <NavSectionCollapsible
-          {...defaultProps}
-          defaultOpen={false}
-          needsAttention={true}
-        />
+        <NavSectionCollapsible {...defaultProps} defaultOpen={false} needsAttention={true} />,
       );
 
       // Should now be expanded

@@ -1,5 +1,14 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useSyncConfigs, useTriggerSync, useSyncStatus, usePendingReviewCount, useSteamConnection, usePSNStatus, useEpicConnection, useGOGConnection } from '@/hooks';
+import {
+  useSyncConfigs,
+  useTriggerSync,
+  useSyncStatus,
+  usePendingReviewCount,
+  useSteamConnection,
+  usePSNStatus,
+  useEpicConnection,
+  useGOGConnection,
+} from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -81,22 +90,24 @@ function SyncPage() {
 
   // Create map of existing configs by storefront
   const configsByStorefront = new Map<SyncStorefront, SyncConfig>();
-  configs?.configs.forEach(config => {
+  configs?.configs.forEach((config) => {
     configsByStorefront.set(config.storefront, config);
   });
 
   // Create configs for all supported storefronts (will show "not configured" for missing ones)
-  const allStorefrontConfigs = SUPPORTED_SYNC_STOREFRONTS.map(storefront => {
-    return configsByStorefront.get(storefront) || {
-      id: `placeholder-${storefront}`,
-      userId: '',
-      storefront,
-      frequency: SyncFrequency.MANUAL,
-      lastSyncedAt: null,
-      createdAt: '',
-      updatedAt: '',
-      isConfigured: false,
-    };
+  const allStorefrontConfigs = SUPPORTED_SYNC_STOREFRONTS.map((storefront) => {
+    return (
+      configsByStorefront.get(storefront) || {
+        id: `placeholder-${storefront}`,
+        userId: '',
+        storefront,
+        frequency: SyncFrequency.MANUAL,
+        lastSyncedAt: null,
+        createdAt: '',
+        updatedAt: '',
+        isConfigured: false,
+      }
+    );
   });
 
   const handleTriggerSync = async (storefront: SyncStorefront) => {
@@ -163,12 +174,11 @@ function SyncPage() {
                 added.
               </p>
               <p>
-                Configure sync frequency for each storefront individually from the storefront details
-                page. Manual sync is always available regardless of your settings.
+                Configure sync frequency for each storefront individually from the storefront
+                details page. Manual sync is always available regardless of your settings.
               </p>
             </AlertDescription>
           </Alert>
-
         </>
       )}
     </div>

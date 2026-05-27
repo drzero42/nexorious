@@ -56,7 +56,11 @@ describe('RecentActivity component', () => {
   it('renders alreadyInLibraryItems section when items are present', async () => {
     const job: RecentJobDetail = {
       ...baseJob,
-      alreadyInLibraryItems: [makeItem('Old Game A'), makeItem('Old Game B'), makeItem('Old Game C')],
+      alreadyInLibraryItems: [
+        makeItem('Old Game A'),
+        makeItem('Old Game B'),
+        makeItem('Old Game C'),
+      ],
     };
     (useRecentJobs as ReturnType<typeof vi.fn>).mockReturnValue({
       data: { jobs: [job] },

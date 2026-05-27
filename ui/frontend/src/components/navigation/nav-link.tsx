@@ -46,10 +46,8 @@ export function NavLink({
       onClick={handleClick}
       className={cn(
         'flex items-center justify-between gap-2 px-3 py-2 rounded-md transition-colors',
-        isActive
-          ? 'bg-primary text-primary-foreground'
-          : 'hover:bg-muted',
-        className
+        isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted',
+        className,
       )}
     >
       <span className="flex items-center gap-2">
@@ -57,10 +55,7 @@ export function NavLink({
         <span>{label}</span>
       </span>
       {badge !== undefined && badge > 0 && (
-        <NavBadge
-          count={badge}
-          onClick={badgeHref ? handleBadgeClick : undefined}
-        />
+        <NavBadge count={badge} onClick={badgeHref ? handleBadgeClick : undefined} />
       )}
     </Link>
   );

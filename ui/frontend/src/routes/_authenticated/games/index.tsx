@@ -2,13 +2,7 @@ import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-r
 import { Suspense, useMemo, useCallback, useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { useUserGames, useUserGameIds } from '@/hooks';
-import {
-  GameFilters,
-  GameGrid,
-  GameList,
-  BulkActions,
-  GamesPagination,
-} from '@/components/games';
+import { GameFilters, GameGrid, GameList, BulkActions, GamesPagination } from '@/components/games';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import type { PlayStatus, OwnershipStatus, UserGame, SelectionMode } from '@/types';
@@ -17,7 +11,14 @@ export const Route = createFileRoute('/_authenticated/games/')({
   component: GamesPage,
 });
 
-type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date' | 'hours_played' | 'rating_average';
+type SortField =
+  | 'title'
+  | 'created_at'
+  | 'howlongtobeat_main'
+  | 'personal_rating'
+  | 'release_date'
+  | 'hours_played'
+  | 'rating_average';
 type SortOrder = 'asc' | 'desc';
 
 interface SortOption {
@@ -37,7 +38,7 @@ const SORT_OPTIONS: SortOption[] = [
 ];
 
 const VALID_PER_PAGE = [25, 50, 100, 500] as const;
-type PerPage = typeof VALID_PER_PAGE[number];
+type PerPage = (typeof VALID_PER_PAGE)[number];
 
 function parsePerPage(raw: string): PerPage {
   const n = parseInt(raw, 10);
@@ -57,8 +58,9 @@ function GamesPageContent() {
     const statusParam = (search as Record<string, string>)['status'];
     const ownershipParam = (search as Record<string, string>)['ownership'];
     // Handle "null" string or empty string as undefined
-    const status = statusParam && statusParam !== 'null' ? statusParam as PlayStatus : undefined;
-    const ownershipStatus = ownershipParam && ownershipParam !== 'null' ? ownershipParam as OwnershipStatus : undefined;
+    const status = statusParam && statusParam !== 'null' ? (statusParam as PlayStatus) : undefined;
+    const ownershipStatus =
+      ownershipParam && ownershipParam !== 'null' ? (ownershipParam as OwnershipStatus) : undefined;
     const s = search as Record<string, string | string[]>;
     const getAll = (key: string): string[] => {
       const val = s[key];
@@ -88,20 +90,23 @@ function GamesPageContent() {
   const currentPerPage = parsePerPage(s['perPage'] ?? '50');
 
   // Helper to update URL params
-  const updateParams = useCallback((updates: Record<string, string | string[] | undefined>) => {
-    const currentSearch = search as Record<string, string | string[]>;
-    const params: Record<string, string | string[]> = { ...currentSearch };
+  const updateParams = useCallback(
+    (updates: Record<string, string | string[] | undefined>) => {
+      const currentSearch = search as Record<string, string | string[]>;
+      const params: Record<string, string | string[]> = { ...currentSearch };
 
-    Object.entries(updates).forEach(([key, value]) => {
-      if (value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) {
-        delete params[key];
-      } else {
-        params[key] = value;
-      }
-    });
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) {
+          delete params[key];
+        } else {
+          params[key] = value;
+        }
+      });
 
-    navigate({ to: '/games', search: params as Record<string, string>, replace: true });
-  }, [navigate, search]);
+      navigate({ to: '/games', search: params as Record<string, string>, replace: true });
+    },
+    [navigate, search],
+  );
 
   // Shared filter fields — no pagination params
   const filterFields = useMemo(
@@ -114,10 +119,11 @@ function GamesPageContent() {
       genre: filters.genres.length > 0 ? filters.genres : undefined,
       gameMode: filters.gameModes.length > 0 ? filters.gameModes : undefined,
       theme: filters.themes.length > 0 ? filters.themes : undefined,
-      playerPerspective: filters.playerPerspectives.length > 0 ? filters.playerPerspectives : undefined,
+      playerPerspective:
+        filters.playerPerspectives.length > 0 ? filters.playerPerspectives : undefined,
       tags: filters.tags.length > 0 ? filters.tags : undefined,
     }),
-    [filters]
+    [filters],
   );
 
   // Passed to useUserGames — includes page + perPage
@@ -129,7 +135,7 @@ function GamesPageContent() {
       sortBy,
       sortOrder,
     }),
-    [filterFields, currentPage, currentPerPage, sortBy, sortOrder]
+    [filterFields, currentPage, currentPerPage, sortBy, sortOrder],
   );
 
   // Passed to useUserGameIds — no page/perPage so "select all" spans all pages
@@ -139,7 +145,7 @@ function GamesPageContent() {
       sortBy,
       sortOrder,
     }),
-    [filterFields, sortBy, sortOrder]
+    [filterFields, sortBy, sortOrder],
   );
 
   const { data, isLoading, refetch } = useUserGames(listQueryParams);
@@ -158,49 +164,58 @@ function GamesPageContent() {
   const { refetch: fetchAllIds } = useUserGameIds(idsQueryParams, { enabled: false });
 
   // Wrap filter changes to also clear selection and update URL
-  const handleFiltersChange = useCallback((newFilters: {
-    search: string;
-    status?: PlayStatus;
-    ownershipStatus?: OwnershipStatus;
-    platforms?: string[];
-    storefronts?: string[];
-    genres?: string[];
-    gameModes?: string[];
-    themes?: string[];
-    playerPerspectives?: string[];
-    tags?: string[];
-  }) => {
-    updateParams({
-      q: newFilters.search || undefined,
-      status: newFilters.status,
-      ownership: newFilters.ownershipStatus,
-      platform: newFilters.platforms,
-      storefront: newFilters.storefronts,
-      genre: newFilters.genres,
-      gameMode: newFilters.gameModes,
-      theme: newFilters.themes,
-      playerPerspective: newFilters.playerPerspectives,
-      tag: newFilters.tags,
-      page: undefined,
-    });
-    setSelectedIds(new Set());
-    setSelectionMode('manual');
-  }, [updateParams]);
+  const handleFiltersChange = useCallback(
+    (newFilters: {
+      search: string;
+      status?: PlayStatus;
+      ownershipStatus?: OwnershipStatus;
+      platforms?: string[];
+      storefronts?: string[];
+      genres?: string[];
+      gameModes?: string[];
+      themes?: string[];
+      playerPerspectives?: string[];
+      tags?: string[];
+    }) => {
+      updateParams({
+        q: newFilters.search || undefined,
+        status: newFilters.status,
+        ownership: newFilters.ownershipStatus,
+        platform: newFilters.platforms,
+        storefront: newFilters.storefronts,
+        genre: newFilters.genres,
+        gameMode: newFilters.gameModes,
+        theme: newFilters.themes,
+        playerPerspective: newFilters.playerPerspectives,
+        tag: newFilters.tags,
+        page: undefined,
+      });
+      setSelectedIds(new Set());
+      setSelectionMode('manual');
+    },
+    [updateParams],
+  );
 
-  const handleSortByChange = useCallback((newSortBy: SortField) => {
-    const option = SORT_OPTIONS.find((o) => o.value === newSortBy);
-    const newOrder = option?.defaultOrder ?? 'asc';
-    updateParams({ sort: newSortBy, order: newOrder, page: undefined });
-  }, [updateParams]);
+  const handleSortByChange = useCallback(
+    (newSortBy: SortField) => {
+      const option = SORT_OPTIONS.find((o) => o.value === newSortBy);
+      const newOrder = option?.defaultOrder ?? 'asc';
+      updateParams({ sort: newSortBy, order: newOrder, page: undefined });
+    },
+    [updateParams],
+  );
 
   const handleSortOrderToggle = useCallback(() => {
     const newOrder = sortOrder === 'asc' ? 'desc' : 'asc';
     updateParams({ order: newOrder, page: undefined });
   }, [sortOrder, updateParams]);
 
-  const handleViewModeChange = useCallback((mode: 'grid' | 'list') => {
-    updateParams({ view: mode === 'grid' ? undefined : mode }); // Don't store default 'grid' in URL
-  }, [updateParams]);
+  const handleViewModeChange = useCallback(
+    (mode: 'grid' | 'list') => {
+      updateParams({ view: mode === 'grid' ? undefined : mode }); // Don't store default 'grid' in URL
+    },
+    [updateParams],
+  );
 
   const handleSelectGame = useCallback((id: string) => {
     setSelectionMode('manual');
@@ -250,22 +265,36 @@ function GamesPageContent() {
       // All in collection selected -> clear
       clearSelection();
     }
-  }, [selectionMode, selectedIds.size, games, visibleCount, totalCount, fetchAllIds, clearSelection]);
+  }, [
+    selectionMode,
+    selectedIds.size,
+    games,
+    visibleCount,
+    totalCount,
+    fetchAllIds,
+    clearSelection,
+  ]);
 
-  const handlePageChange = useCallback((page: number) => {
-    updateParams({ page: page === 1 ? undefined : String(page) });
-    setSelectedIds(new Set());
-    setSelectionMode('manual');
-  }, [updateParams]);
+  const handlePageChange = useCallback(
+    (page: number) => {
+      updateParams({ page: page === 1 ? undefined : String(page) });
+      setSelectedIds(new Set());
+      setSelectionMode('manual');
+    },
+    [updateParams],
+  );
 
-  const handlePerPageChange = useCallback((perPage: number) => {
-    updateParams({
-      perPage: perPage === 50 ? undefined : String(perPage),
-      page: undefined,
-    });
-    setSelectedIds(new Set());
-    setSelectionMode('manual');
-  }, [updateParams]);
+  const handlePerPageChange = useCallback(
+    (perPage: number) => {
+      updateParams({
+        perPage: perPage === 50 ? undefined : String(perPage),
+        page: undefined,
+      });
+      setSelectedIds(new Set());
+      setSelectionMode('manual');
+    },
+    [updateParams],
+  );
 
   const handleClickGame = (game: UserGame) => {
     sessionStorage.setItem('games_list_return_url', JSON.stringify(search));

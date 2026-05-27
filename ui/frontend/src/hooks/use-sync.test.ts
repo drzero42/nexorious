@@ -80,7 +80,6 @@ describe('use-sync hooks', () => {
       expect(syncKeys.status(SyncStorefront.STEAM)).toEqual(['sync', 'statuses', 'steam']);
       expect(syncKeys.status(SyncStorefront.GOG)).toEqual(['sync', 'statuses', 'gog']);
     });
-
   });
 
   describe('useSyncConfigs', () => {
@@ -91,7 +90,7 @@ describe('use-sync hooks', () => {
             configs: [mockSyncConfigApi],
             total: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSyncConfigs(), {
@@ -113,11 +112,8 @@ describe('use-sync hooks', () => {
     it('handles error state', async () => {
       server.use(
         http.get(`${API_URL}/sync/config`, () => {
-          return HttpResponse.json(
-            { detail: 'Failed to fetch sync configs' },
-            { status: 500 }
-          );
-        })
+          return HttpResponse.json({ detail: 'Failed to fetch sync configs' }, { status: 500 });
+        }),
       );
 
       const { result } = renderHook(() => useSyncConfigs(), {
@@ -137,7 +133,7 @@ describe('use-sync hooks', () => {
       server.use(
         http.get(`${API_URL}/sync/config/steam`, () => {
           return HttpResponse.json(mockSyncConfigApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSyncConfig(SyncStorefront.STEAM), {
@@ -157,7 +153,7 @@ describe('use-sync hooks', () => {
       server.use(
         http.get(`${API_URL}/sync/config/epic`, () => {
           return HttpResponse.json({ detail: 'Config not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSyncConfig(SyncStorefront.EPIC), {
@@ -177,7 +173,7 @@ describe('use-sync hooks', () => {
       server.use(
         http.get(`${API_URL}/sync/steam/status`, () => {
           return HttpResponse.json(mockSyncStatusApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSyncStatus(SyncStorefront.STEAM), {
@@ -202,7 +198,7 @@ describe('use-sync hooks', () => {
             is_syncing: true,
             active_job_id: 'job-123',
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSyncStatus(SyncStorefront.STEAM), {
@@ -232,7 +228,7 @@ describe('use-sync hooks', () => {
           };
           expect(body.frequency).toBe('weekly');
           return HttpResponse.json(updatedConfig);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUpdateSyncConfig(), {
@@ -259,7 +255,7 @@ describe('use-sync hooks', () => {
       server.use(
         http.put(`${API_URL}/sync/config/steam`, () => {
           return HttpResponse.json({ detail: 'Update failed' }, { status: 400 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUpdateSyncConfig(), {
@@ -295,7 +291,7 @@ describe('use-sync hooks', () => {
             storefront: 'steam',
             status: 'queued',
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useTriggerSync(), {
@@ -319,11 +315,8 @@ describe('use-sync hooks', () => {
     it('handles sync already in progress error', async () => {
       server.use(
         http.post(`${API_URL}/sync/steam`, () => {
-          return HttpResponse.json(
-            { detail: 'Sync already in progress' },
-            { status: 409 }
-          );
-        })
+          return HttpResponse.json({ detail: 'Sync already in progress' }, { status: 409 });
+        }),
       );
 
       const { result } = renderHook(() => useTriggerSync(), {

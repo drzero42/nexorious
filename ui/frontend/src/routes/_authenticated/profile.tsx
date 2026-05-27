@@ -84,31 +84,34 @@ function ProfilePage() {
   const passwordsMatch = newPassword && confirmPassword && newPassword === confirmPassword;
 
   // Debounced username availability check
-  const checkUsername = useCallback(async (username: string) => {
-    if (!username || !user || username === user.username) {
-      setUsernameAvailable(null);
-      setUsernameError('');
-      return;
-    }
+  const checkUsername = useCallback(
+    async (username: string) => {
+      if (!username || !user || username === user.username) {
+        setUsernameAvailable(null);
+        setUsernameError('');
+        return;
+      }
 
-    if (username.length < 3) {
-      setUsernameAvailable(false);
-      setUsernameError('Username must be at least 3 characters');
-      return;
-    }
+      if (username.length < 3) {
+        setUsernameAvailable(false);
+        setUsernameError('Username must be at least 3 characters');
+        return;
+      }
 
-    setIsCheckingUsername(true);
-    try {
-      const result = await authApi.checkUsernameAvailability(username);
-      setUsernameAvailable(result.available);
-      setUsernameError(result.available ? '' : 'Username is already taken');
-    } catch {
-      setUsernameAvailable(false);
-      setUsernameError('Error checking username availability');
-    } finally {
-      setIsCheckingUsername(false);
-    }
-  }, [user]);
+      setIsCheckingUsername(true);
+      try {
+        const result = await authApi.checkUsernameAvailability(username);
+        setUsernameAvailable(result.available);
+        setUsernameError(result.available ? '' : 'Username is already taken');
+      } catch {
+        setUsernameAvailable(false);
+        setUsernameError('Error checking username availability');
+      } finally {
+        setIsCheckingUsername(false);
+      }
+    },
+    [user],
+  );
 
   // Debounce username check
   useEffect(() => {
@@ -193,7 +196,8 @@ function ProfilePage() {
   }
 
   const isUsernameChanged = newUsername !== user.username;
-  const canSubmitUsername = isUsernameChanged && usernameAvailable === true && !isSubmittingUsername;
+  const canSubmitUsername =
+    isUsernameChanged && usernameAvailable === true && !isSubmittingUsername;
   const canSubmitPassword =
     currentPassword &&
     newPassword &&
@@ -264,22 +268,15 @@ function ProfilePage() {
                     )}
                   </div>
                 </div>
-                {usernameError && (
-                  <p className="mt-2 text-sm text-red-600">{usernameError}</p>
-                )}
+                {usernameError && <p className="mt-2 text-sm text-red-600">{usernameError}</p>}
                 {usernameAvailable === true && (
                   <p className="mt-2 text-sm text-green-600">Username is available</p>
                 )}
               </div>
 
               {/* Update Username Button */}
-              <Button
-                onClick={handleUsernameSubmit}
-                disabled={!canSubmitUsername}
-              >
-                {isSubmittingUsername && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
+              <Button onClick={handleUsernameSubmit} disabled={!canSubmitUsername}>
+                {isSubmittingUsername && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Update Username
               </Button>
             </CardContent>
@@ -308,7 +305,9 @@ function ProfilePage() {
                     type="button"
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                     className="absolute inset-y-0 right-0 flex items-center pr-3"
-                    aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                    aria-label={
+                      showCurrentPassword ? 'Hide current password' : 'Show current password'
+                    }
                   >
                     {showCurrentPassword ? (
                       <EyeOff className="h-5 w-5 text-muted-foreground" />
@@ -349,10 +348,7 @@ function ProfilePage() {
                 {newPassword && (
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center gap-2">
-                      <Progress
-                        value={(passwordStrength.score / 6) * 100}
-                        className="h-2 flex-1"
-                      />
+                      <Progress value={(passwordStrength.score / 6) * 100} className="h-2 flex-1" />
                       <span className="text-sm text-muted-foreground">
                         {passwordStrength.label}
                       </span>
@@ -383,7 +379,9 @@ function ProfilePage() {
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     className="absolute inset-y-0 right-0 flex items-center pr-3"
-                    aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                    aria-label={
+                      showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'
+                    }
                   >
                     {showConfirmPassword ? (
                       <EyeOff className="h-5 w-5 text-muted-foreground" />
@@ -412,16 +410,10 @@ function ProfilePage() {
                   disabled={!canSubmitPassword}
                   variant="destructive"
                 >
-                  {isSubmittingPassword && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
+                  {isSubmittingPassword && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Change Password
                 </Button>
-                <Button
-                  onClick={resetPasswordForm}
-                  variant="outline"
-                  type="button"
-                >
+                <Button onClick={resetPasswordForm} variant="outline" type="button">
                   Cancel
                 </Button>
               </div>

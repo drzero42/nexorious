@@ -18,7 +18,14 @@ import {
   jobsKeys,
 } from '@/hooks';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
-import { SteamConnectionCard, EpicConnectionCard, GOGConnectionCard, PSNConnectionCard, RecentActivity, ExternalGamesSection } from '@/components/sync';
+import {
+  SteamConnectionCard,
+  EpicConnectionCard,
+  GOGConnectionCard,
+  PSNConnectionCard,
+  RecentActivity,
+  ExternalGamesSection,
+} from '@/components/sync';
 import {
   SyncStorefront,
   SyncFrequency,
@@ -297,9 +304,7 @@ function SyncDetailPage() {
         {/* Header */}
         <div className="flex items-center gap-4">
           <Button variant="outline" asChild>
-            <Link to="/sync">
-              Back to Sync
-            </Link>
+            <Link to="/sync">Back to Sync</Link>
           </Button>
         </div>
 
@@ -511,7 +516,9 @@ function SyncDetailPage() {
               <CardContent className="flex items-center justify-between py-4">
                 <div>
                   <div className="font-medium">Sync Frequency</div>
-                  <div className="text-sm text-muted-foreground">How often to automatically sync</div>
+                  <div className="text-sm text-muted-foreground">
+                    How often to automatically sync
+                  </div>
                 </div>
                 <Select
                   value={effectiveFrequency}
@@ -537,11 +544,7 @@ function SyncDetailPage() {
 
       {/* Active Sync Progress */}
       {isSyncing && activeJob && (
-        <JobProgressCard
-          job={activeJob}
-          onCancel={handleCancelJob}
-          isCancelling={isCancelling}
-        />
+        <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
       )}
 
       {/* External Games Library */}

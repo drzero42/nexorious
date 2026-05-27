@@ -8,17 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/jobs';
 import { toast } from 'sonner';
-import {
-  RefreshCw,
-  Loader2,
-  RotateCcw,
-} from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { RefreshCw, Loader2, RotateCcw } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useHealthStatus } from '@/hooks/use-health-status';
 import * as adminApi from '@/api/admin';
 
@@ -49,13 +40,16 @@ function MaintenancePage() {
   const igdbUnavailable = health?.igdb_status !== undefined && health.igdb_status !== 'ok';
 
   // Track active maintenance job
-  const { data: activeMaintenanceJob, refetch: refetchMaintenanceJob } = useActiveJob(JobType.METADATA_REFRESH);
+  const { data: activeMaintenanceJob, refetch: refetchMaintenanceJob } = useActiveJob(
+    JobType.METADATA_REFRESH,
+  );
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
 
   // Determine which job to display (not dismissed)
-  const activeJob = activeMaintenanceJob && activeMaintenanceJob.id !== dismissedJobId
-    ? activeMaintenanceJob
-    : null;
+  const activeJob =
+    activeMaintenanceJob && activeMaintenanceJob.id !== dismissedJobId
+      ? activeMaintenanceJob
+      : null;
 
   const showJobProgress = activeJob != null;
   const hasActiveJob = activeJob != null && !activeJob.isTerminal;
@@ -134,11 +128,7 @@ function MaintenancePage() {
       {/* Active Job Progress View */}
       {showJobProgress && activeJob && (
         <section className="space-y-4">
-          <JobProgressCard
-            job={activeJob}
-            onCancel={handleCancelJob}
-            isCancelling={isCancelling}
-          />
+          <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
 
           {activeJob.progress && (
             <JobItemsDetails
@@ -151,10 +141,7 @@ function MaintenancePage() {
           {/* Actions for completed jobs */}
           {activeJob.isTerminal && (
             <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={handleDismissJob}
-              >
+              <Button variant="outline" onClick={handleDismissJob}>
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Start New
               </Button>
@@ -176,8 +163,8 @@ function MaintenancePage() {
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Start a background job to refresh game modes, themes, player perspectives, and other
-              metadata from IGDB for all games in your collection. This operation runs asynchronously
-              and respects IGDB rate limits.
+              metadata from IGDB for all games in your collection. This operation runs
+              asynchronously and respects IGDB rate limits.
             </p>
             {igdbUnavailable ? (
               <TooltipProvider>
@@ -194,7 +181,11 @@ function MaintenancePage() {
                 </Tooltip>
               </TooltipProvider>
             ) : (
-              <Button onClick={handleStartMetadataRefresh} disabled={isRefreshLoading} className="w-full">
+              <Button
+                onClick={handleStartMetadataRefresh}
+                disabled={isRefreshLoading}
+                className="w-full"
+              >
                 {isRefreshLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

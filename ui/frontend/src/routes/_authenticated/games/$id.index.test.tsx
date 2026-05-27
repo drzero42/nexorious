@@ -72,11 +72,12 @@ describe('GameDetailPage — Back to Games navigation', () => {
 
   it('navigates to stored return URL when Back to Games is clicked', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem('games_list_return_url', JSON.stringify({ q: 'foo', status: 'completed' }));
-
-    const { GameDetailPage } = await import(
-      './$id.index'
+    sessionStorage.setItem(
+      'games_list_return_url',
+      JSON.stringify({ q: 'foo', status: 'completed' }),
     );
+
+    const { GameDetailPage } = await import('./$id.index');
     render(<GameDetailPage />);
 
     await user.click(screen.getByRole('button', { name: /back to games/i }));
@@ -172,7 +173,10 @@ describe('GameDetailPage — Back to Games navigation', () => {
 
   it('restores page number without double-encoding (regression: page="2" not page="\\"2\\"")', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem('games_list_return_url', JSON.stringify({ page: '2', status: 'completed' }));
+    sessionStorage.setItem(
+      'games_list_return_url',
+      JSON.stringify({ page: '2', status: 'completed' }),
+    );
 
     const { GameDetailPage } = await import('./$id.index');
     render(<GameDetailPage />);

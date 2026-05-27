@@ -14,8 +14,18 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
       const state = { location: { pathname: '/games', search: '', hash: '' } };
       return opts?.select ? opts.select(state) : state;
     }),
-    Link: ({ children, to, ...props }: { children: React.ReactNode; to: string; [key: string]: unknown }) => (
-      <a href={to} {...props as React.HTMLAttributes<HTMLAnchorElement>}>{children}</a>
+    Link: ({
+      children,
+      to,
+      ...props
+    }: {
+      children: React.ReactNode;
+      to: string;
+      [key: string]: unknown;
+    }) => (
+      <a href={to} {...(props as React.HTMLAttributes<HTMLAnchorElement>)}>
+        {children}
+      </a>
     ),
   };
 });

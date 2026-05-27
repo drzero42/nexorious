@@ -32,7 +32,9 @@ function stubGOGConnection(data: Partial<ReturnType<typeof hooks.useGOGConnectio
   } as ReturnType<typeof hooks.useGOGConnection>);
 }
 
-function stubConnectGOG(mutateAsync = vi.fn().mockResolvedValue({ username: 'goguser', userId: 'u1' })) {
+function stubConnectGOG(
+  mutateAsync = vi.fn().mockResolvedValue({ username: 'goguser', userId: 'u1' }),
+) {
   vi.spyOn(hooks, 'useConnectGOG').mockReturnValue({
     mutateAsync,
     isPending: false,
@@ -44,7 +46,9 @@ function stubDisconnectGOG(mutateAsync = vi.fn().mockResolvedValue(undefined)) {
   vi.spyOn(hooks, 'useDisconnectGOG').mockReturnValue({
     mutateAsync,
     isPending: false,
-  } as Partial<ReturnType<typeof hooks.useDisconnectGOG>> as ReturnType<typeof hooks.useDisconnectGOG>);
+  } as Partial<ReturnType<typeof hooks.useDisconnectGOG>> as ReturnType<
+    typeof hooks.useDisconnectGOG
+  >);
   return mutateAsync;
 }
 
@@ -59,10 +63,9 @@ describe('GOGConnectionCard', () => {
   });
 
   it('renders not-configured state with auth code form', () => {
-    render(
-      <GOGConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
-      { wrapper: createWrapper() },
-    );
+    render(<GOGConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />, {
+      wrapper: createWrapper(),
+    });
 
     expect(screen.getByText('GOG Connection')).toBeInTheDocument();
     expect(screen.getByText('Not Configured')).toBeInTheDocument();
@@ -73,10 +76,9 @@ describe('GOGConnectionCard', () => {
   it('renders connected state with username', () => {
     stubGOGConnection({ connected: true, username: 'goguser', userId: 'u1' });
 
-    render(
-      <GOGConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />,
-      { wrapper: createWrapper() },
-    );
+    render(<GOGConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
+      wrapper: createWrapper(),
+    });
 
     expect(screen.getByText('Connected')).toBeInTheDocument();
     expect(screen.getByText(/Connected as goguser/)).toBeInTheDocument();
@@ -86,10 +88,9 @@ describe('GOGConnectionCard', () => {
   it('submits auth code and calls onConnectionChange on success', async () => {
     const mutateAsync = stubConnectGOG();
 
-    render(
-      <GOGConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
-      { wrapper: createWrapper() },
-    );
+    render(<GOGConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />, {
+      wrapper: createWrapper(),
+    });
 
     await userEvent.type(screen.getByLabelText('Authorization Code'), 'my-gog-code');
     await userEvent.click(screen.getByRole('button', { name: 'Connect GOG' }));
@@ -101,10 +102,9 @@ describe('GOGConnectionCard', () => {
   });
 
   it('shows error when auth code is empty', async () => {
-    render(
-      <GOGConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
-      { wrapper: createWrapper() },
-    );
+    render(<GOGConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />, {
+      wrapper: createWrapper(),
+    });
 
     await userEvent.click(screen.getByRole('button', { name: 'Connect GOG' }));
 
@@ -115,10 +115,9 @@ describe('GOGConnectionCard', () => {
     stubGOGConnection({ connected: true, username: 'goguser' });
     const mutateAsync = stubDisconnectGOG();
 
-    render(
-      <GOGConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />,
-      { wrapper: createWrapper() },
-    );
+    render(<GOGConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
+      wrapper: createWrapper(),
+    });
 
     await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
     await userEvent.click(screen.getByRole('button', { name: 'Disconnect', hidden: false }));

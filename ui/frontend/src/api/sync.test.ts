@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as syncApi from './sync';
-import {
-  connectEpic,
-  getEpicConnection,
-  disconnectEpic,
-} from './sync';
+import { connectEpic, getEpicConnection, disconnectEpic } from './sync';
 import { api } from './client';
 import { SyncStorefront, SyncFrequency } from '@/types';
 

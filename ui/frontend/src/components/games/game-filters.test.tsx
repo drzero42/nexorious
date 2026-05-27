@@ -14,7 +14,6 @@ vi.mock('@/hooks', () => ({
   useAllTags: vi.fn(),
 }));
 
-
 // Mock lucide-react icons
 vi.mock('lucide-react', () => ({
   Grid: ({ className }: { className?: string }) => (
@@ -161,7 +160,9 @@ describe('GameFilters', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     // Default mock implementation
-    const { useAllPlatforms, useAllStorefronts, useFilterOptions, useAllTags } = vi.mocked(await import('@/hooks'));
+    const { useAllPlatforms, useAllStorefronts, useFilterOptions, useAllTags } = vi.mocked(
+      await import('@/hooks'),
+    );
     useAllPlatforms.mockReturnValue({
       data: mockPlatforms,
       isLoading: false,
@@ -204,7 +205,9 @@ describe('GameFilters', () => {
       const filtersLabel = screen.getByText('Filters:');
 
       // Sort row should come before filters row in the DOM
-      expect(sortLabel.compareDocumentPosition(filtersLabel)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(sortLabel.compareDocumentPosition(filtersLabel)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
     });
   });
 
@@ -218,12 +221,7 @@ describe('GameFilters', () => {
     });
 
     it('displays current search value', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{ search: 'Zelda' }}
-        />
-      );
+      render(<GameFilters {...defaultProps} filters={{ search: 'Zelda' }} />);
 
       const searchInput = screen.getByPlaceholderText('Search games...');
       expect(searchInput).toHaveValue('Zelda');
@@ -232,12 +230,7 @@ describe('GameFilters', () => {
     it('calls onFiltersChange when search input changes', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
-      render(
-        <GameFilters
-          {...defaultProps}
-          onFiltersChange={onFiltersChange}
-        />
-      );
+      render(<GameFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
 
       const searchInput = screen.getByPlaceholderText('Search games...');
       await user.clear(searchInput);
@@ -261,7 +254,7 @@ describe('GameFilters', () => {
             platformId: 'platform-1',
           }}
           onFiltersChange={onFiltersChange}
-        />
+        />,
       );
 
       const searchInput = screen.getByPlaceholderText('Search games...');
@@ -292,7 +285,7 @@ describe('GameFilters', () => {
             search: '',
             status: PlayStatus.IN_PROGRESS,
           }}
-        />
+        />,
       );
 
       // The select should be rendered
@@ -303,12 +296,7 @@ describe('GameFilters', () => {
     it('calls onFiltersChange when status changes to specific status', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
-      render(
-        <GameFilters
-          {...defaultProps}
-          onFiltersChange={onFiltersChange}
-        />
-      );
+      render(<GameFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
 
       const comboboxes = screen.getAllByRole('combobox');
       const statusSelect = comboboxes[1]; // Second combobox is status (first is sort)
@@ -335,7 +323,7 @@ describe('GameFilters', () => {
             status: PlayStatus.COMPLETED,
           }}
           onFiltersChange={onFiltersChange}
-        />
+        />,
       );
 
       const comboboxes = screen.getAllByRole('combobox');
@@ -382,7 +370,7 @@ describe('GameFilters', () => {
             platformId: 'platform-1',
           }}
           onFiltersChange={onFiltersChange}
-        />
+        />,
       );
 
       const comboboxes = screen.getAllByRole('combobox');
@@ -461,12 +449,7 @@ describe('GameFilters', () => {
     it('calls onFiltersChange when platform is selected', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
-      render(
-        <GameFilters
-          {...defaultProps}
-          onFiltersChange={onFiltersChange}
-        />
-      );
+      render(<GameFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
 
       const platformsButton = screen.getByText('Platforms').closest('button')!;
       await user.click(platformsButton);
@@ -492,7 +475,7 @@ describe('GameFilters', () => {
             platforms: ['ps5'],
           }}
           onFiltersChange={onFiltersChange}
-        />
+        />,
       );
 
       const platformsButton = screen.getByText('Platforms (1)').closest('button')!;
@@ -519,7 +502,7 @@ describe('GameFilters', () => {
             status: PlayStatus.IN_PROGRESS,
           }}
           onFiltersChange={onFiltersChange}
-        />
+        />,
       );
 
       const platformsButton = screen.getByText('Platforms').closest('button')!;
@@ -543,7 +526,7 @@ describe('GameFilters', () => {
             search: '',
             platforms: ['pc', 'ps5'],
           }}
-        />
+        />,
       );
 
       expect(screen.getByText('Platforms (2)')).toBeInTheDocument();
@@ -580,12 +563,7 @@ describe('GameFilters', () => {
     it('calls onFiltersChange when storefront is selected', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
-      render(
-        <GameFilters
-          {...defaultProps}
-          onFiltersChange={onFiltersChange}
-        />
-      );
+      render(<GameFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
 
       // Click "More filters" to expand
       const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
@@ -635,12 +613,7 @@ describe('GameFilters', () => {
     it('calls onFiltersChange when genre is selected', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
-      render(
-        <GameFilters
-          {...defaultProps}
-          onFiltersChange={onFiltersChange}
-        />
-      );
+      render(<GameFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
 
       // Click "More filters" to expand
       const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
@@ -689,12 +662,7 @@ describe('GameFilters', () => {
     it('calls onFiltersChange when tag is selected', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
-      render(
-        <GameFilters
-          {...defaultProps}
-          onFiltersChange={onFiltersChange}
-        />
-      );
+      render(<GameFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
 
       // Click "More filters" to expand
       const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
@@ -729,7 +697,7 @@ describe('GameFilters', () => {
             storefronts: ['steam'],
             genres: ['RPG'],
           }}
-        />
+        />,
       );
 
       // Should show badge with count of 2 (storefronts + genres)
@@ -765,23 +733,13 @@ describe('GameFilters', () => {
 
   describe('clear filters button', () => {
     it('does not show clear button when no filters are active', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{ search: '' }}
-        />
-      );
+      render(<GameFilters {...defaultProps} filters={{ search: '' }} />);
 
       expect(screen.queryByRole('button', { name: /clear/i })).not.toBeInTheDocument();
     });
 
     it('shows clear button when search filter is active', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{ search: 'Test' }}
-        />
-      );
+      render(<GameFilters {...defaultProps} filters={{ search: 'Test' }} />);
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
     });
@@ -794,7 +752,7 @@ describe('GameFilters', () => {
             search: '',
             status: PlayStatus.COMPLETED,
           }}
-        />
+        />,
       );
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
@@ -808,7 +766,7 @@ describe('GameFilters', () => {
             search: '',
             platformId: 'platform-1',
           }}
-        />
+        />,
       );
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
@@ -822,7 +780,7 @@ describe('GameFilters', () => {
             search: '',
             platforms: ['pc'],
           }}
-        />
+        />,
       );
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
@@ -836,7 +794,7 @@ describe('GameFilters', () => {
             search: '',
             storefronts: ['steam'],
           }}
-        />
+        />,
       );
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
@@ -850,7 +808,7 @@ describe('GameFilters', () => {
             search: '',
             genres: ['RPG'],
           }}
-        />
+        />,
       );
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
@@ -864,7 +822,7 @@ describe('GameFilters', () => {
             search: '',
             tags: ['Favorite'],
           }}
-        />
+        />,
       );
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
@@ -880,7 +838,7 @@ describe('GameFilters', () => {
             platforms: ['pc'],
             storefronts: ['steam'],
           }}
-        />
+        />,
       );
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
@@ -904,7 +862,7 @@ describe('GameFilters', () => {
             tags: ['Favorite'],
           }}
           onFiltersChange={onFiltersChange}
-        />
+        />,
       );
 
       const clearButton = screen.getByRole('button', { name: /clear/i });
@@ -934,9 +892,7 @@ describe('GameFilters', () => {
     });
 
     it('highlights grid button when viewMode is grid', () => {
-      render(
-        <GameFilters {...defaultProps} viewMode="grid" />
-      );
+      render(<GameFilters {...defaultProps} viewMode="grid" />);
 
       // Grid button should have secondary variant (check for the button containing grid icon)
       const gridButton = screen.getByTestId('grid-icon').closest('button');
@@ -944,9 +900,7 @@ describe('GameFilters', () => {
     });
 
     it('highlights list button when viewMode is list', () => {
-      render(
-        <GameFilters {...defaultProps} viewMode="list" />
-      );
+      render(<GameFilters {...defaultProps} viewMode="list" />);
 
       // List button should have secondary variant
       const listButton = screen.getByTestId('list-icon').closest('button');
@@ -956,13 +910,7 @@ describe('GameFilters', () => {
     it('calls onViewModeChange with "grid" when grid button is clicked', async () => {
       const user = userEvent.setup();
       const onViewModeChange = vi.fn();
-      render(
-        <GameFilters
-          {...defaultProps}
-          viewMode="list"
-          onViewModeChange={onViewModeChange}
-        />
-      );
+      render(<GameFilters {...defaultProps} viewMode="list" onViewModeChange={onViewModeChange} />);
 
       const gridButton = screen.getByTestId('grid-icon').closest('button')!;
       await user.click(gridButton);
@@ -973,13 +921,7 @@ describe('GameFilters', () => {
     it('calls onViewModeChange with "list" when list button is clicked', async () => {
       const user = userEvent.setup();
       const onViewModeChange = vi.fn();
-      render(
-        <GameFilters
-          {...defaultProps}
-          viewMode="grid"
-          onViewModeChange={onViewModeChange}
-        />
-      );
+      render(<GameFilters {...defaultProps} viewMode="grid" onViewModeChange={onViewModeChange} />);
 
       const listButton = screen.getByTestId('list-icon').closest('button')!;
       await user.click(listButton);
@@ -993,10 +935,7 @@ describe('GameFilters', () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
       const { rerender } = render(
-        <GameFilters
-          {...defaultProps}
-          onFiltersChange={onFiltersChange}
-        />
+        <GameFilters {...defaultProps} onFiltersChange={onFiltersChange} />,
       );
 
       // Change search
@@ -1010,7 +949,7 @@ describe('GameFilters', () => {
           {...defaultProps}
           filters={{ search: 'T' }}
           onFiltersChange={onFiltersChange}
-        />
+        />,
       );
 
       // Change status - click on the button showing "All Statuses"
@@ -1030,7 +969,7 @@ describe('GameFilters', () => {
           {...defaultProps}
           filters={{ search: 'T', status: PlayStatus.COMPLETED }}
           onFiltersChange={onFiltersChange}
-        />
+        />,
       );
 
       // Change platform (now multi-select)
@@ -1055,7 +994,7 @@ describe('GameFilters', () => {
           {...defaultProps}
           onFiltersChange={onFiltersChange}
           onViewModeChange={onViewModeChange}
-        />
+        />,
       );
 
       // Change filter
@@ -1108,9 +1047,9 @@ describe('GameFilters', () => {
       await user.click(platformsButton);
 
       // Get all option labels
-      const options = screen.getAllByRole('checkbox').map(
-        (checkbox) => checkbox.closest('label')?.textContent || ''
-      );
+      const options = screen
+        .getAllByRole('checkbox')
+        .map((checkbox) => checkbox.closest('label')?.textContent || '');
 
       // Verify options are sorted alphabetically
       // Expected order: PC, PlayStation 5, Unknown, Xbox Series X
@@ -1129,9 +1068,9 @@ describe('GameFilters', () => {
       await user.click(storefrontsButton);
 
       // Get all option labels
-      const options = screen.getAllByRole('checkbox').map(
-        (checkbox) => checkbox.closest('label')?.textContent || ''
-      );
+      const options = screen
+        .getAllByRole('checkbox')
+        .map((checkbox) => checkbox.closest('label')?.textContent || '');
 
       // Verify options are sorted alphabetically
       // Expected order: Epic Games Store, Steam, Unknown
@@ -1141,12 +1080,7 @@ describe('GameFilters', () => {
     it('can select Unknown platform filter', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
-      render(
-        <GameFilters
-          {...defaultProps}
-          onFiltersChange={onFiltersChange}
-        />
-      );
+      render(<GameFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
 
       const platformsButton = screen.getByText('Platforms').closest('button')!;
       await user.click(platformsButton);
@@ -1163,12 +1097,7 @@ describe('GameFilters', () => {
     it('can select Unknown storefront filter', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
-      render(
-        <GameFilters
-          {...defaultProps}
-          onFiltersChange={onFiltersChange}
-        />
-      );
+      render(<GameFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
 
       // Click "More filters" to expand
       const moreFiltersButton = screen.getByRole('button', { name: /more filters/i });
@@ -1210,9 +1139,7 @@ describe('GameFilters', () => {
     it('calls onSortByChange when sort option is selected', async () => {
       const user = userEvent.setup();
       const onSortByChange = vi.fn();
-      render(
-        <GameFilters {...defaultProps} onSortByChange={onSortByChange} />
-      );
+      render(<GameFilters {...defaultProps} onSortByChange={onSortByChange} />);
 
       // Find the sort select by its current value "Title"
       const sortSelect = screen.getByText('Title').closest('button')!;
@@ -1227,9 +1154,7 @@ describe('GameFilters', () => {
     it('calls onSortOrderToggle when direction button is clicked', async () => {
       const user = userEvent.setup();
       const onSortOrderToggle = vi.fn();
-      render(
-        <GameFilters {...defaultProps} onSortOrderToggle={onSortOrderToggle} />
-      );
+      render(<GameFilters {...defaultProps} onSortOrderToggle={onSortOrderToggle} />);
 
       await user.click(screen.getByTitle('Ascending'));
       expect(onSortOrderToggle).toHaveBeenCalled();

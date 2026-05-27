@@ -20,7 +20,16 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { ArrowLeft, AlertCircle, Loader2, Check, Eye, EyeOff, AlertTriangle, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  AlertCircle,
+  Loader2,
+  Check,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  Trash2,
+} from 'lucide-react';
 import * as adminApi from '@/api/admin';
 import type { AdminUser, UserDeletionImpact } from '@/types';
 
@@ -120,7 +129,7 @@ function EditUserPage() {
       formData.username !== originalData.username ||
       formData.isActive !== originalData.isActive ||
       formData.isAdmin !== originalData.isAdmin,
-    [formData, originalData]
+    [formData, originalData],
   );
 
   // Check admin access
@@ -415,7 +424,9 @@ function EditUserPage() {
                   >
                     Administrator privileges
                     {isEditingSelf && (
-                      <span className="text-xs ml-2">(Cannot modify your own admin privileges)</span>
+                      <span className="text-xs ml-2">
+                        (Cannot modify your own admin privileges)
+                      </span>
                     )}
                   </label>
                 </div>

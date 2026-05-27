@@ -98,7 +98,7 @@ describe('platforms.ts', () => {
             per_page: 100,
             pages: 1,
           });
-        })
+        }),
       );
 
       const result = await getPlatforms();
@@ -150,7 +150,7 @@ describe('platforms.ts', () => {
             per_page: 50,
             pages: 0,
           });
-        })
+        }),
       );
 
       const result = await getPlatforms({
@@ -185,7 +185,7 @@ describe('platforms.ts', () => {
             per_page: 100,
             pages: 1,
           });
-        })
+        }),
       );
 
       const result = await getAllPlatforms();
@@ -210,7 +210,7 @@ describe('platforms.ts', () => {
             per_page: 100,
             pages: 0,
           });
-        })
+        }),
       );
 
       await getAllPlatforms({ activeOnly: false, source: 'custom' });
@@ -222,7 +222,7 @@ describe('platforms.ts', () => {
       server.use(
         http.get(`${API_URL}/platforms/pc`, () => {
           return HttpResponse.json(mockPlatformApi);
-        })
+        }),
       );
 
       const result = await getPlatform('pc');
@@ -236,7 +236,7 @@ describe('platforms.ts', () => {
       server.use(
         http.get(`${API_URL}/platforms/non-existent`, () => {
           return HttpResponse.json({ detail: 'Platform not found' }, { status: 404 });
-        })
+        }),
       );
 
       await expect(getPlatform('non-existent')).rejects.toMatchObject({
@@ -259,7 +259,7 @@ describe('platforms.ts', () => {
             storefronts: [mockPlatformApi.storefronts[0], mockStorefrontApi],
             total_storefronts: 2,
           });
-        })
+        }),
       );
 
       const result = await getPlatformStorefronts('pc');
@@ -281,7 +281,7 @@ describe('platforms.ts', () => {
             storefronts: [],
             total_storefronts: 0,
           });
-        })
+        }),
       );
 
       await getPlatformStorefronts('pc', false);
@@ -296,7 +296,7 @@ describe('platforms.ts', () => {
             storefronts: [],
             total_storefronts: 0,
           });
-        })
+        }),
       );
 
       const result = await getPlatformStorefronts('playstation-5');
@@ -321,7 +321,7 @@ describe('platforms.ts', () => {
             per_page: 100,
             pages: 1,
           });
-        })
+        }),
       );
 
       const result = await getStorefronts();
@@ -347,7 +347,7 @@ describe('platforms.ts', () => {
             per_page: 25,
             pages: 0,
           });
-        })
+        }),
       );
 
       await getStorefronts({
@@ -370,7 +370,7 @@ describe('platforms.ts', () => {
             per_page: 100,
             pages: 1,
           });
-        })
+        }),
       );
 
       const result = await getAllStorefronts();
@@ -393,7 +393,7 @@ describe('platforms.ts', () => {
             per_page: 100,
             pages: 0,
           });
-        })
+        }),
       );
 
       await getAllStorefronts({ activeOnly: false, source: 'custom' });
@@ -405,7 +405,7 @@ describe('platforms.ts', () => {
       server.use(
         http.get(`${API_URL}/platforms/storefronts/epic`, () => {
           return HttpResponse.json(mockStorefrontApi);
-        })
+        }),
       );
 
       const result = await getStorefront('epic');
@@ -419,7 +419,7 @@ describe('platforms.ts', () => {
       server.use(
         http.get(`${API_URL}/platforms/storefronts/non-existent`, () => {
           return HttpResponse.json({ detail: 'Storefront not found' }, { status: 404 });
-        })
+        }),
       );
 
       await expect(getStorefront('non-existent')).rejects.toMatchObject({
@@ -437,7 +437,7 @@ describe('platforms.ts', () => {
           expect(url.searchParams.get('active_only')).toBe('true');
 
           return HttpResponse.json(['PC', 'PlayStation 5', 'Xbox Series X']);
-        })
+        }),
       );
 
       const result = await getPlatformNames();
@@ -452,7 +452,7 @@ describe('platforms.ts', () => {
           expect(url.searchParams.get('active_only')).toBe('false');
 
           return HttpResponse.json(['PC', 'PlayStation 5', 'Inactive Platform']);
-        })
+        }),
       );
 
       const result = await getPlatformNames(false);
@@ -469,7 +469,7 @@ describe('platforms.ts', () => {
           expect(url.searchParams.get('active_only')).toBe('true');
 
           return HttpResponse.json(['Steam', 'Epic Games Store', 'GOG']);
-        })
+        }),
       );
 
       const result = await getStorefrontNames();
@@ -484,7 +484,7 @@ describe('platforms.ts', () => {
           expect(url.searchParams.get('active_only')).toBe('false');
 
           return HttpResponse.json(['Steam', 'Inactive Store']);
-        })
+        }),
       );
 
       const result = await getStorefrontNames(false);

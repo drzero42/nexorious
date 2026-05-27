@@ -135,17 +135,12 @@ function PersonalStats({
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Average Hours per Game</span>
             <span className="text-sm text-muted-foreground">
-              {stats.totalGames > 0
-                ? (stats.totalHoursPlayed / stats.totalGames).toFixed(1)
-                : 0}
-              h
+              {stats.totalGames > 0 ? (stats.totalHoursPlayed / stats.totalGames).toFixed(1) : 0}h
             </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Games Finished</span>
-            <span className="text-sm text-muted-foreground">
-              {completedGames}
-            </span>
+            <span className="text-sm text-muted-foreground">{completedGames}</span>
           </div>
         </CardContent>
       </Card>
@@ -157,9 +152,7 @@ function PersonalStats({
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Pile of Shame</span>
-            <span className="text-sm text-muted-foreground">
-              {stats.pileOfShame} games
-            </span>
+            <span className="text-sm text-muted-foreground">{stats.pileOfShame} games</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Completion Rate</span>
@@ -187,9 +180,7 @@ function DashboardPage() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Your gaming statistics and insights
-        </p>
+        <p className="text-muted-foreground">Your gaming statistics and insights</p>
       </div>
 
       {isLoading && <DashboardSkeleton />}

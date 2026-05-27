@@ -45,7 +45,7 @@ export function useJobs(
   filters?: JobFilters,
   page: number = 1,
   perPage: number = 20,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean },
 ) {
   return useQuery({
     queryKey: jobsKeys.list(filters, page, perPage),
@@ -102,7 +102,7 @@ export function useJobItems(
   status?: JobItemStatus,
   page: number = 1,
   pageSize: number = 50,
-  options?: { enabled?: boolean; refetchInterval?: number | false }
+  options?: { enabled?: boolean; refetchInterval?: number | false },
 ) {
   return useQuery({
     queryKey: jobsKeys.items(jobId, status, page),

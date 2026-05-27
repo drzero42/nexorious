@@ -1,11 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -50,7 +46,9 @@ function SyncChangeList({
             {icon}
             <span className="text-sm">{label}</span>
           </div>
-          <Badge variant="secondary" className="h-5 text-xs">{items.length}</Badge>
+          <Badge variant="secondary" className="h-5 text-xs">
+            {items.length}
+          </Badge>
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent>
@@ -75,8 +73,10 @@ function formatSummary(job: RecentJobDetail): string {
   const parts: string[] = [];
   if (job.addedItems.length > 0) parts.push(`${job.addedItems.length} added`);
   if (job.removedItems.length > 0) parts.push(`${job.removedItems.length} removed`);
-  if (job.statusChangedItems.length > 0) parts.push(`${job.statusChangedItems.length} status changed`);
-  if (job.alreadyInLibraryItems.length > 0) parts.push(`${job.alreadyInLibraryItems.length} already in library`);
+  if (job.statusChangedItems.length > 0)
+    parts.push(`${job.statusChangedItems.length} status changed`);
+  if (job.alreadyInLibraryItems.length > 0)
+    parts.push(`${job.alreadyInLibraryItems.length} already in library`);
   if (job.skippedItems.length > 0) parts.push(`${job.skippedItems.length} skipped`);
   return parts.join(' · ');
 }

@@ -73,7 +73,10 @@ export function getStorefrontDisplayInfo(storefront: SyncStorefront): {
   bgColor: string;
   iconUrl: string;
 } {
-  const info: Record<SyncStorefront, { name: string; color: string; bgColor: string; iconUrl: string }> = {
+  const info: Record<
+    SyncStorefront,
+    { name: string; color: string; bgColor: string; iconUrl: string }
+  > = {
     [SyncStorefront.STEAM]: {
       name: 'Steam',
       color: 'text-[#1b2838]',
@@ -112,7 +115,8 @@ export interface SteamVerifyResponse {
 export const STEAM_VERIFY_ERROR_MESSAGES: Record<string, string> = {
   invalid_api_key: 'Invalid API key. Please check and try again.',
   invalid_steam_id: 'Steam ID not found. Please verify the number.',
-  private_profile: 'Your Steam profile or game details are set to private. Please make them public and try again.',
+  private_profile:
+    'Your Steam profile or game details are set to private. Please make them public and try again.',
   rate_limited: 'Steam API rate limit reached. Please try again in a few minutes.',
   network_error: 'Could not connect to Steam. Please try again.',
 };

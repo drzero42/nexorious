@@ -259,15 +259,12 @@ describe('GameCard', () => {
       { status: PlayStatus.REPLAY, label: 'Replay' },
     ];
 
-    it.each(statusTestCases)(
-      'renders "$label" badge for $status status',
-      ({ status, label }) => {
-        const game = createMockGame({ play_status: status });
-        render(<GameCard game={game} />);
+    it.each(statusTestCases)('renders "$label" badge for $status status', ({ status, label }) => {
+      const game = createMockGame({ play_status: status });
+      render(<GameCard game={game} />);
 
-        expect(screen.getByText(label)).toBeInTheDocument();
-      }
-    );
+      expect(screen.getByText(label)).toBeInTheDocument();
+    });
   });
 
   describe('loved indicator', () => {

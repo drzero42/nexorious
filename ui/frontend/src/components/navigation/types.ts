@@ -13,5 +13,5 @@ export interface NavSection {
   icon: ReactNode;
   items: NavItem[];
   defaultOpen?: boolean;
-  needsAttention?: boolean;  // Add this - when true, section auto-expands
+  needsAttention?: boolean; // Add this - when true, section auto-expands
 }

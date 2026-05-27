@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  SyncStorefront,
-  SUPPORTED_SYNC_STOREFRONTS,
-  getStorefrontDisplayInfo,
-} from './sync';
+import { SyncStorefront, SUPPORTED_SYNC_STOREFRONTS, getStorefrontDisplayInfo } from './sync';
 
 describe('SyncStorefront', () => {
   it('should include PSN in enum', () => {
@@ -16,11 +12,7 @@ describe('SyncStorefront', () => {
 
   it('should have all supported storefronts defined', () => {
     expect(SUPPORTED_SYNC_STOREFRONTS).toEqual(
-      expect.arrayContaining([
-        SyncStorefront.STEAM,
-        SyncStorefront.EPIC,
-        SyncStorefront.PSN,
-      ])
+      expect.arrayContaining([SyncStorefront.STEAM, SyncStorefront.EPIC, SyncStorefront.PSN]),
     );
   });
 });

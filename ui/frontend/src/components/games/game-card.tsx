@@ -55,7 +55,7 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
     <Card
       className={cn(
         'overflow-hidden cursor-pointer transition-all hover:shadow-lg group',
-        selected && 'ring-2 ring-primary'
+        selected && 'ring-2 ring-primary',
       )}
       onClick={onClick}
     >
@@ -92,10 +92,7 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
 
         {/* Selection checkbox */}
         {onSelect && (
-          <div
-            className="absolute top-2 left-2 z-10"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
             <Checkbox
               checked={selected}
               onCheckedChange={() => onSelect(game.id)}
@@ -106,12 +103,7 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
 
         {/* Status badge */}
         <div className="absolute bottom-2 left-2">
-          <Badge
-            className={cn(
-              'text-white border-0',
-              statusColors[game.play_status]
-            )}
-          >
+          <Badge className={cn('text-white border-0', statusColors[game.play_status])}>
             {statusLabels[game.play_status]}
           </Badge>
         </div>
@@ -127,19 +119,12 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
       </div>
 
       <CardContent className="p-3">
-        <h3
-          className="font-medium truncate"
-          title={game.game?.title ?? 'Unknown Game'}
-        >
+        <h3 className="font-medium truncate" title={game.game?.title ?? 'Unknown Game'}>
           {game.game?.title ?? 'Unknown Game'}
         </h3>
         {game.platforms && game.platforms.length > 0 && (
           <div className="mt-1">
-            <PlatformIconList
-              platforms={game.platforms}
-              size="sm"
-              showTooltips
-            />
+            <PlatformIconList platforms={game.platforms} size="sm" showTooltips />
           </div>
         )}
         <div className="flex items-center justify-between mt-2">
@@ -156,12 +141,12 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
           {game.game?.rating_average != null && (
             <div className="flex items-center gap-1 text-muted-foreground">
               <Gamepad2 className="h-3 w-3" />
-              <span className="text-sm font-medium text-foreground">{formatIgdbRating(game.game.rating_average)}</span>
+              <span className="text-sm font-medium text-foreground">
+                {formatIgdbRating(game.game.rating_average)}
+              </span>
             </div>
           )}
-          <span className="text-sm text-muted-foreground">
-            {game.hours_played || 0}h
-          </span>
+          <span className="text-sm text-muted-foreground">{game.hours_played || 0}h</span>
         </div>
         {(game.game?.howlongtobeat_main != null ||
           game.game?.howlongtobeat_extra != null ||

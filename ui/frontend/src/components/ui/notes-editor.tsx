@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -50,7 +49,7 @@ export function NotesEditor({
       attributes: {
         class: cn(
           'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[150px] p-3',
-          'prose-headings:mb-2 prose-headings:mt-4 prose-p:my-2 prose-ul:my-2 prose-ol:my-2'
+          'prose-headings:mb-2 prose-headings:mt-4 prose-p:my-2 prose-ul:my-2 prose-ol:my-2',
         ),
       },
     },
@@ -202,7 +201,7 @@ export function NotesViewer({ content, className }: { content: string; className
       attributes: {
         class: cn(
           'prose prose-sm dark:prose-invert max-w-none',
-          'prose-headings:mb-2 prose-headings:mt-4 prose-p:my-2 prose-ul:my-2 prose-ol:my-2'
+          'prose-headings:mb-2 prose-headings:mt-4 prose-p:my-2 prose-ul:my-2 prose-ol:my-2',
         ),
       },
     },

@@ -1,12 +1,12 @@
-import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
-import { afterEach, beforeAll, afterAll, vi } from "vitest";
-import type React from "react";
-import { server } from "./mocks/server";
+import '@testing-library/jest-dom/vitest';
+import { cleanup } from '@testing-library/react';
+import { afterEach, beforeAll, afterAll, vi } from 'vitest';
+import type React from 'react';
+import { server } from './mocks/server';
 
 // Establish API mocking before all tests
 beforeAll(() => {
-  server.listen({ onUnhandledRequest: "error" });
+  server.listen({ onUnhandledRequest: 'error' });
 });
 
 // Reset any request handlers that we may add during the tests,
@@ -33,7 +33,17 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
       const state = { location: { pathname: '/', search: '', hash: '' } };
       return opts?.select ? opts.select(state) : state;
     }),
-    Link: ({ children, to, params, ...props }: { children: React.ReactNode; to: string; params?: Record<string, string>; [key: string]: unknown }) => {
+    Link: ({
+      children,
+      to,
+      params,
+      ...props
+    }: {
+      children: React.ReactNode;
+      to: string;
+      params?: Record<string, string>;
+      [key: string]: unknown;
+    }) => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const React = require('react');
       let href = to;
@@ -57,12 +67,12 @@ const localStorageMock = {
   key: vi.fn(),
 };
 
-Object.defineProperty(window, "localStorage", {
+Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
 });
 
 // Mock matchMedia
-Object.defineProperty(window, "matchMedia", {
+Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({
     matches: false,
@@ -83,7 +93,7 @@ class ResizeObserverMock {
   disconnect = vi.fn();
 }
 
-Object.defineProperty(window, "ResizeObserver", {
+Object.defineProperty(window, 'ResizeObserver', {
   value: ResizeObserverMock,
 });
 
@@ -93,11 +103,11 @@ class IntersectionObserverMock {
   unobserve = vi.fn();
   disconnect = vi.fn();
   root = null;
-  rootMargin = "";
+  rootMargin = '';
   thresholds = [];
 }
 
-Object.defineProperty(window, "IntersectionObserver", {
+Object.defineProperty(window, 'IntersectionObserver', {
   value: IntersectionObserverMock,
 });
 
