@@ -397,6 +397,19 @@ describe('client.ts', () => {
         });
       });
 
+      it('extracts error message from error field', async () => {
+        server.use(
+          http.get(`${API_URL}/error`, () => {
+            return HttpResponse.json({ error: 'invalid or expired token' }, { status: 401 });
+          }),
+        );
+
+        await expect(apiCall('/error')).rejects.toMatchObject({
+          message: 'invalid or expired token',
+          status: 401,
+        });
+      });
+
       it('uses default error message when response is not JSON', async () => {
         server.use(
           http.get(`${API_URL}/error`, () => {

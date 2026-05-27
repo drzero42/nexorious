@@ -64,6 +64,8 @@ async function handleApiError(response: Response): Promise<never> {
       const details = errorDetails as Record<string, unknown>;
       if (typeof details.detail === 'string') {
         errorMessage = details.detail;
+      } else if (typeof details.error === 'string') {
+        errorMessage = details.error;
       } else if (typeof details.message === 'string') {
         errorMessage = details.message;
       }
