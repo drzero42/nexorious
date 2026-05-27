@@ -135,11 +135,12 @@ export function GameEditForm({ game }: GameEditFormProps) {
     assignTags.isPending ||
     removeTags.isPending;
 
-  // Compute total hours from platform playtimes
-  const totalHoursPlayed = useMemo(() => {
-    const platformHours = Object.values(platformPlaytimes).reduce((sum, h) => sum + h, 0);
-    return platformHours > 0 ? platformHours : game.hours_played;
-  }, [platformPlaytimes, game.hours_played]);
+  // Total hours = sum of the per-platform playtime inputs (the calculated value the API
+  // now returns as game.hours_played, kept live so in-progress edits are reflected).
+  const totalHoursPlayed = useMemo(
+    () => Object.values(platformPlaytimes).reduce((sum, h) => sum + h, 0),
+    [platformPlaytimes],
+  );
 
   // Track original values for comparison
   const originalTagIds = useMemo(() => game.tags?.map((t) => t.id) ?? [], [game.tags]);
