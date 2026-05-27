@@ -94,9 +94,9 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 
 	ctx := context.Background()
 	var statsUsers, statsGames, statsTags int
-	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&statsUsers) //nolint:errcheck // cosmetic stat; zero value acceptable on error
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&statsUsers)                     //nolint:errcheck // cosmetic stat; zero value acceptable on error
 	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT game_id) FROM user_games").Scan(&statsGames) //nolint:errcheck // cosmetic stat; zero value acceptable on error
-	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&statsTags) //nolint:errcheck // cosmetic stat; zero value acceptable on error
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&statsTags)                       //nolint:errcheck // cosmetic stat; zero value acceptable on error
 
 	var migrationVersion string
 	_ = s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(name), '') FROM bun_migrations").Scan(&migrationVersion) //nolint:errcheck // cosmetic stat; zero value acceptable on error
@@ -155,12 +155,15 @@ func (s *Service) ListBackups() ([]BackupInfo, error) {
 			slog.Warn("skipping invalid backup archive", "path", archivePath, "err", err)
 			continue
 		}
-		info, _ := os.Stat(archivePath) //nolint:errcheck // best-effort modtime for display; zero value acceptable
+		var sizeBytes int64
+		if info, statErr := os.Stat(archivePath); statErr == nil {
+			sizeBytes = info.Size()
+		}
 		bi := BackupInfo{
 			ID:         strings.TrimSuffix(filepath.Base(archivePath), ".tar.gz"),
 			CreatedAt:  manifest.CreatedAt,
 			BackupType: manifest.BackupType,
-			SizeBytes:  info.Size(),
+			SizeBytes:  sizeBytes,
 		}
 		bi.Stats.Users = manifest.StatsUsers
 		bi.Stats.Games = manifest.StatsGames

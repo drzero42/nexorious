@@ -16,6 +16,6 @@ func parseDurationHours(s string) int {
 	if m == nil {
 		return 0
 	}
-	h, _ := strconv.Atoi(m[1]) //nolint:errcheck // m[1] is a regex \d+ capture; always numeric
+	h, _ := strconv.Atoi(m[1]) //nolint:errcheck // optional hours group; empty match yields 0, which is correct
 	return h
 }
