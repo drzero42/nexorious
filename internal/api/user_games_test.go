@@ -1335,3 +1335,51 @@ func TestUserGameCalculatedHours(t *testing.T) {
 		}
 	})
 }
+
+func TestUserGamesNoStoredHoursColumn(t *testing.T) {
+	truncateAllTables(t)
+	var count int
+	err := testDB.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM information_schema.columns
+		 WHERE table_schema = 'public' AND table_name = 'user_games' AND column_name = 'hours_played'`).Scan(&count)
+	if err != nil {
+		t.Fatalf("information_schema query: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("user_games.hours_played must not be a stored column; found %d", count)
+	}
+}
+
+func TestManualPlatformHoursReflectedInSum(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "manualhours")
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO platforms (name, display_name) VALUES ('pc','PC') ON CONFLICT DO NOTHING`)
+	g := insertTestGame(t, testDB, "Manual Hours Game")
+	insertTestUserGame(t, testDB, "ug-mh-1", userID, int(g))
+	pc := "pc"
+	insertTestUserGamePlatform(t, testDB, "ugp-mh-1", "ug-mh-1", &pc, nil)
+
+	// Manually set hours via the platform-update endpoint.
+	rec := putJSONAuth(t, e, "/api/user-games/ug-mh-1/platforms/ugp-mh-1", map[string]any{
+		"hours_played": 42.5,
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from platform update, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// The calculated game-level value reflects the manual entry — proving it is derived,
+	// not stored.
+	rec = getAuth(t, e, "/api/user-games/ug-mh-1", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["hours_played"].(float64) != 42.5 {
+		t.Fatalf("expected calculated hours_played=42.5, got %v", resp["hours_played"])
+	}
+}
