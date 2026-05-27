@@ -1204,6 +1204,67 @@ func TestCollectionStats(t *testing.T) {
 	})
 }
 
+func TestListUserGamesSortByHours(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "sorthours")
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO platforms (name, display_name) VALUES ('pc','PC') ON CONFLICT DO NOTHING`)
+	pc := "pc"
+
+	gLow := insertTestGame(t, testDB, "Low Hours")
+	gHigh := insertTestGame(t, testDB, "High Hours")
+	gZero := insertTestGame(t, testDB, "Zero Hours")
+	insertTestUserGame(t, testDB, "ug-sh-low", userID, int(gLow))
+	insertTestUserGame(t, testDB, "ug-sh-high", userID, int(gHigh))
+	insertTestUserGame(t, testDB, "ug-sh-zero", userID, int(gZero)) // no platforms → 0
+
+	insertTestUserGamePlatform(t, testDB, "ugp-sh-low", "ug-sh-low", &pc, nil)
+	insertTestUserGamePlatform(t, testDB, "ugp-sh-high", "ug-sh-high", &pc, nil)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE user_game_platforms SET hours_played = 5 WHERE id = 'ugp-sh-low'`)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE user_game_platforms SET hours_played = 100 WHERE id = 'ugp-sh-high'`)
+
+	idsInOrder := func(t *testing.T, order string) []string {
+		t.Helper()
+		rec := getAuth(t, e, "/api/user-games?sort_by=hours_played&sort_order="+order, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		games := resp["user_games"].([]any)
+		ids := make([]string, len(games))
+		for i, g := range games {
+			ids[i] = g.(map[string]any)["id"].(string)
+		}
+		return ids
+	}
+
+	t.Run("desc orders highest hours first, zero last", func(t *testing.T) {
+		ids := idsInOrder(t, "desc")
+		want := []string{"ug-sh-high", "ug-sh-low", "ug-sh-zero"}
+		for i := range want {
+			if ids[i] != want[i] {
+				t.Fatalf("desc order mismatch: got %v, want %v", ids, want)
+			}
+		}
+	})
+
+	t.Run("asc orders zero first, highest last", func(t *testing.T) {
+		ids := idsInOrder(t, "asc")
+		want := []string{"ug-sh-zero", "ug-sh-low", "ug-sh-high"}
+		for i := range want {
+			if ids[i] != want[i] {
+				t.Fatalf("asc order mismatch: got %v, want %v", ids, want)
+			}
+		}
+	})
+}
+
 func TestUserGameCalculatedHours(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()

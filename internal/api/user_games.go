@@ -138,11 +138,18 @@ var allowedUserGameSortFields = map[string]string{
 	"personal_rating": "ug.personal_rating",
 	"is_loved":        "ug.is_loved",
 	"release_date":    "g.release_date",
+	// hours_played sorts on the joined aggregate alias `hp`; COALESCE so games with no
+	// platforms (LEFT JOIN → NULL) sort as 0 instead of NULL-first under DESC.
+	"hours_played": "COALESCE(hp.total, 0)",
 }
 
 var sortFieldsRequiringGamesJoin = map[string]bool{
 	"title":        true,
 	"release_date": true,
+}
+
+var sortFieldsRequiringHoursJoin = map[string]bool{
+	"hours_played": true,
 }
 
 // HandleListUserGames handles GET /api/user-games.
@@ -216,6 +223,10 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	// If sort field needs games join, add it.
 	if sortBy != "" && sortFieldsRequiringGamesJoin[sortBy] {
 		fb.AddJoin("g", "LEFT JOIN games AS g ON g.id = ug.game_id")
+	}
+	// If sort field needs the aggregated platform-hours join, add it.
+	if sortBy != "" && sortFieldsRequiringHoursJoin[sortBy] {
+		fb.AddJoin("hp", "LEFT JOIN (SELECT user_game_id, COALESCE(SUM(hours_played), 0) AS total FROM user_game_platforms GROUP BY user_game_id) hp ON hp.user_game_id = ug.id")
 	}
 
 	ctx := context.Background()
@@ -300,6 +311,9 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		// For game-table sorts, join games again on the model query.
 		if sortFieldsRequiringGamesJoin[sortBy] {
 			q = q.Join("LEFT JOIN games AS g ON g.id = user_game.game_id")
+		}
+		if sortFieldsRequiringHoursJoin[sortBy] {
+			q = q.Join("LEFT JOIN (SELECT user_game_id, COALESCE(SUM(hours_played), 0) AS total FROM user_game_platforms GROUP BY user_game_id) hp ON hp.user_game_id = user_game.id")
 		}
 		q = q.OrderExpr(sortCol + " " + sortOrder)
 	}
