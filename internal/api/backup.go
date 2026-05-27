@@ -61,13 +61,13 @@ func parseCronToSchedule(cron string) (schedule, scheduleTime string, scheduleDa
 	if len(parts) != 5 {
 		return "manual", scheduleTime, 0
 	}
-	h, _ := strconv.Atoi(parts[1])
-	m, _ := strconv.Atoi(parts[0])
+	h, _ := strconv.Atoi(parts[1]) //nolint:errcheck // malformed cron field defaults to 0
+	m, _ := strconv.Atoi(parts[0]) //nolint:errcheck // malformed cron field defaults to 0
 	scheduleTime = fmt.Sprintf("%02d:%02d", h, m)
 	if parts[4] == "*" {
 		return "daily", scheduleTime, 0
 	}
-	cronDay, _ := strconv.Atoi(parts[4])
+	cronDay, _ := strconv.Atoi(parts[4]) //nolint:errcheck // malformed cron field defaults to 0
 	return "weekly", scheduleTime, (cronDay + 6) % 7
 }
 

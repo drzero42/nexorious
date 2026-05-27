@@ -87,11 +87,11 @@ var allowedSortFields = map[string]bool{
 
 // HandleListGames handles GET /api/games.
 func (h *GamesHandler) HandleListGames(c *echo.Context) error {
-	page, _ := strconv.Atoi(c.QueryParam("page"))
+	page, _ := strconv.Atoi(c.QueryParam("page")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if page < 1 {
 		page = 1
 	}
-	perPage, _ := strconv.Atoi(c.QueryParam("per_page"))
+	perPage, _ := strconv.Atoi(c.QueryParam("per_page")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if perPage < 1 || perPage > 100 {
 		perPage = 20
 	}

@@ -102,11 +102,11 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 
-	page, _ := strconv.Atoi(c.QueryParam("page"))
+	page, _ := strconv.Atoi(c.QueryParam("page")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if page < 1 {
 		page = 1
 	}
-	perPage, _ := strconv.Atoi(c.QueryParam("per_page"))
+	perPage, _ := strconv.Atoi(c.QueryParam("per_page")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if perPage < 1 {
 		perPage = 20
 	}
@@ -319,7 +319,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	}
 
 	source := c.Param("source")
-	limit, _ := strconv.Atoi(c.QueryParam("limit"))
+	limit, _ := strconv.Atoi(c.QueryParam("limit")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if limit < 1 {
 		limit = 5
 	}
@@ -468,11 +468,11 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
 	}
 
-	page, _ := strconv.Atoi(c.QueryParam("page"))
+	page, _ := strconv.Atoi(c.QueryParam("page")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if page < 1 {
 		page = 1
 	}
-	perPage, _ := strconv.Atoi(c.QueryParam("per_page"))
+	perPage, _ := strconv.Atoi(c.QueryParam("per_page")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if perPage < 1 {
 		perPage = 20
 	}
