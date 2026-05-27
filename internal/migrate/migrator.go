@@ -202,6 +202,7 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 
 	if err := mg.bunMig.Lock(ctx); err != nil {
 		wrapped := fmt.Errorf("migrate: acquire lock: %w", err)
+		mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", wrapped))
 		mg.TransitionToFailed(wrapped)
 		close(ch)
 		return wrapped
