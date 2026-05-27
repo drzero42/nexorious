@@ -224,6 +224,7 @@ One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a user action.
    - On conflict: apply the ownership rank guard (never downgrade ownership status); update `hours_played` only if the incoming value from `external_game_platforms.hours_played` is greater; if the ownership status changed, write a `status_changed` entry to `sync_changes`
    - Set `external_game_id` to the specific ExternalGame row that produced this platform entry
 5. Update `external_game.updated_at` — always, whether the game was skipped or not
+6. After writing all platform rows, if IGDB is configured and the `games` row has no description, an immediate metadata fetch is enqueued for that game. This ensures newly added games have cover art and full IGDB data within seconds rather than waiting for the next scheduled bulk refresh. The enqueue is fire-and-forget and non-fatal — the periodic bulk refresh (see [docs/maintenance.md](maintenance.md) § "Metadata refresh") remains the safety net.
 
 ### Ownership rank guard
 
@@ -315,7 +316,7 @@ A periodic worker checks `user_sync_configs` for all users where the sync freque
 
 ## Maintenance
 
-A periodic maintenance worker prunes `sync_changes` entries older than the retention period configured by `SYNC_HISTORY_RETENTION_DAYS` (default: 90 days). This keeps the table from growing unboundedly while preserving recent history for the Sync History UI.
+Maintenance tasks that support the sync system — sync history pruning, orphaned item rescue, and stale job cleanup — are documented in [docs/maintenance.md](maintenance.md).
 
 ---
 
