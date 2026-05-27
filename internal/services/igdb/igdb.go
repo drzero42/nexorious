@@ -527,7 +527,7 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 }
 
 func drainAndClose(body io.ReadCloser) {
-	_, _ = io.Copy(io.Discard, body)
+	_, _ = io.Copy(io.Discard, body) //nolint:errcheck // draining body for connection reuse
 	_ = body.Close()
 }
 
