@@ -125,7 +125,7 @@ export async function getSyncConfig(platform: SyncStorefront): Promise<SyncConfi
  */
 export async function updateSyncConfig(
   platform: SyncStorefront,
-  data: SyncConfigUpdateData
+  data: SyncConfigUpdateData,
 ): Promise<SyncConfig> {
   const requestBody: Record<string, unknown> = {};
 
@@ -133,10 +133,7 @@ export async function updateSyncConfig(
     requestBody.frequency = data.frequency;
   }
 
-  const response = await api.put<SyncConfigApiResponse>(
-    `/sync/config/${platform}`,
-    requestBody
-  );
+  const response = await api.put<SyncConfigApiResponse>(`/sync/config/${platform}`, requestBody);
   return transformSyncConfig(response);
 }
 
@@ -209,7 +206,7 @@ interface EpicConnectionApiResponse {
  */
 export async function verifySteamCredentials(
   steamId: string,
-  webApiKey: string
+  webApiKey: string,
 ): Promise<SteamVerifyResponse> {
   const response = await api.post<SteamVerifyApiResponse>('/sync/steam/verify', {
     steam_id: steamId,

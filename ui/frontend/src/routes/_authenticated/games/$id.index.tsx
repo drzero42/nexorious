@@ -19,7 +19,11 @@ import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink, Gamepad2 } from 'l
 import { StarRating } from '@/components/ui/star-rating';
 import { config } from '@/lib/env';
 import { formatIgdbRating } from '@/lib/game-utils';
-import { OwnershipStatus, type PlayStatus, type OwnershipStatus as OwnershipStatusType } from '@/types';
+import {
+  OwnershipStatus,
+  type PlayStatus,
+  type OwnershipStatus as OwnershipStatusType,
+} from '@/types';
 
 export const Route = createFileRoute('/_authenticated/games/$id/')({
   component: GameDetailPage,
@@ -134,7 +138,10 @@ export function GameDetailPage() {
           Back to Games
         </Button>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => navigate({ to: '/games/$id/edit', params: { id: gameId } })}>
+          <Button
+            variant="outline"
+            onClick={() => navigate({ to: '/games/$id/edit', params: { id: gameId } })}
+          >
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
@@ -197,9 +204,7 @@ export function GameDetailPage() {
                     <p className="text-muted-foreground mt-1">{game.game.developer}</p>
                   )}
                 </div>
-                {game.is_loved && (
-                  <Heart className="h-8 w-8 text-red-500 fill-red-500" />
-                )}
+                {game.is_loved && <Heart className="h-8 w-8 text-red-500 fill-red-500" />}
               </div>
 
               {/* Quick Stats */}
@@ -283,7 +288,10 @@ export function GameDetailPage() {
                   <h3 className="font-medium mb-2">Platforms & Ownership</h3>
                   <div className="space-y-2">
                     {game.platforms.map((p) => (
-                      <div key={p.id} className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-lg">
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-lg"
+                      >
                         <div className="flex items-center gap-2">
                           <span className="font-medium">
                             {p.platform_details?.display_name || p.platform || 'Unknown'}

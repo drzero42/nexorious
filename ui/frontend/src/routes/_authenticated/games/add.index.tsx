@@ -2,12 +2,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { IGDBSearch } from '@/components/games/igdb-search';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useHealthStatus } from '@/hooks/use-health-status';
 import type { IGDBGameCandidate } from '@/types';
 

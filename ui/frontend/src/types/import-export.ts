@@ -34,18 +34,26 @@ export function getImportSourceDisplayInfo(source: ImportSource): {
   features: string[];
   color: 'indigo' | 'purple';
 } {
-  const info: Record<ImportSource, {
-    title: string;
-    description: string;
-    icon: string;
-    features: string[];
-    color: 'indigo' | 'purple';
-  }> = {
+  const info: Record<
+    ImportSource,
+    {
+      title: string;
+      description: string;
+      icon: string;
+      features: string[];
+      color: 'indigo' | 'purple';
+    }
+  > = {
     [ImportSource.NEXORIOUS]: {
       title: 'Nexorious JSON',
-      description: 'Restore a previous Nexorious export with all metadata, ratings, play status, and notes intact.',
+      description:
+        'Restore a previous Nexorious export with all metadata, ratings, play status, and notes intact.',
       icon: '📦',
-      features: ['Full metadata restoration', 'Preserves ratings and notes', 'Non-interactive import'],
+      features: [
+        'Full metadata restoration',
+        'Preserves ratings and notes',
+        'Non-interactive import',
+      ],
       color: 'indigo',
     },
   };
@@ -58,11 +66,14 @@ export function getExportFormatDisplayInfo(format: ExportFormat): {
   description: string;
   features: string[];
 } {
-  const info: Record<ExportFormat, {
-    title: string;
-    description: string;
-    features: string[];
-  }> = {
+  const info: Record<
+    ExportFormat,
+    {
+      title: string;
+      description: string;
+      features: string[];
+    }
+  > = {
     [ExportFormat.JSON]: {
       title: 'JSON Format',
       description: 'Export your entire game collection to a JSON file for backup or transfer.',

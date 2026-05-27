@@ -83,7 +83,11 @@ function getBackupTypeBadge(type: string) {
     case 'manual':
       return <Badge variant="secondary">Manual</Badge>;
     case 'pre_restore':
-      return <Badge variant="outline" className="border-orange-500 text-orange-600">Pre-restore</Badge>;
+      return (
+        <Badge variant="outline" className="border-orange-500 text-orange-600">
+          Pre-restore
+        </Badge>
+      );
     default:
       return <Badge variant="outline">{type}</Badge>;
   }
@@ -238,7 +242,7 @@ function BackupPage() {
       setIsDeleting(deleteBackupId);
       await backupApi.deleteBackup(deleteBackupId);
       toast.success('Backup deleted');
-      setBackups(backups.filter(b => b.id !== deleteBackupId));
+      setBackups(backups.filter((b) => b.id !== deleteBackupId));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete backup';
       toast.error(message);
@@ -305,7 +309,7 @@ function BackupPage() {
     return <BackupPageSkeleton />;
   }
 
-  const restoreBackup = restoreBackupId ? backups.find(b => b.id === restoreBackupId) : null;
+  const restoreBackup = restoreBackupId ? backups.find((b) => b.id === restoreBackupId) : null;
 
   return (
     <div className="space-y-6">
@@ -368,7 +372,10 @@ function BackupPage() {
             {schedule === 'weekly' && (
               <div className="space-y-2">
                 <Label>Day of Week</Label>
-                <Select value={String(scheduleDay)} onValueChange={(v) => setScheduleDay(Number(v))}>
+                <Select
+                  value={String(scheduleDay)}
+                  onValueChange={(v) => setScheduleDay(Number(v))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -388,7 +395,10 @@ function BackupPage() {
             <div className="space-y-2">
               <Label>Retention Policy</Label>
               <div className="flex gap-2">
-                <Select value={retentionMode} onValueChange={(v) => setRetentionMode(v as RetentionMode)}>
+                <Select
+                  value={retentionMode}
+                  onValueChange={(v) => setRetentionMode(v as RetentionMode)}
+                >
                   <SelectTrigger className="w-32">
                     <SelectValue />
                   </SelectTrigger>
@@ -437,9 +447,7 @@ function BackupPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Create Backup Now</p>
-                  <p className="text-sm text-muted-foreground">
-                    Full database and file backup
-                  </p>
+                  <p className="text-sm text-muted-foreground">Full database and file backup</p>
                 </div>
                 <Button onClick={handleCreateBackup} disabled={isCreatingBackup}>
                   {isCreatingBackup ? (
@@ -471,7 +479,6 @@ function BackupPage() {
                 </Button>
               </div>
             </div>
-
           </CardContent>
         </Card>
       </div>
@@ -508,9 +515,7 @@ function BackupPage() {
               <TableBody>
                 {backups.map((backup) => (
                   <TableRow key={backup.id}>
-                    <TableCell className="font-medium">
-                      {formatDate(backup.createdAt)}
-                    </TableCell>
+                    <TableCell className="font-medium">{formatDate(backup.createdAt)}</TableCell>
                     <TableCell>{getBackupTypeBadge(backup.backupType)}</TableCell>
                     <TableCell>{formatBytes(backup.sizeBytes)}</TableCell>
                     <TableCell>
@@ -590,9 +595,16 @@ function BackupPage() {
           {restoreBackup && (
             <div className="space-y-4">
               <div className="rounded-lg bg-muted p-4 text-sm">
-                <p><strong>Backup:</strong> {formatDate(restoreBackup.createdAt)}</p>
-                <p><strong>Type:</strong> {restoreBackup.backupType}</p>
-                <p><strong>Contents:</strong> {restoreBackup.stats.users} users, {restoreBackup.stats.games} games, {restoreBackup.stats.tags} tags</p>
+                <p>
+                  <strong>Backup:</strong> {formatDate(restoreBackup.createdAt)}
+                </p>
+                <p>
+                  <strong>Type:</strong> {restoreBackup.backupType}
+                </p>
+                <p>
+                  <strong>Contents:</strong> {restoreBackup.stats.users} users,{' '}
+                  {restoreBackup.stats.games} games, {restoreBackup.stats.tags} tags
+                </p>
               </div>
               <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200">
                 <p className="font-medium">Warning:</p>
@@ -637,13 +649,16 @@ function BackupPage() {
       </Dialog>
 
       {/* Upload Restore Dialog */}
-      <Dialog open={uploadDialogOpen} onOpenChange={(open) => {
-        if (!open) {
-          setUploadDialogOpen(false);
-          setUploadFile(null);
-          setUploadConfirmed(false);
-        }
-      }}>
+      <Dialog
+        open={uploadDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setUploadDialogOpen(false);
+            setUploadFile(null);
+            setUploadConfirmed(false);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -666,8 +681,12 @@ function BackupPage() {
             {uploadFile && (
               <>
                 <div className="rounded-lg bg-muted p-4 text-sm">
-                  <p><strong>File:</strong> {uploadFile.name}</p>
-                  <p><strong>Size:</strong> {formatBytes(uploadFile.size)}</p>
+                  <p>
+                    <strong>File:</strong> {uploadFile.name}
+                  </p>
+                  <p>
+                    <strong>Size:</strong> {formatBytes(uploadFile.size)}
+                  </p>
                 </div>
                 <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200">
                   <p className="font-medium">Warning:</p>
@@ -713,7 +732,10 @@ function BackupPage() {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteBackupId} onOpenChange={(open) => !open && setDeleteBackupId(null)}>
+      <AlertDialog
+        open={!!deleteBackupId}
+        onOpenChange={(open) => !open && setDeleteBackupId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Backup?</AlertDialogTitle>
@@ -723,7 +745,10 @@ function BackupPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

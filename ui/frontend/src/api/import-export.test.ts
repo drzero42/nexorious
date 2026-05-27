@@ -114,7 +114,9 @@ describe('importExportApi', () => {
         download: '',
         click: mockClick,
       };
-      vi.spyOn(document, 'createElement').mockReturnValue(mockAnchor as unknown as HTMLAnchorElement);
+      vi.spyOn(document, 'createElement').mockReturnValue(
+        mockAnchor as unknown as HTMLAnchorElement,
+      );
       vi.spyOn(document.body, 'appendChild').mockImplementation(mockAppendChild);
       vi.spyOn(document.body, 'removeChild').mockImplementation(mockRemoveChild);
 

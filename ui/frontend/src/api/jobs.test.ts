@@ -103,7 +103,7 @@ describe('jobsApi', () => {
           sortOrder: 'desc',
         },
         2,
-        10
+        10,
       );
 
       expect(api.get).toHaveBeenCalledWith('/jobs/', {

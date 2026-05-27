@@ -3,6 +3,7 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
+import eslintConfigPrettier from 'eslint-config-prettier/flat';
 
 export default defineConfig([
   globalIgnores(['dist/**', 'coverage/**']),
@@ -39,4 +40,6 @@ export default defineConfig([
       'react-refresh/only-export-components': 'off',
     },
   },
+  // Must be last: turns off ESLint rules that would conflict with Prettier
+  eslintConfigPrettier,
 ]);

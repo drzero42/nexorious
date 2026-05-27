@@ -87,9 +87,7 @@ export function SyncServiceCard({
                 params={{ storefront: config.storefront }}
                 hash="needs-review"
               >
-                <Badge variant="destructive">
-                  {pendingReviewCount}
-                </Badge>
+                <Badge variant="destructive">{pendingReviewCount}</Badge>
               </Link>
             )}
             {credentialsError ? (

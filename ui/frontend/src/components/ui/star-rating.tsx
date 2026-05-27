@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Star } from 'lucide-react';
@@ -56,7 +55,7 @@ export function StarRating({
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (!isInteractive || !onChange) return;
 
-    const currentIndex = focusedIndex ?? ((value ?? 1) - 1);
+    const currentIndex = focusedIndex ?? (value ?? 1) - 1;
 
     switch (event.key) {
       case 'ArrowLeft':
@@ -136,7 +135,8 @@ export function StarRating({
         className={cn(
           'inline-flex items-center',
           config.gap,
-          isInteractive && 'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded-sm'
+          isInteractive &&
+            'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded-sm',
         )}
       >
         {stars.map((star) => {
@@ -159,7 +159,7 @@ export function StarRating({
                 config.star,
                 isInteractive && 'cursor-pointer hover:scale-110',
                 !isInteractive && 'cursor-default',
-                isFocusedStar && 'ring-2 ring-yellow-400 ring-offset-1 rounded-sm'
+                isFocusedStar && 'ring-2 ring-yellow-400 ring-offset-1 rounded-sm',
               )}
             >
               <Star
@@ -169,7 +169,7 @@ export function StarRating({
                     ? 'fill-yellow-400 text-yellow-400'
                     : 'fill-transparent text-muted-foreground/40',
                   isInteractive && !isFilled && !isHovered && 'hover:text-yellow-300',
-                  disabled && 'opacity-50'
+                  disabled && 'opacity-50',
                 )}
               />
             </button>

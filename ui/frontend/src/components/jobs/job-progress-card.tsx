@@ -1,4 +1,3 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -59,8 +58,11 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
               <div className="mb-2 flex justify-between text-sm text-muted-foreground">
                 <span>Progress</span>
                 <span>
-                  {job.progress.completed + job.progress.pendingReview + job.progress.failed + job.progress.skipped} /{' '}
-                  {job.progress.total} ({job.progress.percent}%)
+                  {job.progress.completed +
+                    job.progress.pendingReview +
+                    job.progress.failed +
+                    job.progress.skipped}{' '}
+                  / {job.progress.total} ({job.progress.percent}%)
                 </span>
               </div>
               <Progress value={job.progress.percent} />
@@ -75,7 +77,9 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
               </div>
               <div>
                 <div className="text-muted-foreground">Needs Review</div>
-                <div className="text-lg font-semibold text-yellow-600">{job.progress.pendingReview}</div>
+                <div className="text-lg font-semibold text-yellow-600">
+                  {job.progress.pendingReview}
+                </div>
               </div>
               <div>
                 <div className="text-muted-foreground">Skipped</div>
@@ -87,7 +91,9 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
               </div>
               <div>
                 <div className="text-muted-foreground">Processing</div>
-                <div className="text-lg font-semibold">{job.progress.pending + job.progress.processing}</div>
+                <div className="text-lg font-semibold">
+                  {job.progress.pending + job.progress.processing}
+                </div>
               </div>
             </div>
           )}

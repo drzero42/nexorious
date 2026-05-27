@@ -48,7 +48,7 @@ describe('auth.ts', () => {
           expect(body.username).toBe('testuser');
           expect(body.password).toBe('password123');
           return HttpResponse.json(mockResponse);
-        })
+        }),
       );
 
       const result = await login('testuser', 'password123');
@@ -60,7 +60,7 @@ describe('auth.ts', () => {
       server.use(
         http.post(`${API_URL}/auth/login`, () => {
           return HttpResponse.json({ detail: 'Invalid credentials' }, { status: 401 });
-        })
+        }),
       );
 
       await expect(login('baduser', 'badpass')).rejects.toMatchObject({
@@ -80,7 +80,7 @@ describe('auth.ts', () => {
             token_type: 'bearer',
             expires_in: 3600,
           });
-        })
+        }),
       );
 
       // Should not throw even without auth token
@@ -99,7 +99,7 @@ describe('auth.ts', () => {
             is_admin: true,
             preferences: { theme: 'dark' },
           });
-        })
+        }),
       );
 
       const result = await getMe();
@@ -120,7 +120,7 @@ describe('auth.ts', () => {
             username: 'regularuser',
             is_admin: false,
           });
-        })
+        }),
       );
 
       const result = await getMe();
@@ -152,7 +152,7 @@ describe('auth.ts', () => {
           const body = (await request.json()) as { refresh_token: string };
           expect(body.refresh_token).toBe('old-refresh-token');
           return HttpResponse.json(mockResponse);
-        })
+        }),
       );
 
       const result = await refreshToken('old-refresh-token');
@@ -171,7 +171,7 @@ describe('auth.ts', () => {
             token_type: 'bearer',
             expires_in: 3600,
           });
-        })
+        }),
       );
 
       const result = await refreshToken('refresh-token');
@@ -182,7 +182,7 @@ describe('auth.ts', () => {
       server.use(
         http.post(`${API_URL}/auth/refresh`, () => {
           return HttpResponse.json({ detail: 'Invalid refresh token' }, { status: 401 });
-        })
+        }),
       );
 
       await expect(refreshToken('bad-token')).rejects.toMatchObject({
@@ -203,7 +203,7 @@ describe('auth.ts', () => {
             username: 'newusername',
             is_admin: false,
           });
-        })
+        }),
       );
 
       const result = await changeUsername('newusername');
@@ -229,7 +229,7 @@ describe('auth.ts', () => {
       server.use(
         http.put(`${API_URL}/auth/username`, () => {
           return HttpResponse.json({ detail: 'Username already taken' }, { status: 409 });
-        })
+        }),
       );
 
       await expect(changeUsername('takenname')).rejects.toMatchObject({
@@ -250,7 +250,7 @@ describe('auth.ts', () => {
           expect(body.current_password).toBe('oldpass');
           expect(body.new_password).toBe('newpass');
           return HttpResponse.json({ message: 'Password changed successfully' });
-        })
+        }),
       );
 
       // Should not throw
@@ -270,7 +270,7 @@ describe('auth.ts', () => {
       server.use(
         http.put(`${API_URL}/auth/change-password`, () => {
           return HttpResponse.json({ detail: 'Current password is incorrect' }, { status: 400 });
-        })
+        }),
       );
 
       await expect(changePassword('wrongpass', 'newpass')).rejects.toMatchObject({
@@ -285,7 +285,7 @@ describe('auth.ts', () => {
       server.use(
         http.get(`${API_URL}/auth/username/check/newuser`, () => {
           return HttpResponse.json({ available: true, username: 'newuser' });
-        })
+        }),
       );
 
       const result = await checkUsernameAvailability('newuser');
@@ -297,7 +297,7 @@ describe('auth.ts', () => {
       server.use(
         http.get(`${API_URL}/auth/username/check/takenuser`, () => {
           return HttpResponse.json({ available: false, username: 'takenuser' });
-        })
+        }),
       );
 
       const result = await checkUsernameAvailability('takenuser');
@@ -309,7 +309,7 @@ describe('auth.ts', () => {
       server.use(
         http.get(`${API_URL}/auth/username/check/user%40name`, () => {
           return HttpResponse.json({ available: true, username: 'user@name' });
-        })
+        }),
       );
 
       const result = await checkUsernameAvailability('user@name');
@@ -341,7 +341,7 @@ describe('auth.ts', () => {
             is_admin: false,
             preferences: newPreferences,
           });
-        })
+        }),
       );
 
       const result = await updatePreferences(newPreferences);
@@ -374,7 +374,7 @@ describe('auth.ts', () => {
             is_admin: false,
             preferences: {},
           });
-        })
+        }),
       );
 
       const result = await updatePreferences({});

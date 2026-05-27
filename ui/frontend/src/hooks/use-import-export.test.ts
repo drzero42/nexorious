@@ -54,7 +54,7 @@ describe('use-import-export hooks', () => {
             message: 'Import job created. Processing 5 games.',
             total_items: 5,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useImportNexorious(), {
@@ -79,11 +79,8 @@ describe('use-import-export hooks', () => {
     it('handles import error', async () => {
       server.use(
         http.post(`${API_URL}/import/nexorious`, () => {
-          return HttpResponse.json(
-            { detail: 'Invalid JSON file' },
-            { status: 400 }
-          );
-        })
+          return HttpResponse.json({ detail: 'Invalid JSON file' }, { status: 400 });
+        }),
       );
 
       const { result } = renderHook(() => useImportNexorious(), {
@@ -112,9 +109,9 @@ describe('use-import-export hooks', () => {
         http.post(`${API_URL}/import/nexorious`, () => {
           return HttpResponse.json(
             { detail: 'Import already in progress. Job ID: job-existing' },
-            { status: 409 }
+            { status: 409 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useImportNexorious(), {
@@ -149,7 +146,7 @@ describe('use-import-export hooks', () => {
             message: 'Export job created. Check job status for progress.',
             estimated_items: 50,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useExportCollection(), {
@@ -177,7 +174,7 @@ describe('use-import-export hooks', () => {
             message: 'Export job created.',
             estimated_items: 100,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useExportCollection(), {
@@ -201,9 +198,9 @@ describe('use-import-export hooks', () => {
         http.post(`${API_URL}/export/json`, () => {
           return HttpResponse.json(
             { detail: 'No games in collection to export.' },
-            { status: 400 }
+            { status: 400 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useExportCollection(), {
@@ -238,7 +235,7 @@ describe('use-import-export hooks', () => {
               'Content-Disposition': 'attachment; filename="nexorious_collection_20250101.json"',
             },
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useDownloadExport(), {
@@ -283,11 +280,8 @@ describe('use-import-export hooks', () => {
     it('handles expired export file', async () => {
       server.use(
         http.get(`${API_URL}/export/export-old/download`, () => {
-          return HttpResponse.json(
-            { detail: 'Export file has expired.' },
-            { status: 410 }
-          );
-        })
+          return HttpResponse.json({ detail: 'Export file has expired.' }, { status: 410 });
+        }),
       );
 
       const { result } = renderHook(() => useDownloadExport(), {
@@ -314,9 +308,9 @@ describe('use-import-export hooks', () => {
         http.get(`${API_URL}/export/export-pending/download`, () => {
           return HttpResponse.json(
             { detail: 'Export not ready. Current status: processing' },
-            { status: 400 }
+            { status: 400 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useDownloadExport(), {

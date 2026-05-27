@@ -21,14 +21,14 @@ describe('GamesPagination', () => {
   describe('visibility', () => {
     it('renders nothing when totalPages is 1', () => {
       const { container } = render(
-        <GamesPagination {...defaultProps} totalPages={1} totalCount={10} />
+        <GamesPagination {...defaultProps} totalPages={1} totalCount={10} />,
       );
       expect(container.firstChild).toBeNull();
     });
 
     it('renders nothing when totalPages is 0', () => {
       const { container } = render(
-        <GamesPagination {...defaultProps} totalPages={0} totalCount={0} />
+        <GamesPagination {...defaultProps} totalPages={0} totalCount={0} />,
       );
       expect(container.firstChild).toBeNull();
     });
@@ -69,7 +69,7 @@ describe('GamesPagination', () => {
           showPerPageSelector={true}
           perPage={50}
           onPerPageChange={onPerPageChange}
-        />
+        />,
       );
       await user.click(screen.getByRole('combobox'));
       await user.click(screen.getByRole('option', { name: '100' }));
@@ -100,9 +100,7 @@ describe('GamesPagination', () => {
     it('does not call onPageChange when previous is clicked on page 1', async () => {
       const user = userEvent.setup();
       const onPageChange = vi.fn();
-      render(
-        <GamesPagination {...defaultProps} page={1} onPageChange={onPageChange} />
-      );
+      render(<GamesPagination {...defaultProps} page={1} onPageChange={onPageChange} />);
       await user.click(screen.getByRole('link', { name: /previous/i }));
       expect(onPageChange).not.toHaveBeenCalled();
     });
@@ -111,7 +109,7 @@ describe('GamesPagination', () => {
       const user = userEvent.setup();
       const onPageChange = vi.fn();
       render(
-        <GamesPagination {...defaultProps} page={5} totalPages={5} onPageChange={onPageChange} />
+        <GamesPagination {...defaultProps} page={5} totalPages={5} onPageChange={onPageChange} />,
       );
       await user.click(screen.getByRole('link', { name: /next/i }));
       expect(onPageChange).not.toHaveBeenCalled();
@@ -120,9 +118,7 @@ describe('GamesPagination', () => {
     it('clicking previous calls onPageChange with page - 1', async () => {
       const user = userEvent.setup();
       const onPageChange = vi.fn();
-      render(
-        <GamesPagination {...defaultProps} page={3} onPageChange={onPageChange} />
-      );
+      render(<GamesPagination {...defaultProps} page={3} onPageChange={onPageChange} />);
       await user.click(screen.getByRole('link', { name: /previous/i }));
       expect(onPageChange).toHaveBeenCalledWith(2);
     });
@@ -131,7 +127,7 @@ describe('GamesPagination', () => {
       const user = userEvent.setup();
       const onPageChange = vi.fn();
       render(
-        <GamesPagination {...defaultProps} page={3} totalPages={5} onPageChange={onPageChange} />
+        <GamesPagination {...defaultProps} page={3} totalPages={5} onPageChange={onPageChange} />,
       );
       await user.click(screen.getByRole('link', { name: /next/i }));
       expect(onPageChange).toHaveBeenCalledWith(4);
@@ -141,7 +137,7 @@ describe('GamesPagination', () => {
       const user = userEvent.setup();
       const onPageChange = vi.fn();
       render(
-        <GamesPagination {...defaultProps} page={1} totalPages={5} onPageChange={onPageChange} />
+        <GamesPagination {...defaultProps} page={1} totalPages={5} onPageChange={onPageChange} />,
       );
       await user.click(screen.getByRole('link', { name: '3' }));
       expect(onPageChange).toHaveBeenCalledWith(3);

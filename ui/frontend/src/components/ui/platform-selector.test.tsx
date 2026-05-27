@@ -99,7 +99,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={[]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByRole('combobox')).toHaveTextContent('Select platforms...');
@@ -112,7 +112,7 @@ describe('PlatformSelector', () => {
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
         placeholder="Choose your platforms"
-      />
+      />,
     );
 
     expect(screen.getByRole('combobox')).toHaveTextContent('Choose your platforms');
@@ -126,7 +126,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     // Badge shows in trigger (without remove button to avoid nested buttons)
@@ -147,7 +147,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByText('+2 more')).toBeInTheDocument();
@@ -161,7 +161,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={[]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
@@ -181,7 +181,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={[]}
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
@@ -202,7 +202,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
@@ -221,7 +221,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={[]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
@@ -238,7 +238,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={[]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
@@ -257,7 +257,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     // Should show the platform card below the trigger with storefront selector
@@ -273,7 +273,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     // The storefront selector should be present (second combobox after main trigger)
@@ -294,7 +294,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
@@ -306,10 +306,7 @@ describe('PlatformSelector', () => {
   it('respects maxSelection limit', async () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
-    const selected: PlatformSelection[] = [
-      { platform: 'pc' },
-      { platform: 'ps5' },
-    ];
+    const selected: PlatformSelection[] = [{ platform: 'pc' }, { platform: 'ps5' }];
 
     render(
       <PlatformSelector
@@ -317,7 +314,7 @@ describe('PlatformSelector', () => {
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
         maxSelection={2}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
@@ -337,7 +334,7 @@ describe('PlatformSelector', () => {
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
         maxSelection={3}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
@@ -355,7 +352,7 @@ describe('PlatformSelector', () => {
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
         disabled
-      />
+      />,
     );
 
     const combobox = screen.getByRole('combobox');
@@ -375,7 +372,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
-      />
+      />,
     );
 
     // The remove button is in the platform card below the trigger, not in the trigger badge
@@ -393,7 +390,7 @@ describe('PlatformSelector', () => {
         selectedPlatforms={[]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
@@ -405,13 +402,7 @@ describe('PlatformSelector', () => {
   it('shows empty state when no platforms are available', async () => {
     const user = userEvent.setup();
 
-    render(
-      <PlatformSelector
-        selectedPlatforms={[]}
-        availablePlatforms={[]}
-        onChange={vi.fn()}
-      />
-    );
+    render(<PlatformSelector selectedPlatforms={[]} availablePlatforms={[]} onChange={vi.fn()} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
 
@@ -430,7 +421,7 @@ describe('PlatformSelectorCompact', () => {
         selectedPlatforms={[]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     const checkboxes = screen.getAllByRole('checkbox');
@@ -450,7 +441,7 @@ describe('PlatformSelectorCompact', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     const checkboxes = screen.getAllByRole('checkbox');
@@ -468,7 +459,7 @@ describe('PlatformSelectorCompact', () => {
         selectedPlatforms={[]}
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
-      />
+      />,
     );
 
     const checkboxes = screen.getAllByRole('checkbox');
@@ -489,7 +480,7 @@ describe('PlatformSelectorCompact', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
-      />
+      />,
     );
 
     const checkboxes = screen.getAllByRole('checkbox');
@@ -506,7 +497,7 @@ describe('PlatformSelectorCompact', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     // Should show storefront label
@@ -521,7 +512,7 @@ describe('PlatformSelectorCompact', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     // The storefront selector combobox should be present
@@ -536,7 +527,7 @@ describe('PlatformSelectorCompact', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     // Xbox has no storefronts, so no storefront label should appear
@@ -545,11 +536,7 @@ describe('PlatformSelectorCompact', () => {
 
   it('shows empty state when no platforms are available', () => {
     render(
-      <PlatformSelectorCompact
-        selectedPlatforms={[]}
-        availablePlatforms={[]}
-        onChange={vi.fn()}
-      />
+      <PlatformSelectorCompact selectedPlatforms={[]} availablePlatforms={[]} onChange={vi.fn()} />,
     );
 
     expect(screen.getByText('No platforms available')).toBeInTheDocument();
@@ -565,7 +552,7 @@ describe('PlatformSelectorCompact', () => {
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
         disabled
-      />
+      />,
     );
 
     const checkboxes = screen.getAllByRole('checkbox');
@@ -583,7 +570,7 @@ describe('PlatformSelectorCompact', () => {
         selectedPlatforms={selected}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     // The PC platform container should have the selected styling

@@ -59,9 +59,8 @@ function ImportCard({ source, onFileSelect, isUploading, disabled }: ImportCardP
     }
   };
 
-  const acceptTypes = source === ImportSource.NEXORIOUS
-    ? '.json,application/json'
-    : '.csv,text/csv';
+  const acceptTypes =
+    source === ImportSource.NEXORIOUS ? '.json,application/json' : '.csv,text/csv';
 
   const colorClasses = {
     indigo: {
@@ -84,7 +83,9 @@ function ImportCard({ source, onFileSelect, isUploading, disabled }: ImportCardP
   const isDisabled = disabled || isUploading;
 
   return (
-    <Card className={`${colors.bg} ${colors.border} border-2 transition-all ${!isDisabled ? colors.hover : 'opacity-60'}`}>
+    <Card
+      className={`${colors.bg} ${colors.border} border-2 transition-all ${!isDisabled ? colors.hover : 'opacity-60'}`}
+    >
       <CardContent className="pb-2 pt-6">
         <div className="flex items-center gap-3 mb-2">
           <div className={`${colors.icon} rounded-lg p-3`}>
@@ -149,7 +150,9 @@ function ExportCard({ format, onExport, isExporting, disabled }: ExportCardProps
   const isDisabled = disabled || isExporting;
 
   return (
-    <Card className={`bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 border-2 transition-all ${!isDisabled ? 'hover:border-green-400 dark:hover:border-green-600' : 'opacity-60'}`}>
+    <Card
+      className={`bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 border-2 transition-all ${!isDisabled ? 'hover:border-green-400 dark:hover:border-green-600' : 'opacity-60'}`}
+    >
       <CardContent className="pb-2 pt-6">
         <div className="flex items-center gap-3 mb-2">
           <div className="bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 rounded-lg p-3">
@@ -194,7 +197,9 @@ function ExportCard({ format, onExport, isExporting, disabled }: ExportCardProps
 
 function ImportExportPage() {
   const [isUploading, setIsUploading] = useState(false);
-  const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(null);
+  const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(
+    null,
+  );
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
   const { mutateAsync: importNexorious } = useImportNexorious();
@@ -219,8 +224,12 @@ function ImportExportPage() {
     // Then, show the most recently completed job
     if (importNotDismissed && exportNotDismissed) {
       // Compare completion times, show the most recent
-      const importTime = activeImportJob.completedAt ? new Date(activeImportJob.completedAt).getTime() : 0;
-      const exportTime = activeExportJob.completedAt ? new Date(activeExportJob.completedAt).getTime() : 0;
+      const importTime = activeImportJob.completedAt
+        ? new Date(activeImportJob.completedAt).getTime()
+        : 0;
+      const exportTime = activeExportJob.completedAt
+        ? new Date(activeExportJob.completedAt).getTime()
+        : 0;
       return exportTime > importTime ? activeExportJob : activeImportJob;
     }
 
@@ -237,7 +246,8 @@ function ImportExportPage() {
   // Exclude IDs for recent activity
   const excludeJobIds = activeJob && !activeJob.isTerminal ? [activeJob.id] : [];
   // Check if the currently displayed job is a completed export (for download button)
-  const isActiveJobCompletedExport = activeJob?.isTerminal &&
+  const isActiveJobCompletedExport =
+    activeJob?.isTerminal &&
     activeJob?.status === JobStatus.COMPLETED &&
     activeJob?.jobType === JobType.EXPORT;
 
@@ -331,11 +341,7 @@ function ImportExportPage() {
       {/* Active Job Progress View */}
       {showJobProgress && activeJob && (
         <section className="mb-8 space-y-4">
-          <JobProgressCard
-            job={activeJob}
-            onCancel={handleCancelJob}
-            isCancelling={isCancelling}
-          />
+          <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
 
           {activeJob.progress && (
             <JobItemsDetails
@@ -370,10 +376,7 @@ function ImportExportPage() {
               )}
 
               {/* Start New button */}
-              <Button
-                variant="outline"
-                onClick={handleDismissJob}
-              >
+              <Button variant="outline" onClick={handleDismissJob}>
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Start New
               </Button>
@@ -424,23 +427,21 @@ function ImportExportPage() {
         <AlertTitle>About Import / Export</AlertTitle>
         <AlertDescription>
           <p className="mb-2">
-            <strong>Nexorious JSON</strong> is the recommended format for importing on other Nexorious instances. It preserves all
-            metadata including IGDB IDs, ratings, notes, and platform associations.
+            <strong>Nexorious JSON</strong> is the recommended format for importing on other
+            Nexorious instances. It preserves all metadata including IGDB IDs, ratings, notes, and
+            platform associations.
           </p>
           <p>
-            <strong>CSV exports</strong> are useful for spreadsheet analysis but are not
-            recommended for re-import due to potential data loss.
+            <strong>CSV exports</strong> are useful for spreadsheet analysis but are not recommended
+            for re-import due to potential data loss.
           </p>
         </AlertDescription>
       </Alert>
 
       {/* Recent Activity - shows completed jobs from last 7 days */}
       <section className="mb-6">
-        <RecentActivity
-          excludeJobIds={excludeJobIds}
-        />
+        <RecentActivity excludeJobIds={excludeJobIds} />
       </section>
-
     </div>
   );
 }

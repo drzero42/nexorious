@@ -251,9 +251,7 @@ function transformStorefront(apiStorefront: StorefrontApiResponse): Storefront {
   };
 }
 
-function transformUserGamePlatform(
-  apiPlatform: UserGamePlatformApiResponse
-): UserGamePlatform {
+function transformUserGamePlatform(apiPlatform: UserGamePlatformApiResponse): UserGamePlatform {
   return {
     id: apiPlatform.id,
     platform: apiPlatform.platform,
@@ -330,9 +328,7 @@ function transformUserGame(apiUserGame: UserGameApiResponse): UserGame {
   };
 }
 
-function transformIGDBGameCandidate(
-  apiCandidate: IGDBGameCandidateApiResponse
-): IGDBGameCandidate {
+function transformIGDBGameCandidate(apiCandidate: IGDBGameCandidateApiResponse): IGDBGameCandidate {
   return {
     igdb_id: apiCandidate.igdb_id as GameId,
     igdb_slug: apiCandidate.igdb_slug,
@@ -358,7 +354,7 @@ function transformIGDBGameCandidate(
 function appendParam(
   searchParams: URLSearchParams,
   key: string,
-  value: string | string[] | number | boolean | undefined | null
+  value: string | string[] | number | boolean | undefined | null,
 ): void {
   if (value === undefined || value === null) return;
 
@@ -411,9 +407,7 @@ function buildUserGamesQueryParams(params?: GetUserGamesParams): string | undefi
 /**
  * Get user's game collection with optional filtering and pagination.
  */
-export async function getUserGames(
-  params?: GetUserGamesParams
-): Promise<UserGamesListResponse> {
+export async function getUserGames(params?: GetUserGamesParams): Promise<UserGamesListResponse> {
   const queryString = buildUserGamesQueryParams(params);
   const path = queryString ? `/user-games?${queryString}` : '/user-games';
   const response = await api.get<UserGameListApiResponse>(path);
@@ -464,10 +458,7 @@ export async function createUserGame(data: UserGameCreateData): Promise<UserGame
 /**
  * Update a user game entry.
  */
-export async function updateUserGame(
-  id: string,
-  data: UserGameUpdateData
-): Promise<UserGame> {
+export async function updateUserGame(id: string, data: UserGameUpdateData): Promise<UserGame> {
   const requestBody: Record<string, unknown> = {};
 
   if (data.personalRating !== undefined) {
@@ -486,10 +477,7 @@ export async function updateUserGame(
     requestBody.personal_notes = data.personalNotes;
   }
 
-  const response = await api.put<UserGameApiResponse>(
-    `/user-games/${id}`,
-    requestBody
-  );
+  const response = await api.put<UserGameApiResponse>(`/user-games/${id}`, requestBody);
   return transformUserGame(response);
 }
 
@@ -532,10 +520,7 @@ export async function getGameByIGDBId(igdbId: number): Promise<IGDBGameCandidate
 /**
  * Import a game from IGDB to the database.
  */
-export async function importFromIGDB(
-  igdbId: GameId,
-  downloadCoverArt?: boolean
-): Promise<Game> {
+export async function importFromIGDB(igdbId: GameId, downloadCoverArt?: boolean): Promise<Game> {
   const response = await api.post<GameApiResponse>(
     '/games/igdb-import',
     { igdb_id: igdbId },
@@ -543,7 +528,7 @@ export async function importFromIGDB(
       params: {
         download_cover_art: downloadCoverArt ?? true,
       },
-    }
+    },
   );
 
   return transformGame(response);
@@ -554,7 +539,7 @@ export async function importFromIGDB(
  */
 export async function bulkUpdateUserGames(
   ids: string[],
-  updates: BulkUpdateData
+  updates: BulkUpdateData,
 ): Promise<{ message: string; updatedCount: number; failedCount: number }> {
   const requestBody = {
     user_game_ids: ids,
@@ -581,7 +566,7 @@ export async function bulkUpdateUserGames(
  * Bulk delete multiple user games.
  */
 export async function bulkDeleteUserGames(
-  ids: string[]
+  ids: string[],
 ): Promise<{ message: string; deletedCount: number; failedCount: number }> {
   const response = await api.delete<{
     message: string;
@@ -646,9 +631,7 @@ export async function getUserGameGenres(): Promise<string[]> {
 /**
  * Get all user game IDs matching filters (for bulk selection).
  */
-export async function getUserGameIds(
-  params?: GetUserGamesParams
-): Promise<string[]> {
+export async function getUserGameIds(params?: GetUserGamesParams): Promise<string[]> {
   const queryString = buildUserGamesQueryParams(params);
   const path = queryString ? `/user-games/ids?${queryString}` : '/user-games/ids';
   const response = await api.get<{ ids: string[] }>(path);
@@ -661,7 +644,7 @@ export async function getUserGameIds(
  */
 export async function addPlatformToUserGame(
   userGameId: string,
-  data: UserGamePlatformData
+  data: UserGamePlatformData,
 ): Promise<UserGamePlatform> {
   const requestBody = {
     platform: data.platform,
@@ -674,7 +657,7 @@ export async function addPlatformToUserGame(
 
   const response = await api.post<UserGamePlatformApiResponse>(
     `/user-games/${userGameId}/platforms`,
-    requestBody
+    requestBody,
   );
   return transformUserGamePlatform(response);
 }
@@ -685,7 +668,7 @@ export async function addPlatformToUserGame(
 export async function updatePlatformAssociation(
   userGameId: string,
   platformAssociationId: string,
-  data: UserGamePlatformData
+  data: UserGamePlatformData,
 ): Promise<UserGamePlatform> {
   const requestBody = {
     platform: data.platform,
@@ -700,7 +683,7 @@ export async function updatePlatformAssociation(
 
   const response = await api.put<UserGamePlatformApiResponse>(
     `/user-games/${userGameId}/platforms/${platformAssociationId}`,
-    requestBody
+    requestBody,
   );
   return transformUserGamePlatform(response);
 }
@@ -710,7 +693,7 @@ export async function updatePlatformAssociation(
  */
 export async function removePlatformFromUserGame(
   userGameId: string,
-  platformAssociationId: string
+  platformAssociationId: string,
 ): Promise<void> {
   await api.delete(`/user-games/${userGameId}/platforms/${platformAssociationId}`);
 }

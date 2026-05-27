@@ -69,20 +69,11 @@ const COLOR_PALETTE = [
   '#6B7280', // gray
 ];
 
-function ColorPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (color: string) => void;
-}) {
+function ColorPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <div
-          className="h-8 w-8 rounded-md border"
-          style={{ backgroundColor: value }}
-        />
+        <div className="h-8 w-8 rounded-md border" style={{ backgroundColor: value }} />
         <Input
           type="text"
           value={value}
@@ -201,8 +192,7 @@ function TagsPage() {
       const query = searchQuery.toLowerCase();
       result = result.filter(
         (tag) =>
-          tag.name.toLowerCase().includes(query) ||
-          tag.description?.toLowerCase().includes(query)
+          tag.name.toLowerCase().includes(query) || tag.description?.toLowerCase().includes(query),
       );
     }
 
@@ -445,9 +435,7 @@ function TagsPage() {
                   onClick={() => toggleSort('name')}
                 >
                   Name
-                  {sortField === 'name' && (
-                    <ArrowUpDown className="ml-1 h-3 w-3" />
-                  )}
+                  {sortField === 'name' && <ArrowUpDown className="ml-1 h-3 w-3" />}
                 </Button>
                 <Button
                   variant={sortField === 'usage' ? 'secondary' : 'ghost'}
@@ -456,9 +444,7 @@ function TagsPage() {
                   onClick={() => toggleSort('usage')}
                 >
                   Usage
-                  {sortField === 'usage' && (
-                    <ArrowUpDown className="ml-1 h-3 w-3" />
-                  )}
+                  {sortField === 'usage' && <ArrowUpDown className="ml-1 h-3 w-3" />}
                 </Button>
                 <Button
                   variant={sortField === 'created' ? 'secondary' : 'ghost'}
@@ -467,9 +453,7 @@ function TagsPage() {
                   onClick={() => toggleSort('created')}
                 >
                   Date
-                  {sortField === 'created' && (
-                    <ArrowUpDown className="ml-1 h-3 w-3" />
-                  )}
+                  {sortField === 'created' && <ArrowUpDown className="ml-1 h-3 w-3" />}
                 </Button>
               </div>
             </div>
@@ -537,9 +521,7 @@ function TagsPage() {
                         )}
                       </div>
                       {tag.description && (
-                        <p className="truncate text-sm text-muted-foreground">
-                          {tag.description}
-                        </p>
+                        <p className="truncate text-sm text-muted-foreground">{tag.description}</p>
                       )}
                       <p className="text-xs text-muted-foreground">
                         Created {new Date(tag.created_at).toLocaleDateString()}
@@ -547,19 +529,11 @@ function TagsPage() {
                     </div>
                   </button>
                   <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleOpenEdit(tag)}
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => handleOpenEdit(tag)}>
                       <Pencil className="h-4 w-4" />
                       <span className="sr-only">Edit</span>
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleOpenDelete(tag)}
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => handleOpenDelete(tag)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                       <span className="sr-only">Delete</span>
                     </Button>
@@ -576,9 +550,7 @@ function TagsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Tag</DialogTitle>
-            <DialogDescription>
-              Create a new tag to organize your games.
-            </DialogDescription>
+            <DialogDescription>Create a new tag to organize your games.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -603,9 +575,7 @@ function TagsPage() {
               <Input
                 id="tag-description"
                 value={formData.description}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, description: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
                 placeholder="Optional description..."
                 maxLength={500}
               />
@@ -616,9 +586,7 @@ function TagsPage() {
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={createTagMutation.isPending}>
-              {createTagMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
+              {createTagMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create Tag
             </Button>
           </DialogFooter>
@@ -655,9 +623,7 @@ function TagsPage() {
               <Input
                 id="edit-tag-description"
                 value={formData.description}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, description: e.target.value }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
                 placeholder="Optional description..."
                 maxLength={500}
               />
@@ -668,9 +634,7 @@ function TagsPage() {
               Cancel
             </Button>
             <Button onClick={handleUpdate} disabled={updateTagMutation.isPending}>
-              {updateTagMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
+              {updateTagMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Update Tag
             </Button>
           </DialogFooter>
@@ -694,9 +658,7 @@ function TagsPage() {
               onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleteTagMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
+              {deleteTagMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

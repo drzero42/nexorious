@@ -1,0 +1,8 @@
+# Commits listed here are skipped by `git blame` — large mechanical reformats
+# that would otherwise obscure real authorship.
+#
+# Enable locally once:  git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub applies this file automatically.
+#
+# After the "chore: adopt Prettier" PR squash-merges to main, append the
+# resulting commit hash below (the feature-branch hash does not survive squash).

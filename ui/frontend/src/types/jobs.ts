@@ -108,7 +108,7 @@ export interface JobItem {
   resultUserGameId: string | null;
   createdAt: string;
   processedAt: string | null;
-  igdbCandidatesJson?: string;  // Optional - present for PENDING_REVIEW items
+  igdbCandidatesJson?: string; // Optional - present for PENDING_REVIEW items
   externalGameId: string | null;
 }
 
@@ -232,7 +232,7 @@ export function getJobStatusLabel(status: JobStatus): string {
  * Get CSS classes for a job status badge.
  */
 export function getJobStatusVariant(
-  status: JobStatus
+  status: JobStatus,
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
   switch (status) {
     case JobStatus.COMPLETED:
@@ -329,7 +329,7 @@ export function getJobItemStatusLabel(status: JobItemStatus): string {
  * Get CSS classes for a job item status badge.
  */
 export function getJobItemStatusVariant(
-  status: JobItemStatus
+  status: JobItemStatus,
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
   switch (status) {
     case JobItemStatus.COMPLETED:

@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -139,8 +138,12 @@ export function SteamConnectionCard({
         className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
       };
     }
-    if (!isConfigured) return { label: 'Not Configured', className: 'bg-muted text-muted-foreground' };
-    return { label: 'Connected', className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' };
+    if (!isConfigured)
+      return { label: 'Not Configured', className: 'bg-muted text-muted-foreground' };
+    return {
+      label: 'Connected',
+      className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    };
   };
 
   const badgeState = getBadgeState();
@@ -168,12 +171,8 @@ export function SteamConnectionCard({
             <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-4">
               <Check className="h-5 w-5 text-green-600" />
               <div>
-                <p className="font-medium">
-                  Connected as {steamUsername || verifiedUsername}
-                </p>
-                {steamId && (
-                  <p className="text-sm text-muted-foreground">{steamId}</p>
-                )}
+                <p className="font-medium">Connected as {steamUsername || verifiedUsername}</p>
+                {steamId && <p className="text-sm text-muted-foreground">{steamId}</p>}
               </div>
             </div>
 
@@ -199,9 +198,7 @@ export function SteamConnectionCard({
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDisconnect}>
-                    Disconnect
-                  </AlertDialogAction>
+                  <AlertDialogAction onClick={handleDisconnect}>Disconnect</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -221,123 +218,139 @@ export function SteamConnectionCard({
                 </div>
               </div>
             )}
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="steamId">Steam ID</Label>
-              <Input
-                id="steamId"
-                placeholder="76561198012345678"
-                {...register('steamId')}
-                disabled={isVerifying}
-              />
-              {errors.steamId && (
-                <p className="text-sm text-destructive">{errors.steamId.message}</p>
-              )}
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="steamId">Steam ID</Label>
+                <Input
+                  id="steamId"
+                  placeholder="76561198012345678"
+                  {...register('steamId')}
+                  disabled={isVerifying}
+                />
+                {errors.steamId && (
+                  <p className="text-sm text-destructive">{errors.steamId.message}</p>
+                )}
 
-              <Accordion type="single" collapsible className="w-full">
-                <AccordionItem value="steam-id-help" className="border-none">
-                  <AccordionTrigger className="py-2 text-sm text-muted-foreground hover:no-underline">
-                    How do I find my Steam ID?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-sm text-muted-foreground">
-                    <div className="space-y-2 rounded-lg bg-muted/50 p-3">
-                      <p className="font-medium text-foreground">
-                        Your Steam ID is a 17-digit number that uniquely identifies your account.
-                      </p>
-                      <ol className="list-inside list-decimal space-y-1">
-                        <li>Open Steam and go to your <strong>Profile</strong></li>
-                        <li>Look at the URL:
-                          <ul className="ml-4 list-inside list-disc">
-                            <li>If it shows <code>steamcommunity.com/profiles/76561198...</code>, that number is your Steam ID</li>
-                            <li>If it shows <code>steamcommunity.com/id/customname/</code>, you have a custom URL</li>
-                          </ul>
-                        </li>
-                        <li>
-                          <strong>If you have a custom URL:</strong> Go to{' '}
-                          <a
-                            href="https://steamid.io"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            steamid.io <ExternalLink className="inline h-3 w-3" />
-                          </a>
-                          , paste your profile URL, and copy the <strong>steamID64</strong> value
-                        </li>
-                      </ol>
-                      <div className="mt-2 rounded border border-yellow-200 bg-yellow-50 p-2 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
-                        <strong>Important:</strong> Your Steam profile must be set to <strong>Public</strong> for sync to work.
-                        <ol className="ml-4 mt-1 list-inside list-decimal">
-                          <li>Go to Steam → Settings → Privacy Settings</li>
-                          <li>Set &quot;My profile&quot; to Public</li>
-                          <li>Set &quot;Game details&quot; to Public</li>
+                <Accordion type="single" collapsible className="w-full">
+                  <AccordionItem value="steam-id-help" className="border-none">
+                    <AccordionTrigger className="py-2 text-sm text-muted-foreground hover:no-underline">
+                      How do I find my Steam ID?
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground">
+                      <div className="space-y-2 rounded-lg bg-muted/50 p-3">
+                        <p className="font-medium text-foreground">
+                          Your Steam ID is a 17-digit number that uniquely identifies your account.
+                        </p>
+                        <ol className="list-inside list-decimal space-y-1">
+                          <li>
+                            Open Steam and go to your <strong>Profile</strong>
+                          </li>
+                          <li>
+                            Look at the URL:
+                            <ul className="ml-4 list-inside list-disc">
+                              <li>
+                                If it shows <code>steamcommunity.com/profiles/76561198...</code>,
+                                that number is your Steam ID
+                              </li>
+                              <li>
+                                If it shows <code>steamcommunity.com/id/customname/</code>, you have
+                                a custom URL
+                              </li>
+                            </ul>
+                          </li>
+                          <li>
+                            <strong>If you have a custom URL:</strong> Go to{' '}
+                            <a
+                              href="https://steamid.io"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline"
+                            >
+                              steamid.io <ExternalLink className="inline h-3 w-3" />
+                            </a>
+                            , paste your profile URL, and copy the <strong>steamID64</strong> value
+                          </li>
                         </ol>
+                        <div className="mt-2 rounded border border-yellow-200 bg-yellow-50 p-2 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
+                          <strong>Important:</strong> Your Steam profile must be set to{' '}
+                          <strong>Public</strong> for sync to work.
+                          <ol className="ml-4 mt-1 list-inside list-decimal">
+                            <li>Go to Steam → Settings → Privacy Settings</li>
+                            <li>Set &quot;My profile&quot; to Public</li>
+                            <li>Set &quot;Game details&quot; to Public</li>
+                          </ol>
+                        </div>
                       </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="webApiKey">Steam Web API Key</Label>
-              <Input
-                id="webApiKey"
-                type="password"
-                placeholder="********************************"
-                {...register('webApiKey')}
-                disabled={isVerifying}
-              />
-              {errors.webApiKey && (
-                <p className="text-sm text-destructive">{errors.webApiKey.message}</p>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="webApiKey">Steam Web API Key</Label>
+                <Input
+                  id="webApiKey"
+                  type="password"
+                  placeholder="********************************"
+                  {...register('webApiKey')}
+                  disabled={isVerifying}
+                />
+                {errors.webApiKey && (
+                  <p className="text-sm text-destructive">{errors.webApiKey.message}</p>
+                )}
 
-              <Accordion type="single" collapsible className="w-full">
-                <AccordionItem value="api-key-help" className="border-none">
-                  <AccordionTrigger className="py-2 text-sm text-muted-foreground hover:no-underline">
-                    How do I get an API key?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-sm text-muted-foreground">
-                    <div className="space-y-2 rounded-lg bg-muted/50 p-3">
-                      <p className="font-medium text-foreground">
-                        A Steam Web API key allows Nexorious to read your game library.
-                      </p>
-                      <ol className="list-inside list-decimal space-y-1">
-                        <li>
-                          Go to{' '}
-                          <a
-                            href="https://steamcommunity.com/dev/apikey"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            Steam Web API Key Registration <ExternalLink className="inline h-3 w-3" />
-                          </a>
-                        </li>
-                        <li>Sign in with your Steam account if prompted</li>
-                        <li>Enter a domain name (you can use <code>localhost</code> or any domain)</li>
-                        <li>Click <strong>Register</strong> and copy the 32-character key</li>
-                      </ol>
-                      <p className="mt-2 text-xs">
-                        <strong>Note:</strong> Keep your API key private. It&apos;s stored securely and only used to sync your library.
-                      </p>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </div>
+                <Accordion type="single" collapsible className="w-full">
+                  <AccordionItem value="api-key-help" className="border-none">
+                    <AccordionTrigger className="py-2 text-sm text-muted-foreground hover:no-underline">
+                      How do I get an API key?
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground">
+                      <div className="space-y-2 rounded-lg bg-muted/50 p-3">
+                        <p className="font-medium text-foreground">
+                          A Steam Web API key allows Nexorious to read your game library.
+                        </p>
+                        <ol className="list-inside list-decimal space-y-1">
+                          <li>
+                            Go to{' '}
+                            <a
+                              href="https://steamcommunity.com/dev/apikey"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline"
+                            >
+                              Steam Web API Key Registration{' '}
+                              <ExternalLink className="inline h-3 w-3" />
+                            </a>
+                          </li>
+                          <li>Sign in with your Steam account if prompted</li>
+                          <li>
+                            Enter a domain name (you can use <code>localhost</code> or any domain)
+                          </li>
+                          <li>
+                            Click <strong>Register</strong> and copy the 32-character key
+                          </li>
+                        </ol>
+                        <p className="mt-2 text-xs">
+                          <strong>Note:</strong> Keep your API key private. It&apos;s stored
+                          securely and only used to sync your library.
+                        </p>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </div>
 
-            <Button type="submit" disabled={isVerifying} className="w-full">
-              {isVerifying ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {credentialsError ? 'Reconfiguring...' : 'Verifying...'}
-                </>
-              ) : (
-                <>{credentialsError ? 'Reconfigure' : 'Verify & Connect'}</>
-              )}
-            </Button>
-          </form>
+              <Button type="submit" disabled={isVerifying} className="w-full">
+                {isVerifying ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {credentialsError ? 'Reconfiguring...' : 'Verifying...'}
+                  </>
+                ) : (
+                  <>{credentialsError ? 'Reconfigure' : 'Verify & Connect'}</>
+                )}
+              </Button>
+            </form>
           </div>
         )}
       </CardContent>

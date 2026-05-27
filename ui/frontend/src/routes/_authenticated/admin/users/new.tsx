@@ -115,10 +115,7 @@ function CreateUserPage() {
   }
 
   const canSubmit =
-    username.trim().length >= 3 &&
-    password.length >= 6 &&
-    passwordsMatch &&
-    !isLoading;
+    username.trim().length >= 3 && password.length >= 6 && passwordsMatch && !isLoading;
 
   return (
     <div className="space-y-6">
@@ -142,7 +139,8 @@ function CreateUserPage() {
             Create New User
           </h1>
           <p className="text-muted-foreground">
-            Create a new user account with username and password. You can also assign admin privileges.
+            Create a new user account with username and password. You can also assign admin
+            privileges.
           </p>
         </div>
       </div>
@@ -219,7 +217,10 @@ function CreateUserPage() {
                     {password && (
                       <div className="mt-2 space-y-1">
                         <div className="flex items-center gap-2">
-                          <Progress value={(passwordStrength.score / 7) * 100} className="h-2 flex-1" />
+                          <Progress
+                            value={(passwordStrength.score / 7) * 100}
+                            className="h-2 flex-1"
+                          />
                           <span className="text-xs text-muted-foreground">
                             {passwordStrength.label}
                           </span>

@@ -77,33 +77,36 @@ export function GameEditForm({ game }: GameEditFormProps) {
   const [personalRating, setPersonalRating] = useState<number | null>(game.personal_rating ?? null);
   const [isLoved, setIsLoved] = useState(game.is_loved);
   const [platformPlaytimes, setPlatformPlaytimes] = useState<Record<string, number>>(
-    Object.fromEntries(game.platforms.map((p) => [p.id, p.hours_played]))
+    Object.fromEntries(game.platforms.map((p) => [p.id, p.hours_played])),
   );
-  const [platformOwnership, setPlatformOwnership] = useState<Record<string, {
-    ownershipStatus: OwnershipStatus;
-    acquiredDate: string;
-  }>>(
+  const [platformOwnership, setPlatformOwnership] = useState<
+    Record<
+      string,
+      {
+        ownershipStatus: OwnershipStatus;
+        acquiredDate: string;
+      }
+    >
+  >(
     Object.fromEntries(
       game.platforms.map((p) => [
         p.id,
         {
           ownershipStatus: p.ownership_status,
-          acquiredDate: p.acquired_date ?? ''
-        }
-      ])
-    )
+          acquiredDate: p.acquired_date ?? '',
+        },
+      ]),
+    ),
   );
   const [personalNotes, setPersonalNotes] = useState(game.personal_notes ?? '');
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
-    game.tags?.map((t) => t.id) ?? []
-  );
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(game.tags?.map((t) => t.id) ?? []);
   const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformSelection[]>(
     game.platforms
       .filter((p) => p.platform)
       .map((p) => ({
         platform: p.platform!,
         storefront: p.storefront,
-      }))
+      })),
   );
 
   // Data fetching
@@ -139,13 +142,10 @@ export function GameEditForm({ game }: GameEditFormProps) {
   }, [platformPlaytimes, game.hours_played]);
 
   // Track original values for comparison
-  const originalTagIds = useMemo(
-    () => game.tags?.map((t) => t.id) ?? [],
-    [game.tags]
-  );
+  const originalTagIds = useMemo(() => game.tags?.map((t) => t.id) ?? [], [game.tags]);
   const originalPlatformNames = useMemo(
     () => game.platforms.map((p) => p.platform).filter(Boolean) as string[],
-    [game.platforms]
+    [game.platforms],
   );
 
   // Get platform association ID by platform name
@@ -154,7 +154,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
       const assoc = game.platforms.find((p) => p.platform === platformName);
       return assoc?.id;
     },
-    [game.platforms]
+    [game.platforms],
   );
 
   const handleSave = async () => {
@@ -173,10 +173,10 @@ export function GameEditForm({ game }: GameEditFormProps) {
       // 2. Handle platform changes
       const currentPlatformNames = selectedPlatforms.map((p) => p.platform);
       const platformsToAdd = selectedPlatforms.filter(
-        (p) => !originalPlatformNames.includes(p.platform)
+        (p) => !originalPlatformNames.includes(p.platform),
       );
       const platformsToRemove = originalPlatformNames.filter(
-        (name) => !currentPlatformNames.includes(name)
+        (name) => !currentPlatformNames.includes(name),
       );
 
       // Add new platforms
@@ -304,9 +304,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
                   loading="lazy"
                 />
               ) : (
-                <div className="h-full w-full flex items-center justify-center text-2xl">
-                  🎮
-                </div>
+                <div className="h-full w-full flex items-center justify-center text-2xl">🎮</div>
               )}
             </div>
             <div>
@@ -346,12 +344,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
             {/* Personal Rating */}
             <div className="space-y-2">
               <Label>Personal Rating</Label>
-              <StarRating
-                value={personalRating}
-                onChange={setPersonalRating}
-                clearable
-                size="lg"
-              />
+              <StarRating value={personalRating} onChange={setPersonalRating} clearable size="lg" />
             </div>
 
             {/* Is Loved */}
@@ -418,7 +411,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
                     const isSteamSynced = isSteamSyncEnabled && isSteamPlatform;
                     const ownership = platformOwnership[p.id] ?? {
                       ownershipStatus: p.ownership_status,
-                      acquiredDate: p.acquired_date ?? ''
+                      acquiredDate: p.acquired_date ?? '',
                     };
                     const platformName =
                       p.storefront_details?.display_name ||
@@ -441,8 +434,8 @@ export function GameEditForm({ game }: GameEditFormProps) {
                                   ...prev,
                                   [p.id]: {
                                     ...prev[p.id],
-                                    ownershipStatus: v as OwnershipStatus
-                                  }
+                                    ownershipStatus: v as OwnershipStatus,
+                                  },
                                 }))
                               }
                             >
@@ -471,8 +464,8 @@ export function GameEditForm({ game }: GameEditFormProps) {
                                   ...prev,
                                   [p.id]: {
                                     ...prev[p.id],
-                                    acquiredDate: e.target.value
-                                  }
+                                    acquiredDate: e.target.value,
+                                  },
                                 }))
                               }
                             />

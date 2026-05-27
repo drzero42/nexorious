@@ -102,7 +102,11 @@ export function JobCard({
             <div className="mb-2 flex justify-between text-sm text-muted-foreground">
               <span>Progress</span>
               <span>
-                {job.progress.completed + job.progress.pendingReview + job.progress.skipped + job.progress.failed} / {job.progress.total} ({job.progress.percent}%)
+                {job.progress.completed +
+                  job.progress.pendingReview +
+                  job.progress.skipped +
+                  job.progress.failed}{' '}
+                / {job.progress.total} ({job.progress.percent}%)
               </span>
             </div>
             <Progress value={job.progress.percent} />

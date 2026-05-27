@@ -1,4 +1,3 @@
-
 import * as React from 'react';
 import { Check, ChevronsUpDown, Plus, Search, Tag as TagIcon, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -12,11 +11,7 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Tag } from '@/types';
@@ -60,7 +55,7 @@ function TagBadge({ tag, onRemove, size = 'md', className }: TagBadgeProps) {
       className={cn(
         'inline-flex items-center gap-1 rounded-full font-medium transition-colors',
         sizeClasses,
-        className
+        className,
       )}
       style={{ backgroundColor: tag.color, color: textColor }}
     >
@@ -142,8 +137,7 @@ export function TagSelector({
     const query = searchQuery.toLowerCase();
     return availableTags.filter(
       (tag) =>
-        tag.name.toLowerCase().includes(query) ||
-        tag.description?.toLowerCase().includes(query)
+        tag.name.toLowerCase().includes(query) || tag.description?.toLowerCase().includes(query),
     );
   }, [availableTags, searchQuery]);
 
@@ -152,9 +146,7 @@ export function TagSelector({
     if (!allowCreate || !searchQuery.trim()) return false;
 
     const normalizedQuery = searchQuery.trim().toLowerCase();
-    return !availableTags.some(
-      (tag) => tag.name.toLowerCase() === normalizedQuery
-    );
+    return !availableTags.some((tag) => tag.name.toLowerCase() === normalizedQuery);
   }, [allowCreate, availableTags, searchQuery]);
 
   // Check if we've reached max selection
@@ -211,27 +203,17 @@ export function TagSelector({
             disabled={disabled}
             className={cn(
               'w-full justify-between min-h-[40px] h-auto py-2',
-              !selectedTags.length && 'text-muted-foreground'
+              !selectedTags.length && 'text-muted-foreground',
             )}
           >
             <div className="flex flex-wrap gap-1 items-center">
               {selectedTags.length > 0 ? (
                 selectedTags.length <= 3 ? (
-                  selectedTags.map((tag) => (
-                    <TagBadge
-                      key={tag.id}
-                      tag={tag}
-                      size="sm"
-                    />
-                  ))
+                  selectedTags.map((tag) => <TagBadge key={tag.id} tag={tag} size="sm" />)
                 ) : (
                   <>
                     {selectedTags.slice(0, 2).map((tag) => (
-                      <TagBadge
-                        key={tag.id}
-                        tag={tag}
-                        size="sm"
-                      />
+                      <TagBadge key={tag.id} tag={tag} size="sm" />
                     ))}
                     <Badge variant="secondary" className="text-xs">
                       +{selectedTags.length - 2} more
@@ -291,10 +273,7 @@ export function TagSelector({
               {canCreateNewTag && onCreateTag && (
                 <>
                   <CommandGroup heading="Create new">
-                    <CommandItem
-                      onSelect={handleCreateTag}
-                      className="cursor-pointer"
-                    >
+                    <CommandItem onSelect={handleCreateTag} className="cursor-pointer">
                       <Plus className="mr-2 h-4 w-4" />
                       Create &quot;{searchQuery.trim()}&quot;
                     </CommandItem>
@@ -311,9 +290,7 @@ export function TagSelector({
                       <TagIcon className="h-8 w-8 text-muted-foreground/50" />
                       <p className="text-sm text-muted-foreground">No tags available</p>
                       {allowCreate && (
-                        <p className="text-xs text-muted-foreground">
-                          Type to create a new tag
-                        </p>
+                        <p className="text-xs text-muted-foreground">Type to create a new tag</p>
                       )}
                     </div>
                   ) : (
@@ -340,7 +317,7 @@ export function TagSelector({
                           disabled={isDisabledItem}
                           className={cn(
                             'cursor-pointer',
-                            isDisabledItem && 'opacity-50 cursor-not-allowed'
+                            isDisabledItem && 'opacity-50 cursor-not-allowed',
                           )}
                         >
                           <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -349,7 +326,7 @@ export function TagSelector({
                                 'flex h-4 w-4 items-center justify-center rounded border',
                                 isSelected
                                   ? 'bg-primary border-primary text-primary-foreground'
-                                  : 'border-muted-foreground/25'
+                                  : 'border-muted-foreground/25',
                               )}
                             >
                               {isSelected && <Check className="h-3 w-3" />}
@@ -359,11 +336,13 @@ export function TagSelector({
                               style={{ backgroundColor: tag.color }}
                             />
                             <span className="truncate flex-1">{tag.name}</span>
-                            {showGameCounts && tag.game_count !== undefined && tag.game_count > 0 && (
-                              <span className="text-xs text-muted-foreground flex-shrink-0">
-                                {tag.game_count}
-                              </span>
-                            )}
+                            {showGameCounts &&
+                              tag.game_count !== undefined &&
+                              tag.game_count > 0 && (
+                                <span className="text-xs text-muted-foreground flex-shrink-0">
+                                  {tag.game_count}
+                                </span>
+                              )}
                           </div>
                         </CommandItem>
                       );
@@ -430,8 +409,7 @@ export function TagSelectorCompact({
     const query = searchQuery.toLowerCase();
     return availableTags.filter(
       (tag) =>
-        tag.name.toLowerCase().includes(query) ||
-        tag.description?.toLowerCase().includes(query)
+        tag.name.toLowerCase().includes(query) || tag.description?.toLowerCase().includes(query),
     );
   }, [availableTags, searchQuery]);
 
@@ -482,7 +460,7 @@ export function TagSelectorCompact({
               'flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm',
               'ring-offset-background placeholder:text-muted-foreground',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-              'disabled:cursor-not-allowed disabled:opacity-50'
+              'disabled:cursor-not-allowed disabled:opacity-50',
             )}
             placeholder="Search tags..."
             value={searchQuery}
@@ -588,7 +566,7 @@ function TagListItem({ tag, isSelected, disabled, onToggle }: TagListItemProps) 
         isSelected
           ? 'bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800'
           : 'bg-background border-border hover:bg-accent',
-        disabled && 'opacity-50 cursor-not-allowed'
+        disabled && 'opacity-50 cursor-not-allowed',
       )}
     >
       <input
@@ -606,9 +584,7 @@ function TagListItem({ tag, isSelected, disabled, onToggle }: TagListItemProps) 
         <div className="min-w-0 flex-1">
           <div className="font-medium text-sm truncate">{tag.name}</div>
           {tag.description && (
-            <div className="text-xs text-muted-foreground truncate">
-              {tag.description}
-            </div>
+            <div className="text-xs text-muted-foreground truncate">{tag.description}</div>
           )}
         </div>
       </div>

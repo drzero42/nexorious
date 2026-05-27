@@ -1,11 +1,6 @@
-
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { NavLink } from './nav-link';
 import type { NavSection } from './types';
@@ -50,7 +45,7 @@ export function NavSectionCollapsible({
         <ChevronDown
           className={cn(
             'h-4 w-4 text-muted-foreground transition-transform',
-            isOpen && 'rotate-180'
+            isOpen && 'rotate-180',
           )}
         />
       </CollapsibleTrigger>

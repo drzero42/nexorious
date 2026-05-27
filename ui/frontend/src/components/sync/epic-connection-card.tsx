@@ -1,4 +1,3 @@
-
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -203,80 +202,80 @@ export function EpicConnectionCard({
                 </div>
               </div>
             )}
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                <strong>Note:</strong> Epic Games Store does not provide playtime data.
-              </AlertDescription>
-            </Alert>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Note:</strong> Epic Games Store does not provide playtime data.
+                </AlertDescription>
+              </Alert>
 
-            <div className="space-y-2">
-              <Label htmlFor="authCode">Authorization Code</Label>
-              <Input
-                id="authCode"
-                type="text"
-                placeholder="Paste the authorization code from Epic Games"
-                autoComplete="off"
-                {...register('authCode')}
-                disabled={isConnecting}
-              />
-              {errors.authCode && (
-                <p className="text-sm text-destructive">{errors.authCode.message}</p>
-              )}
+              <div className="space-y-2">
+                <Label htmlFor="authCode">Authorization Code</Label>
+                <Input
+                  id="authCode"
+                  type="text"
+                  placeholder="Paste the authorization code from Epic Games"
+                  autoComplete="off"
+                  {...register('authCode')}
+                  disabled={isConnecting}
+                />
+                {errors.authCode && (
+                  <p className="text-sm text-destructive">{errors.authCode.message}</p>
+                )}
 
-              <Accordion type="single" collapsible className="w-full">
-                <AccordionItem value="epic-code-help" className="border-none">
-                  <AccordionTrigger className="py-2 text-sm text-muted-foreground hover:no-underline">
-                    How do I get an authorization code?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-sm text-muted-foreground">
-                    <div className="space-y-2 rounded-lg bg-muted/50 p-3">
-                      <p className="font-medium text-foreground">
-                        Epic Games requires you to log in once to issue a short-lived
-                        authorization code.
-                      </p>
-                      <ol className="list-inside list-decimal space-y-1">
-                        <li>
-                          <a
-                            href={EPIC_AUTH_URL}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                          >
-                            Open the Epic Games login page{' '}
-                            <ExternalLink className="inline h-3 w-3" />
-                          </a>{' '}
-                          in a new tab
-                        </li>
-                        <li>Sign in with your Epic Games account if prompted</li>
-                        <li>
-                          The page will display a JSON response containing an{' '}
-                          <code>authorizationCode</code> value
-                        </li>
-                        <li>Copy the code and paste it into the field above</li>
-                      </ol>
-                      <div className="mt-2 rounded border border-yellow-200 bg-yellow-50 p-2 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
-                        <strong>Note:</strong> The authorization code is single-use and expires
-                        within a few minutes. Paste it as soon as you copy it.
+                <Accordion type="single" collapsible className="w-full">
+                  <AccordionItem value="epic-code-help" className="border-none">
+                    <AccordionTrigger className="py-2 text-sm text-muted-foreground hover:no-underline">
+                      How do I get an authorization code?
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm text-muted-foreground">
+                      <div className="space-y-2 rounded-lg bg-muted/50 p-3">
+                        <p className="font-medium text-foreground">
+                          Epic Games requires you to log in once to issue a short-lived
+                          authorization code.
+                        </p>
+                        <ol className="list-inside list-decimal space-y-1">
+                          <li>
+                            <a
+                              href={EPIC_AUTH_URL}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline"
+                            >
+                              Open the Epic Games login page{' '}
+                              <ExternalLink className="inline h-3 w-3" />
+                            </a>{' '}
+                            in a new tab
+                          </li>
+                          <li>Sign in with your Epic Games account if prompted</li>
+                          <li>
+                            The page will display a JSON response containing an{' '}
+                            <code>authorizationCode</code> value
+                          </li>
+                          <li>Copy the code and paste it into the field above</li>
+                        </ol>
+                        <div className="mt-2 rounded border border-yellow-200 bg-yellow-50 p-2 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
+                          <strong>Note:</strong> The authorization code is single-use and expires
+                          within a few minutes. Paste it as soon as you copy it.
+                        </div>
                       </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </div>
 
-            <Button type="submit" disabled={isConnecting} className="w-full">
-              {isConnecting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {resolvedCredentialsError ? 'Reconfiguring...' : 'Connecting...'}
-                </>
-              ) : (
-                <>{resolvedCredentialsError ? 'Reconfigure' : 'Connect Epic Games Store'}</>
-              )}
-            </Button>
-          </form>
+              <Button type="submit" disabled={isConnecting} className="w-full">
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {resolvedCredentialsError ? 'Reconfiguring...' : 'Connecting...'}
+                  </>
+                ) : (
+                  <>{resolvedCredentialsError ? 'Reconfigure' : 'Connect Epic Games Store'}</>
+                )}
+              </Button>
+            </form>
           </div>
         )}
       </CardContent>

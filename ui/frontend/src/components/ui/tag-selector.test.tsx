@@ -67,13 +67,7 @@ const mockTags: Tag[] = [
 
 describe('TagSelector', () => {
   it('renders with placeholder when no tags are selected', () => {
-    render(
-      <TagSelector
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelector selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     expect(screen.getByRole('combobox')).toHaveTextContent('Select tags...');
   });
@@ -85,20 +79,14 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={vi.fn()}
         placeholder="Choose tags"
-      />
+      />,
     );
 
     expect(screen.getByRole('combobox')).toHaveTextContent('Choose tags');
   });
 
   it('shows selected tag badges', () => {
-    render(
-      <TagSelector
-        selectedTagIds={['1', '2']}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelector selectedTagIds={['1', '2']} availableTags={mockTags} onChange={vi.fn()} />);
 
     const trigger = screen.getByRole('combobox', { name: 'Select tags' });
     expect(trigger).toHaveTextContent('Action');
@@ -111,7 +99,7 @@ describe('TagSelector', () => {
         selectedTagIds={['1', '2', '3', '4']}
         availableTags={mockTags}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByText('+2 more')).toBeInTheDocument();
@@ -120,13 +108,7 @@ describe('TagSelector', () => {
   it('opens popover on click', async () => {
     const user = userEvent.setup();
 
-    render(
-      <TagSelector
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelector selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
 
@@ -140,13 +122,7 @@ describe('TagSelector', () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
 
-    render(
-      <TagSelector
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={handleChange}
-      />
-    );
+    render(<TagSelector selectedTagIds={[]} availableTags={mockTags} onChange={handleChange} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
     await user.click(screen.getByText('Action'));
@@ -158,13 +134,7 @@ describe('TagSelector', () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
 
-    render(
-      <TagSelector
-        selectedTagIds={['1']}
-        availableTags={mockTags}
-        onChange={handleChange}
-      />
-    );
+    render(<TagSelector selectedTagIds={['1']} availableTags={mockTags} onChange={handleChange} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
     // When popover opens, there are multiple "Action" texts (in badge and in list)
@@ -178,13 +148,7 @@ describe('TagSelector', () => {
   it('filters tags based on search query', async () => {
     const user = userEvent.setup();
 
-    render(
-      <TagSelector
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelector selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
     await user.type(screen.getByPlaceholderText('Search tags...'), 'action');
@@ -197,13 +161,7 @@ describe('TagSelector', () => {
   it('filters tags by description', async () => {
     const user = userEvent.setup();
 
-    render(
-      <TagSelector
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelector selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
     await user.type(screen.getByPlaceholderText('Search tags...'), 'brain');
@@ -223,7 +181,7 @@ describe('TagSelector', () => {
         onChange={vi.fn()}
         onCreateTag={handleCreateTag}
         allowCreate
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -243,7 +201,7 @@ describe('TagSelector', () => {
         onChange={vi.fn()}
         onCreateTag={vi.fn()}
         allowCreate
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -263,7 +221,7 @@ describe('TagSelector', () => {
         onChange={vi.fn()}
         onCreateTag={handleCreateTag}
         allowCreate
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -283,7 +241,7 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={handleChange}
         maxSelection={2}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -303,7 +261,7 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={vi.fn()}
         maxSelection={3}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -321,7 +279,7 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={handleChange}
         maxSelection={2}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -338,13 +296,7 @@ describe('TagSelector', () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
 
-    render(
-      <TagSelector
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={handleChange}
-      />
-    );
+    render(<TagSelector selectedTagIds={[]} availableTags={mockTags} onChange={handleChange} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
     await user.click(screen.getByText('All'));
@@ -362,7 +314,7 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={handleChange}
         maxSelection={2}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -381,7 +333,7 @@ describe('TagSelector', () => {
         selectedTagIds={['1', '2', '3']}
         availableTags={mockTags}
         onChange={handleChange}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -395,12 +347,7 @@ describe('TagSelector', () => {
     const handleChange = vi.fn();
 
     render(
-      <TagSelector
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={handleChange}
-        disabled
-      />
+      <TagSelector selectedTagIds={[]} availableTags={mockTags} onChange={handleChange} disabled />,
     );
 
     const combobox = screen.getByRole('combobox');
@@ -414,13 +361,7 @@ describe('TagSelector', () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
 
-    render(
-      <TagSelector
-        selectedTagIds={['1']}
-        availableTags={mockTags}
-        onChange={handleChange}
-      />
-    );
+    render(<TagSelector selectedTagIds={['1']} availableTags={mockTags} onChange={handleChange} />);
 
     // Open the dropdown
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -441,7 +382,7 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={vi.fn()}
         showGameCounts
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -460,7 +401,7 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={vi.fn()}
         showGameCounts={false}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -481,7 +422,7 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={vi.fn()}
         showGameCounts
-      />
+      />,
     );
 
     const trigger = screen.getByRole('combobox', { name: 'Select tags' });
@@ -491,14 +432,7 @@ describe('TagSelector', () => {
   it('shows empty state when no tags are available', async () => {
     const user = userEvent.setup();
 
-    render(
-      <TagSelector
-        selectedTagIds={[]}
-        availableTags={[]}
-        onChange={vi.fn()}
-        allowCreate
-      />
-    );
+    render(<TagSelector selectedTagIds={[]} availableTags={[]} onChange={vi.fn()} allowCreate />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
 
@@ -509,13 +443,7 @@ describe('TagSelector', () => {
   it('shows empty state when no tags match search', async () => {
     const user = userEvent.setup();
 
-    render(
-      <TagSelector
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelector selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
     await user.type(screen.getByPlaceholderText('Search tags...'), 'nonexistent');
@@ -529,7 +457,7 @@ describe('TagSelector', () => {
         selectedTagIds={['1', '2', '3', '4']}
         availableTags={mockTags}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     // When more than 3 tags are selected, all tags should be visible as badges below the trigger
@@ -544,13 +472,7 @@ describe('TagSelector', () => {
   it('shows selection count in popover', async () => {
     const user = userEvent.setup();
 
-    render(
-      <TagSelector
-        selectedTagIds={['1', '2']}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelector selectedTagIds={['1', '2']} availableTags={mockTags} onChange={vi.fn()} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
 
@@ -564,7 +486,7 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={vi.fn()}
         className="custom-class"
-      />
+      />,
     );
 
     expect(container.querySelector('.custom-class')).toBeInTheDocument();
@@ -577,7 +499,7 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={vi.fn()}
         id="custom-id"
-      />
+      />,
     );
 
     expect(document.getElementById('custom-id')).toBeInTheDocument();
@@ -586,13 +508,7 @@ describe('TagSelector', () => {
   it('disables Clear All button when no tags are selected', async () => {
     const user = userEvent.setup();
 
-    render(
-      <TagSelector
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelector selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
 
@@ -609,7 +525,7 @@ describe('TagSelector', () => {
         availableTags={mockTags}
         onChange={vi.fn()}
         maxSelection={2}
-      />
+      />,
     );
 
     await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
@@ -625,13 +541,7 @@ describe('TagSelector', () => {
 
 describe('TagSelectorCompact', () => {
   it('renders all tags as checkboxes', () => {
-    render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     const checkboxes = screen.getAllByRole('checkbox');
     expect(checkboxes).toHaveLength(4);
@@ -648,11 +558,11 @@ describe('TagSelectorCompact', () => {
         selectedTagIds={['1', '2']}
         availableTags={mockTags}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     const checkboxes = screen.getAllByRole('checkbox');
-    const selectedCheckboxes = checkboxes.filter(cb => (cb as HTMLInputElement).checked);
+    const selectedCheckboxes = checkboxes.filter((cb) => (cb as HTMLInputElement).checked);
     expect(selectedCheckboxes).toHaveLength(2);
   });
 
@@ -661,11 +571,7 @@ describe('TagSelectorCompact', () => {
     const handleChange = vi.fn();
 
     render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={handleChange}
-      />
+      <TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={handleChange} />,
     );
 
     const checkboxes = screen.getAllByRole('checkbox');
@@ -683,7 +589,7 @@ describe('TagSelectorCompact', () => {
         selectedTagIds={['1']}
         availableTags={mockTags}
         onChange={handleChange}
-      />
+      />,
     );
 
     const checkboxes = screen.getAllByRole('checkbox');
@@ -695,13 +601,7 @@ describe('TagSelectorCompact', () => {
   it('filters tags based on search', async () => {
     const user = userEvent.setup();
 
-    render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     await user.type(screen.getByPlaceholderText('Search tags...'), 'rpg');
 
@@ -715,7 +615,7 @@ describe('TagSelectorCompact', () => {
         selectedTagIds={['1', '2']}
         availableTags={mockTags}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByText(/2 of 4 selected/)).toBeInTheDocument();
@@ -726,11 +626,7 @@ describe('TagSelectorCompact', () => {
     const handleChange = vi.fn();
 
     render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={handleChange}
-      />
+      <TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={handleChange} />,
     );
 
     await user.click(screen.getByText('Select All'));
@@ -747,7 +643,7 @@ describe('TagSelectorCompact', () => {
         selectedTagIds={['1', '2']}
         availableTags={mockTags}
         onChange={handleChange}
-      />
+      />,
     );
 
     await user.click(screen.getByText('Clear'));
@@ -765,7 +661,7 @@ describe('TagSelectorCompact', () => {
         availableTags={mockTags}
         onChange={handleChange}
         disabled
-      />
+      />,
     );
 
     const checkboxes = screen.getAllByRole('checkbox');
@@ -776,13 +672,7 @@ describe('TagSelectorCompact', () => {
   });
 
   it('shows empty state when no tags are available', () => {
-    render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={[]}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelectorCompact selectedTagIds={[]} availableTags={[]} onChange={vi.fn()} />);
 
     expect(screen.getByText('No tags available')).toBeInTheDocument();
     expect(screen.getByText('Create some tags first to use them here.')).toBeInTheDocument();
@@ -791,13 +681,7 @@ describe('TagSelectorCompact', () => {
   it('shows empty state when no tags match search', async () => {
     const user = userEvent.setup();
 
-    render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     await user.type(screen.getByPlaceholderText('Search tags...'), 'nonexistent');
 
@@ -806,11 +690,7 @@ describe('TagSelectorCompact', () => {
 
   it('highlights selected tags visually', () => {
     render(
-      <TagSelectorCompact
-        selectedTagIds={['1']}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
+      <TagSelectorCompact selectedTagIds={['1']} availableTags={mockTags} onChange={vi.fn()} />,
     );
 
     const actionText = screen.getByText('Action');
@@ -824,7 +704,7 @@ describe('TagSelectorCompact', () => {
         selectedTagIds={['1', '2']}
         availableTags={mockTags}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     expect(screen.getByText(/Selected \(2\)/)).toBeInTheDocument();
@@ -832,13 +712,7 @@ describe('TagSelectorCompact', () => {
   });
 
   it('shows game counts for tags', () => {
-    render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     expect(screen.getByText('10 games')).toBeInTheDocument();
     expect(screen.getByText('5 games')).toBeInTheDocument();
@@ -852,11 +726,7 @@ describe('TagSelectorCompact', () => {
     };
 
     render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={[singleGameTag]}
-        onChange={vi.fn()}
-      />
+      <TagSelectorCompact selectedTagIds={[]} availableTags={[singleGameTag]} onChange={vi.fn()} />,
     );
 
     expect(screen.getByText('1 game')).toBeInTheDocument();
@@ -869,33 +739,21 @@ describe('TagSelectorCompact', () => {
         availableTags={mockTags}
         onChange={vi.fn()}
         className="custom-class"
-      />
+      />,
     );
 
     expect(container.querySelector('.custom-class')).toBeInTheDocument();
   });
 
   it('disables Clear button when no tags are selected', () => {
-    render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     const clearButton = screen.getByText('Clear');
     expect(clearButton).toHaveClass('disabled:text-muted-foreground');
   });
 
   it('shows tag descriptions', () => {
-    render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     expect(screen.getByText('Action-packed games')).toBeInTheDocument();
     expect(screen.getByText('Role-playing games')).toBeInTheDocument();
@@ -904,13 +762,7 @@ describe('TagSelectorCompact', () => {
   it('filters by tag description', async () => {
     const user = userEvent.setup();
 
-    render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />
-    );
+    render(<TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
     await user.type(screen.getByPlaceholderText('Search tags...'), 'brain');
 
@@ -930,7 +782,7 @@ describe('getTextColor utility', () => {
         selectedTagIds={['1']} // Action tag has dark red color #FF5733
         availableTags={mockTags}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     const trigger = screen.getByRole('combobox');
@@ -944,7 +796,7 @@ describe('getTextColor utility', () => {
         selectedTagIds={['4']} // Puzzle tag has light color #F0F0F0
         availableTags={mockTags}
         onChange={vi.fn()}
-      />
+      />,
     );
 
     const trigger = screen.getByRole('combobox');

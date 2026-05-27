@@ -1,10 +1,5 @@
 import { config } from '@/lib/env';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { Platform } from '@/types';
 
@@ -29,9 +24,7 @@ function PlatformIcon({
   showLabel = false,
   className,
 }: PlatformIconProps) {
-  const iconUrl = platform.icon_url
-    ? `${config.staticUrl}${platform.icon_url}`
-    : null;
+  const iconUrl = platform.icon_url ? `${config.staticUrl}${platform.icon_url}` : null;
 
   const icon = iconUrl ? (
     <img

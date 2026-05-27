@@ -161,9 +161,11 @@ describe('use-games hooks', () => {
         'list',
         { status: 'completed' },
       ]);
-      expect(
-        gameKeys.list({ search: 'zelda', page: 2, perPage: 20 })
-      ).toEqual(['userGames', 'list', { search: 'zelda', page: 2, perPage: 20 }]);
+      expect(gameKeys.list({ search: 'zelda', page: 2, perPage: 20 })).toEqual([
+        'userGames',
+        'list',
+        { search: 'zelda', page: 2, perPage: 20 },
+      ]);
     });
 
     it('generates correct query keys for details', () => {
@@ -194,7 +196,7 @@ describe('use-games hooks', () => {
             per_page: 20,
             pages: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUserGames(), {
@@ -230,7 +232,7 @@ describe('use-games hooks', () => {
             per_page: 10,
             pages: 0,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(
@@ -242,7 +244,7 @@ describe('use-games hooks', () => {
             page: 2,
             perPage: 10,
           }),
-        { wrapper: QueryWrapper }
+        { wrapper: QueryWrapper },
       );
 
       await waitFor(() => {
@@ -254,7 +256,7 @@ describe('use-games hooks', () => {
       server.use(
         http.get(`${API_URL}/user-games`, () => {
           return HttpResponse.json({ detail: 'Failed to fetch games' }, { status: 500 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUserGames(), {
@@ -275,7 +277,7 @@ describe('use-games hooks', () => {
       server.use(
         http.get(`${API_URL}/user-games/${gameId}`, () => {
           return HttpResponse.json(mockUserGameApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUserGame(gameId), {
@@ -299,7 +301,7 @@ describe('use-games hooks', () => {
         http.get(`${API_URL}/user-games/*`, () => {
           fetchSpy();
           return HttpResponse.json(mockUserGameApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUserGame(undefined), {
@@ -317,7 +319,7 @@ describe('use-games hooks', () => {
       server.use(
         http.get(`${API_URL}/user-games/non-existent`, () => {
           return HttpResponse.json({ detail: 'Game not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUserGame('non-existent'), {
@@ -340,7 +342,7 @@ describe('use-games hooks', () => {
             games: [mockIGDBGameApi],
             total: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSearchIGDB('zelda'), {
@@ -363,7 +365,7 @@ describe('use-games hooks', () => {
         http.post(`${API_URL}/games/search/igdb`, () => {
           fetchSpy();
           return HttpResponse.json({ games: [], total: 0 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSearchIGDB('ze'), {
@@ -383,7 +385,7 @@ describe('use-games hooks', () => {
           const body = (await request.json()) as { query: string; limit: number };
           expect(body.limit).toBe(5);
           return HttpResponse.json({ games: [], total: 0 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSearchIGDB('zelda', { limit: 5 }), {
@@ -402,7 +404,7 @@ describe('use-games hooks', () => {
             games: [mockIGDBGameApi],
             total: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSearchIGDB('igdb:12345'), {
@@ -424,7 +426,7 @@ describe('use-games hooks', () => {
             games: [mockIGDBGameApi],
             total: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSearchIGDB('IGDB:99999'), {
@@ -445,7 +447,7 @@ describe('use-games hooks', () => {
             games: [mockIGDBGameApi],
             total: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSearchIGDB('igdb:1'), {
@@ -466,7 +468,7 @@ describe('use-games hooks', () => {
             games: [],
             total: 0,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSearchIGDB('igdb:99999999'), {
@@ -487,7 +489,7 @@ describe('use-games hooks', () => {
         http.post(`${API_URL}/games/search/igdb`, () => {
           fetchSpy();
           return HttpResponse.json({ games: [], total: 0 });
-        })
+        }),
       );
 
       // "igdb:abc" is not a valid ID format, should fall through to search
@@ -513,10 +515,9 @@ describe('use-games hooks', () => {
         }),
       );
 
-      const { result } = renderHook(
-        () => useSearchIGDB('zelda', { externalGameId: 'eg-xyz' }),
-        { wrapper: QueryWrapper },
-      );
+      const { result } = renderHook(() => useSearchIGDB('zelda', { externalGameId: 'eg-xyz' }), {
+        wrapper: QueryWrapper,
+      });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(capturedBody).not.toBeNull();
@@ -532,8 +533,12 @@ describe('use-games hooks', () => {
         }),
       );
 
-      renderHook(() => useSearchIGDB('zelda', { externalGameId: 'eg-a' }), { wrapper: QueryWrapper });
-      renderHook(() => useSearchIGDB('zelda', { externalGameId: 'eg-b' }), { wrapper: QueryWrapper });
+      renderHook(() => useSearchIGDB('zelda', { externalGameId: 'eg-a' }), {
+        wrapper: QueryWrapper,
+      });
+      renderHook(() => useSearchIGDB('zelda', { externalGameId: 'eg-b' }), {
+        wrapper: QueryWrapper,
+      });
 
       await waitFor(() => expect(calls).toBe(2));
     });
@@ -571,7 +576,7 @@ describe('use-games hooks', () => {
       server.use(
         http.get(`${API_URL}/user-games/stats`, () => {
           return HttpResponse.json(mockStats);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useCollectionStats(), {
@@ -596,7 +601,7 @@ describe('use-games hooks', () => {
           const body = (await request.json()) as { game_id: number };
           expect(body.game_id).toBe(12345);
           return HttpResponse.json(mockUserGameApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useCreateUserGame(), {
@@ -622,7 +627,7 @@ describe('use-games hooks', () => {
       server.use(
         http.post(`${API_URL}/user-games`, () => {
           return HttpResponse.json({ detail: 'Game already in collection' }, { status: 400 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useCreateUserGame(), {
@@ -659,7 +664,7 @@ describe('use-games hooks', () => {
       server.use(
         http.put(`${API_URL}/user-games/${gameId}`, () => {
           return HttpResponse.json(updatedGame);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUpdateUserGame(), {
@@ -685,7 +690,7 @@ describe('use-games hooks', () => {
       server.use(
         http.put(`${API_URL}/user-games/non-existent`, () => {
           return HttpResponse.json({ detail: 'Game not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUpdateUserGame(), {
@@ -718,7 +723,7 @@ describe('use-games hooks', () => {
       server.use(
         http.delete(`${API_URL}/user-games/${gameId}`, () => {
           return new HttpResponse(null, { status: 204 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useDeleteUserGame(), {
@@ -738,7 +743,7 @@ describe('use-games hooks', () => {
       server.use(
         http.delete(`${API_URL}/user-games/non-existent`, () => {
           return HttpResponse.json({ detail: 'Game not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useDeleteUserGame(), {
@@ -768,7 +773,7 @@ describe('use-games hooks', () => {
           const body = (await request.json()) as { igdb_id: number };
           expect(body.igdb_id).toBe(99999);
           return HttpResponse.json(mockGameApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useImportFromIGDB(), {
@@ -806,7 +811,7 @@ describe('use-games hooks', () => {
             updated_count: 3,
             failed_count: 0,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useBulkUpdateUserGames(), {
@@ -842,7 +847,7 @@ describe('use-games hooks', () => {
             deleted_count: 2,
             failed_count: 0,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useBulkDeleteUserGames(), {
@@ -882,7 +887,7 @@ describe('use-games hooks', () => {
             platform: 'ps5',
             storefront: 'psn',
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useAddPlatformToUserGame(), {
@@ -924,8 +929,8 @@ describe('use-games hooks', () => {
               ...mockUserGamePlatformApi,
               is_available: false,
             });
-          }
-        )
+          },
+        ),
       );
 
       const { result } = renderHook(() => useUpdatePlatformAssociation(), {
@@ -961,8 +966,8 @@ describe('use-games hooks', () => {
           `${API_URL}/user-games/${userGameId}/platforms/${platformAssociationId}`,
           () => {
             return new HttpResponse(null, { status: 204 });
-          }
-        )
+          },
+        ),
       );
 
       const { result } = renderHook(() => useRemovePlatformFromUserGame(), {
@@ -1033,7 +1038,7 @@ describe('use-games hooks', () => {
             per_page: 50,
             pages: 0,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useActiveGames(), {
@@ -1062,7 +1067,7 @@ describe('use-games hooks', () => {
             per_page: 50,
             pages: 0,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useActiveGames(), {
@@ -1089,7 +1094,7 @@ describe('use-games hooks', () => {
             per_page: 50,
             pages: 0,
           });
-        })
+        }),
       );
 
       const { result: activeResult } = renderHook(() => useActiveGames(), {
@@ -1124,7 +1129,7 @@ describe('use-games hooks', () => {
             per_page: 20,
             pages: 1,
           });
-        })
+        }),
       );
 
       const queryClient = createTestQueryClient();
@@ -1166,7 +1171,7 @@ describe('use-games hooks', () => {
             per_page: 20,
             pages: 0,
           });
-        })
+        }),
       );
 
       const queryClient = createTestQueryClient();
@@ -1177,7 +1182,7 @@ describe('use-games hooks', () => {
           wrapper: ({ children }) => (
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
           ),
-        }
+        },
       );
 
       await waitFor(() => {
@@ -1190,7 +1195,7 @@ describe('use-games hooks', () => {
           wrapper: ({ children }) => (
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
           ),
-        }
+        },
       );
 
       await waitFor(() => {
@@ -1207,7 +1212,7 @@ describe('use-games hooks', () => {
       server.use(
         http.get(`${API_URL}/user-games/genres`, () => {
           return HttpResponse.json({ genres: ['Action', 'Adventure', 'RPG'] });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUserGameGenres(), {
@@ -1226,7 +1231,7 @@ describe('use-games hooks', () => {
       server.use(
         http.get(`${API_URL}/user-games/genres`, () => {
           return HttpResponse.json({ genres: [] });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUserGameGenres(), {
@@ -1244,7 +1249,7 @@ describe('use-games hooks', () => {
       server.use(
         http.get(`${API_URL}/user-games/genres`, () => {
           return HttpResponse.json({ detail: 'Failed to fetch genres' }, { status: 500 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUserGameGenres(), {
@@ -1265,7 +1270,7 @@ describe('use-games hooks', () => {
         http.get(`${API_URL}/user-games/genres`, () => {
           fetchCount++;
           return HttpResponse.json({ genres: ['Action', 'Adventure'] });
-        })
+        }),
       );
 
       const queryClient = createTestQueryClient();

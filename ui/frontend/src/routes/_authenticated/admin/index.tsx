@@ -6,14 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  Users,
-  UserPlus,
-  Shield,
-  Gamepad2,
-  CheckCircle,
-  AlertCircle,
-} from 'lucide-react';
+import { Users, UserPlus, Shield, Gamepad2, CheckCircle, AlertCircle } from 'lucide-react';
 import * as adminApi from '@/api/admin';
 import type { AdminStatistics } from '@/types';
 
@@ -212,7 +205,9 @@ function AdminDashboardPage() {
                         </div>
                       </div>
                       <Button variant="outline" size="sm" asChild>
-                        <Link to="/admin/users/$id" params={{ id: user.id }}>View</Link>
+                        <Link to="/admin/users/$id" params={{ id: user.id }}>
+                          View
+                        </Link>
                       </Button>
                     </div>
                   ))}

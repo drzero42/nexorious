@@ -5,7 +5,6 @@ import { JobCard } from './job-card';
 import type { Job } from '@/types';
 import { JobType, JobSource, JobStatus } from '@/types';
 
-
 const mockJob: Job = {
   id: 'job-1',
   userId: 'user-1',

@@ -47,9 +47,7 @@ export async function getBackupConfig(): Promise<BackupConfig> {
 /**
  * Update backup configuration
  */
-export async function updateBackupConfig(
-  config: BackupConfigUpdateRequest
-): Promise<BackupConfig> {
+export async function updateBackupConfig(config: BackupConfigUpdateRequest): Promise<BackupConfig> {
   const response = await api.put<BackupConfigBackend>('/admin/backups/config', config);
   return mapBackupConfigToFrontend(response);
 }

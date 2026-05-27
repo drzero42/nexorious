@@ -34,7 +34,7 @@ export async function refreshToken(refreshTokenValue: string): Promise<LoginResp
   return api.post<LoginResponse>(
     '/auth/refresh',
     { refresh_token: refreshTokenValue },
-    { skipAuth: true }
+    { skipAuth: true },
   );
 }
 
@@ -45,10 +45,7 @@ export async function changeUsername(newUsername: string): Promise<User> {
   return transformUser(response);
 }
 
-export async function changePassword(
-  currentPassword: string,
-  newPassword: string
-): Promise<void> {
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await api.put('/auth/change-password', {
     current_password: currentPassword,
     new_password: newPassword,
@@ -56,17 +53,14 @@ export async function changePassword(
 }
 
 export async function checkUsernameAvailability(
-  username: string
+  username: string,
 ): Promise<UsernameAvailabilityResponse> {
   return api.get<UsernameAvailabilityResponse>(
-    `/auth/username/check/${encodeURIComponent(username)}`
+    `/auth/username/check/${encodeURIComponent(username)}`,
   );
 }
 
-export async function updatePreferences(
-  preferences: Record<string, unknown>
-): Promise<User> {
+export async function updatePreferences(preferences: Record<string, unknown>): Promise<User> {
   const response = await api.put<UserApiResponse>('/auth/me', { preferences });
   return transformUser(response);
 }
-

@@ -122,7 +122,11 @@ describe('use-platforms hooks', () => {
         { activeOnly: false },
       ]);
       expect(storefrontKeys.details()).toEqual(['storefronts', 'detail']);
-      expect(storefrontKeys.detail('storefront-1')).toEqual(['storefronts', 'detail', 'storefront-1']);
+      expect(storefrontKeys.detail('storefront-1')).toEqual([
+        'storefronts',
+        'detail',
+        'storefront-1',
+      ]);
       expect(storefrontKeys.names()).toEqual(['storefronts', 'names']);
     });
   });
@@ -138,7 +142,7 @@ describe('use-platforms hooks', () => {
             per_page: 100,
             pages: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => usePlatforms(), {
@@ -171,13 +175,12 @@ describe('use-platforms hooks', () => {
             per_page: 100,
             pages: 0,
           });
-        })
+        }),
       );
 
-      const { result } = renderHook(
-        () => usePlatforms({ activeOnly: false, source: 'custom' }),
-        { wrapper: QueryWrapper }
-      );
+      const { result } = renderHook(() => usePlatforms({ activeOnly: false, source: 'custom' }), {
+        wrapper: QueryWrapper,
+      });
 
       await waitFor(() => {
         expect(result.current.isSuccess).toBe(true);
@@ -188,7 +191,7 @@ describe('use-platforms hooks', () => {
       server.use(
         http.get(`${API_URL}/platforms`, () => {
           return HttpResponse.json({ detail: 'Server error' }, { status: 500 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => usePlatforms(), {
@@ -214,7 +217,7 @@ describe('use-platforms hooks', () => {
             per_page: 100,
             pages: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useAllPlatforms(), {
@@ -242,7 +245,7 @@ describe('use-platforms hooks', () => {
             per_page: 100,
             pages: 0,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useAllPlatforms({ activeOnly: false }), {
@@ -260,7 +263,7 @@ describe('use-platforms hooks', () => {
       server.use(
         http.get(`${API_URL}/platforms/platform-1`, () => {
           return HttpResponse.json(mockPlatformApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => usePlatform('platform-1'), {
@@ -283,7 +286,7 @@ describe('use-platforms hooks', () => {
         http.get(`${API_URL}/platforms/*`, () => {
           fetchSpy();
           return HttpResponse.json(mockPlatformApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => usePlatform(undefined), {
@@ -309,7 +312,7 @@ describe('use-platforms hooks', () => {
             storefronts: [mockPlatformApi.storefronts[0], mockStorefrontApi],
             total_storefronts: 2,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => usePlatformStorefronts('platform-1'), {
@@ -335,7 +338,7 @@ describe('use-platforms hooks', () => {
             storefronts: [],
             total_storefronts: 0,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => usePlatformStorefronts(undefined), {
@@ -355,7 +358,7 @@ describe('use-platforms hooks', () => {
       server.use(
         http.get(`${API_URL}/platforms/simple-list`, () => {
           return HttpResponse.json(['PC', 'PlayStation 5', 'Xbox Series X']);
-        })
+        }),
       );
 
       const { result } = renderHook(() => usePlatformNames(), {
@@ -381,7 +384,7 @@ describe('use-platforms hooks', () => {
             per_page: 100,
             pages: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useStorefronts(), {
@@ -410,13 +413,12 @@ describe('use-platforms hooks', () => {
             per_page: 100,
             pages: 0,
           });
-        })
+        }),
       );
 
-      const { result } = renderHook(
-        () => useStorefronts({ activeOnly: false, source: 'custom' }),
-        { wrapper: QueryWrapper }
-      );
+      const { result } = renderHook(() => useStorefronts({ activeOnly: false, source: 'custom' }), {
+        wrapper: QueryWrapper,
+      });
 
       await waitFor(() => {
         expect(result.current.isSuccess).toBe(true);
@@ -435,7 +437,7 @@ describe('use-platforms hooks', () => {
             per_page: 100,
             pages: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useAllStorefronts(), {
@@ -455,7 +457,7 @@ describe('use-platforms hooks', () => {
       server.use(
         http.get(`${API_URL}/platforms/storefronts/storefront-2`, () => {
           return HttpResponse.json(mockStorefrontApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useStorefront('storefront-2'), {
@@ -477,7 +479,7 @@ describe('use-platforms hooks', () => {
         http.get(`${API_URL}/platforms/storefronts/*`, () => {
           fetchSpy();
           return HttpResponse.json(mockStorefrontApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useStorefront(undefined), {
@@ -497,7 +499,7 @@ describe('use-platforms hooks', () => {
       server.use(
         http.get(`${API_URL}/platforms/storefronts/simple-list`, () => {
           return HttpResponse.json(['Steam', 'Epic Games Store', 'GOG']);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useStorefrontNames(), {
@@ -526,7 +528,7 @@ describe('use-platforms hooks', () => {
             per_page: 100,
             pages: 1,
           });
-        })
+        }),
       );
 
       const queryClient = createTestQueryClient();
@@ -536,9 +538,7 @@ describe('use-platforms hooks', () => {
       });
 
       const { result, rerender } = renderHook(() => usePlatforms(), {
-        wrapper: ({ children }) => (
-          <QueryWrapper>{children}</QueryWrapper>
-        ),
+        wrapper: ({ children }) => <QueryWrapper>{children}</QueryWrapper>,
       });
 
       await waitFor(() => {

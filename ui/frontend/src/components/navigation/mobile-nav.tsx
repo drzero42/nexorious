@@ -2,13 +2,7 @@ import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Menu, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/providers';
 import { useNavItems, NavLink, NavSectionCollapsible } from './index';
@@ -41,11 +35,7 @@ export function MobileNav() {
           <SheetContent side="left" className="w-72 p-0">
             <SheetHeader className="p-4 border-b">
               <SheetTitle>
-                <Link
-                  to="/games"
-                  onClick={handleNavigate}
-                  className="flex items-center gap-2"
-                >
+                <Link to="/games" onClick={handleNavigate} className="flex items-center gap-2">
                   <img src="/logo.svg" alt="" className="h-7 w-7" />
                   Nexorious
                 </Link>
@@ -65,10 +55,7 @@ export function MobileNav() {
               {/* Admin section (admin only) */}
               {user?.isAdmin && (
                 <div className="mt-6">
-                  <NavSectionCollapsible
-                    {...adminSection}
-                    onNavigate={handleNavigate}
-                  />
+                  <NavSectionCollapsible {...adminSection} onNavigate={handleNavigate} />
                 </div>
               )}
 
@@ -116,9 +103,7 @@ export function MobileNav() {
       {/* Avatar on right */}
       <Link to="/profile">
         <Avatar className="h-8 w-8">
-          <AvatarFallback>
-            {user?.username?.charAt(0).toUpperCase()}
-          </AvatarFallback>
+          <AvatarFallback>{user?.username?.charAt(0).toUpperCase()}</AvatarFallback>
         </Avatar>
       </Link>
     </div>

@@ -77,9 +77,9 @@ describe('GameList', () => {
       render(<GameList games={[]} isLoading={true} />);
 
       // Check for skeleton elements - they have animate-pulse class
-      const skeletons = screen.getAllByRole('generic').filter((el) =>
-        el.className.includes('animate-pulse')
-      );
+      const skeletons = screen
+        .getAllByRole('generic')
+        .filter((el) => el.className.includes('animate-pulse'));
 
       // There should be 9 skeleton cells per row × 10 rows = 90 skeleton divs
       expect(skeletons.length).toBeGreaterThanOrEqual(10);
@@ -118,7 +118,7 @@ describe('GameList', () => {
 
       expect(screen.getByText('No games found')).toBeInTheDocument();
       expect(
-        screen.getByText(/Try adjusting your filters or add some games to your library/i)
+        screen.getByText(/Try adjusting your filters or add some games to your library/i),
       ).toBeInTheDocument();
     });
 
@@ -297,7 +297,7 @@ describe('GameList', () => {
         // Check for the color class
         const badge = container.querySelector(`.${color}`);
         expect(badge).toBeInTheDocument();
-      }
+      },
     );
   });
 
@@ -656,13 +656,7 @@ describe('GameList', () => {
       const games = [createMockGame({ id: 'game-1' as UserGameId })];
       const selectedIds = new Set(['game-1']);
       const onSelectGame = vi.fn();
-      render(
-        <GameList
-          games={games}
-          selectedIds={selectedIds}
-          onSelectGame={onSelectGame}
-        />
-      );
+      render(<GameList games={games} selectedIds={selectedIds} onSelectGame={onSelectGame} />);
 
       expect(screen.getByRole('checkbox')).toBeChecked();
     });
@@ -671,13 +665,7 @@ describe('GameList', () => {
       const games = [createMockGame({ id: 'game-1' as UserGameId })];
       const selectedIds = new Set<string>();
       const onSelectGame = vi.fn();
-      render(
-        <GameList
-          games={games}
-          selectedIds={selectedIds}
-          onSelectGame={onSelectGame}
-        />
-      );
+      render(<GameList games={games} selectedIds={selectedIds} onSelectGame={onSelectGame} />);
 
       expect(screen.getByRole('checkbox')).not.toBeChecked();
     });
@@ -699,13 +687,7 @@ describe('GameList', () => {
       const games = [createMockGame({ id: 'game-1' as UserGameId })];
       const onSelectGame = vi.fn();
       const onClickGame = vi.fn();
-      render(
-        <GameList
-          games={games}
-          onSelectGame={onSelectGame}
-          onClickGame={onClickGame}
-        />
-      );
+      render(<GameList games={games} onSelectGame={onSelectGame} onClickGame={onClickGame} />);
 
       await user.click(screen.getByRole('checkbox'));
 
@@ -718,11 +700,7 @@ describe('GameList', () => {
       const selectedIds = new Set(['game-1']);
       const onSelectGame = vi.fn();
       const { container } = render(
-        <GameList
-          games={games}
-          selectedIds={selectedIds}
-          onSelectGame={onSelectGame}
-        />
+        <GameList games={games} selectedIds={selectedIds} onSelectGame={onSelectGame} />,
       );
 
       // Find the data row (not header row) with bg-muted
@@ -791,9 +769,7 @@ describe('GameList', () => {
       const selectedIds = new Set(['game-1']);
 
       // Should not crash, but checkboxes won't render without onSelectGame
-      expect(() =>
-        render(<GameList games={games} selectedIds={selectedIds} />)
-      ).not.toThrow();
+      expect(() => render(<GameList games={games} selectedIds={selectedIds} />)).not.toThrow();
     });
 
     it('renders large number of games without issues', () => {
@@ -801,7 +777,7 @@ describe('GameList', () => {
         createMockGame({
           id: `game-${i}` as UserGameId,
           game: { ...createMockGame().game, title: `Game ${i}` },
-        })
+        }),
       );
 
       render(<GameList games={games} />);
@@ -880,13 +856,7 @@ describe('GameList', () => {
       const onSelectGame = vi.fn();
       const onClickGame = vi.fn();
 
-      render(
-        <GameList
-          games={[game]}
-          onSelectGame={onSelectGame}
-          onClickGame={onClickGame}
-        />
-      );
+      render(<GameList games={[game]} onSelectGame={onSelectGame} onClickGame={onClickGame} />);
 
       // Click checkbox
       await user.click(screen.getByRole('checkbox'));
@@ -902,9 +872,9 @@ describe('GameList', () => {
       const { rerender } = render(<GameList games={[]} isLoading={true} />);
 
       // Should show skeletons initially
-      const skeletons = screen.getAllByRole('generic').filter((el) =>
-        el.className.includes('animate-pulse')
-      );
+      const skeletons = screen
+        .getAllByRole('generic')
+        .filter((el) => el.className.includes('animate-pulse'));
       expect(skeletons.length).toBeGreaterThanOrEqual(10);
 
       // Re-render with games loaded
@@ -936,11 +906,7 @@ describe('GameList', () => {
       const onSelectGame = vi.fn();
 
       const { rerender } = render(
-        <GameList
-          games={[game1]}
-          selectedIds={selectedIds}
-          onSelectGame={onSelectGame}
-        />
+        <GameList games={[game1]} selectedIds={selectedIds} onSelectGame={onSelectGame} />,
       );
 
       // Game 1 should be selected
@@ -948,11 +914,7 @@ describe('GameList', () => {
 
       // Add second game, keep same selection
       rerender(
-        <GameList
-          games={[game1, game2]}
-          selectedIds={selectedIds}
-          onSelectGame={onSelectGame}
-        />
+        <GameList games={[game1, game2]} selectedIds={selectedIds} onSelectGame={onSelectGame} />,
       );
 
       // Get both checkboxes

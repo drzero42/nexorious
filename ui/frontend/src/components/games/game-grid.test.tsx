@@ -100,9 +100,9 @@ describe('GameGrid', () => {
       render(<GameGrid games={[]} isLoading={true} />);
 
       // Check for skeleton elements - they have animate-pulse class
-      const skeletons = screen.getAllByRole('generic').filter((el) =>
-        el.className.includes('animate-pulse')
-      );
+      const skeletons = screen
+        .getAllByRole('generic')
+        .filter((el) => el.className.includes('animate-pulse'));
 
       // There should be 36 skeleton divs (12 skeletons × 3 skeleton parts each)
       // But we specifically check for the main skeleton wrappers
@@ -129,7 +129,7 @@ describe('GameGrid', () => {
 
       expect(screen.getByText('No games found')).toBeInTheDocument();
       expect(
-        screen.getByText(/Try adjusting your filters or add some games to your library/i)
+        screen.getByText(/Try adjusting your filters or add some games to your library/i),
       ).toBeInTheDocument();
     });
 
@@ -178,9 +178,9 @@ describe('GameGrid', () => {
       const games = [createMockGame()];
       render(<GameGrid games={games} />);
 
-      const skeletons = screen.queryAllByRole('generic').filter((el) =>
-        el.className.includes('animate-pulse')
-      );
+      const skeletons = screen
+        .queryAllByRole('generic')
+        .filter((el) => el.className.includes('animate-pulse'));
 
       expect(skeletons.length).toBe(0);
     });
@@ -202,13 +202,7 @@ describe('GameGrid', () => {
       const selectedIds = new Set(['game-1']);
       const onSelectGame = vi.fn();
 
-      render(
-        <GameGrid
-          games={games}
-          selectedIds={selectedIds}
-          onSelectGame={onSelectGame}
-        />
-      );
+      render(<GameGrid games={games} selectedIds={selectedIds} onSelectGame={onSelectGame} />);
 
       // Game 1 should have a checked checkbox
       const checkbox1 = screen.getByTestId('checkbox-game-1') as HTMLInputElement;
@@ -294,9 +288,7 @@ describe('GameGrid', () => {
       render(<GameGrid games={[game]} />);
 
       // Should not throw
-      await expect(
-        user.click(screen.getByTestId('click-game-1'))
-      ).resolves.not.toThrow();
+      await expect(user.click(screen.getByTestId('click-game-1'))).resolves.not.toThrow();
     });
   });
 
@@ -310,9 +302,7 @@ describe('GameGrid', () => {
       const selectedIds = new Set(['game-1']);
 
       // Should not crash, but checkboxes won't render without onSelectGame
-      expect(() =>
-        render(<GameGrid games={games} selectedIds={selectedIds} />)
-      ).not.toThrow();
+      expect(() => render(<GameGrid games={games} selectedIds={selectedIds} />)).not.toThrow();
     });
 
     it('renders large number of games without issues', () => {
@@ -320,7 +310,7 @@ describe('GameGrid', () => {
         createMockGame({
           id: `game-${i}` as UserGameId,
           game: { ...createMockGame().game, title: `Game ${i}` },
-        })
+        }),
       );
 
       render(<GameGrid games={games} />);
@@ -347,13 +337,7 @@ describe('GameGrid', () => {
       const onSelectGame = vi.fn();
       const onClickGame = vi.fn();
 
-      render(
-        <GameGrid
-          games={[game]}
-          onSelectGame={onSelectGame}
-          onClickGame={onClickGame}
-        />
-      );
+      render(<GameGrid games={[game]} onSelectGame={onSelectGame} onClickGame={onClickGame} />);
 
       // Click checkbox
       await user.click(screen.getByTestId('checkbox-game-1'));
@@ -369,9 +353,9 @@ describe('GameGrid', () => {
       const { rerender } = render(<GameGrid games={[]} isLoading={true} />);
 
       // Should show skeletons initially
-      const skeletons = screen.getAllByRole('generic').filter((el) =>
-        el.className.includes('animate-pulse')
-      );
+      const skeletons = screen
+        .getAllByRole('generic')
+        .filter((el) => el.className.includes('animate-pulse'));
       expect(skeletons.length).toBeGreaterThanOrEqual(12);
 
       // Re-render with games loaded
@@ -400,11 +384,7 @@ describe('GameGrid', () => {
       const onSelectGame = vi.fn();
 
       const { rerender } = render(
-        <GameGrid
-          games={[game1]}
-          selectedIds={selectedIds}
-          onSelectGame={onSelectGame}
-        />
+        <GameGrid games={[game1]} selectedIds={selectedIds} onSelectGame={onSelectGame} />,
       );
 
       // Game 1 should be selected
@@ -413,17 +393,11 @@ describe('GameGrid', () => {
 
       // Add second game, keep same selection
       rerender(
-        <GameGrid
-          games={[game1, game2]}
-          selectedIds={selectedIds}
-          onSelectGame={onSelectGame}
-        />
+        <GameGrid games={[game1, game2]} selectedIds={selectedIds} onSelectGame={onSelectGame} />,
       );
 
       // Game 1 should still be selected
-      const checkbox1After = screen.getByTestId(
-        'checkbox-game-1'
-      ) as HTMLInputElement;
+      const checkbox1After = screen.getByTestId('checkbox-game-1') as HTMLInputElement;
       expect(checkbox1After.checked).toBe(true);
 
       // Game 2 should not be selected

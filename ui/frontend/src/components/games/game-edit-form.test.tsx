@@ -154,7 +154,9 @@ describe('GameEditForm', () => {
     const cancelButtons = screen.getAllByRole('button', { name: /cancel/i });
     await user.click(cancelButtons[0]);
 
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/games/f47ac10b-58cc-4372-a567-0e02b2c3d479' });
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/games/f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    });
   });
 
   it('renders save button', () => {

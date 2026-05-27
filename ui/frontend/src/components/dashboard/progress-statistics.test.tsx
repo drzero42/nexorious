@@ -130,9 +130,7 @@ describe('ProgressStatistics', () => {
     });
 
     it('does not display time investment when hours is 0', () => {
-      render(
-        <ProgressStatistics stats={createMockStats({ totalHoursPlayed: 0 })} />
-      );
+      render(<ProgressStatistics stats={createMockStats({ totalHoursPlayed: 0 })} />);
 
       expect(screen.queryByText('Time Investment')).not.toBeInTheDocument();
     });
@@ -185,10 +183,7 @@ describe('ProgressStatistics', () => {
 
     it('applies custom className', () => {
       const { container } = render(
-        <ProgressStatistics
-          stats={createMockStats()}
-          className="custom-container"
-        />
+        <ProgressStatistics stats={createMockStats()} className="custom-container" />,
       );
 
       expect(container.firstChild).toHaveClass('custom-container');

@@ -92,7 +92,7 @@ interface JobItemApiResponse {
   result_user_game_id: string | null;
   created_at: string;
   processed_at: string | null;
-  igdb_candidates_json?: string;  // Optional - present for PENDING_REVIEW items
+  igdb_candidates_json?: string; // Optional - present for PENDING_REVIEW items
   external_game_id: string | null;
 }
 
@@ -231,7 +231,16 @@ function transformSyncChangeItem(sc: SyncChangeItemApiResponse): SyncChangeItem 
 }
 
 function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
-  const p = api.progress ?? { completed: 0, skipped: 0, failed: 0, pending: 0, processing: 0, pending_review: 0, total: 0, percent: 0 };
+  const p = api.progress ?? {
+    completed: 0,
+    skipped: 0,
+    failed: 0,
+    pending: 0,
+    processing: 0,
+    pending_review: 0,
+    total: 0,
+    percent: 0,
+  };
   return {
     id: api.id,
     status: api.status,
@@ -259,7 +268,7 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
 export async function getJobs(
   filters?: JobFilters,
   page: number = 1,
-  perPage: number = 20
+  perPage: number = 20,
 ): Promise<JobListResponse> {
   const params: Record<string, string | number> = {
     page,
@@ -334,15 +343,12 @@ export async function getJobItems(
   jobId: string,
   status?: JobItemStatus,
   page: number = 1,
-  pageSize: number = 50
+  pageSize: number = 50,
 ): Promise<JobItemListResponse> {
   const params: Record<string, string | number> = { page, per_page: pageSize };
   if (status) params.status = status;
 
-  const response = await api.get<JobItemListApiResponse>(
-    `/jobs/${jobId}/items`,
-    { params }
-  );
+  const response = await api.get<JobItemListApiResponse>(`/jobs/${jobId}/items`, { params });
 
   return {
     items: response.items.map(transformJobItem),
@@ -397,7 +403,10 @@ export async function retryJobItem(itemId: string): Promise<JobItemDetail> {
 /**
  * Get recent completed jobs for a specific source with item details.
  */
-export async function getRecentJobs(source: string, limit: number = 5): Promise<RecentJobsResponse> {
+export async function getRecentJobs(
+  source: string,
+  limit: number = 5,
+): Promise<RecentJobsResponse> {
   const response = await api.get<RecentJobsApiResponse>(`/jobs/recent/${source}`, {
     params: { limit },
   });

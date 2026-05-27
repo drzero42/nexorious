@@ -31,7 +31,8 @@ export const syncKeys = {
   epicConnection: () => [...syncKeys.all, 'epicConnection'] as const,
   gogConnection: () => [...syncKeys.all, 'gogConnection'] as const,
   psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
-  externalGames: (platform: SyncStorefront) => [...syncKeys.all, 'external-games', platform] as const,
+  externalGames: (platform: SyncStorefront) =>
+    [...syncKeys.all, 'external-games', platform] as const,
 };
 
 // ============================================================================
@@ -98,19 +99,17 @@ export function useSyncStatuses() {
 export function useUpdateSyncConfig() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    SyncConfig,
-    Error,
-    { storefront: SyncStorefront; data: SyncConfigUpdateData }
-  >({
-    mutationFn: ({ storefront, data }) => syncApi.updateSyncConfig(storefront, data),
-    onSuccess: (updatedConfig, { storefront }) => {
-      // Update the specific config in cache
-      queryClient.setQueryData(syncKeys.config(storefront), updatedConfig);
-      // Invalidate the configs list to refetch
-      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+  return useMutation<SyncConfig, Error, { storefront: SyncStorefront; data: SyncConfigUpdateData }>(
+    {
+      mutationFn: ({ storefront, data }) => syncApi.updateSyncConfig(storefront, data),
+      onSuccess: (updatedConfig, { storefront }) => {
+        // Update the specific config in cache
+        queryClient.setQueryData(syncKeys.config(storefront), updatedConfig);
+        // Invalidate the configs list to refetch
+        queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      },
     },
-  });
+  );
 }
 
 /**
@@ -125,16 +124,13 @@ export function useTriggerSync() {
       // Optimistically set isSyncing to true and include the jobId from the response
       // This ensures the job progress card can immediately fetch job details
       // without waiting for the next status poll
-      queryClient.setQueryData(
-        syncKeys.status(platform),
-        (old: SyncStatus | undefined) => ({
-          storefront: old?.storefront ?? platform,
-          isSyncing: true,
-          lastSyncedAt: old?.lastSyncedAt ?? null,
-          activeJobId: result.jobId,
-          externalGameCount: old?.externalGameCount ?? 0,
-        })
-      );
+      queryClient.setQueryData(syncKeys.status(platform), (old: SyncStatus | undefined) => ({
+        storefront: old?.storefront ?? platform,
+        isSyncing: true,
+        lastSyncedAt: old?.lastSyncedAt ?? null,
+        activeJobId: result.jobId,
+        externalGameCount: old?.externalGameCount ?? 0,
+      }));
       // Also invalidate to get fresh data from server
       queryClient.invalidateQueries({ queryKey: syncKeys.status(platform) });
     },
@@ -145,13 +141,8 @@ export function useTriggerSync() {
  * Hook to verify Steam credentials before saving.
  */
 export function useVerifySteamCredentials() {
-  return useMutation<
-    SteamVerifyResponse,
-    Error,
-    { steamId: string; webApiKey: string }
-  >({
-    mutationFn: ({ steamId, webApiKey }) =>
-      syncApi.verifySteamCredentials(steamId, webApiKey),
+  return useMutation<SteamVerifyResponse, Error, { steamId: string; webApiKey: string }>({
+    mutationFn: ({ steamId, webApiKey }) => syncApi.verifySteamCredentials(steamId, webApiKey),
   });
 }
 

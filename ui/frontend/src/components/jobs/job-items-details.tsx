@@ -1,10 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -18,11 +14,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
-import {
-  useJobItems,
-  useRetryFailedItems,
-  useRetryJobItem,
-} from '@/hooks';
+import { useJobItems, useRetryFailedItems, useRetryJobItem } from '@/hooks';
 import { JobItemStatus, getJobItemStatusLabel, getJobItemStatusVariant } from '@/types';
 
 interface JobItemsDetailsProps {
@@ -45,7 +37,6 @@ interface StatusSectionProps {
   defaultOpen?: boolean;
   isTerminal: boolean;
 }
-
 
 function StatusSection({
   jobId,
@@ -106,13 +97,9 @@ function StatusSection({
 
   const iconMap: Record<JobItemStatus, React.ReactNode> = {
     [JobItemStatus.PENDING]: <Clock className="h-4 w-4 text-muted-foreground" />,
-    [JobItemStatus.PROCESSING]: (
-      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-    ),
+    [JobItemStatus.PROCESSING]: <Loader2 className="h-4 w-4 animate-spin text-blue-500" />,
     [JobItemStatus.COMPLETED]: <CheckCircle className="h-4 w-4 text-green-600" />,
-    [JobItemStatus.PENDING_REVIEW]: (
-      <AlertCircle className="h-4 w-4 text-yellow-600" />
-    ),
+    [JobItemStatus.PENDING_REVIEW]: <AlertCircle className="h-4 w-4 text-yellow-600" />,
     [JobItemStatus.SKIPPED]: <Clock className="h-4 w-4 text-muted-foreground" />,
     [JobItemStatus.FAILED]: <AlertCircle className="h-4 w-4 text-red-600" />,
   };
@@ -120,16 +107,9 @@ function StatusSection({
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger asChild>
-        <Button
-          variant="ghost"
-          className="w-full justify-between px-4 py-2 h-auto"
-        >
+        <Button variant="ghost" className="w-full justify-between px-4 py-2 h-auto">
           <div className="flex items-center gap-2">
-            {isOpen ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
+            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             {iconMap[status]}
             <span>{getJobItemStatusLabel(status)}</span>
           </div>
@@ -175,18 +155,19 @@ function StatusSection({
                   <div className="min-w-0 flex-1">
                     {item.resultUserGameId ? (
                       <Link
-                        to="/games/$id" params={{ id: String(item.resultUserGameId) }}
+                        to="/games/$id"
+                        params={{ id: String(item.resultUserGameId) }}
                         className="font-medium truncate hover:underline text-primary block"
                       >
                         {item.resultGameTitle || item.sourceTitle}
                       </Link>
                     ) : (
-                      <div className="font-medium truncate">{item.resultGameTitle || item.sourceTitle}</div>
+                      <div className="font-medium truncate">
+                        {item.resultGameTitle || item.sourceTitle}
+                      </div>
                     )}
                     {item.errorMessage && (
-                      <div className="text-xs mt-1 text-red-600">
-                        {item.errorMessage}
-                      </div>
+                      <div className="text-xs mt-1 text-red-600">{item.errorMessage}</div>
                     )}
                   </div>
                   {canRetryItem && (

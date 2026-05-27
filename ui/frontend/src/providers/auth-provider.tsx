@@ -164,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Update ref immediately so API calls can use the token
       tokensRef.current = {
         accessToken: storedAuth.accessToken,
-        refreshToken: storedAuth.refreshToken
+        refreshToken: storedAuth.refreshToken,
       };
 
       // Set state for React rendering

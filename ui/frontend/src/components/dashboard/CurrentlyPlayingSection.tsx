@@ -53,7 +53,8 @@ export function CurrentlyPlayingSection() {
           return (
             <Link
               key={game.id}
-              to="/games/$id" params={{ id: String(game.id) }}
+              to="/games/$id"
+              params={{ id: String(game.id) }}
               className="flex-shrink-0 w-[140px] sm:w-40 group shadow-md hover:shadow-lg transition-shadow rounded-lg"
             >
               {/* Cover art with 3:4 aspect ratio */}
@@ -102,9 +103,7 @@ export function CurrentlyPlayingSection() {
                   {firstPlatform}
                 </Badge>
                 {additionalCount > 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    +{additionalCount} more
-                  </span>
+                  <span className="text-xs text-muted-foreground">+{additionalCount} more</span>
                 )}
               </div>
             </Link>
