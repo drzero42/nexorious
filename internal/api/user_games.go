@@ -97,17 +97,24 @@ func toUserGamePlatformResponse(ugp models.UserGamePlatform) userGamePlatformRes
 	return resp
 }
 
-// userGameWithPlatformsResponse wraps UserGame but serialises Platforms as DTOs with nested details.
+// userGameWithPlatformsResponse wraps UserGame but serialises Platforms as DTOs with
+// nested details and exposes a calculated game-level HoursPlayed (sum of platform hours).
 type userGameWithPlatformsResponse struct {
 	models.UserGame
-	Platforms []userGamePlatformResponse `json:"platforms"`
+	HoursPlayed float64                    `json:"hours_played"`
+	Platforms   []userGamePlatformResponse `json:"platforms"`
 }
 
 func toUserGameWithPlatformsResponse(ug models.UserGame) userGameWithPlatformsResponse {
 	resp := userGameWithPlatformsResponse{UserGame: ug}
+	var totalHours float64
 	for _, p := range ug.Platforms {
+		if p.HoursPlayed != nil {
+			totalHours += *p.HoursPlayed
+		}
 		resp.Platforms = append(resp.Platforms, toUserGamePlatformResponse(p))
 	}
+	resp.HoursPlayed = totalHours
 	if resp.Platforms == nil {
 		resp.Platforms = []userGamePlatformResponse{}
 	}
@@ -251,7 +258,8 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	if sortCol != "" {
 		idQ = idQ.OrderExpr(sortCol + " " + sortOrder)
 	}
-	idQ = idQ.OrderExpr("ug.created_at DESC"). // stable secondary sort
+	// stable secondary sort
+	idQ = idQ.OrderExpr("ug.created_at DESC").
 		Offset((page - 1) * perPage).
 		Limit(perPage)
 

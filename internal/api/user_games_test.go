@@ -1203,3 +1203,74 @@ func TestCollectionStats(t *testing.T) {
 		}
 	})
 }
+
+func TestUserGameCalculatedHours(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "calchours")
+
+	// Two platforms on one game: 10 + 25.5 = 35.5
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO platforms (name, display_name) VALUES ('pc','PC'),('ps5','PS5') ON CONFLICT DO NOTHING`)
+	g1 := insertTestGame(t, testDB, "Calc Hours Game")
+	insertTestUserGame(t, testDB, "ug-calc-1", userID, int(g1))
+	pc, ps5 := "pc", "ps5"
+	insertTestUserGamePlatform(t, testDB, "ugp-calc-1", "ug-calc-1", &pc, nil)
+	insertTestUserGamePlatform(t, testDB, "ugp-calc-2", "ug-calc-1", &ps5, nil)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE user_game_platforms SET hours_played = 10 WHERE id = 'ugp-calc-1'`)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE user_game_platforms SET hours_played = 25.5 WHERE id = 'ugp-calc-2'`)
+
+	// A second game with no platform hours → 0
+	g2 := insertTestGame(t, testDB, "No Hours Game")
+	insertTestUserGame(t, testDB, "ug-calc-2", userID, int(g2))
+
+	t.Run("single GET returns summed hours", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games/ug-calc-1", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp["hours_played"].(float64) != 35.5 {
+			t.Fatalf("expected hours_played=35.5, got %v", resp["hours_played"])
+		}
+	})
+
+	t.Run("single GET returns 0 when no platform hours", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games/ug-calc-2", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp["hours_played"].(float64) != 0 {
+			t.Fatalf("expected hours_played=0, got %v", resp["hours_played"])
+		}
+	})
+
+	t.Run("list returns summed hours", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		games := resp["user_games"].([]any)
+		var calc1 map[string]any
+		for _, g := range games {
+			gm := g.(map[string]any)
+			if gm["id"] == "ug-calc-1" {
+				calc1 = gm
+			}
+		}
+		if calc1 == nil {
+			t.Fatal("ug-calc-1 not found in list response")
+		}
+		if calc1["hours_played"].(float64) != 35.5 {
+			t.Fatalf("expected list hours_played=35.5, got %v", calc1["hours_played"])
+		}
+	})
+}
