@@ -94,12 +94,12 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 
 	ctx := context.Background()
 	var statsUsers, statsGames, statsTags int
-	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&statsUsers)
-	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT game_id) FROM user_games").Scan(&statsGames)
-	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&statsTags)
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&statsUsers) //nolint:errcheck // cosmetic stat; zero value acceptable on error
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT game_id) FROM user_games").Scan(&statsGames) //nolint:errcheck // cosmetic stat; zero value acceptable on error
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&statsTags) //nolint:errcheck // cosmetic stat; zero value acceptable on error
 
 	var migrationVersion string
-	_ = s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(name), '') FROM bun_migrations").Scan(&migrationVersion)
+	_ = s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(name), '') FROM bun_migrations").Scan(&migrationVersion) //nolint:errcheck // cosmetic stat; zero value acceptable on error
 
 	dbChecksum, dbSize := checksumFile(dbSQLPath)
 	coverArtChecksum := checksumDir(coverArtDst)
@@ -155,7 +155,7 @@ func (s *Service) ListBackups() ([]BackupInfo, error) {
 			slog.Warn("skipping invalid backup archive", "path", archivePath, "err", err)
 			continue
 		}
-		info, _ := os.Stat(archivePath)
+		info, _ := os.Stat(archivePath) //nolint:errcheck // best-effort modtime for display; zero value acceptable
 		bi := BackupInfo{
 			ID:         strings.TrimSuffix(filepath.Base(archivePath), ".tar.gz"),
 			CreatedAt:  manifest.CreatedAt,
@@ -418,13 +418,13 @@ func checksumFile(path string) (string, int64) {
 	}
 	defer func() { _ = f.Close() }()
 	h := sha256.New()
-	size, _ := io.Copy(h, f)
+	size, _ := io.Copy(h, f) //nolint:errcheck // hashing a file; hash.Hash.Write never errors
 	return hex.EncodeToString(h.Sum(nil)), size
 }
 
 func checksumDir(dir string) string {
 	h := sha256.New()
-	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error { //nolint:errcheck // best-effort directory checksum; non-fatal
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -433,7 +433,7 @@ func checksumDir(dir string) string {
 			return err
 		}
 		defer func() { _ = f.Close() }()
-		_, _ = io.Copy(h, f) // hash.Hash.Write never returns an error
+		_, _ = io.Copy(h, f) //nolint:errcheck // hash.Hash.Write never returns an error
 		return nil
 	})
 	return hex.EncodeToString(h.Sum(nil))
@@ -450,7 +450,7 @@ func copyDir(src, dst string) (fileCount int, totalSize int64, err error) {
 		if err != nil {
 			return err
 		}
-		relPath, _ := filepath.Rel(src, path)
+		relPath, _ := filepath.Rel(src, path) //nolint:errcheck // path is always under src; cannot fail here
 		dstPath := filepath.Join(dst, relPath)
 		if d.IsDir() {
 			return os.MkdirAll(dstPath, 0o755)
@@ -481,7 +481,7 @@ func createTarGz(archivePath, baseDir, dirName string) error {
 		if err != nil {
 			return err
 		}
-		relPath, _ := filepath.Rel(baseDir, path)
+		relPath, _ := filepath.Rel(baseDir, path) //nolint:errcheck // path is always under baseDir; cannot fail here
 		info, err := d.Info()
 		if err != nil {
 			return err
@@ -822,7 +822,7 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
 	}
 
-	entries, _ := os.ReadDir(tmpDir)
+	entries, _ := os.ReadDir(tmpDir) //nolint:errcheck // already in restore-failure path; empty result handled below
 	if len(entries) == 0 {
 		opts.SetAppState("db_unavailable")
 		return fmt.Errorf("restore failed AND rollback failed (empty archive). Original: %w", originalErr)
@@ -854,7 +854,7 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 	coverArtDst := filepath.Join(s.storagePath, "cover_art")
 	_ = os.RemoveAll(coverArtDst)
 	if _, err := os.Stat(coverArtSrc); err == nil {
-		_, _, _ = copyDir(coverArtSrc, coverArtDst)
+		_, _, _ = copyDir(coverArtSrc, coverArtDst) //nolint:errcheck // best-effort cover-art restore; DB already restored
 	}
 
 	newDB, err := opts.ReconnectDB()
