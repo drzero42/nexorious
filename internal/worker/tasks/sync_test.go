@@ -2194,3 +2194,112 @@ func TestUserGameWorker_WorkerAutoSkip_WritesSyncChange(t *testing.T) {
 		t.Errorf("title: want 'Skipped Game', got %q", sc.Title)
 	}
 }
+
+// userGameStage3Fixture seeds the rows a UserGameWorker run needs: user,
+// platform, storefront, games row (description NULL), external_game (resolved),
+// one external_game_platform, and a pending sync job_item. It returns the
+// job_item ID and the IGDB game ID.
+func userGameStage3Fixture(t *testing.T) (itemID string, igdbID int32) {
+	t.Helper()
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+
+	igdbID = int32(730)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Counter-Strike 2', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	egID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', '730', 'Counter-Strike 2', false, true, false, ?)`,
+		egID, userID, igdbID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 42.5, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID = uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, '730', 'Counter-Strike 2', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+	return itemID, igdbID
+}
+
+func TestUserGameWorker_EnqueuesImmediateMetadataFetch(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	itemID, igdbID := userGameStage3Fixture(t)
+
+	srv := igdbTestServer(t, `[]`) // never actually called — UserGameWorker only checks Configured()
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+	rc := newTestRiverClient(t)
+
+	w := &tasks.UserGameWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var count int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM river_job WHERE kind = 'metadata_fetch' AND (args->>'game_id')::int = ?`, igdbID,
+	).Scan(ctx, &count)
+	if count != 1 {
+		t.Errorf("metadata_fetch river_job for game %d: want 1, got %d", igdbID, count)
+	}
+}
+
+func TestUserGameWorker_SkipsMetadataFetchWhenDescriptionPresent(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	itemID, igdbID := userGameStage3Fixture(t)
+	// Game already has metadata.
+	_, _ = testDB.NewRaw(`UPDATE games SET description = 'already here' WHERE id = ?`, igdbID).Exec(ctx)
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+	rc := newTestRiverClient(t)
+
+	w := &tasks.UserGameWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var count int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM river_job WHERE kind = 'metadata_fetch'`).Scan(ctx, &count)
+	if count != 0 {
+		t.Errorf("metadata_fetch river_job: want 0 (description present), got %d", count)
+	}
+}
+
+func TestUserGameWorker_SkipsMetadataFetchWhenIGDBNotConfigured(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	itemID, _ := userGameStage3Fixture(t)
+
+	unconfigured := igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
+	rc := newTestRiverClient(t)
+
+	w := &tasks.UserGameWorker{DB: testDB, IGDBClient: unconfigured, RiverClient: rc}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var count int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM river_job WHERE kind = 'metadata_fetch'`).Scan(ctx, &count)
+	if count != 0 {
+		t.Errorf("metadata_fetch river_job: want 0 (IGDB not configured), got %d", count)
+	}
+}

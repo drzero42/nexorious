@@ -186,36 +186,54 @@ func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[Met
 		return nil
 	}
 
-	// Step 3 — Load game.
-	var game struct {
-		ID          int32   `bun:"id"`
-		Title       string  `bun:"title"`
-		CoverArtUrl *string `bun:"cover_art_url"`
-	}
-	if err := w.DB.NewRaw(
-		`SELECT id, title, cover_art_url FROM games WHERE id = ?`, sourceMeta.GameID,
-	).Scan(ctx, &game); err != nil {
-		metaRefreshMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("load game: %v", err))
-		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
-		return nil
-	}
-
-	// Step 4 — IGDB guard (defensive).
+	// Step 3 — IGDB guard (defensive; preserves the per-item failure message).
 	if !w.IGDBClient.Configured() {
 		metaRefreshMarkItemFailed(ctx, w.DB, &item, "igdb_not_configured")
 		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
-	// Step 5 — Fetch metadata.
-	md, err := w.IGDBClient.FetchFullMetadata(ctx, int(sourceMeta.GameID))
-	if err != nil {
+	// Step 4 — Fetch IGDB metadata and update the games row (shared helper).
+	if err := fetchAndStoreMetadata(ctx, w.DB, w.IGDBClient, w.StoragePath, sourceMeta.GameID); err != nil {
 		metaRefreshMarkItemFailed(ctx, w.DB, &item, err.Error())
 		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
-	// Step 6 — Update games row.
+	// Step 5 — Mark item completed.
+	metaRefreshMarkItemCompleted(ctx, w.DB, &item)
+
+	// Step 6 — Check job completion.
+	metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
+
+	return nil
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// fetchAndStoreMetadata fetches fresh IGDB metadata for a single game and writes
+// it to the games row, including cover art (cover-art failure is non-fatal). It
+// is the shared core used by both MetadataRefreshItemWorker (which layers
+// job_items tracking on top) and the fire-and-forget MetadataFetchWorker. The
+// caller must verify IGDB is configured before calling.
+func fetchAndStoreMetadata(ctx context.Context, db *bun.DB, igdbClient *igdbsvc.Client, storagePath string, gameID int32) error {
+	// Load the current games row; cover_art_url drives the cover re-download decision.
+	var game struct {
+		ID          int32   `bun:"id"`
+		Title       string  `bun:"title"`
+		CoverArtUrl *string `bun:"cover_art_url"`
+	}
+	if err := db.NewRaw(
+		`SELECT id, title, cover_art_url FROM games WHERE id = ?`, gameID,
+	).Scan(ctx, &game); err != nil {
+		return fmt.Errorf("load game: %w", err)
+	}
+
+	md, err := igdbClient.FetchFullMetadata(ctx, int(gameID))
+	if err != nil {
+		return err
+	}
+
 	var releaseDate *time.Time
 	if md.ReleaseDate != nil {
 		if t, err := time.Parse("2006-01-02", *md.ReleaseDate); err == nil {
@@ -242,7 +260,7 @@ func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[Met
 		igdbPlatformNames = &s
 	}
 
-	_, err = w.DB.NewRaw(
+	if _, err := db.NewRaw(
 		`UPDATE games SET
 			title = ?,
 			description = ?,
@@ -280,42 +298,31 @@ func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[Met
 		md.GameModes,
 		md.Themes,
 		md.PlayerPerspectives,
-		sourceMeta.GameID,
-	).Exec(ctx)
-	if err != nil {
-		metaRefreshMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("update games: %v", err))
-		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
-		return nil
+		gameID,
+	).Exec(ctx); err != nil {
+		return fmt.Errorf("update games: %w", err)
 	}
 
-	// Step 7 — Cover art (non-fatal).
+	// Cover art (non-fatal).
 	if md.CoverImageID != "" {
 		expectedURLPath := "/static/cover_art/" + md.CoverImageID + ".jpg"
 		if game.CoverArtUrl == nil || *game.CoverArtUrl != expectedURLPath {
-			coverURLPath, err := w.IGDBClient.DownloadCoverArt(ctx, md.CoverImageID, w.StoragePath)
+			coverURLPath, err := igdbClient.DownloadCoverArt(ctx, md.CoverImageID, storagePath)
 			if err != nil {
-				slog.Warn("metadata_refresh_item: cover art download failed",
+				slog.Warn("metadata fetch: cover art download failed",
 					"game_id", game.ID, "image_id", md.CoverImageID, "err", err)
 			} else if coverURLPath != "" {
-				if _, err := w.DB.NewRaw(
+				if _, err := db.NewRaw(
 					`UPDATE games SET cover_art_url = ? WHERE id = ?`, coverURLPath, game.ID,
 				).Exec(ctx); err != nil {
-					slog.Error("metadata_refresh_item: update cover_art_url failed", "err", err, "game_id", game.ID)
+					slog.Error("metadata fetch: update cover_art_url failed", "err", err, "game_id", game.ID)
 				}
 			}
 		}
 	}
 
-	// Step 8 — Mark item completed.
-	metaRefreshMarkItemCompleted(ctx, w.DB, &item)
-
-	// Step 9 — Check job completion.
-	metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
-
 	return nil
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func metaRefreshMarkItemFailed(ctx context.Context, db *bun.DB, item *models.JobItem, msg string) {
 	now := time.Now().UTC()

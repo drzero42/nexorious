@@ -515,6 +515,7 @@ func (UserGameArgs) InsertOpts() river.InsertOpts {
 type UserGameWorker struct {
 	river.WorkerDefaults[UserGameArgs]
 	DB          *bun.DB
+	IGDBClient  *igdbsvc.Client
 	RiverClient *river.Client[pgx.Tx]
 }
 
@@ -739,9 +740,47 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		}
 	}
 
+	// Immediate metadata fetch: if IGDB is configured and the games row has no
+	// description yet, enqueue a fire-and-forget fetch so newly added games get
+	// cover art and full IGDB data within seconds rather than waiting for the
+	// next scheduled bulk refresh. Non-fatal — the bulk refresh is the safety net.
+	w.maybeEnqueueImmediateMetadataFetch(ctx, *eg.ResolvedIGDBID)
+
 	syncMarkItemCompleted(ctx, w.DB, &item)
 	SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 	return nil
+}
+
+// maybeEnqueueImmediateMetadataFetch enqueues a fire-and-forget metadata_fetch
+// job for gameID when IGDB is configured and the games row has no description
+// yet. Every failure mode is non-fatal — the periodic bulk refresh is the
+// safety net — so we log at warn and move on rather than failing the job_item.
+func (w *UserGameWorker) maybeEnqueueImmediateMetadataFetch(ctx context.Context, gameID int32) {
+	if w.IGDBClient == nil || !w.IGDBClient.Configured() {
+		return
+	}
+
+	var descriptionIsNull bool
+	if err := w.DB.NewRaw(
+		`SELECT description IS NULL FROM games WHERE id = ?`, gameID,
+	).Scan(ctx, &descriptionIsNull); err != nil {
+		slog.Warn("user_game_write: check game description for immediate metadata fetch",
+			"err", err, "game_id", gameID)
+		return
+	}
+	if !descriptionIsNull {
+		return // already has metadata
+	}
+
+	if w.RiverClient == nil {
+		slog.Warn("user_game_write: river client unavailable, skipping immediate metadata fetch",
+			"game_id", gameID)
+		return
+	}
+	if _, err := w.RiverClient.Insert(ctx, MetadataFetchArgs{GameID: gameID}, nil); err != nil {
+		slog.Warn("user_game_write: enqueue immediate metadata fetch failed",
+			"err", err, "game_id", gameID)
+	}
 }
 
 // syncMarkItemFailed sets a job_item to failed with an error message.
