@@ -195,6 +195,13 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				skippedInBatch++
 				slog.Debug("dispatch_sync: game is user-skipped, not enqueuing for matching",
 					"job_id", p.JobID, "external_id", e.ExternalID, "title", e.Title)
+				if _, err := w.DB.NewRaw(
+					`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+					 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
+					uuid.NewString(), p.JobID, p.UserID, egID, e.Title,
+				).Exec(ctx); err != nil {
+					slog.Error("dispatch_sync: insert sync_change (skipped)", "err", err)
+				}
 			} else {
 				if itemID := insertJobItem(ctx, w.DB, egID, e, p); itemID != "" {
 					batchItemIDs = append(batchItemIDs, itemID)
@@ -533,12 +540,19 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		return nil
 	}
 
-	// Skipped games: mark the item skipped and check completion.
+	// Skipped games: record the outcome, mark the item skipped, and check completion.
 	if eg.IsSkipped {
 		if _, err := w.DB.NewRaw(
 			`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
 		).Exec(ctx); err != nil {
 			slog.Error("user_game_write: update external_game updated_at (skipped)", "err", err)
+		}
+		if _, err := w.DB.NewRaw(
+			`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
+			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: insert sync_change (skipped)", "err", err)
 		}
 		syncMarkItemSkipped(ctx, w.DB, &item)
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
@@ -628,6 +642,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		ownership = "subscription"
 	}
 
+	var platformUpgraded bool
 	for _, egp := range egPlatforms {
 		var existingID string
 		var existingOwnership *string
@@ -671,6 +686,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 				finalOwnership = *existingOwnership
 			}
 			if newRank > existingRank {
+				platformUpgraded = true
 				// Insert the status_changed sync_change BEFORE the UPDATE so
 				// that old_status reflects the pre-UPDATE value.
 				if _, err := w.DB.NewRaw(
@@ -712,6 +728,14 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
 		).Exec(ctx); err != nil {
 			slog.Error("user_game_write: insert sync_change (added)", "err", err)
+		}
+	} else if !platformUpgraded {
+		if _, err := w.DB.NewRaw(
+			`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			 VALUES (?, ?, ?, ?, 'already_in_library', ?, now())`,
+			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: insert sync_change (already_in_library)", "err", err)
 		}
 	}
 

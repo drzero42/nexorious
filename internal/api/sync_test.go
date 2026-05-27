@@ -515,6 +515,23 @@ func TestSkipGame_MarksJobItemSkippedAndCompletesJob(t *testing.T) {
 	if jobStatus != "completed" {
 		t.Errorf("expected job status=completed after last item skipped, got %q", jobStatus)
 	}
+
+	// sync_changes('skipped') must be written with the correct title.
+	var sc struct {
+		ChangeType string `bun:"change_type"`
+		Title      string `bun:"title"`
+	}
+	if err := testDB.NewRaw(
+		`SELECT change_type, title FROM sync_changes WHERE job_id = 'job-skip-ji'`,
+	).Scan(context.Background(), &sc); err != nil {
+		t.Fatalf("scan sync_change: %v", err)
+	}
+	if sc.ChangeType != "skipped" {
+		t.Errorf("sync_change change_type: want 'skipped', got %q", sc.ChangeType)
+	}
+	if sc.Title != "Skip Me" {
+		t.Errorf("sync_change title: want 'Skip Me', got %q", sc.Title)
+	}
 }
 
 func TestIgnored_404ForUnknown(t *testing.T) {
