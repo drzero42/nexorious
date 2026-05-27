@@ -16,6 +16,8 @@ import {
   CheckCircle,
   XCircle,
   ArrowRight,
+  SkipForward,
+  BookMarked,
 } from 'lucide-react';
 import { useRecentJobs } from '@/hooks';
 import type { RecentJobDetail, SyncChangeItem } from '@/types';
@@ -74,6 +76,8 @@ function formatSummary(job: RecentJobDetail): string {
   if (job.addedItems.length > 0) parts.push(`${job.addedItems.length} added`);
   if (job.removedItems.length > 0) parts.push(`${job.removedItems.length} removed`);
   if (job.statusChangedItems.length > 0) parts.push(`${job.statusChangedItems.length} status changed`);
+  if (job.alreadyInLibraryItems.length > 0) parts.push(`${job.alreadyInLibraryItems.length} already in library`);
+  if (job.skippedItems.length > 0) parts.push(`${job.skippedItems.length} skipped`);
   return parts.join(' · ');
 }
 
@@ -119,6 +123,16 @@ function JobCard({ job }: { job: RecentJobDetail }) {
             items={job.statusChangedItems}
             label="Status changed"
             icon={<ArrowRight className="h-4 w-4 text-blue-500" />}
+          />
+          <SyncChangeList
+            items={job.alreadyInLibraryItems}
+            label="Already in library"
+            icon={<BookMarked className="h-4 w-4 text-muted-foreground" />}
+          />
+          <SyncChangeList
+            items={job.skippedItems}
+            label="Skipped"
+            icon={<SkipForward className="h-4 w-4 text-muted-foreground" />}
           />
         </div>
       </CollapsibleContent>
