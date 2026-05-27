@@ -183,7 +183,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	checkPendingSyncsWorker := &scheduler.CheckPendingSyncsWorker{DB: db}
 	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
 	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, IGDBClient: igdbClient}
-	userGameWorker := &tasks.UserGameWorker{DB: db}
+	userGameWorker := &tasks.UserGameWorker{DB: db, IGDBClient: igdbClient}
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -194,6 +194,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, userGameWorker)
 	river.AddWorker(workers, metaDispatchWorker)
 	river.AddWorker(workers, &tasks.MetadataRefreshItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, &tasks.MetadataFetchWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &scheduler.CleanupOldJobsWorker{DB: db})
 	river.AddWorker(workers, &scheduler.CleanupExportsWorker{DB: db})
 	river.AddWorker(workers, &scheduler.CleanupUnreferencedGamesWorker{DB: db})
@@ -259,7 +260,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newCheckSyncs := &scheduler.CheckPendingSyncsWorker{DB: newDB}
 			newRescueOrphaned := &scheduler.RescueOrphanedPendingItemsWorker{DB: newDB}
 			newIGDBMatch := &tasks.IGDBMatchWorker{DB: newDB, IGDBClient: igdbClient}
-			newUserGame := &tasks.UserGameWorker{DB: newDB}
+			newUserGame := &tasks.UserGameWorker{DB: newDB, IGDBClient: igdbClient}
 
 			newWorkers := river.NewWorkers()
 			river.AddWorker(newWorkers, &tasks.ImportItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -270,6 +271,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			river.AddWorker(newWorkers, newUserGame)
 			river.AddWorker(newWorkers, newMetaDispatch)
 			river.AddWorker(newWorkers, &tasks.MetadataRefreshItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+			river.AddWorker(newWorkers, &tasks.MetadataFetchWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &scheduler.CleanupOldJobsWorker{DB: newDB})
 			river.AddWorker(newWorkers, &scheduler.CleanupExportsWorker{DB: newDB})
 			river.AddWorker(newWorkers, &scheduler.CleanupUnreferencedGamesWorker{DB: newDB})
