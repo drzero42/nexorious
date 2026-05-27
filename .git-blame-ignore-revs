@@ -3,6 +3,6 @@
 #
 # Enable locally once:  git config blame.ignoreRevsFile .git-blame-ignore-revs
 # GitHub applies this file automatically.
-#
-# After the "chore: adopt Prettier" PR squash-merges to main, append the
-# resulting commit hash below (the feature-branch hash does not survive squash).
+
+# chore: adopt Prettier for frontend formatting (#633)
+6dfc76a848ed488a3be727a4db10ad092afc67b8
