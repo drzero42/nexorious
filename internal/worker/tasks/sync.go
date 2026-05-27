@@ -195,6 +195,13 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				skippedInBatch++
 				slog.Debug("dispatch_sync: game is user-skipped, not enqueuing for matching",
 					"job_id", p.JobID, "external_id", e.ExternalID, "title", e.Title)
+				if _, err := w.DB.NewRaw(
+					`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+					 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
+					uuid.NewString(), p.JobID, p.UserID, egID, e.Title,
+				).Exec(ctx); err != nil {
+					slog.Error("dispatch_sync: insert sync_change (skipped)", "err", err)
+				}
 			} else {
 				if itemID := insertJobItem(ctx, w.DB, egID, e, p); itemID != "" {
 					batchItemIDs = append(batchItemIDs, itemID)

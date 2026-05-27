@@ -577,6 +577,24 @@ func TestDispatchSync_Steam_SkippedGameExcluded(t *testing.T) {
 	if cs2Count != 0 {
 		t.Error("expected no job_item for skipped CS2")
 	}
+
+	// The pre-skipped CS2 must produce a sync_changes('skipped') row.
+	var sc struct {
+		ChangeType string `bun:"change_type"`
+		Title      string `bun:"title"`
+	}
+	if err := testDB.NewRaw(
+		`SELECT change_type, title FROM sync_changes WHERE job_id = ? AND external_game_id = ?`,
+		jobID, egID,
+	).Scan(ctx, &sc); err != nil {
+		t.Fatalf("scan sync_change for skipped game: %v", err)
+	}
+	if sc.ChangeType != "skipped" {
+		t.Errorf("change_type: want 'skipped', got %q", sc.ChangeType)
+	}
+	if sc.Title != "Counter-Strike 2" {
+		t.Errorf("title: want 'Counter-Strike 2', got %q", sc.Title)
+	}
 }
 
 func TestDispatchSync_Steam_PlaytimeStoredOnPlatform(t *testing.T) {
