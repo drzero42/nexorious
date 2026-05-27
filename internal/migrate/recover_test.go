@@ -2,6 +2,7 @@ package migrate_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -166,5 +167,59 @@ func TestLastUnavailableAt_ZeroValue(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	if !m.LastUnavailableAt().IsZero() {
 		t.Error("expected zero time before any unavailability")
+	}
+}
+
+// TestStartDBProbe_RecoveryFromFailed_ClearsLastError exercises the default
+// branch of recoverFromUnavailable after a MigrationFailed → DBUnavailable
+// transition. The recovery re-determines state from the (now reachable) DB and
+// must clear the stale lastError inherited from the earlier failure.
+func TestStartDBProbe_RecoveryFromFailed_ClearsLastError(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Bring the DB to a known-good, fully-migrated state.
+	m := migrate.NewMigrator(db)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
+	if err := m.RunMigrations(context.Background()); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	// Record a failure, then stage the recovery entry point deterministically:
+	// prevState = MigrationFailed (the default-arm trigger), state = DBUnavailable.
+	m.TransitionToFailed(errors.New("boom"))
+	if m.LastError() != "boom" {
+		t.Fatalf("precondition: expected LastError %q, got %q", "boom", m.LastError())
+	}
+	m.SetPrevStateForTest(migrate.AppStateMigrationFailed)
+	m.SetStateForTest(migrate.AppStateDBUnavailable)
+
+	// Probe against the GOOD db: state is DBUnavailable and the ping succeeds, so
+	// the probe recovers via recoverFromUnavailable(prev=MigrationFailed) — the
+	// default arm. No bad-DB timing dependency, so the assertion always runs.
+	m.SetProbeIntervalForTest(30 * time.Millisecond)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	m.StartDBProbe(ctx, db, func(_ context.Context) error { return nil })
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if m.State() != migrate.AppStateDBUnavailable {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if m.State() == migrate.AppStateDBUnavailable {
+		t.Fatal("expected recovery from DBUnavailable (default branch), but still DBUnavailable")
+	}
+	if got := m.LastError(); got != "" {
+		t.Errorf("expected LastError cleared after recovery, got %q", got)
+	}
+	// determineState() in the recovery arm (not RunMigrations) sets Ready directly,
+	// so unlike the happy-path migration flow no TransitionToReady() is involved.
+	if m.State() != migrate.AppStateReady {
+		t.Errorf("expected Ready after recovery, got %v", m.State())
 	}
 }

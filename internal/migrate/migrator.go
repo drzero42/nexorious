@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/riverqueue/river/rivermigrate"
 	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
+	"github.com/riverqueue/river/rivermigrate"
 	"github.com/uptrace/bun"
 	bunmigrate "github.com/uptrace/bun/migrate"
 
@@ -20,7 +20,7 @@ import (
 type AppState int32
 
 const (
-	AppStateDBUnavailable  AppState = iota
+	AppStateDBUnavailable AppState = iota
 	AppStateNeedsMigration
 	AppStateMigrating
 	AppStateReady
@@ -266,6 +266,10 @@ func (mg *Migrator) SetStateForTest(s AppState) {
 	mg.state.Store(int32(s))
 }
 
+func (mg *Migrator) SetPrevStateForTest(s AppState) {
+	mg.prevState.Store(int32(s))
+}
+
 func NewMigratorForTest(s AppState) *Migrator {
 	mg := &Migrator{}
 	mg.state.Store(int32(s))
@@ -358,6 +362,7 @@ func (mg *Migrator) recoverFromUnavailable(ctx context.Context, db *bun.DB, prev
 		slog.Info("db probe: recovery complete (re-determined state after migrating)", "state", mg.State())
 
 	default:
+		mg.lastError.Store("") // clear any failure inherited via DBUnavailable
 		if mg.bunMig != nil {
 			mg.bunMig = nil
 		}
