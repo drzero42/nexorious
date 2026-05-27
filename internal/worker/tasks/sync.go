@@ -853,6 +853,12 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 //   - pending_review items still exist: job stays processing (user must review).
 //   - No pending_review items remain: marks job completed (individual item failures are
 //     surfaced via the job_items table, not the job status).
+//
+// In addition, a sync job is never finalized while its dispatch is still
+// streaming batches: DispatchSyncWorker sets jobs.dispatch_complete=false on
+// entry and true only after the full library has been dispatched, so the
+// completion check below treats dispatch_complete=false as "more work may
+// still arrive" and refuses to finalize.
 func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 	var activeRemaining int
 	if err := db.NewRaw(
@@ -882,7 +888,7 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 	now := time.Now().UTC()
 	finalStatus := "completed"
 	if _, err := db.NewRaw(
-		`UPDATE jobs SET status = ?, completed_at = ? WHERE id = ? AND status IN ('pending', 'processing')`,
+		`UPDATE jobs SET status = ?, completed_at = ? WHERE id = ? AND status IN ('pending', 'processing') AND dispatch_complete = true`,
 		finalStatus, now, jobID,
 	).Exec(ctx); err != nil {
 		slog.Error("sync: SyncCheckJobCompletion finalize job failed", "err", err, "job_id", jobID, "final_status", finalStatus)

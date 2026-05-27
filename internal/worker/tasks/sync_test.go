@@ -1876,6 +1876,106 @@ func TestSyncCheckJobCompletion_FailedItemsYieldsCompleted(t *testing.T) {
 	}
 }
 
+// TestSyncCheckJobCompletion_DispatchIncomplete_StaysProcessing is the #642
+// regression guard: while DispatchSyncWorker is still streaming batches
+// (dispatch_complete=false), a transiently-empty active set must NOT finalize
+// the job, or items from later batches get orphaned under a terminal job.
+func TestSyncCheckJobCompletion_DispatchIncomplete_StaysProcessing(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	// Dispatch is still streaming batches.
+	if _, err := testDB.NewRaw(`UPDATE jobs SET dispatch_complete = false WHERE id = ?`, jobID).Exec(ctx); err != nil {
+		t.Fatalf("set dispatch_complete=false: %v", err)
+	}
+
+	// One fully-resolved item, none pending_review — the empty-active set that
+	// previously tripped premature completion.
+	if _, err := testDB.NewRaw(`
+		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'completed', '{}', '[]', now())`,
+		jobID, userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if status != "processing" {
+		t.Errorf("dispatch incomplete: expected job to stay 'processing', got %q", status)
+	}
+}
+
+// TestSyncCheckJobCompletion_DispatchComplete_Finalizes confirms the happy
+// path: once dispatch is complete and no active/pending_review items remain,
+// the job finalizes to 'completed'.
+func TestSyncCheckJobCompletion_DispatchComplete_Finalizes(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1) // dispatch_complete defaults TRUE
+
+	if _, err := testDB.NewRaw(`
+		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'completed', '{}', '[]', now())`,
+		jobID, userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if status != "completed" {
+		t.Errorf("dispatch complete, no active/review items: expected 'completed', got %q", status)
+	}
+}
+
+// TestSyncCheckJobCompletion_PendingReviewBlocks confirms pending_review items
+// keep the job processing even when dispatch is complete (existing invariant).
+func TestSyncCheckJobCompletion_PendingReviewBlocks(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1) // dispatch_complete defaults TRUE
+
+	if _, err := testDB.NewRaw(`
+		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'pending_review', '{}', '[]', now())`,
+		jobID, userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if status != "processing" {
+		t.Errorf("pending_review present: expected job to stay 'processing', got %q", status)
+	}
+}
+
 // TestUserGameWorker_BackfillsExternalGameID covers the spec invariant from
 // docs/sync.md § "Manually added games": Stage 3 must always set
 // external_game_id on user_game_platforms, even when the row pre-existed
