@@ -44,7 +44,7 @@ make frontend    # builds React SPA into ui/frontend/dist/
 make build       # compiles the Go binary
 ```
 
-`ui/frontend/dist/` is gitignored and must be populated by `make frontend` before `go build`. The Go binary embeds four UI dirs via `//go:embed`: `all:frontend/dist`, `all:migrate`, `db-error`, and `setup` (see `ui/ui.go`).
+`ui/frontend/dist/` is gitignored and must be populated by `make frontend` before `go build`. The Go binary embeds five UI dirs via `//go:embed`: `all:frontend/dist`, `all:migrate`, `db-error`, `setup`, and `all:shared` (see `ui/ui.go`).
 
 ### Initial Setup
 ```bash
@@ -68,7 +68,7 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 - `internal/migrate/` — migration state machine + Echo handlers for `/migrate` and `/api/migrate/*`
 - `internal/worker/` — River job worker implementations; `tasks/` contains workers for sync, import, export, and metadata refresh
 - `internal/scheduler/` — River worker implementations for periodic maintenance jobs (cleanup, backup polling, stale job pruning); `BuildPeriodicJobs()` registers cron-scheduled River `PeriodicJob` entries
-- `internal/services/` — IGDB client, Steam/PSN sync, game matching, platform resolution
+- `internal/services/` — IGDB client, storefront sync (Steam, PSN, GOG, Epic), game matching, platform resolution
 - `internal/auth/` — JWT generation/validation + Echo middleware
 - `internal/filter/` — dynamic query builder (Bun) for user-game list filtering
 - `internal/ratelimit/` — interface + local (`x/time/rate`) and PostgreSQL implementations
@@ -94,7 +94,7 @@ Echo middleware blocks all non-migration routes until state is `Ready`. River wo
 - **Migrations**: Bun migrate (`uptrace/bun/migrate`); SQL files live in `internal/db/migrations/` with timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); discovered automatically via `Migrations.Discover(FS)` in `migrations.go`.
 
 ### Frontend Embedding (Stash pattern)
-`ui/ui.go` exposes four `embed.FS` vars:
+`ui/ui.go` exposes five `embed.FS` vars:
 ```go
 //go:embed all:frontend/dist
 var UIBox embed.FS      // main React SPA
@@ -107,11 +107,14 @@ var DBErrorBox embed.FS
 
 //go:embed setup
 var SetupBox embed.FS
+
+//go:embed all:shared
+var SharedBox embed.FS
 ```
 The Go binary serves the React SPA itself.
 
 ### Frontend Stack
-- Vite 6 + React 19 + TypeScript
+- Vite 8 + React 19 + TypeScript
 - TanStack Router (file-based routes in `ui/frontend/src/routes/`)
 - TanStack Query, Tailwind CSS v4, shadcn/ui, React Hook Form + Zod, TipTap
 - Vitest + @testing-library/react
@@ -122,7 +125,7 @@ The Go binary serves the React SPA itself.
 - **API zone** — gated by state middleware, then JWT where required
 
 ### Workers & Scheduler
-River (`riverqueue/river`) is the job queue. Worker structs live under `worker/tasks/` (sync, import, export, metadata refresh) and `internal/scheduler/` (cleanup jobs, backup polling). Periodic schedules are registered in `scheduler.BuildPeriodicJobs()` using `robfig/cron/v3` expressions and River `PeriodicJob`. Backup orchestration still lives in `internal/backup/` and is invoked by the `CheckScheduledBackupWorker`. Sync workers cover Steam, PSN, GOG (via Legendary), and IGDB metadata refresh.
+River (`riverqueue/river`) is the job queue. Worker structs live under `worker/tasks/` (sync, import, export, metadata refresh) and `internal/scheduler/` (cleanup jobs, backup polling). Periodic schedules are registered in `scheduler.BuildPeriodicJobs()` using `robfig/cron/v3` expressions and River `PeriodicJob`. Backup orchestration still lives in `internal/backup/` and is invoked by the `CheckScheduledBackupWorker`. Sync workers cover Steam, PSN, GOG, and Epic (via Legendary), plus IGDB metadata refresh.
 
 ### Rate Limiting
 `ratelimit.Limiter` interface with two implementations:
