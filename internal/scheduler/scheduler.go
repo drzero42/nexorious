@@ -217,7 +217,7 @@ func CleanupSyncChanges(ctx context.Context, db *bun.DB, retentionDays int) {
 		slog.Error("cleanup: failed to delete old sync_changes", "err", err)
 		return
 	}
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
 		slog.Info("cleanup: deleted old sync_changes", "count", rows)
 	}
@@ -316,7 +316,7 @@ func CleanupOldJobs(ctx context.Context, db *bun.DB) {
 		slog.Error("cleanup: failed to delete old jobs", "err", err)
 		return
 	}
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
 		slog.Info("cleanup: deleted old jobs", "count", rows)
 	}
@@ -372,7 +372,7 @@ func CleanupUnreferencedGames(ctx context.Context, db *bun.DB) {
 		slog.Error("cleanup: failed to delete unreferenced games", "err", err)
 		return
 	}
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
 		slog.Info("cleanup: deleted unreferenced games", "count", rows)
 	}
@@ -387,7 +387,7 @@ func CleanupExpiredSessions(ctx context.Context, db *bun.DB) {
 		slog.Error("cleanup: failed to delete expired sessions", "err", err)
 		return
 	}
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
 		slog.Info("cleanup: deleted expired sessions", "count", rows)
 	}

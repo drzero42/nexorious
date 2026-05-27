@@ -161,10 +161,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	adapter, err := w.Adapter(ctx, p.Storefront, cfg)
 	if errors.Is(err, ErrCredentials) {
 		failSyncJob(ctx, w.DB, p.JobID, "credentials error")
-		_, _ = w.DB.NewRaw(
+		if _, err := w.DB.NewRaw(
 			`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 			p.UserID, p.Storefront,
-		).Exec(ctx)
+		).Exec(ctx); err != nil {
+			slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
+		}
 		return nil
 	}
 	if err != nil {
@@ -217,16 +219,18 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			"total_processed_so_far", totalProcessed,
 		)
 		for _, itemID := range batchItemIDs {
-			_ = EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, IGDBMatchArgs{JobItemID: itemID})
+			_ = EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, IGDBMatchArgs{JobItemID: itemID}) //nolint:errcheck // EnqueueOrFail records its own failure on the job_item
 		}
 		return nil
 	}); err != nil {
 		if errors.Is(err, ErrCredentials) {
 			failSyncJob(ctx, w.DB, p.JobID, "credentials error")
-			_, _ = w.DB.NewRaw(
+			if _, err := w.DB.NewRaw(
 				`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 				p.UserID, p.Storefront,
-			).Exec(ctx)
+			).Exec(ctx); err != nil {
+				slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
+			}
 			return nil
 		}
 		slog.Error("dispatch_sync: library fetch failed", "job_id", p.JobID, "err", err)
@@ -476,7 +480,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			"tie_gap", bestScore-secondBestScore,
 			"candidate_count", len(candidates),
 		)
-		candidatesJSON, _ := json.Marshal(candidates)
+		candidatesJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling the candidates slice cannot fail
 		item.IGDBCandidates = candidatesJSON
 		item.MatchConfidence = &bestScore
 		syncMarkItemPendingReview(ctx, w.DB, &item)

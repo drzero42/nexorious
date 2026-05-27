@@ -277,7 +277,7 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
+			body, _ := io.ReadAll(resp.Body) //nolint:errcheck // body read only to enrich the error log line
 			slog.Error("psn: graphql non-200", "status", resp.StatusCode, "body", string(body))
 			return nil, fmt.Errorf("psn: graphql HTTP %d", resp.StatusCode)
 		}

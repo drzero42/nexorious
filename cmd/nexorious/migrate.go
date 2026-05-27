@@ -75,7 +75,7 @@ func openPgxPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 // loadEnvAndConfig resolves --config / .env, loads it into the process env,
 // and returns the parsed config. Shared between the migrate subcommands.
 func loadEnvAndConfig(cmd *cobra.Command) (*config.Config, error) {
-	configFile, _ := cmd.Root().PersistentFlags().GetString("config")
+	configFile, _ := cmd.Root().PersistentFlags().GetString("config") //nolint:errcheck // "config" persistent flag is always registered; cannot error
 	if configFile != "" {
 		if err := godotenv.Load(configFile); err != nil {
 			return nil, fmt.Errorf("load env file %q: %w", configFile, err)

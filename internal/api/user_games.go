@@ -754,7 +754,7 @@ func (h *UserGamesHandler) HandleBulkAddPlatforms(c *echo.Context) error {
 		if insertErr != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 		}
-		rows, _ := result.RowsAffected()
+		rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 		added += rows
 	}
 
@@ -798,7 +798,7 @@ func (h *UserGamesHandler) HandleBulkRemovePlatforms(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	return c.JSON(http.StatusOK, map[string]int64{"removed": rows})
 }
 
@@ -1049,7 +1049,7 @@ func (h *UserGamesHandler) HandleDeletePlatform(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows == 0 {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found"})
 	}
