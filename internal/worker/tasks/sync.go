@@ -161,10 +161,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	adapter, err := w.Adapter(ctx, p.Storefront, cfg)
 	if errors.Is(err, ErrCredentials) {
 		failSyncJob(ctx, w.DB, p.JobID, "credentials error")
-		_, _ = w.DB.NewRaw(
+		if _, err := w.DB.NewRaw(
 			`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 			p.UserID, p.Storefront,
-		).Exec(ctx)
+		).Exec(ctx); err != nil {
+			slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
+		}
 		return nil
 	}
 	if err != nil {
@@ -223,10 +225,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	}); err != nil {
 		if errors.Is(err, ErrCredentials) {
 			failSyncJob(ctx, w.DB, p.JobID, "credentials error")
-			_, _ = w.DB.NewRaw(
+			if _, err := w.DB.NewRaw(
 				`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 				p.UserID, p.Storefront,
-			).Exec(ctx)
+			).Exec(ctx); err != nil {
+				slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
+			}
 			return nil
 		}
 		slog.Error("dispatch_sync: library fetch failed", "job_id", p.JobID, "err", err)
