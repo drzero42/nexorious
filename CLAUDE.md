@@ -166,7 +166,7 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 1. **Planning**: Read `docs/superpowers/specs/` for design context
 2. **Branching**: Create a feature branch before starting any task
 3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
-4. **Testing**: Run `go test ./...` after any Go changes; `npm run check && npm run knip && npm run test` after any frontend changes
+4. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)) — format/lint on every edit, build + typecheck when a turn ends, and the full suites at `git push`. You don't need to re-run the whole suites by hand; do run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.
 5. **Plan files**: `docs/superpowers/plans/` is tracked — always commit the plan file on the feature branch
 
 ### Branch Workflow (MANDATORY)
@@ -190,9 +190,22 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 - shadcn/ui components in `ui/frontend/src/components/ui/` follow an "include and prune" policy — knip removes any unused component or sub-export. If a feature needs a missing one (e.g. `Form`, `Tabs`, `Separator`), re-add it via `npx shadcn@latest add <component>` and import it.
 
 ### Quality Gates
+Enforced automatically by the hooks in [Automated Checks](#automated-checks); this list is the contract they uphold:
 - Zero Go build errors and zero `golangci-lint` errors before committing
 - Zero TypeScript/lint errors (`npm run check`) and zero knip findings (`npm run knip`) before committing
 - All tests must pass before committing
+
+### Automated Checks
+
+Format, lint, build, and test gates run automatically — you rarely invoke them by hand. **Launch Claude Code from inside `devenv shell`** (or an active direnv) so `go`, `golangci-lint`, `node`, and `jq` are on `PATH`; otherwise the Claude Code hooks silently no-op.
+
+| When | Mechanism | What runs |
+|---|---|---|
+| After each file edit | `PostToolUse` hook → `.claude/hooks/post-edit.sh` | Go: `gofmt -w` + `golangci-lint` on the file's package. Frontend: `prettier --write` + `eslint --fix` on the file. Remaining findings are fed back to fix. |
+| When a turn ends | `Stop` hook → `.claude/hooks/stop-check.sh` | `go build ./...` if any `.go` is dirty; `tsc --noEmit` if `ui/frontend/` is dirty. Build/typecheck only — a one-time nudge, not the hard gate. |
+| `git push` | devenv `git-hooks` (pre-push) | Full `go test ./...` (when `.go` files change) and `npm run check && npm run knip && npm run test` (when `ui/frontend/` changes). The hard gate. |
+
+Config lives in `.claude/settings.json` (Claude Code hooks) and `devenv.nix` → `git-hooks.hooks` (git). Pre-push hooks install/refresh on `devenv shell`; bypass in a pinch with `git push --no-verify`.
 
 ### Nix Flake Maintenance
 

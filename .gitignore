@@ -9,6 +9,8 @@ ui/frontend/node_modules/
 # devenv
 .devenv/
 .devenv.flake.nix
+# Generated from devenv.nix git-hooks on shell entry; do not commit.
+.pre-commit-config.yaml
 
 .env
 
