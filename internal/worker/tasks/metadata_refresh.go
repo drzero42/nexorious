@@ -112,7 +112,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 			itemID := uuid.NewString()
 			itemIDs = append(itemIDs, itemID)
 
-			sourceMeta, _ := json.Marshal(map[string]any{"game_id": g.ID})
+			sourceMeta, _ := json.Marshal(map[string]any{"game_id": g.ID}) //nolint:errcheck // marshaling a fixed map cannot fail
 			sourceMetaRaw := json.RawMessage(sourceMeta)
 
 			_, err = tx.NewRaw(
@@ -248,14 +248,14 @@ func fetchAndStoreMetadata(ctx context.Context, db *bun.DB, igdbClient *igdbsvc.
 
 	var igdbPlatformIds *string
 	if len(md.PlatformIDs) > 0 {
-		b, _ := json.Marshal(md.PlatformIDs)
+		b, _ := json.Marshal(md.PlatformIDs) //nolint:errcheck // marshaling a fixed slice cannot fail
 		s := string(b)
 		igdbPlatformIds = &s
 	}
 
 	var igdbPlatformNames *string
 	if len(md.PlatformNames) > 0 {
-		b, _ := json.Marshal(md.PlatformNames)
+		b, _ := json.Marshal(md.PlatformNames) //nolint:errcheck // marshaling a fixed slice cannot fail
 		s := string(b)
 		igdbPlatformNames = &s
 	}

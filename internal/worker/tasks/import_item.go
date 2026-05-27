@@ -412,7 +412,7 @@ func markItemFailed(db *bun.DB, item *models.JobItem, errMsg string) {
 // was cancelled during graceful shutdown.
 func markItemCompleted(db *bun.DB, item *models.JobItem, result any) {
 	now := time.Now().UTC()
-	resultJSON, _ := json.Marshal(result)
+	resultJSON, _ := json.Marshal(result) //nolint:errcheck // marshaling the job result struct cannot fail
 	item.Status = models.JobItemStatusCompleted
 	item.Result = resultJSON
 	item.ProcessedAt = &now
@@ -454,12 +454,12 @@ func igdbMetadataToGame(md *igdb.GameMetadata) *models.Game {
 		}
 	}
 	if len(md.PlatformIDs) > 0 {
-		b, _ := json.Marshal(md.PlatformIDs)
+		b, _ := json.Marshal(md.PlatformIDs) //nolint:errcheck // marshaling a fixed slice cannot fail
 		s := string(b)
 		game.IgdbPlatformIds = &s
 	}
 	if len(md.PlatformNames) > 0 {
-		b, _ := json.Marshal(md.PlatformNames)
+		b, _ := json.Marshal(md.PlatformNames) //nolint:errcheck // marshaling a fixed slice cannot fail
 		s := string(b)
 		game.IgdbPlatformNames = &s
 	}

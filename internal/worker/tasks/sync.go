@@ -219,7 +219,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			"total_processed_so_far", totalProcessed,
 		)
 		for _, itemID := range batchItemIDs {
-			_ = EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, IGDBMatchArgs{JobItemID: itemID})
+			_ = EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, IGDBMatchArgs{JobItemID: itemID}) //nolint:errcheck // EnqueueOrFail records its own failure on the job_item
 		}
 		return nil
 	}); err != nil {
@@ -480,7 +480,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			"tie_gap", bestScore-secondBestScore,
 			"candidate_count", len(candidates),
 		)
-		candidatesJSON, _ := json.Marshal(candidates)
+		candidatesJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling the candidates slice cannot fail
 		item.IGDBCandidates = candidatesJSON
 		item.MatchConfidence = &bestScore
 		syncMarkItemPendingReview(ctx, w.DB, &item)
