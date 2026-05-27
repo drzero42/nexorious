@@ -142,7 +142,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	// 1. Mark job as processing.
 	now := time.Now().UTC()
 	if _, err := w.DB.NewRaw(
-		`UPDATE jobs SET status = 'processing', started_at = ? WHERE id = ?`,
+		`UPDATE jobs SET status = 'processing', started_at = ?, dispatch_complete = false WHERE id = ?`,
 		now, p.JobID,
 	).Exec(ctx); err != nil {
 		slog.Error("dispatch_sync: mark processing failed", "err", err, "job_id", p.JobID)
@@ -282,6 +282,22 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	).Exec(context.Background()); err != nil {
 		slog.Error("dispatch_sync: update last_synced_at failed", "err", err, "job_id", p.JobID)
 	}
+
+	// 9. Dispatch is fully complete — every batch has been streamed and enqueued.
+	//    Open the completion gate and run the authoritative check: this finalizes
+	//    the job when all items already drained during dispatch (including an
+	//    empty library), and lets per-item checks finalize it from here on.
+	if _, err := w.DB.NewRaw(
+		`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, p.JobID,
+	).Exec(ctx); err != nil {
+		// The gate write failed, so the gate stays closed and the completion
+		// check below would be a guaranteed no-op — skip it. The job stays in
+		// 'processing'; the user can cancel the stuck sync (recovery of such
+		// jobs is out of scope for #642).
+		slog.Error("dispatch_sync: mark dispatch_complete failed", "err", err, "job_id", p.JobID)
+		return nil
+	}
+	SyncCheckJobCompletion(ctx, w.DB, p.JobID)
 
 	return nil
 }

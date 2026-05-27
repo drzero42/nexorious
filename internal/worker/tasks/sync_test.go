@@ -2403,3 +2403,114 @@ func TestUserGameWorker_SkipsMetadataFetchWhenIGDBNotConfigured(t *testing.T) {
 		t.Errorf("metadata_fetch river_job: want 0 (IGDB not configured), got %d", count)
 	}
 }
+
+// streamProbeAdapter yields batches and invokes probe() after the first batch
+// (i.e. while dispatch is still mid-stream) so a test can observe the job's
+// dispatch_complete flag during streaming.
+type streamProbeAdapter struct {
+	batches [][]tasks.ExternalGameEntry
+	probe   func()
+}
+
+func (a *streamProbeAdapter) GetLibrary(_ context.Context, _ int, onBatch func([]tasks.ExternalGameEntry) error) error {
+	for i, batch := range a.batches {
+		if err := onBatch(batch); err != nil {
+			return err
+		}
+		if i == 0 && a.probe != nil {
+			a.probe()
+		}
+	}
+	return nil
+}
+
+// TestDispatchSync_FlagFalseWhileStreaming proves DispatchSyncWorker sets
+// dispatch_complete=false while it is still streaming batches, and true once
+// dispatch finishes.
+func TestDispatchSync_FlagFalseWhileStreaming(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	var midStreamFlag bool
+	adapter := &streamProbeAdapter{
+		batches: [][]tasks.ExternalGameEntry{
+			{{ExternalID: "1", Title: "Game A", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
+			{{ExternalID: "2", Title: "Game B", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
+		},
+		probe: func() {
+			_ = testDB.NewRaw(`SELECT dispatch_complete FROM jobs WHERE id = ?`, jobID).Scan(ctx, &midStreamFlag)
+		},
+	}
+	rc := newTestRiverClient(t)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if midStreamFlag {
+		t.Error("expected dispatch_complete=false while dispatch is still streaming batches")
+	}
+
+	var finalFlag bool
+	if err := testDB.NewRaw(`SELECT dispatch_complete FROM jobs WHERE id = ?`, jobID).Scan(ctx, &finalFlag); err != nil {
+		t.Fatalf("query dispatch_complete: %v", err)
+	}
+	if !finalFlag {
+		t.Error("expected dispatch_complete=true after dispatch finished")
+	}
+}
+
+// TestDispatchSync_EmptyLibrary_Finalizes proves an empty library finalizes the
+// job: dispatch sets dispatch_complete=true and runs the authoritative
+// completion check, which finds no active/pending_review items.
+func TestDispatchSync_EmptyLibrary_Finalizes(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	rc := newTestRiverClient(t)
+	// Adapter yields no games at all.
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if status != "completed" {
+		t.Errorf("empty library: expected job 'completed', got %q", status)
+	}
+}
