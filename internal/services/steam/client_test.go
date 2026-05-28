@@ -18,8 +18,10 @@ func TestGetOwnedGames_ParsesResponse(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"response": map[string]any{
 				"games": []map[string]any{
-					{"appid": 730, "name": "Counter-Strike 2", "playtime_forever": 120},
-					{"appid": 440, "name": "Team Fortress 2", "playtime_forever": 0},
+					{"appid": 730, "name": "Counter-Strike 2", "playtime_forever": 120}, // 120 min → 2.0h
+					{"appid": 440, "name": "Team Fortress 2", "playtime_forever": 0},    // 0 min → 0.0h
+					{"appid": 570, "name": "Dota 2", "playtime_forever": 90},            // 90 min → 1.5h (sub-hour)
+					{"appid": 620, "name": "Portal 2", "playtime_forever": 45},          // 45 min → 0.75h
 				},
 			},
 		})
@@ -31,8 +33,8 @@ func TestGetOwnedGames_ParsesResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetOwnedGames: %v", err)
 	}
-	if len(games) != 2 {
-		t.Fatalf("want 2 games, got %d", len(games))
+	if len(games) != 4 {
+		t.Fatalf("want 4 games, got %d", len(games))
 	}
 	if games[0].AppID != 730 {
 		t.Errorf("AppID: got %d, want 730", games[0].AppID)
@@ -40,11 +42,17 @@ func TestGetOwnedGames_ParsesResponse(t *testing.T) {
 	if games[0].Title != "Counter-Strike 2" {
 		t.Errorf("Title: got %q", games[0].Title)
 	}
-	if games[0].PlaytimeHours != 2 {
-		t.Errorf("PlaytimeHours: got %v, want 2 (120 min / 60)", games[0].PlaytimeHours)
+	if games[0].PlaytimeHours != 2.0 {
+		t.Errorf("PlaytimeHours: got %v, want 2.0 (120 min / 60)", games[0].PlaytimeHours)
 	}
-	if games[1].PlaytimeHours != 0 {
-		t.Errorf("PlaytimeHours for 0-minute game: got %v, want 0", games[1].PlaytimeHours)
+	if games[1].PlaytimeHours != 0.0 {
+		t.Errorf("PlaytimeHours for 0-minute game: got %v, want 0.0", games[1].PlaytimeHours)
+	}
+	if games[2].PlaytimeHours != 1.5 {
+		t.Errorf("PlaytimeHours for 90-min game: got %v, want 1.5 (sub-hour precision)", games[2].PlaytimeHours)
+	}
+	if games[3].PlaytimeHours != 0.75 {
+		t.Errorf("PlaytimeHours for 45-min game: got %v, want 0.75", games[3].PlaytimeHours)
 	}
 }
 

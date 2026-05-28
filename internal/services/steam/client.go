@@ -148,7 +148,7 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 		games = append(games, OwnedGame{
 			AppID:         g.AppID,
 			Title:         g.Name,
-			PlaytimeHours: float64(g.PlaytimeForever / 60), // still int-truncating; Task 3 makes it fractional
+			PlaytimeHours: float64(g.PlaytimeForever) / 60.0,
 		})
 	}
 	return games, nil
