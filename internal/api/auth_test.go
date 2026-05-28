@@ -712,3 +712,147 @@ func TestHandleChangeUsername_TooShort(t *testing.T) {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
 	}
 }
+
+// ─── Session management test helpers ──────────────────────────────────────────
+
+// getAuth fires a GET request with a session cookie.
+func getAuth(t *testing.T, handler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, path string, sessionID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+// putJSONAuth fires a PUT request with a JSON body and a session cookie.
+func putJSONAuth(t *testing.T, handler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, path string, body any, sessionID string) *httptest.ResponseRecorder {
+	t.Helper()
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPut, path, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+// deleteAuth fires a DELETE request with a session cookie.
+func deleteAuth(t *testing.T, handler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, path string, sessionID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, path, nil)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+// ─── Session management tests ─────────────────────────────────────────────
+
+func TestHandleListSessions_ReturnsSessions(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-sess-001", "sesuser", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-sess-001")
+	_ = insertAuthTestSession(t, testDB, "user-sess-001")
+
+	rec := getAuth(t, e, "/api/auth/sessions", sessionID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+
+	var sessions []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&sessions); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Errorf("len(sessions) = %d, want 2", len(sessions))
+	}
+	currentCount := 0
+	for _, s := range sessions {
+		if s["is_current"] == true {
+			currentCount++
+		}
+	}
+	if currentCount != 1 {
+		t.Errorf("is_current count = %d, want 1", currentCount)
+	}
+}
+
+func TestHandleRevokeSession_DeletesSession(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-sess-002", "sesuser2", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-sess-002")
+	otherSession := insertAuthTestSession(t, testDB, "user-sess-002")
+
+	var otherID string
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT id FROM user_sessions WHERE session_id_hash = ?",
+		auth.HashToken(otherSession),
+	).Scan(&otherID)
+
+	rec := deleteAuth(t, e, "/api/auth/sessions/"+otherID, sessionID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body: %s", rec.Code, rec.Body)
+	}
+
+	var count int
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ?", "user-sess-002",
+	).Scan(&count)
+	if count != 1 {
+		t.Errorf("session count = %d, want 1 after revoke", count)
+	}
+}
+
+func TestHandleRevokeSession_OtherUserForbidden(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-sess-003", "sesuser3", "pw", true, false)
+	insertAuthTestUser(t, testDB, "user-sess-004", "sesuser4", "pw", true, false)
+	mySession := insertAuthTestSession(t, testDB, "user-sess-003")
+	theirSession := insertAuthTestSession(t, testDB, "user-sess-004")
+
+	var theirID string
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT id FROM user_sessions WHERE session_id_hash = ?",
+		auth.HashToken(theirSession),
+	).Scan(&theirID)
+
+	rec := deleteAuth(t, e, "/api/auth/sessions/"+theirID, mySession)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 (other user's session)", rec.Code)
+	}
+}
+
+func TestHandleRevokeAllOtherSessions(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-sess-010", "sesuser10", "pw", true, false)
+	currentSession := insertAuthTestSession(t, testDB, "user-sess-010")
+	_ = insertAuthTestSession(t, testDB, "user-sess-010")
+	_ = insertAuthTestSession(t, testDB, "user-sess-010")
+
+	rec := deleteAuth(t, e, "/api/auth/sessions", currentSession)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body: %s", rec.Code, rec.Body)
+	}
+
+	var count int
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ?", "user-sess-010",
+	).Scan(&count)
+	if count != 1 {
+		t.Errorf("session count = %d, want 1 (current session preserved)", count)
+	}
+}

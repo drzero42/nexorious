@@ -357,3 +357,100 @@ func (h *AuthHandler) HandleChangeUsername(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, resp)
 }
+
+// ─── Session management ───────────────────────────────────────────────────────
+
+type sessionItem struct {
+	ID         string     `json:"id"`
+	UserAgent  *string    `json:"user_agent"`
+	IPAddress  *string    `json:"ip_address"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	IsCurrent  bool       `json:"is_current"`
+}
+
+// HandleListSessions handles GET /api/auth/sessions.
+func (h *AuthHandler) HandleListSessions(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	currentHash, _ := c.Get("session_hash").(string)
+
+	rows, err := h.db.QueryContext(context.Background(),
+		`SELECT id, user_agent, ip_address, created_at, last_used_at, session_id_hash
+		 FROM user_sessions WHERE user_id = ? AND expires_at > now() ORDER BY created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		slog.Error("list sessions: query", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+	defer func() { _ = rows.Close() }()
+
+	var items []sessionItem
+	for rows.Next() {
+		var item sessionItem
+		var hash string
+		if err := rows.Scan(&item.ID, &item.UserAgent, &item.IPAddress,
+			&item.CreatedAt, &item.LastUsedAt, &hash); err != nil {
+			slog.Error("list sessions: scan", "err", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+		}
+		item.IsCurrent = hash == currentHash
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("list sessions: rows.Err", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+	if items == nil {
+		items = []sessionItem{}
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+// HandleRevokeSession handles DELETE /api/auth/sessions/:id.
+func (h *AuthHandler) HandleRevokeSession(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	sessionRowID := c.Param("id")
+
+	var sessionHash string
+	err := h.db.QueryRowContext(context.Background(),
+		"SELECT session_id_hash FROM user_sessions WHERE id = ? AND user_id = ?",
+		sessionRowID, userID,
+	).Scan(&sessionHash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, "session not found")
+		}
+		slog.Error("revoke session: query", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+
+	if _, err := h.db.ExecContext(context.Background(),
+		"DELETE FROM user_sessions WHERE id = ? AND user_id = ?",
+		sessionRowID, userID,
+	); err != nil {
+		slog.Error("revoke session: delete", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+
+	currentHash, _ := c.Get("session_hash").(string)
+	if sessionHash == currentHash {
+		auth.ClearSessionCookie(c)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// HandleRevokeAllOtherSessions handles DELETE /api/auth/sessions.
+func (h *AuthHandler) HandleRevokeAllOtherSessions(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	currentHash, _ := c.Get("session_hash").(string)
+
+	if _, err := h.db.ExecContext(context.Background(),
+		"DELETE FROM user_sessions WHERE user_id = ? AND session_id_hash != ?",
+		userID, currentHash,
+	); err != nil {
+		slog.Error("revoke other sessions: delete", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+	return c.NoContent(http.StatusNoContent)
+}
