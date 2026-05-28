@@ -90,7 +90,7 @@ func NewAdminUsersHandler(db *bun.DB) *AdminUsersHandler {
 }
 
 // RegisterRoutes registers all admin user management routes on the given group.
-// The caller is responsible for applying JWTMiddleware + AdminMiddleware to the group.
+// The caller is responsible for applying AuthMiddleware + AdminMiddleware to the group.
 // Static-segment routes are registered before parameterised ones — Echo v5 does not
 // auto-sort, and the wrong order would cause GET /:id/password to be matched by
 // GET /:id.

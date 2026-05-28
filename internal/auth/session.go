@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -59,6 +60,58 @@ func ClearSessionCookie(c *echo.Context) {
 	cookie.Path = "/"
 	cookie.MaxAge = 0
 	c.SetCookie(cookie)
+}
+
+// AuthUser holds user data loaded by AuthMiddleware from the database.
+type AuthUser struct {
+	ID       string
+	Username string
+	IsActive bool
+	IsAdmin  bool
+}
+
+// UserIDFromContext extracts user_id set by AuthMiddleware. Returns "" if unset.
+func UserIDFromContext(c *echo.Context) string {
+	v := c.Get("user_id")
+	if v == nil {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
+}
+
+// IsAdminFromContext extracts is_admin set by AuthMiddleware. Returns false if unset.
+func IsAdminFromContext(c *echo.Context) bool {
+	v := c.Get("is_admin")
+	if v == nil {
+		return false
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return false
+	}
+	return b
+}
+
+// HashToken returns the SHA-256 hex digest of a token string.
+func HashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
+
+// AdminMiddleware requires is_admin=true on the context. Must follow AuthMiddleware.
+func AdminMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			if !IsAdminFromContext(c) {
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "admin access required"})
+			}
+			return next(c)
+		}
+	}
 }
 
 // AuthMiddleware tries cookie-based session auth first, then Bearer API key.
