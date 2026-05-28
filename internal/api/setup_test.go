@@ -37,33 +37,36 @@ func TestSetupAdmin_Success(t *testing.T) {
 		t.Errorf("expected 201, got %d: %s", rec.Code, rec.Body)
 	}
 
-	var resp struct {
-		User struct {
-			ID       string `json:"id"`
-			Username string `json:"username"`
-			IsAdmin  bool   `json:"is_admin"`
-			IsActive bool   `json:"is_active"`
-		} `json:"user"`
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
+	var body struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+		IsAdmin  bool   `json:"is_admin"`
+		IsActive bool   `json:"is_active"`
 	}
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.User.Username != "admin" {
-		t.Errorf("username mismatch: got %q", resp.User.Username)
+	if body.Username != "admin" {
+		t.Errorf("username mismatch: got %q", body.Username)
 	}
-	if !resp.User.IsAdmin {
+	if !body.IsAdmin {
 		t.Error("expected is_admin=true")
 	}
-	if !resp.User.IsActive {
+	if !body.IsActive {
 		t.Error("expected is_active=true")
 	}
-	if resp.AccessToken == "" {
-		t.Error("expected access_token")
+	if body.ID == "" {
+		t.Error("expected user id in response")
 	}
-	if resp.RefreshToken == "" {
-		t.Error("expected refresh_token")
+
+	var sessionCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "session_id" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("no session_id cookie set after setup")
 	}
 
 	var count int
@@ -226,21 +229,29 @@ func TestSetupAdmin_GetMeAfterSetup(t *testing.T) {
 	}
 
 	var setupResp struct {
-		User struct {
-			ID string `json:"id"`
-		} `json:"user"`
-		AccessToken string `json:"access_token"`
+		ID string `json:"id"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&setupResp); err != nil {
 		t.Fatalf("decode setup response: %v", err)
 	}
 
+	// Extract session cookie from setup response
+	var sessionCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "session_id" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("no session_id cookie in setup response")
+	}
+
 	ah := api.NewAuthHandler(testDB, cfg)
 	meReq := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	meReq.Header.Set("Authorization", "Bearer "+setupResp.AccessToken)
+	meReq.AddCookie(sessionCookie)
 	meRec := httptest.NewRecorder()
 	meCtx := e.NewContext(meReq, meRec)
-	meCtx.Set("user_id", setupResp.User.ID)
+	meCtx.Set("user_id", setupResp.ID)
 
 	if err := ah.HandleGetMe(meCtx); err != nil {
 		t.Fatalf("GetMe: %v", err)
