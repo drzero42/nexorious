@@ -177,7 +177,7 @@ func TestGetLibrary_PlaytimeAlwaysZero(t *testing.T) {
 		t.Fatal("expected at least one entry")
 	}
 	if entries[0].PlaytimeHours != 0 {
-		t.Errorf("PlaytimeHours should be 0, got %d", entries[0].PlaytimeHours)
+		t.Errorf("PlaytimeHours should be 0, got %v", entries[0].PlaytimeHours)
 	}
 }
 

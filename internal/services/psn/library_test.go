@@ -71,7 +71,7 @@ func TestFetchPlayHistory_HappyPath(t *testing.T) {
 		t.Errorf("expected Platforms[0]=playstation-5, got %v", ps5.Platforms)
 	}
 	if ps5.PlaytimeHours != 340 {
-		t.Errorf("expected PlaytimeHours=340, got %d", ps5.PlaytimeHours)
+		t.Errorf("expected PlaytimeHours=340, got %v", ps5.PlaytimeHours)
 	}
 	if ps5.OwnershipStatus != "owned" {
 		t.Errorf("expected OwnershipStatus=owned, got %q", ps5.OwnershipStatus)
@@ -218,7 +218,7 @@ func TestFetchPurchasedGames_HappyPath(t *testing.T) {
 		t.Errorf("expected OwnershipStatus=subscription, got %q", ps4.OwnershipStatus)
 	}
 	if ps4.PlaytimeHours != 0 {
-		t.Errorf("expected PlaytimeHours=0, got %d", ps4.PlaytimeHours)
+		t.Errorf("expected PlaytimeHours=0, got %v", ps4.PlaytimeHours)
 	}
 
 	ps5, ok := result["PPSA01234_00"]
@@ -347,7 +347,7 @@ func TestMergePlayedPurchased_PurchasedUpgradesSubscription(t *testing.T) {
 		t.Errorf("expected subscription after merge, got IsSubscription=%v OwnershipStatus=%q", e.IsSubscription, e.OwnershipStatus)
 	}
 	if e.PlaytimeHours != 10 {
-		t.Errorf("expected playtime preserved from play history (10), got %d", e.PlaytimeHours)
+		t.Errorf("expected playtime preserved from play history (10), got %v", e.PlaytimeHours)
 	}
 }
 

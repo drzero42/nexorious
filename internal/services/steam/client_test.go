@@ -41,10 +41,10 @@ func TestGetOwnedGames_ParsesResponse(t *testing.T) {
 		t.Errorf("Title: got %q", games[0].Title)
 	}
 	if games[0].PlaytimeHours != 2 {
-		t.Errorf("PlaytimeHours: got %d, want 2 (120 min / 60)", games[0].PlaytimeHours)
+		t.Errorf("PlaytimeHours: got %v, want 2 (120 min / 60)", games[0].PlaytimeHours)
 	}
 	if games[1].PlaytimeHours != 0 {
-		t.Errorf("PlaytimeHours for 0-minute game: got %d, want 0", games[1].PlaytimeHours)
+		t.Errorf("PlaytimeHours for 0-minute game: got %v, want 0", games[1].PlaytimeHours)
 	}
 }
 

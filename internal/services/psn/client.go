@@ -214,7 +214,7 @@ func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[
 				ExternalID:      t.TitleID,
 				Title:           t.Name,
 				Platforms:       []string{rawPlatform},
-				PlaytimeHours:   parseDurationHours(t.PlayDuration),
+				PlaytimeHours:   float64(parseDurationHours(t.PlayDuration)), // Task 4 replaces this with a fractional parser
 				OwnershipStatus: ownership,
 				IsSubscription:  isSub,
 			}
@@ -335,7 +335,7 @@ type ExternalGameEntry struct {
 	ExternalID      string
 	Title           string
 	Platforms       []string // single element per entry; PSN creates one ExternalGame per title ID
-	PlaytimeHours   int
+	PlaytimeHours   float64
 	OwnershipStatus string
 	IsSubscription  bool
 }
