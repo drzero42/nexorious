@@ -8,7 +8,6 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "nexorious",
       "changelog-path": "CHANGELOG.md",
       "initial-version": "0.1.0",
       "extra-files": [
