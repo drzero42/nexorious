@@ -15,5 +15,6 @@ DROP TABLE IF EXISTS platform_storefronts;
 DROP TABLE IF EXISTS platforms;
 DROP TABLE IF EXISTS storefronts;
 DROP TABLE IF EXISTS games;
+DROP TABLE IF EXISTS api_keys;
 DROP TABLE IF EXISTS user_sessions;
 DROP TABLE IF EXISTS users;

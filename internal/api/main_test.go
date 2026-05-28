@@ -103,6 +103,7 @@ func truncateAllTables(t *testing.T) {
 		TRUNCATE TABLE
 			users,
 			user_sessions,
+			api_keys,
 			games,
 			user_games,
 			user_game_platforms,
