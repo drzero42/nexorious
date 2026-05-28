@@ -661,6 +661,52 @@ func TestDispatchSync_Steam_PlaytimeStoredOnPlatform(t *testing.T) {
 	}
 }
 
+func TestDispatchSync_Steam_FractionalPlaytimeStoredOnPlatform(t *testing.T) {
+	// Regression guard: PlaytimeHours=1.5 (the canonical sub-hour case from Steam)
+	// must reach external_game_platforms.hours_played intact. NUMERIC(10,2) preserves
+	// it; this test fails if anyone later truncates to int inside upsertPlatforms.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
+		{{ExternalID: "570", Title: "Dota 2", PlaytimeHours: 1.5, Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
+	}}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var hours float64
+	if err := testDB.NewRaw(`
+		SELECT egp.hours_played
+		FROM external_game_platforms egp
+		JOIN external_games eg ON eg.id = egp.external_game_id
+		WHERE eg.user_id = ? AND eg.storefront = 'steam' AND eg.external_id = '570'`,
+		userID,
+	).Scan(ctx, &hours); err != nil {
+		t.Fatalf("scan hours_played: %v", err)
+	}
+	if hours != 1.5 {
+		t.Errorf("hours_played: want 1.5, got %v", hours)
+	}
+}
+
 func TestDispatchSync_Steam_JobItemExternalGameIDSet(t *testing.T) {
 	// Verifies that job_items.external_game_id is populated directly (not via
 	// source_metadata JSON) after a Steam dispatch.
