@@ -3,11 +3,11 @@
     "devenv": {
       "locked": {
         "dir": "src/modules",
-        "lastModified": 1779197029,
-        "narHash": "sha256-qlllWT8SDf1cLkDmnF70e/yeCYf+CI9kanHXpHQHjqU=",
+        "lastModified": 1779931123,
+        "narHash": "sha256-ZJ855S3iWO6FkGQjmzR+kToGVBEJrm7NQG6/PEovTvs=",
         "owner": "cachix",
         "repo": "devenv",
-        "rev": "ced95934010f429be4d4c84a65ab8d15bc7344c5",
+        "rev": "40574661afa960888226da4d122a74132fb36835",
         "type": "github"
       },
       "original": {
@@ -24,11 +24,11 @@
         "poetry2nix": "poetry2nix"
       },
       "locked": {
-        "lastModified": 1779251920,
-        "narHash": "sha256-gkmwR4ynHIrCfRTns8zI8jSOa/sqvtWt/BYcm1NRKYY=",
+        "lastModified": 1779943337,
+        "narHash": "sha256-My5rnyQiRcEEKhz9ni5BkDRFZriFxtuhSyINFhkcknw=",
         "owner": "drzero42",
         "repo": "nixpkgs",
-        "rev": "154ed84d9ad0672db4037196be40962b067660dd",
+        "rev": "32a47f58c3967b17f47d9f56993869c7e62910e0",
         "type": "github"
       },
       "original": {
@@ -159,11 +159,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1778869304,
-        "narHash": "sha256-30sZNZoA1cqF5JNO9fVX+wgiQYjB7HJqqJ4ztCDeBZE=",
+        "lastModified": 1779560665,
+        "narHash": "sha256-tpyBcxPpcQb8ukyNF7DoCwfSY3VPsxHoYwj00Cayv5o=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "d233902339c02a9c334e7e593de68855ad26c4cb",
+        "rev": "64c08a7ca051951c8eae34e3e3cb1e202fe36786",
         "type": "github"
       },
       "original": {
