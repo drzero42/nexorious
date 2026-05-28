@@ -5,7 +5,7 @@ name: Nexorious
 .authenticated:
   authentication:
     type: bearer
-    token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+    token: "{{response('create_api_key', trigger='no_history') | jsonpath('$.key')}}"
 
 profiles:
   local:
@@ -52,6 +52,15 @@ requests:
           type: json
           data:
             filename: "{{response('list_setup_backups', trigger='no_history') | jsonpath('$.backups[*].filename', mode='array') | select()}}"
+
+      create_api_key:
+        name: Create API Key
+        method: POST
+        url: "{{base_url}}/api/auth/api-keys"
+        body:
+          type: json
+          data:
+            name: slumber
 
   admin:
     name: Admin
@@ -192,24 +201,11 @@ requests:
             username: "{{username}}"
             password: "{{password}}"
 
-      refresh:
-        name: Refresh Token
-        method: POST
-        url: "{{base_url}}/api/auth/refresh"
-        body:
-          type: json
-          data:
-            refresh_token: "{{response('login', trigger='no_history') | jsonpath('$.refresh_token')}}"
-
       logout:
         name: Logout
         method: POST
         url: "{{base_url}}/api/auth/logout"
         $ref: "#/.authenticated"
-        body:
-          type: json
-          data:
-            refresh_token: "{{response('login', trigger='no_history') | jsonpath('$.refresh_token')}}"
 
       me:
         name: Me
@@ -255,6 +251,36 @@ requests:
           type: json
           data:
             new_username: "{{prompt(message='New username')}}"
+
+      list_sessions:
+        name: List Sessions
+        method: GET
+        url: "{{base_url}}/api/auth/sessions"
+        $ref: "#/.authenticated"
+
+      revoke_session:
+        name: Revoke Session
+        method: DELETE
+        url: "{{base_url}}/api/auth/sessions/{{prompt(message='Session ID')}}"
+        $ref: "#/.authenticated"
+
+      revoke_all_other_sessions:
+        name: Revoke All Other Sessions
+        method: DELETE
+        url: "{{base_url}}/api/auth/sessions"
+        $ref: "#/.authenticated"
+
+      list_api_keys:
+        name: List API Keys
+        method: GET
+        url: "{{base_url}}/api/auth/api-keys"
+        $ref: "#/.authenticated"
+
+      revoke_api_key:
+        name: Revoke API Key
+        method: DELETE
+        url: "{{base_url}}/api/auth/api-keys/{{response('list_api_keys', trigger='no_history') | jsonpath('$[*].id', mode='array') | select()}}"
+        $ref: "#/.authenticated"
 
   health:
     name: Health
