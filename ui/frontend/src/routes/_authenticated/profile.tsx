@@ -135,7 +135,7 @@ function ProfilePage() {
       toast.success('Username updated successfully! Please log in again.');
       // After username change, we need to re-login since the session might be invalidated
       setTimeout(() => {
-        logout();
+        void logout();
       }, 1500);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update username';
@@ -174,7 +174,7 @@ function ProfilePage() {
       await authApi.changePassword(currentPassword, newPassword);
       toast.success('Password changed successfully! Please log in again.');
       setTimeout(() => {
-        logout();
+        void logout();
       }, 1500);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to change password';
