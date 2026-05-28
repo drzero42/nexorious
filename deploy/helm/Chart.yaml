@@ -2,13 +2,13 @@ apiVersion: v2
 name: nexorious
 description: Self-hosted game collection
 type: application
-version: 0.0.0 # x-release-please-version
+version: 0.1.0 # x-release-please-version
 # appVersion is the default image tag for the nexorious container, kept in
 # sync with the chart's release version by release-please. To run a different
 # release than the chart was built for, override
 # controllers.nexorious.containers.main.image.tag and the matching
 # initContainers.migrate.image.tag in values.
-appVersion: "0.0.0" # x-release-please-version
+appVersion: "0.1.0" # x-release-please-version
 kubeVersion: ">=1.31.0-0"
 home: https://github.com/drzero42/nexorious
 sources:
