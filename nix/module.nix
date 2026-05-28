@@ -1,37 +1,5 @@
-# nix/module.nix
-#
-# Usage example — add to your NixOS configuration:
-#
-#   inputs.nexorious.url = "github:drzero42/nexorious";
-#
-#   { inputs, pkgs, system, ... }: {
-#     nixpkgs.overlays = [ inputs.nexorious.overlays.default ];
-#     imports = [ inputs.nexorious.nixosModules.default ];
-#
-#     services.nexorious = {
-#       enable = true;
-#       environmentFile = "/run/secrets/nexorious.env";
-#     };
-#   }
-#
-# The environment file must contain:
-#   SECRET_KEY=<random-secret-used-for-JWT-signing-and-encryption>
-#   DB_ENCRYPTION_KEY=<random-secret-for-at-rest-credential-encryption>
-#   IGDB_CLIENT_ID=<twitch-client-id>
-#   IGDB_CLIENT_SECRET=<twitch-client-secret>
-#
-# Generate SECRET_KEY with: openssl rand -base64 32
-# Generate DB_ENCRYPTION_KEY with: openssl rand -base64 32
-# Obtain IGDB credentials at: https://dev.twitch.tv/console
-#
-# When database.createLocally = true (the default), PostgreSQL is managed
-# automatically and no database credentials are needed in the environment file.
-# The service connects via the Unix socket using peer authentication.
-#
-# To use an external PostgreSQL instance, set:
-#   database.createLocally = false;
-# and include in environmentFile:
-#   DATABASE_URL=postgresql://user:password@host:5432/nexorious
+# nix/module.nix — NixOS module for Nexorious.
+# See the NixOS installation section in README.md for usage examples and options.
 { config, lib, pkgs, ... }:
 
 let
