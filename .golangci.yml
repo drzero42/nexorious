@@ -26,3 +26,7 @@ linters:
       # packages (notably `flatted`) ship .go files for cross-language tests.
       # Those files are not part of this module and must not be linted.
       - ui/frontend/node_modules
+
+formatters:
+  enable:
+    - gofmt
