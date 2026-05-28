@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -854,5 +855,117 @@ func TestHandleRevokeAllOtherSessions(t *testing.T) {
 	).Scan(&count)
 	if count != 1 {
 		t.Errorf("session count = %d, want 1 (current session preserved)", count)
+	}
+}
+
+// ─── API key tests ────────────────────────────────────────────────────────────
+
+func TestHandleCreateAPIKey_ReturnsRawKey(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-key-001", "keyuser", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-key-001")
+
+	rec := postJSONSession(t, e, "/api/auth/api-keys", map[string]any{
+		"name": "my-cli-key",
+	}, sessionID)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	rawKey, _ := resp["key"].(string)
+	if !strings.HasPrefix(rawKey, "nxr_") {
+		t.Errorf("key = %q, want prefix nxr_", rawKey)
+	}
+	if resp["id"] == nil || resp["id"] == "" {
+		t.Error("response must contain id")
+	}
+
+	var count int
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM api_keys WHERE user_id = ? AND key_hash = ?",
+		"user-key-001", auth.HashToken(rawKey),
+	).Scan(&count)
+	if count != 1 {
+		t.Errorf("api_keys count = %d, want 1", count)
+	}
+}
+
+func TestHandleListAPIKeys_HidesRawKey(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-key-002", "keyuser2", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-key-002")
+
+	postJSONSession(t, e, "/api/auth/api-keys", map[string]any{"name": "test-key"}, sessionID)
+
+	rec := getAuth(t, e, "/api/auth/api-keys", sessionID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+
+	var keys []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&keys); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Errorf("len(keys) = %d, want 1", len(keys))
+	}
+	if _, ok := keys[0]["key"]; ok {
+		t.Error("list must not include raw key")
+	}
+	if _, ok := keys[0]["key_hash"]; ok {
+		t.Error("list must not include key_hash")
+	}
+}
+
+func TestHandleRevokeAPIKey(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-key-003", "keyuser3", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-key-003")
+
+	createRec := postJSONSession(t, e, "/api/auth/api-keys", map[string]any{"name": "revoke-me"}, sessionID)
+	var createResp map[string]any
+	_ = json.NewDecoder(createRec.Body).Decode(&createResp)
+	keyID, _ := createResp["id"].(string)
+
+	rec := deleteAuth(t, e, "/api/auth/api-keys/"+keyID, sessionID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body: %s", rec.Code, rec.Body)
+	}
+
+	var revokedAt *time.Time
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT revoked_at FROM api_keys WHERE id = ?", keyID,
+	).Scan(&revokedAt)
+	if revokedAt == nil {
+		t.Error("revoked_at is nil, want a timestamp")
+	}
+}
+
+func TestAPIKeyAuth_BearerToken(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-key-010", "keyuser10", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-key-010")
+
+	createRec := postJSONSession(t, e, "/api/auth/api-keys", map[string]any{"name": "bearer-test"}, sessionID)
+	var createResp map[string]any
+	_ = json.NewDecoder(createRec.Body).Decode(&createResp)
+	rawKey, _ := createResp["key"].(string)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("API key auth: status = %d, want 200; body: %s", rec.Code, rec.Body)
 	}
 }

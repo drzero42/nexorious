@@ -451,3 +451,138 @@ func (h *AuthHandler) HandleRevokeAllOtherSessions(c *echo.Context) error {
 	}
 	return c.NoContent(http.StatusNoContent)
 }
+
+// ─── API keys ────────────────────────────────────────────────────────────────
+
+type apiKeyItem struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Scopes     string     `json:"scopes"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+}
+
+type createAPIKeyRequest struct {
+	Name      string  `json:"name"`
+	Scopes    string  `json:"scopes"`
+	ExpiresAt *string `json:"expires_at"`
+}
+
+type createAPIKeyResponse struct {
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	Scopes    string     `json:"scopes"`
+	Key       string     `json:"key"` // raw value, shown exactly once
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+// HandleListAPIKeys handles GET /api/auth/api-keys.
+func (h *AuthHandler) HandleListAPIKeys(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+
+	rows, err := h.db.QueryContext(context.Background(),
+		`SELECT id, name, scopes, last_used_at, created_at, expires_at
+		 FROM api_keys WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		slog.Error("list api keys: query", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := []apiKeyItem{}
+	for rows.Next() {
+		var item apiKeyItem
+		if err := rows.Scan(&item.ID, &item.Name, &item.Scopes,
+			&item.LastUsedAt, &item.CreatedAt, &item.ExpiresAt); err != nil {
+			slog.Error("list api keys: scan", "err", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("list api keys: rows.Err", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+// HandleCreateAPIKey handles POST /api/auth/api-keys.
+func (h *AuthHandler) HandleCreateAPIKey(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+
+	var req createAPIKeyRequest
+	if err := c.Bind(&req); err != nil || req.Name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+	}
+
+	scopes := req.Scopes
+	if scopes == "" {
+		scopes = "write"
+	}
+	if scopes != "read" && scopes != "write" {
+		return echo.NewHTTPError(http.StatusBadRequest, "scopes must be 'read' or 'write'")
+	}
+
+	var expiresAt *time.Time
+	if req.ExpiresAt != nil {
+		parsed, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "expires_at must be RFC3339")
+		}
+		expiresAt = &parsed
+	}
+
+	rawKey, err := auth.GenerateAPIKey()
+	if err != nil {
+		slog.Error("create api key: generate", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+
+	keyID := uuid.NewString()
+	now := time.Now()
+	if _, err := h.db.ExecContext(context.Background(),
+		`INSERT INTO api_keys (id, user_id, name, key_hash, scopes, created_at, expires_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		keyID, userID, req.Name, auth.HashToken(rawKey), scopes, now, expiresAt,
+	); err != nil {
+		slog.Error("create api key: insert", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+
+	return c.JSON(http.StatusOK, createAPIKeyResponse{
+		ID:        keyID,
+		Name:      req.Name,
+		Scopes:    scopes,
+		Key:       rawKey,
+		CreatedAt: now,
+		ExpiresAt: expiresAt,
+	})
+}
+
+// HandleRevokeAPIKey handles DELETE /api/auth/api-keys/:id.
+func (h *AuthHandler) HandleRevokeAPIKey(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	keyID := c.Param("id")
+
+	result, err := h.db.ExecContext(context.Background(),
+		"UPDATE api_keys SET revoked_at = now() WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
+		keyID, userID,
+	)
+	if err != nil {
+		slog.Error("revoke api key: update", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		slog.Error("revoke api key: rows affected", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+	if affected == 0 {
+		return echo.NewHTTPError(http.StatusNotFound, "api key not found")
+	}
+	return c.NoContent(http.StatusNoContent)
+}
