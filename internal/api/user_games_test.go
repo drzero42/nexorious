@@ -1265,6 +1265,83 @@ func TestListUserGamesSortByHours(t *testing.T) {
 	})
 }
 
+// TestListUserGamesSortByGameNumerics is the regression guard for issue #639:
+// sort_by=howlongtobeat_main and sort_by=rating_average must return 200 (not
+// the prior 400) and order results correctly with NULLs sinking to the bottom
+// in both directions.
+func TestListUserGamesSortByGameNumerics(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "sortnumerics")
+
+	gLow := insertTestGame(t, testDB, "Low Values")
+	gHigh := insertTestGame(t, testDB, "High Values")
+	gNull := insertTestGame(t, testDB, "Null Values")
+
+	insertTestUserGame(t, testDB, "ug-low", userID, int(gLow))
+	insertTestUserGame(t, testDB, "ug-high", userID, int(gHigh))
+	insertTestUserGame(t, testDB, "ug-null", userID, int(gNull))
+
+	// Set both columns with parallel low/high mapping on the same fixture so
+	// rating_average and howlongtobeat_main produce the same expected ordering.
+	// ug-null is left with both columns NULL (the default).
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE games SET rating_average = 50, howlongtobeat_main = 10 WHERE id = ?`, gLow); err != nil {
+		t.Fatalf("update gLow: %v", err)
+	}
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE games SET rating_average = 90, howlongtobeat_main = 100 WHERE id = ?`, gHigh); err != nil {
+		t.Fatalf("update gHigh: %v", err)
+	}
+
+	idsInOrder := func(t *testing.T, field, order string) []string {
+		t.Helper()
+		rec := getAuth(t, e, "/api/user-games?sort_by="+field+"&sort_order="+order, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		games := resp["user_games"].([]any)
+		ids := make([]string, len(games))
+		for i, g := range games {
+			ids[i] = g.(map[string]any)["id"].(string)
+		}
+		return ids
+	}
+
+	for _, field := range []string{"rating_average", "howlongtobeat_main"} {
+		field := field // capture
+		t.Run(field+" desc orders high, low, null", func(t *testing.T) {
+			ids := idsInOrder(t, field, "desc")
+			want := []string{"ug-high", "ug-low", "ug-null"}
+			if len(ids) != len(want) {
+				t.Fatalf("got %d ids, want %d: %v", len(ids), len(want), ids)
+			}
+			for i := range want {
+				if ids[i] != want[i] {
+					t.Fatalf("desc order mismatch: got %v, want %v", ids, want)
+				}
+			}
+		})
+		t.Run(field+" asc orders low, high, null", func(t *testing.T) {
+			ids := idsInOrder(t, field, "asc")
+			want := []string{"ug-low", "ug-high", "ug-null"}
+			if len(ids) != len(want) {
+				t.Fatalf("got %d ids, want %d: %v", len(ids), len(want), ids)
+			}
+			for i := range want {
+				if ids[i] != want[i] {
+					t.Fatalf("asc order mismatch: got %v, want %v", ids, want)
+				}
+			}
+		})
+	}
+}
+
 func TestUserGameCalculatedHours(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
