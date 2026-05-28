@@ -4,8 +4,8 @@ import { server } from '@/test/mocks/server';
 import { setAuthHandlers } from './client';
 import {
   login,
+  logout,
   getMe,
-  refreshToken,
   changeUsername,
   changePassword,
   checkUsernameAvailability,
@@ -34,26 +34,29 @@ describe('auth.ts', () => {
   });
 
   describe('login', () => {
-    it('successfully logs in and returns tokens', async () => {
-      const mockResponse = {
-        access_token: 'new-access-token',
-        refresh_token: 'new-refresh-token',
-        token_type: 'bearer',
-        expires_in: 3600,
-      };
-
+    it('successfully logs in and returns user data', async () => {
       server.use(
         http.post(`${API_URL}/auth/login`, async ({ request }) => {
           const body = (await request.json()) as { username: string; password: string };
           expect(body.username).toBe('testuser');
           expect(body.password).toBe('password123');
-          return HttpResponse.json(mockResponse);
+          return HttpResponse.json({
+            id: 'user-123',
+            username: 'testuser',
+            is_admin: false,
+            preferences: null,
+          });
         }),
       );
 
       const result = await login('testuser', 'password123');
 
-      expect(result).toEqual(mockResponse);
+      expect(result).toEqual({
+        id: 'user-123',
+        username: 'testuser',
+        isAdmin: false,
+        preferences: null,
+      });
     });
 
     it('throws error on invalid credentials', async () => {
@@ -68,24 +71,17 @@ describe('auth.ts', () => {
         status: 401,
       });
     });
+  });
 
-    it('does not require authentication (skipAuth)', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
+  describe('logout', () => {
+    it('logs out successfully', async () => {
       server.use(
-        http.post(`${API_URL}/auth/login`, () => {
-          return HttpResponse.json({
-            access_token: 'token',
-            refresh_token: 'refresh',
-            token_type: 'bearer',
-            expires_in: 3600,
-          });
+        http.post(`${API_URL}/auth/logout`, () => {
+          return HttpResponse.json({ message: 'Logged out successfully' });
         }),
       );
 
-      // Should not throw even without auth token
-      const result = await login('user', 'pass');
-      expect(result.access_token).toBe('token');
+      await expect(logout()).resolves.toBeUndefined();
     });
   });
 
@@ -133,60 +129,6 @@ describe('auth.ts', () => {
 
       await expect(getMe()).rejects.toMatchObject({
         message: 'Not authenticated',
-        status: 401,
-      });
-    });
-  });
-
-  describe('refreshToken', () => {
-    it('refreshes token successfully', async () => {
-      const mockResponse = {
-        access_token: 'refreshed-access-token',
-        refresh_token: 'new-refresh-token',
-        token_type: 'bearer',
-        expires_in: 3600,
-      };
-
-      server.use(
-        http.post(`${API_URL}/auth/refresh`, async ({ request }) => {
-          const body = (await request.json()) as { refresh_token: string };
-          expect(body.refresh_token).toBe('old-refresh-token');
-          return HttpResponse.json(mockResponse);
-        }),
-      );
-
-      const result = await refreshToken('old-refresh-token');
-
-      expect(result).toEqual(mockResponse);
-    });
-
-    it('does not require authentication (skipAuth)', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      server.use(
-        http.post(`${API_URL}/auth/refresh`, () => {
-          return HttpResponse.json({
-            access_token: 'token',
-            refresh_token: 'refresh',
-            token_type: 'bearer',
-            expires_in: 3600,
-          });
-        }),
-      );
-
-      const result = await refreshToken('refresh-token');
-      expect(result.access_token).toBe('token');
-    });
-
-    it('throws error on invalid refresh token', async () => {
-      server.use(
-        http.post(`${API_URL}/auth/refresh`, () => {
-          return HttpResponse.json({ detail: 'Invalid refresh token' }, { status: 401 });
-        }),
-      );
-
-      await expect(refreshToken('bad-token')).rejects.toMatchObject({
-        message: 'Invalid refresh token',
         status: 401,
       });
     });

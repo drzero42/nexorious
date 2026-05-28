@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { User, LoginResponse } from '@/types';
+import type { User } from '@/types';
 interface UserApiResponse {
   id: string;
   username: string;
@@ -21,21 +21,18 @@ function transformUser(apiUser: UserApiResponse): User {
   };
 }
 
-export async function login(username: string, password: string): Promise<LoginResponse> {
-  return api.post<LoginResponse>('/auth/login', { username, password }, { skipAuth: true });
+export async function login(username: string, password: string): Promise<User> {
+  const response = await api.post<UserApiResponse>('/auth/login', { username, password });
+  return transformUser(response);
+}
+
+export async function logout(): Promise<void> {
+  await api.post('/auth/logout');
 }
 
 export async function getMe(): Promise<User> {
   const response = await api.get<UserApiResponse>('/auth/me');
   return transformUser(response);
-}
-
-export async function refreshToken(refreshTokenValue: string): Promise<LoginResponse> {
-  return api.post<LoginResponse>(
-    '/auth/refresh',
-    { refresh_token: refreshTokenValue },
-    { skipAuth: true },
-  );
 }
 
 export async function changeUsername(newUsername: string): Promise<User> {

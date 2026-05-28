@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
 import { AuthProvider, useAuth } from './auth-provider';
 import { localStorageMock } from '@/test/setup';
-import type { User, LoginResponse } from '@/types';
+import type { User } from '@/types';
 
 // In test environment, NODE_ENV is 'test' so apiUrl defaults to '/api'
 // MSW intercepts relative URLs as absolute URLs with the origin
@@ -22,13 +22,6 @@ const mockApiUser = {
   id: 'test-user-id',
   username: 'testuser',
   is_admin: false,
-};
-
-const mockTokens: LoginResponse = {
-  access_token: 'test-access-token',
-  refresh_token: 'test-refresh-token',
-  token_type: 'bearer',
-  expires_in: 3600,
 };
 
 // Test component that uses the auth context
@@ -234,7 +227,7 @@ describe('AuthProvider', () => {
 
       server.use(
         http.post(`${API_URL}/auth/login`, () => {
-          return HttpResponse.json(mockTokens);
+          return HttpResponse.json(mockUser);
         }),
         http.get(`${API_URL}/auth/me`, () => {
           return HttpResponse.json(mockApiUser);
@@ -302,7 +295,7 @@ describe('AuthProvider', () => {
           if (loginAttempts === 1) {
             return HttpResponse.json({ detail: 'Invalid credentials' }, { status: 401 });
           }
-          return HttpResponse.json(mockTokens);
+          return HttpResponse.json(mockUser);
         }),
         http.get(`${API_URL}/auth/me`, () => {
           return HttpResponse.json(mockApiUser);
