@@ -6,7 +6,7 @@ import { config } from '@/lib/env';
 import type { UserGame, PlayStatus } from '@/types';
 import { Timer, Gamepad2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatTtb, formatIgdbRating } from '@/lib/game-utils';
+import { formatTtb, formatIgdbRating, formatHoursPlayed } from '@/lib/game-utils';
 
 export interface GameCardProps {
   game: UserGame;
@@ -146,7 +146,9 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
               </span>
             </div>
           )}
-          <span className="text-sm text-muted-foreground">{game.hours_played || 0}h</span>
+          <span className="text-sm text-muted-foreground">
+            {formatHoursPlayed(game.hours_played)}
+          </span>
         </div>
         {(game.game?.howlongtobeat_main != null ||
           game.game?.howlongtobeat_extra != null ||

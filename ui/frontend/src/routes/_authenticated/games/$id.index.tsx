@@ -18,7 +18,7 @@ import {
 import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink, Gamepad2 } from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
 import { config } from '@/lib/env';
-import { formatIgdbRating } from '@/lib/game-utils';
+import { formatIgdbRating, formatHoursPlayed } from '@/lib/game-utils';
 import {
   OwnershipStatus,
   type PlayStatus,
@@ -392,7 +392,7 @@ export function GameDetailPage() {
               <dt className="text-sm text-muted-foreground flex items-center gap-1">
                 <Clock className="h-4 w-4" /> Hours Played
               </dt>
-              <dd className="mt-1 font-medium">{game.hours_played || 0}h</dd>
+              <dd className="mt-1 font-medium">{formatHoursPlayed(game.hours_played)}</dd>
               {/* Playtime breakdown by storefront */}
               {game.platforms.some((p) => p.hours_played > 0) && (
                 <div className="mt-2 space-y-1 text-xs text-muted-foreground">
@@ -407,7 +407,7 @@ export function GameDetailPage() {
                             p.platform ||
                             'Unknown'}
                         </span>
-                        <span>{p.hours_played}h</span>
+                        <span>{formatHoursPlayed(p.hours_played)}</span>
                       </div>
                     ))}
                 </div>

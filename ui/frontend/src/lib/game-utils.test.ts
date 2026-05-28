@@ -1,5 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { formatTtb, formatIgdbRating } from './game-utils';
+import { formatTtb, formatIgdbRating, formatHoursPlayed } from './game-utils';
+
+describe('formatHoursPlayed', () => {
+  it.each([
+    [0, '0h'],
+    [null, '0h'],
+    [undefined, '0h'],
+    [1.2, '1h'],
+    [1.3, '1.5h'],
+    [7.4, '7.5h'],
+    [9.74, '9.5h'],
+    [9.75, '10h'],
+    [9.8, '10h'],
+    [10, '10h'],
+    [30.299999999999997, '30h'],
+    [134, '134h'],
+  ])('formats %s as %s', (input, expected) => {
+    expect(formatHoursPlayed(input as number | null | undefined)).toBe(expected);
+  });
+});
 
 describe('formatTtb', () => {
   it('formats a whole number of hours', () => {

@@ -14,7 +14,7 @@ import { config } from '@/lib/env';
 import type { UserGame, PlayStatus } from '@/types';
 import { cn } from '@/lib/utils';
 import { Timer } from 'lucide-react';
-import { formatTtb, formatIgdbRating } from '@/lib/game-utils';
+import { formatTtb, formatIgdbRating, formatHoursPlayed } from '@/lib/game-utils';
 
 export interface GameListProps {
   games: UserGame[];
@@ -177,7 +177,7 @@ export function GameList({
                   <PlatformIconList platforms={game.platforms ?? []} size="sm" showLabels />
                 </TableCell>
                 <TableCell>
-                  <span className="text-sm">{game.hours_played || 0}h</span>
+                  <span className="text-sm">{formatHoursPlayed(game.hours_played)}</span>
                 </TableCell>
                 <TableCell>
                   {game.game?.howlongtobeat_main != null ||
