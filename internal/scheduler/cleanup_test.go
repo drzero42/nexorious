@@ -323,7 +323,6 @@ func TestCheckPendingSyncs_NeverSynced_Dispatched(t *testing.T) {
 	}
 }
 
-
 func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()

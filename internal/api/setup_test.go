@@ -226,8 +226,10 @@ func TestSetupAdmin_GetMeAfterSetup(t *testing.T) {
 	}
 
 	var setupResp struct {
-		User        struct{ ID string `json:"id"` } `json:"user"`
-		AccessToken string                          `json:"access_token"`
+		User struct {
+			ID string `json:"id"`
+		} `json:"user"`
+		AccessToken string `json:"access_token"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&setupResp); err != nil {
 		t.Fatalf("decode setup response: %v", err)

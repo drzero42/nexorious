@@ -824,11 +824,11 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"connected":        true,
-		"disabled":         false,
+		"connected":         true,
+		"disabled":          false,
 		"credentials_error": row.CredentialsError,
-		"display_name":     creds.DisplayName,
-		"account_id":       creds.AccountID,
+		"display_name":      creds.DisplayName,
+		"account_id":        creds.AccountID,
 	})
 }
 
@@ -1467,10 +1467,10 @@ func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"connected":        true,
+		"connected":         true,
 		"credentials_error": row.CredentialsError,
-		"username":         creds.Username,
-		"user_id":          creds.UserID,
-		"auth_url":         authURL,
+		"username":          creds.Username,
+		"user_id":           creds.UserID,
+		"auth_url":          authURL,
 	})
 }

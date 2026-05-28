@@ -344,12 +344,12 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 
 	type jobWithChanges struct {
 		models.Job
-		Progress                map[string]any   `json:"progress"`
-		AddedItems              []syncChangeItem `json:"added_items"`
-		RemovedItems            []syncChangeItem `json:"removed_items"`
-		StatusChangedItems      []syncChangeItem `json:"status_changed_items"`
-		SkippedItems            []syncChangeItem `json:"skipped_items"`
-		AlreadyInLibraryItems   []syncChangeItem `json:"already_in_library_items"`
+		Progress              map[string]any   `json:"progress"`
+		AddedItems            []syncChangeItem `json:"added_items"`
+		RemovedItems          []syncChangeItem `json:"removed_items"`
+		StatusChangedItems    []syncChangeItem `json:"status_changed_items"`
+		SkippedItems          []syncChangeItem `json:"skipped_items"`
+		AlreadyInLibraryItems []syncChangeItem `json:"already_in_library_items"`
 	}
 
 	result := make([]jobWithChanges, 0, len(jobs))

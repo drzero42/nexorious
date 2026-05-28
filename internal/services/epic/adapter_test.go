@@ -11,12 +11,12 @@ import (
 
 // fakeEpicClient satisfies clientInterface without invoking legendary.
 type fakeEpicClient struct {
-	configured       bool
-	restoreErr       error
-	getLibraryErr    error
-	captureSnapshot  map[string]string
-	captureErr       error
-	libraryBatches   [][]ExternalGameEntry
+	configured      bool
+	restoreErr      error
+	getLibraryErr   error
+	captureSnapshot map[string]string
+	captureErr      error
+	libraryBatches  [][]ExternalGameEntry
 
 	restoreCalled    bool
 	getLibraryCalled bool
@@ -144,8 +144,8 @@ func TestEpicAdapter_SkipsPersistWhenSnapshotEmpty(t *testing.T) {
 
 func TestEpicAdapter_LegendaryAuthFailure_ReturnsErrCredentials(t *testing.T) {
 	fake := &fakeEpicClient{
-		configured:    true,
-		getLibraryErr: ErrAuthFailed,
+		configured:      true,
+		getLibraryErr:   ErrAuthFailed,
 		captureSnapshot: map[string]string{},
 	}
 	a := NewAdapter(fake, "user1", map[string]string{}, nil)

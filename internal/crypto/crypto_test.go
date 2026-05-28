@@ -91,4 +91,3 @@ func TestNewEncrypter_ShortKey(t *testing.T) {
 		t.Fatal("expected error for key shorter than 32 bytes, got nil")
 	}
 }
-

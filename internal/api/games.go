@@ -45,16 +45,16 @@ type GameListResponse struct {
 
 // IGDBGameCandidate is the response shape for IGDB search results.
 type IGDBGameCandidate struct {
-	IgdbID                      int      `json:"igdb_id"`
-	IgdbSlug                    string   `json:"igdb_slug"`
-	Title                       string   `json:"title"`
-	ReleaseDate                 *string  `json:"release_date"`
-	CoverArtUrl                 *string  `json:"cover_art_url"`
-	Description                 *string  `json:"description"`
-	Platforms                   []string `json:"platforms"`
-	HowlongtobeatMain           *float64 `json:"howlongtobeat_main"`
-	HowlongtobeatExtra          *float64 `json:"howlongtobeat_extra"`
-	HowlongtobeatCompletionist  *float64 `json:"howlongtobeat_completionist"`
+	IgdbID                     int      `json:"igdb_id"`
+	IgdbSlug                   string   `json:"igdb_slug"`
+	Title                      string   `json:"title"`
+	ReleaseDate                *string  `json:"release_date"`
+	CoverArtUrl                *string  `json:"cover_art_url"`
+	Description                *string  `json:"description"`
+	Platforms                  []string `json:"platforms"`
+	HowlongtobeatMain          *float64 `json:"howlongtobeat_main"`
+	HowlongtobeatExtra         *float64 `json:"howlongtobeat_extra"`
+	HowlongtobeatCompletionist *float64 `json:"howlongtobeat_completionist"`
 }
 
 // IGDBSearchResponse wraps IGDB search results.
@@ -72,9 +72,9 @@ type IGDBSearchRequest struct {
 
 // IGDBImportRequest is the request body for POST /api/games/igdb-import.
 type IGDBImportRequest struct {
-	IgdbID          int                    `json:"igdb_id"`
-	CustomOverrides map[string]any `json:"custom_overrides"`
-	DownloadCoverArt *bool                 `json:"download_cover_art"`
+	IgdbID           int            `json:"igdb_id"`
+	CustomOverrides  map[string]any `json:"custom_overrides"`
+	DownloadCoverArt *bool          `json:"download_cover_art"`
 }
 
 // allowedSortFields is the whitelist of sortable columns.

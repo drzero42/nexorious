@@ -23,12 +23,12 @@ import (
 
 // RestoreCallbacks holds the callbacks needed for restore orchestration.
 type RestoreCallbacks struct {
-	SetMaintenance  func(bool)
-	ShutdownPool    func()
-	StopScheduler   func()
-	CloseDB         func() error
-	ReconnectDB     func() (*bun.DB, error)
-	RebuildServices func(db *bun.DB) error
+	SetMaintenance   func(bool)
+	ShutdownPool     func()
+	StopScheduler    func()
+	CloseDB          func() error
+	ReconnectDB      func() (*bun.DB, error)
+	RebuildServices  func(db *bun.DB) error
 	ReinitMigrator   func(db *bun.DB) error
 	SetAppState      func(state string)
 	MaxMigration     string
@@ -49,9 +49,10 @@ func NewBackupHandler(svc *backup.Service, db *bun.DB, callbacks *RestoreCallbac
 
 // parseCronToSchedule converts a stored schedule_cron into the frontend-friendly
 // (schedule, scheduleTime, scheduleDay) triple.
-//   ""              → ("manual", "00:00", 0)
-//   "MM HH * * *"   → ("daily",  "HH:MM", 0)
-//   "MM HH * * D"   → ("weekly", "HH:MM", (D+6)%7)  — frontend 0=Mon, cron 0=Sun
+//
+//	""              → ("manual", "00:00", 0)
+//	"MM HH * * *"   → ("daily",  "HH:MM", 0)
+//	"MM HH * * D"   → ("weekly", "HH:MM", (D+6)%7)  — frontend 0=Mon, cron 0=Sun
 func parseCronToSchedule(cron string) (schedule, scheduleTime string, scheduleDay int) {
 	scheduleTime = "00:00"
 	if cron == "" {

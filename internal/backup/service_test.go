@@ -140,7 +140,6 @@ func createDirTarGz(t *testing.T, dir string) string {
 	return archivePath
 }
 
-
 func TestCreateBackup(t *testing.T) {
 	backup.CheckTools()
 	if !backup.PgDumpAvailable() {
