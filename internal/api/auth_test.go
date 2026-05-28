@@ -185,6 +185,9 @@ func TestHandleLogin_ValidCredentials(t *testing.T) {
 	if _, ok := resp["access_token"]; ok {
 		t.Error("response must not contain access_token")
 	}
+	if resp["id"] == nil || resp["id"] == "" {
+		t.Error("response must contain non-empty id")
+	}
 	if resp["username"] != "alice" {
 		t.Errorf("username = %q, want %q", resp["username"], "alice")
 	}

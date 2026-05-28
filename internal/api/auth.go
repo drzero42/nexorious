@@ -43,7 +43,7 @@ type messageResponse struct {
 
 // issueSession creates a session row and returns the raw session ID.
 // Always uses context.Background() so client disconnect cannot abort the DB write.
-func issueSession(ctx context.Context, db *bun.DB, expireDays int, userID, userAgent, ip string) (string, error) {
+func issueSession(db *bun.DB, expireDays int, userID, userAgent, ip string) (string, error) {
 	sessionID, err := auth.GenerateSessionID()
 	if err != nil {
 		return "", fmt.Errorf("issueSession: %w", err)
@@ -56,7 +56,7 @@ func issueSession(ctx context.Context, db *bun.DB, expireDays int, userID, userA
 		ipVal = ip
 	}
 	expiresAt := time.Now().Add(time.Duration(expireDays) * 24 * time.Hour)
-	_, err = db.ExecContext(ctx,
+	_, err = db.ExecContext(context.Background(),
 		`INSERT INTO user_sessions (id, user_id, session_id_hash, user_agent, ip_address, expires_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(),
@@ -129,7 +129,7 @@ func (h *AuthHandler) HandleLogin(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "user account is disabled")
 	}
 
-	sessionID, err := issueSession(context.Background(), h.db, h.cfg.SessionExpireDays,
+	sessionID, err := issueSession(h.db, h.cfg.SessionExpireDays,
 		userID, c.Request().Header.Get("User-Agent"), c.RealIP())
 	if err != nil {
 		slog.Error("login: issue session", "err", err)
