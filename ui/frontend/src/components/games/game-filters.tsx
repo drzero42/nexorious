@@ -53,6 +53,7 @@ export interface GameFiltersProps {
     search: string;
     status?: PlayStatus;
     ownershipStatus?: OwnershipStatus; // Filter by ownership status (matches if ANY platform has this status)
+    isLoved?: boolean; // Filter by whether the game is marked as loved
     platformId?: string; // Keep for backwards compat (but will migrate to platforms)
     platforms?: string[]; // New: multi-select
     storefronts?: string[]; // New
@@ -139,6 +140,7 @@ export function GameFilters({
     filters.search ||
     filters.status ||
     filters.ownershipStatus ||
+    filters.isLoved !== undefined ||
     filters.platformId ||
     (filters.platforms && filters.platforms.length > 0) ||
     (filters.storefronts && filters.storefronts.length > 0) ||
@@ -153,6 +155,7 @@ export function GameFilters({
       search: '',
       status: undefined,
       ownershipStatus: undefined,
+      isLoved: undefined,
       platformId: undefined,
       platforms: [],
       storefronts: [],
@@ -282,6 +285,26 @@ export function GameFilters({
                 {option.label}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+
+        {/* Loved filter */}
+        <Select
+          value={filters.isLoved === undefined ? 'all' : String(filters.isLoved)}
+          onValueChange={(value) =>
+            onFiltersChange({
+              ...filters,
+              isLoved: value === 'all' ? undefined : value === 'true',
+            })
+          }
+        >
+          <SelectTrigger className="w-36">
+            <SelectValue placeholder="Loved" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All games</SelectItem>
+            <SelectItem value="true">Loved only</SelectItem>
+            <SelectItem value="false">Not loved</SelectItem>
           </SelectContent>
         </Select>
 

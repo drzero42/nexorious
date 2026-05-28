@@ -61,6 +61,8 @@ function GamesPageContent() {
     const status = statusParam && statusParam !== 'null' ? (statusParam as PlayStatus) : undefined;
     const ownershipStatus =
       ownershipParam && ownershipParam !== 'null' ? (ownershipParam as OwnershipStatus) : undefined;
+    const lovedParam = (search as Record<string, string>)['loved'];
+    const isLoved = lovedParam === 'true' ? true : lovedParam === 'false' ? false : undefined;
     const s = search as Record<string, string | string[]>;
     const getAll = (key: string): string[] => {
       const val = s[key];
@@ -71,6 +73,7 @@ function GamesPageContent() {
       search: (s['q'] as string) ?? '',
       status,
       ownershipStatus,
+      isLoved,
       platforms: getAll('platform'),
       storefronts: getAll('storefront'),
       genres: getAll('genre'),
@@ -114,6 +117,7 @@ function GamesPageContent() {
       search: filters.search || undefined,
       status: filters.status,
       ownershipStatus: filters.ownershipStatus,
+      isLoved: filters.isLoved,
       platform: filters.platforms.length > 0 ? filters.platforms : undefined,
       storefront: filters.storefronts.length > 0 ? filters.storefronts : undefined,
       genre: filters.genres.length > 0 ? filters.genres : undefined,
@@ -169,6 +173,7 @@ function GamesPageContent() {
       search: string;
       status?: PlayStatus;
       ownershipStatus?: OwnershipStatus;
+      isLoved?: boolean;
       platforms?: string[];
       storefronts?: string[];
       genres?: string[];
@@ -181,6 +186,7 @@ function GamesPageContent() {
         q: newFilters.search || undefined,
         status: newFilters.status,
         ownership: newFilters.ownershipStatus,
+        loved: newFilters.isLoved === undefined ? undefined : String(newFilters.isLoved),
         platform: newFilters.platforms,
         storefront: newFilters.storefronts,
         genre: newFilters.genres,
