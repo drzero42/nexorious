@@ -14,30 +14,18 @@ import (
 
 // ─── Extra HTTP helpers ───────────────────────────────────────────────────────
 
-// putJSONAuth fires a PUT request with a JSON body and a Bearer authorization header.
-func putJSONAuth(t *testing.T, handler interface {
+// postJSONAuth fires a POST request with a JSON body and a session cookie.
+func postJSONAuth(t *testing.T, handler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
-}, path string, body any, accessToken string) *httptest.ResponseRecorder {
+}, path string, body any, sessionID string) *httptest.ResponseRecorder {
 	t.Helper()
 	b, err := json.Marshal(body)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPut, path, bytes.NewReader(b))
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	return rec
-}
-
-// deleteAuth fires a DELETE request with a Bearer authorization header.
-func deleteAuth(t *testing.T, handler interface {
-	ServeHTTP(http.ResponseWriter, *http.Request)
-}, path string, accessToken string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodDelete, path, nil)
-	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	return rec
@@ -101,7 +89,6 @@ func setupTagUser(t *testing.T, db *bun.DB, handler interface {
 	userID := "u-tags-" + suffix
 	username := "taguser-" + suffix
 	insertAuthTestUser(t, db, userID, username, "pass123", true, false)
-	insertAuthTestSession(t, db, userID, "access-"+suffix, "refresh-"+suffix, 1)
 	token := loginAndGetToken(t, handler, username, "pass123")
 	return userID, token
 }

@@ -29,16 +29,13 @@ type Config struct {
 	// Security
 	// -------------------------------------------------------------------------
 
-	// SecretKey is used for JWT signing.
-	SecretKey string `env:"SECRET_KEY,required"`
-
 	// DBEncryptionKey is used for at-rest encryption of storefront credentials.
 	// Generate with: openssl rand -base64 32
 	DBEncryptionKey string `env:"DB_ENCRYPTION_KEY,required"`
 
-	// JWT lifetimes.
-	AccessTokenExpireMinutes int `env:"ACCESS_TOKEN_EXPIRE_MINUTES" envDefault:"15"`
-	RefreshTokenExpireDays   int `env:"REFRESH_TOKEN_EXPIRE_DAYS"   envDefault:"30"`
+	// SessionExpireDays controls Max-Age of the session cookie and the
+	// expires_at stored in user_sessions. Default 30 days.
+	SessionExpireDays int `env:"SESSION_EXPIRE_DAYS" envDefault:"30"`
 
 	// -------------------------------------------------------------------------
 	// IGDB

@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { User, LoginResponse } from '@/types';
+import type { User } from '@/types';
 
 // Match the API URL format from env.ts
 // In test mode, NODE_ENV is 'test' so apiUrl is '/api'
@@ -17,13 +17,6 @@ const mockAdminUser: User = {
   id: 'admin-user-id',
   username: 'admin',
   isAdmin: true,
-};
-
-const mockTokens = {
-  access_token: 'mock-access-token',
-  refresh_token: 'mock-refresh-token',
-  token_type: 'bearer',
-  expires_in: 3600,
 };
 
 const mockPlatforms = [
@@ -94,11 +87,11 @@ export const handlers = [
     const password = body.get('password');
 
     if (username === 'testuser' && password === 'password123') {
-      return HttpResponse.json<LoginResponse>(mockTokens);
+      return HttpResponse.json<User>(mockUser);
     }
 
     if (username === 'admin' && password === 'admin123') {
-      return HttpResponse.json<LoginResponse>(mockTokens);
+      return HttpResponse.json<User>(mockAdminUser);
     }
 
     return HttpResponse.json({ detail: 'Invalid credentials' }, { status: 401 });
@@ -120,17 +113,8 @@ export const handlers = [
     return HttpResponse.json(mockUser);
   }),
 
-  http.post(`${API_URL}/auth/refresh`, async ({ request }) => {
-    const body = (await request.json()) as { refresh_token: string };
-
-    if (body.refresh_token === 'mock-refresh-token') {
-      return HttpResponse.json<LoginResponse>({
-        ...mockTokens,
-        access_token: 'new-mock-access-token',
-      });
-    }
-
-    return HttpResponse.json({ detail: 'Invalid refresh token' }, { status: 401 });
+  http.post(`${API_URL}/auth/logout`, () => {
+    return HttpResponse.json({ message: 'Logged out successfully' });
   }),
 
   // Platform endpoints

@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
-import { setAuthHandlers } from './client';
 import {
   getUsers,
   getUserById,
@@ -15,22 +14,8 @@ import {
 const API_URL = '/api';
 
 describe('admin.ts', () => {
-  let mockGetAccessToken: Mock<() => string | null>;
-  let mockRefreshTokens: Mock<() => Promise<boolean>>;
-  let mockLogout: Mock<() => void>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetAccessToken = vi.fn<() => string | null>().mockReturnValue('test-access-token');
-    mockRefreshTokens = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
-    mockLogout = vi.fn<() => void>();
-
-    setAuthHandlers(mockGetAccessToken, mockRefreshTokens, mockLogout);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('getUsers', () => {
@@ -90,15 +75,6 @@ describe('admin.ts', () => {
       expect(result).toEqual([]);
     });
 
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(getUsers()).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
-
     it('throws error on server error', async () => {
       server.use(
         http.get(`${API_URL}/auth/admin/users`, () => {
@@ -137,15 +113,6 @@ describe('admin.ts', () => {
         isActive: true,
         createdAt: '2024-01-01T00:00:00Z',
         updatedAt: '2024-01-02T00:00:00Z',
-      });
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(getUserById('user-123')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
       });
     });
 
@@ -232,15 +199,6 @@ describe('admin.ts', () => {
       expect(result.isAdmin).toBe(false);
     });
 
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(createUser({ username: 'test', password: 'test123' })).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
-
     it('throws error when username is taken', async () => {
       server.use(
         http.post(`${API_URL}/auth/admin/users`, () => {
@@ -324,15 +282,6 @@ describe('admin.ts', () => {
 
       expect(result.isActive).toBe(false);
     });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(updateUser('user-123', { username: 'test' })).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
   });
 
   describe('resetUserPassword', () => {
@@ -347,15 +296,6 @@ describe('admin.ts', () => {
       );
 
       await expect(resetUserPassword('user-123', 'newpassword123')).resolves.toBeUndefined();
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(resetUserPassword('user-123', 'newpass')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
     });
 
     it('throws error when user not found', async () => {
@@ -397,15 +337,6 @@ describe('admin.ts', () => {
 
       expect(result).toEqual(mockImpact);
     });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(getUserDeletionImpact('user-123')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
   });
 
   describe('deleteUser', () => {
@@ -417,15 +348,6 @@ describe('admin.ts', () => {
       );
 
       await expect(deleteUser('user-123')).resolves.toBeUndefined();
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(deleteUser('user-123')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
     });
 
     it('throws error when user not found', async () => {

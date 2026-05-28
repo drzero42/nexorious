@@ -18,7 +18,7 @@ export function MobileNav() {
 
   const handleLogout = () => {
     setOpen(false);
-    logout();
+    void logout();
   };
 
   return (

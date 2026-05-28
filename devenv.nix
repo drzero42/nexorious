@@ -53,6 +53,14 @@
   # (.claude/hooks/). These install/refresh whenever the devenv shell is
   # re-entered, and each is scoped to run only when its files are in the push.
   git-hooks.hooks = {
+    go-lint = {
+      enable = true;
+      name = "golangci-lint run";
+      entry = "golangci-lint run";
+      types = [ "go" ];
+      pass_filenames = false;
+      stages = [ "pre-push" ];
+    };
     go-test = {
       enable = true;
       name = "go test ./...";

@@ -14,19 +14,34 @@ CREATE INDEX users_is_active_idx ON users (is_active) WHERE is_active = true;
 
 -- User sessions table
 CREATE TABLE user_sessions (
-    id                 TEXT PRIMARY KEY,
-    user_id            TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash         TEXT NOT NULL,
-    refresh_token_hash TEXT NOT NULL,
-    user_agent         TEXT,
-    ip_address         TEXT,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at         TIMESTAMPTZ NOT NULL
+    id              TEXT        PRIMARY KEY,
+    user_id         TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_id_hash TEXT        NOT NULL UNIQUE,
+    user_agent      TEXT,
+    ip_address      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at      TIMESTAMPTZ NOT NULL,
+    last_used_at    TIMESTAMPTZ
 );
 
-CREATE INDEX user_sessions_user_id_idx ON user_sessions (user_id);
-CREATE INDEX user_sessions_token_hash_idx ON user_sessions (token_hash);
-CREATE INDEX user_sessions_expires_at_idx ON user_sessions (expires_at);
+CREATE INDEX user_sessions_user_id_idx          ON user_sessions (user_id);
+CREATE INDEX user_sessions_session_id_hash_idx  ON user_sessions (session_id_hash);
+CREATE INDEX user_sessions_expires_at_idx       ON user_sessions (expires_at);
+
+-- API keys table
+CREATE TABLE api_keys (
+    id           TEXT        PRIMARY KEY,
+    user_id      TEXT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name         TEXT        NOT NULL,
+    key_hash     TEXT        NOT NULL UNIQUE,
+    scopes       TEXT        NOT NULL DEFAULT 'write',
+    last_used_at TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at   TIMESTAMPTZ,
+    revoked_at   TIMESTAMPTZ
+);
+
+CREATE INDEX api_keys_user_id_idx ON api_keys (user_id);
 
 -- Games table (IGDB catalog)
 CREATE TABLE games (
