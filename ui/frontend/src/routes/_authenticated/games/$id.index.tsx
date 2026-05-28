@@ -18,7 +18,7 @@ import {
 import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink, Gamepad2 } from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
 import { config } from '@/lib/env';
-import { formatIgdbRating, formatHoursPlayed } from '@/lib/game-utils';
+import { formatIgdbRating, formatHoursPlayed, formatTtb } from '@/lib/game-utils';
 import {
   OwnershipStatus,
   type PlayStatus,
@@ -329,7 +329,7 @@ export function GameDetailPage() {
                       <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg text-center">
                         <div className="text-xs text-muted-foreground">Main Story</div>
                         <div className="font-bold text-blue-700 dark:text-blue-300">
-                          {game.game.howlongtobeat_main}h
+                          {formatTtb(game.game.howlongtobeat_main)}
                         </div>
                       </div>
                     )}
@@ -337,7 +337,7 @@ export function GameDetailPage() {
                       <div className="bg-green-50 dark:bg-green-950 p-3 rounded-lg text-center">
                         <div className="text-xs text-muted-foreground">Main + Extra</div>
                         <div className="font-bold text-green-700 dark:text-green-300">
-                          {game.game.howlongtobeat_extra}h
+                          {formatTtb(game.game.howlongtobeat_extra)}
                         </div>
                       </div>
                     )}
@@ -345,7 +345,7 @@ export function GameDetailPage() {
                       <div className="bg-purple-50 dark:bg-purple-950 p-3 rounded-lg text-center">
                         <div className="text-xs text-muted-foreground">Completionist</div>
                         <div className="font-bold text-purple-700 dark:text-purple-300">
-                          {game.game.howlongtobeat_completionist}h
+                          {formatTtb(game.game.howlongtobeat_completionist)}
                         </div>
                       </div>
                     )}

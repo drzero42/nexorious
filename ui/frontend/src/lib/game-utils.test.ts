@@ -21,24 +21,23 @@ describe('formatHoursPlayed', () => {
 });
 
 describe('formatTtb', () => {
-  it('formats a whole number of hours', () => {
-    expect(formatTtb(10)).toBe('10h');
-  });
-
-  it('formats 0 hours', () => {
-    expect(formatTtb(0)).toBe('0h');
-  });
-
-  it('formats decimal hours', () => {
-    expect(formatTtb(12.5)).toBe('12.5h');
-  });
-
-  it('returns em-dash for null', () => {
-    expect(formatTtb(null)).toBe('—');
-  });
-
-  it('returns em-dash for undefined', () => {
-    expect(formatTtb(undefined)).toBe('—');
+  // Same half-hour-bucket rule as formatHoursPlayed; only null handling differs
+  // (TTB uses an em-dash placeholder because "no HLTB data" is meaningfully
+  // distinct from "0 hours").
+  it.each([
+    [null, '—'],
+    [undefined, '—'],
+    [0, '0h'],
+    [1.2, '1h'],
+    [1.3, '1.5h'],
+    [7.4, '7.5h'],
+    [9.75, '10h'], // boundary: half-hour rule rounds to exactly 10
+    [10, '10h'],
+    [12.5, '13h'], // ≥10, integer rule (Math.round half-up)
+    [13.14, '13h'], // canonical case from HLTB display in issue #641 follow-up
+    [134, '134h'],
+  ])('formats %s as %s', (input, expected) => {
+    expect(formatTtb(input as number | null | undefined)).toBe(expected);
   });
 });
 
