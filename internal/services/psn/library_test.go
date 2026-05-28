@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -70,8 +71,9 @@ func TestFetchPlayHistory_HappyPath(t *testing.T) {
 	if len(ps5.Platforms) == 0 || ps5.Platforms[0] != "playstation-5" {
 		t.Errorf("expected Platforms[0]=playstation-5, got %v", ps5.Platforms)
 	}
-	if ps5.PlaytimeHours != 340 {
-		t.Errorf("expected PlaytimeHours=340, got %v", ps5.PlaytimeHours)
+	const wantPS5 = 340 + 46.0/60.0
+	if math.Abs(ps5.PlaytimeHours-wantPS5) > 1e-9 {
+		t.Errorf("expected PlaytimeHours=%v, got %v", wantPS5, ps5.PlaytimeHours)
 	}
 	if ps5.OwnershipStatus != "owned" {
 		t.Errorf("expected OwnershipStatus=owned, got %q", ps5.OwnershipStatus)

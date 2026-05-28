@@ -214,7 +214,7 @@ func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[
 				ExternalID:      t.TitleID,
 				Title:           t.Name,
 				Platforms:       []string{rawPlatform},
-				PlaytimeHours:   float64(parseDurationHours(t.PlayDuration)), // Task 4 replaces this with a fractional parser
+				PlaytimeHours:   parseDurationFractionalHours(t.PlayDuration),
 				OwnershipStatus: ownership,
 				IsSubscription:  isSub,
 			}
