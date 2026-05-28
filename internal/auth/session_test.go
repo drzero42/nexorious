@@ -39,7 +39,10 @@ func TestGenerateAPIKey(t *testing.T) {
 	if len(key) != 68 {
 		t.Errorf("GenerateAPIKey() length = %d, want 68 (4 prefix + 64 hex)", len(key))
 	}
-	key2, _ := auth.GenerateAPIKey()
+	key2, err := auth.GenerateAPIKey()
+	if err != nil {
+		t.Fatalf("GenerateAPIKey() second call error = %v", err)
+	}
 	if key == key2 {
 		t.Error("GenerateAPIKey() returned duplicate values")
 	}
@@ -73,6 +76,9 @@ func TestSetSessionCookie(t *testing.T) {
 	}
 	if cookie.SameSite != http.SameSiteStrictMode {
 		t.Errorf("SameSite = %v, want Strict", cookie.SameSite)
+	}
+	if !cookie.Secure {
+		t.Error("Secure = false, want true")
 	}
 	if cookie.MaxAge != 30*86400 {
 		t.Errorf("MaxAge = %d, want %d", cookie.MaxAge, 30*86400)

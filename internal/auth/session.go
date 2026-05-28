@@ -62,7 +62,7 @@ func ClearSessionCookie(c *echo.Context) {
 }
 
 // AuthMiddleware tries cookie-based session auth first, then Bearer API key.
-func AuthMiddleware(db *bun.DB, expireDays int) echo.MiddlewareFunc {
+func AuthMiddleware(db *bun.DB) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			userID, sessionHash, cookieErr := trySessionCookie(c, db)
@@ -147,6 +147,9 @@ func tryAPIKey(c *echo.Context, db *bun.DB) (string, error) {
 		return "", nil
 	}
 	raw := strings.TrimPrefix(authHeader, "Bearer ")
+	if raw == "" {
+		return "", errors.New("invalid or expired api key")
+	}
 	hash := HashToken(raw)
 	var userID string
 	err := db.QueryRowContext(c.Request().Context(),
