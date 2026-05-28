@@ -278,12 +278,6 @@
           body: JSON.stringify({ username, password }),
         });
         if (res.status === 201) {
-          const data = await res.json();
-          localStorage.setItem('auth', JSON.stringify({
-            accessToken: data.access_token,
-            refreshToken: data.refresh_token,
-            user: { id: data.user.id, username: data.user.username, isAdmin: data.user.is_admin, preferences: {} },
-          }));
           window.location.href = '/';
         } else if (res.status === 400) {
           const body = await res.json();
