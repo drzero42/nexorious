@@ -172,18 +172,18 @@ func exportsDir(storagePath string) (string, error) {
 // ── JSON format helpers ───────────────────────────────────────────────────────
 
 type exportGameJSON struct {
-	IGDBID         int32               `json:"igdb_id"`
-	Title          string              `json:"title"`
-	ReleaseYear    *int                `json:"release_year"`
-	PlayStatus     *string             `json:"play_status"`
-	PersonalRating *int32              `json:"personal_rating"`
-	IsLoved        bool                `json:"is_loved"`
-	HoursPlayed    *float64            `json:"hours_played"`
-	PersonalNotes  *string             `json:"personal_notes"`
+	IGDBID         int32                `json:"igdb_id"`
+	Title          string               `json:"title"`
+	ReleaseYear    *int                 `json:"release_year"`
+	PlayStatus     *string              `json:"play_status"`
+	PersonalRating *int32               `json:"personal_rating"`
+	IsLoved        bool                 `json:"is_loved"`
+	HoursPlayed    *float64             `json:"hours_played"`
+	PersonalNotes  *string              `json:"personal_notes"`
 	Platforms      []exportPlatformJSON `json:"platforms"`
-	Tags           []exportTagJSON     `json:"tags"`
-	CreatedAt      string              `json:"created_at"`
-	UpdatedAt      string              `json:"updated_at"`
+	Tags           []exportTagJSON      `json:"tags"`
+	CreatedAt      string               `json:"created_at"`
+	UpdatedAt      string               `json:"updated_at"`
 }
 
 type exportPlatformJSON struct {

@@ -23,6 +23,7 @@ import (
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 )
+
 var gameIDCounter int32
 
 func insertTestGame(t *testing.T, db *bun.DB, title string) int32 {

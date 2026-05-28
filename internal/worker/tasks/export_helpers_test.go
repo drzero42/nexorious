@@ -189,11 +189,11 @@ func TestBuildJSONDoc_NilOriginalPlatformName(t *testing.T) {
 		Platforms: []models.UserGamePlatform{
 			{
 				ID: "ugp1", UserGameID: "ug1",
-				Platform:             &platform,
-				OriginalPlatformName: nil,   // will fall back to slug
-				Storefront:           &platform,
+				Platform:               &platform,
+				OriginalPlatformName:   nil, // will fall back to slug
+				Storefront:             &platform,
 				OriginalStorefrontName: nil, // will fall back to slug
-				CreatedAt:            time.Now(), UpdatedAt: time.Now(),
+				CreatedAt:              time.Now(), UpdatedAt: time.Now(),
 			},
 		},
 	}

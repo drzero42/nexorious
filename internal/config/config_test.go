@@ -73,7 +73,7 @@ func TestLoad_SucceedsWithoutIGDBVars(t *testing.T) {
 	t.Setenv("SECRET_KEY", "testsecretkey")
 	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	// Explicitly unset IGDB vars to ensure they're not inherited.
-	os.Unsetenv("IGDB_CLIENT_ID")   //nolint:errcheck
+	os.Unsetenv("IGDB_CLIENT_ID")     //nolint:errcheck
 	os.Unsetenv("IGDB_CLIENT_SECRET") //nolint:errcheck
 
 	cfg, err := config.Load()

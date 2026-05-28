@@ -73,4 +73,3 @@ func expandQueries(query string) []string {
 func collapseWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
-

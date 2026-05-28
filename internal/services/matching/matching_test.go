@@ -53,7 +53,6 @@ func TestNormalizeTitle(t *testing.T) {
 	}
 }
 
-
 func TestFuzzyConfidence(t *testing.T) {
 	tests := []struct {
 		query    string

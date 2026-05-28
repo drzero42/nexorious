@@ -8,14 +8,14 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
+	"github.com/riverqueue/river/rivermigrate"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
-	"github.com/riverqueue/river/rivermigrate"
-	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 	bunmigrate "github.com/uptrace/bun/migrate"
 	"golang.org/x/crypto/bcrypt"
 
@@ -169,4 +169,3 @@ func mustMarshal(t *testing.T, v any) json.RawMessage {
 	}
 	return b
 }
-
