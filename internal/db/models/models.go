@@ -49,14 +49,28 @@ type User struct {
 type UserSession struct {
 	bun.BaseModel `bun:"table:user_sessions"`
 
-	ID               string    `bun:"id,pk"                      json:"id"`
-	UserID           string    `bun:"user_id,notnull"            json:"user_id"`
-	TokenHash        string    `bun:"token_hash,notnull"         json:"token_hash"`
-	RefreshTokenHash string    `bun:"refresh_token_hash,notnull" json:"refresh_token_hash"`
-	UserAgent        *string   `bun:"user_agent"                 json:"user_agent"`
-	IpAddress        *string   `bun:"ip_address"                 json:"ip_address"`
-	CreatedAt        time.Time `bun:"created_at,notnull"         json:"created_at"`
-	ExpiresAt        time.Time `bun:"expires_at,notnull"         json:"expires_at"`
+	ID            string     `bun:"id,pk"                      json:"id"`
+	UserID        string     `bun:"user_id,notnull"            json:"user_id"`
+	SessionIDHash string     `bun:"session_id_hash,notnull"    json:"-"`
+	UserAgent     *string    `bun:"user_agent"                 json:"user_agent"`
+	IpAddress     *string    `bun:"ip_address"                 json:"ip_address"`
+	CreatedAt     time.Time  `bun:"created_at,notnull"         json:"created_at"`
+	ExpiresAt     time.Time  `bun:"expires_at,notnull"         json:"expires_at"`
+	LastUsedAt    *time.Time `bun:"last_used_at"               json:"last_used_at"`
+}
+
+type APIKey struct {
+	bun.BaseModel `bun:"table:api_keys"`
+
+	ID         string     `bun:"id,pk"              json:"id"`
+	UserID     string     `bun:"user_id,notnull"    json:"user_id"`
+	Name       string     `bun:"name,notnull"       json:"name"`
+	KeyHash    string     `bun:"key_hash,notnull"   json:"-"`
+	Scopes     string     `bun:"scopes,notnull"     json:"scopes"`
+	LastUsedAt *time.Time `bun:"last_used_at"       json:"last_used_at"`
+	CreatedAt  time.Time  `bun:"created_at,notnull" json:"created_at"`
+	ExpiresAt  *time.Time `bun:"expires_at"         json:"expires_at"`
+	RevokedAt  *time.Time `bun:"revoked_at"         json:"revoked_at"`
 }
 
 type UserGame struct {
