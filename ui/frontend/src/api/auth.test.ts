@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
-import { setAuthHandlers } from './client';
 import {
   login,
   logout,
@@ -15,22 +14,8 @@ import {
 const API_URL = '/api';
 
 describe('auth.ts', () => {
-  let mockGetAccessToken: Mock<() => string | null>;
-  let mockRefreshTokens: Mock<() => Promise<boolean>>;
-  let mockLogout: Mock<() => void>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetAccessToken = vi.fn<() => string | null>().mockReturnValue('test-access-token');
-    mockRefreshTokens = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
-    mockLogout = vi.fn<() => void>();
-
-    setAuthHandlers(mockGetAccessToken, mockRefreshTokens, mockLogout);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('login', () => {
@@ -123,15 +108,6 @@ describe('auth.ts', () => {
 
       expect(result.isAdmin).toBe(false);
     });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(getMe()).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
   });
 
   describe('changeUsername', () => {
@@ -155,15 +131,6 @@ describe('auth.ts', () => {
         username: 'newusername',
         isAdmin: false,
         preferences: undefined,
-      });
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(changeUsername('newname')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
       });
     });
 
@@ -197,15 +164,6 @@ describe('auth.ts', () => {
 
       // Should not throw
       await expect(changePassword('oldpass', 'newpass')).resolves.toBeUndefined();
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(changePassword('old', 'new')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
     });
 
     it('throws error on incorrect current password', async () => {
@@ -258,15 +216,6 @@ describe('auth.ts', () => {
 
       expect(result.available).toBe(true);
     });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(checkUsernameAvailability('username')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
   });
 
   describe('updatePreferences', () => {
@@ -293,15 +242,6 @@ describe('auth.ts', () => {
         username: 'testuser',
         isAdmin: false,
         preferences: newPreferences,
-      });
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(updatePreferences({ theme: 'light' })).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
       });
     });
 

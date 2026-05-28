@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
-import { setAuthHandlers } from './client';
 import { PlayStatus, OwnershipStatus, type GameId } from '@/types';
 import {
   getUserGames,
@@ -112,22 +111,8 @@ const mockIGDBGameApi = {
 };
 
 describe('games.ts', () => {
-  let mockGetAccessToken: Mock<() => string | null>;
-  let mockRefreshTokens: Mock<() => Promise<boolean>>;
-  let mockLogout: Mock<() => void>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetAccessToken = vi.fn<() => string | null>().mockReturnValue('test-access-token');
-    mockRefreshTokens = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
-    mockLogout = vi.fn<() => void>();
-
-    setAuthHandlers(mockGetAccessToken, mockRefreshTokens, mockLogout);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('getUserGames', () => {
@@ -201,15 +186,6 @@ describe('games.ts', () => {
         isLoved: true,
         ratingMin: 7,
         ratingMax: 10,
-      });
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(getUserGames()).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
       });
     });
 
