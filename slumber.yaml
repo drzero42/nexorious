@@ -54,6 +54,11 @@ requests:
             filename: "{{response('list_setup_backups', trigger='no_history') | jsonpath('$.backups[*].filename', mode='array') | select()}}"
 
       create_api_key:
+        # Slumber has no cookie jar, so this recipe can't use the session from
+        # bootstrap.login directly. Bootstrap once with an existing API key:
+        #   slumber request bootstrap.create_api_key --bearer nxr_<your_key>
+        # (Create a first key via the web UI or curl.) After this runs,
+        # Slumber caches the response and .authenticated reads $.key from it.
         name: Create API Key
         method: POST
         url: "{{base_url}}/api/auth/api-keys"
