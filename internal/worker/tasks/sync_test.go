@@ -1876,6 +1876,106 @@ func TestSyncCheckJobCompletion_FailedItemsYieldsCompleted(t *testing.T) {
 	}
 }
 
+// TestSyncCheckJobCompletion_DispatchIncomplete_StaysProcessing is the #642
+// regression guard: while DispatchSyncWorker is still streaming batches
+// (dispatch_complete=false), a transiently-empty active set must NOT finalize
+// the job, or items from later batches get orphaned under a terminal job.
+func TestSyncCheckJobCompletion_DispatchIncomplete_StaysProcessing(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	// Dispatch is still streaming batches.
+	if _, err := testDB.NewRaw(`UPDATE jobs SET dispatch_complete = false WHERE id = ?`, jobID).Exec(ctx); err != nil {
+		t.Fatalf("set dispatch_complete=false: %v", err)
+	}
+
+	// One fully-resolved item, none pending_review — the empty-active set that
+	// previously tripped premature completion.
+	if _, err := testDB.NewRaw(`
+		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'completed', '{}', '[]', now())`,
+		jobID, userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if status != "processing" {
+		t.Errorf("dispatch incomplete: expected job to stay 'processing', got %q", status)
+	}
+}
+
+// TestSyncCheckJobCompletion_DispatchComplete_Finalizes confirms the happy
+// path: once dispatch is complete and no active/pending_review items remain,
+// the job finalizes to 'completed'.
+func TestSyncCheckJobCompletion_DispatchComplete_Finalizes(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1) // dispatch_complete defaults TRUE
+
+	if _, err := testDB.NewRaw(`
+		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'completed', '{}', '[]', now())`,
+		jobID, userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if status != "completed" {
+		t.Errorf("dispatch complete, no active/review items: expected 'completed', got %q", status)
+	}
+}
+
+// TestSyncCheckJobCompletion_PendingReviewBlocks confirms pending_review items
+// keep the job processing even when dispatch is complete (existing invariant).
+func TestSyncCheckJobCompletion_PendingReviewBlocks(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1) // dispatch_complete defaults TRUE
+
+	if _, err := testDB.NewRaw(`
+		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Game A', '{}', 'pending_review', '{}', '[]', now())`,
+		jobID, userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if status != "processing" {
+		t.Errorf("pending_review present: expected job to stay 'processing', got %q", status)
+	}
+}
+
 // TestUserGameWorker_BackfillsExternalGameID covers the spec invariant from
 // docs/sync.md § "Manually added games": Stage 3 must always set
 // external_game_id on user_game_platforms, even when the row pre-existed
@@ -2301,5 +2401,116 @@ func TestUserGameWorker_SkipsMetadataFetchWhenIGDBNotConfigured(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM river_job WHERE kind = 'metadata_fetch'`).Scan(ctx, &count)
 	if count != 0 {
 		t.Errorf("metadata_fetch river_job: want 0 (IGDB not configured), got %d", count)
+	}
+}
+
+// streamProbeAdapter yields batches and invokes probe() after the first batch
+// (i.e. while dispatch is still mid-stream) so a test can observe the job's
+// dispatch_complete flag during streaming.
+type streamProbeAdapter struct {
+	batches [][]tasks.ExternalGameEntry
+	probe   func()
+}
+
+func (a *streamProbeAdapter) GetLibrary(_ context.Context, _ int, onBatch func([]tasks.ExternalGameEntry) error) error {
+	for i, batch := range a.batches {
+		if err := onBatch(batch); err != nil {
+			return err
+		}
+		if i == 0 && a.probe != nil {
+			a.probe()
+		}
+	}
+	return nil
+}
+
+// TestDispatchSync_FlagFalseWhileStreaming proves DispatchSyncWorker sets
+// dispatch_complete=false while it is still streaming batches, and true once
+// dispatch finishes.
+func TestDispatchSync_FlagFalseWhileStreaming(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	var midStreamFlag bool
+	adapter := &streamProbeAdapter{
+		batches: [][]tasks.ExternalGameEntry{
+			{{ExternalID: "1", Title: "Game A", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
+			{{ExternalID: "2", Title: "Game B", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
+		},
+		probe: func() {
+			_ = testDB.NewRaw(`SELECT dispatch_complete FROM jobs WHERE id = ?`, jobID).Scan(ctx, &midStreamFlag)
+		},
+	}
+	rc := newTestRiverClient(t)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if midStreamFlag {
+		t.Error("expected dispatch_complete=false while dispatch is still streaming batches")
+	}
+
+	var finalFlag bool
+	if err := testDB.NewRaw(`SELECT dispatch_complete FROM jobs WHERE id = ?`, jobID).Scan(ctx, &finalFlag); err != nil {
+		t.Fatalf("query dispatch_complete: %v", err)
+	}
+	if !finalFlag {
+		t.Error("expected dispatch_complete=true after dispatch finished")
+	}
+}
+
+// TestDispatchSync_EmptyLibrary_Finalizes proves an empty library finalizes the
+// job: dispatch sets dispatch_complete=true and runs the authoritative
+// completion check, which finds no active/pending_review items.
+func TestDispatchSync_EmptyLibrary_Finalizes(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	rc := newTestRiverClient(t)
+	// Adapter yields no games at all.
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("query job: %v", err)
+	}
+	if status != "completed" {
+		t.Errorf("empty library: expected job 'completed', got %q", status)
 	}
 }

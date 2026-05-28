@@ -229,8 +229,9 @@ CREATE TABLE jobs (
     file_path       TEXT,
     total_items     INTEGER NOT NULL DEFAULT 0,
     error_message   TEXT,
-    auto_retry_done BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    auto_retry_done   BOOLEAN NOT NULL DEFAULT FALSE,
+    dispatch_complete BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     started_at      TIMESTAMPTZ,
     completed_at    TIMESTAMPTZ
 );

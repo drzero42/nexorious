@@ -108,14 +108,15 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	// Create the Job record.
 	now := time.Now().UTC()
 	job := &models.Job{
-		ID:         uuid.NewString(),
-		UserID:     userID,
-		JobType:    models.JobTypeImport,
-		Source:     models.JobSourceNexorious,
-		Status:     models.JobStatusPending,
-		Priority:   models.JobPriorityHigh,
-		TotalItems: len(export.Games),
-		CreatedAt:  now,
+		ID:               uuid.NewString(),
+		UserID:           userID,
+		JobType:          models.JobTypeImport,
+		Source:           models.JobSourceNexorious,
+		Status:           models.JobStatusPending,
+		Priority:         models.JobPriorityHigh,
+		TotalItems:       len(export.Games),
+		DispatchComplete: true, // not a streaming sync; the completion gate is N/A
+		CreatedAt:        now,
 	}
 	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
