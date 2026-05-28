@@ -39,7 +39,7 @@ func TestHandleGetConfig_Success(t *testing.T) {
 	_, tok := setupAdminUser(t, testDB, e, "backup-getcfg")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/backups/config", nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -73,7 +73,7 @@ func TestHandleUpdateConfig_InvalidSchedule(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/backups/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -96,7 +96,7 @@ func TestHandleUpdateConfig_InvalidRetentionMode(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/backups/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -119,7 +119,7 @@ func TestHandleUpdateConfig_InvalidRetentionValue(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/backups/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -142,7 +142,7 @@ func TestHandleUpdateConfig_InvalidCronTime(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/backups/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -165,7 +165,7 @@ func TestHandleUpdateConfig_Success(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/backups/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -187,7 +187,7 @@ func TestHandleListBackups_EmptyList(t *testing.T) {
 	_, tok := setupAdminUser(t, testDB, e, "backup-list-empty")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/backups", nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -216,7 +216,7 @@ func TestHandleDeleteBackup_NotFound(t *testing.T) {
 	_, tok := setupAdminUser(t, testDB, e, "backup-del-notfound")
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/admin/backups/nonexistent-backup", nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -238,7 +238,7 @@ func TestHandleDownloadBackup_NotFound(t *testing.T) {
 	_, tok := setupAdminUser(t, testDB, e, "backup-dl-notfound")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/backups/nonexistent/download", nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -267,7 +267,7 @@ func TestHandleRestore_MissingConfirm(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"confirm": false})
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/backups/backup-123/restore", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -292,7 +292,7 @@ func TestHandleRestore_PsqlUnavailable(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"confirm": true})
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/backups/backup-123/restore", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -319,7 +319,7 @@ func TestHandleRestoreUpload_MissingFile(t *testing.T) {
 	_, tok := setupAdminUser(t, testDB, e, "backup-upload-nofile")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/backups/restore/upload", nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -346,7 +346,7 @@ func TestHandleCreateBackup_PgDumpUnavailable(t *testing.T) {
 	_, tok := setupAdminUser(t, testDB, e, "backup-create-nopgdump")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/backups", nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 

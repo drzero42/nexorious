@@ -1809,7 +1809,7 @@ func TestGOGDisconnect_Idempotent(t *testing.T) {
 	_, token := setupTagUser(t, testDB, app, "gog-disc")
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/sync/gog/connection", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
@@ -1824,7 +1824,7 @@ func TestGOGConnection_NotConnected(t *testing.T) {
 	_, token := setupTagUser(t, testDB, app, "gog-status-notconn")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/gog/connection", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1860,7 +1860,7 @@ func TestGOGConnection_Connected(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/gog/connection", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

@@ -17,7 +17,7 @@ import (
 // postMultipartFile posts a multipart/form-data request with a file field.
 func postMultipartFile(t *testing.T, handler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
-}, path string, filename string, fileContent []byte, accessToken string) *httptest.ResponseRecorder {
+}, path string, filename string, fileContent []byte, sessionID string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -39,8 +39,8 @@ func postMultipartFile(t *testing.T, handler interface {
 
 	req := httptest.NewRequest(http.MethodPost, path, &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	if accessToken != "" {
-		req.Header.Set("Authorization", "Bearer "+accessToken)
+	if sessionID != "" {
+		req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
 	}
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -92,7 +92,7 @@ func TestImportNexorious_NoFile(t *testing.T) {
 	_ = mw.Close()
 	req := httptest.NewRequest(http.MethodPost, "/api/import/nexorious", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
