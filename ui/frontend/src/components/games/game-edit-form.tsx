@@ -482,12 +482,13 @@ export function GameEditForm({ game }: GameEditFormProps) {
                               <Input
                                 type="number"
                                 min="0"
+                                step="0.5"
                                 className="h-9 w-24"
                                 value={platformPlaytimes[p.id] ?? p.hours_played}
                                 onChange={(e) =>
                                   setPlatformPlaytimes((prev) => ({
                                     ...prev,
-                                    [p.id]: parseInt(e.target.value) || 0,
+                                    [p.id]: parseFloat(e.target.value) || 0,
                                   }))
                                 }
                                 disabled={isSteamSynced}
