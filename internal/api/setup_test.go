@@ -37,25 +37,25 @@ func TestSetupAdmin_Success(t *testing.T) {
 		t.Errorf("expected 201, got %d: %s", rec.Code, rec.Body)
 	}
 
-	var body struct {
+	var resp struct {
 		ID       string `json:"id"`
 		Username string `json:"username"`
 		IsAdmin  bool   `json:"is_admin"`
 		IsActive bool   `json:"is_active"`
 	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body.Username != "admin" {
-		t.Errorf("username mismatch: got %q", body.Username)
+	if resp.Username != "admin" {
+		t.Errorf("username mismatch: got %q", resp.Username)
 	}
-	if !body.IsAdmin {
+	if !resp.IsAdmin {
 		t.Error("expected is_admin=true")
 	}
-	if !body.IsActive {
+	if !resp.IsActive {
 		t.Error("expected is_active=true")
 	}
-	if body.ID == "" {
+	if resp.ID == "" {
 		t.Error("expected user id in response")
 	}
 

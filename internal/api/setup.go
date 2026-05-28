@@ -65,9 +65,8 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
-	var createdAt time.Time
 	for attempt := range 2 {
-		createdAt, err = h.tryCreateAdmin(context.Background(), userID, req.Username, string(hash))
+		_, err = h.tryCreateAdmin(context.Background(), userID, req.Username, string(hash))
 		if err == nil {
 			break
 		}

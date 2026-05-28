@@ -9,18 +9,6 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// getAuth fires a GET request with a session cookie.
-func getAuth(t *testing.T, handler interface {
-	ServeHTTP(http.ResponseWriter, *http.Request)
-}, path string, sessionID string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, path, nil)
-	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	return rec
-}
-
 // ─── Platform list tests ──────────────────────────────────────────────────────
 
 func TestListPlatforms(t *testing.T) {

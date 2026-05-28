@@ -47,7 +47,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSN
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
 	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
-	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
 }
@@ -1475,7 +1475,7 @@ func newSyncTestAppWithEpic(t *testing.T, db *bun.DB, steam api.SteamClient, psn
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
 	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, epic, (api.GOGClient)(nil))
-	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
 }
@@ -1506,7 +1506,7 @@ func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClie
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
 	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
-	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
 }
@@ -1535,7 +1535,7 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
 	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), gog)
-	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
 }

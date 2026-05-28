@@ -115,7 +115,10 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 
 	if len(cfg.CORSOrigins) > 0 {
 		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-			AllowOrigins: cfg.CORSOrigins,
+			AllowOrigins:     cfg.CORSOrigins,
+			AllowCredentials: true,
+			AllowHeaders:     []string{"Content-Type", "Authorization"},
+			AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		}))
 	}
 
@@ -195,20 +198,25 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 		// Public auth routes (no JWT required)
 		e.POST("/api/auth/login", ah.HandleLogin)
-		e.POST("/api/auth/refresh", ah.HandleRefresh)
 
-		// JWT-protected auth routes
-		authGroup := e.Group("/api/auth", auth.JWTMiddleware(cfg.SecretKey, db))
+		// Auth-protected auth routes
+		authGroup := e.Group("/api/auth", auth.AuthMiddleware(db))
 		authGroup.POST("/logout", ah.HandleLogout)
 		authGroup.GET("/me", ah.HandleGetMe)
 		authGroup.PUT("/me", ah.HandleUpdateMe)
 		authGroup.PUT("/change-password", ah.HandleChangePassword)
 		authGroup.GET("/username/check/:username", ah.HandleCheckUsername)
 		authGroup.PUT("/username", ah.HandleChangeUsername)
+		authGroup.GET("/sessions", ah.HandleListSessions)
+		authGroup.DELETE("/sessions", ah.HandleRevokeAllOtherSessions)
+		authGroup.DELETE("/sessions/:id", ah.HandleRevokeSession)
+		authGroup.GET("/api-keys", ah.HandleListAPIKeys)
+		authGroup.POST("/api-keys", ah.HandleCreateAPIKey)
+		authGroup.DELETE("/api-keys/:id", ah.HandleRevokeAPIKey)
 
-		// Platform and storefront routes (all JWT-protected)
+		// Platform and storefront routes (all auth-protected)
 		ph := NewPlatformsHandler(db)
-		platformsGroup := e.Group("/api/platforms", auth.JWTMiddleware(cfg.SecretKey, db))
+		platformsGroup := e.Group("/api/platforms", auth.AuthMiddleware(db))
 		platformsGroup.GET("", ph.HandleListPlatforms)
 		platformsGroup.GET("/simple-list", ph.HandleSimpleList)
 		platformsGroup.GET("/storefronts/simple-list", ph.HandleStorefrontSimpleList)
@@ -220,7 +228,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 		// Tag routes (all JWT-protected)
 		th := NewTagsHandler(db)
-		tagsGroup := e.Group("/api/tags", auth.JWTMiddleware(cfg.SecretKey, db))
+		tagsGroup := e.Group("/api/tags", auth.AuthMiddleware(db))
 		tagsGroup.GET("", th.HandleListTags)
 		tagsGroup.POST("", th.HandleCreateTag)
 		tagsGroup.PUT("/:id", th.HandleUpdateTag)
@@ -228,7 +236,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 		// Games routes (all JWT-protected)
 		gh := NewGamesHandler(db, igdbClient, cfg, riverClient)
-		gamesGroup := e.Group("/api/games", auth.JWTMiddleware(cfg.SecretKey, db))
+		gamesGroup := e.Group("/api/games", auth.AuthMiddleware(db))
 		gamesGroup.GET("", gh.HandleListGames)
 		gamesGroup.POST("/metadata/refresh-job", gh.HandleStartMetadataRefreshJob)
 		gamesGroup.POST("/search/igdb", gh.HandleSearchIGDB)
@@ -238,7 +246,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 		// User Games routes (all JWT-protected)
 		ugh := NewUserGamesHandler(db, cfg)
-		userGamesGroup := e.Group("/api/user-games", auth.JWTMiddleware(cfg.SecretKey, db))
+		userGamesGroup := e.Group("/api/user-games", auth.AuthMiddleware(db))
 		userGamesGroup.GET("", ugh.HandleListUserGames)
 		userGamesGroup.POST("", ugh.HandleCreateUserGame)
 		userGamesGroup.PUT("/bulk-update", ugh.HandleBulkUpdate)
@@ -260,7 +268,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 		// Jobs routes (all JWT-protected)
 		jh := NewJobsHandler(db, riverClient)
-		jobsGroup := e.Group("/api/jobs", auth.JWTMiddleware(cfg.SecretKey, db))
+		jobsGroup := e.Group("/api/jobs", auth.AuthMiddleware(db))
 		jobsGroup.GET("", jh.HandleListJobs)
 		jobsGroup.GET("/summary", jh.HandleJobsSummary)
 		jobsGroup.GET("/pending-review-count", jh.HandlePendingReviewCount)
@@ -274,24 +282,24 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 		// Job Items routes (all JWT-protected)
 		jih := NewJobItemsHandler(db, riverClient)
-		jobItemsGroup := e.Group("/api/job-items", auth.JWTMiddleware(cfg.SecretKey, db))
+		jobItemsGroup := e.Group("/api/job-items", auth.AuthMiddleware(db))
 		jobItemsGroup.GET("/:id", jih.HandleGetJobItem)
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
 
 		// Import routes (all JWT-protected)
 		imh := NewImportHandler(db, riverClient)
-		importGroup := e.Group("/api/import", auth.JWTMiddleware(cfg.SecretKey, db))
+		importGroup := e.Group("/api/import", auth.AuthMiddleware(db))
 		importGroup.POST("/nexorious", imh.HandleImportNexorious)
 
 		// Export routes (all JWT-protected)
 		exh := NewExportHandler(db, riverClient, cfg)
-		exportGroup := e.Group("/api/export", auth.JWTMiddleware(cfg.SecretKey, db))
+		exportGroup := e.Group("/api/export", auth.AuthMiddleware(db))
 		exportGroup.POST("/json", exh.HandleExportJSON)
 		exportGroup.POST("/csv", exh.HandleExportCSV)
 		exportGroup.GET("/:id/download", exh.HandleDownload)
 
 		// Admin backup routes (JWT + admin required)
-		adminGroup := e.Group("", auth.JWTMiddleware(cfg.SecretKey, db), auth.AdminMiddleware())
+		adminGroup := e.Group("", auth.AuthMiddleware(db), auth.AdminMiddleware())
 		adminBackups := adminGroup.Group("/api/admin/backups")
 		adminBackups.GET("/config", bh.HandleGetConfig)
 		adminBackups.PUT("/config", bh.HandleUpdateConfig)
@@ -312,7 +320,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		epicSvc := epicsvc.NewClient(cfg.LegendaryWorkDir)
 		gogSvc := gogsvc.NewClient()
 		synch := NewSyncHandler(encrypter, db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc})
-		syncGroup := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+		syncGroup := e.Group("/api/sync", auth.AuthMiddleware(db))
 		synch.RegisterRoutes(syncGroup)
 	}
 

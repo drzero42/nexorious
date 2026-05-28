@@ -31,35 +31,6 @@ func postJSONAuth(t *testing.T, handler interface {
 	return rec
 }
 
-// putJSONAuth fires a PUT request with a JSON body and a session cookie.
-func putJSONAuth(t *testing.T, handler interface {
-	ServeHTTP(http.ResponseWriter, *http.Request)
-}, path string, body any, sessionID string) *httptest.ResponseRecorder {
-	t.Helper()
-	b, err := json.Marshal(body)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	req := httptest.NewRequest(http.MethodPut, path, bytes.NewReader(b))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	return rec
-}
-
-// deleteAuth fires a DELETE request with a session cookie.
-func deleteAuth(t *testing.T, handler interface {
-	ServeHTTP(http.ResponseWriter, *http.Request)
-}, path string, sessionID string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodDelete, path, nil)
-	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	return rec
-}
-
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 
 // insertTag inserts a tag row directly and returns its ID.
