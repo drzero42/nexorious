@@ -49,7 +49,6 @@ func TestGamesList(t *testing.T) {
 	e := newTestEcho(t, testDB, cfg)
 
 	insertAuthTestUser(t, testDB, "u-games-1", "gamesuser", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-games-1", "access-games-1", "refresh-games-1", 1)
 	token := loginAndGetToken(t, e, "gamesuser", "pass123")
 
 	insertTestGame(t, testDB, "The Witcher 3")
@@ -85,7 +84,6 @@ func TestGamesList_Search(t *testing.T) {
 	e := newTestEcho(t, testDB, cfg)
 
 	insertAuthTestUser(t, testDB, "u-games-2", "gamesuser2", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-games-2", "access-games-2", "refresh-games-2", 1)
 	token := loginAndGetToken(t, e, "gamesuser2", "pass123")
 
 	insertTestGame(t, testDB, "The Witcher 3")
@@ -113,7 +111,6 @@ func TestGamesGet(t *testing.T) {
 	e := newTestEcho(t, testDB, cfg)
 
 	insertAuthTestUser(t, testDB, "u-games-3", "gamesuser3", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-games-3", "access-games-3", "refresh-games-3", 1)
 	token := loginAndGetToken(t, e, "gamesuser3", "pass123")
 
 	gameID := insertTestGame(t, testDB, "Hollow Knight")
@@ -138,7 +135,6 @@ func TestGamesGet_NotFound(t *testing.T) {
 	e := newTestEcho(t, testDB, cfg)
 
 	insertAuthTestUser(t, testDB, "u-games-4", "gamesuser4", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-games-4", "access-games-4", "refresh-games-4", 1)
 	token := loginAndGetToken(t, e, "gamesuser4", "pass123")
 
 	rec := getAuth(t, e, "/api/games/99999", token)
@@ -153,7 +149,6 @@ func TestGamesList_InvalidSort(t *testing.T) {
 	e := newTestEcho(t, testDB, cfg)
 
 	insertAuthTestUser(t, testDB, "u-games-5", "gamesuser5", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-games-5", "access-games-5", "refresh-games-5", 1)
 	token := loginAndGetToken(t, e, "gamesuser5", "pass123")
 
 	rec := getAuth(t, e, "/api/games?sort_by=invalid_field", token)
@@ -162,13 +157,13 @@ func TestGamesList_InvalidSort(t *testing.T) {
 	}
 }
 
-// postAuth issues an authenticated POST with a JSON body.
+// postAuth issues an authenticated POST with a JSON body and a session cookie.
 func postAuth(t *testing.T, handler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
-}, path string, accessToken string, body string) *httptest.ResponseRecorder {
+}, path string, sessionID string, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -193,7 +188,6 @@ func TestSearchIGDB_NotConfigured(t *testing.T) {
 	e := newTestEchoWithIGDB(t, testDB)
 
 	insertAuthTestUser(t, testDB, "u-igdb-1", "igdbuser", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-igdb-1", "access-igdb-1", "refresh-igdb-1", 1)
 	token := loginAndGetToken(t, e, "igdbuser", "pass123")
 
 	body := `{"query": "Zelda", "limit": 10}`
@@ -208,7 +202,6 @@ func TestGetIGDBGame_NotConfigured(t *testing.T) {
 	e := newTestEchoWithIGDB(t, testDB)
 
 	insertAuthTestUser(t, testDB, "u-igdb-2", "igdbuser2", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-igdb-2", "access-igdb-2", "refresh-igdb-2", 1)
 	token := loginAndGetToken(t, e, "igdbuser2", "pass123")
 
 	rec := getAuth(t, e, "/api/games/igdb/12345", token)
@@ -222,7 +215,6 @@ func TestImportFromIGDB_NotConfigured(t *testing.T) {
 	e := newTestEchoWithIGDB(t, testDB)
 
 	insertAuthTestUser(t, testDB, "u-igdb-3", "igdbuser3", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-igdb-3", "access-igdb-3", "refresh-igdb-3", 1)
 	token := loginAndGetToken(t, e, "igdbuser3", "pass123")
 
 	body := `{"igdb_id": 12345}`
@@ -239,7 +231,6 @@ func TestSearchIGDB_EmptyQuery(t *testing.T) {
 	e := newTestEchoWithIGDB(t, testDB)
 
 	insertAuthTestUser(t, testDB, "u-igdb-4", "igdbuser4", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-igdb-4", "access-igdb-4", "refresh-igdb-4", 1)
 	token := loginAndGetToken(t, e, "igdbuser4", "pass123")
 
 	body := `{"query": "", "limit": 10}`
@@ -254,7 +245,6 @@ func TestGetIGDBGame_InvalidID(t *testing.T) {
 	e := newTestEchoWithIGDB(t, testDB)
 
 	insertAuthTestUser(t, testDB, "u-igdb-5", "igdbuser5", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-igdb-5", "access-igdb-5", "refresh-igdb-5", 1)
 	token := loginAndGetToken(t, e, "igdbuser5", "pass123")
 
 	rec := getAuth(t, e, "/api/games/igdb/not-a-number", token)
@@ -268,7 +258,6 @@ func TestImportFromIGDB_MissingIGDBID(t *testing.T) {
 	e := newTestEchoWithIGDB(t, testDB)
 
 	insertAuthTestUser(t, testDB, "u-igdb-6", "igdbuser6", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-igdb-6", "access-igdb-6", "refresh-igdb-6", 1)
 	token := loginAndGetToken(t, e, "igdbuser6", "pass123")
 
 	// Missing igdb_id (0 value) should return bad request.
@@ -289,14 +278,12 @@ func newTestEchoWithLiveIGDB(t *testing.T, db *bun.DB, srvURL string) interface 
 } {
 	t.Helper()
 	cfg := &config.Config{
-		SecretKey:                "test-secret-key-at-least-32-bytes!",
-		DBEncryptionKey:          "test-db-encryption-key-32-bytes!!",
-		AccessTokenExpireMinutes: 15,
-		RefreshTokenExpireDays:   30,
-		Port:                     8000,
-		IGDBClientID:             "test-client-id",
-		IGDBClientSecret:         "test-client-secret",
-		IGDBAccessToken:          "test-access-token",
+		DBEncryptionKey:   "test-db-encryption-key-32-bytes!!",
+		SessionExpireDays: 30,
+		Port:              8000,
+		IGDBClientID:      "test-client-id",
+		IGDBClientSecret:  "test-client-secret",
+		IGDBAccessToken:   "test-access-token",
 	}
 	igdbClient := igdb.NewClientWithTokenURL(cfg, srvURL+"/oauth2/token", ratelimit.NewLocal(100, 100))
 	igdbClient.SetAPIURLForTest(srvURL)
@@ -346,7 +333,6 @@ func TestSearchIGDB_ExternalGameID_CrossUserReturns403(t *testing.T) {
 
 	// Calling user.
 	insertAuthTestUser(t, testDB, "u-caller", "caller", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-caller", "access-caller", "refresh-caller", 1)
 	token := loginAndGetToken(t, e, "caller", "pass123")
 
 	body := fmt.Sprintf(`{"query": "x", "limit": 10, "external_game_id": %q}`, otherEGID)
@@ -361,7 +347,6 @@ func TestSearchIGDB_ExternalGameID_NonExistentReturns403(t *testing.T) {
 	e := newTestEchoWithIGDB(t, testDB)
 
 	insertAuthTestUser(t, testDB, "u-caller-2", "caller2", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-caller-2", "access-caller-2", "refresh-caller-2", 1)
 	token := loginAndGetToken(t, e, "caller2", "pass123")
 
 	body := `{"query": "x", "limit": 10, "external_game_id": "ghost-id-does-not-exist"}`
@@ -390,7 +375,6 @@ func TestSearchIGDB_ExternalGameID_OwnedPassesPlatformIDs(t *testing.T) {
 	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
 
 	insertAuthTestUser(t, testDB, "u-caller-3", "caller3", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-caller-3", "access-caller-3", "refresh-caller-3", 1)
 	token := loginAndGetToken(t, e, "caller3", "pass123")
 	egID := insertTestExternalGameForUser(t, testDB, "u-caller-3", "steam", "Owned Title")
 	insertTestExternalGamePlatformForUser(t, testDB, egID, "pc-windows")
@@ -432,7 +416,6 @@ func TestSearchIGDB_NoExternalGameID_UnfilteredCall(t *testing.T) {
 
 	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
 	insertAuthTestUser(t, testDB, "u-caller-4", "caller4", "pass123", true, false)
-	insertAuthTestSession(t, testDB, "u-caller-4", "access-caller-4", "refresh-caller-4", 1)
 	token := loginAndGetToken(t, e, "caller4", "pass123")
 
 	body := `{"query": "x", "limit": 10}`

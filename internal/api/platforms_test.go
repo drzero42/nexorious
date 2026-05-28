@@ -9,13 +9,13 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// getAuth fires a GET request with a Bearer authorization header.
+// getAuth fires a GET request with a session cookie.
 func getAuth(t *testing.T, handler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
-}, path string, accessToken string) *httptest.ResponseRecorder {
+}, path string, sessionID string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
-	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	return rec
@@ -28,9 +28,7 @@ func TestListPlatforms(t *testing.T) {
 	cfg := testCfg()
 	e := newTestEcho(t, testDB, cfg)
 
-	userID := "u-plat-list-1"
-	insertAuthTestUser(t, testDB, userID, "platlistuser", "pass123", true, false)
-	insertAuthTestSession(t, testDB, userID, "access-plat-list", "refresh-plat-list", 1)
+	insertAuthTestUser(t, testDB, "u-plat-list-1", "platlistuser", "pass123", true, false)
 	token := loginAndGetToken(t, e, "platlistuser", "pass123")
 
 	rec := getAuth(t, e, "/api/platforms", token)
@@ -318,7 +316,7 @@ func setupUser(t *testing.T, db *bun.DB) string {
 	return username
 }
 
-// loginAndGetToken logs in and returns the access token.
+// loginAndGetToken logs in and returns the session ID cookie value.
 func loginAndGetToken(t *testing.T, handler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }, username, password string) string {
@@ -330,15 +328,13 @@ func loginAndGetToken(t *testing.T, handler interface {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("login failed: %d %s", rec.Code, rec.Body.String())
 	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal login response: %v", err)
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "session_id" && c.Value != "" {
+			return c.Value
+		}
 	}
-	token, ok := resp["access_token"].(string)
-	if !ok || token == "" {
-		t.Fatalf("no access_token in login response: %v", resp)
-	}
-	return token
+	t.Fatalf("no session_id cookie in login response")
+	return ""
 }
 
 func TestListPlatforms_HasIconURL(t *testing.T) {
