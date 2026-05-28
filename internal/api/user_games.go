@@ -140,16 +140,30 @@ var allowedUserGameSortFields = map[string]string{
 	"release_date":    "g.release_date",
 	// hours_played sorts on the joined aggregate alias `hp`; COALESCE so games with no
 	// platforms (LEFT JOIN → NULL) sort as 0 instead of NULL-first under DESC.
-	"hours_played": "COALESCE(hp.total, 0)",
+	"hours_played":       "COALESCE(hp.total, 0)",
+	"howlongtobeat_main": "g.howlongtobeat_main",
+	"rating_average":     "g.rating_average",
 }
 
 var sortFieldsRequiringGamesJoin = map[string]bool{
-	"title":        true,
-	"release_date": true,
+	"title":              true,
+	"release_date":       true,
+	"howlongtobeat_main": true,
+	"rating_average":     true,
 }
 
 var sortFieldsRequiringHoursJoin = map[string]bool{
 	"hours_played": true,
+}
+
+// sortFieldsNullsLast lists sort fields whose ORDER BY clause should append
+// "NULLS LAST", so games without IGDB data (NULL) sink to the bottom regardless
+// of sort direction. release_date is intentionally NOT in this set — changing
+// its NULL ordering would be a user-visible behavior change beyond the scope
+// of issue #639.
+var sortFieldsNullsLast = map[string]bool{
+	"howlongtobeat_main": true,
+	"rating_average":     true,
 }
 
 // HandleListUserGames handles GET /api/user-games.
@@ -186,6 +200,15 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	}
 	if sortOrder != "asc" && sortOrder != "desc" {
 		sortOrder = "desc"
+	}
+	// Compose the ORDER BY expression once so both phases of the two-phase
+	// list query stay in sync. NULLS LAST is opt-in per field.
+	var orderExpr string
+	if sortCol != "" {
+		orderExpr = sortCol + " " + sortOrder
+		if sortFieldsNullsLast[sortBy] {
+			orderExpr += " NULLS LAST"
+		}
 	}
 
 	// Build filter.
@@ -266,8 +289,8 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		ColumnExpr(colExpr).
 		Where("ug.user_id = ?", userID)
 	idQ = fb.Apply(idQ)
-	if sortCol != "" {
-		idQ = idQ.OrderExpr(sortCol + " " + sortOrder)
+	if orderExpr != "" {
+		idQ = idQ.OrderExpr(orderExpr)
 	}
 	// stable secondary sort
 	idQ = idQ.OrderExpr("ug.created_at DESC").
@@ -315,7 +338,7 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		if sortFieldsRequiringHoursJoin[sortBy] {
 			q = q.Join("LEFT JOIN (SELECT user_game_id, COALESCE(SUM(hours_played), 0) AS total FROM user_game_platforms GROUP BY user_game_id) hp ON hp.user_game_id = user_game.id")
 		}
-		q = q.OrderExpr(sortCol + " " + sortOrder)
+		q = q.OrderExpr(orderExpr)
 	}
 	q = q.OrderExpr("user_game.created_at DESC")
 
