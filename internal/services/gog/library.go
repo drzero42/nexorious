@@ -15,7 +15,7 @@ type ExternalGameEntry struct {
 	ExternalID      string
 	Title           string
 	Platforms       []string // all platforms this product runs on
-	PlaytimeHours   int
+	PlaytimeHours   float64
 	OwnershipStatus string
 	IsSubscription  bool
 }

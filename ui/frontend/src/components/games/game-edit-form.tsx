@@ -32,6 +32,7 @@ import {
 } from '@/hooks';
 import { SyncStorefront, SyncFrequency } from '@/types/sync';
 import { config } from '@/lib/env';
+import { formatHoursPlayed } from '@/lib/game-utils';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame } from '@/types';
 import { ArrowLeft, Save, Loader2, Heart } from 'lucide-react';
@@ -382,7 +383,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
             <p className="text-sm text-muted-foreground">
               Playtime and ownership are tracked per platform below.
             </p>
-            <p className="text-lg font-medium">{totalHoursPlayed} hours total</p>
+            <p className="text-lg font-medium">{formatHoursPlayed(totalHoursPlayed)} total</p>
           </div>
         </CardContent>
       </Card>
@@ -481,12 +482,13 @@ export function GameEditForm({ game }: GameEditFormProps) {
                               <Input
                                 type="number"
                                 min="0"
+                                step="0.5"
                                 className="h-9 w-24"
                                 value={platformPlaytimes[p.id] ?? p.hours_played}
                                 onChange={(e) =>
                                   setPlatformPlaytimes((prev) => ({
                                     ...prev,
-                                    [p.id]: parseInt(e.target.value) || 0,
+                                    [p.id]: parseFloat(e.target.value) || 0,
                                   }))
                                 }
                                 disabled={isSteamSynced}

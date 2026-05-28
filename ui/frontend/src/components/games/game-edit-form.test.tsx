@@ -135,7 +135,7 @@ describe('GameEditForm', () => {
 
     // Hours played is now shown as aggregate total, not as an editable input
     // The per-platform playtime inputs are in the Platforms section
-    expect(screen.getByText('10 hours total')).toBeInTheDocument();
+    expect(screen.getByText('10h total')).toBeInTheDocument();
   });
 
   it('renders acquired date input per platform with current value', () => {

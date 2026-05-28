@@ -53,7 +53,7 @@ type SteamPlayerSummary struct {
 type OwnedGame struct {
 	AppID         int
 	Title         string
-	PlaytimeHours int
+	PlaytimeHours float64
 }
 
 // Platforms represents per-OS availability from the Steam store appdetails endpoint.
@@ -148,7 +148,7 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 		games = append(games, OwnedGame{
 			AppID:         g.AppID,
 			Title:         g.Name,
-			PlaytimeHours: g.PlaytimeForever / 60,
+			PlaytimeHours: float64(g.PlaytimeForever) / 60.0,
 		})
 	}
 	return games, nil

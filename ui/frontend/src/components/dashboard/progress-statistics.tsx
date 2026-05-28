@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatHoursPlayed } from '@/lib/game-utils';
 import { PlayStatus } from '@/types';
 import { StatusProgress } from './status-progress';
 import { statusIcons, statusLabels } from './status-progress-data';
@@ -106,7 +107,7 @@ export function ProgressStatistics({ stats, className }: ProgressStatisticsProps
           <CardContent className="p-4">
             <div className="text-sm font-medium text-muted-foreground">Total Hours</div>
             <div className="mt-1 text-2xl font-bold text-blue-600">
-              {totalHoursPlayed.toLocaleString()}
+              {formatHoursPlayed(totalHoursPlayed)}
             </div>
           </CardContent>
         </Card>
@@ -177,7 +178,7 @@ export function ProgressStatistics({ stats, className }: ProgressStatisticsProps
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="text-center">
                 <div className="text-3xl font-bold text-blue-600">
-                  {totalHoursPlayed.toLocaleString()}
+                  {formatHoursPlayed(totalHoursPlayed)}
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">Total Hours Played</div>
               </div>

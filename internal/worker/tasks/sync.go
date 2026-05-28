@@ -98,9 +98,9 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 	return row.ID, row.IsSkipped
 }
 
-func upsertPlatforms(ctx context.Context, db *bun.DB, egID string, platforms []string, playtimeHours int) {
+func upsertPlatforms(ctx context.Context, db *bun.DB, egID string, platforms []string, playtimeHours float64) {
 	for i, platform := range platforms {
-		hours := 0
+		hours := 0.0
 		if i == 0 {
 			hours = playtimeHours
 		}
