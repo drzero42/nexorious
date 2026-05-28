@@ -385,7 +385,7 @@ func (h *AuthHandler) HandleListSessions(c *echo.Context) error {
 	}
 	defer func() { _ = rows.Close() }()
 
-	var items []sessionItem
+	items := []sessionItem{}
 	for rows.Next() {
 		var item sessionItem
 		var hash string
@@ -400,9 +400,6 @@ func (h *AuthHandler) HandleListSessions(c *echo.Context) error {
 	if err := rows.Err(); err != nil {
 		slog.Error("list sessions: rows.Err", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
-	}
-	if items == nil {
-		items = []sessionItem{}
 	}
 	return c.JSON(http.StatusOK, items)
 }
