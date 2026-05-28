@@ -71,8 +71,8 @@ func TestCleanupExpiredSessions(t *testing.T) {
 
 	// Expired session.
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
-		 VALUES ('sess-expired', ?, 'hash1', 'rhash1', now() - interval '1 hour')`,
+		`INSERT INTO user_sessions (id, user_id, session_id_hash, expires_at)
+		 VALUES ('sess-expired', ?, 'hash1', now() - interval '1 hour')`,
 		userID,
 	).Exec(ctx)
 	if err != nil {
@@ -81,8 +81,8 @@ func TestCleanupExpiredSessions(t *testing.T) {
 
 	// Valid session.
 	_, err = testDB.NewRaw(
-		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
-		 VALUES ('sess-valid', ?, 'hash2', 'rhash2', now() + interval '30 days')`,
+		`INSERT INTO user_sessions (id, user_id, session_id_hash, expires_at)
+		 VALUES ('sess-valid', ?, 'hash2', now() + interval '30 days')`,
 		userID,
 	).Exec(ctx)
 	if err != nil {

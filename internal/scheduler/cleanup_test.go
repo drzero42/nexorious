@@ -73,8 +73,8 @@ func TestCleanupExpiredSessions_DeletesExpiredSessions(t *testing.T) {
 
 	// Insert an expired session.
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at, created_at)
-		 VALUES (?, ?, 'abc123hash', 'abc123refresh', now() - interval '1 hour', now() - interval '2 hours')`,
+		`INSERT INTO user_sessions (id, user_id, session_id_hash, expires_at, created_at)
+		 VALUES (?, ?, 'abc123hash', now() - interval '1 hour', now() - interval '2 hours')`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
 	if err != nil {
@@ -83,8 +83,8 @@ func TestCleanupExpiredSessions_DeletesExpiredSessions(t *testing.T) {
 
 	// Insert a valid session.
 	_, err = testDB.NewRaw(
-		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at, created_at)
-		 VALUES (?, ?, 'def456hash', 'def456refresh', now() + interval '1 hour', now() - interval '10 minutes')`,
+		`INSERT INTO user_sessions (id, user_id, session_id_hash, expires_at, created_at)
+		 VALUES (?, ?, 'def456hash', now() + interval '1 hour', now() - interval '10 minutes')`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
 	if err != nil {
@@ -94,14 +94,14 @@ func TestCleanupExpiredSessions_DeletesExpiredSessions(t *testing.T) {
 	scheduler.CleanupExpiredSessions(ctx, testDB)
 
 	var count int
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE token_hash = 'abc123hash'`).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE session_id_hash = 'abc123hash'`).Scan(ctx, &count); err != nil {
 		t.Fatalf("check expired session: %v", err)
 	}
 	if count != 0 {
 		t.Errorf("expected expired session deleted, got count=%d", count)
 	}
 
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE token_hash = 'def456hash'`).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE session_id_hash = 'def456hash'`).Scan(ctx, &count); err != nil {
 		t.Fatalf("check valid session: %v", err)
 	}
 	if count != 1 {
