@@ -190,14 +190,6 @@ jobs:
             | awk '{print $NF}')
           helm push "$PKG" oci://ghcr.io/drzero42/charts
 
-      - name: Push Helm chart (moving latest tag)
-        if: github.event_name == 'release'
-        run: |
-          PKG=$(helm package deploy/helm/ \
-            --version "0.0.0-latest" \
-            --app-version "${{ steps.chart-version.outputs.app_version }}" \
-            | awk '{print $NF}')
-          helm push "$PKG" oci://ghcr.io/drzero42/charts
 
   update-release-branch:
     name: Advance release branch
