@@ -1132,6 +1132,223 @@ func TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending(t *testing.T) 
 	}
 }
 
+// TestRematchExternalGame_AfterSyncCompleted reproduces the bug where
+// HandleRematchExternalGame returns 500 "failed to create job item" after a
+// sync has completed. The job_item for the external game is already in
+// 'completed' status; the handler must update it instead of inserting a
+// duplicate that would violate the UNIQUE(job_id, item_key) constraint.
+func TestRematchExternalGame_AfterSyncCompleted(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-postcomplete")
+	insertExternalGame(t, testDB, "eg-pc-1", userID, "steam", "555", "Half-Life 3")
+	insertJob(t, testDB, "job-pc-1", userID, "sync", "steam", "completed")
+
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-pc-1', 'job-pc-1', ?, '555', 'Half-Life 3', 'eg-pc-1', '{}', 'completed', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert completed job_item: %v", err)
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (9001, 'Half-Life 3', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-pc-1/rematch",
+		map[string]any{"igdb_id": 9001}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-pc-1'`).Scan(context.Background(), &status); err != nil {
+		t.Fatalf("scan job_item status: %v", err)
+	}
+	if status != "pending" {
+		t.Errorf("expected existing job_item reset to pending, got %q", status)
+	}
+	var count int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE external_game_id = 'eg-pc-1'`).Scan(context.Background(), &count)
+	if count != 1 {
+		t.Errorf("expected exactly 1 job_item for the external game, got %d", count)
+	}
+}
+
+// TestRematchExternalGame_SiblingAfterSyncCompleted verifies that sibling
+// external_games with 'completed' job_items are also reset to 'pending'
+// without triggering a duplicate-key error.
+func TestRematchExternalGame_SiblingAfterSyncCompleted(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-sib-postcomplete")
+
+	insertExternalGame(t, testDB, "eg-sib-pc1", userID, "psn", "CUSA-001", "Horizon")
+	insertExternalGame(t, testDB, "eg-sib-pc2", userID, "psn", "CUSA-002", "Horizon")
+	insertJob(t, testDB, "job-sib-pc", userID, "sync", "psn", "completed")
+
+	for _, row := range []struct{ id, egID, extID string }{
+		{"ji-sib-pc1", "eg-sib-pc1", "CUSA-001"},
+		{"ji-sib-pc2", "eg-sib-pc2", "CUSA-002"},
+	} {
+		_, err := testDB.ExecContext(context.Background(),
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+			 VALUES (?, 'job-sib-pc', ?, ?, 'Horizon', ?, '{}', 'completed', '{}', '[]', now())`,
+			row.id, userID, row.extID, row.egID,
+		)
+		if err != nil {
+			t.Fatalf("insert job_item %s: %v", row.id, err)
+		}
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (9002, 'Horizon', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-sib-pc1/rematch",
+		map[string]any{"igdb_id": 9002}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+	var count int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE id IN ('ji-sib-pc1', 'ji-sib-pc2') AND status = 'pending'`,
+	).Scan(ctx, &count); err != nil {
+		t.Fatalf("scan job_item status count: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected both sibling job_items reset to pending, got count=%d", count)
+	}
+}
+
+// TestRematchExternalGame_MultiPlatformOrphanRemove reproduces the bug where
+// a Steam game with both Windows and Linux platform rows only had one UGP
+// deleted (LIMIT 1), leaving the user_game alive despite orphan_action=remove.
+// The backend otherCount also disagreed with the frontend's count because it
+// used id != ugpID instead of external_game_id IS DISTINCT FROM eg.id.
+func TestRematchExternalGame_MultiPlatformOrphanRemove(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-mp-orphan")
+
+	// Wrong IGDB match — external_game must exist before UGPs (FK constraint).
+	insertExternalGame(t, testDB, "eg-mp-1", userID, "steam", "3000", "Another World")
+	insertUserGameAndPlatform(t, testDB, "ug-mp-wrong", userID, "1111", "ugp-mp-win", "eg-mp-1")
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE external_games SET resolved_igdb_id = 1111 WHERE id = 'eg-mp-1'`); err != nil {
+		t.Fatalf("set wrong match: %v", err)
+	}
+	// Second platform (Linux) on the same user_game and same external_game.
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO user_game_platforms (id, user_game_id, external_game_id, platform, storefront, sync_from_source, is_available, created_at, updated_at)
+		 VALUES ('ugp-mp-lin', 'ug-mp-wrong', 'eg-mp-1', 'pc-linux', 'steam', true, true, now(), now())`); err != nil {
+		t.Fatalf("insert linux ugp: %v", err)
+	}
+
+	insertJob(t, testDB, "job-mp", userID, "sync", "steam", "completed")
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-mp-1', 'job-mp', ?, '3000', 'Another World', 'eg-mp-1', '{}', 'completed', '{}', '[]', now())`,
+		userID); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (2222, 'Another World', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-mp-1/rematch",
+		map[string]any{"igdb_id": 2222, "orphan_action": "remove"}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	// Both Windows and Linux UGPs must be gone.
+	var ugpCount int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = 'ug-mp-wrong'`,
+	).Scan(ctx, &ugpCount); err != nil {
+		t.Fatalf("scan ugp count: %v", err)
+	}
+	if ugpCount != 0 {
+		t.Errorf("expected all UGPs deleted, got %d remaining", ugpCount)
+	}
+
+	// The wrong user_game must be deleted.
+	var ugCount int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM user_games WHERE id = 'ug-mp-wrong'`,
+	).Scan(ctx, &ugCount); err != nil {
+		t.Fatalf("scan user_game count: %v", err)
+	}
+	if ugCount != 0 {
+		t.Errorf("expected wrong user_game deleted, got %d rows", ugCount)
+	}
+}
+
+// TestRematchExternalGame_SiblingAlreadyMatchedWrong reproduces the bug where
+// rematching one platform variant of a game leaves sibling variants on the
+// wrong match because the sibling query filtered resolved_igdb_id IS NULL.
+func TestRematchExternalGame_SiblingAlreadyMatchedWrong(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-sib-wrong")
+
+	// Two Steam entries for "Another World" — both previously matched to the wrong IGDB game (id 1111).
+	// The games row must exist before setting resolved_igdb_id (FK constraint).
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (1111, 'Wrong Game', now(), now()) ON CONFLICT DO NOTHING`)
+	if err != nil {
+		t.Fatalf("insert wrong game: %v", err)
+	}
+	insertExternalGame(t, testDB, "eg-aw-win", userID, "steam", "2100", "Another World")
+	insertExternalGame(t, testDB, "eg-aw-lin", userID, "steam", "2101", "Another World")
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE external_games SET resolved_igdb_id = 1111 WHERE id IN ('eg-aw-win', 'eg-aw-lin')`); err != nil {
+		t.Fatalf("set wrong match: %v", err)
+	}
+
+	insertJob(t, testDB, "job-aw", userID, "sync", "steam", "completed")
+	for _, row := range []struct{ id, egID, key string }{
+		{"ji-aw-win", "eg-aw-win", "2100"},
+		{"ji-aw-lin", "eg-aw-lin", "2101"},
+	} {
+		_, err := testDB.ExecContext(context.Background(),
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+			 VALUES (?, 'job-aw', ?, ?, 'Another World', ?, '{}', 'completed', '{}', '[]', now())`,
+			row.id, userID, row.key, row.egID,
+		)
+		if err != nil {
+			t.Fatalf("insert job_item %s: %v", row.id, err)
+		}
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (2222, 'Another World', now(), now()) ON CONFLICT DO NOTHING`)
+
+	// Rematch the Windows entry to the correct game.
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-aw-win/rematch",
+		map[string]any{"igdb_id": 2222}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Both Windows and Linux should now point to the correct IGDB game.
+	ctx := context.Background()
+	var count int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM external_games WHERE id IN ('eg-aw-win', 'eg-aw-lin') AND resolved_igdb_id = 2222`,
+	).Scan(ctx, &count); err != nil {
+		t.Fatalf("scan resolved count: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected both platform variants resolved to 2222, got count=%d", count)
+	}
+}
+
 // ─── TestUnskipGame_EnqueuesJobItem ───────────────────────────────────────────
 
 func TestUnskipGame_EnqueuesJobItem(t *testing.T) {

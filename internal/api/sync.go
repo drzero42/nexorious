@@ -1150,18 +1150,22 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load external game")
 	}
 
-	// Find the existing user_game_platform linked to this external game.
-	var ugpID, ugID string
+	// Find the user_game linked to this external game (any one of its platform rows is enough).
+	var ugID string
 	err = h.db.NewRaw(
-		`SELECT id, user_game_id FROM user_game_platforms WHERE external_game_id = ? LIMIT 1`, id,
-	).Scan(ctx, &ugpID, &ugID)
+		`SELECT user_game_id FROM user_game_platforms WHERE external_game_id = ? LIMIT 1`, id,
+	).Scan(ctx, &ugID)
 	platformFound := err == nil
 
 	if platformFound {
-		// Count other platforms on the same user_game.
+		// Count platforms on the same user_game that belong to OTHER external games.
+		// Matches the frontend definition of user_game_other_platform_count, which also
+		// uses IS DISTINCT FROM rather than a row-id comparison — important for Steam
+		// games that appear as multiple platforms (Windows + Linux) under one external_game_id.
 		var otherCount int
 		if err := h.db.NewRaw(
-			`SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = ? AND id != ?`, ugID, ugpID,
+			`SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = ? AND external_game_id IS DISTINCT FROM ?`,
+			ugID, id,
 		).Scan(ctx, &otherCount); err != nil {
 			slog.Error("sync: count other platforms failed", "err", err, "user_game_id", ugID)
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to check platform count")
@@ -1172,9 +1176,10 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusConflict, "orphan_action required: game would lose its only storefront link")
 		}
 
-		// Delete the platform link.
-		if _, err := h.db.NewRaw(`DELETE FROM user_game_platforms WHERE id = ?`, ugpID).Exec(ctx); err != nil {
-			slog.Error("sync: delete user_game_platform failed", "err", err, "ugp_id", ugpID)
+		// Delete all platform links for this external game (a Steam game may have
+		// both Windows and Linux rows, all sharing the same external_game_id).
+		if _, err := h.db.NewRaw(`DELETE FROM user_game_platforms WHERE external_game_id = ?`, id).Exec(ctx); err != nil {
+			slog.Error("sync: delete user_game_platforms failed", "err", err, "external_game_id", id)
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to remove platform link")
 		}
 
@@ -1205,15 +1210,18 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update external game")
 	}
 
-	// Find the existing pending_review job_item for this external game.
+	// Find any existing job_item for this external game. Looking beyond
+	// pending_review covers the case where the sync already completed and the
+	// item is 'completed' — inserting a second row would violate
+	// UNIQUE(job_id, item_key).
 	var jobItemID string
 	if err := h.db.NewRaw(`
 		SELECT id FROM job_items
-		WHERE external_game_id = ? AND status = 'pending_review'
+		WHERE external_game_id = ?
 		ORDER BY created_at DESC
 		LIMIT 1`, id,
 	).Scan(ctx, &jobItemID); err != nil || jobItemID == "" {
-		// No pending_review item — create a minimal one attached to the
+		// No existing job_item — create a minimal one attached to the
 		// most recent job for this user+storefront.
 		var recentJobID string
 		if err2 := h.db.NewRaw(`
@@ -1231,6 +1239,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 			VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
 			jobItemID, recentJobID, userID, eg.ExternalID, eg.Title, eg.ID,
 		).Exec(ctx); err3 != nil {
+			slog.Error("sync: rematch: insert job_item failed", "err", err3, "job_id", recentJobID, "item_key", eg.ExternalID, "external_game_id", id)
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
 	} else {
@@ -1259,7 +1268,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	if err := h.db.NewRaw(`
 		SELECT id, external_id, title FROM external_games
 		WHERE user_id = ? AND storefront = ? AND title = ?
-		  AND id != ? AND resolved_igdb_id IS NULL AND is_skipped = false`,
+		  AND id != ? AND is_skipped = false`,
 		userID, eg.Storefront, eg.Title, id,
 	).Scan(ctx, &siblings); err == nil {
 		for _, sib := range siblings {
@@ -1273,7 +1282,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 			var sibItemID string
 			if err := h.db.NewRaw(`
 				SELECT id FROM job_items
-				WHERE external_game_id = ? AND status = 'pending_review'
+				WHERE external_game_id = ?
 				ORDER BY created_at DESC LIMIT 1`, sib.ID,
 			).Scan(ctx, &sibItemID); err != nil || sibItemID == "" {
 				var recentJobID string
