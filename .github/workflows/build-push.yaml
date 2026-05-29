@@ -272,17 +272,45 @@ jobs:
       contents: write
 
     steps:
-      - name: Fast-forward release branch to tag
+      - name: Fast-forward release branch and pin nix version
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
+          set -euo pipefail
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          RELEASE_SHA="${{ github.sha }}"
+
+          # Fast-forward (or create) the release branch to the release commit.
           if gh api "repos/${{ github.repository }}/git/refs/heads/release" -q .ref 2>/dev/null; then
             gh api "repos/${{ github.repository }}/git/refs/heads/release" \
-              -X PATCH --field sha="${{ github.sha }}" --field force=true
+              -X PATCH --field sha="${RELEASE_SHA}" --field force=true
           else
             gh api "repos/${{ github.repository }}/git/refs" \
-              -X POST --field ref="refs/heads/release" --field sha="${{ github.sha }}"
+              -X POST --field ref="refs/heads/release" --field sha="${RELEASE_SHA}"
           fi
+
+          # Add one commit on top of the release branch that creates
+          # nix/release-version.txt. This file is absent from main, so
+          # nix builds from main get "main-<shortrev>" while builds from
+          # the release branch get the clean semver.
+          BASE_TREE=$(gh api "repos/${{ github.repository }}/git/commits/${RELEASE_SHA}" -q .tree.sha)
+          BLOB=$(gh api "repos/${{ github.repository }}/git/blobs" \
+            -X POST --field content="${VERSION}" --field encoding="utf-8" -q .sha)
+          NEW_TREE=$(gh api "repos/${{ github.repository }}/git/trees" \
+            -X POST --input - <<EOF
+          {"base_tree":"${BASE_TREE}","tree":[{"path":"nix/release-version.txt","mode":"100644","type":"blob","sha":"${BLOB}"}]}
+          EOF
+          )
+          NEW_TREE_SHA=$(echo "${NEW_TREE}" | jq -r .sha)
+          NEW_COMMIT=$(gh api "repos/${{ github.repository }}/git/commits" \
+            -X POST --input - <<EOF
+          {"message":"chore: pin nix version to ${VERSION}","tree":"${NEW_TREE_SHA}","parents":["${RELEASE_SHA}"]}
+          EOF
+          )
+          NEW_COMMIT_SHA=$(echo "${NEW_COMMIT}" | jq -r .sha)
+          gh api "repos/${{ github.repository }}/git/refs/heads/release" \
+            -X PATCH --field sha="${NEW_COMMIT_SHA}" --field force=true
 
   cleanup:
     name: Cleanup old dev versions

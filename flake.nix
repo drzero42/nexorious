@@ -11,8 +11,13 @@
       forEachSystem = f: nixpkgs.lib.genAttrs systems
         (system: f nixpkgs.legacyPackages.${system});
 
-      # Kept in sync with deploy/helm/Chart.yaml by release-please.
-      version = "0.1.1"; # x-release-please-version
+      # release-please keeps this in sync with Chart.yaml etc.
+      # On the release branch a CI-created nix/release-version.txt overrides it.
+      _releaseVersion = "0.1.1"; # x-release-please-version
+      version =
+        if builtins.pathExists ./nix/release-version.txt
+        then builtins.readFile ./nix/release-version.txt
+        else "main-${self.shortRev or "dirty"}";
     in
     {
       packages = forEachSystem (pkgs: rec {
