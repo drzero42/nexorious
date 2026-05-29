@@ -249,6 +249,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.event.release.tag_name }}" dist/nexorious_* dist/sha256sums.txt
 
+  update-release-branch:
+    name: Advance release branch
+    runs-on: ubuntu-latest
+    needs: build-push
+    if: github.event_name == 'release'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Fast-forward release branch to tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} \
+            refs/tags/${{ github.event.release.tag_name }}:refs/heads/release --force
+
   cleanup:
     name: Cleanup old dev versions
     runs-on: ubuntu-latest
