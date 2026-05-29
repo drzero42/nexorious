@@ -18,6 +18,7 @@
       packages = forEachSystem (pkgs: rec {
         nexorious-frontend = pkgs.callPackage ./nix/frontend.nix {
           src = self;
+          inherit version;
         };
 
         nexorious = pkgs.callPackage ./nix/package.nix {
