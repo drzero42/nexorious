@@ -64,10 +64,22 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout code at release tag
+      - name: Resolve commit SHA
+        id: commitish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          # The git tag does not exist yet (release-please only creates it on
+          # publish, not on draft creation). Fetch the SHA from the draft release.
+          SHA=$(gh api "repos/${{ github.repository }}/releases" \
+            --jq ".[] | select(.tag_name == \"$TAG_NAME\") | .target_commitish")
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout code at release commit
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ steps.commitish.outputs.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
