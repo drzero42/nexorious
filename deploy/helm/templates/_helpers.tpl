@@ -40,7 +40,6 @@ but no `stringData` entries — pointless and noisy. Wrap the entire
 credentials-secret.yaml body in `{{- if include "nexorious.credentialsSecretNeeded" . }}`.
 */}}
 {{- define "nexorious.credentialsSecretNeeded" -}}
-{{- $secretKeyFrom := default dict .Values.nexorious.secretKeyFrom -}}
 {{- $dbEncryptionKeyFrom := default dict .Values.nexorious.dbEncryptionKeyFrom -}}
 {{- $igdbClientIdFrom := default dict .Values.nexorious.igdbClientIdFrom -}}
 {{- $igdbClientSecretFrom := default dict .Values.nexorious.igdbClientSecretFrom -}}
@@ -56,7 +55,6 @@ credentials-secret.yaml body in `{{- if include "nexorious.credentialsSecretNeed
 {{- $omitDbUrl := or $databaseUrlFrom.name $dbHostFrom.name $dbPortFrom.name $dbUserFrom.name $dbPasswordFrom.name $dbNameFrom.name -}}
 {{- $pgEnabled := dig "postgresql" "enabled" true .Values.controllers -}}
 {{- if or
-      (not $secretKeyFrom.name)
       (not $dbEncryptionKeyFrom.name)
       (not $igdbClientIdFrom.name)
       (not $igdbClientSecretFrom.name)
@@ -90,7 +88,6 @@ Validate required values.
 
 {{/* --- *From completeness checks --- */}}
 {{- $fromFields := list
-  (dict "label" "secretKeyFrom"               "from" .Values.nexorious.secretKeyFrom)
   (dict "label" "dbEncryptionKeyFrom"         "from" .Values.nexorious.dbEncryptionKeyFrom)
   (dict "label" "igdbClientIdFrom"            "from" .Values.nexorious.igdbClientIdFrom)
   (dict "label" "igdbClientSecretFrom"        "from" .Values.nexorious.igdbClientSecretFrom)
@@ -112,13 +109,6 @@ Validate required values.
 {{- end -}}
 
 {{/* --- Non-DB credential checks (bypass when *From is configured) --- */}}
-{{- $secretKeyFromConfigured := not (empty (dig "name" "" (default dict .Values.nexorious.secretKeyFrom))) -}}
-{{- if not $secretKeyFromConfigured -}}
-  {{- if eq .Values.nexorious.secretKey "change-me-in-production" }}
-    {{- fail "nexorious.secretKey must be set to a secure random value" }}
-  {{- end }}
-{{- end }}
-
 {{- $dbEncryptionKeyFromConfigured := not (empty (dig "name" "" (default dict .Values.nexorious.dbEncryptionKeyFrom))) -}}
 {{- if not $dbEncryptionKeyFromConfigured -}}
   {{- if eq .Values.nexorious.dbEncryptionKey "change-me-in-production" }}
@@ -215,22 +205,6 @@ Each credential has two helpers: SecretName and SecretKey.
 When *From.name is non-empty, the external secret is used.
 Otherwise, falls back to the managed credentials secret.
 */}}
-
-{{- define "nexorious.secretKeySecretName" -}}
-{{- if and .Values.nexorious.secretKeyFrom .Values.nexorious.secretKeyFrom.name -}}
-{{- .Values.nexorious.secretKeyFrom.name -}}
-{{- else -}}
-{{- include "nexorious.fullname" . }}-credentials
-{{- end -}}
-{{- end }}
-
-{{- define "nexorious.secretKeySecretKey" -}}
-{{- if and .Values.nexorious.secretKeyFrom .Values.nexorious.secretKeyFrom.key -}}
-{{- .Values.nexorious.secretKeyFrom.key -}}
-{{- else -}}
-SECRET_KEY
-{{- end -}}
-{{- end }}
 
 {{- define "nexorious.dbEncryptionKeySecretName" -}}
 {{- if and .Values.nexorious.dbEncryptionKeyFrom .Values.nexorious.dbEncryptionKeyFrom.name -}}

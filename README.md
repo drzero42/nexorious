@@ -66,7 +66,7 @@ export DATABASE_URL="postgres://user:password@localhost:5432/nexorious"
 The simplest production-like deployment uses the published container image:
 
 ```bash
-cp .env.example .env   # fill in SECRET_KEY, DB_ENCRYPTION_KEY, IGDB_CLIENT_ID, IGDB_CLIENT_SECRET, POSTGRES_PASSWORD
+cp .env.example .env   # fill in DB_ENCRYPTION_KEY, IGDB_CLIENT_ID, IGDB_CLIENT_SECRET, POSTGRES_PASSWORD
 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
@@ -78,7 +78,6 @@ A Helm chart is published to `oci://ghcr.io/drzero42/charts` and is built on the
 
 ```bash
 helm install nexorious oci://ghcr.io/drzero42/charts/nexorious \
-  --set nexorious.secretKey="$(openssl rand -hex 32)" \
   --set nexorious.igdbClientId=YOUR_CLIENT_ID \
   --set nexorious.igdbClientSecret=YOUR_CLIENT_SECRET \
   --set nexorious.postgresql.password="$(openssl rand -hex 16)"
@@ -127,7 +126,6 @@ Minimal NixOS configuration:
 The environment file must contain:
 
 ```bash
-SECRET_KEY=...          # generate: openssl rand -base64 32
 DB_ENCRYPTION_KEY=...   # generate: openssl rand -base64 32
 IGDB_CLIENT_ID=...      # from https://dev.twitch.tv/console
 IGDB_CLIENT_SECRET=...
@@ -151,7 +149,6 @@ When `database.createLocally = true` (the default), PostgreSQL is configured aut
 ```bash
 # Required
 DATABASE_URL=postgres://user:password@host:5432/nexorious?sslmode=disable
-SECRET_KEY=your-secret-key-here           # generate: openssl rand -hex 32
 DB_ENCRYPTION_KEY=your-db-encryption-key  # generate: openssl rand -base64 32
 IGDB_CLIENT_ID=your-igdb-client-id
 IGDB_CLIENT_SECRET=your-igdb-client-secret
@@ -167,7 +164,6 @@ LOG_LEVEL=info                             # default: info
 
 - [ ] PostgreSQL configured
 - [ ] `DATABASE_URL` set
-- [ ] `SECRET_KEY` set to a cryptographically random value
 - [ ] `DB_ENCRYPTION_KEY` set to a cryptographically random value
 - [ ] IGDB API credentials configured
 - [ ] Storage directory writable

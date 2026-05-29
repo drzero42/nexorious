@@ -11,12 +11,8 @@
     "nexorious": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["secretKey", "igdbClientId", "igdbClientSecret", "postgresql"],
+      "required": ["igdbClientId", "igdbClientSecret", "postgresql"],
       "properties": {
-        "secretKey": {
-          "type": "string",
-          "description": "JWT signing secret key. Generate with: openssl rand -hex 32"
-        },
         "dbEncryptionKey": {
           "type": "string",
           "description": "At-rest credential encryption key. Generate with: openssl rand -base64 32"
@@ -103,15 +99,6 @@
                 "key":  { "type": "string" }
               }
             }
-          }
-        },
-        "secretKeyFrom": {
-          "type": ["object", "null"],
-          "description": "External secret reference for secretKey. When name and key are both non-empty, the secretKey inline value is ignored.",
-          "additionalProperties": false,
-          "properties": {
-            "name": { "type": "string" },
-            "key":  { "type": "string" }
           }
         },
         "igdbClientIdFrom": {

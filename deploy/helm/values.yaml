@@ -22,9 +22,6 @@ global:
 
 # -- Custom nexorious configuration (not part of the common library)
 nexorious:
-  # -- JWT signing secret key. REQUIRED. Generate with: openssl rand -hex 32
-  secretKey: "change-me-in-production"
-
   # -- At-rest credential encryption key. REQUIRED. Generate with: openssl rand -base64 32
   dbEncryptionKey: "change-me-in-production"
 
@@ -68,9 +65,6 @@ nexorious:
   # and the corresponding inline value is ignored.
 
   # Non-DB credentials
-  secretKeyFrom:
-    name: ""
-    key: ""
   igdbClientIdFrom:
     name: ""
     key: ""
@@ -287,11 +281,6 @@ controllers:
         env:
           LOG_LEVEL: info
           DEBUG: "false"
-          SECRET_KEY:
-            valueFrom:
-              secretKeyRef:
-                name: '{{ include "nexorious.secretKeySecretName" . }}'
-                key: '{{ include "nexorious.secretKeySecretKey" . }}'
           DB_ENCRYPTION_KEY:
             valueFrom:
               secretKeyRef:
@@ -372,11 +361,6 @@ controllers:
           LOG_LEVEL: info
           DEBUG: "false"
           RATE_LIMITER_BACKEND: postgres
-          SECRET_KEY:
-            valueFrom:
-              secretKeyRef:
-                name: '{{ include "nexorious.secretKeySecretName" . }}'
-                key: '{{ include "nexorious.secretKeySecretKey" . }}'
           DB_ENCRYPTION_KEY:
             valueFrom:
               secretKeyRef:

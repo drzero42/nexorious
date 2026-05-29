@@ -5,7 +5,6 @@
   env = {
     ENABLE_LSP_TOOL = 0; # Disable LSP for Claude Code
     CGO_ENABLED = 0;
-    SECRET_KEY = "dev-only-insecure-secret-do-not-use-in-production";
     DB_ENCRYPTION_KEY = "dev-only-insecure-db-key-do-not-use-in-production";
   };
 

@@ -21,15 +21,14 @@ Image: `ghcr.io/drzero42/nexorious:<appVersion>`.
 
 ## Required values
 
-These three values must be set or the chart will fail rendering:
+These two values must be set or the chart will fail rendering:
 
 | Value                         | Description                                          |
 |-------------------------------|------------------------------------------------------|
-| `nexorious.secretKey`         | JWT signing secret. `openssl rand -hex 32`           |
 | `nexorious.igdbClientId`      | IGDB OAuth client id                                 |
 | `nexorious.igdbClientSecret`  | IGDB OAuth client secret                             |
 
-Any of them can alternatively be supplied via an external Secret — see
+Either can alternatively be supplied via an external Secret — see
 [External secret refs](#external-secret-refs-from-pattern).
 
 `nexorious.postgresql.password` is **optional**. When empty (the default),
@@ -48,7 +47,6 @@ pull it from an external Secret.
 ```sh
 helm install nexorious oci://ghcr.io/drzero42/charts/nexorious \
   --version 0.1.0 \
-  --set nexorious.secretKey="$(openssl rand -hex 32)" \
   --set nexorious.igdbClientId="..." \
   --set nexorious.igdbClientSecret="..."
 ```
@@ -59,8 +57,8 @@ Upgrade:
 helm upgrade nexorious oci://ghcr.io/drzero42/charts/nexorious --version 0.1.0 -f my-values.yaml
 ```
 
-> **Note on `--set` for secrets:** the snippet above leaves the JWT
-> secret and IGDB credentials in your shell history and process arglist.
+> **Note on `--set` for secrets:** the snippet above leaves the IGDB
+> credentials in your shell history and process arglist.
 > For anything beyond local experimentation, use a values file, `--set-file`,
 > or — better — an external Secret referenced via the `*From` fields
 > ([below](#external-secret-refs-from-pattern)). With a GitOps tool
@@ -131,9 +129,6 @@ inline value is ignored.
 
 ```yaml
 nexorious:
-  secretKeyFrom:
-    name: my-existing-secret
-    key: jwt-secret
   igdbClientIdFrom:
     name: my-existing-secret
     key: igdb-client-id
