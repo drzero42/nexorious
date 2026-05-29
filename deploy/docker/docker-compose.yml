@@ -41,7 +41,6 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://nexorious:${POSTGRES_PASSWORD}@db:5432/nexorious?sslmode=disable
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       DB_ENCRYPTION_KEY: ${DB_ENCRYPTION_KEY:?DB_ENCRYPTION_KEY is required}
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:?IGDB_CLIENT_ID is required}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:?IGDB_CLIENT_SECRET is required}

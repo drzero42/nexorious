@@ -99,8 +99,6 @@ in
 
         **Required variables:**
 
-        - `SECRET_KEY` — random secret for JWT signing and credential
-          encryption. Generate with `openssl rand -base64 32`.
         - `DB_ENCRYPTION_KEY` — random secret for at-rest credential
           encryption. Generate with `openssl rand -base64 32`.
         - `IGDB_CLIENT_ID`, `IGDB_CLIENT_SECRET` — Twitch/IGDB API
