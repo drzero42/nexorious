@@ -274,10 +274,15 @@ jobs:
     steps:
       - name: Fast-forward release branch to tag
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} \
-            refs/tags/${{ github.event.release.tag_name }}:refs/heads/release --force
+          if gh api "repos/${{ github.repository }}/git/refs/heads/release" -q .ref 2>/dev/null; then
+            gh api "repos/${{ github.repository }}/git/refs/heads/release" \
+              -X PATCH --field sha="${{ github.sha }}" --field force=true
+          else
+            gh api "repos/${{ github.repository }}/git/refs" \
+              -X POST --field ref="refs/heads/release" --field sha="${{ github.sha }}"
+          fi
 
   cleanup:
     name: Cleanup old dev versions
