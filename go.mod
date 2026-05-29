@@ -1,6 +1,6 @@
 module github.com/drzero42/nexorious
 
-go 1.25.9
+go 1.25.10
 
 require (
 	github.com/caarlos0/env/v11 v11.4.1
