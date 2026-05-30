@@ -221,5 +221,5 @@ After that, any request requiring authentication will automatically log in on fi
 
 **Day-to-day use:**
 
-Open `slumber`, select the `local` profile, and run any request. JWT-protected routes auto-login when needed using the cached credentials from the `local` profile.
+Open `slumber`, select the `local` profile, and run any request. Auth-protected routes auto-authenticate when needed using the cached credentials from the `local` profile.
 

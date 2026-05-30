@@ -205,7 +205,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 	if db != nil {
 		ah := NewAuthHandler(db, cfg)
 
-		// Public auth routes (no JWT required)
+		// Public auth routes (no auth required)
 		e.POST("/api/auth/login", ah.HandleLogin)
 
 		// Auth-protected auth routes
@@ -235,7 +235,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		platformsGroup.GET("/:platform/default-storefront", ph.HandleDefaultStorefront)
 		platformsGroup.GET("/:platform", ph.HandleGetPlatform)
 
-		// Tag routes (all JWT-protected)
+		// Tag routes (all auth-protected)
 		th := NewTagsHandler(db)
 		tagsGroup := e.Group("/api/tags", auth.AuthMiddleware(db))
 		tagsGroup.GET("", th.HandleListTags)
@@ -243,7 +243,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		tagsGroup.PUT("/:id", th.HandleUpdateTag)
 		tagsGroup.DELETE("/:id", th.HandleDeleteTag)
 
-		// Games routes (all JWT-protected)
+		// Games routes (all auth-protected)
 		gh := NewGamesHandler(db, igdbClient, cfg, riverClient)
 		gamesGroup := e.Group("/api/games", auth.AuthMiddleware(db))
 		gamesGroup.GET("", gh.HandleListGames)
@@ -253,7 +253,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		gamesGroup.POST("/igdb-import", gh.HandleImportFromIGDB)
 		gamesGroup.GET("/:id", gh.HandleGetGame)
 
-		// User Games routes (all JWT-protected)
+		// User Games routes (all auth-protected)
 		ugh := NewUserGamesHandler(db, cfg)
 		userGamesGroup := e.Group("/api/user-games", auth.AuthMiddleware(db))
 		userGamesGroup.GET("", ugh.HandleListUserGames)
@@ -275,7 +275,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		userGamesGroup.PUT("/:id/platforms/:platform_id", ugh.HandleUpdatePlatform)
 		userGamesGroup.DELETE("/:id/platforms/:platform_id", ugh.HandleDeletePlatform)
 
-		// Jobs routes (all JWT-protected)
+		// Jobs routes (all auth-protected)
 		jh := NewJobsHandler(db, riverClient)
 		jobsGroup := e.Group("/api/jobs", auth.AuthMiddleware(db))
 		jobsGroup.GET("", jh.HandleListJobs)
@@ -289,25 +289,25 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		jobsGroup.DELETE("/:id", jh.HandleDeleteJob)
 		jobsGroup.POST("/:id/retry-failed", jh.HandleRetryFailed)
 
-		// Job Items routes (all JWT-protected)
+		// Job Items routes (all auth-protected)
 		jih := NewJobItemsHandler(db, riverClient)
 		jobItemsGroup := e.Group("/api/job-items", auth.AuthMiddleware(db))
 		jobItemsGroup.GET("/:id", jih.HandleGetJobItem)
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
 
-		// Import routes (all JWT-protected)
+		// Import routes (all auth-protected)
 		imh := NewImportHandler(db, riverClient)
 		importGroup := e.Group("/api/import", auth.AuthMiddleware(db))
 		importGroup.POST("/nexorious", imh.HandleImportNexorious)
 
-		// Export routes (all JWT-protected)
+		// Export routes (all auth-protected)
 		exh := NewExportHandler(db, riverClient, cfg)
 		exportGroup := e.Group("/api/export", auth.AuthMiddleware(db))
 		exportGroup.POST("/json", exh.HandleExportJSON)
 		exportGroup.POST("/csv", exh.HandleExportCSV)
 		exportGroup.GET("/:id/download", exh.HandleDownload)
 
-		// Admin backup routes (JWT + admin required)
+		// Admin backup routes (auth + admin required)
 		adminGroup := e.Group("", auth.AuthMiddleware(db), auth.AdminMiddleware())
 		adminBackups := adminGroup.Group("/api/admin/backups")
 		adminBackups.GET("/config", bh.HandleGetConfig)
@@ -319,11 +319,11 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		adminBackups.POST("/:id/restore", bh.HandleRestore)
 		adminBackups.POST("/restore/upload", bh.HandleRestoreUpload)
 
-		// Admin user management routes (JWT + admin required)
+		// Admin user management routes (auth + admin required)
 		auh := NewAdminUsersHandler(db)
 		auh.RegisterRoutes(adminGroup)
 
-		// Sync routes (all JWT-protected)
+		// Sync routes (all auth-protected)
 		steamSvc := steamsvc.NewClient()
 		psnSvc := psnsvc.NewClient()
 		epicSvc := epicsvc.NewClient(cfg.LegendaryWorkDir)

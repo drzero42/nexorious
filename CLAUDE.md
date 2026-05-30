@@ -68,7 +68,7 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 - `internal/worker/` — River job worker implementations; `tasks/` contains workers for sync, import, export, and metadata refresh
 - `internal/scheduler/` — River worker implementations for periodic maintenance jobs (cleanup, backup polling, stale job pruning); `BuildPeriodicJobs()` registers cron-scheduled River `PeriodicJob` entries
 - `internal/services/` — IGDB client, storefront sync (Steam, PSN, GOG, Epic), game matching, platform resolution
-- `internal/auth/` — JWT generation/validation + Echo middleware
+- `internal/auth/` — session + API key auth + Echo middleware
 - `internal/filter/` — dynamic query builder (Bun) for user-game list filtering
 - `internal/ratelimit/` — interface + local (`x/time/rate`) and PostgreSQL implementations
 - `internal/config/` — config struct via `caarlos0/env`
@@ -120,8 +120,8 @@ The Go binary serves the React SPA itself.
 
 ### Route Zones
 - **Migration zone** (`/migrate`, `/api/migrate/*`) — always available, bypasses state middleware
-- **Setup zone** (`/api/auth/setup/*`) — requires `Ready` state, no JWT (no users exist yet)
-- **API zone** — gated by state middleware, then JWT where required
+- **Setup zone** (`/api/auth/setup/*`) — requires `Ready` state, no auth (no users exist yet)
+- **API zone** — gated by state middleware, then `AuthMiddleware` where required
 
 ### Workers & Scheduler
 River (`riverqueue/river`) is the job queue. Worker structs live under `worker/tasks/` (sync, import, export, metadata refresh) and `internal/scheduler/` (cleanup jobs, backup polling). Periodic schedules are registered in `scheduler.BuildPeriodicJobs()` using `robfig/cron/v3` expressions and River `PeriodicJob`. Backup orchestration still lives in `internal/backup/` and is invoked by the `CheckScheduledBackupWorker`. Sync workers cover Steam, PSN, GOG, and Epic (via Legendary), plus IGDB metadata refresh.
@@ -230,7 +230,7 @@ The `version` field in `flake.nix` is managed automatically by release-please (s
 ### Slumber Collection Maintenance
 When adding a new API route, always add a corresponding request to `slumber.yaml`:
 - Add it to the matching domain folder (e.g. a new `GET /api/games` goes in a `games/` folder)
-- If the route requires JWT, add the `authentication: type: bearer` block with `"{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"`
+- If the route requires auth, add the `authentication: type: bearer` block with `"{{response('bootstrap.create_api_key', trigger='no_history') | jsonpath('$.key')}}"`
 - If it's a new domain with no existing folder, add new domain folders in alphabetical order; `bootstrap/` always stays first as the workflow anchor
 - Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
 - Run `slumber collection` to verify the collection loads without errors after any change
