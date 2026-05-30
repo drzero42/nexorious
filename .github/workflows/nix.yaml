@@ -60,7 +60,12 @@ jobs:
           echo "Hash mismatch detected — patching nix files..."
 
           mapfile -t old_hashes < <(grep "specified:" /tmp/nix-build.log | awk '{print $NF}')
-          mapfile -t new_hashes < <(grep "got:" /tmp/nix-build.log | awk '{print $NF}')
+          mapfile -t new_hashes < <(grep -E "^\s+got:" /tmp/nix-build.log | awk '{print $NF}')
+
+          if [ "${#old_hashes[@]}" -eq 0 ] || [ "${#old_hashes[@]}" -ne "${#new_hashes[@]}" ]; then
+            echo "Hash extraction produced mismatched or empty arrays — bailing out."
+            exit "$BUILD_EXIT"
+          fi
 
           for i in "${!old_hashes[@]}"; do
             echo "  ${old_hashes[$i]} → ${new_hashes[$i]}"
