@@ -39,7 +39,7 @@ jobs:
 
           # Query BOTH image (nexorious) and chart (charts/nexorious) packages
           # for a tag ending in -<short-sha>. The image tag format is
-          # YYYYMMDD-<short-sha>; the chart tag is 0.0.0-dev-YYYYMMDD-<short-sha>;
+          # main-YYYYMMDD-<short-sha>; the chart tag is 0.0.0-dev-YYYYMMDD-<short-sha>;
           # both end with -<short-sha>. We skip the build only if BOTH packages
           # already have one for HEAD — otherwise a prior nightly's chart-push
           # failure would leave the chart permanently absent (the image alone
@@ -100,6 +100,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Compute VERSION
+        id: build-version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "value=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$(make print-version)" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -110,8 +120,8 @@ jobs:
             type=semver,pattern={{version}}
             # Release floating tag
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-            # Main branch builds: YYYYMMDD-<short-sha> + dev
-            type=raw,value={{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
+            # Main branch builds: main-YYYYMMDD-<short-sha> + dev
+            type=raw,value=main-{{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push image
@@ -122,7 +132,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+            VERSION=${{ steps.build-version.outputs.value }}
             COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -264,13 +274,14 @@ jobs:
           container: nexorious
           # Protect release images (semver, with optional pre-release suffix)
           # and the floating 'dev' tag. Exclusion always wins over inclusion,
-          # so a manifest carrying BOTH 'dev' and YYYYMMDD-<sha> is preserved.
+          # so a manifest carrying BOTH 'dev' and main-YYYYMMDD-<sha> is preserved.
           keep-tags-regexes: |
             ^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$
             ^dev$
-          # Prune dev-build tags: YYYYMMDD-<short-sha>. keep-last keeps the 30
-          # most recent of the matched-for-pruning versions.
+          # Prune dev-build tags: main-YYYYMMDD-<short-sha> and legacy YYYYMMDD-<short-sha>.
+          # keep-last keeps the 30 most recent of the matched-for-pruning versions.
           prune-tags-regexes: |
+            ^main-\d{8}-[a-f0-9]+$
             ^\d{8}-[a-f0-9]+$
           keep-last: 30
 
