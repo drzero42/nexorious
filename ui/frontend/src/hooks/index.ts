@@ -99,3 +99,7 @@ export {
   useRetryFailedItems,
   useRetryJobItem,
 } from './use-jobs';
+
+// Version hooks
+export { useVersion } from './use-version';
+export type { VersionInfo } from './use-version';
