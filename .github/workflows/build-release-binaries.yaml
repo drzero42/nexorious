@@ -1,0 +1,59 @@
+---
+name: Build and Upload Release Binaries
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-upload:
+    name: Build Binaries and Upload to Release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code at release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Build frontend
+        run: cd ui/frontend && npm install && npm run build
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binaries
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          COMMIT=$(git rev-parse HEAD)
+          mkdir -p dist
+          for GOOS in linux; do
+            for GOARCH in amd64 arm64; do
+              NAME="nexorious_${VERSION}_${GOOS}_${GOARCH}"
+              GOOS=$GOOS GOARCH=$GOARCH go build \
+                -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT}" \
+                -o "dist/${NAME}" \
+                ./cmd/nexorious
+            done
+          done
+          cd dist && sha256sum nexorious_* > sha256sums.txt
+
+      - name: Upload binaries to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG_NAME" dist/nexorious_* dist/sha256sums.txt
