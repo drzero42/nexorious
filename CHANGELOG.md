@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.4](https://github.com/drzero42/nexorious/compare/v0.1.3...v0.1.4) (2026-05-30)
+
+
+### Features
+
+* add release branch CI job and NixOS installation docs ([#666](https://github.com/drzero42/nexorious/issues/666)) ([45cdfb2](https://github.com/drzero42/nexorious/commit/45cdfb2c69f54c91fee13f76e455970dd68ffb9e)), closes [#654](https://github.com/drzero42/nexorious/issues/654)
+* add version endpoint and sidebar version display ([#678](https://github.com/drzero42/nexorious/issues/678)) ([e48c052](https://github.com/drzero42/nexorious/commit/e48c0522ec870e516dde0939e3813a98a0f10170))
+* **ci:** build and upload release binaries on publish ([#663](https://github.com/drzero42/nexorious/issues/663)) ([8869bd9](https://github.com/drzero42/nexorious/commit/8869bd9d8bd204603145ec98b8b068b99488bbe4))
+
+
+### Bug Fixes
+
+* **ci:** remove package-name to fix release-please component mismatch ([#660](https://github.com/drzero42/nexorious/issues/660)) ([81e58cb](https://github.com/drzero42/nexorious/commit/81e58cb23def00eb108b8e3279c34a1719a04187))
+* **ci:** use PAT for release-please to allow downstream workflow triggers ([#662](https://github.com/drzero42/nexorious/issues/662)) ([21fa2f1](https://github.com/drzero42/nexorious/commit/21fa2f1b8435951ec0760e4069c36c07e2263f17))
+* correct three bugs in HandleRematchExternalGame ([#673](https://github.com/drzero42/nexorious/issues/673)) ([66a6f7c](https://github.com/drzero42/nexorious/commit/66a6f7c33bfcbf26f61ed94993da14f72ac9a889))
+* handle push failures gracefully in renovate rebase workflow ([#685](https://github.com/drzero42/nexorious/issues/685)) ([5e39761](https://github.com/drzero42/nexorious/commit/5e39761e4fdb967793333ecaddf4e732618e82f2))
+* use case-insensitive ~ operator for IGDB exact-name queries ([#686](https://github.com/drzero42/nexorious/issues/686)) ([2b2670b](https://github.com/drzero42/nexorious/commit/2b2670b1768601fbc9d4317908e1508143840803)), closes [#680](https://github.com/drzero42/nexorious/issues/680)
+* use persist-credentials false and direct remote set-url for PAT auth ([#684](https://github.com/drzero42/nexorious/issues/684)) ([2aaf546](https://github.com/drzero42/nexorious/commit/2aaf5467f19404ce11c8ef186ff5c90589e5b40c))
+
 ## [0.1.3](https://github.com/drzero42/nexorious/compare/v0.1.2...v0.1.3) (2026-05-30)
 
 
