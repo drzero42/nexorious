@@ -243,14 +243,12 @@ Releases are produced by [release-please](https://github.com/googleapis/release-
 
 All commits on `main` must follow [Conventional Commits](https://www.conventionalcommits.org/). PRs are squash-merged, so the **PR title** is the commit message release-please parses.
 
-| Prefix | Effect (pre-1.0) | Effect (post-1.0) |
-|---|---|---|
-| `feat: …` | patch bump | minor bump |
-| `fix: …` | patch bump | patch bump |
-| `feat!: …` or `BREAKING CHANGE:` footer | **minor bump** | **major bump** |
-| `chore:`, `ci:`, `docs:`, `refactor:`, `test:` | no release | no release |
-
-During the 0.x window the minor digit is reserved for breaking changes; everything else bumps patch.
+| Prefix | Effect |
+|---|---|
+| `feat: …` | minor bump |
+| `fix: …` | patch bump |
+| `feat!: …` or `BREAKING CHANGE:` footer | **major bump** |
+| `chore:`, `ci:`, `docs:`, `refactor:`, `test:` | no release |
 
 ### Cutting a release
 
@@ -274,14 +272,7 @@ To skip a release after an unwanted `feat:` / `fix:` lands: close the Release PR
 
 ### Promoting to 1.0.0
 
-Push an empty commit to `main` with both the version override and a note to update the versioning config:
-
-```bash
-git commit --allow-empty -m "chore: release 1.0.0" -m "Release-As: 1.0.0"
-git push origin main
-```
-
-Then open a PR that removes `bump-minor-pre-major` and `bump-patch-for-minor-pre-major` from `.github/release-please-config.json` and merges it before or alongside the Release PR. From the next commit onward, post-1.0 SemVer applies.
+A `feat!:` commit (or `BREAKING CHANGE:` footer) will naturally produce a `1.0.0` Release PR when the current version is `0.x.y`. Merge that PR to cut 1.0.0.
 
 ## Known Gotchas
 
