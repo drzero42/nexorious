@@ -66,12 +66,19 @@ function formatPlaytime(hours?: number): string | null {
 }
 
 /**
- * Check if a platform matches any of the IGDB platform names.
- * Uses case-insensitive comparison on both display_name and name.
+ * Check if a platform matches any of the IGDB platforms for a game.
+ * Prefers numeric igdb_platform_id matching; falls back to case-insensitive
+ * name comparison for platforms that have no IGDB ID assigned.
  */
-function isPlatformInIGDB(platform: Platform, igdbPlatforms: string[]): boolean {
+function isPlatformInIGDB(
+  platform: Platform,
+  igdbPlatforms: string[],
+  igdbPlatformIds?: number[],
+): boolean {
+  if (platform.igdb_platform_id != null && igdbPlatformIds && igdbPlatformIds.length > 0) {
+    return igdbPlatformIds.includes(platform.igdb_platform_id);
+  }
   if (!igdbPlatforms || igdbPlatforms.length === 0) return false;
-
   return igdbPlatforms.some(
     (igdbPlatform) =>
       igdbPlatform.toLowerCase() === platform.display_name.toLowerCase() ||
@@ -79,20 +86,24 @@ function isPlatformInIGDB(platform: Platform, igdbPlatforms: string[]): boolean 
   );
 }
 
-/**
- * Filter platforms to only those available on IGDB for this game.
- */
-function getIGDBPlatforms(platforms: Platform[], igdbPlatforms: string[]): Platform[] {
+function getIGDBPlatforms(
+  platforms: Platform[],
+  igdbPlatforms: string[],
+  igdbPlatformIds?: number[],
+): Platform[] {
   if (!igdbPlatforms || igdbPlatforms.length === 0) return [];
-  return platforms.filter((platform) => isPlatformInIGDB(platform, igdbPlatforms));
+  return platforms.filter((platform) => isPlatformInIGDB(platform, igdbPlatforms, igdbPlatformIds));
 }
 
-/**
- * Filter platforms to those NOT available on IGDB for this game.
- */
-function getOtherPlatforms(platforms: Platform[], igdbPlatforms: string[]): Platform[] {
+function getOtherPlatforms(
+  platforms: Platform[],
+  igdbPlatforms: string[],
+  igdbPlatformIds?: number[],
+): Platform[] {
   if (!igdbPlatforms || igdbPlatforms.length === 0) return platforms;
-  return platforms.filter((platform) => !isPlatformInIGDB(platform, igdbPlatforms));
+  return platforms.filter(
+    (platform) => !isPlatformInIGDB(platform, igdbPlatforms, igdbPlatformIds),
+  );
 }
 
 // ============================================================================
@@ -186,6 +197,7 @@ function GamePreviewCard({ game }: GamePreviewProps) {
 interface PlatformSelectionSectionProps {
   platforms: Platform[];
   igdbPlatformNames: string[];
+  igdbPlatformIds?: number[];
   selectedPlatforms: PlatformSelection[];
   onChange: (selections: PlatformSelection[]) => void;
   disabled?: boolean;
@@ -194,6 +206,7 @@ interface PlatformSelectionSectionProps {
 function PlatformSelectionSection({
   platforms,
   igdbPlatformNames,
+  igdbPlatformIds,
   selectedPlatforms,
   onChange,
   disabled = false,
@@ -202,12 +215,12 @@ function PlatformSelectionSection({
 
   // Filter platforms based on IGDB data
   const igdbPlatforms = React.useMemo(
-    () => getIGDBPlatforms(platforms, igdbPlatformNames),
-    [platforms, igdbPlatformNames],
+    () => getIGDBPlatforms(platforms, igdbPlatformNames, igdbPlatformIds),
+    [platforms, igdbPlatformNames, igdbPlatformIds],
   );
   const otherPlatforms = React.useMemo(
-    () => getOtherPlatforms(platforms, igdbPlatformNames),
-    [platforms, igdbPlatformNames],
+    () => getOtherPlatforms(platforms, igdbPlatformNames, igdbPlatformIds),
+    [platforms, igdbPlatformNames, igdbPlatformIds],
   );
 
   const hasIGDBPlatforms = igdbPlatforms.length > 0;
@@ -509,6 +522,7 @@ function GameConfirmPage() {
       <PlatformSelectionSection
         platforms={platforms ?? []}
         igdbPlatformNames={game.platforms}
+        igdbPlatformIds={game.platform_ids}
         selectedPlatforms={selectedPlatforms}
         onChange={setSelectedPlatforms}
         disabled={isSubmitting}
