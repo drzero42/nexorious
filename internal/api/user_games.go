@@ -38,11 +38,12 @@ func NewUserGamesHandler(db *bun.DB, cfg *config.Config) *UserGamesHandler {
 
 // createUserGameRequest is the body for POST /api/user-games.
 type createUserGameRequest struct {
-	GameID         int32   `json:"game_id"`
-	PlayStatus     *string `json:"play_status"`
-	PersonalRating *int32  `json:"personal_rating"`
-	IsLoved        bool    `json:"is_loved"`
-	PersonalNotes  *string `json:"personal_notes"`
+	GameID         int32             `json:"game_id"`
+	PlayStatus     *string           `json:"play_status"`
+	PersonalRating *int32            `json:"personal_rating"`
+	IsLoved        bool              `json:"is_loved"`
+	PersonalNotes  *string           `json:"personal_notes"`
+	Platforms      []platformRequest `json:"platforms"`
 }
 
 // userGamePlatformResponse is the API DTO for a user game platform entry with nested detail objects.
@@ -412,6 +413,34 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusConflict, "game already in collection")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+
+	if len(req.Platforms) > 0 {
+		plats := make([]*models.UserGamePlatform, len(req.Platforms))
+		for i, p := range req.Platforms {
+			pl := &models.UserGamePlatform{
+				ID:              uuid.New().String(),
+				UserGameID:      ug.ID,
+				Platform:        p.Platform,
+				Storefront:      p.Storefront,
+				StoreGameID:     p.StoreGameID,
+				StoreUrl:        p.StoreUrl,
+				HoursPlayed:     p.HoursPlayed,
+				OwnershipStatus: p.OwnershipStatus,
+				CreatedAt:       now,
+				UpdatedAt:       now,
+			}
+			if p.IsAvailable != nil {
+				pl.IsAvailable = *p.IsAvailable
+			} else {
+				pl.IsAvailable = true
+			}
+			plats[i] = pl
+		}
+		if _, err := h.db.NewInsert().Model(&plats).Exec(ctx); err != nil {
+			slog.Error("user_games: failed to insert platforms on create", "err", err, "user_game_id", ug.ID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		}
 	}
 
 	// Eager-load relations so the response includes the game, platforms and tags.
