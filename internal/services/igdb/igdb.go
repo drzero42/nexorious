@@ -276,7 +276,7 @@ func (c *Client) GetGameByID(ctx context.Context, igdbID int) (*GameMetadata, er
 		return nil, ErrIGDBNotConfigured
 	}
 
-	query := fmt.Sprintf(`fields name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name; where id = %d;`, igdbID)
+	query := fmt.Sprintf(`fields name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.id,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name; where id = %d;`, igdbID)
 	results, err := c.searchIGDB(ctx, query)
 	if err != nil {
 		return nil, err
@@ -296,7 +296,7 @@ func (c *Client) FetchFullMetadata(ctx context.Context, igdbID int) (*GameMetada
 	}
 
 	// Fetch game data (same fields as GetGameByID)
-	query := fmt.Sprintf(`fields name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name; where id = %d;`, igdbID)
+	query := fmt.Sprintf(`fields name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.id,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name; where id = %d;`, igdbID)
 	results, err := c.searchIGDB(ctx, query)
 	if err != nil {
 		return nil, err

@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PlatformSelectorCompact } from '@/components/ui/platform-selector';
 import type { PlatformSelection } from '@/components/ui/platform-selector';
-import { useImportFromIGDB, useCreateUserGame } from '@/hooks/use-games';
+import { useImportFromIGDB, useCreateUserGame, useIGDBGameByID } from '@/hooks/use-games';
 import { useAllPlatforms } from '@/hooks/use-platforms';
 import type { IGDBGameCandidate } from '@/types';
 import type { Platform } from '@/types/platform';
@@ -426,12 +426,19 @@ function GameConfirmPage() {
     return null;
   });
 
+  // Fallback: fetch from API when sessionStorage is empty (e.g. page reload)
+  const { data: igdbResults, isLoading: isIGDBLoading } = useIGDBGameByID(
+    game === null && igdbId !== null ? Number(igdbId) : null,
+  );
+  const resolvedGame = game ?? igdbResults?.[0] ?? null;
+
   // Derive error message rather than storing it in state
   const gameLoadError = React.useMemo<string | null>(() => {
     if (!igdbId) return 'No game ID provided. Please search for a game first.';
-    if (!game) return 'Game data not found. Please search for the game again.';
+    if (!isIGDBLoading && !resolvedGame)
+      return 'Game data not found. Please search for the game again.';
     return null;
-  }, [igdbId, game]);
+  }, [igdbId, isIGDBLoading, resolvedGame]);
 
   // Fetch available platforms
   const { data: platforms, isLoading: isPlatformsLoading } = useAllPlatforms();
@@ -441,14 +448,14 @@ function GameConfirmPage() {
   const createUserGame = useCreateUserGame();
 
   // Show loading while platforms or game data are still being fetched
-  const isLoading = isPlatformsLoading || (!game && !gameLoadError);
+  const isLoading = isPlatformsLoading || isIGDBLoading;
 
   const handleBack = () => {
     navigate({ to: '/games/add' });
   };
 
   const handleAddToLibrary = async () => {
-    if (!igdbId || !game) {
+    if (!igdbId || !resolvedGame) {
       toast.error('No game selected');
       return;
     }
@@ -471,7 +478,7 @@ function GameConfirmPage() {
         })),
       });
 
-      toast.success(`Added "${game.title}" to your library!`);
+      toast.success(`Added "${resolvedGame.title}" to your library!`);
 
       // Navigate to the newly created user game
       navigate({ to: '/games/$id', params: { id: userGame.id } });
@@ -488,7 +495,7 @@ function GameConfirmPage() {
   }
 
   // Error state - game not found
-  if (gameLoadError || !game) {
+  if (gameLoadError || !resolvedGame) {
     return (
       <ErrorState
         message={
@@ -516,13 +523,13 @@ function GameConfirmPage() {
       </div>
 
       {/* Game Preview Card */}
-      <GamePreviewCard game={game} />
+      <GamePreviewCard game={resolvedGame} />
 
       {/* Platform Selection */}
       <PlatformSelectionSection
         platforms={platforms ?? []}
-        igdbPlatformNames={game.platforms}
-        igdbPlatformIds={game.platform_ids}
+        igdbPlatformNames={resolvedGame.platforms}
+        igdbPlatformIds={resolvedGame.platform_ids}
         selectedPlatforms={selectedPlatforms}
         onChange={setSelectedPlatforms}
         disabled={isSubmitting}
