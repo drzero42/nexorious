@@ -39,7 +39,7 @@ jobs:
 
           # Query BOTH image (nexorious) and chart (charts/nexorious) packages
           # for a tag ending in -<short-sha>. The image tag format is
-          # YYYYMMDD-<short-sha>; the chart tag is 0.0.0-dev-YYYYMMDD-<short-sha>;
+          # main-YYYYMMDD-<short-sha>; the chart tag is 0.0.0-dev-YYYYMMDD-<short-sha>;
           # both end with -<short-sha>. We skip the build only if BOTH packages
           # already have one for HEAD — otherwise a prior nightly's chart-push
           # failure would leave the chart permanently absent (the image alone
@@ -274,7 +274,7 @@ jobs:
           container: nexorious
           # Protect release images (semver, with optional pre-release suffix)
           # and the floating 'dev' tag. Exclusion always wins over inclusion,
-          # so a manifest carrying BOTH 'dev' and YYYYMMDD-<sha> is preserved.
+          # so a manifest carrying BOTH 'dev' and main-YYYYMMDD-<sha> is preserved.
           keep-tags-regexes: |
             ^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$
             ^dev$

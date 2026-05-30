@@ -1,6 +1,6 @@
 .PHONY: all frontend build docker test test-backend test-frontend coverage print-version
 
-COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+COMMIT  := $(shell git rev-parse --short=7 HEAD 2>/dev/null || echo "unknown")
 TAG     := $(shell git describe --exact-match HEAD 2>/dev/null)
 
 ifneq ($(TAG),)
