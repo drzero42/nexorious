@@ -23,10 +23,16 @@ jobs:
   nix-build:
     name: Nix Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          # On pull_request events, check out the actual PR branch HEAD (not the
+          # synthetic merge commit) so we can commit a hash fix and push it back.
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
@@ -34,4 +40,39 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build package
-        run: nix build .#nexorious
+        run: |
+          set +e
+          nix build .#nexorious 2>&1 | tee /tmp/nix-build.log
+          BUILD_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$BUILD_EXIT" -eq 0 ]; then
+            exit 0
+          fi
+
+          # On push-to-main or non-hash failures, fail immediately — we cannot
+          # commit directly to a protected branch.
+          if [ "${{ github.event_name }}" != "pull_request" ] || ! grep -q "hash mismatch" /tmp/nix-build.log; then
+            echo "Build failed (not a hash mismatch or not a PR)."
+            exit "$BUILD_EXIT"
+          fi
+
+          echo "Hash mismatch detected — patching nix files..."
+
+          mapfile -t old_hashes < <(grep "specified:" /tmp/nix-build.log | awk '{print $NF}')
+          mapfile -t new_hashes < <(grep "got:" /tmp/nix-build.log | awk '{print $NF}')
+
+          for i in "${!old_hashes[@]}"; do
+            echo "  ${old_hashes[$i]} → ${new_hashes[$i]}"
+            sed -i "s|${old_hashes[$i]}|${new_hashes[$i]}|g" nix/frontend.nix nix/package.nix
+          done
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add nix/frontend.nix nix/package.nix
+          git diff --cached --quiet && { echo "No hash changes to commit."; exit 1; }
+          git commit -m "chore(nix): update hashes for ${{ github.head_ref }}"
+          git push origin HEAD:${{ github.head_ref }}
+
+          echo "Hashes fixed. Re-running build..."
+          nix build .#nexorious
