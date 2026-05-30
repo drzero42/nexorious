@@ -120,8 +120,8 @@ jobs:
             type=semver,pattern={{version}}
             # Release floating tag
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-            # Main branch builds: YYYYMMDD-<short-sha> + dev
-            type=raw,value={{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
+            # Main branch builds: main-YYYYMMDD-<short-sha> + dev
+            type=raw,value=main-{{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push image
@@ -278,9 +278,10 @@ jobs:
           keep-tags-regexes: |
             ^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$
             ^dev$
-          # Prune dev-build tags: YYYYMMDD-<short-sha>. keep-last keeps the 30
-          # most recent of the matched-for-pruning versions.
+          # Prune dev-build tags: main-YYYYMMDD-<short-sha> and legacy YYYYMMDD-<short-sha>.
+          # keep-last keeps the 30 most recent of the matched-for-pruning versions.
           prune-tags-regexes: |
+            ^main-\d{8}-[a-f0-9]+$
             ^\d{8}-[a-f0-9]+$
           keep-last: 30
 
