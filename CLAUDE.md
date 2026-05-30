@@ -261,14 +261,14 @@ During the 0.x window the minor digit is reserved for breaking changes; everythi
 
 ### Overrides
 
-To force the next release to a specific version, push an empty commit directly to `main` with a `Release-As:` footer:
+To force the next release to a specific version, add a `Release-As: X.Y.Z` line to the **PR description** before squash-merging. The repo is configured with `squash_merge_commit_message=PR_BODY`, so GitHub uses the PR description as the commit body — release-please will find the trailer there.
+
+Alternatively, push an empty commit directly to `main`:
 
 ```bash
 git commit --allow-empty -m "chore: release X.Y.Z" -m "Release-As: X.Y.Z"
 git push origin main
 ```
-
-release-please sees the footer on a real `main` commit (not mangled by squash) and updates the Release PR to the specified version. No config file changes needed, no follow-up cleanup.
 
 To skip a release after an unwanted `feat:` / `fix:` lands: close the Release PR; release-please reopens it on the next push to main, so a true skip requires absorbing the change into the next legitimate release.
 
