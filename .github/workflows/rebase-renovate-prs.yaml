@@ -81,16 +81,23 @@ jobs:
             # npmDepsHash / vendorHash line both this PR and main modified) by
             # taking main's version. W1 will replace it with the correct hash
             # for the combined lockfile immediately after this push.
-            if git merge origin/main -X theirs --no-edit \
+            if ! git merge origin/main -X theirs --no-edit \
                 -m "chore: merge main into ${branch}"; then
-              git push origin "refs/heads/${branch}:refs/heads/${branch}"
-              echo "  Pushed updated branch for PR #${pr_number}."
-            else
               echo "  Unresolvable conflict for PR #${pr_number}; skipping."
               git merge --abort 2>/dev/null || true
               git checkout -f main
               continue
             fi
+
+            # Push via PAT. PRs that touch .github/workflows/ require the PAT
+            # to have the `workflow` scope — skip them gracefully if the push
+            # is rejected for that reason.
+            if ! git push origin "refs/heads/${branch}:refs/heads/${branch}"; then
+              echo "  Push failed for PR #${pr_number} (branch may touch workflow files requiring 'workflow' PAT scope); skipping."
+              git checkout -f main
+              continue
+            fi
+            echo "  Pushed updated branch for PR #${pr_number}."
 
             # Return to main before processing the next PR.
             git checkout -f main
