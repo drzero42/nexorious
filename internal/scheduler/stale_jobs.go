@@ -8,17 +8,21 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// CleanupStaleJobs marks metadata_refresh jobs that are stuck in pending or
-// processing with no remaining unfinished items as failed. This releases the
-// duplicate-run guard in metadata_refresh_dispatch after a crash during
-// dispatch.
+// CleanupStaleJobs marks jobs that are stuck in pending or processing with no
+// remaining unfinished items as failed. This releases duplicate-run guards and
+// unblocks scheduled syncs after a crash.
 //
 // A job is stale when ALL of:
-//   - job_type = 'metadata_refresh'
+//   - job_type is in the handled set (see below)
 //   - status IN ('pending', 'processing')
 //   - created_at < now() - threshold
 //   - no associated job_items rows are in pending/processing/pending_review
 //     (i.e. items are either all terminal or never existed)
+//
+// Handled job types:
+//   - metadata_refresh: guards against stuck dispatch after a crash
+//   - sync: guards against orphaned dispatch (dispatch_complete=false) after
+//     all River retries are exhausted; dispatch_complete=true jobs are never touched
 //
 // Action: UPDATE jobs SET status='failed', error_message='stale_job_cleaned_up'.
 func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) {
