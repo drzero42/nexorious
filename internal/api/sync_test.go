@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
+	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/api"
@@ -43,8 +46,8 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSN
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
-	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
+	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
 }
@@ -86,7 +89,6 @@ func TestSyncConfig_Put_CreatesRow(t *testing.T) {
 
 	rec := putJSONAuth(t, e, "/api/sync/config/steam", map[string]any{
 		"frequency": "daily",
-		"auto_add":  true,
 	}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -97,9 +99,6 @@ func TestSyncConfig_Put_CreatesRow(t *testing.T) {
 	}
 	if resp["frequency"] != "daily" {
 		t.Fatalf("expected frequency=daily, got %v", resp["frequency"])
-	}
-	if resp["auto_add"].(bool) != true {
-		t.Fatalf("expected auto_add=true")
 	}
 }
 
@@ -203,6 +202,9 @@ func TestSyncStatus_ReflectsActiveJob(t *testing.T) {
 	if status["is_syncing"].(bool) {
 		t.Fatal("expected is_syncing=false before trigger")
 	}
+	if count, ok := status["external_game_count"].(float64); !ok || count != 0 {
+		t.Fatalf("expected external_game_count=0, got %v", status["external_game_count"])
+	}
 
 	postJSONAuth(t, e, "/api/sync/steam", nil, token)
 
@@ -298,6 +300,13 @@ func TestSteamVerify_StubSuccess(t *testing.T) {
 	if creds == "" {
 		t.Fatal("expected non-empty credentials")
 	}
+	// verify stored value is ciphertext, not plaintext
+	if strings.Contains(creds, "web_api_key") {
+		t.Fatal("stored credentials must be ciphertext, not plaintext")
+	}
+	if !strings.HasPrefix(creds, "enc:v1:") {
+		t.Fatalf("expected enc:v1: prefix, got %q", creds[:min(20, len(creds))])
+	}
 }
 
 func TestSteamDisconnect_Idempotent(t *testing.T) {
@@ -378,11 +387,11 @@ func TestPSNStatus_NoRow(t *testing.T) {
 	if resp["is_configured"].(bool) {
 		t.Fatal("expected is_configured=false")
 	}
-	if resp["token_expired"].(bool) {
-		t.Fatal("expected token_expired=false")
+	if resp["credentials_error"] != nil {
+		t.Fatalf("expected credentials_error absent/null, got %v", resp["credentials_error"])
 	}
-	if resp["online_id"] != "" {
-		t.Fatalf("expected online_id='', got %v", resp["online_id"])
+	if resp["online_id"] != nil {
+		t.Fatalf("expected online_id absent/null, got %v", resp["online_id"])
 	}
 }
 
@@ -402,8 +411,8 @@ func TestPSNDisconnect_Idempotent(t *testing.T) {
 func insertExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID, title string) {
 	t.Helper()
 	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, playtime_hours, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, false, true, false, 0, now(), now())`,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, false, true, false, now(), now())`,
 		id, userID, storefront, extID, title,
 	)
 	if err != nil {
@@ -468,6 +477,63 @@ func TestIgnored_SkipAndUnskip(t *testing.T) {
 	}
 }
 
+func TestSkipGame_MarksJobItemSkippedAndCompletesJob(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "skip-jobitem")
+	insertExternalGame(t, testDB, "eg-skip-ji", userID, "steam", "777", "Skip Me")
+	insertJob(t, testDB, "job-skip-ji", userID, "sync", "steam", "processing")
+	// Insert a pending_review job_item linked to the external_game.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-skip-1', 'job-skip-ji', ?, '777', 'Skip Me', 'eg-skip-ji', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	rec := postJSONAuth(t, e, "/api/sync/ignored/eg-skip-ji", nil, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	var itemStatus string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-skip-1'`).Scan(ctx, &itemStatus); err != nil {
+		t.Fatalf("scan job_item status: %v", err)
+	}
+	if itemStatus != "skipped" {
+		t.Errorf("expected job_item status=skipped, got %q", itemStatus)
+	}
+
+	var jobStatus string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = 'job-skip-ji'`).Scan(ctx, &jobStatus); err != nil {
+		t.Fatalf("scan job status: %v", err)
+	}
+	if jobStatus != "completed" {
+		t.Errorf("expected job status=completed after last item skipped, got %q", jobStatus)
+	}
+
+	// sync_changes('skipped') must be written with the correct title.
+	var sc struct {
+		ChangeType string `bun:"change_type"`
+		Title      string `bun:"title"`
+	}
+	if err := testDB.NewRaw(
+		`SELECT change_type, title FROM sync_changes WHERE job_id = 'job-skip-ji'`,
+	).Scan(context.Background(), &sc); err != nil {
+		t.Fatalf("scan sync_change: %v", err)
+	}
+	if sc.ChangeType != "skipped" {
+		t.Errorf("sync_change change_type: want 'skipped', got %q", sc.ChangeType)
+	}
+	if sc.Title != "Skip Me" {
+		t.Errorf("sync_change title: want 'Skip Me', got %q", sc.Title)
+	}
+}
+
 func TestIgnored_404ForUnknown(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
@@ -489,7 +555,6 @@ func TestSyncListConfig_AfterPut(t *testing.T) {
 	// Create a steam config.
 	rec := putJSONAuth(t, e, "/api/sync/config/steam", map[string]any{
 		"frequency": "daily",
-		"auto_add":  false,
 	}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -554,7 +619,6 @@ func TestSyncGetConfig_AfterPut(t *testing.T) {
 	// Create a config first.
 	rec := putJSONAuth(t, e, "/api/sync/config/psn", map[string]any{
 		"frequency": "weekly",
-		"auto_add":  false,
 	}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -593,19 +657,24 @@ func TestPSNStatus_WithCredentials(t *testing.T) {
 		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456", Region: "GB"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
-	_, token := setupTagUser(t, testDB, e, "psn-stat-cred")
+	userID, token := setupTagUser(t, testDB, e, "psn-stat-cred")
 
-	// Configure PSN first to store credentials.
-	token64 := strings.Repeat("b", 64)
-	rec := postJSONAuth(t, e, "/api/sync/psn/configure", map[string]any{
-		"npsso_token": token64,
-	}, token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("configure expected 200, got %d: %s", rec.Code, rec.Body.String())
+	rawCreds := `{"npsso_token":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","online_id":"MyPSNName","account_id":"123456","region":"GB","is_verified":true,"token_expired_at":null}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt psn creds: %v", err)
+	}
+	_, err = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'manual', ?, now(), now())`,
+		"cfg-psn-cred", userID, credsCiphertext,
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("seed user_sync_configs: %v", err)
 	}
 
 	// Now get PSN status — should return configured=true.
-	rec = getAuth(t, e, "/api/sync/psn/connection", token)
+	rec := getAuth(t, e, "/api/sync/psn/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -615,6 +684,126 @@ func TestPSNStatus_WithCredentials(t *testing.T) {
 	}
 	if !resp["is_configured"].(bool) {
 		t.Error("expected is_configured=true after PSN configure")
+	}
+}
+
+// insertCorruptedSyncConfig inserts a user_sync_configs row with
+// deliberately corrupted storefront_credentials to test error handling.
+func insertCorruptedSyncConfig(t *testing.T, db *bun.DB, userID, storefront string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (gen_random_uuid()::text, ?, ?, 'manual', 'THIS IS NOT JSON', now(), now())
+		 ON CONFLICT (user_id, storefront) DO UPDATE SET storefront_credentials = 'THIS IS NOT JSON', updated_at = now()`,
+		userID, storefront,
+	)
+	if err != nil {
+		t.Fatalf("insertCorruptedSyncConfig: %v", err)
+	}
+}
+
+func TestPSNStatus_CorruptedCredentials(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "psn-corrupt-creds")
+	insertCorruptedSyncConfig(t, testDB, userID, "psn")
+
+	// Decrypt failure must surface credentials_error=true without clearing the row.
+	rec := getAuth(t, e, "/api/sync/psn/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 for undecryptable PSN credentials", rec.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["is_configured"] != true {
+		t.Errorf("expected is_configured=true (row still exists), got %v", resp["is_configured"])
+	}
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true, got %v", resp["credentials_error"])
+	}
+
+	// Credentials row must NOT be cleared.
+	var creds string
+	err := testDB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'psn'`, userID,
+	).Scan(context.Background(), &creds)
+	if err != nil {
+		t.Fatalf("credentials row missing after decrypt failure: %v", err)
+	}
+	if creds == "" {
+		t.Error("expected credentials to remain non-null after decrypt failure")
+	}
+}
+
+func TestEpicStatus_CorruptedCredentials(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubEpicClient{configured: true})
+	userID, token := setupTagUser(t, testDB, e, "epic-corrupt-creds")
+	insertCorruptedSyncConfig(t, testDB, userID, "epic")
+
+	// Decrypt failure must surface credentials_error=true without clearing the row.
+	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 for undecryptable Epic credentials", rec.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["connected"] != true {
+		t.Errorf("expected connected=true (row still exists), got %v", resp["connected"])
+	}
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true, got %v", resp["credentials_error"])
+	}
+
+	// Credentials row must NOT be cleared.
+	var creds string
+	err := testDB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`, userID,
+	).Scan(context.Background(), &creds)
+	if err != nil {
+		t.Fatalf("credentials row missing after decrypt failure: %v", err)
+	}
+	if creds == "" {
+		t.Error("expected credentials to remain non-null after decrypt failure")
+	}
+}
+
+func TestGOGStatus_CorruptedCredentials(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubGOGClient{})
+	userID, token := setupTagUser(t, testDB, e, "gog-corrupt-creds")
+	insertCorruptedSyncConfig(t, testDB, userID, "gog")
+
+	// Decrypt failure must surface credentials_error=true without clearing the row.
+	rec := getAuth(t, e, "/api/sync/gog/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 for undecryptable GOG credentials", rec.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["connected"] != true {
+		t.Errorf("expected connected=true (row still exists), got %v", resp["connected"])
+	}
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true, got %v", resp["credentials_error"])
+	}
+
+	// Credentials row must NOT be cleared.
+	var creds string
+	err := testDB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'gog'`, userID,
+	).Scan(context.Background(), &creds)
+	if err != nil {
+		t.Fatalf("credentials row missing after decrypt failure: %v", err)
+	}
+	if creds == "" {
+		t.Error("expected credentials to remain non-null after decrypt failure")
 	}
 }
 
@@ -745,6 +934,8 @@ func TestRematchExternalGame_KeepOrphan(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "rm-keep")
 	insertExternalGame(t, testDB, "eg-rm-2", userID, "steam", "2", "Game Two")
 	insertUserGameAndPlatform(t, testDB, "ug-rm-2", userID, "2222", "ugp-rm-2", "eg-rm-2")
+	// Insert a recent sync job so HandleRematchExternalGame can create a job_item attached to it
+	insertJob(t, testDB, "job-rm-keep", userID, "sync", "steam", "pending")
 
 	// Insert the target games row so FK is satisfied
 	_, _ = testDB.ExecContext(context.Background(),
@@ -782,6 +973,8 @@ func TestRematchExternalGame_RemoveOrphan(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "rm-remove")
 	insertExternalGame(t, testDB, "eg-rm-3", userID, "steam", "3", "Game Three")
 	insertUserGameAndPlatform(t, testDB, "ug-rm-3", userID, "3333", "ugp-rm-3", "eg-rm-3")
+	// Insert a recent sync job so HandleRematchExternalGame can create a job_item attached to it
+	insertJob(t, testDB, "job-rm-remove", userID, "sync", "steam", "pending")
 
 	_, _ = testDB.ExecContext(context.Background(),
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (7777, 'Another Game', now(), now()) ON CONFLICT DO NOTHING`)
@@ -796,6 +989,363 @@ func TestRematchExternalGame_RemoveOrphan(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM user_games WHERE id = 'ug-rm-3'`).Scan(context.Background(), &ugCount)
 	if ugCount != 0 {
 		t.Fatal("expected user_game to be deleted with orphan_action=remove")
+	}
+}
+
+func TestRematchExternalGame_ResolvesSiblings(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-siblings")
+
+	// Two PSN external_games for the same game title (PS4 + PS5 variants).
+	insertExternalGame(t, testDB, "eg-ps4", userID, "psn", "PPSA-001", "Spider-Man 2")
+	insertExternalGame(t, testDB, "eg-ps5", userID, "psn", "PPSA-002", "Spider-Man 2")
+
+	// A recent sync job for the sibling fallback path.
+	insertJob(t, testDB, "job-sib", userID, "sync", "psn", "processing")
+
+	// pending_review job_item for the primary (PS4).
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-ps4', 'job-sib', ?, 'PPSA-001', 'Spider-Man 2', 'eg-ps4', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert primary job_item: %v", err)
+	}
+
+	// No job_item for the sibling (PS5) — the fallback path will create one.
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (5555, 'Spider-Man 2', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-ps4/rematch",
+		map[string]any{"igdb_id": 5555}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	// Sibling (PS5) should now have resolved_igdb_id set.
+	var sibResolvedID *int32
+	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-ps5'`).Scan(ctx, &sibResolvedID); err != nil {
+		t.Fatalf("scan sibling resolved_igdb_id: %v", err)
+	}
+	if sibResolvedID == nil || *sibResolvedID != 5555 {
+		t.Errorf("expected sibling resolved_igdb_id=5555, got %v", sibResolvedID)
+	}
+
+	// A job_item for the sibling should have been created (fallback path).
+	var sibItemCount int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE external_game_id = 'eg-ps5'`,
+	).Scan(ctx, &sibItemCount); err != nil {
+		t.Fatalf("scan sibling job_item count: %v", err)
+	}
+	if sibItemCount != 1 {
+		t.Errorf("expected 1 job_item for sibling, got %d", sibItemCount)
+	}
+}
+
+// TestRematchExternalGame_UpdatesJobItemStatusToPending verifies that a
+// pending_review job_item is immediately set to pending when rematch is called,
+// so the game disappears from the needs-review list without waiting for River.
+func TestRematchExternalGame_UpdatesJobItemStatusToPending(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-status")
+	insertExternalGame(t, testDB, "eg-status-1", userID, "steam", "111", "Portal 2")
+	insertJob(t, testDB, "job-status-1", userID, "sync", "steam", "processing")
+
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-status-1', 'job-status-1', ?, '111', 'Portal 2', 'eg-status-1', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (6001, 'Portal 2', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-status-1/rematch",
+		map[string]any{"igdb_id": 6001}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-status-1'`).Scan(context.Background(), &status); err != nil {
+		t.Fatalf("scan job_item status: %v", err)
+	}
+	if status != "pending" {
+		t.Errorf("expected job_item status=pending after rematch, got %q", status)
+	}
+}
+
+// TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending verifies that
+// pending_review job_items for sibling external_games are also immediately set
+// to pending when a rematch resolves the whole sibling group.
+func TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-sib-status")
+
+	insertExternalGame(t, testDB, "eg-sib-s1", userID, "psn", "PPSA-101", "God of War")
+	insertExternalGame(t, testDB, "eg-sib-s2", userID, "psn", "PPSA-102", "God of War")
+	insertJob(t, testDB, "job-sib-s", userID, "sync", "psn", "processing")
+
+	for _, row := range []struct{ id, egID, extID string }{
+		{"ji-sib-s1", "eg-sib-s1", "PPSA-101"},
+		{"ji-sib-s2", "eg-sib-s2", "PPSA-102"},
+	} {
+		_, err := testDB.ExecContext(context.Background(),
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+			 VALUES (?, 'job-sib-s', ?, ?, 'God of War', ?, '{}', 'pending_review', '{}', '[]', now())`,
+			row.id, userID, row.extID, row.egID,
+		)
+		if err != nil {
+			t.Fatalf("insert job_item %s: %v", row.id, err)
+		}
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (6002, 'God of War', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-sib-s1/rematch",
+		map[string]any{"igdb_id": 6002}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+	var count int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE id IN ('ji-sib-s1', 'ji-sib-s2') AND status = 'pending'`,
+	).Scan(ctx, &count); err != nil {
+		t.Fatalf("scan job_item status count: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected both job_items to have status=pending after rematch, got count=%d", count)
+	}
+}
+
+// TestRematchExternalGame_AfterSyncCompleted reproduces the bug where
+// HandleRematchExternalGame returns 500 "failed to create job item" after a
+// sync has completed. The job_item for the external game is already in
+// 'completed' status; the handler must update it instead of inserting a
+// duplicate that would violate the UNIQUE(job_id, item_key) constraint.
+func TestRematchExternalGame_AfterSyncCompleted(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-postcomplete")
+	insertExternalGame(t, testDB, "eg-pc-1", userID, "steam", "555", "Half-Life 3")
+	insertJob(t, testDB, "job-pc-1", userID, "sync", "steam", "completed")
+
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-pc-1', 'job-pc-1', ?, '555', 'Half-Life 3', 'eg-pc-1', '{}', 'completed', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert completed job_item: %v", err)
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (9001, 'Half-Life 3', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-pc-1/rematch",
+		map[string]any{"igdb_id": 9001}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-pc-1'`).Scan(context.Background(), &status); err != nil {
+		t.Fatalf("scan job_item status: %v", err)
+	}
+	if status != "pending" {
+		t.Errorf("expected existing job_item reset to pending, got %q", status)
+	}
+	var count int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE external_game_id = 'eg-pc-1'`).Scan(context.Background(), &count)
+	if count != 1 {
+		t.Errorf("expected exactly 1 job_item for the external game, got %d", count)
+	}
+}
+
+// TestRematchExternalGame_SiblingAfterSyncCompleted verifies that sibling
+// external_games with 'completed' job_items are also reset to 'pending'
+// without triggering a duplicate-key error.
+func TestRematchExternalGame_SiblingAfterSyncCompleted(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-sib-postcomplete")
+
+	insertExternalGame(t, testDB, "eg-sib-pc1", userID, "psn", "CUSA-001", "Horizon")
+	insertExternalGame(t, testDB, "eg-sib-pc2", userID, "psn", "CUSA-002", "Horizon")
+	insertJob(t, testDB, "job-sib-pc", userID, "sync", "psn", "completed")
+
+	for _, row := range []struct{ id, egID, extID string }{
+		{"ji-sib-pc1", "eg-sib-pc1", "CUSA-001"},
+		{"ji-sib-pc2", "eg-sib-pc2", "CUSA-002"},
+	} {
+		_, err := testDB.ExecContext(context.Background(),
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+			 VALUES (?, 'job-sib-pc', ?, ?, 'Horizon', ?, '{}', 'completed', '{}', '[]', now())`,
+			row.id, userID, row.extID, row.egID,
+		)
+		if err != nil {
+			t.Fatalf("insert job_item %s: %v", row.id, err)
+		}
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (9002, 'Horizon', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-sib-pc1/rematch",
+		map[string]any{"igdb_id": 9002}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+	var count int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE id IN ('ji-sib-pc1', 'ji-sib-pc2') AND status = 'pending'`,
+	).Scan(ctx, &count); err != nil {
+		t.Fatalf("scan job_item status count: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected both sibling job_items reset to pending, got count=%d", count)
+	}
+}
+
+// TestRematchExternalGame_MultiPlatformOrphanRemove reproduces the bug where
+// a Steam game with both Windows and Linux platform rows only had one UGP
+// deleted (LIMIT 1), leaving the user_game alive despite orphan_action=remove.
+// The backend otherCount also disagreed with the frontend's count because it
+// used id != ugpID instead of external_game_id IS DISTINCT FROM eg.id.
+func TestRematchExternalGame_MultiPlatformOrphanRemove(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-mp-orphan")
+
+	// Wrong IGDB match — external_game must exist before UGPs (FK constraint).
+	insertExternalGame(t, testDB, "eg-mp-1", userID, "steam", "3000", "Another World")
+	insertUserGameAndPlatform(t, testDB, "ug-mp-wrong", userID, "1111", "ugp-mp-win", "eg-mp-1")
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE external_games SET resolved_igdb_id = 1111 WHERE id = 'eg-mp-1'`); err != nil {
+		t.Fatalf("set wrong match: %v", err)
+	}
+	// Second platform (Linux) on the same user_game and same external_game.
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO user_game_platforms (id, user_game_id, external_game_id, platform, storefront, sync_from_source, is_available, created_at, updated_at)
+		 VALUES ('ugp-mp-lin', 'ug-mp-wrong', 'eg-mp-1', 'pc-linux', 'steam', true, true, now(), now())`); err != nil {
+		t.Fatalf("insert linux ugp: %v", err)
+	}
+
+	insertJob(t, testDB, "job-mp", userID, "sync", "steam", "completed")
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-mp-1', 'job-mp', ?, '3000', 'Another World', 'eg-mp-1', '{}', 'completed', '{}', '[]', now())`,
+		userID); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (2222, 'Another World', now(), now()) ON CONFLICT DO NOTHING`)
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-mp-1/rematch",
+		map[string]any{"igdb_id": 2222, "orphan_action": "remove"}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	// Both Windows and Linux UGPs must be gone.
+	var ugpCount int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = 'ug-mp-wrong'`,
+	).Scan(ctx, &ugpCount); err != nil {
+		t.Fatalf("scan ugp count: %v", err)
+	}
+	if ugpCount != 0 {
+		t.Errorf("expected all UGPs deleted, got %d remaining", ugpCount)
+	}
+
+	// The wrong user_game must be deleted.
+	var ugCount int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM user_games WHERE id = 'ug-mp-wrong'`,
+	).Scan(ctx, &ugCount); err != nil {
+		t.Fatalf("scan user_game count: %v", err)
+	}
+	if ugCount != 0 {
+		t.Errorf("expected wrong user_game deleted, got %d rows", ugCount)
+	}
+}
+
+// TestRematchExternalGame_SiblingAlreadyMatchedWrong reproduces the bug where
+// rematching one platform variant of a game leaves sibling variants on the
+// wrong match because the sibling query filtered resolved_igdb_id IS NULL.
+func TestRematchExternalGame_SiblingAlreadyMatchedWrong(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-sib-wrong")
+
+	// Two Steam entries for "Another World" — both previously matched to the wrong IGDB game (id 1111).
+	// The games row must exist before setting resolved_igdb_id (FK constraint).
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (1111, 'Wrong Game', now(), now()) ON CONFLICT DO NOTHING`)
+	if err != nil {
+		t.Fatalf("insert wrong game: %v", err)
+	}
+	insertExternalGame(t, testDB, "eg-aw-win", userID, "steam", "2100", "Another World")
+	insertExternalGame(t, testDB, "eg-aw-lin", userID, "steam", "2101", "Another World")
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE external_games SET resolved_igdb_id = 1111 WHERE id IN ('eg-aw-win', 'eg-aw-lin')`); err != nil {
+		t.Fatalf("set wrong match: %v", err)
+	}
+
+	insertJob(t, testDB, "job-aw", userID, "sync", "steam", "completed")
+	for _, row := range []struct{ id, egID, key string }{
+		{"ji-aw-win", "eg-aw-win", "2100"},
+		{"ji-aw-lin", "eg-aw-lin", "2101"},
+	} {
+		_, err := testDB.ExecContext(context.Background(),
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+			 VALUES (?, 'job-aw', ?, ?, 'Another World', ?, '{}', 'completed', '{}', '[]', now())`,
+			row.id, userID, row.key, row.egID,
+		)
+		if err != nil {
+			t.Fatalf("insert job_item %s: %v", row.id, err)
+		}
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (2222, 'Another World', now(), now()) ON CONFLICT DO NOTHING`)
+
+	// Rematch the Windows entry to the correct game.
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-aw-win/rematch",
+		map[string]any{"igdb_id": 2222}, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Both Windows and Linux should now point to the correct IGDB game.
+	ctx := context.Background()
+	var count int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM external_games WHERE id IN ('eg-aw-win', 'eg-aw-lin') AND resolved_igdb_id = 2222`,
+	).Scan(ctx, &count); err != nil {
+		t.Fatalf("scan resolved count: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected both platform variants resolved to 2222, got count=%d", count)
 	}
 }
 
@@ -850,8 +1400,8 @@ func TestResetSyncData_DeletesDataAndResetsTimestamp(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "reset-data")
 
 	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at, created_at, updated_at)
-		 VALUES (gen_random_uuid(), ?, 'steam', 'manual', false, now(), now(), now())`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at, created_at, updated_at)
+		 VALUES (gen_random_uuid(), ?, 'steam', 'manual', now(), now(), now())`,
 		userID,
 	)
 	insertExternalGame(t, testDB, "eg-reset-1", userID, "steam", "730", "CS2")
@@ -993,6 +1543,115 @@ func TestListExternalGames_AllStates(t *testing.T) {
 	}
 }
 
+func TestListExternalGames_ExcludesInFlight(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "eg-inflight")
+
+	insertExternalGame(t, testDB, "eg-stable", userID, "steam", "10", "Stable Game")
+	insertExternalGame(t, testDB, "eg-inflight-1", userID, "steam", "20", "In-Flight Game")
+	insertJob(t, testDB, "job-inflight", userID, "sync", "steam", "processing")
+
+	// pending job_item links eg-inflight-1 to the active job.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-inflight', 'job-inflight', ?, '20', 'In-Flight Game', 'eg-inflight-1', '{}', 'pending', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert in-flight job_item: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 game (in-flight excluded), got %d", len(resp))
+	}
+	if resp[0]["id"] != "eg-stable" {
+		t.Errorf("expected eg-stable in response, got %v", resp[0]["id"])
+	}
+}
+
+func TestListExternalGames_ReturnsPlatforms(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "eg-plat")
+
+	insertExternalGame(t, testDB, "eg-p1", userID, "steam", "730", "CS2")
+
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+		 VALUES ('egp-1', 'eg-p1', 'pc-windows', 0, now()),
+		        ('egp-2', 'eg-p1', 'pc-linux', 0, now())`)
+	if err != nil {
+		t.Fatalf("insert platforms: %v", err)
+	}
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (8888, 'CS2', now(), now()) ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE external_games SET resolved_igdb_id = 8888 WHERE id = 'eg-p1'`)
+
+	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 game, got %d", len(resp))
+	}
+	plRaw, ok := resp[0]["platforms"]
+	if !ok {
+		t.Fatal("expected 'platforms' field in response")
+	}
+	platforms, _ := plRaw.([]any)
+	if len(platforms) != 2 {
+		t.Errorf("expected 2 platforms, got %v", plRaw)
+	}
+	platformStrs := make(map[string]bool)
+	for _, p := range platforms {
+		platformStrs[p.(string)] = true
+	}
+	if !platformStrs["pc-windows"] || !platformStrs["pc-linux"] {
+		t.Errorf("expected pc-windows and pc-linux, got %v", platforms)
+	}
+}
+
+func TestListExternalGames_NoPlatforms_ReturnsEmptyArray(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "eg-noplat")
+
+	insertExternalGame(t, testDB, "eg-np1", userID, "steam", "999", "Orphan Game")
+
+	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
+	var resp []map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 game, got %d", len(resp))
+	}
+	plRaw, ok := resp[0]["platforms"]
+	if !ok {
+		t.Fatal("expected 'platforms' field in response")
+	}
+	if plRaw == nil {
+		t.Fatal("expected empty array [], got JSON null")
+	}
+	platforms, _ := plRaw.([]any)
+	if len(platforms) != 0 {
+		t.Errorf("expected empty platforms array, got %v", plRaw)
+	}
+}
+
 // ─── Epic connection-handler tests ────────────────────────────────────────────
 
 type stubEpicClient struct {
@@ -1032,8 +1691,8 @@ func newSyncTestAppWithEpic(t *testing.T, db *bun.DB, steam api.SteamClient, psn
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, nil, steam, psn, epic, (api.GOGClient)(nil))
-	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, epic, (api.GOGClient)(nil))
+	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
 }
@@ -1055,6 +1714,35 @@ func (s *stubGOGClient) ExchangeCode(_ context.Context, _ string) (*api.GOGToken
 	return s.token, s.err
 }
 
+func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient, rc *river.Client[pgx.Tx]) interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+} {
+	t.Helper()
+	cfg := testCfg()
+	e := echo.New()
+	ah := api.NewAuthHandler(testDB, cfg)
+	e.POST("/api/auth/login", ah.HandleLogin)
+	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
+	g := e.Group("/api/sync", auth.AuthMiddleware(db))
+	synch.RegisterRoutes(g)
+	return e
+}
+
+// TestHandleTriggerSync_RiverInsertFails_Returns500 locks in the contract that
+// HandleTriggerSync returns 500 when the River enqueue fails, rather than
+// silently succeeding with an orphaned job.
+func TestHandleTriggerSync_RiverInsertFails_Returns500(t *testing.T) {
+	truncateAllTables(t)
+	rc := newFailingRiverClient(t)
+	e := newSyncTestAppWithRiverClient(t, testDB, &stubSteamClient{}, &stubPSNClient{}, rc)
+	_, token := setupTagUser(t, testDB, e, "trigger-river-fail")
+
+	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 when River insert fails, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient, gog api.GOGClient) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
@@ -1063,8 +1751,8 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(db, nil, steam, psn, (api.EpicClient)(nil), gog)
-	g := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), gog)
+	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
 }
@@ -1144,19 +1832,27 @@ func TestHandleEpicConnect_HappyPathPersistsConfig(t *testing.T) {
 	}
 
 	var credsRaw string
-	var snapshotRaw string
 	err := testDB.NewRaw(
-		`SELECT storefront_credentials, epic_legendary_state::text FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
 		userID,
-	).Scan(context.Background(), &credsRaw, &snapshotRaw)
+	).Scan(context.Background(), &credsRaw)
 	if err != nil {
 		t.Fatalf("scan user_sync_configs: %v", err)
 	}
-	if !strings.Contains(credsRaw, "EpicTester") || !strings.Contains(credsRaw, "acct-123") {
-		t.Errorf("storefront_credentials missing fields: %s", credsRaw)
+	// storefront_credentials holds the encrypted legendary snapshot.
+	if !strings.HasPrefix(credsRaw, "enc:v1:") {
+		t.Fatalf("expected enc:v1: prefix for storefront_credentials, got %q", credsRaw[:min(20, len(credsRaw))])
 	}
-	if !strings.Contains(snapshotRaw, "user.json") {
-		t.Errorf("epic_legendary_state did not persist snapshot: %s", snapshotRaw)
+	decryptedState, err := testEncrypter.Decrypt(credsRaw)
+	if err != nil {
+		t.Fatalf("decrypt storefront_credentials: %v", err)
+	}
+	var stateMap map[string]string
+	if err := json.Unmarshal(decryptedState, &stateMap); err != nil {
+		t.Fatalf("unmarshal decrypted storefront_credentials: %v", err)
+	}
+	if _, ok := stateMap["user.json"]; !ok {
+		t.Errorf("decrypted storefront_credentials missing user.json key: %v", stateMap)
 	}
 }
 
@@ -1166,13 +1862,16 @@ func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-disc")
 
-	// Pre-populate a connected Epic row.
-	creds := `{"display_name":"X","account_id":"y"}`
-	snap := `{"user.json":"{}"}`
-	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, epic_legendary_state, created_at, updated_at)
-		 VALUES (?, ?, 'epic', 'manual', ?, ?::jsonb, now(), now())`,
-		"cfg-epic-disc", userID, creds, snap,
+	// Pre-populate a connected Epic row: storefront_credentials holds the encrypted snapshot.
+	snapJSON := `{"user.json":"{}"}`
+	snapCiphertext, err := testEncrypter.Encrypt([]byte(snapJSON))
+	if err != nil {
+		t.Fatalf("encrypt snap fixture: %v", err)
+	}
+	_, err = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?, now(), now())`,
+		"cfg-epic-disc", userID, snapCiphertext,
 	).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("seed user_sync_configs: %v", err)
@@ -1186,19 +1885,16 @@ func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 		t.Errorf("expected Cleanup(%q) to be called, got called=%v user=%q", userID, stub.cleanupCalled, stub.cleanupUserID)
 	}
 
-	var credsAfter, snapAfter *string
+	var credsAfter *string
 	err = testDB.NewRaw(
-		`SELECT storefront_credentials, epic_legendary_state::text FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
 		userID,
-	).Scan(context.Background(), &credsAfter, &snapAfter)
+	).Scan(context.Background(), &credsAfter)
 	if err != nil {
 		t.Fatalf("scan after disconnect: %v", err)
 	}
 	if credsAfter != nil {
 		t.Errorf("expected storefront_credentials cleared, got %v", *credsAfter)
-	}
-	if snapAfter != nil {
-		t.Errorf("expected epic_legendary_state cleared, got %v", *snapAfter)
 	}
 }
 
@@ -1245,11 +1941,15 @@ func TestHandleGetEpicConnection_ConnectedReturnsAccountInfo(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-status-conn")
 
-	creds := `{"display_name":"PlayerOne","account_id":"acct-xyz"}`
-	_, err := testDB.NewRaw(
+	rawCreds := `{"display_name":"PlayerOne","account_id":"acct-xyz"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt epic creds: %v", err)
+	}
+	_, err = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
 		 VALUES (?, ?, 'epic', 'manual', ?, now(), now())`,
-		"cfg-epic-conn", userID, creds,
+		"cfg-epic-conn", userID, credsCiphertext,
 	).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("seed user_sync_configs: %v", err)
@@ -1326,7 +2026,7 @@ func TestGOGDisconnect_Idempotent(t *testing.T) {
 	_, token := setupTagUser(t, testDB, app, "gog-disc")
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/sync/gog/connection", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
@@ -1341,7 +2041,7 @@ func TestGOGConnection_NotConnected(t *testing.T) {
 	_, token := setupTagUser(t, testDB, app, "gog-status-notconn")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/gog/connection", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1360,13 +2060,24 @@ func TestGOGConnection_Connected(t *testing.T) {
 		token: &api.GOGTokenResponse{Username: "goguser", UserID: "u1", AccessToken: "a", RefreshToken: "r"},
 	}
 	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
-	_, token := setupTagUser(t, testDB, app, "gog-status-conn")
+	userID, token := setupTagUser(t, testDB, app, "gog-status-conn")
 
-	// Connect first.
-	postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{"auth_code": "ok"}, token)
+	rawCreds := `{"access_token":"a","refresh_token":"r","user_id":"u1","username":"goguser"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt gog creds: %v", err)
+	}
+	_, err = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'gog', 'manual', ?, now(), now())`,
+		"cfg-gog-conn", userID, credsCiphertext,
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("seed user_sync_configs: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/gog/connection", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1379,5 +2090,258 @@ func TestGOGConnection_Connected(t *testing.T) {
 	}
 	if body["username"] != "goguser" {
 		t.Errorf("username: got %v", body["username"])
+	}
+}
+
+// ─── Steam connection-handler tests ──────────────────────────────────────────
+
+func TestGetSteamConnection_NotConnected(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, testDB, e, "steam-conn-notconn")
+
+	rec := getAuth(t, e, "/api/sync/steam/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["connected"] != false {
+		t.Errorf("want connected=false, got %v", body["connected"])
+	}
+	if body["credentials_error"] != nil {
+		t.Errorf("want credentials_error absent, got %v", body["credentials_error"])
+	}
+}
+
+func TestGetSteamConnection_Connected(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "steam-conn-ok")
+
+	rawCreds := `{"web_api_key":"AABBCCDD00112233445566778899AABB","steam_id":"76561198012345678","display_name":"Frostbyte"}`
+	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt steam creds: %v", err)
+	}
+	_, err = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
+		 VALUES (?, ?, 'steam', 'manual', ?, now(), now())`,
+		"cfg-steam-conn", userID, credsCiphertext,
+	).Exec(context.Background())
+	if err != nil {
+		t.Fatalf("seed user_sync_configs: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/sync/steam/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["connected"] != true {
+		t.Errorf("want connected=true, got %v", body["connected"])
+	}
+	if body["steam_id"] != "76561198012345678" {
+		t.Errorf("steam_id: got %v", body["steam_id"])
+	}
+	if body["username"] != "Frostbyte" {
+		t.Errorf("username: got %v", body["username"])
+	}
+	if body["credentials_error"] != nil {
+		t.Errorf("want credentials_error absent, got %v", body["credentials_error"])
+	}
+}
+
+func TestGetSteamConnection_DBCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "sc-db-cred-err")
+
+	rawCreds := `{"steam_id":"76561198000000001","web_api_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","display_name":"TestUser"}`
+	ciphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'steam', 'manual', ?, true, now(), now())`,
+		uuid.NewString(), userID, ciphertext,
+	)
+
+	rec := getAuth(t, e, "/api/sync/steam/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
+	}
+}
+
+func TestGetPSNStatus_DBCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "psn-db-cred-err")
+
+	rawCreds := `{"npsso_token":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","online_id":"MyPSN","account_id":"123","region":"GB","is_verified":true,"token_expired_at":null}`
+	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'manual', ?, true, now(), now())`,
+		uuid.NewString(), userID, ciphertext,
+	)
+
+	rec := getAuth(t, e, "/api/sync/psn/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
+	}
+}
+
+func TestGetGOGConnection_DBCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubGOGClient{})
+	userID, token := setupTagUser(t, testDB, e, "gog-db-cred-err")
+
+	rawCreds := `{"access_token":"aaa","refresh_token":"bbb","user_id":"u1","username":"GogUser"}`
+	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'gog', 'manual', ?, true, now(), now())`,
+		uuid.NewString(), userID, ciphertext,
+	)
+
+	rec := getAuth(t, e, "/api/sync/gog/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
+	}
+}
+
+func TestGetEpicConnection_DBCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubEpicClient{configured: true})
+	userID, token := setupTagUser(t, testDB, e, "epic-db-cred-err")
+
+	rawCreds := `{"user.json":"{\"displayName\":\"EpicUser\",\"account_id\":\"abc123\"}"}`
+	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'epic', 'manual', ?, true, now(), now())`,
+		uuid.NewString(), userID, ciphertext,
+	)
+
+	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["credentials_error"] != true {
+		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
+	}
+}
+
+func TestSteamVerify_ClearsCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubSteamClient{
+		summary: &api.SteamPlayerSummary{PersonaName: "TestUser", CommunityVisibilityState: 3},
+	}
+	e := newSyncTestApp(t, testDB, stub, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "sv-clear-cred")
+
+	// Seed a pre-existing row with credentials_error=true.
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'steam', 'manual', true, now(), now())`,
+		uuid.NewString(), userID,
+	)
+
+	body := `{"steam_id":"76561198000000001","web_api_key":"AABBCCDD00112233445566778899AABB"}`
+	rec := postAuth(t, e, "/api/sync/steam/verify", token, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var credsErr bool
+	_ = testDB.NewRaw(
+		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`,
+		userID,
+	).Scan(context.Background(), &credsErr)
+	if credsErr {
+		t.Error("expected credentials_error=false after successful Steam verify, got true")
+	}
+}
+
+func TestPSNConfigure_ClearsCredentialsErrorFlag(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubPSNClient{
+		info: &api.PSNAccountInfo{OnlineID: "MyPSN", AccountID: "123", Region: "GB"},
+	}
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
+	userID, token := setupTagUser(t, testDB, e, "psn-clear-cred")
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'manual', true, now(), now())`,
+		uuid.NewString(), userID,
+	)
+
+	body := `{"npsso_token":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}`
+	rec := postAuth(t, e, "/api/sync/psn/configure", token, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var credsErr bool
+	_ = testDB.NewRaw(
+		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'psn'`,
+		userID,
+	).Scan(context.Background(), &credsErr)
+	if credsErr {
+		t.Error("expected credentials_error=false after PSN configure, got true")
+	}
+}
+
+func TestGetSteamConnection_CorruptedCredentials(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "steam-conn-corrupt")
+	insertCorruptedSyncConfig(t, testDB, userID, "steam")
+
+	// Decrypt failure must surface credentials_error=true without clearing the row.
+	rec := getAuth(t, e, "/api/sync/steam/connection", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["connected"] != true {
+		t.Errorf("want connected=true (row still exists), got %v", body["connected"])
+	}
+	if body["credentials_error"] != true {
+		t.Errorf("want credentials_error=true, got %v", body["credentials_error"])
+	}
+
+	// Credentials row must NOT be cleared.
+	var creds string
+	err := testDB.NewRaw(
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`, userID,
+	).Scan(context.Background(), &creds)
+	if err != nil {
+		t.Fatalf("credentials row missing after decrypt failure: %v", err)
+	}
+	if creds == "" {
+		t.Error("expected credentials to remain non-null after decrypt failure")
 	}
 }

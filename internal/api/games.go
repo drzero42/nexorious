@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/services/platformresolution"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -43,16 +45,16 @@ type GameListResponse struct {
 
 // IGDBGameCandidate is the response shape for IGDB search results.
 type IGDBGameCandidate struct {
-	IgdbID                      int      `json:"igdb_id"`
-	IgdbSlug                    string   `json:"igdb_slug"`
-	Title                       string   `json:"title"`
-	ReleaseDate                 *string  `json:"release_date"`
-	CoverArtUrl                 *string  `json:"cover_art_url"`
-	Description                 *string  `json:"description"`
-	Platforms                   []string `json:"platforms"`
-	HowlongtobeatMain           *float64 `json:"howlongtobeat_main"`
-	HowlongtobeatExtra          *float64 `json:"howlongtobeat_extra"`
-	HowlongtobeatCompletionist  *float64 `json:"howlongtobeat_completionist"`
+	IgdbID                     int      `json:"igdb_id"`
+	IgdbSlug                   string   `json:"igdb_slug"`
+	Title                      string   `json:"title"`
+	ReleaseDate                *string  `json:"release_date"`
+	CoverArtUrl                *string  `json:"cover_art_url"`
+	Description                *string  `json:"description"`
+	Platforms                  []string `json:"platforms"`
+	HowlongtobeatMain          *float64 `json:"howlongtobeat_main"`
+	HowlongtobeatExtra         *float64 `json:"howlongtobeat_extra"`
+	HowlongtobeatCompletionist *float64 `json:"howlongtobeat_completionist"`
 }
 
 // IGDBSearchResponse wraps IGDB search results.
@@ -63,15 +65,16 @@ type IGDBSearchResponse struct {
 
 // IGDBSearchRequest is the request body for POST /api/games/search/igdb.
 type IGDBSearchRequest struct {
-	Query string `json:"query"`
-	Limit int    `json:"limit"`
+	Query          string  `json:"query"`
+	Limit          int     `json:"limit"`
+	ExternalGameID *string `json:"external_game_id,omitempty"`
 }
 
 // IGDBImportRequest is the request body for POST /api/games/igdb-import.
 type IGDBImportRequest struct {
-	IgdbID          int                    `json:"igdb_id"`
-	CustomOverrides map[string]any `json:"custom_overrides"`
-	DownloadCoverArt *bool                 `json:"download_cover_art"`
+	IgdbID           int            `json:"igdb_id"`
+	CustomOverrides  map[string]any `json:"custom_overrides"`
+	DownloadCoverArt *bool          `json:"download_cover_art"`
 }
 
 // allowedSortFields is the whitelist of sortable columns.
@@ -84,11 +87,11 @@ var allowedSortFields = map[string]bool{
 
 // HandleListGames handles GET /api/games.
 func (h *GamesHandler) HandleListGames(c *echo.Context) error {
-	page, _ := strconv.Atoi(c.QueryParam("page"))
+	page, _ := strconv.Atoi(c.QueryParam("page")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if page < 1 {
 		page = 1
 	}
-	perPage, _ := strconv.Atoi(c.QueryParam("per_page"))
+	perPage, _ := strconv.Atoi(c.QueryParam("per_page")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if perPage < 1 || perPage > 100 {
 		perPage = 20
 	}
@@ -201,7 +204,34 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 		req.Limit = 50
 	}
 
-	results, err := h.igdb.SearchGames(c.Request().Context(), req.Query, req.Limit)
+	ctx := c.Request().Context()
+
+	var platformIDs []int
+	if req.ExternalGameID != nil && *req.ExternalGameID != "" {
+		userID := auth.UserIDFromContext(c)
+		if userID == "" {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		}
+		var exists bool
+		if err := h.db.NewRaw(
+			`SELECT EXISTS(SELECT 1 FROM external_games WHERE id = ? AND user_id = ?)`,
+			*req.ExternalGameID, userID,
+		).Scan(ctx, &exists); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "ownership check failed"})
+		}
+		if !exists {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "external_game not found or not owned by user"})
+		}
+
+		if ids, perErr := platformresolution.IGDBPlatformIDsForExternalGame(ctx, h.db, *req.ExternalGameID); perErr == nil {
+			platformIDs = ids
+		} else {
+			slog.Debug("HandleSearchIGDB: platform resolution failed, falling back to unfiltered",
+				"external_game_id", *req.ExternalGameID, "err", perErr)
+		}
+	}
+
+	results, err := h.igdb.SearchGames(ctx, req.Query, req.Limit, platformIDs)
 	if err != nil {
 		return h.mapIGDBError(c, err)
 	}
@@ -210,7 +240,6 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 	for i, md := range results {
 		candidates[i] = metadataToCandidate(md)
 	}
-
 	return c.JSON(http.StatusOK, IGDBSearchResponse{
 		Games: candidates,
 		Total: len(candidates),

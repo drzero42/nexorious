@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
 )
 
 // ─── Import test helpers ──────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ import (
 // postMultipartFile posts a multipart/form-data request with a file field.
 func postMultipartFile(t *testing.T, handler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
-}, path string, filename string, fileContent []byte, accessToken string) *httptest.ResponseRecorder {
+}, path string, filename string, fileContent []byte, sessionID string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -39,8 +39,8 @@ func postMultipartFile(t *testing.T, handler interface {
 
 	req := httptest.NewRequest(http.MethodPost, path, &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	if accessToken != "" {
-		req.Header.Set("Authorization", "Bearer "+accessToken)
+	if sessionID != "" {
+		req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
 	}
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -92,7 +92,7 @@ func TestImportNexorious_NoFile(t *testing.T) {
 	_ = mw.Close()
 	req := httptest.NewRequest(http.MethodPost, "/api/import/nexorious", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -217,5 +217,54 @@ func TestImportNexorious_Conflict(t *testing.T) {
 	rec2 := postMultipartFile(t, e, "/api/import/nexorious", "export.json", data, token)
 	if rec2.Code != http.StatusConflict {
 		t.Fatalf("second upload: status = %d, want 409; body: %s", rec2.Code, rec2.Body)
+	}
+}
+
+func TestImportNexorious_MalformedRecord(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoPool(t, testDB, cfg)
+
+	_, token := setupTagUser(t, testDB, e, "imp-malformed")
+
+	// Build an export where the second game entry is a JSON string, not an object.
+	// The outer json.Unmarshal into []json.RawMessage succeeds (each element is a
+	// valid JSON token), but json.Unmarshal into the game-fields struct fails for a
+	// string value, which is the malformed-record path we want to exercise.
+	data := []byte(`{"export_version":"1.2","games":[{"igdb_id":1,"title":"Good Game"},"not-an-object",{"igdb_id":3,"title":"Another Good Game"}]}`)
+
+	rec := postMultipartFile(t, e, "/api/import/nexorious", "export.json", data, token)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+
+	// skipped_count must be 1 (the malformed record).
+	skippedCount, ok := resp["skipped_count"].(float64)
+	if !ok || int(skippedCount) != 1 {
+		t.Fatalf("skipped_count = %v, want 1", resp["skipped_count"])
+	}
+
+	// total_items must reflect the 2 good records only.
+	totalItems, ok := resp["total_items"].(float64)
+	if !ok || int(totalItems) != 2 {
+		t.Fatalf("total_items = %v, want 2", resp["total_items"])
+	}
+
+	// Only 2 job_items should exist in the DB.
+	jobID, _ := resp["job_id"].(string)
+	var count int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID,
+	).Scan(context.Background(), &count); err != nil {
+		t.Fatalf("count job_items: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("job_items count = %d, want 2", count)
 	}
 }

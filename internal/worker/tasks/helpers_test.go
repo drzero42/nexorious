@@ -24,6 +24,7 @@ func TestParseFlexibleDate_RFC3339(t *testing.T) {
 	result := parseFlexibleDate(&s)
 	if result == nil {
 		t.Fatal("expected non-nil for RFC3339 input")
+		return
 	}
 	if result.Year() != 2024 || result.Month() != 1 || result.Day() != 15 {
 		t.Errorf("unexpected date: %v", result)
@@ -35,6 +36,7 @@ func TestParseFlexibleDate_DateOnly(t *testing.T) {
 	result := parseFlexibleDate(&s)
 	if result == nil {
 		t.Fatal("expected non-nil for date-only input")
+		return
 	}
 	if result.Year() != 2022 || result.Month() != 6 || result.Day() != 30 {
 		t.Errorf("unexpected date: %v", result)
@@ -104,8 +106,8 @@ func TestIgdbMetadataToGame_AllFields(t *testing.T) {
 		CoverArtURL:                &coverURL,
 		RatingAverage:              &rating,
 		RatingCount:                &ratingCount,
-		HowlongtobeatMain:         &ttbMain,
-		HowlongtobeatExtra:        &ttbExtra,
+		HowlongtobeatMain:          &ttbMain,
+		HowlongtobeatExtra:         &ttbExtra,
 		HowlongtobeatCompletionist: &ttbComp,
 		PlatformIDs:                []int{6, 48},
 		PlatformNames:              []string{"PC (Microsoft Windows)", "PlayStation 4"},

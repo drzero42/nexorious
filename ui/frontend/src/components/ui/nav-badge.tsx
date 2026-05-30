@@ -26,7 +26,7 @@ export function NavBadge({ count, onClick, className }: NavBadgeProps) {
         'inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-medium rounded-full',
         'bg-destructive text-destructive-foreground',
         onClick && 'cursor-pointer hover:bg-destructive/90',
-        className
+        className,
       )}
     >
       {displayCount}

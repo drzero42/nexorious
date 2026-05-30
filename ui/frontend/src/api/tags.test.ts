@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
-import { setAuthHandlers } from './client';
 import {
   getTags,
   getAllTags,
@@ -42,22 +41,8 @@ const mockTag2Api = {
 };
 
 describe('tags.ts', () => {
-  let mockGetAccessToken: Mock<() => string | null>;
-  let mockRefreshTokens: Mock<() => Promise<boolean>>;
-  let mockLogout: Mock<() => void>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetAccessToken = vi.fn<() => string | null>().mockReturnValue('test-access-token');
-    mockRefreshTokens = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
-    mockLogout = vi.fn<() => void>();
-
-    setAuthHandlers(mockGetAccessToken, mockRefreshTokens, mockLogout);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('getTags', () => {
@@ -65,7 +50,7 @@ describe('tags.ts', () => {
       server.use(
         http.get(`${API_URL}/tags`, () => {
           return HttpResponse.json([mockTagApi, mockTag2Api]);
-        })
+        }),
       );
 
       const result = await getTags();
@@ -98,19 +83,10 @@ describe('tags.ts', () => {
           expect(url.searchParams.get('include_game_count')).toBe('true');
 
           return HttpResponse.json([]);
-        })
+        }),
       );
 
       await getTags({ page: 2, perPage: 50, includeGameCount: true });
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(getTags()).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
     });
   });
 
@@ -122,7 +98,7 @@ describe('tags.ts', () => {
         http.get(`${API_URL}/tags`, () => {
           callCount++;
           return HttpResponse.json([mockTagApi, mockTag2Api]);
-        })
+        }),
       );
 
       const result = await getAllTags();
@@ -137,7 +113,7 @@ describe('tags.ts', () => {
       server.use(
         http.get(`${API_URL}/tags`, () => {
           return HttpResponse.json([]);
-        })
+        }),
       );
 
       const result = await getAllTags();
@@ -151,7 +127,7 @@ describe('tags.ts', () => {
       server.use(
         http.get(`${API_URL}/tags/tag-1`, () => {
           return HttpResponse.json(mockTagApi);
-        })
+        }),
       );
 
       const result = await getTag('tag-1');
@@ -165,7 +141,7 @@ describe('tags.ts', () => {
       server.use(
         http.get(`${API_URL}/tags/non-existent`, () => {
           return HttpResponse.json({ detail: 'Tag not found' }, { status: 404 });
-        })
+        }),
       );
 
       await expect(getTag('non-existent')).rejects.toMatchObject({
@@ -197,7 +173,7 @@ describe('tags.ts', () => {
             created_at: '2024-01-02T00:00:00Z',
             updated_at: '2024-01-02T00:00:00Z',
           });
-        })
+        }),
       );
 
       const result = await createTag({
@@ -224,7 +200,7 @@ describe('tags.ts', () => {
             created_at: '2024-01-02T00:00:00Z',
             updated_at: '2024-01-02T00:00:00Z',
           });
-        })
+        }),
       );
 
       const result = await createTag({ name: 'Simple Tag' });
@@ -235,8 +211,11 @@ describe('tags.ts', () => {
     it('throws error for duplicate tag name', async () => {
       server.use(
         http.post(`${API_URL}/tags`, () => {
-          return HttpResponse.json({ detail: 'Tag with this name already exists' }, { status: 409 });
-        })
+          return HttpResponse.json(
+            { detail: 'Tag with this name already exists' },
+            { status: 409 },
+          );
+        }),
       );
 
       await expect(createTag({ name: 'RPG' })).rejects.toMatchObject({
@@ -265,7 +244,7 @@ describe('tags.ts', () => {
             },
             created: true,
           });
-        })
+        }),
       );
 
       const result = await createOrGetTag('New Tag', '#FF0000');
@@ -285,7 +264,7 @@ describe('tags.ts', () => {
             tag: mockTagApi,
             created: false,
           });
-        })
+        }),
       );
 
       const result = await createOrGetTag('RPG');
@@ -312,7 +291,7 @@ describe('tags.ts', () => {
             name: 'Updated RPG',
             color: '#AABBCC',
           });
-        })
+        }),
       );
 
       const result = await updateTag('tag-1', {
@@ -335,7 +314,7 @@ describe('tags.ts', () => {
             ...mockTagApi,
             description: 'New description',
           });
-        })
+        }),
       );
 
       const result = await updateTag('tag-1', { description: 'New description' });
@@ -347,7 +326,7 @@ describe('tags.ts', () => {
       server.use(
         http.put(`${API_URL}/tags/non-existent`, () => {
           return HttpResponse.json({ detail: 'Tag not found' }, { status: 404 });
-        })
+        }),
       );
 
       await expect(updateTag('non-existent', { name: 'New Name' })).rejects.toMatchObject({
@@ -362,7 +341,7 @@ describe('tags.ts', () => {
       server.use(
         http.delete(`${API_URL}/tags/tag-1`, () => {
           return new HttpResponse(null, { status: 204 });
-        })
+        }),
       );
 
       await expect(deleteTag('tag-1')).resolves.toBeUndefined();
@@ -372,7 +351,7 @@ describe('tags.ts', () => {
       server.use(
         http.delete(`${API_URL}/tags/non-existent`, () => {
           return HttpResponse.json({ detail: 'Tag not found' }, { status: 404 });
-        })
+        }),
       );
 
       await expect(deleteTag('non-existent')).rejects.toMatchObject({
@@ -394,7 +373,7 @@ describe('tags.ts', () => {
             new_associations: 2,
             total_requested: 2,
           });
-        })
+        }),
       );
 
       const result = await assignTagsToGame('game-123', ['tag-1', 'tag-2']);
@@ -412,7 +391,7 @@ describe('tags.ts', () => {
             new_associations: 1,
             total_requested: 2,
           });
-        })
+        }),
       );
 
       const result = await assignTagsToGame('game-123', ['tag-1', 'tag-2']);
@@ -434,7 +413,7 @@ describe('tags.ts', () => {
             removed_associations: 1,
             total_requested: 1,
           });
-        })
+        }),
       );
 
       const result = await removeTagsFromGame('game-123', ['tag-1']);
@@ -461,7 +440,7 @@ describe('tags.ts', () => {
             total_new_associations: 6,
             games_processed: 3,
           });
-        })
+        }),
       );
 
       const result = await bulkAssignTags(['game-1', 'game-2', 'game-3'], ['tag-1', 'tag-2']);
@@ -488,7 +467,7 @@ describe('tags.ts', () => {
             total_removed_associations: 2,
             games_processed: 2,
           });
-        })
+        }),
       );
 
       const result = await bulkRemoveTags(['game-1', 'game-2'], ['tag-1']);

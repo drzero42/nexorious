@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/riverqueue/river/rivermigrate"
 	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
+	"github.com/riverqueue/river/rivermigrate"
 	"github.com/uptrace/bun"
 	bunmigrate "github.com/uptrace/bun/migrate"
 
@@ -20,10 +20,11 @@ import (
 type AppState int32
 
 const (
-	AppStateDBUnavailable  AppState = iota
+	AppStateDBUnavailable AppState = iota
 	AppStateNeedsMigration
 	AppStateMigrating
 	AppStateReady
+	AppStateMigrationFailed
 )
 
 func (s AppState) String() string {
@@ -36,6 +37,8 @@ func (s AppState) String() string {
 		return "migrating"
 	case AppStateReady:
 		return "ready"
+	case AppStateMigrationFailed:
+		return "migration_failed"
 	default:
 		return "unknown"
 	}
@@ -53,6 +56,7 @@ type Migrator struct {
 	bunMig            *bunmigrate.Migrator
 	logCh             chan string
 	logWriter         io.Writer
+	lastError         atomic.Value // string; "" or absent means no failure recorded
 }
 
 func NewMigrator(db *bun.DB) *Migrator {
@@ -106,6 +110,26 @@ func (mg *Migrator) DetermineState() error {
 
 func (mg *Migrator) TransitionToReady() {
 	mg.state.Store(int32(AppStateReady))
+}
+
+// TransitionToFailed records the error and switches state to AppStateMigrationFailed.
+// The error is stored before the state flip so any observer that reads
+// AppStateMigrationFailed is guaranteed to see a non-empty LastError —
+// preserve this ordering when editing.
+// The stored value is always a string; never store an error value here or
+// atomic.Value will panic on subsequent loads of a different concrete type.
+func (mg *Migrator) TransitionToFailed(err error) {
+	mg.lastError.Store(err.Error())
+	mg.state.Store(int32(AppStateMigrationFailed))
+}
+
+// LastError returns the most recent migration error message, or "" if none.
+func (mg *Migrator) LastError() string {
+	v := mg.lastError.Load()
+	if v == nil {
+		return ""
+	}
+	return v.(string)
 }
 
 func (mg *Migrator) State() AppState {
@@ -173,21 +197,25 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 
 	ch := make(chan string, 256)
 	mg.logCh = ch
+	mg.lastError.Store("") // clear any previous failure before starting
 	mg.state.Store(int32(AppStateMigrating))
 
 	if err := mg.bunMig.Lock(ctx); err != nil {
-		mg.state.Store(int32(AppStateNeedsMigration))
+		wrapped := fmt.Errorf("migrate: acquire lock: %w", err)
+		mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", wrapped))
+		mg.TransitionToFailed(wrapped)
 		close(ch)
-		return fmt.Errorf("migrate: acquire lock: %w", err)
+		return wrapped
 	}
 	defer mg.bunMig.Unlock(ctx) //nolint:errcheck
 
 	group, err := mg.bunMig.Migrate(ctx)
 	if err != nil {
+		wrapped := fmt.Errorf("migrate: bun: %w", err)
 		mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", err))
-		mg.state.Store(int32(AppStateNeedsMigration))
+		mg.TransitionToFailed(wrapped)
 		close(ch)
-		return err
+		return wrapped
 	}
 	if group.IsZero() {
 		mg.sendLog(ch, "No new migrations to run\n")
@@ -197,17 +225,19 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 
 	riverMig, err := rivermigrate.New(riverdatabasesql.New(mg.db.DB), nil)
 	if err != nil {
+		wrapped := fmt.Errorf("migrate: River migrator: %w", err)
 		mg.sendLog(ch, fmt.Sprintf("River migration setup failed: %v\n", err))
-		mg.state.Store(int32(AppStateNeedsMigration))
+		mg.TransitionToFailed(wrapped)
 		close(ch)
-		return fmt.Errorf("migrate: River migrator: %w", err)
+		return wrapped
 	}
 	riverRes, err := riverMig.Migrate(ctx, rivermigrate.DirectionUp, nil)
 	if err != nil {
+		wrapped := fmt.Errorf("migrate: River: %w", err)
 		mg.sendLog(ch, fmt.Sprintf("River migration failed: %v\n", err))
-		mg.state.Store(int32(AppStateNeedsMigration))
+		mg.TransitionToFailed(wrapped)
 		close(ch)
-		return fmt.Errorf("migrate: River: %w", err)
+		return wrapped
 	}
 	if len(riverRes.Versions) == 0 {
 		mg.sendLog(ch, "No new River migrations to run\n")
@@ -235,6 +265,10 @@ func (mg *Migrator) Close() error { return nil }
 
 func (mg *Migrator) SetStateForTest(s AppState) {
 	mg.state.Store(int32(s))
+}
+
+func (mg *Migrator) SetPrevStateForTest(s AppState) {
+	mg.prevState.Store(int32(s))
 }
 
 func NewMigratorForTest(s AppState) *Migrator {
@@ -329,6 +363,7 @@ func (mg *Migrator) recoverFromUnavailable(ctx context.Context, db *bun.DB, prev
 		slog.Info("db probe: recovery complete (re-determined state after migrating)", "state", mg.State())
 
 	default:
+		mg.lastError.Store("") // clear any failure inherited via DBUnavailable
 		if mg.bunMig != nil {
 			mg.bunMig = nil
 		}

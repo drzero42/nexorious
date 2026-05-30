@@ -82,7 +82,7 @@ export async function getAdminStatistics(): Promise<AdminStatistics> {
   const users = await getUsers();
 
   const totalUsers = users.length;
-  const totalAdmins = users.filter(u => u.isAdmin).length;
+  const totalAdmins = users.filter((u) => u.isAdmin).length;
 
   // Sort by creation date (newest first) and take top 5
   const recentUsers = [...users]
@@ -110,7 +110,9 @@ export interface MetadataRefreshJobResult {
  * Start a metadata refresh job to update game metadata from IGDB (admin only)
  * Uses fan-out pattern to process games in parallel via background workers.
  */
-export async function startMetadataRefreshJob(gameIds?: string[]): Promise<MetadataRefreshJobResult> {
+export async function startMetadataRefreshJob(
+  gameIds?: string[],
+): Promise<MetadataRefreshJobResult> {
   const response = await api.post<{
     success: boolean;
     message: string;

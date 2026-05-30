@@ -1,14 +1,8 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Menu, LogOut, ArrowLeftRight } from 'lucide-react';
+import { Menu, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/providers';
 import { useNavItems, NavLink, NavSectionCollapsible } from './index';
@@ -24,7 +18,7 @@ export function MobileNav() {
 
   const handleLogout = () => {
     setOpen(false);
-    logout();
+    void logout();
   };
 
   return (
@@ -41,7 +35,8 @@ export function MobileNav() {
           <SheetContent side="left" className="w-72 p-0">
             <SheetHeader className="p-4 border-b">
               <SheetTitle>
-                <Link to="/games" onClick={handleNavigate}>
+                <Link to="/games" onClick={handleNavigate} className="flex items-center gap-2">
+                  <img src="/logo.svg" alt="" className="h-7 w-7" />
                   Nexorious
                 </Link>
               </SheetTitle>
@@ -60,10 +55,7 @@ export function MobileNav() {
               {/* Admin section (admin only) */}
               {user?.isAdmin && (
                 <div className="mt-6">
-                  <NavSectionCollapsible
-                    {...adminSection}
-                    onNavigate={handleNavigate}
-                  />
+                  <NavSectionCollapsible {...adminSection} onNavigate={handleNavigate} />
                 </div>
               )}
 
@@ -88,16 +80,6 @@ export function MobileNav() {
                     </Link>
                   </li>
                   <li>
-                    <Link
-                      to="/import-export"
-                      onClick={handleNavigate}
-                      className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors"
-                    >
-                      <ArrowLeftRight className="h-4 w-4" />
-                      <span>Import / Export</span>
-                    </Link>
-                  </li>
-                  <li>
                     <button
                       onClick={handleLogout}
                       className="flex w-full items-center gap-2 px-3 py-2 rounded-md hover:bg-muted transition-colors text-left"
@@ -112,7 +94,8 @@ export function MobileNav() {
           </SheetContent>
         </Sheet>
 
-        <Link to="/games" className="font-bold text-lg">
+        <Link to="/games" className="flex items-center gap-2 font-bold text-lg">
+          <img src="/logo.svg" alt="" className="h-7 w-7" />
           Nexorious
         </Link>
       </div>
@@ -120,9 +103,7 @@ export function MobileNav() {
       {/* Avatar on right */}
       <Link to="/profile">
         <Avatar className="h-8 w-8">
-          <AvatarFallback>
-            {user?.username?.charAt(0).toUpperCase()}
-          </AvatarFallback>
+          <AvatarFallback>{user?.username?.charAt(0).toUpperCase()}</AvatarFallback>
         </Avatar>
       </Link>
     </div>

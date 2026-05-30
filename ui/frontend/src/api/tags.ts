@@ -167,18 +167,16 @@ export async function createTag(data: TagCreateData): Promise<Tag> {
  */
 export async function createOrGetTag(
   name: string,
-  color?: string
+  color?: string,
 ): Promise<TagCreateOrGetResponse> {
   const queryParams: Record<string, string | undefined> = { name };
   if (color) {
     queryParams.color = color;
   }
 
-  const response = await api.post<TagCreateOrGetApiResponse>(
-    '/tags/create-or-get',
-    undefined,
-    { params: queryParams }
-  );
+  const response = await api.post<TagCreateOrGetApiResponse>('/tags/create-or-get', undefined, {
+    params: queryParams,
+  });
 
   return {
     tag: transformTag(response.tag),
@@ -218,12 +216,11 @@ export async function deleteTag(id: string): Promise<void> {
  */
 export async function assignTagsToGame(
   userGameId: string,
-  tagIds: string[]
+  tagIds: string[],
 ): Promise<TagAssignResponse> {
-  const response = await api.post<TagAssignApiResponse>(
-    `/tags/assign/${userGameId}`,
-    { tag_ids: tagIds }
-  );
+  const response = await api.post<TagAssignApiResponse>(`/tags/assign/${userGameId}`, {
+    tag_ids: tagIds,
+  });
 
   return {
     message: response.message,
@@ -237,12 +234,11 @@ export async function assignTagsToGame(
  */
 export async function removeTagsFromGame(
   userGameId: string,
-  tagIds: string[]
+  tagIds: string[],
 ): Promise<TagRemoveResponse> {
-  const response = await api.delete<TagRemoveApiResponse>(
-    `/tags/remove/${userGameId}`,
-    { body: JSON.stringify({ tag_ids: tagIds }) }
-  );
+  const response = await api.delete<TagRemoveApiResponse>(`/tags/remove/${userGameId}`, {
+    body: JSON.stringify({ tag_ids: tagIds }),
+  });
 
   return {
     message: response.message,
@@ -256,7 +252,7 @@ export async function removeTagsFromGame(
  */
 export async function bulkAssignTags(
   userGameIds: string[],
-  tagIds: string[]
+  tagIds: string[],
 ): Promise<{ message: string; totalNewAssociations: number; gamesProcessed: number }> {
   const response = await api.post<{
     message: string;
@@ -279,7 +275,7 @@ export async function bulkAssignTags(
  */
 export async function bulkRemoveTags(
   userGameIds: string[],
-  tagIds: string[]
+  tagIds: string[],
 ): Promise<{ message: string; totalRemovedAssociations: number; gamesProcessed: number }> {
   const response = await api.delete<{
     message: string;

@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import path from 'path';
 
 // In Docker dev, set API_TARGET=http://api:8000 to proxy to the backend service.
@@ -9,7 +9,10 @@ const apiTarget = process.env.API_TARGET ?? 'http://localhost:8000';
 
 export default defineConfig({
   plugins: [
-    TanStackRouterVite({ routesDirectory: './src/routes', routeFileIgnorePattern: '\\.(test|spec)\\.(ts|tsx)$' }),
+    tanstackRouter({
+      routesDirectory: './src/routes',
+      routeFileIgnorePattern: '\\.(test|spec)\\.(ts|tsx)$',
+    }),
     react(),
   ],
   resolve: {
@@ -25,5 +28,6 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    chunkSizeWarningLimit: 1500,
   },
 });

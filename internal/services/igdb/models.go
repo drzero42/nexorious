@@ -9,13 +9,13 @@ type GameMetadata struct {
 	Genre                      *string
 	Developer                  *string
 	Publisher                  *string
-	ReleaseDate                *string  // ISO date string "YYYY-MM-DD"
+	ReleaseDate                *string // ISO date string "YYYY-MM-DD"
 	CoverArtURL                *string
-	CoverImageID               string   // IGDB image_id, e.g. "co1wyy". Empty when no cover.
+	CoverImageID               string // IGDB image_id, e.g. "co1wyy". Empty when no cover.
 	RatingAverage              *float64
 	RatingCount                *int32
-	HowlongtobeatMain         *float64
-	HowlongtobeatExtra        *float64
+	HowlongtobeatMain          *float64
+	HowlongtobeatExtra         *float64
 	HowlongtobeatCompletionist *float64
 	PlatformIDs                []int
 	PlatformNames              []string
@@ -33,19 +33,19 @@ type twitchTokenResponse struct {
 
 // igdbGameResponse represents a single game from the IGDB API.
 type igdbGameResponse struct {
-	ID               int              `json:"id"`
-	Name             string           `json:"name"`
-	Slug             string           `json:"slug"`
-	Summary          *string          `json:"summary"`
-	FirstReleaseDate *int64           `json:"first_release_date"`
-	Cover            *igdbCover       `json:"cover"`
-	Genres           []igdbNamedItem  `json:"genres"`
-	InvolvedCompanies []igdbCompany   `json:"involved_companies"`
-	Platforms        []igdbPlatform   `json:"platforms"`
-	TotalRating      *float64         `json:"total_rating"`
-	TotalRatingCount *int32           `json:"total_rating_count"`
-	GameModes        []igdbNamedItem  `json:"game_modes"`
-	Themes           []igdbNamedItem  `json:"themes"`
+	ID                 int             `json:"id"`
+	Name               string          `json:"name"`
+	Slug               string          `json:"slug"`
+	Summary            *string         `json:"summary"`
+	FirstReleaseDate   *int64          `json:"first_release_date"`
+	Cover              *igdbCover      `json:"cover"`
+	Genres             []igdbNamedItem `json:"genres"`
+	InvolvedCompanies  []igdbCompany   `json:"involved_companies"`
+	Platforms          []igdbPlatform  `json:"platforms"`
+	TotalRating        *float64        `json:"total_rating"`
+	TotalRatingCount   *int32          `json:"total_rating_count"`
+	GameModes          []igdbNamedItem `json:"game_modes"`
+	Themes             []igdbNamedItem `json:"themes"`
 	PlayerPerspectives []igdbNamedItem `json:"player_perspectives"`
 }
 

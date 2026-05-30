@@ -209,9 +209,7 @@ describe('NotesEditor', () => {
     const initialValue = '<p>Initial</p>';
     const updatedValue = '<p>Updated</p>';
 
-    const { rerender } = render(
-      <NotesEditor value={initialValue} onChange={handleChange} />
-    );
+    const { rerender } = render(<NotesEditor value={initialValue} onChange={handleChange} />);
 
     await waitFor(() => {
       const editor = document.querySelector('.ProseMirror');
@@ -310,9 +308,7 @@ describe('NotesViewer', () => {
 
   it('applies custom className to wrapper', async () => {
     const customClass = 'custom-viewer-class';
-    const { container } = render(
-      <NotesViewer content="<p>Content</p>" className={customClass} />
-    );
+    const { container } = render(<NotesViewer content="<p>Content</p>" className={customClass} />);
 
     await waitFor(() => {
       const wrapper = container.querySelector('.custom-viewer-class');

@@ -3,6 +3,8 @@ package migrate_test
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -295,4 +297,89 @@ func TestStartDBProbe_RespectsContext(t *testing.T) {
 	cancel() // should cause goroutine to exit cleanly
 	time.Sleep(100 * time.Millisecond)
 	// No assertion needed — if the goroutine leaks, the race detector will catch it.
+}
+
+func TestAppState_String_MigrationFailed(t *testing.T) {
+	if got := migrate.AppStateMigrationFailed.String(); got != "migration_failed" {
+		t.Errorf("AppStateMigrationFailed.String() = %q, want %q", got, "migration_failed")
+	}
+}
+
+func TestTransitionToFailed_SetsStateAndStoresError(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateMigrating)
+
+	if got := m.LastError(); got != "" {
+		t.Fatalf("LastError before transition = %q, want empty", got)
+	}
+
+	m.TransitionToFailed(errors.New("boom"))
+
+	if got := m.State(); got != migrate.AppStateMigrationFailed {
+		t.Errorf("State = %v, want AppStateMigrationFailed", got)
+	}
+	if got := m.LastError(); got != "boom" {
+		t.Errorf("LastError = %q, want %q", got, "boom")
+	}
+}
+
+func TestTransitionToFailed_OverwritesPreviousError(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateMigrating)
+	m.TransitionToFailed(errors.New("first"))
+	m.TransitionToFailed(errors.New("second"))
+	if got := m.LastError(); got != "second" {
+		t.Errorf("LastError = %q, want %q", got, "second")
+	}
+}
+
+func TestRunMigrations_FailureTransitionsToFailedWithError(t *testing.T) {
+	db := setupTestDB(t)
+	m := migrate.NewMigrator(db)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
+
+	// Close the underlying *sql.DB so bunMig.Lock fails inside RunMigrations.
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close: %v", err)
+	}
+
+	err := m.RunMigrations(context.Background())
+	if err == nil {
+		t.Fatal("RunMigrations: expected error from closed DB, got nil")
+	}
+	if m.State() != migrate.AppStateMigrationFailed {
+		t.Errorf("State = %v, want AppStateMigrationFailed", m.State())
+	}
+	if m.LastError() == "" {
+		t.Errorf("LastError is empty, want non-empty")
+	}
+
+	// The Lock-failure path must emit a log line before closing the SSE
+	// channel, matching the other failure paths (issue #590). RunMigrations
+	// has returned, so the channel is buffered, written, and closed: this
+	// range drains and terminates without blocking.
+	var logged strings.Builder
+	for line := range m.LogCh() {
+		logged.WriteString(line)
+	}
+	if !strings.Contains(logged.String(), "migration failed") {
+		t.Errorf("expected a log line emitted on Lock failure, got %q", logged.String())
+	}
+}
+
+func TestRunMigrations_ClearsLastErrorOnStart(t *testing.T) {
+	db := setupTestDB(t)
+	m := migrate.NewMigrator(db)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
+	// Seed a previous failure.
+	m.TransitionToFailed(errors.New("previous run failed"))
+
+	if err := m.RunMigrations(context.Background()); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+	if got := m.LastError(); got != "" {
+		t.Errorf("LastError after successful run = %q, want empty", got)
+	}
 }

@@ -5,7 +5,7 @@ name: Nexorious
 .authenticated:
   authentication:
     type: bearer
-    token: "{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"
+    token: "{{response('create_api_key', trigger='no_history') | jsonpath('$.key')}}"
 
 profiles:
   local:
@@ -38,6 +38,34 @@ requests:
           data:
             username: "{{username}}"
             password: "{{password}}"
+
+      list_setup_backups:
+        name: List Setup Backups
+        method: GET
+        url: "{{base_url}}/api/auth/setup/backups"
+
+      setup_restore_disk:
+        name: Setup Restore from Disk
+        method: POST
+        url: "{{base_url}}/api/auth/setup/restore/disk"
+        body:
+          type: json
+          data:
+            filename: "{{response('list_setup_backups', trigger='no_history') | jsonpath('$.backups[*].filename', mode='array') | select()}}"
+
+      create_api_key:
+        # Slumber has no cookie jar, so this recipe can't use the session from
+        # bootstrap.login directly. Bootstrap once with an existing API key:
+        #   slumber request bootstrap.create_api_key --bearer nxr_<your_key>
+        # (Create a first key via the web UI or curl.) After this runs,
+        # Slumber caches the response and .authenticated reads $.key from it.
+        name: Create API Key
+        method: POST
+        url: "{{base_url}}/api/auth/api-keys"
+        body:
+          type: json
+          data:
+            name: slumber
 
   admin:
     name: Admin
@@ -178,24 +206,11 @@ requests:
             username: "{{username}}"
             password: "{{password}}"
 
-      refresh:
-        name: Refresh Token
-        method: POST
-        url: "{{base_url}}/api/auth/refresh"
-        body:
-          type: json
-          data:
-            refresh_token: "{{response('login', trigger='no_history') | jsonpath('$.refresh_token')}}"
-
       logout:
         name: Logout
         method: POST
         url: "{{base_url}}/api/auth/logout"
         $ref: "#/.authenticated"
-        body:
-          type: json
-          data:
-            refresh_token: "{{response('login', trigger='no_history') | jsonpath('$.refresh_token')}}"
 
       me:
         name: Me
@@ -242,6 +257,36 @@ requests:
           data:
             new_username: "{{prompt(message='New username')}}"
 
+      list_sessions:
+        name: List Sessions
+        method: GET
+        url: "{{base_url}}/api/auth/sessions"
+        $ref: "#/.authenticated"
+
+      revoke_session:
+        name: Revoke Session
+        method: DELETE
+        url: "{{base_url}}/api/auth/sessions/{{prompt(message='Session ID')}}"
+        $ref: "#/.authenticated"
+
+      revoke_all_other_sessions:
+        name: Revoke All Other Sessions
+        method: DELETE
+        url: "{{base_url}}/api/auth/sessions"
+        $ref: "#/.authenticated"
+
+      list_api_keys:
+        name: List API Keys
+        method: GET
+        url: "{{base_url}}/api/auth/api-keys"
+        $ref: "#/.authenticated"
+
+      revoke_api_key:
+        name: Revoke API Key
+        method: DELETE
+        url: "{{base_url}}/api/auth/api-keys/{{response('list_api_keys', trigger='no_history') | jsonpath('$[*].id', mode='array') | select()}}"
+        $ref: "#/.authenticated"
+
   health:
     name: Health
     requests:
@@ -249,6 +294,14 @@ requests:
         name: Health Check
         method: GET
         url: "{{base_url}}/health"
+
+  version:
+    name: Version
+    requests:
+      get_version:
+        name: Get Version
+        method: GET
+        url: "{{base_url}}/api/version"
 
   import:
     name: Import
@@ -271,26 +324,6 @@ requests:
         method: GET
         url: "{{base_url}}/api/job-items/{{prompt(message='Job Item ID')}}"
         $ref: "#/.authenticated"
-
-      resolve_item:
-        name: Resolve Item
-        method: POST
-        url: "{{base_url}}/api/job-items/{{prompt(message='Job Item ID')}}/resolve"
-        $ref: "#/.authenticated"
-        body:
-          type: json
-          data:
-            igdb_id: "{{prompt(message='IGDB ID to resolve to') | json_parse()}}"
-
-      skip_item:
-        name: Skip Item
-        method: POST
-        url: "{{base_url}}/api/job-items/{{prompt(message='Job Item ID')}}/skip"
-        $ref: "#/.authenticated"
-        body:
-          type: json
-          data:
-            reason: "{{prompt(message='Skip reason')}}"
 
       retry_item:
         name: Retry Item
@@ -478,6 +511,18 @@ requests:
             query: "{{prompt(message='IGDB search query')}}"
             limit: 10
 
+      search_igdb_filtered:
+        name: Search IGDB (platform-filtered)
+        method: POST
+        url: "{{base_url}}/api/games/search/igdb"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            query: "{{prompt(message='IGDB search query')}}"
+            limit: 10
+            external_game_id: "{{prompt(message='External game ID (from pending_review)')}}"
+
       get_igdb_game:
         name: Get IGDB Game
         method: GET
@@ -519,7 +564,6 @@ requests:
           type: json
           data:
             frequency: "daily"
-            auto_add: false
 
       steam_verify:
         name: Steam Verify

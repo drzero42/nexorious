@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/time/rate"
 )
 
 func TestFetchPlayHistory_HappyPath(t *testing.T) {
@@ -64,11 +68,12 @@ func TestFetchPlayHistory_HappyPath(t *testing.T) {
 	if !ok {
 		t.Fatal("expected entry for PPSA07950_00")
 	}
-	if ps5.RawPlatform != "playstation-5" {
-		t.Errorf("expected RawPlatform=playstation-5, got %q", ps5.RawPlatform)
+	if len(ps5.Platforms) == 0 || ps5.Platforms[0] != "playstation-5" {
+		t.Errorf("expected Platforms[0]=playstation-5, got %v", ps5.Platforms)
 	}
-	if ps5.PlaytimeHours != 340 {
-		t.Errorf("expected PlaytimeHours=340, got %d", ps5.PlaytimeHours)
+	const wantPS5 = 340 + 46.0/60.0
+	if math.Abs(ps5.PlaytimeHours-wantPS5) > 1e-9 {
+		t.Errorf("expected PlaytimeHours=%v, got %v", wantPS5, ps5.PlaytimeHours)
 	}
 	if ps5.OwnershipStatus != "owned" {
 		t.Errorf("expected OwnershipStatus=owned, got %q", ps5.OwnershipStatus)
@@ -81,8 +86,8 @@ func TestFetchPlayHistory_HappyPath(t *testing.T) {
 	if !ok {
 		t.Fatal("expected entry for CUSA12345_00")
 	}
-	if ps4.RawPlatform != "playstation-4" {
-		t.Errorf("expected RawPlatform=playstation-4, got %q", ps4.RawPlatform)
+	if len(ps4.Platforms) == 0 || ps4.Platforms[0] != "playstation-4" {
+		t.Errorf("expected Platforms[0]=playstation-4, got %v", ps4.Platforms)
 	}
 	if ps4.OwnershipStatus != "subscription" {
 		t.Errorf("expected OwnershipStatus=subscription, got %q", ps4.OwnershipStatus)
@@ -144,6 +149,7 @@ func TestFetchPlayHistory_Pagination(t *testing.T) {
 	c := NewClient()
 	c.SetHTTPClient(srv.Client())
 	c.SetGamelistURL(srv.URL)
+	c.SetLimiter(rate.NewLimiter(rate.Inf, 1))
 
 	result, err := c.fetchPlayHistory(context.Background(), "test-token")
 	if err != nil {
@@ -204,8 +210,8 @@ func TestFetchPurchasedGames_HappyPath(t *testing.T) {
 	if !ok {
 		t.Fatal("expected entry for CUSA10410_00")
 	}
-	if ps4.RawPlatform != "playstation-4" {
-		t.Errorf("expected RawPlatform=playstation-4, got %q", ps4.RawPlatform)
+	if len(ps4.Platforms) == 0 || ps4.Platforms[0] != "playstation-4" {
+		t.Errorf("expected Platforms[0]=playstation-4, got %v", ps4.Platforms)
 	}
 	if !ps4.IsSubscription {
 		t.Error("expected IsSubscription=true for PS_PLUS game")
@@ -214,15 +220,15 @@ func TestFetchPurchasedGames_HappyPath(t *testing.T) {
 		t.Errorf("expected OwnershipStatus=subscription, got %q", ps4.OwnershipStatus)
 	}
 	if ps4.PlaytimeHours != 0 {
-		t.Errorf("expected PlaytimeHours=0, got %d", ps4.PlaytimeHours)
+		t.Errorf("expected PlaytimeHours=0, got %v", ps4.PlaytimeHours)
 	}
 
 	ps5, ok := result["PPSA01234_00"]
 	if !ok {
 		t.Fatal("expected entry for PPSA01234_00")
 	}
-	if ps5.RawPlatform != "playstation-5" {
-		t.Errorf("expected RawPlatform=playstation-5, got %q", ps5.RawPlatform)
+	if len(ps5.Platforms) == 0 || ps5.Platforms[0] != "playstation-5" {
+		t.Errorf("expected Platforms[0]=playstation-5, got %v", ps5.Platforms)
 	}
 	if ps5.IsSubscription {
 		t.Error("expected IsSubscription=false for non-PS_PLUS game")
@@ -276,6 +282,7 @@ func TestFetchPurchasedGames_Pagination(t *testing.T) {
 	c.SetHTTPClient(srv.Client())
 	c.SetGraphQLURL(srv.URL)
 	c.SetGraphQLPageSize(2)
+	c.SetLimiter(rate.NewLimiter(rate.Inf, 1))
 
 	result, err := c.fetchPurchasedGames(context.Background(), "test-token")
 	if err != nil {
@@ -314,11 +321,11 @@ func TestFetchPurchasedGames_HTTPError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMergePlayedPurchased_UnionBothSources(t *testing.T) {
-	played := map[string]ExternalLibraryEntry{
-		"DISC1": {ExternalID: "DISC1", Title: "Disc Game", RawPlatform: "playstation-4", PlaytimeHours: 5, OwnershipStatus: "owned"},
+	played := map[string]ExternalGameEntry{
+		"DISC1": {ExternalID: "DISC1", Title: "Disc Game", Platforms: []string{"playstation-4"}, PlaytimeHours: 5, OwnershipStatus: "owned"},
 	}
-	purchased := map[string]ExternalLibraryEntry{
-		"DL1": {ExternalID: "DL1", Title: "Digital", RawPlatform: "playstation-5", PlaytimeHours: 0, OwnershipStatus: "owned"},
+	purchased := map[string]ExternalGameEntry{
+		"DL1": {ExternalID: "DL1", Title: "Digital", Platforms: []string{"playstation-5"}, PlaytimeHours: 0, OwnershipStatus: "owned"},
 	}
 	result := mergePlayedPurchased(played, purchased)
 	if len(result) != 2 {
@@ -327,11 +334,11 @@ func TestMergePlayedPurchased_UnionBothSources(t *testing.T) {
 }
 
 func TestMergePlayedPurchased_PurchasedUpgradesSubscription(t *testing.T) {
-	played := map[string]ExternalLibraryEntry{
-		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 10, OwnershipStatus: "owned", IsSubscription: false},
+	played := map[string]ExternalGameEntry{
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 10, OwnershipStatus: "owned", IsSubscription: false},
 	}
-	purchased := map[string]ExternalLibraryEntry{
-		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 0, OwnershipStatus: "subscription", IsSubscription: true},
+	purchased := map[string]ExternalGameEntry{
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 0, OwnershipStatus: "subscription", IsSubscription: true},
 	}
 	result := mergePlayedPurchased(played, purchased)
 	if len(result) != 1 {
@@ -342,16 +349,16 @@ func TestMergePlayedPurchased_PurchasedUpgradesSubscription(t *testing.T) {
 		t.Errorf("expected subscription after merge, got IsSubscription=%v OwnershipStatus=%q", e.IsSubscription, e.OwnershipStatus)
 	}
 	if e.PlaytimeHours != 10 {
-		t.Errorf("expected playtime preserved from play history (10), got %d", e.PlaytimeHours)
+		t.Errorf("expected playtime preserved from play history (10), got %v", e.PlaytimeHours)
 	}
 }
 
 func TestMergePlayedPurchased_PurchasedDoesNotDowngradeOwnership(t *testing.T) {
-	played := map[string]ExternalLibraryEntry{
-		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 5, OwnershipStatus: "owned", IsSubscription: false},
+	played := map[string]ExternalGameEntry{
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 5, OwnershipStatus: "owned", IsSubscription: false},
 	}
-	purchased := map[string]ExternalLibraryEntry{
-		"GAME1": {ExternalID: "GAME1", RawPlatform: "playstation-4", PlaytimeHours: 0, OwnershipStatus: "owned", IsSubscription: false},
+	purchased := map[string]ExternalGameEntry{
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 0, OwnershipStatus: "owned", IsSubscription: false},
 	}
 	result := mergePlayedPurchased(played, purchased)
 	if len(result) != 1 {
@@ -363,10 +370,10 @@ func TestMergePlayedPurchased_PurchasedDoesNotDowngradeOwnership(t *testing.T) {
 }
 
 func TestMergePlayedPurchased_DiscGameNotInPurchased(t *testing.T) {
-	played := map[string]ExternalLibraryEntry{
-		"DISC1": {ExternalID: "DISC1", RawPlatform: "playstation-4", PlaytimeHours: 3, OwnershipStatus: "owned"},
+	played := map[string]ExternalGameEntry{
+		"DISC1": {ExternalID: "DISC1", Platforms: []string{"playstation-4"}, PlaytimeHours: 3, OwnershipStatus: "owned"},
 	}
-	result := mergePlayedPurchased(played, map[string]ExternalLibraryEntry{})
+	result := mergePlayedPurchased(played, map[string]ExternalGameEntry{})
 	if len(result) != 1 || result[0].ExternalID != "DISC1" {
 		t.Errorf("expected disc game in result, got %v", result)
 	}
@@ -407,9 +414,10 @@ func TestGetLibrary_MergesResults(t *testing.T) {
 	c.SetGamelistURL(srv.URL)
 	c.SetGraphQLURL(srv.URL)
 	c.SetAuthFn(func(_ context.Context, _ string) (string, error) { return "test-token", nil })
+	c.SetLimiter(rate.NewLimiter(rate.Inf, 1))
 
 	var total int
-	err := c.GetLibrary(context.Background(), "fake-npsso", 10, func(batch []ExternalLibraryEntry) error {
+	err := c.GetLibrary(context.Background(), "fake-npsso", 10, func(batch []ExternalGameEntry) error {
 		total += len(batch)
 		return nil
 	})
@@ -433,7 +441,7 @@ func TestGetLibrary_PlayHistoryError_ReturnsError(t *testing.T) {
 	c.SetGraphQLURL(srv.URL)
 	c.SetAuthFn(func(_ context.Context, _ string) (string, error) { return "tok", nil })
 
-	err := c.GetLibrary(context.Background(), "npsso", 10, func([]ExternalLibraryEntry) error { return nil })
+	err := c.GetLibrary(context.Background(), "npsso", 10, func([]ExternalGameEntry) error { return nil })
 	if err == nil {
 		t.Fatal("expected error when gamelist endpoint fails, got nil")
 	}
@@ -457,9 +465,59 @@ func TestGetLibrary_GraphQLSchemaChanged_ReturnsSentinel(t *testing.T) {
 	c.SetGamelistURL(srv.URL)
 	c.SetGraphQLURL(srv.URL)
 	c.SetAuthFn(func(_ context.Context, _ string) (string, error) { return "tok", nil })
+	c.SetLimiter(rate.NewLimiter(rate.Inf, 1))
 
-	err := c.GetLibrary(context.Background(), "npsso", 10, func([]ExternalLibraryEntry) error { return nil })
+	err := c.GetLibrary(context.Background(), "npsso", 10, func([]ExternalGameEntry) error { return nil })
 	if !errors.Is(err, ErrPSNGraphQLSchemaChanged) {
 		t.Errorf("expected ErrPSNGraphQLSchemaChanged, got %v", err)
+	}
+}
+
+// TestFetchPurchasedGames_RateLimiterWaitsBetweenPages covers the spec
+// invariant from docs/sync.md § PSN: the adapter applies a conservative
+// request delay between pages. With a 50ms-per-token limiter and 3 page
+// fetches, the second and third calls each wait one token => total
+// elapsed time must be >= 100ms.
+func TestFetchPurchasedGames_RateLimiterWaitsBetweenPages(t *testing.T) {
+	// Server emits 2 games per call for the first two calls and 1 game for
+	// the third (so the < size condition breaks the loop after the third).
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		var body string
+		if callCount < 3 {
+			body = `{"data":{"purchasedTitlesRetrieve":{"games":[
+				{"titleId":"CUSA00001_00","name":"Game A","platform":"PS5","subscriptionService":"NONE"},
+				{"titleId":"CUSA00002_00","name":"Game B","platform":"PS5","subscriptionService":"NONE"}
+			]}}}`
+		} else {
+			body = `{"data":{"purchasedTitlesRetrieve":{"games":[
+				{"titleId":"CUSA00003_00","name":"Game C","platform":"PS5","subscriptionService":"NONE"}
+			]}}}`
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	c := NewClient()
+	c.SetHTTPClient(srv.Client())
+	c.SetGraphQLURL(srv.URL)
+	c.SetGraphQLPageSize(2)
+	c.SetLimiter(rate.NewLimiter(rate.Every(50*time.Millisecond), 1))
+
+	start := time.Now()
+	if _, err := c.fetchPurchasedGames(context.Background(), "test-token"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	elapsed := time.Since(start)
+
+	if callCount != 3 {
+		t.Fatalf("expected 3 HTTP calls, got %d", callCount)
+	}
+	// First call passes through immediately (bucket starts full); the next
+	// two each wait ~50ms => >= 100ms total.
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("expected elapsed >= 100ms, got %v (limiter not consulted between pages?)", elapsed)
 	}
 }

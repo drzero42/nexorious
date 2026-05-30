@@ -146,7 +146,7 @@ function AdminUsersPage() {
   const handleToggleUserStatus = async (user: AdminUser) => {
     // Prevent self-deactivation
     if (user.id === currentUser?.id) {
-      toast.error("You cannot deactivate your own account");
+      toast.error('You cannot deactivate your own account');
       return;
     }
 
@@ -292,7 +292,9 @@ function AdminUsersPage() {
                         </div>
                       </div>
                       <Button variant="link" asChild>
-                        <Link to="/admin/users/$id" params={{ id: user.id }}>View</Link>
+                        <Link to="/admin/users/$id" params={{ id: user.id }}>
+                          View
+                        </Link>
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground mt-3">
@@ -344,7 +346,9 @@ function AdminUsersPage() {
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             <Button variant="link" size="sm" asChild>
-                              <Link to="/admin/users/$id" params={{ id: user.id }}>View</Link>
+                              <Link to="/admin/users/$id" params={{ id: user.id }}>
+                                View
+                              </Link>
                             </Button>
                             <Button
                               variant="ghost"

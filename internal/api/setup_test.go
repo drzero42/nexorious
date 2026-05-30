@@ -38,32 +38,35 @@ func TestSetupAdmin_Success(t *testing.T) {
 	}
 
 	var resp struct {
-		User struct {
-			ID       string `json:"id"`
-			Username string `json:"username"`
-			IsAdmin  bool   `json:"is_admin"`
-			IsActive bool   `json:"is_active"`
-		} `json:"user"`
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
+		ID       string `json:"id"`
+		Username string `json:"username"`
+		IsAdmin  bool   `json:"is_admin"`
+		IsActive bool   `json:"is_active"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.User.Username != "admin" {
-		t.Errorf("username mismatch: got %q", resp.User.Username)
+	if resp.Username != "admin" {
+		t.Errorf("username mismatch: got %q", resp.Username)
 	}
-	if !resp.User.IsAdmin {
+	if !resp.IsAdmin {
 		t.Error("expected is_admin=true")
 	}
-	if !resp.User.IsActive {
+	if !resp.IsActive {
 		t.Error("expected is_active=true")
 	}
-	if resp.AccessToken == "" {
-		t.Error("expected access_token")
+	if resp.ID == "" {
+		t.Error("expected user id in response")
 	}
-	if resp.RefreshToken == "" {
-		t.Error("expected refresh_token")
+
+	var sessionCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "session_id" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("no session_id cookie set after setup")
 	}
 
 	var count int
@@ -226,19 +229,29 @@ func TestSetupAdmin_GetMeAfterSetup(t *testing.T) {
 	}
 
 	var setupResp struct {
-		User        struct{ ID string `json:"id"` } `json:"user"`
-		AccessToken string                          `json:"access_token"`
+		ID string `json:"id"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&setupResp); err != nil {
 		t.Fatalf("decode setup response: %v", err)
 	}
 
+	// Extract session cookie from setup response
+	var sessionCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "session_id" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("no session_id cookie in setup response")
+	}
+
 	ah := api.NewAuthHandler(testDB, cfg)
 	meReq := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	meReq.Header.Set("Authorization", "Bearer "+setupResp.AccessToken)
+	meReq.AddCookie(sessionCookie)
 	meRec := httptest.NewRecorder()
 	meCtx := e.NewContext(meReq, meRec)
-	meCtx.Set("user_id", setupResp.User.ID)
+	meCtx.Set("user_id", setupResp.ID)
 
 	if err := ah.HandleGetMe(meCtx); err != nil {
 		t.Fatalf("GetMe: %v", err)
@@ -281,8 +294,8 @@ func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
 	if err := testDB.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM platform_storefronts").Scan(&assocCount); err != nil {
 		t.Fatalf("count platform_storefronts: %v", err)
 	}
-	if assocCount != 42 {
-		t.Errorf("expected 42 platform-storefront associations from migration, got %d", assocCount)
+	if assocCount != 43 {
+		t.Errorf("expected 43 platform-storefront associations from migration, got %d", assocCount)
 	}
 
 	// Spot-check: pc-windows default_storefront

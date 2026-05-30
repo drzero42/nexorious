@@ -1,5 +1,5 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatHoursPlayed } from '@/lib/game-utils';
 import { PlayStatus } from '@/types';
 import { StatusProgress } from './status-progress';
 import { statusIcons, statusLabels } from './status-progress-data';
@@ -65,21 +65,12 @@ const journeyDescriptions: Record<PlayStatus, string> = {
   [PlayStatus.REPLAY]: 'games replaying',
 };
 
-export function ProgressStatistics({
-  stats,
-  className,
-}: ProgressStatisticsProps) {
-  const {
-    totalGames,
-    completionStats,
-    completionRate,
-    totalHoursPlayed,
-  } = stats;
+export function ProgressStatistics({ stats, className }: ProgressStatisticsProps) {
+  const { totalGames, completionStats, completionRate, totalHoursPlayed } = stats;
 
   // Calculate active games (in progress + replay)
   const activeGames =
-    (completionStats[PlayStatus.IN_PROGRESS] || 0) +
-    (completionStats[PlayStatus.REPLAY] || 0);
+    (completionStats[PlayStatus.IN_PROGRESS] || 0) + (completionStats[PlayStatus.REPLAY] || 0);
 
   // Calculate time metrics
   const averageHoursPerGame = totalGames > 0 ? totalHoursPlayed / totalGames : 0;
@@ -92,9 +83,7 @@ export function ProgressStatistics({
 
   // Estimate average completion time (rough approximation)
   const averageCompletionTime =
-    completedCount > 0 && totalHoursPlayed > 0
-      ? totalHoursPlayed / completedCount
-      : 0;
+    completedCount > 0 && totalHoursPlayed > 0 ? totalHoursPlayed / completedCount : 0;
 
   return (
     <div className={className}>
@@ -102,17 +91,13 @@ export function ProgressStatistics({
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm font-medium text-muted-foreground">
-              Total Games
-            </div>
+            <div className="text-sm font-medium text-muted-foreground">Total Games</div>
             <div className="mt-1 text-2xl font-bold">{totalGames}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm font-medium text-muted-foreground">
-              Completion Rate
-            </div>
+            <div className="text-sm font-medium text-muted-foreground">Completion Rate</div>
             <div className="mt-1 text-2xl font-bold text-green-600">
               {completionRate.toFixed(1)}%
             </div>
@@ -120,22 +105,16 @@ export function ProgressStatistics({
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm font-medium text-muted-foreground">
-              Total Hours
-            </div>
+            <div className="text-sm font-medium text-muted-foreground">Total Hours</div>
             <div className="mt-1 text-2xl font-bold text-blue-600">
-              {totalHoursPlayed.toLocaleString()}
+              {formatHoursPlayed(totalHoursPlayed)}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm font-medium text-muted-foreground">
-              Active Games
-            </div>
-            <div className="mt-1 text-2xl font-bold text-purple-600">
-              {activeGames}
-            </div>
+            <div className="text-sm font-medium text-muted-foreground">Active Games</div>
+            <div className="mt-1 text-2xl font-bold text-purple-600">{activeGames}</div>
           </CardContent>
         </Card>
       </div>
@@ -199,27 +178,21 @@ export function ProgressStatistics({
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="text-center">
                 <div className="text-3xl font-bold text-blue-600">
-                  {totalHoursPlayed.toLocaleString()}
+                  {formatHoursPlayed(totalHoursPlayed)}
                 </div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  Total Hours Played
-                </div>
+                <div className="mt-1 text-sm text-muted-foreground">Total Hours Played</div>
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-green-600">
                   {averageHoursPerGame.toFixed(1)}
                 </div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  Average Hours per Game
-                </div>
+                <div className="mt-1 text-sm text-muted-foreground">Average Hours per Game</div>
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-purple-600">
                   {averageCompletionTime.toFixed(1)}
                 </div>
-                <div className="mt-1 text-sm text-muted-foreground">
-                  Average Completion Time
-                </div>
+                <div className="mt-1 text-sm text-muted-foreground">Average Completion Time</div>
               </div>
             </div>
           </CardContent>

@@ -2,18 +2,18 @@
  * Types for sync configuration and status management.
  */
 
-export enum SyncPlatform {
+export enum SyncStorefront {
   STEAM = 'steam',
   EPIC = 'epic',
   GOG = 'gog',
   PSN = 'psn',
 }
 
-export const SUPPORTED_SYNC_PLATFORMS: SyncPlatform[] = [
-  SyncPlatform.STEAM,
-  SyncPlatform.EPIC,
-  SyncPlatform.GOG,
-  SyncPlatform.PSN,
+export const SUPPORTED_SYNC_STOREFRONTS: SyncStorefront[] = [
+  SyncStorefront.STEAM,
+  SyncStorefront.EPIC,
+  SyncStorefront.GOG,
+  SyncStorefront.PSN,
 ];
 
 export enum SyncFrequency {
@@ -26,9 +26,8 @@ export enum SyncFrequency {
 export interface SyncConfig {
   id: string;
   userId: string;
-  platform: SyncPlatform;
+  storefront: SyncStorefront;
   frequency: SyncFrequency;
-  autoAdd: boolean;
   lastSyncedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -37,22 +36,22 @@ export interface SyncConfig {
 
 export interface SyncConfigUpdateData {
   frequency?: SyncFrequency;
-  autoAdd?: boolean;
 }
 
 export interface SyncStatus {
-  platform: SyncPlatform;
+  storefront: SyncStorefront;
   isSyncing: boolean;
   lastSyncedAt: string | null;
   activeJobId: string | null;
   requiresReauth?: boolean;
   authExpired?: boolean;
+  externalGameCount: number;
 }
 
 export interface ManualSyncResponse {
   message: string;
   jobId: string;
-  platform: string;
+  storefront: string;
   status: string;
 }
 
@@ -67,40 +66,43 @@ export function getSyncFrequencyLabel(frequency: SyncFrequency): string {
   return labels[frequency];
 }
 
-// Helper to get platform display info
-export function getPlatformDisplayInfo(platform: SyncPlatform): {
+// Helper to get storefront display info
+export function getStorefrontDisplayInfo(storefront: SyncStorefront): {
   name: string;
   color: string;
   bgColor: string;
   iconUrl: string;
 } {
-  const info: Record<SyncPlatform, { name: string; color: string; bgColor: string; iconUrl: string }> = {
-    [SyncPlatform.STEAM]: {
+  const info: Record<
+    SyncStorefront,
+    { name: string; color: string; bgColor: string; iconUrl: string }
+  > = {
+    [SyncStorefront.STEAM]: {
       name: 'Steam',
       color: 'text-[#1b2838]',
       bgColor: 'bg-[#1b2838]/10 dark:bg-[#1b2838]/30',
       iconUrl: '/logos/storefronts/steam/steam-icon-light.svg',
     },
-    [SyncPlatform.EPIC]: {
+    [SyncStorefront.EPIC]: {
       name: 'Epic Games',
       color: 'text-gray-800 dark:text-gray-200',
       bgColor: 'bg-gray-100 dark:bg-gray-700',
       iconUrl: '/logos/storefronts/epic-games-store/epic-games-store-icon-light.svg',
     },
-    [SyncPlatform.GOG]: {
+    [SyncStorefront.GOG]: {
       name: 'GOG',
       color: 'text-purple-700 dark:text-purple-400',
       bgColor: 'bg-purple-100 dark:bg-purple-900/30',
       iconUrl: '/logos/storefronts/gog/gog-icon-light.svg',
     },
-    [SyncPlatform.PSN]: {
+    [SyncStorefront.PSN]: {
       name: 'PlayStation Network',
       color: 'text-[#003087]',
       bgColor: 'bg-[#003087]/10 dark:bg-[#003087]/30',
       iconUrl: '/logos/storefronts/playstation-store/playstation-store-icon-light.svg',
     },
   };
-  return info[platform];
+  return info[storefront];
 }
 
 export interface SteamVerifyResponse {
@@ -113,7 +115,8 @@ export interface SteamVerifyResponse {
 export const STEAM_VERIFY_ERROR_MESSAGES: Record<string, string> = {
   invalid_api_key: 'Invalid API key. Please check and try again.',
   invalid_steam_id: 'Steam ID not found. Please verify the number.',
-  private_profile: 'Your Steam profile or game details are set to private. Please make them public and try again.',
+  private_profile:
+    'Your Steam profile or game details are set to private. Please make them public and try again.',
   rate_limited: 'Steam API rate limit reached. Please try again in a few minutes.',
   network_error: 'Could not connect to Steam. Please try again.',
 };
@@ -139,6 +142,7 @@ export interface EpicConnectResponse {
 export interface EpicConnectionResponse {
   connected: boolean;
   disabled: boolean;
+  credentialsError?: boolean;
   displayName?: string;
   accountId?: string;
   /** "legendary_not_configured" when disabled=true (LEGENDARY_WORK_DIR unset). */
@@ -153,6 +157,7 @@ export interface GOGConnectResponse {
 
 export interface GOGConnectionResponse {
   connected: boolean;
+  credentialsError?: boolean;
   username?: string;
   userId?: string;
   authUrl?: string;
@@ -170,7 +175,15 @@ export interface PSNStatusResponse {
   configured: boolean;
   accountId: string | null;
   onlineId: string | null;
-  tokenExpired: boolean;
+  credentialsError: boolean;
+}
+
+// Steam Connection Types
+export interface SteamConnectionData {
+  connected: boolean;
+  credentialsError: boolean;
+  steamId: string;
+  username: string;
 }
 
 export interface ExternalGame {
@@ -182,9 +195,11 @@ export interface ExternalGame {
   is_skipped: boolean;
   is_available: boolean;
   is_subscription: boolean;
-  playtime_hours: number;
   has_user_game: boolean;
   user_game_id: string | null;
   igdb_title: string | null;
   user_game_other_platform_count: number;
+  sync_status: 'needs_review' | 'failed' | 'matched' | 'skipped' | 'unmatched';
+  failed_job_item_id: string | null;
+  platforms: string[];
 }

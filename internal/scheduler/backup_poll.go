@@ -49,8 +49,10 @@ func (w *CheckScheduledBackupWorker) Work(ctx context.Context, _ *river.Job[Chec
 	if err := w.BackupSvc.ApplyRetention(cfg.RetentionMode, cfg.RetentionValue); err != nil {
 		slog.Warn("scheduled backup retention cleanup failed", "err", err)
 	}
-	_, _ = w.DB.NewRaw(
+	if _, err := w.DB.NewRaw(
 		`UPDATE backup_config SET last_backup_at = now(), updated_at = now() WHERE id = 1`,
-	).Exec(context.Background())
+	).Exec(context.Background()); err != nil {
+		slog.Error("check_scheduled_backup: update last_backup_at failed", "err", err)
+	}
 	return nil
 }

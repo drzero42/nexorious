@@ -4,17 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 )
 
-// ExternalLibraryEntry is a normalised game entry from GOG.
+// ExternalGameEntry is a normalised game entry from GOG.
 // PlaytimeHours is always 0 — the GOG library API has no playtime field.
-type ExternalLibraryEntry struct {
+type ExternalGameEntry struct {
 	ExternalID      string
 	Title           string
-	RawPlatform     string // "pc-windows" or "pc-linux"
-	PlaytimeHours   int
+	Platforms       []string // all platforms this product runs on
+	PlaytimeHours   float64
 	OwnershipStatus string
 	IsSubscription  bool
 }
@@ -38,28 +39,31 @@ type product struct {
 }
 
 // GetLibrary fetches the user's complete GOG library by paging
-// account/getFilteredProducts. For each game available on both Windows and
-// Linux, two entries are emitted with the same ExternalID but different
-// RawPlatform values. onBatch is called once per page.
-func (c *Client) GetLibrary(ctx context.Context, accessToken string, _ int, onBatch func([]ExternalLibraryEntry) error) error {
+// account/getFilteredProducts. Each product is emitted as a single entry whose
+// Platforms slice holds all supported platforms. onBatch is called once per page.
+func (c *Client) GetLibrary(ctx context.Context, accessToken string, _ int, onBatch func([]ExternalGameEntry) error) error {
+	totalFetched := 0
 	for page := 1; ; page++ {
 		entries, numPages, err := c.fetchPage(ctx, accessToken, page)
 		if err != nil {
 			return err
 		}
+		slog.Debug("gog: fetched page", "page", page, "numPages", numPages, "entriesOnPage", len(entries))
+		totalFetched += len(entries)
 		if len(entries) > 0 {
 			if err := onBatch(entries); err != nil {
 				return err
 			}
 		}
 		if page >= numPages {
+			slog.Debug("gog: library fetch complete", "totalFetched", totalFetched, "lastPage", page, "numPages", numPages)
 			break
 		}
 	}
 	return nil
 }
 
-func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([]ExternalLibraryEntry, int, error) {
+func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([]ExternalGameEntry, int, error) {
 	url := fmt.Sprintf("%s/account/getFilteredProducts?mediaType=1&page=%d", c.embedBase, page)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -85,34 +89,47 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 		return nil, 0, fmt.Errorf("gog: decode library response: %w", err)
 	}
 
-	numPages := body.NumPages
-	if numPages < 1 {
-		numPages = 1
-	}
+	slog.Debug("gog: page response metadata",
+		"requestedPage", page,
+		"responsePage", body.Page,
+		"totalProducts", body.TotalProducts,
+		"numPages", body.NumPages,
+		"productsPerPage", body.ProductsPerPage,
+		"productsInResponse", len(body.Products),
+	)
 
-	entries := make([]ExternalLibraryEntry, 0, len(body.Products)*2)
+	// GOG sometimes returns numPages: 0 even when totalProducts > productsPerPage.
+	// Fall back to ceiling division so all pages are fetched.
+	numPages := body.NumPages
+	if numPages == 0 && body.ProductsPerPage > 0 {
+		numPages = (body.TotalProducts + body.ProductsPerPage - 1) / body.ProductsPerPage
+	}
+	numPages = max(numPages, 1)
+
+	entries := make([]ExternalGameEntry, 0, len(body.Products))
 	for _, p := range body.Products {
 		id := strconv.FormatInt(p.ID, 10)
+		var platforms []string
 		if p.WorksOn.Windows {
-			entries = append(entries, ExternalLibraryEntry{
-				ExternalID:      id,
-				Title:           p.Title,
-				RawPlatform:     "pc-windows",
-				PlaytimeHours:   0,
-				OwnershipStatus: "owned",
-				IsSubscription:  false,
-			})
+			platforms = append(platforms, "pc-windows")
+		}
+		if p.WorksOn.Mac {
+			platforms = append(platforms, "pc-mac")
 		}
 		if p.WorksOn.Linux {
-			entries = append(entries, ExternalLibraryEntry{
-				ExternalID:      id,
-				Title:           p.Title,
-				RawPlatform:     "pc-linux",
-				PlaytimeHours:   0,
-				OwnershipStatus: "owned",
-				IsSubscription:  false,
-			})
+			platforms = append(platforms, "pc-linux")
 		}
+		if len(platforms) == 0 {
+			platforms = []string{"pc-windows"}
+		}
+		entries = append(entries, ExternalGameEntry{
+			ExternalID:      id,
+			Title:           p.Title,
+			Platforms:       platforms,
+			PlaytimeHours:   0,
+			OwnershipStatus: "owned",
+			IsSubscription:  false,
+		})
 	}
 	return entries, numPages, nil
 }

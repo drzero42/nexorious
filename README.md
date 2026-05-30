@@ -66,7 +66,7 @@ export DATABASE_URL="postgres://user:password@localhost:5432/nexorious"
 The simplest production-like deployment uses the published container image:
 
 ```bash
-cp .env.example .env   # fill in SECRET_KEY, IGDB_CLIENT_ID, IGDB_CLIENT_SECRET, POSTGRES_PASSWORD
+cp .env.example .env   # fill in DB_ENCRYPTION_KEY, IGDB_CLIENT_ID, IGDB_CLIENT_SECRET, POSTGRES_PASSWORD
 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
@@ -78,7 +78,6 @@ A Helm chart is published to `oci://ghcr.io/drzero42/charts` and is built on the
 
 ```bash
 helm install nexorious oci://ghcr.io/drzero42/charts/nexorious \
-  --set nexorious.secretKey="$(openssl rand -hex 32)" \
   --set nexorious.igdbClientId=YOUR_CLIENT_ID \
   --set nexorious.igdbClientSecret=YOUR_CLIENT_SECRET \
   --set nexorious.postgresql.password="$(openssl rand -hex 16)"
@@ -86,12 +85,71 @@ helm install nexorious oci://ghcr.io/drzero42/charts/nexorious \
 
 See `deploy/helm/values.yaml` for the full values reference.
 
+### NixOS
+
+The Nix flake exposes a package, an overlay, and a NixOS module. Two flake input URLs are available:
+
+```nix
+# Latest stable release — updates automatically with `nix flake update`
+inputs.nexorious.url = "github:drzero42/nexorious/release";
+
+# Bleeding edge (tracks main)
+inputs.nexorious.url = "github:drzero42/nexorious";
+```
+
+Minimal NixOS configuration:
+
+```nix
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.nexorious.url = "github:drzero42/nexorious/release";
+
+  outputs = { nixpkgs, nexorious, ... }: {
+    nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        nexorious.nixosModules.default
+        ({ pkgs, ... }: {
+          nixpkgs.overlays = [ nexorious.overlays.default ];
+
+          services.nexorious = {
+            enable = true;
+            environmentFile = "/run/secrets/nexorious.env";
+          };
+        })
+      ];
+    };
+  };
+}
+```
+
+The environment file must contain:
+
+```bash
+DB_ENCRYPTION_KEY=...   # generate: openssl rand -base64 32
+IGDB_CLIENT_ID=...      # from https://dev.twitch.tv/console
+IGDB_CLIENT_SECRET=...
+```
+
+Key module options:
+
+| Option | Default | Description |
+|---|---|---|
+| `services.nexorious.enable` | `false` | Enable the service |
+| `services.nexorious.port` | `8000` | TCP port to listen on |
+| `services.nexorious.database.createLocally` | `true` | Manage a local PostgreSQL instance automatically |
+| `services.nexorious.database.name` | `"nexorious"` | Database name (when `createLocally = true`) |
+| `services.nexorious.storagePath` | `/var/lib/nexorious` | Path for uploads and backups |
+| `services.nexorious.environmentFile` | — | Path to the environment file with secrets |
+
+When `database.createLocally = true` (the default), PostgreSQL is configured automatically and no `DATABASE_URL` is needed. To use an external database, set `database.createLocally = false` and add `DATABASE_URL=postgresql://...` to the environment file.
+
 ### Environment Variables
 
 ```bash
 # Required
 DATABASE_URL=postgres://user:password@host:5432/nexorious?sslmode=disable
-SECRET_KEY=your-secret-key-here           # generate: openssl rand -hex 32
+DB_ENCRYPTION_KEY=your-db-encryption-key  # generate: openssl rand -base64 32
 IGDB_CLIENT_ID=your-igdb-client-id
 IGDB_CLIENT_SECRET=your-igdb-client-secret
 
@@ -106,7 +164,7 @@ LOG_LEVEL=info                             # default: info
 
 - [ ] PostgreSQL configured
 - [ ] `DATABASE_URL` set
-- [ ] `SECRET_KEY` set to a cryptographically random value
+- [ ] `DB_ENCRYPTION_KEY` set to a cryptographically random value
 - [ ] IGDB API credentials configured
 - [ ] Storage directory writable
 - [ ] Backup procedures in place

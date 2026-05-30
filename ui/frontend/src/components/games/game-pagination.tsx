@@ -76,10 +76,7 @@ export function GamesPagination({
       {showPerPageSelector ? (
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Per page</span>
-          <Select
-            value={String(perPage)}
-            onValueChange={(v) => onPerPageChange(Number(v))}
-          >
+          <Select value={String(perPage)} onValueChange={(v) => onPerPageChange(Number(v))}>
             <SelectTrigger className="w-20">
               <SelectValue />
             </SelectTrigger>
@@ -129,7 +126,7 @@ export function GamesPagination({
                   {p}
                 </PaginationLink>
               </PaginationItem>
-            )
+            ),
           )}
 
           <PaginationItem>

@@ -1,9 +1,9 @@
-import * as React from "react";
-import { ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import * as React from 'react';
+import { ChevronDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 export interface MultiSelectOption {
   value: string;
@@ -37,11 +37,10 @@ export function MultiSelectFilter({
     }
   };
 
-  const displayText =
-    selected.length > 0 ? `${label} (${selected.length})` : label;
+  const displayText = selected.length > 0 ? `${label} (${selected.length})` : label;
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn('relative', className)}>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -52,7 +51,12 @@ export function MultiSelectFilter({
             className="justify-between"
           >
             {displayText}
-            <ChevronDown className={cn("ml-2 h-4 w-4 shrink-0 opacity-50 transition-transform", open && "rotate-180")} />
+            <ChevronDown
+              className={cn(
+                'ml-2 h-4 w-4 shrink-0 opacity-50 transition-transform',
+                open && 'rotate-180',
+              )}
+            />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-56 p-2" align="start">

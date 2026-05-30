@@ -94,3 +94,27 @@ func TestMaintenanceMiddleware_AllowsAuthMe(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
 }
+
+func TestMaintenanceMiddleware_AllowsBrandIconAssets(t *testing.T) {
+	paths := []string{"/logo.svg", "/favicon.svg", "/favicon.ico", "/apple-touch-icon.png"}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			SetMaintenanceMode(true)
+			defer SetMaintenanceMode(false)
+
+			e := echo.New()
+			e.Use(MaintenanceMiddleware())
+			e.GET(path, func(c *echo.Context) error {
+				return c.String(http.StatusOK, "ok")
+			})
+
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Errorf("expected 200 for %s, got %d", path, rec.Code)
+			}
+		})
+	}
+}

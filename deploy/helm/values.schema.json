@@ -11,11 +11,20 @@
     "nexorious": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["secretKey", "igdbClientId", "igdbClientSecret", "postgresql"],
+      "required": ["igdbClientId", "igdbClientSecret", "postgresql"],
       "properties": {
-        "secretKey": {
+        "dbEncryptionKey": {
           "type": "string",
-          "description": "JWT signing secret key. Generate with: openssl rand -hex 32"
+          "description": "At-rest credential encryption key. Generate with: openssl rand -base64 32"
+        },
+        "dbEncryptionKeyFrom": {
+          "type": ["object", "null"],
+          "description": "External secret reference for dbEncryptionKey. When name and key are both non-empty, the dbEncryptionKey inline value is ignored.",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "key":  { "type": "string" }
+          }
         },
         "igdbClientId": {
           "type": "string",
@@ -33,6 +42,17 @@
           "type": "string",
           "description": "Absolute path for the Legendary work directory. When non-empty, the chart injects LEGENDARY_WORK_DIR on the main container and mounts an emptyDir volume at this path. Leave empty to disable Epic Games Store sync."
         },
+        "tmpDir": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Writable /tmp emptyDir mounted on the main container. Required because readOnlyRootFilesystem is true; the app stages backups (pg_dump output + cover-art copy) and buffers restore-upload tarballs under os.TempDir() before archiving/extracting.",
+          "properties": {
+            "sizeLimit": {
+              "type": "string",
+              "description": "Kubernetes resource quantity capping the emptyDir size (e.g. 2Gi, 500Mi). Bump if cover-art library or restore payloads exceed the default."
+            }
+          }
+        },
         "postgresql": {
           "type": "object",
           "additionalProperties": false,
@@ -45,23 +65,40 @@
             },
             "password": {
               "type": "string",
-              "minLength": 1,
-              "description": "PostgreSQL password. Use only URL-safe characters when relying on auto-built DATABASE_URL."
+              "description": "PostgreSQL password. Leave empty to auto-generate on first install (preserved across upgrades via lookup of the existing managed Secret). Use only URL-safe characters when relying on auto-built DATABASE_URL."
             },
             "database": {
               "type": "string",
               "minLength": 1,
               "description": "PostgreSQL database name"
+            },
+            "usernameFrom": {
+              "type": ["object", "null"],
+              "description": "External secret reference for the in-cluster Postgres pod's POSTGRES_USER. When name and key are both non-empty, the inline username is ignored for the postgres pod's env.",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "key":  { "type": "string" }
+              }
+            },
+            "passwordFrom": {
+              "type": ["object", "null"],
+              "description": "External secret reference for the in-cluster Postgres pod's POSTGRES_PASSWORD. When name and key are both non-empty, the inline password is ignored for the postgres pod's env.",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "key":  { "type": "string" }
+              }
+            },
+            "databaseFrom": {
+              "type": ["object", "null"],
+              "description": "External secret reference for the in-cluster Postgres pod's POSTGRES_DB. When name and key are both non-empty, the inline database name is ignored for the postgres pod's env.",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "key":  { "type": "string" }
+              }
             }
-          }
-        },
-        "secretKeyFrom": {
-          "type": ["object", "null"],
-          "description": "External secret reference for secretKey. When name and key are both non-empty, the secretKey inline value is ignored.",
-          "additionalProperties": false,
-          "properties": {
-            "name": { "type": "string" },
-            "key":  { "type": "string" }
           }
         },
         "igdbClientIdFrom": {

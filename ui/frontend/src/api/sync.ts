@@ -4,9 +4,10 @@ import type {
   SyncConfigUpdateData,
   SyncStatus,
   ManualSyncResponse,
-  SyncPlatform,
+  SyncStorefront,
   SyncFrequency,
   SteamVerifyResponse,
+  SteamConnectionData,
   EpicConnectResponse,
   EpicConnectionResponse,
   GOGConnectResponse,
@@ -25,7 +26,6 @@ interface SyncConfigApiResponse {
   user_id: string;
   storefront: string;
   frequency: string;
-  auto_add: boolean;
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
@@ -42,6 +42,7 @@ interface SyncStatusApiResponse {
   is_syncing: boolean;
   last_synced_at: string | null;
   active_job_id: string | null;
+  external_game_count: number;
 }
 
 interface ManualSyncApiResponse {
@@ -68,9 +69,8 @@ function transformSyncConfig(apiConfig: SyncConfigApiResponse): SyncConfig {
   return {
     id: apiConfig.id,
     userId: apiConfig.user_id,
-    platform: apiConfig.storefront as SyncPlatform,
+    storefront: apiConfig.storefront as SyncStorefront,
     frequency: apiConfig.frequency as SyncFrequency,
-    autoAdd: apiConfig.auto_add,
     lastSyncedAt: apiConfig.last_synced_at,
     createdAt: apiConfig.created_at,
     updatedAt: apiConfig.updated_at,
@@ -80,10 +80,11 @@ function transformSyncConfig(apiConfig: SyncConfigApiResponse): SyncConfig {
 
 function transformSyncStatus(apiStatus: SyncStatusApiResponse): SyncStatus {
   return {
-    platform: apiStatus.storefront as SyncPlatform,
+    storefront: apiStatus.storefront as SyncStorefront,
     isSyncing: apiStatus.is_syncing,
     lastSyncedAt: apiStatus.last_synced_at,
     activeJobId: apiStatus.active_job_id,
+    externalGameCount: apiStatus.external_game_count ?? 0,
   };
 }
 
@@ -91,7 +92,7 @@ function transformManualSyncResponse(apiResponse: ManualSyncApiResponse): Manual
   return {
     message: apiResponse.message,
     jobId: apiResponse.job_id,
-    platform: apiResponse.storefront,
+    storefront: apiResponse.storefront,
     status: apiResponse.status,
   };
 }
@@ -114,7 +115,7 @@ export async function getSyncConfigs(): Promise<SyncConfigsResponse> {
 /**
  * Get sync configuration for a specific platform.
  */
-export async function getSyncConfig(platform: SyncPlatform): Promise<SyncConfig> {
+export async function getSyncConfig(platform: SyncStorefront): Promise<SyncConfig> {
   const response = await api.get<SyncConfigApiResponse>(`/sync/config/${platform}`);
   return transformSyncConfig(response);
 }
@@ -123,29 +124,23 @@ export async function getSyncConfig(platform: SyncPlatform): Promise<SyncConfig>
  * Update sync configuration for a specific platform.
  */
 export async function updateSyncConfig(
-  platform: SyncPlatform,
-  data: SyncConfigUpdateData
+  platform: SyncStorefront,
+  data: SyncConfigUpdateData,
 ): Promise<SyncConfig> {
   const requestBody: Record<string, unknown> = {};
 
   if (data.frequency !== undefined) {
     requestBody.frequency = data.frequency;
   }
-  if (data.autoAdd !== undefined) {
-    requestBody.auto_add = data.autoAdd;
-  }
 
-  const response = await api.put<SyncConfigApiResponse>(
-    `/sync/config/${platform}`,
-    requestBody
-  );
+  const response = await api.put<SyncConfigApiResponse>(`/sync/config/${platform}`, requestBody);
   return transformSyncConfig(response);
 }
 
 /**
  * Trigger a manual sync for a specific platform.
  */
-export async function triggerSync(platform: SyncPlatform): Promise<ManualSyncResponse> {
+export async function triggerSync(platform: SyncStorefront): Promise<ManualSyncResponse> {
   const response = await api.post<ManualSyncApiResponse>(`/sync/${platform}`);
   return transformManualSyncResponse(response);
 }
@@ -153,7 +148,7 @@ export async function triggerSync(platform: SyncPlatform): Promise<ManualSyncRes
 /**
  * Get the current sync status for a platform.
  */
-export async function getSyncStatus(platform: SyncPlatform): Promise<SyncStatus> {
+export async function getSyncStatus(platform: SyncStorefront): Promise<SyncStatus> {
   const response = await api.get<SyncStatusApiResponse>(`/sync/${platform}/status`);
   return transformSyncStatus(response);
 }
@@ -173,6 +168,13 @@ interface SteamVerifyApiResponse {
   error: string | null;
 }
 
+interface SteamConnectionApiResponse {
+  connected: boolean;
+  credentials_error?: boolean;
+  steam_id?: string;
+  username?: string;
+}
+
 // ============================================================================
 // Epic Auth API Types
 // ============================================================================
@@ -189,6 +191,7 @@ interface EpicConnectApiResponse {
 interface EpicConnectionApiResponse {
   connected: boolean;
   disabled: boolean;
+  credentials_error?: boolean;
   display_name?: string;
   account_id?: string;
   reason?: string;
@@ -203,7 +206,7 @@ interface EpicConnectionApiResponse {
  */
 export async function verifySteamCredentials(
   steamId: string,
-  webApiKey: string
+  webApiKey: string,
 ): Promise<SteamVerifyResponse> {
   const response = await api.post<SteamVerifyApiResponse>('/sync/steam/verify', {
     steam_id: steamId,
@@ -251,6 +254,7 @@ export async function getEpicConnection(): Promise<EpicConnectionResponse> {
   return {
     connected: response.connected,
     disabled: response.disabled,
+    credentialsError: response.credentials_error ?? false,
     displayName: response.display_name,
     accountId: response.account_id,
     reason: response.reason,
@@ -279,6 +283,7 @@ interface GOGConnectApiResponse {
 
 interface GOGConnectionApiResponse {
   connected: boolean;
+  credentials_error?: boolean;
   username?: string;
   user_id?: string;
   auth_url?: string;
@@ -302,6 +307,7 @@ export async function getGOGConnection(): Promise<GOGConnectionResponse> {
   const response = await api.get<GOGConnectionApiResponse>('/sync/gog/connection');
   return {
     connected: response.connected,
+    credentialsError: response.credentials_error ?? false,
     username: response.username,
     userId: response.user_id,
     authUrl: response.auth_url,
@@ -330,10 +336,10 @@ interface PSNConfigureApiResponse {
 
 interface PSNStatusApiResponse {
   is_configured: boolean;
+  credentials_error?: boolean;
   online_id: string | null;
   account_id: string | null;
   region: string | null;
-  token_expired: boolean;
 }
 
 // ============================================================================
@@ -366,7 +372,20 @@ export async function getPSNStatus(): Promise<PSNStatusResponse> {
     configured: response.is_configured,
     accountId: response.account_id,
     onlineId: response.online_id,
-    tokenExpired: response.token_expired,
+    credentialsError: response.credentials_error ?? false,
+  };
+}
+
+/**
+ * Get Steam connection status.
+ */
+export async function getSteamConnection(): Promise<SteamConnectionData> {
+  const response = await api.get<SteamConnectionApiResponse>('/sync/steam/connection');
+  return {
+    connected: response.connected,
+    credentialsError: response.credentials_error ?? false,
+    steamId: response.steam_id ?? '',
+    username: response.username ?? '',
   };
 }
 
@@ -381,7 +400,7 @@ export async function disconnectPSN(): Promise<void> {
 // External Games
 // ============================================================================
 
-export async function getExternalGames(platform: SyncPlatform): Promise<ExternalGame[]> {
+export async function getExternalGames(platform: SyncStorefront): Promise<ExternalGame[]> {
   const response = await api.get<ExternalGame[]>(`/sync/${platform}/external-games`);
   return response;
 }
@@ -405,6 +424,10 @@ export async function rematchExternalGame(
   });
 }
 
-export async function resetSyncData(platform: SyncPlatform): Promise<void> {
+export async function resetSyncData(platform: SyncStorefront): Promise<void> {
   await api.delete(`/sync/${platform}/data`);
+}
+
+export async function retryFailedExternalGames(storefront: SyncStorefront): Promise<void> {
+  await api.post(`/sync/${storefront}/external-games/retry-failed`);
 }

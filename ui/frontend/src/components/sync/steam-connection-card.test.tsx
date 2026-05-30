@@ -43,10 +43,7 @@ describe('SteamConnectionCard', () => {
   describe('badge states', () => {
     it('renders "Not Configured" badge when not configured', () => {
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       expect(screen.getByText('Not Configured')).toBeInTheDocument();
@@ -59,7 +56,7 @@ describe('SteamConnectionCard', () => {
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('Connected')).toBeInTheDocument();
@@ -69,10 +66,7 @@ describe('SteamConnectionCard', () => {
   describe('not configured state', () => {
     it('shows connection form with Steam ID and API Key inputs', () => {
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       expect(screen.getByLabelText('Steam ID')).toBeInTheDocument();
@@ -81,10 +75,7 @@ describe('SteamConnectionCard', () => {
 
     it('shows "Verify & Connect" button', () => {
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       expect(screen.getByRole('button', { name: 'Verify & Connect' })).toBeInTheDocument();
@@ -92,10 +83,7 @@ describe('SteamConnectionCard', () => {
 
     it('shows help accordions', () => {
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       expect(screen.getByText('How do I find my Steam ID?')).toBeInTheDocument();
@@ -104,14 +92,11 @@ describe('SteamConnectionCard', () => {
 
     it('shows description for not configured state', () => {
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       expect(
-        screen.getByText('Connect your Steam account to sync your game library')
+        screen.getByText('Connect your Steam account to sync your game library'),
       ).toBeInTheDocument();
     });
   });
@@ -124,7 +109,7 @@ describe('SteamConnectionCard', () => {
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('Connected as TestUser')).toBeInTheDocument();
@@ -137,7 +122,7 @@ describe('SteamConnectionCard', () => {
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('76561198012345678')).toBeInTheDocument();
@@ -150,7 +135,7 @@ describe('SteamConnectionCard', () => {
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
@@ -163,7 +148,7 @@ describe('SteamConnectionCard', () => {
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.getByText('Your Steam account is connected')).toBeInTheDocument();
@@ -176,7 +161,7 @@ describe('SteamConnectionCard', () => {
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       expect(screen.queryByLabelText('Steam ID')).not.toBeInTheDocument();
@@ -189,10 +174,7 @@ describe('SteamConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const steamIdInput = screen.getByLabelText('Steam ID');
@@ -210,10 +192,7 @@ describe('SteamConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const steamIdInput = screen.getByLabelText('Steam ID');
@@ -235,10 +214,7 @@ describe('SteamConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const steamIdInput = screen.getByLabelText('Steam ID');
@@ -259,10 +235,7 @@ describe('SteamConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const steamIdInput = screen.getByLabelText('Steam ID');
@@ -289,10 +262,7 @@ describe('SteamConnectionCard', () => {
       mockUpdateProfileMutateAsync.mockResolvedValue({});
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const steamIdInput = screen.getByLabelText('Steam ID');
@@ -321,10 +291,7 @@ describe('SteamConnectionCard', () => {
       mockUpdateProfileMutateAsync.mockResolvedValue({});
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const steamIdInput = screen.getByLabelText('Steam ID');
@@ -356,10 +323,7 @@ describe('SteamConnectionCard', () => {
       mockUpdateProfileMutateAsync.mockResolvedValue({});
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const steamIdInput = screen.getByLabelText('Steam ID');
@@ -395,10 +359,7 @@ describe('SteamConnectionCard', () => {
       });
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const steamIdInput = screen.getByLabelText('Steam ID');
@@ -424,10 +385,7 @@ describe('SteamConnectionCard', () => {
       });
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const steamIdInput = screen.getByLabelText('Steam ID');
@@ -456,7 +414,7 @@ describe('SteamConnectionCard', () => {
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const disconnectButton = screen.getByRole('button', { name: 'Disconnect' });
@@ -465,8 +423,8 @@ describe('SteamConnectionCard', () => {
       expect(screen.getByText('Disconnect Steam?')).toBeInTheDocument();
       expect(
         screen.getByText(
-          'Your sync settings will be preserved but syncing will stop until you reconnect.'
-        )
+          'Your sync settings will be preserved but syncing will stop until you reconnect.',
+        ),
       ).toBeInTheDocument();
     });
 
@@ -480,7 +438,7 @@ describe('SteamConnectionCard', () => {
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const disconnectButton = screen.getByRole('button', { name: 'Disconnect' });
@@ -511,7 +469,7 @@ describe('SteamConnectionCard', () => {
           steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
-        />
+        />,
       );
 
       const disconnectButton = screen.getByRole('button', { name: 'Disconnect' });
@@ -531,19 +489,14 @@ describe('SteamConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const steamIdHelp = screen.getByText('How do I find my Steam ID?');
       await user.click(steamIdHelp);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/Your Steam ID is a 17-digit number/)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/Your Steam ID is a 17-digit number/)).toBeInTheDocument();
       });
     });
 
@@ -551,10 +504,7 @@ describe('SteamConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <SteamConnectionCard
-          isConfigured={false}
-          onConnectionChange={mockOnConnectionChange}
-        />
+        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
       );
 
       const apiKeyHelp = screen.getByText('How do I get an API key?');
@@ -562,7 +512,7 @@ describe('SteamConnectionCard', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(/A Steam Web API key allows Nexorious to read your game library/)
+          screen.getByText(/A Steam Web API key allows Nexorious to read your game library/),
         ).toBeInTheDocument();
       });
     });

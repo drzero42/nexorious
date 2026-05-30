@@ -20,6 +20,7 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/crypto"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	migrate "github.com/drzero42/nexorious/internal/migrate"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
@@ -32,7 +33,7 @@ import (
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
+func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
 	e := echo.New()
 
 	var rc *river.Client[pgx.Tx]
@@ -73,14 +74,16 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 		}
 	})
 
-	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health, /static/app.css
+	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health, /static/app.css, brand icon assets
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			state := migrator.State()
 			if state != migrate.AppStateReady && state != migrate.AppStateDBUnavailable {
 				path := c.Request().URL.Path
 				if strings.HasPrefix(path, "/migrate") || strings.HasPrefix(path, "/api/migrate") ||
-					path == "/health" || path == "/static/app.css" {
+					path == "/health" || path == "/static/app.css" ||
+					path == "/logo.svg" || path == "/favicon.svg" ||
+					path == "/favicon.ico" || path == "/apple-touch-icon.png" {
 					return next(c)
 				}
 				return c.Redirect(http.StatusFound, "/migrate")
@@ -89,14 +92,16 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 		}
 	})
 
-	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /api/migrate*, /static/app.css
+	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /api/migrate*, /static/app.css, brand icon assets
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			if migrator.NeedsSetup() {
 				path := c.Request().URL.Path
 				if path == "/setup" || strings.HasPrefix(path, "/api/auth/setup") ||
 					path == "/health" || strings.HasPrefix(path, "/api/migrate") ||
-					path == "/static/app.css" {
+					path == "/static/app.css" ||
+					path == "/logo.svg" || path == "/favicon.svg" ||
+					path == "/favicon.ico" || path == "/apple-touch-icon.png" {
 					return next(c)
 				}
 				return c.Redirect(http.StatusFound, "/setup")
@@ -110,17 +115,20 @@ func New(cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDat
 
 	if len(cfg.CORSOrigins) > 0 {
 		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-			AllowOrigins: cfg.CORSOrigins,
+			AllowOrigins:     cfg.CORSOrigins,
+			AllowCredentials: true,
+			AllowHeaders:     []string{"Content-Type", "Authorization"},
+			AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		}))
 	}
 
 	mh := migrate.NewHandler(migrator, db)
-	registerRoutes(e, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, rc)
+	registerRoutes(e, encrypter, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, version, commit, rc)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, riverClient *river.Client[pgx.Tx]) {
+func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, riverClient *river.Client[pgx.Tx]) {
 	// Migration routes (bypass gate 2 via prefix)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
@@ -142,6 +150,15 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 			"status":           status,
 			"igdb_status":      igdbStatus,
 			"backup_available": backup.PgDumpAvailable() && backup.PsqlAvailable(),
+		})
+	})
+
+	// Version — public, aggressively cached
+	e.GET("/api/version", func(c *echo.Context) error {
+		c.Response().Header().Set("Cache-Control", "public, max-age=3600")
+		return c.JSON(http.StatusOK, map[string]string{
+			"version": version,
+			"commit":  commit,
 		})
 	})
 
@@ -181,6 +198,8 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 	// Backup handler — used by both setup restore and admin routes
 	bh := NewBackupHandler(backupSvc, db, restoreCallbacks)
 	e.POST("/api/auth/setup/restore", bh.HandleSetupRestore)
+	e.GET("/api/auth/setup/backups", bh.HandleSetupListBackups)
+	e.POST("/api/auth/setup/restore/disk", bh.HandleSetupRestoreFromDisk)
 
 	// Auth routes — only registered when a DB is available.
 	if db != nil {
@@ -188,20 +207,25 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 
 		// Public auth routes (no JWT required)
 		e.POST("/api/auth/login", ah.HandleLogin)
-		e.POST("/api/auth/refresh", ah.HandleRefresh)
 
-		// JWT-protected auth routes
-		authGroup := e.Group("/api/auth", auth.JWTMiddleware(cfg.SecretKey, db))
+		// Auth-protected auth routes
+		authGroup := e.Group("/api/auth", auth.AuthMiddleware(db))
 		authGroup.POST("/logout", ah.HandleLogout)
 		authGroup.GET("/me", ah.HandleGetMe)
 		authGroup.PUT("/me", ah.HandleUpdateMe)
 		authGroup.PUT("/change-password", ah.HandleChangePassword)
 		authGroup.GET("/username/check/:username", ah.HandleCheckUsername)
 		authGroup.PUT("/username", ah.HandleChangeUsername)
+		authGroup.GET("/sessions", ah.HandleListSessions)
+		authGroup.DELETE("/sessions", ah.HandleRevokeAllOtherSessions)
+		authGroup.DELETE("/sessions/:id", ah.HandleRevokeSession)
+		authGroup.GET("/api-keys", ah.HandleListAPIKeys)
+		authGroup.POST("/api-keys", ah.HandleCreateAPIKey)
+		authGroup.DELETE("/api-keys/:id", ah.HandleRevokeAPIKey)
 
-		// Platform and storefront routes (all JWT-protected)
+		// Platform and storefront routes (all auth-protected)
 		ph := NewPlatformsHandler(db)
-		platformsGroup := e.Group("/api/platforms", auth.JWTMiddleware(cfg.SecretKey, db))
+		platformsGroup := e.Group("/api/platforms", auth.AuthMiddleware(db))
 		platformsGroup.GET("", ph.HandleListPlatforms)
 		platformsGroup.GET("/simple-list", ph.HandleSimpleList)
 		platformsGroup.GET("/storefronts/simple-list", ph.HandleStorefrontSimpleList)
@@ -213,7 +237,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 
 		// Tag routes (all JWT-protected)
 		th := NewTagsHandler(db)
-		tagsGroup := e.Group("/api/tags", auth.JWTMiddleware(cfg.SecretKey, db))
+		tagsGroup := e.Group("/api/tags", auth.AuthMiddleware(db))
 		tagsGroup.GET("", th.HandleListTags)
 		tagsGroup.POST("", th.HandleCreateTag)
 		tagsGroup.PUT("/:id", th.HandleUpdateTag)
@@ -221,7 +245,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 
 		// Games routes (all JWT-protected)
 		gh := NewGamesHandler(db, igdbClient, cfg, riverClient)
-		gamesGroup := e.Group("/api/games", auth.JWTMiddleware(cfg.SecretKey, db))
+		gamesGroup := e.Group("/api/games", auth.AuthMiddleware(db))
 		gamesGroup.GET("", gh.HandleListGames)
 		gamesGroup.POST("/metadata/refresh-job", gh.HandleStartMetadataRefreshJob)
 		gamesGroup.POST("/search/igdb", gh.HandleSearchIGDB)
@@ -231,7 +255,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 
 		// User Games routes (all JWT-protected)
 		ugh := NewUserGamesHandler(db, cfg)
-		userGamesGroup := e.Group("/api/user-games", auth.JWTMiddleware(cfg.SecretKey, db))
+		userGamesGroup := e.Group("/api/user-games", auth.AuthMiddleware(db))
 		userGamesGroup.GET("", ugh.HandleListUserGames)
 		userGamesGroup.POST("", ugh.HandleCreateUserGame)
 		userGamesGroup.PUT("/bulk-update", ugh.HandleBulkUpdate)
@@ -253,7 +277,7 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 
 		// Jobs routes (all JWT-protected)
 		jh := NewJobsHandler(db, riverClient)
-		jobsGroup := e.Group("/api/jobs", auth.JWTMiddleware(cfg.SecretKey, db))
+		jobsGroup := e.Group("/api/jobs", auth.AuthMiddleware(db))
 		jobsGroup.GET("", jh.HandleListJobs)
 		jobsGroup.GET("/summary", jh.HandleJobsSummary)
 		jobsGroup.GET("/pending-review-count", jh.HandlePendingReviewCount)
@@ -267,26 +291,24 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 
 		// Job Items routes (all JWT-protected)
 		jih := NewJobItemsHandler(db, riverClient)
-		jobItemsGroup := e.Group("/api/job-items", auth.JWTMiddleware(cfg.SecretKey, db))
+		jobItemsGroup := e.Group("/api/job-items", auth.AuthMiddleware(db))
 		jobItemsGroup.GET("/:id", jih.HandleGetJobItem)
-		jobItemsGroup.POST("/:id/resolve", jih.HandleResolveItem)
-		jobItemsGroup.POST("/:id/skip", jih.HandleSkipItem)
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
 
 		// Import routes (all JWT-protected)
 		imh := NewImportHandler(db, riverClient)
-		importGroup := e.Group("/api/import", auth.JWTMiddleware(cfg.SecretKey, db))
+		importGroup := e.Group("/api/import", auth.AuthMiddleware(db))
 		importGroup.POST("/nexorious", imh.HandleImportNexorious)
 
 		// Export routes (all JWT-protected)
 		exh := NewExportHandler(db, riverClient, cfg)
-		exportGroup := e.Group("/api/export", auth.JWTMiddleware(cfg.SecretKey, db))
+		exportGroup := e.Group("/api/export", auth.AuthMiddleware(db))
 		exportGroup.POST("/json", exh.HandleExportJSON)
 		exportGroup.POST("/csv", exh.HandleExportCSV)
 		exportGroup.GET("/:id/download", exh.HandleDownload)
 
 		// Admin backup routes (JWT + admin required)
-		adminGroup := e.Group("", auth.JWTMiddleware(cfg.SecretKey, db), auth.AdminMiddleware())
+		adminGroup := e.Group("", auth.AuthMiddleware(db), auth.AdminMiddleware())
 		adminBackups := adminGroup.Group("/api/admin/backups")
 		adminBackups.GET("/config", bh.HandleGetConfig)
 		adminBackups.PUT("/config", bh.HandleUpdateConfig)
@@ -306,8 +328,8 @@ func registerRoutes(e *echo.Echo, cfg *config.Config, mh *migrate.Handler, db *b
 		psnSvc := psnsvc.NewClient()
 		epicSvc := epicsvc.NewClient(cfg.LegendaryWorkDir)
 		gogSvc := gogsvc.NewClient()
-		synch := NewSyncHandler(db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc})
-		syncGroup := e.Group("/api/sync", auth.JWTMiddleware(cfg.SecretKey, db))
+		synch := NewSyncHandler(encrypter, db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc})
+		syncGroup := e.Group("/api/sync", auth.AuthMiddleware(db))
 		synch.RegisterRoutes(syncGroup)
 	}
 

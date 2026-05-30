@@ -25,9 +25,9 @@ import (
 
 // ExportHandler handles export-related endpoints.
 type ExportHandler struct {
-	db           *bun.DB
-	riverClient  *river.Client[pgx.Tx]
-	cfg          *config.Config
+	db          *bun.DB
+	riverClient *river.Client[pgx.Tx]
+	cfg         *config.Config
 }
 
 // NewExportHandler returns a new ExportHandler.
@@ -58,14 +58,15 @@ func (h *ExportHandler) handleExport(c *echo.Context, source string, taskType st
 
 	// Create the Job record.
 	job := &models.Job{
-		ID:         uuid.NewString(),
-		UserID:     userID,
-		JobType:    models.JobTypeExport,
-		Source:     source,
-		Status:     models.JobStatusPending,
-		Priority:   models.JobPriorityNormal,
-		TotalItems: count,
-		CreatedAt:  time.Now().UTC(),
+		ID:               uuid.NewString(),
+		UserID:           userID,
+		JobType:          models.JobTypeExport,
+		Source:           source,
+		Status:           models.JobStatusPending,
+		Priority:         models.JobPriorityNormal,
+		TotalItems:       count,
+		DispatchComplete: true, // not a streaming sync; the completion gate is N/A
+		CreatedAt:        time.Now().UTC(),
 	}
 	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create export job")

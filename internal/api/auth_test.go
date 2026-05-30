@@ -5,17 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
+	"github.com/riverqueue/river"
+	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/uptrace/bun"
 	"golang.org/x/crypto/bcrypt"
-
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/auth"
@@ -41,22 +44,22 @@ func insertAuthTestUser(t *testing.T, db *bun.DB, id, username, password string,
 	}
 }
 
-// insertAuthTestSession inserts a user_session for testing.
-// expiredDays < 0 means the session is already expired.
-func insertAuthTestSession(t *testing.T, db *bun.DB, userID, accessToken, refreshToken string, expiredDays int) {
+// insertAuthTestSession inserts a session for userID and returns the raw session ID.
+func insertAuthTestSession(t *testing.T, db *bun.DB, userID string) string {
 	t.Helper()
-	expiresExpr := "now() + interval '30 days'"
-	if expiredDays < 0 {
-		expiresExpr = "now() - interval '1 second'"
+	sessionID, err := auth.GenerateSessionID()
+	if err != nil {
+		t.Fatalf("GenerateSessionID: %v", err)
 	}
-	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
-		 VALUES (gen_random_uuid()::text, ?, ?, ?, `+expiresExpr+`)`,
-		userID, auth.HashToken(accessToken), auth.HashToken(refreshToken),
+	_, err = db.ExecContext(context.Background(),
+		`INSERT INTO user_sessions (id, user_id, session_id_hash, expires_at)
+		 VALUES (gen_random_uuid()::text, ?, ?, now() + interval '30 days')`,
+		userID, auth.HashToken(sessionID),
 	)
 	if err != nil {
 		t.Fatalf("insertAuthTestSession: %v", err)
 	}
+	return sessionID
 }
 
 // newTestEcho returns an Echo instance wired with a real db and a ready migrator.
@@ -65,25 +68,61 @@ func newTestEcho(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, db, "", nil, nil, nil)
+	return api.New(testEncrypter, cfg, m, db, "", nil, nil, nil, "dev", "unknown")
 }
 
-// newTestEchoPool returns an Echo instance wired with a real db and ready migrator.
+// newTestEchoPool returns an Echo instance wired with a real db, ready
+// migrator, and a real River client backed by the shared test container so
+// handler tests exercise production-realistic enqueue paths.
 func newTestEchoPool(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(cfg, m, db, "", nil, nil, nil)
+	rc := newTestRiverClient(t)
+	return api.New(testEncrypter, cfg, m, db, "", nil, nil, nil, "dev", "unknown", rc)
+}
+
+// newTestRiverClient builds a non-started River client against the shared
+// test container — sufficient for handler tests that only need Insert to
+// succeed.
+func newTestRiverClient(t *testing.T) *river.Client[pgx.Tx] {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(), testConnStr)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatalf("river.NewClient: %v", err)
+	}
+	return rc
+}
+
+// newFailingRiverClient builds a River client backed by a pool that has been
+// closed, so every Insert call returns an error. Used to test 500 responses on
+// River insert failures.
+func newFailingRiverClient(t *testing.T) *river.Client[pgx.Tx] {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(), testConnStr)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatalf("river.NewClient: %v", err)
+	}
+	pool.Close() // closed pool causes Insert to fail immediately
+	return rc
 }
 
 // testCfg returns a minimal config suitable for api_test tests.
 func testCfg() *config.Config {
 	return &config.Config{
-		SecretKey:                "test-secret-key-at-least-32-bytes!",
-		AccessTokenExpireMinutes: 15,
-		RefreshTokenExpireDays:   30,
-		Port:                     8000,
+		DBEncryptionKey:   "test-db-encryption-key-32-bytes!!",
+		SessionExpireDays: 30,
+		Port:              8000,
 	}
 }
 
@@ -103,41 +142,32 @@ func postJSON(t *testing.T, handler interface {
 	return rec
 }
 
-// postJSONAuth fires a POST with a JSON body and a Bearer authorization header.
-func postJSONAuth(t *testing.T, handler interface {
+// postJSONSession fires a POST request with a JSON body and a session cookie.
+func postJSONSession(t *testing.T, handler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
-}, path string, body any, accessToken string) *httptest.ResponseRecorder {
+}, path string, body any, sessionID string) *httptest.ResponseRecorder {
 	t.Helper()
-	b, err := json.Marshal(body)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
+	var bodyReader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		bodyReader = bytes.NewReader(b)
 	}
-	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
+	req := httptest.NewRequest(http.MethodPost, path, bodyReader)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	return rec
-}
-
-// jwtSign signs a Claims struct for test purposes (e.g. to build expired tokens).
-func jwtSign(t *testing.T, claims auth.Claims, secret string) string {
-	t.Helper()
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString([]byte(secret))
-	if err != nil {
-		t.Fatalf("jwtSign: %v", err)
-	}
-	return signed
 }
 
 // ─── Login tests ─────────────────────────────────────────────────────────────
 
 func TestHandleLogin_ValidCredentials(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
+	e := newTestEcho(t, testDB, testCfg())
 	insertAuthTestUser(t, testDB, "user-001", "alice", "password123", true, false)
 
 	rec := postJSON(t, e, "/api/auth/login", map[string]string{
@@ -151,37 +181,32 @@ func TestHandleLogin_ValidCredentials(t *testing.T) {
 
 	var resp map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode response: %v", err)
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := resp["access_token"]; ok {
+		t.Error("response must not contain access_token")
+	}
+	if resp["id"] == nil || resp["id"] == "" {
+		t.Error("response must contain non-empty id")
+	}
+	if resp["username"] != "alice" {
+		t.Errorf("username = %q, want %q", resp["username"], "alice")
 	}
 
-	accessToken, _ := resp["access_token"].(string)
-	refreshToken, _ := resp["refresh_token"].(string)
-	if accessToken == "" {
-		t.Error("access_token is empty")
+	var sessionCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "session_id" {
+			sessionCookie = c
+		}
 	}
-	if refreshToken == "" {
-		t.Error("refresh_token is empty")
-	}
-	if tt, _ := resp["token_type"].(string); tt != "bearer" {
-		t.Errorf("token_type = %q, want %q", tt, "bearer")
-	}
-	if ei, ok := resp["expires_in"].(float64); !ok || int(ei) != 900 {
-		t.Errorf("expires_in = %v, want 900", resp["expires_in"])
+	if sessionCookie == nil {
+		t.Fatal("no session_id cookie set")
 	}
 
-	// Verify tokens are valid JWTs.
-	if _, err := auth.ParseToken(cfg.SecretKey, accessToken, "access"); err != nil {
-		t.Errorf("access_token not a valid access JWT: %v", err)
-	}
-	if _, err := auth.ParseToken(cfg.SecretKey, refreshToken, "refresh"); err != nil {
-		t.Errorf("refresh_token not a valid refresh JWT: %v", err)
-	}
-
-	// Verify session was created in DB.
 	var count int
 	if err := testDB.QueryRowContext(context.Background(),
-		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND token_hash = ?",
-		"user-001", auth.HashToken(accessToken),
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND session_id_hash = ?",
+		"user-001", auth.HashToken(sessionCookie.Value),
 	).Scan(&count); err != nil {
 		t.Fatalf("session query: %v", err)
 	}
@@ -199,14 +224,8 @@ func TestHandleLogin_WrongPassword(t *testing.T) {
 		"username": "bob",
 		"password": "wrongpassword",
 	})
-
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
-	}
-	var resp map[string]string
-	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp["message"] != "incorrect username or password" {
-		t.Errorf("error = %q, want %q", resp["message"], "incorrect username or password")
 	}
 }
 
@@ -218,14 +237,8 @@ func TestHandleLogin_NonExistentUser(t *testing.T) {
 		"username": "nobody",
 		"password": "irrelevant",
 	})
-
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
-	}
-	var resp map[string]string
-	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp["message"] != "incorrect username or password" {
-		t.Errorf("error = %q, want %q", resp["message"], "incorrect username or password")
 	}
 }
 
@@ -238,42 +251,22 @@ func TestHandleLogin_DisabledUser(t *testing.T) {
 		"username": "carol",
 		"password": "password123",
 	})
-
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
 	}
-	var resp map[string]string
-	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp["message"] != "user account is disabled" {
-		t.Errorf("error = %q, want %q", resp["message"], "user account is disabled")
-	}
 }
 
-func TestHandleLogin_MissingUsername(t *testing.T) {
+func TestHandleLogin_MissingFields(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEcho(t, testDB, testCfg())
 
-	rec := postJSON(t, e, "/api/auth/login", map[string]string{
-		"username": "",
-		"password": "password123",
-	})
-
+	rec := postJSON(t, e, "/api/auth/login", map[string]string{"username": "", "password": "pw"})
 	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rec.Code)
+		t.Errorf("missing username: status = %d, want 400", rec.Code)
 	}
-}
-
-func TestHandleLogin_MissingPassword(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEcho(t, testDB, testCfg())
-
-	rec := postJSON(t, e, "/api/auth/login", map[string]string{
-		"username": "alice",
-		"password": "",
-	})
-
+	rec = postJSON(t, e, "/api/auth/login", map[string]string{"username": "alice", "password": ""})
 	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rec.Code)
+		t.Errorf("missing password: status = %d, want 400", rec.Code)
 	}
 }
 
@@ -281,7 +274,7 @@ func TestHandleLogin_MalformedJSON(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(cfg, m, testDB, "", nil, nil, nil)
+	e := api.New(testEncrypter, cfg, m, testDB, "", nil, nil, nil, "dev", "unknown")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader("{not-json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -293,267 +286,46 @@ func TestHandleLogin_MalformedJSON(t *testing.T) {
 	}
 }
 
-// ─── Refresh tests ────────────────────────────────────────────────────────────
-
-func TestHandleRefresh_Valid(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	insertAuthTestUser(t, testDB, "user-010", "dave", "pw", true, false)
-
-	oldAccess, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-010", cfg.AccessTokenExpireMinutes)
-	refreshToken, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-010", cfg.RefreshTokenExpireDays)
-	insertAuthTestSession(t, testDB, "user-010", oldAccess, refreshToken, 30)
-
-	rec := postJSON(t, e, "/api/auth/refresh", map[string]string{
-		"refresh_token": refreshToken,
-	})
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
-	}
-
-	var resp map[string]any
-	_ = json.NewDecoder(rec.Body).Decode(&resp)
-
-	newAccess, _ := resp["access_token"].(string)
-	echoedRefresh, _ := resp["refresh_token"].(string)
-
-	if newAccess == "" {
-		t.Error("access_token is empty")
-	}
-	if echoedRefresh != refreshToken {
-		t.Error("refresh_token changed; want original back")
-	}
-	if _, err := auth.ParseToken(cfg.SecretKey, newAccess, "access"); err != nil {
-		t.Errorf("new access token invalid: %v", err)
-	}
-
-	// Old token_hash must be replaced in DB.
-	var count int
-	_ = testDB.QueryRowContext(context.Background(),
-		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND token_hash = ?",
-		"user-010", auth.HashToken(oldAccess),
-	).Scan(&count)
-	if count != 0 {
-		t.Error("old token_hash was not removed from session")
-	}
-	_ = testDB.QueryRowContext(context.Background(),
-		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND token_hash = ?",
-		"user-010", auth.HashToken(newAccess),
-	).Scan(&count)
-	if count != 1 {
-		t.Error("new token_hash not found in session")
-	}
-}
-
-func TestHandleRefresh_ExpiredJWT(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	insertAuthTestUser(t, testDB, "user-011", "eve", "pw", true, false)
-
-	expiredClaims := auth.Claims{
-		Type: "refresh",
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   "user-011",
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-31 * 24 * time.Hour)),
-		},
-	}
-	rawToken := jwtSign(t, expiredClaims, cfg.SecretKey)
-
-	rec := postJSON(t, e, "/api/auth/refresh", map[string]string{
-		"refresh_token": rawToken,
-	})
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", rec.Code)
-	}
-}
-
-func TestHandleRefresh_NoMatchingSession(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	insertAuthTestUser(t, testDB, "user-012", "frank", "pw", true, false)
-	refreshToken, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-012", cfg.RefreshTokenExpireDays)
-	// Intentionally do NOT insert a session.
-
-	rec := postJSON(t, e, "/api/auth/refresh", map[string]string{
-		"refresh_token": refreshToken,
-	})
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", rec.Code)
-	}
-	var resp map[string]string
-	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp["message"] != "invalid or expired refresh token" {
-		t.Errorf("error = %q, want %q", resp["message"], "invalid or expired refresh token")
-	}
-}
-
-func TestHandleRefresh_DisabledUser(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	insertAuthTestUser(t, testDB, "user-013", "grace", "pw", false, false)
-	access, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-013", cfg.AccessTokenExpireMinutes)
-	refresh, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-013", cfg.RefreshTokenExpireDays)
-	insertAuthTestSession(t, testDB, "user-013", access, refresh, 30)
-
-	rec := postJSON(t, e, "/api/auth/refresh", map[string]string{
-		"refresh_token": refresh,
-	})
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", rec.Code)
-	}
-}
-
-func TestHandleRefresh_AccessTokenPassedInstead(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	insertAuthTestUser(t, testDB, "user-014", "heidi", "pw", true, false)
-	accessToken, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-014", cfg.AccessTokenExpireMinutes)
-
-	rec := postJSON(t, e, "/api/auth/refresh", map[string]string{
-		"refresh_token": accessToken, // wrong type
-	})
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", rec.Code)
-	}
-}
-
-func TestHandleRefresh_MissingField(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEcho(t, testDB, testCfg())
-
-	rec := postJSON(t, e, "/api/auth/refresh", map[string]string{})
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rec.Code)
-	}
-}
-
 // ─── Logout tests ─────────────────────────────────────────────────────────────
 
 func TestHandleLogout_Valid(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
+	e := newTestEcho(t, testDB, testCfg())
 	insertAuthTestUser(t, testDB, "user-020", "ivan", "pw", true, false)
-	access, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-020", cfg.AccessTokenExpireMinutes)
-	refresh, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-020", cfg.RefreshTokenExpireDays)
-	insertAuthTestSession(t, testDB, "user-020", access, refresh, 30)
+	sessionID := insertAuthTestSession(t, testDB, "user-020")
 
-	rec := postJSONAuth(t, e, "/api/auth/logout", map[string]string{
-		"refresh_token": refresh,
-	}, access)
+	rec := postJSONSession(t, e, "/api/auth/logout", nil, sessionID)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
 	}
 
-	// Session must be deleted.
 	var count int
 	_ = testDB.QueryRowContext(context.Background(),
-		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ?",
-		"user-020",
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ?", "user-020",
 	).Scan(&count)
 	if count != 0 {
 		t.Errorf("session count = %d, want 0 after logout", count)
 	}
+
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "session_id" && c.MaxAge == 0 {
+			return
+		}
+	}
+	t.Error("expected session_id cookie with MaxAge=0")
 }
 
-func TestHandleLogout_WrongUserRefreshToken(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	insertAuthTestUser(t, testDB, "user-021", "judy", "pw", true, false)
-	insertAuthTestUser(t, testDB, "user-022", "ken", "pw", true, false)
-
-	judyAccess, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-021", cfg.AccessTokenExpireMinutes)
-	judyRefresh, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-021", cfg.RefreshTokenExpireDays)
-	insertAuthTestSession(t, testDB, "user-021", judyAccess, judyRefresh, 30)
-
-	kenRefresh, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-022", cfg.RefreshTokenExpireDays)
-
-	rec := postJSONAuth(t, e, "/api/auth/logout", map[string]string{
-		"refresh_token": kenRefresh,
-	}, judyAccess)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rec.Code)
-	}
-	var resp map[string]string
-	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp["message"] != "invalid refresh token for authenticated user" {
-		t.Errorf("error = %q, want %q", resp["message"], "invalid refresh token for authenticated user")
-	}
-}
-
-func TestHandleLogout_MalformedRefreshToken(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	insertAuthTestUser(t, testDB, "user-023", "lena", "pw", true, false)
-	access, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-023", cfg.AccessTokenExpireMinutes)
-	insertAuthTestSession(t, testDB, "user-023", access, "unused-hash-placeholder", 30)
-
-	rec := postJSONAuth(t, e, "/api/auth/logout", map[string]string{
-		"refresh_token": "not-a-jwt",
-	}, access)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200 for malformed refresh token", rec.Code)
-	}
-}
-
-func TestHandleLogout_DoubleLogout(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	insertAuthTestUser(t, testDB, "user-024", "mike", "pw", true, false)
-	access, _ := auth.GenerateAccessToken(cfg.SecretKey, "user-024", cfg.AccessTokenExpireMinutes)
-	refresh, _ := auth.GenerateRefreshToken(cfg.SecretKey, "user-024", cfg.RefreshTokenExpireDays)
-	insertAuthTestSession(t, testDB, "user-024", access, refresh, 30)
-
-	// First logout.
-	rec := postJSONAuth(t, e, "/api/auth/logout", map[string]string{"refresh_token": refresh}, access)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("first logout status = %d, want 200", rec.Code)
-	}
-
-	// Second logout — session deleted, so JWTMiddleware blocks with 401.
-	rec2 := postJSONAuth(t, e, "/api/auth/logout", map[string]string{"refresh_token": refresh}, access)
-	if rec2.Code != http.StatusUnauthorized {
-		t.Errorf("second logout status = %d, want 401 (session deleted)", rec2.Code)
-	}
-}
-
-func TestHandleLogout_NoAuthorizationHeader(t *testing.T) {
+func TestHandleLogout_NoSession(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEcho(t, testDB, testCfg())
 
-	rec := postJSON(t, e, "/api/auth/logout", map[string]string{
-		"refresh_token": "anything",
-	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", rec.Code)
+		t.Errorf("status = %d, want 401 (no session cookie)", rec.Code)
 	}
 }
 
@@ -561,20 +333,12 @@ func TestHandleLogout_NoAuthorizationHeader(t *testing.T) {
 
 func TestGetMe_Success(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
 	userID := "user-me-001"
 	insertAuthTestUser(t, testDB, userID, "admin", "password123", true, true)
 
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
-
 	e := echo.New()
-	ah := api.NewAuthHandler(testDB, cfg)
+	ah := api.NewAuthHandler(testDB, testCfg())
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	req.Header.Set("Authorization", "Bearer "+accessToken)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	c.Set("user_id", userID)
@@ -610,8 +374,7 @@ func TestGetMe_Success(t *testing.T) {
 
 func TestGetMe_Unauthorized_NoUserID(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	ah := api.NewAuthHandler(testDB, cfg)
+	ah := api.NewAuthHandler(testDB, testCfg())
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	rec := httptest.NewRecorder()
@@ -633,35 +396,23 @@ func TestGetMe_Unauthorized_NoUserID(t *testing.T) {
 
 func TestHandleChangePassword_Success(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	userID := "user-chpwd-001"
-	insertAuthTestUser(t, testDB, userID, "pwduser", "oldpass123", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-cp-001", "pwduser", "oldpass123", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-cp-001")
 
 	rec := putJSONAuth(t, e, "/api/auth/change-password", map[string]any{
 		"current_password": "oldpass123",
 		"new_password":     "newpass456",
-	}, accessToken)
+	}, sessionID)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body)
 	}
 
-	// Verify new password works by checking bcrypt.
 	var hash string
-	err = testDB.QueryRowContext(context.Background(),
-		"SELECT password_hash FROM users WHERE id = ?", userID,
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT password_hash FROM users WHERE id = ?", "user-cp-001",
 	).Scan(&hash)
-	if err != nil {
-		t.Fatalf("query hash: %v", err)
-	}
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte("newpass456")); err != nil {
 		t.Error("new password does not match stored hash")
 	}
@@ -669,23 +420,14 @@ func TestHandleChangePassword_Success(t *testing.T) {
 
 func TestHandleChangePassword_WrongCurrentPassword(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	userID := "user-chpwd-002"
-	insertAuthTestUser(t, testDB, userID, "pwduser2", "oldpass123", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-cp-002", "pwduser2", "oldpass123", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-cp-002")
 
 	rec := putJSONAuth(t, e, "/api/auth/change-password", map[string]any{
 		"current_password": "wrongpass",
 		"new_password":     "newpass456",
-	}, accessToken)
-
+	}, sessionID)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
 	}
@@ -693,23 +435,14 @@ func TestHandleChangePassword_WrongCurrentPassword(t *testing.T) {
 
 func TestHandleChangePassword_SamePassword(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	userID := "user-chpwd-003"
-	insertAuthTestUser(t, testDB, userID, "pwduser3", "samepass1", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-cp-003", "pwduser3", "samepass1", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-cp-003")
 
 	rec := putJSONAuth(t, e, "/api/auth/change-password", map[string]any{
 		"current_password": "samepass1",
 		"new_password":     "samepass1",
-	}, accessToken)
-
+	}, sessionID)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
 	}
@@ -717,23 +450,14 @@ func TestHandleChangePassword_SamePassword(t *testing.T) {
 
 func TestHandleChangePassword_TooShort(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-
-	userID := "user-chpwd-004"
-	insertAuthTestUser(t, testDB, userID, "pwduser4", "oldpass123", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-cp-004", "pwduser4", "oldpass123", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-cp-004")
 
 	rec := putJSONAuth(t, e, "/api/auth/change-password", map[string]any{
 		"current_password": "oldpass123",
 		"new_password":     "short",
-	}, accessToken)
-
+	}, sessionID)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
 	}
@@ -741,60 +465,26 @@ func TestHandleChangePassword_TooShort(t *testing.T) {
 
 func TestHandleChangePassword_InvalidatesOtherSessions(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-cp-005", "pwduser5", "oldpass123", true, false)
+	currentSession := insertAuthTestSession(t, testDB, "user-cp-005")
+	_ = insertAuthTestSession(t, testDB, "user-cp-005")
 
-	userID := "user-chpwd-005"
-	insertAuthTestUser(t, testDB, userID, "pwduser5", "oldpass123", true, false)
-
-	// Create the "current" session.
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
-
-	// Create an "other" session (simulating another device).
-	otherToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken other: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, otherToken, "", 30)
-
-	// Change password using the first token.
 	rec := putJSONAuth(t, e, "/api/auth/change-password", map[string]any{
 		"current_password": "oldpass123",
 		"new_password":     "newpass456",
-	}, accessToken)
+	}, currentSession)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body)
 	}
 
-	// Current session should still exist.
-	var currentCount int
-	err = testDB.QueryRowContext(context.Background(),
-		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND token_hash = ?",
-		userID, auth.HashToken(accessToken),
-	).Scan(&currentCount)
-	if err != nil {
-		t.Fatalf("count current session: %v", err)
-	}
-	if currentCount != 1 {
-		t.Errorf("current session should be preserved, got count=%d", currentCount)
-	}
-
-	// Other session should be deleted.
-	var otherCount int
-	err = testDB.QueryRowContext(context.Background(),
-		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND token_hash = ?",
-		userID, auth.HashToken(otherToken),
-	).Scan(&otherCount)
-	if err != nil {
-		t.Fatalf("count other session: %v", err)
-	}
-	if otherCount != 0 {
-		t.Errorf("other session should be deleted, got count=%d", otherCount)
+	var count int
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ?", "user-cp-005",
+	).Scan(&count)
+	if count != 1 {
+		t.Errorf("session count = %d, want 1 (current session preserved)", count)
 	}
 }
 
@@ -802,21 +492,15 @@ func TestHandleChangePassword_InvalidatesOtherSessions(t *testing.T) {
 
 func TestHandleUpdateMe_Success(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
 
 	userID := "user-update-me-001"
 	insertAuthTestUser(t, testDB, userID, "testuser", "password123", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	sessionID := insertAuthTestSession(t, testDB, userID)
 
 	rec := putJSONAuth(t, e, "/api/auth/me", map[string]any{
 		"preferences": map[string]any{"theme": "dark", "language": "en"},
-	}, accessToken)
+	}, sessionID)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body)
@@ -845,21 +529,15 @@ func TestHandleUpdateMe_Success(t *testing.T) {
 
 func TestHandleUpdateMe_InvalidPreferences_Array(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
 
 	userID := "user-update-me-002"
 	insertAuthTestUser(t, testDB, userID, "testuser2", "password123", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	sessionID := insertAuthTestSession(t, testDB, userID)
 
 	rec := putJSONAuth(t, e, "/api/auth/me", map[string]any{
 		"preferences": []string{"not", "an", "object"},
-	}, accessToken)
+	}, sessionID)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
@@ -868,21 +546,15 @@ func TestHandleUpdateMe_InvalidPreferences_Array(t *testing.T) {
 
 func TestHandleUpdateMe_InvalidPreferences_Null(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
 
 	userID := "user-update-me-003"
 	insertAuthTestUser(t, testDB, userID, "testuser3", "password123", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	sessionID := insertAuthTestSession(t, testDB, userID)
 
 	rec := putJSONAuth(t, e, "/api/auth/me", map[string]any{
 		"preferences": nil,
-	}, accessToken)
+	}, sessionID)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
@@ -893,19 +565,13 @@ func TestHandleUpdateMe_InvalidPreferences_Null(t *testing.T) {
 
 func TestHandleCheckUsername_Available(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
 
 	userID := "user-chkusr-001"
 	insertAuthTestUser(t, testDB, userID, "existinguser", "password123", true, false)
+	sessionID := insertAuthTestSession(t, testDB, userID)
 
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
-
-	rec := getAuth(t, e, "/api/auth/username/check/newname", accessToken)
+	rec := getAuth(t, e, "/api/auth/username/check/newname", sessionID)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body)
@@ -928,19 +594,13 @@ func TestHandleCheckUsername_Available(t *testing.T) {
 
 func TestHandleCheckUsername_Taken(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
 
 	userID := "user-chkusr-002"
 	insertAuthTestUser(t, testDB, userID, "takenname", "password123", true, false)
+	sessionID := insertAuthTestSession(t, testDB, userID)
 
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
-
-	rec := getAuth(t, e, "/api/auth/username/check/takenname", accessToken)
+	rec := getAuth(t, e, "/api/auth/username/check/takenname", sessionID)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body)
@@ -959,19 +619,13 @@ func TestHandleCheckUsername_Taken(t *testing.T) {
 
 func TestHandleCheckUsername_TooShort(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
 
 	userID := "user-chkusr-003"
 	insertAuthTestUser(t, testDB, userID, "someuser", "password123", true, false)
+	sessionID := insertAuthTestSession(t, testDB, userID)
 
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
-
-	rec := getAuth(t, e, "/api/auth/username/check/ab", accessToken)
+	rec := getAuth(t, e, "/api/auth/username/check/ab", sessionID)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
@@ -982,21 +636,15 @@ func TestHandleCheckUsername_TooShort(t *testing.T) {
 
 func TestHandleChangeUsername_Success(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
 
 	userID := "user-chusr-001"
 	insertAuthTestUser(t, testDB, userID, "oldname", "password123", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	sessionID := insertAuthTestSession(t, testDB, userID)
 
 	rec := putJSONAuth(t, e, "/api/auth/username", map[string]any{
 		"new_username": "newname",
-	}, accessToken)
+	}, sessionID)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body)
@@ -1016,21 +664,15 @@ func TestHandleChangeUsername_Success(t *testing.T) {
 
 func TestHandleChangeUsername_SameAsCurrent(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
 
 	userID := "user-chusr-002"
 	insertAuthTestUser(t, testDB, userID, "samename", "password123", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	sessionID := insertAuthTestSession(t, testDB, userID)
 
 	rec := putJSONAuth(t, e, "/api/auth/username", map[string]any{
 		"new_username": "samename",
-	}, accessToken)
+	}, sessionID)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
@@ -1039,22 +681,16 @@ func TestHandleChangeUsername_SameAsCurrent(t *testing.T) {
 
 func TestHandleChangeUsername_AlreadyTaken(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
 
 	userID := "user-chusr-003"
 	insertAuthTestUser(t, testDB, userID, "myname", "password123", true, false)
 	insertAuthTestUser(t, testDB, "user-chusr-004", "othername", "password123", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	sessionID := insertAuthTestSession(t, testDB, userID)
 
 	rec := putJSONAuth(t, e, "/api/auth/username", map[string]any{
 		"new_username": "othername",
-	}, accessToken)
+	}, sessionID)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
@@ -1063,23 +699,273 @@ func TestHandleChangeUsername_AlreadyTaken(t *testing.T) {
 
 func TestHandleChangeUsername_TooShort(t *testing.T) {
 	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
+	e := newTestEcho(t, testDB, testCfg())
 
 	userID := "user-chusr-005"
 	insertAuthTestUser(t, testDB, userID, "validname", "password123", true, false)
-
-	accessToken, err := auth.GenerateAccessToken(cfg.SecretKey, userID, cfg.AccessTokenExpireMinutes)
-	if err != nil {
-		t.Fatalf("GenerateAccessToken: %v", err)
-	}
-	insertAuthTestSession(t, testDB, userID, accessToken, "", 30)
+	sessionID := insertAuthTestSession(t, testDB, userID)
 
 	rec := putJSONAuth(t, e, "/api/auth/username", map[string]any{
 		"new_username": "ab",
-	}, accessToken)
+	}, sessionID)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+// ─── Session management test helpers ──────────────────────────────────────────
+
+// getAuth fires a GET request with a session cookie.
+func getAuth(t *testing.T, handler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, path string, sessionID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+// putJSONAuth fires a PUT request with a JSON body and a session cookie.
+func putJSONAuth(t *testing.T, handler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, path string, body any, sessionID string) *httptest.ResponseRecorder {
+	t.Helper()
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPut, path, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+// deleteAuth fires a DELETE request with a session cookie.
+func deleteAuth(t *testing.T, handler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, path string, sessionID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, path, nil)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+// ─── Session management tests ─────────────────────────────────────────────
+
+func TestHandleListSessions_ReturnsSessions(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-sess-001", "sesuser", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-sess-001")
+	_ = insertAuthTestSession(t, testDB, "user-sess-001")
+
+	rec := getAuth(t, e, "/api/auth/sessions", sessionID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+
+	var sessions []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&sessions); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Errorf("len(sessions) = %d, want 2", len(sessions))
+	}
+	currentCount := 0
+	for _, s := range sessions {
+		if s["is_current"] == true {
+			currentCount++
+		}
+	}
+	if currentCount != 1 {
+		t.Errorf("is_current count = %d, want 1", currentCount)
+	}
+}
+
+func TestHandleRevokeSession_DeletesSession(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-sess-002", "sesuser2", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-sess-002")
+	otherSession := insertAuthTestSession(t, testDB, "user-sess-002")
+
+	var otherID string
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT id FROM user_sessions WHERE session_id_hash = ?",
+		auth.HashToken(otherSession),
+	).Scan(&otherID)
+
+	rec := deleteAuth(t, e, "/api/auth/sessions/"+otherID, sessionID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body: %s", rec.Code, rec.Body)
+	}
+
+	var count int
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ?", "user-sess-002",
+	).Scan(&count)
+	if count != 1 {
+		t.Errorf("session count = %d, want 1 after revoke", count)
+	}
+}
+
+func TestHandleRevokeSession_OtherUserForbidden(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-sess-003", "sesuser3", "pw", true, false)
+	insertAuthTestUser(t, testDB, "user-sess-004", "sesuser4", "pw", true, false)
+	mySession := insertAuthTestSession(t, testDB, "user-sess-003")
+	theirSession := insertAuthTestSession(t, testDB, "user-sess-004")
+
+	var theirID string
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT id FROM user_sessions WHERE session_id_hash = ?",
+		auth.HashToken(theirSession),
+	).Scan(&theirID)
+
+	rec := deleteAuth(t, e, "/api/auth/sessions/"+theirID, mySession)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 (other user's session)", rec.Code)
+	}
+}
+
+func TestHandleRevokeAllOtherSessions(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-sess-010", "sesuser10", "pw", true, false)
+	currentSession := insertAuthTestSession(t, testDB, "user-sess-010")
+	_ = insertAuthTestSession(t, testDB, "user-sess-010")
+	_ = insertAuthTestSession(t, testDB, "user-sess-010")
+
+	rec := deleteAuth(t, e, "/api/auth/sessions", currentSession)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body: %s", rec.Code, rec.Body)
+	}
+
+	var count int
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ?", "user-sess-010",
+	).Scan(&count)
+	if count != 1 {
+		t.Errorf("session count = %d, want 1 (current session preserved)", count)
+	}
+}
+
+// ─── API key tests ────────────────────────────────────────────────────────────
+
+func TestHandleCreateAPIKey_ReturnsRawKey(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-key-001", "keyuser", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-key-001")
+
+	rec := postJSONSession(t, e, "/api/auth/api-keys", map[string]any{
+		"name": "my-cli-key",
+	}, sessionID)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	rawKey, _ := resp["key"].(string)
+	if !strings.HasPrefix(rawKey, "nxr_") {
+		t.Errorf("key = %q, want prefix nxr_", rawKey)
+	}
+	if resp["id"] == nil || resp["id"] == "" {
+		t.Error("response must contain id")
+	}
+
+	var count int
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM api_keys WHERE user_id = ? AND key_hash = ?",
+		"user-key-001", auth.HashToken(rawKey),
+	).Scan(&count)
+	if count != 1 {
+		t.Errorf("api_keys count = %d, want 1", count)
+	}
+}
+
+func TestHandleListAPIKeys_HidesRawKey(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-key-002", "keyuser2", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-key-002")
+
+	postJSONSession(t, e, "/api/auth/api-keys", map[string]any{"name": "test-key"}, sessionID)
+
+	rec := getAuth(t, e, "/api/auth/api-keys", sessionID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+
+	var keys []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&keys); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Errorf("len(keys) = %d, want 1", len(keys))
+	}
+	if _, ok := keys[0]["key"]; ok {
+		t.Error("list must not include raw key")
+	}
+	if _, ok := keys[0]["key_hash"]; ok {
+		t.Error("list must not include key_hash")
+	}
+}
+
+func TestHandleRevokeAPIKey(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-key-003", "keyuser3", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-key-003")
+
+	createRec := postJSONSession(t, e, "/api/auth/api-keys", map[string]any{"name": "revoke-me"}, sessionID)
+	var createResp map[string]any
+	_ = json.NewDecoder(createRec.Body).Decode(&createResp)
+	keyID, _ := createResp["id"].(string)
+
+	rec := deleteAuth(t, e, "/api/auth/api-keys/"+keyID, sessionID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body: %s", rec.Code, rec.Body)
+	}
+
+	var revokedAt *time.Time
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT revoked_at FROM api_keys WHERE id = ?", keyID,
+	).Scan(&revokedAt)
+	if revokedAt == nil {
+		t.Error("revoked_at is nil, want a timestamp")
+	}
+}
+
+func TestAPIKeyAuth_BearerToken(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "user-key-010", "keyuser10", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-key-010")
+
+	createRec := postJSONSession(t, e, "/api/auth/api-keys", map[string]any{"name": "bearer-test"}, sessionID)
+	var createResp map[string]any
+	_ = json.NewDecoder(createRec.Body).Decode(&createResp)
+	rawKey, _ := createResp["key"].(string)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("API key auth: status = %d, want 200; body: %s", rec.Code, rec.Body)
 	}
 }

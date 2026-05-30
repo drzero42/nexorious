@@ -2,13 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/providers';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -64,11 +58,10 @@ function LoginPage() {
 
   return (
     <Card className="w-full max-w-sm">
-      <CardHeader className="space-y-1 text-center">
+      <CardHeader className="space-y-2 text-center">
+        <img src="/logo.svg" alt="" className="mx-auto h-14 w-14" />
         <CardTitle className="text-2xl font-bold">Nexorious</CardTitle>
-        <CardDescription>
-          Sign in to your account to continue
-        </CardDescription>
+        <CardDescription>Sign in to your account to continue</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">

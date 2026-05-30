@@ -30,8 +30,9 @@ import {
   useCreateOrGetTag,
   useSyncConfig,
 } from '@/hooks';
-import { SyncPlatform, SyncFrequency } from '@/types/sync';
+import { SyncStorefront, SyncFrequency } from '@/types/sync';
 import { config } from '@/lib/env';
+import { formatHoursPlayed } from '@/lib/game-utils';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame } from '@/types';
 import { ArrowLeft, Save, Loader2, Heart } from 'lucide-react';
@@ -77,39 +78,42 @@ export function GameEditForm({ game }: GameEditFormProps) {
   const [personalRating, setPersonalRating] = useState<number | null>(game.personal_rating ?? null);
   const [isLoved, setIsLoved] = useState(game.is_loved);
   const [platformPlaytimes, setPlatformPlaytimes] = useState<Record<string, number>>(
-    Object.fromEntries(game.platforms.map((p) => [p.id, p.hours_played]))
+    Object.fromEntries(game.platforms.map((p) => [p.id, p.hours_played])),
   );
-  const [platformOwnership, setPlatformOwnership] = useState<Record<string, {
-    ownershipStatus: OwnershipStatus;
-    acquiredDate: string;
-  }>>(
+  const [platformOwnership, setPlatformOwnership] = useState<
+    Record<
+      string,
+      {
+        ownershipStatus: OwnershipStatus;
+        acquiredDate: string;
+      }
+    >
+  >(
     Object.fromEntries(
       game.platforms.map((p) => [
         p.id,
         {
           ownershipStatus: p.ownership_status,
-          acquiredDate: p.acquired_date ?? ''
-        }
-      ])
-    )
+          acquiredDate: p.acquired_date ?? '',
+        },
+      ]),
+    ),
   );
   const [personalNotes, setPersonalNotes] = useState(game.personal_notes ?? '');
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
-    game.tags?.map((t) => t.id) ?? []
-  );
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(game.tags?.map((t) => t.id) ?? []);
   const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformSelection[]>(
     game.platforms
       .filter((p) => p.platform)
       .map((p) => ({
         platform: p.platform!,
         storefront: p.storefront,
-      }))
+      })),
   );
 
   // Data fetching
   const { data: platforms = [], isLoading: platformsLoading } = useAllPlatforms();
   const { data: tags = [], isLoading: tagsLoading } = useAllTags();
-  const { data: steamSyncConfig } = useSyncConfig(SyncPlatform.STEAM);
+  const { data: steamSyncConfig } = useSyncConfig(SyncStorefront.STEAM);
 
   // Check if Steam sync is enabled (non-manual frequency when configured)
   const isSteamSyncEnabled =
@@ -132,20 +136,18 @@ export function GameEditForm({ game }: GameEditFormProps) {
     assignTags.isPending ||
     removeTags.isPending;
 
-  // Compute total hours from platform playtimes
-  const totalHoursPlayed = useMemo(() => {
-    const platformHours = Object.values(platformPlaytimes).reduce((sum, h) => sum + h, 0);
-    return platformHours > 0 ? platformHours : game.hours_played;
-  }, [platformPlaytimes, game.hours_played]);
+  // Total hours = sum of the per-platform playtime inputs (the calculated value the API
+  // now returns as game.hours_played, kept live so in-progress edits are reflected).
+  const totalHoursPlayed = useMemo(
+    () => Object.values(platformPlaytimes).reduce((sum, h) => sum + h, 0),
+    [platformPlaytimes],
+  );
 
   // Track original values for comparison
-  const originalTagIds = useMemo(
-    () => game.tags?.map((t) => t.id) ?? [],
-    [game.tags]
-  );
+  const originalTagIds = useMemo(() => game.tags?.map((t) => t.id) ?? [], [game.tags]);
   const originalPlatformNames = useMemo(
     () => game.platforms.map((p) => p.platform).filter(Boolean) as string[],
-    [game.platforms]
+    [game.platforms],
   );
 
   // Get platform association ID by platform name
@@ -154,7 +156,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
       const assoc = game.platforms.find((p) => p.platform === platformName);
       return assoc?.id;
     },
-    [game.platforms]
+    [game.platforms],
   );
 
   const handleSave = async () => {
@@ -173,10 +175,10 @@ export function GameEditForm({ game }: GameEditFormProps) {
       // 2. Handle platform changes
       const currentPlatformNames = selectedPlatforms.map((p) => p.platform);
       const platformsToAdd = selectedPlatforms.filter(
-        (p) => !originalPlatformNames.includes(p.platform)
+        (p) => !originalPlatformNames.includes(p.platform),
       );
       const platformsToRemove = originalPlatformNames.filter(
-        (name) => !currentPlatformNames.includes(name)
+        (name) => !currentPlatformNames.includes(name),
       );
 
       // Add new platforms
@@ -304,9 +306,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
                   loading="lazy"
                 />
               ) : (
-                <div className="h-full w-full flex items-center justify-center text-2xl">
-                  🎮
-                </div>
+                <div className="h-full w-full flex items-center justify-center text-2xl">🎮</div>
               )}
             </div>
             <div>
@@ -346,12 +346,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
             {/* Personal Rating */}
             <div className="space-y-2">
               <Label>Personal Rating</Label>
-              <StarRating
-                value={personalRating}
-                onChange={setPersonalRating}
-                clearable
-                size="lg"
-              />
+              <StarRating value={personalRating} onChange={setPersonalRating} clearable size="lg" />
             </div>
 
             {/* Is Loved */}
@@ -388,7 +383,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
             <p className="text-sm text-muted-foreground">
               Playtime and ownership are tracked per platform below.
             </p>
-            <p className="text-lg font-medium">{totalHoursPlayed} hours total</p>
+            <p className="text-lg font-medium">{formatHoursPlayed(totalHoursPlayed)} total</p>
           </div>
         </CardContent>
       </Card>
@@ -418,7 +413,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
                     const isSteamSynced = isSteamSyncEnabled && isSteamPlatform;
                     const ownership = platformOwnership[p.id] ?? {
                       ownershipStatus: p.ownership_status,
-                      acquiredDate: p.acquired_date ?? ''
+                      acquiredDate: p.acquired_date ?? '',
                     };
                     const platformName =
                       p.storefront_details?.display_name ||
@@ -441,8 +436,8 @@ export function GameEditForm({ game }: GameEditFormProps) {
                                   ...prev,
                                   [p.id]: {
                                     ...prev[p.id],
-                                    ownershipStatus: v as OwnershipStatus
-                                  }
+                                    ownershipStatus: v as OwnershipStatus,
+                                  },
                                 }))
                               }
                             >
@@ -471,8 +466,8 @@ export function GameEditForm({ game }: GameEditFormProps) {
                                   ...prev,
                                   [p.id]: {
                                     ...prev[p.id],
-                                    acquiredDate: e.target.value
-                                  }
+                                    acquiredDate: e.target.value,
+                                  },
                                 }))
                               }
                             />
@@ -487,12 +482,13 @@ export function GameEditForm({ game }: GameEditFormProps) {
                               <Input
                                 type="number"
                                 min="0"
+                                step="0.5"
                                 className="h-9 w-24"
                                 value={platformPlaytimes[p.id] ?? p.hours_played}
                                 onChange={(e) =>
                                   setPlatformPlaytimes((prev) => ({
                                     ...prev,
-                                    [p.id]: parseInt(e.target.value) || 0,
+                                    [p.id]: parseFloat(e.target.value) || 0,
                                   }))
                                 }
                                 disabled={isSteamSynced}

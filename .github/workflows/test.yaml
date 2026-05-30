@@ -122,7 +122,7 @@ jobs:
       - name: Lint Helm chart
         run: |
           helm lint --strict deploy/helm/ \
-            --set nexorious.secretKey=x \
+            --set nexorious.dbEncryptionKey=x \
             --set nexorious.postgresql.password=x \
             --set nexorious.igdbClientId=x \
             --set nexorious.igdbClientSecret=x

@@ -27,7 +27,10 @@ export const jobsKeys = {
   items: (jobId: string, status?: JobItemStatus, page?: number) =>
     [...jobsKeys.detail(jobId), 'items', { status, page }] as const,
   active: (jobType: JobType) => [...jobsKeys.all, 'active', jobType] as const,
-  recent: (source: string, limit?: number) => [...jobsKeys.all, 'recent', source, limit] as const,
+  recent: (source: string, limit?: number) =>
+    limit !== undefined
+      ? ([...jobsKeys.all, 'recent', source, limit] as const)
+      : ([...jobsKeys.all, 'recent', source] as const),
 };
 
 // ============================================================================
@@ -42,7 +45,7 @@ export function useJobs(
   filters?: JobFilters,
   page: number = 1,
   perPage: number = 20,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean },
 ) {
   return useQuery({
     queryKey: jobsKeys.list(filters, page, perPage),
@@ -99,7 +102,7 @@ export function useJobItems(
   status?: JobItemStatus,
   page: number = 1,
   pageSize: number = 50,
-  options?: { enabled?: boolean; refetchInterval?: number | false }
+  options?: { enabled?: boolean; refetchInterval?: number | false },
 ) {
   return useQuery({
     queryKey: jobsKeys.items(jobId, status, page),
@@ -188,36 +191,6 @@ export function useDeleteJob() {
         // Invalidate job lists to refetch
         queryClient.invalidateQueries({ queryKey: jobsKeys.lists() });
       }
-    },
-  });
-}
-
-/**
- * Hook to resolve a job item to an IGDB ID.
- */
-export function useResolveJobItem() {
-  const queryClient = useQueryClient();
-
-  return useMutation<JobItemDetail, Error, { itemId: string; igdbId: number }>({
-    mutationFn: ({ itemId, igdbId }) => jobsApi.resolveJobItem(itemId, igdbId),
-    onSuccess: () => {
-      // Invalidate job queries to refresh progress counts
-      queryClient.invalidateQueries({ queryKey: jobsKeys.all });
-    },
-  });
-}
-
-/**
- * Hook to skip a job item.
- */
-export function useSkipJobItem() {
-  const queryClient = useQueryClient();
-
-  return useMutation<JobItemDetail, Error, { itemId: string; reason?: string }>({
-    mutationFn: ({ itemId, reason }) => jobsApi.skipJobItem(itemId, reason),
-    onSuccess: () => {
-      // Invalidate job queries to refresh progress counts
-      queryClient.invalidateQueries({ queryKey: jobsKeys.all });
     },
   });
 }

@@ -21,7 +21,6 @@ func setupUserGamesUser(t *testing.T, db *bun.DB, handler interface {
 	userID := "u-ug-" + suffix
 	username := "uguser-" + suffix
 	insertAuthTestUser(t, db, userID, username, "pass123", true, false)
-	insertAuthTestSession(t, db, userID, "access-"+suffix, "refresh-"+suffix, 1)
 	token := loginAndGetToken(t, handler, username, "pass123")
 	return userID, token
 }
@@ -414,19 +413,9 @@ func TestUpdateProgress(t *testing.T) {
 	gameID := insertTestGame(t, testDB, "Test Game Progress")
 	insertTestUserGame(t, testDB, "ug-prog-1", userID, int(gameID))
 
-	t.Run("success hours only", func(t *testing.T) {
+	t.Run("success play_status", func(t *testing.T) {
 		rec := putJSONAuth(t, e, "/api/user-games/ug-prog-1/progress", map[string]any{
-			"hours_played": 12.5,
-		}, token)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-		}
-	})
-
-	t.Run("success both fields", func(t *testing.T) {
-		rec := putJSONAuth(t, e, "/api/user-games/ug-prog-1/progress", map[string]any{
-			"hours_played": 25.0,
-			"play_status":  "in_progress",
+			"play_status": "in_progress",
 		}, token)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -451,7 +440,7 @@ func TestUpdateProgress(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		rec := putJSONAuth(t, e, "/api/user-games/nonexistent/progress", map[string]any{
-			"hours_played": 1.0,
+			"play_status": "completed",
 		}, token)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
@@ -542,7 +531,7 @@ func TestBulkDelete(t *testing.T) {
 		})
 		req := httptest.NewRequest(http.MethodDelete, "/api/user-games/bulk-delete", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -621,7 +610,7 @@ func TestBulkRemovePlatforms(t *testing.T) {
 		})
 		req := httptest.NewRequest(http.MethodDelete, "/api/user-games/bulk-remove-platforms", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -1178,7 +1167,7 @@ func TestCollectionStats(t *testing.T) {
 		}
 	})
 
-	t.Run("hours fallback", func(t *testing.T) {
+	t.Run("hours from platforms", func(t *testing.T) {
 		userID, token := setupUserGamesUser(t, testDB, e, "stats-hours")
 
 		g1 := insertTestGame(t, testDB, "Hours Game 1")
@@ -1195,9 +1184,10 @@ func TestCollectionStats(t *testing.T) {
 		_, _ = testDB.ExecContext(context.Background(),
 			`UPDATE user_game_platforms SET hours_played = 50.5 WHERE id = 'ugp-hours-1'`)
 
-		// Game 2: no platform hours, legacy hours = 10.0
+		// Game 2: platform hours = 10.0
+		insertTestUserGamePlatform(t, testDB, "ugp-hours-2", "ug-hours-2", &pc, &steam)
 		_, _ = testDB.ExecContext(context.Background(),
-			`UPDATE user_games SET hours_played = 10.0 WHERE id = 'ug-hours-2'`)
+			`UPDATE user_game_platforms SET hours_played = 10.0 WHERE id = 'ugp-hours-2'`)
 
 		rec := getAuth(t, e, "/api/user-games/stats", token)
 		if rec.Code != http.StatusOK {
@@ -1211,4 +1201,261 @@ func TestCollectionStats(t *testing.T) {
 			t.Fatalf("expected total_hours_played=60.5, got %v", hours)
 		}
 	})
+}
+
+func TestListUserGamesSortByHours(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "sorthours")
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO platforms (name, display_name) VALUES ('pc','PC') ON CONFLICT DO NOTHING`)
+	pc := "pc"
+
+	gLow := insertTestGame(t, testDB, "Low Hours")
+	gHigh := insertTestGame(t, testDB, "High Hours")
+	gZero := insertTestGame(t, testDB, "Zero Hours")
+	insertTestUserGame(t, testDB, "ug-sh-low", userID, int(gLow))
+	insertTestUserGame(t, testDB, "ug-sh-high", userID, int(gHigh))
+	insertTestUserGame(t, testDB, "ug-sh-zero", userID, int(gZero)) // no platforms → 0
+
+	insertTestUserGamePlatform(t, testDB, "ugp-sh-low", "ug-sh-low", &pc, nil)
+	insertTestUserGamePlatform(t, testDB, "ugp-sh-high", "ug-sh-high", &pc, nil)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE user_game_platforms SET hours_played = 5 WHERE id = 'ugp-sh-low'`)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE user_game_platforms SET hours_played = 100 WHERE id = 'ugp-sh-high'`)
+
+	idsInOrder := func(t *testing.T, order string) []string {
+		t.Helper()
+		rec := getAuth(t, e, "/api/user-games?sort_by=hours_played&sort_order="+order, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		games := resp["user_games"].([]any)
+		ids := make([]string, len(games))
+		for i, g := range games {
+			ids[i] = g.(map[string]any)["id"].(string)
+		}
+		return ids
+	}
+
+	t.Run("desc orders highest hours first, zero last", func(t *testing.T) {
+		ids := idsInOrder(t, "desc")
+		want := []string{"ug-sh-high", "ug-sh-low", "ug-sh-zero"}
+		for i := range want {
+			if ids[i] != want[i] {
+				t.Fatalf("desc order mismatch: got %v, want %v", ids, want)
+			}
+		}
+	})
+
+	t.Run("asc orders zero first, highest last", func(t *testing.T) {
+		ids := idsInOrder(t, "asc")
+		want := []string{"ug-sh-zero", "ug-sh-low", "ug-sh-high"}
+		for i := range want {
+			if ids[i] != want[i] {
+				t.Fatalf("asc order mismatch: got %v, want %v", ids, want)
+			}
+		}
+	})
+}
+
+// TestListUserGamesSortByGameNumerics is the regression guard for issue #639:
+// sort_by=howlongtobeat_main and sort_by=rating_average must return 200 (not
+// the prior 400) and order results correctly with NULLs sinking to the bottom
+// in both directions.
+func TestListUserGamesSortByGameNumerics(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "sortnumerics")
+
+	gLow := insertTestGame(t, testDB, "Low Values")
+	gHigh := insertTestGame(t, testDB, "High Values")
+	gNull := insertTestGame(t, testDB, "Null Values")
+
+	insertTestUserGame(t, testDB, "ug-low", userID, int(gLow))
+	insertTestUserGame(t, testDB, "ug-high", userID, int(gHigh))
+	insertTestUserGame(t, testDB, "ug-null", userID, int(gNull))
+
+	// Set both columns with parallel low/high mapping on the same fixture so
+	// rating_average and howlongtobeat_main produce the same expected ordering.
+	// ug-null is left with both columns NULL (the default).
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE games SET rating_average = 50, howlongtobeat_main = 10 WHERE id = ?`, gLow); err != nil {
+		t.Fatalf("update gLow: %v", err)
+	}
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE games SET rating_average = 90, howlongtobeat_main = 100 WHERE id = ?`, gHigh); err != nil {
+		t.Fatalf("update gHigh: %v", err)
+	}
+
+	idsInOrder := func(t *testing.T, field, order string) []string {
+		t.Helper()
+		rec := getAuth(t, e, "/api/user-games?sort_by="+field+"&sort_order="+order, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		games := resp["user_games"].([]any)
+		ids := make([]string, len(games))
+		for i, g := range games {
+			ids[i] = g.(map[string]any)["id"].(string)
+		}
+		return ids
+	}
+
+	for _, field := range []string{"rating_average", "howlongtobeat_main"} {
+		field := field // capture
+		t.Run(field+" desc orders high, low, null", func(t *testing.T) {
+			ids := idsInOrder(t, field, "desc")
+			want := []string{"ug-high", "ug-low", "ug-null"}
+			if len(ids) != len(want) {
+				t.Fatalf("got %d ids, want %d: %v", len(ids), len(want), ids)
+			}
+			for i := range want {
+				if ids[i] != want[i] {
+					t.Fatalf("desc order mismatch: got %v, want %v", ids, want)
+				}
+			}
+		})
+		t.Run(field+" asc orders low, high, null", func(t *testing.T) {
+			ids := idsInOrder(t, field, "asc")
+			want := []string{"ug-low", "ug-high", "ug-null"}
+			if len(ids) != len(want) {
+				t.Fatalf("got %d ids, want %d: %v", len(ids), len(want), ids)
+			}
+			for i := range want {
+				if ids[i] != want[i] {
+					t.Fatalf("asc order mismatch: got %v, want %v", ids, want)
+				}
+			}
+		})
+	}
+}
+
+func TestUserGameCalculatedHours(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "calchours")
+
+	// Two platforms on one game: 10 + 25.5 = 35.5
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO platforms (name, display_name) VALUES ('pc','PC'),('ps5','PS5') ON CONFLICT DO NOTHING`)
+	g1 := insertTestGame(t, testDB, "Calc Hours Game")
+	insertTestUserGame(t, testDB, "ug-calc-1", userID, int(g1))
+	pc, ps5 := "pc", "ps5"
+	insertTestUserGamePlatform(t, testDB, "ugp-calc-1", "ug-calc-1", &pc, nil)
+	insertTestUserGamePlatform(t, testDB, "ugp-calc-2", "ug-calc-1", &ps5, nil)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE user_game_platforms SET hours_played = 10 WHERE id = 'ugp-calc-1'`)
+	_, _ = testDB.ExecContext(context.Background(),
+		`UPDATE user_game_platforms SET hours_played = 25.5 WHERE id = 'ugp-calc-2'`)
+
+	// A second game with no platform hours → 0
+	g2 := insertTestGame(t, testDB, "No Hours Game")
+	insertTestUserGame(t, testDB, "ug-calc-2", userID, int(g2))
+
+	t.Run("single GET returns summed hours", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games/ug-calc-1", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp["hours_played"].(float64) != 35.5 {
+			t.Fatalf("expected hours_played=35.5, got %v", resp["hours_played"])
+		}
+	})
+
+	t.Run("single GET returns 0 when no platform hours", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games/ug-calc-2", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp["hours_played"].(float64) != 0 {
+			t.Fatalf("expected hours_played=0, got %v", resp["hours_played"])
+		}
+	})
+
+	t.Run("list returns summed hours", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		games := resp["user_games"].([]any)
+		var calc1 map[string]any
+		for _, g := range games {
+			gm := g.(map[string]any)
+			if gm["id"] == "ug-calc-1" {
+				calc1 = gm
+			}
+		}
+		if calc1 == nil {
+			t.Fatal("ug-calc-1 not found in list response")
+		}
+		if calc1["hours_played"].(float64) != 35.5 {
+			t.Fatalf("expected list hours_played=35.5, got %v", calc1["hours_played"])
+		}
+	})
+}
+
+func TestUserGamesNoStoredHoursColumn(t *testing.T) {
+	truncateAllTables(t)
+	var count int
+	err := testDB.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM information_schema.columns
+		 WHERE table_schema = 'public' AND table_name = 'user_games' AND column_name = 'hours_played'`).Scan(&count)
+	if err != nil {
+		t.Fatalf("information_schema query: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("user_games.hours_played must not be a stored column; found %d", count)
+	}
+}
+
+func TestManualPlatformHoursReflectedInSum(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "manualhours")
+
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO platforms (name, display_name) VALUES ('pc','PC') ON CONFLICT DO NOTHING`)
+	g := insertTestGame(t, testDB, "Manual Hours Game")
+	insertTestUserGame(t, testDB, "ug-mh-1", userID, int(g))
+	pc := "pc"
+	insertTestUserGamePlatform(t, testDB, "ugp-mh-1", "ug-mh-1", &pc, nil)
+
+	// Manually set hours via the platform-update endpoint.
+	rec := putJSONAuth(t, e, "/api/user-games/ug-mh-1/platforms/ugp-mh-1", map[string]any{
+		"hours_played": 42.5,
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from platform update, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// The calculated game-level value reflects the manual entry — proving it is derived,
+	// not stored.
+	rec = getAuth(t, e, "/api/user-games/ug-mh-1", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["hours_played"].(float64) != 42.5 {
+		t.Fatalf("expected calculated hours_played=42.5, got %v", resp["hours_played"])
+	}
 }

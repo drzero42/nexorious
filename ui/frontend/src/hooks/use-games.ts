@@ -8,7 +8,14 @@ import type {
   BulkUpdateData,
   FilterOptions,
 } from '@/api/games';
-import type { UserGame, IGDBGameCandidate, Game, GameId, UserGamePlatform, PlayStatus } from '@/types';
+import type {
+  UserGame,
+  IGDBGameCandidate,
+  Game,
+  GameId,
+  UserGamePlatform,
+  PlayStatus,
+} from '@/types';
 
 // ============================================================================
 // Query Keys
@@ -74,17 +81,22 @@ function parseIGDBIdFromQuery(query: string): number | null {
  * 1. Direct ID lookup: Use "igdb:12345" format (case-insensitive)
  * 2. Name search: Any other query (requires 3+ characters)
  */
-export function useSearchIGDB(query: string, limit?: number) {
+export function useSearchIGDB(
+  query: string,
+  options?: { limit?: number; externalGameId?: string },
+) {
+  const limit = options?.limit;
+  const externalGameId = options?.externalGameId;
   const igdbId = parseIGDBIdFromQuery(query);
   const isIdLookup = igdbId !== null;
 
   return useQuery<IGDBGameCandidate[], Error>({
-    queryKey: gameKeys.igdbSearch(query),
+    queryKey: [...gameKeys.igdbSearch(query), externalGameId ?? null] as const,
     queryFn: () => {
       if (isIdLookup) {
         return gamesApi.getGameByIGDBId(igdbId);
       }
-      return gamesApi.searchIGDB(query, limit);
+      return gamesApi.searchIGDB(query, limit, externalGameId);
     },
     // ID lookup: always enabled (no min chars)
     // Name search: require 3+ characters
@@ -192,11 +204,7 @@ export function useCreateUserGame() {
 export function useUpdateUserGame() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    UserGame,
-    Error,
-    { id: string; data: UserGameUpdateData }
-  >({
+  return useMutation<UserGame, Error, { id: string; data: UserGameUpdateData }>({
     mutationFn: ({ id, data }) => gamesApi.updateUserGame(id, data),
     onSuccess: (updatedGame, { id }) => {
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
@@ -233,8 +241,7 @@ export function useDeleteUserGame() {
  */
 export function useImportFromIGDB() {
   return useMutation<Game, Error, { igdbId: GameId; downloadCoverArt?: boolean }>({
-    mutationFn: ({ igdbId, downloadCoverArt }) =>
-      gamesApi.importFromIGDB(igdbId, downloadCoverArt),
+    mutationFn: ({ igdbId, downloadCoverArt }) => gamesApi.importFromIGDB(igdbId, downloadCoverArt),
   });
 }
 
@@ -291,8 +298,7 @@ export function useAddPlatformToUserGame() {
     Error,
     { userGameId: string; data: gamesApi.UserGamePlatformData }
   >({
-    mutationFn: ({ userGameId, data }) =>
-      gamesApi.addPlatformToUserGame(userGameId, data),
+    mutationFn: ({ userGameId, data }) => gamesApi.addPlatformToUserGame(userGameId, data),
     onSuccess: (_result, { userGameId }) => {
       queryClient.invalidateQueries({ queryKey: gameKeys.detail(userGameId) });
       queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
@@ -329,11 +335,7 @@ export function useUpdatePlatformAssociation() {
 export function useRemovePlatformFromUserGame() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    void,
-    Error,
-    { userGameId: string; platformAssociationId: string }
-  >({
+  return useMutation<void, Error, { userGameId: string; platformAssociationId: string }>({
     mutationFn: ({ userGameId, platformAssociationId }) =>
       gamesApi.removePlatformFromUserGame(userGameId, platformAssociationId),
     onSuccess: (_result, { userGameId }) => {

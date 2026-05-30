@@ -1,4 +1,3 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Loader2, XCircle, RefreshCw } from 'lucide-react';
+import { Loader2, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import type { Job } from '@/types';
 import {
@@ -28,11 +27,9 @@ interface JobProgressCardProps {
   job: Job;
   onCancel: () => Promise<void>;
   isCancelling?: boolean;
-  onRetry?: () => Promise<void>;
-  isRetrying?: boolean;
 }
 
-export function JobProgressCard({ job, onCancel, isCancelling, onRetry, isRetrying }: JobProgressCardProps) {
+export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCardProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const showProgress = isJobInProgress(job);
 
@@ -56,13 +53,16 @@ export function JobProgressCard({ job, onCancel, isCancelling, onRetry, isRetryi
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {showProgress && job.progress && (
+          {showProgress && job.progress && job.progress.total > 0 && (
             <div>
               <div className="mb-2 flex justify-between text-sm text-muted-foreground">
                 <span>Progress</span>
                 <span>
-                  {job.progress.completed + job.progress.failed + job.progress.skipped} /{' '}
-                  {job.progress.total} ({job.progress.percent}%)
+                  {job.progress.completed +
+                    job.progress.pendingReview +
+                    job.progress.failed +
+                    job.progress.skipped}{' '}
+                  / {job.progress.total} ({job.progress.percent}%)
                 </span>
               </div>
               <Progress value={job.progress.percent} />
@@ -70,10 +70,20 @@ export function JobProgressCard({ job, onCancel, isCancelling, onRetry, isRetryi
           )}
 
           {job.progress && (
-            <div className={`grid grid-cols-2 gap-4 text-sm ${job.progress.igdbFailed > 0 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
+            <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-5">
               <div>
-                <div className="text-muted-foreground">Completed</div>
+                <div className="text-muted-foreground">Matched</div>
                 <div className="text-lg font-semibold text-green-600">{job.progress.completed}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Needs Review</div>
+                <div className="text-lg font-semibold text-yellow-600">
+                  {job.progress.pendingReview}
+                </div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Skipped</div>
+                <div className="text-lg font-semibold">{job.progress.skipped}</div>
               </div>
               <div>
                 <div className="text-muted-foreground">Failed</div>
@@ -81,18 +91,10 @@ export function JobProgressCard({ job, onCancel, isCancelling, onRetry, isRetryi
               </div>
               <div>
                 <div className="text-muted-foreground">Processing</div>
-                <div className="text-lg font-semibold">{job.progress.processing}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Pending</div>
-                <div className="text-lg font-semibold">{job.progress.pending}</div>
-              </div>
-              {job.progress.igdbFailed > 0 && (
-                <div>
-                  <div className="text-muted-foreground">IGDB Error</div>
-                  <div className="text-lg font-semibold text-orange-500">{job.progress.igdbFailed}</div>
+                <div className="text-lg font-semibold">
+                  {job.progress.pending + job.progress.processing}
                 </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -103,23 +105,7 @@ export function JobProgressCard({ job, onCancel, isCancelling, onRetry, isRetryi
           )}
 
           {!job.isTerminal && (
-            <div className="flex justify-end gap-2">
-              {onRetry && job.progress && job.progress.igdbFailed > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onRetry}
-                  disabled={isRetrying}
-                  className="text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-                >
-                  {isRetrying ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                  )}
-                  Retry {job.progress.igdbFailed} IGDB {job.progress.igdbFailed === 1 ? 'error' : 'errors'}
-                </Button>
-              )}
+            <div className="flex justify-end">
               <Button
                 variant="outline"
                 size="sm"

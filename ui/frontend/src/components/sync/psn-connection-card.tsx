@@ -1,4 +1,3 @@
-
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -39,7 +38,7 @@ type PSNCredentialsForm = z.infer<typeof psnCredentialsSchema>;
 
 interface PSNConnectionCardProps {
   isConfigured: boolean;
-  tokenExpired: boolean;
+  credentialsError: boolean;
   accountId?: string;
   onlineId?: string;
   onConnectionChange: () => void;
@@ -47,7 +46,7 @@ interface PSNConnectionCardProps {
 
 export function PSNConnectionCard({
   isConfigured,
-  tokenExpired,
+  credentialsError,
   accountId,
   onlineId,
   onConnectionChange,
@@ -96,9 +95,9 @@ export function PSNConnectionCard({
   };
 
   const getBadgeState = () => {
-    if (tokenExpired) {
+    if (credentialsError) {
       return {
-        label: 'Token Expired',
+        label: 'Credentials Error',
         className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
       };
     }
@@ -113,8 +112,8 @@ export function PSNConnectionCard({
 
   const badgeState = getBadgeState();
 
-  // Show form if not configured OR token expired
-  const showForm = !isConfigured || tokenExpired;
+  // Show form if not configured OR credentials error (e.g. token expired)
+  const showForm = !isConfigured || credentialsError;
 
   return (
     <Card>
@@ -136,7 +135,7 @@ export function PSNConnectionCard({
       <CardContent>
         {showForm ? (
           <div className="space-y-4">
-            {tokenExpired && (
+            {credentialsError && (
               <div className="flex items-start gap-3 rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/20">
                 <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
                 <div>
@@ -184,8 +183,7 @@ export function PSNConnectionCard({
                               rel="noopener noreferrer"
                               className="text-primary hover:underline"
                             >
-                              Sony SSO Cookie Page{' '}
-                              <ExternalLink className="inline h-3 w-3" />
+                              Sony SSO Cookie Page <ExternalLink className="inline h-3 w-3" />
                             </a>
                           </li>
                           <li>Sign in with your PlayStation Network account if prompted</li>
@@ -198,13 +196,12 @@ export function PSNConnectionCard({
                         <div className="mt-2 space-y-2">
                           <div className="rounded border border-yellow-200 bg-yellow-50 p-2 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
                             <strong>Security Note:</strong> Your NPSSO token expires approximately
-                            every 2 months. You&apos;ll need to get a new token when it expires.
-                            The token is stored securely and only used to sync your library.
+                            every 2 months. You&apos;ll need to get a new token when it expires. The
+                            token is stored securely and only used to sync your library.
                           </div>
                           <div className="rounded border border-blue-200 bg-blue-50 p-2 text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
                             <strong>Note:</strong> PS3 games cannot be synced due to PlayStation
-                            Network API limitations. Only PS4, PS5, and PS Vita games are
-                            supported.
+                            Network API limitations. Only PS4, PS5, and PS Vita games are supported.
                           </div>
                         </div>
                       </div>
@@ -217,10 +214,10 @@ export function PSNConnectionCard({
                 {isConfiguring ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {tokenExpired ? 'Reconfiguring...' : 'Configuring...'}
+                    {credentialsError ? 'Reconfiguring...' : 'Configuring...'}
                   </>
                 ) : (
-                  <>{tokenExpired ? 'Reconfigure' : 'Configure PSN'}</>
+                  <>{credentialsError ? 'Reconfigure' : 'Configure PSN'}</>
                 )}
               </Button>
             </form>

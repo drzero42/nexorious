@@ -1,9 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
 import { QueryWrapper } from '@/test/test-utils';
-import { setAuthHandlers } from '@/api/client';
 import {
   useImportNexorious,
   useExportCollection,
@@ -15,22 +14,8 @@ import { ExportFormat } from '@/types';
 const API_URL = '/api';
 
 describe('use-import-export hooks', () => {
-  let mockGetAccessToken: Mock<() => string | null>;
-  let mockRefreshTokens: Mock<() => Promise<boolean>>;
-  let mockLogout: Mock<() => void>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetAccessToken = vi.fn<() => string | null>().mockReturnValue('test-access-token');
-    mockRefreshTokens = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
-    mockLogout = vi.fn<() => void>();
-
-    setAuthHandlers(mockGetAccessToken, mockRefreshTokens, mockLogout);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('importExportKeys', () => {
@@ -54,7 +39,7 @@ describe('use-import-export hooks', () => {
             message: 'Import job created. Processing 5 games.',
             total_items: 5,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useImportNexorious(), {
@@ -79,11 +64,8 @@ describe('use-import-export hooks', () => {
     it('handles import error', async () => {
       server.use(
         http.post(`${API_URL}/import/nexorious`, () => {
-          return HttpResponse.json(
-            { detail: 'Invalid JSON file' },
-            { status: 400 }
-          );
-        })
+          return HttpResponse.json({ detail: 'Invalid JSON file' }, { status: 400 });
+        }),
       );
 
       const { result } = renderHook(() => useImportNexorious(), {
@@ -112,9 +94,9 @@ describe('use-import-export hooks', () => {
         http.post(`${API_URL}/import/nexorious`, () => {
           return HttpResponse.json(
             { detail: 'Import already in progress. Job ID: job-existing' },
-            { status: 409 }
+            { status: 409 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useImportNexorious(), {
@@ -149,7 +131,7 @@ describe('use-import-export hooks', () => {
             message: 'Export job created. Check job status for progress.',
             estimated_items: 50,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useExportCollection(), {
@@ -177,7 +159,7 @@ describe('use-import-export hooks', () => {
             message: 'Export job created.',
             estimated_items: 100,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useExportCollection(), {
@@ -201,9 +183,9 @@ describe('use-import-export hooks', () => {
         http.post(`${API_URL}/export/json`, () => {
           return HttpResponse.json(
             { detail: 'No games in collection to export.' },
-            { status: 400 }
+            { status: 400 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useExportCollection(), {
@@ -238,7 +220,7 @@ describe('use-import-export hooks', () => {
               'Content-Disposition': 'attachment; filename="nexorious_collection_20250101.json"',
             },
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useDownloadExport(), {
@@ -283,11 +265,8 @@ describe('use-import-export hooks', () => {
     it('handles expired export file', async () => {
       server.use(
         http.get(`${API_URL}/export/export-old/download`, () => {
-          return HttpResponse.json(
-            { detail: 'Export file has expired.' },
-            { status: 410 }
-          );
-        })
+          return HttpResponse.json({ detail: 'Export file has expired.' }, { status: 410 });
+        }),
       );
 
       const { result } = renderHook(() => useDownloadExport(), {
@@ -314,9 +293,9 @@ describe('use-import-export hooks', () => {
         http.get(`${API_URL}/export/export-pending/download`, () => {
           return HttpResponse.json(
             { detail: 'Export not ready. Current status: processing' },
-            { status: 400 }
+            { status: 400 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useDownloadExport(), {

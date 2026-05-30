@@ -40,7 +40,6 @@ func TestExportJSON_Task(t *testing.T) {
 
 	// Insert a user_game.
 	rating := int32(8)
-	hours := float64(55.5)
 	status := "completed"
 	ug := &models.UserGame{
 		ID:             uuid.NewString(),
@@ -49,7 +48,6 @@ func TestExportJSON_Task(t *testing.T) {
 		PlayStatus:     &status,
 		PersonalRating: &rating,
 		IsLoved:        true,
-		HoursPlayed:    &hours,
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
 	}

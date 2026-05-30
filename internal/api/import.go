@@ -108,27 +108,33 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	// Create the Job record.
 	now := time.Now().UTC()
 	job := &models.Job{
-		ID:         uuid.NewString(),
-		UserID:     userID,
-		JobType:    models.JobTypeImport,
-		Source:     models.JobSourceNexorious,
-		Status:     models.JobStatusPending,
-		Priority:   models.JobPriorityHigh,
-		TotalItems: len(export.Games),
-		CreatedAt:  now,
+		ID:               uuid.NewString(),
+		UserID:           userID,
+		JobType:          models.JobTypeImport,
+		Source:           models.JobSourceNexorious,
+		Status:           models.JobStatusPending,
+		Priority:         models.JobPriorityHigh,
+		TotalItems:       len(export.Games),
+		DispatchComplete: true, // not a streaming sync; the completion gate is N/A
+		CreatedAt:        now,
 	}
 	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
 	}
 
 	// Create one JobItem per game and enqueue a task.
+	var skipCount int
 	for i, raw := range export.Games {
 		// Extract igdb_id and title from raw game JSON.
 		var gameFields struct {
 			IgdbID *int    `json:"igdb_id"`
 			Title  *string `json:"title"`
 		}
-		_ = json.Unmarshal(raw, &gameFields)
+		if err := json.Unmarshal(raw, &gameFields); err != nil {
+			slog.Warn("import: malformed game record, skipping", "record_index", i, "err", err)
+			skipCount++
+			continue
+		}
 
 		// Build item_key.
 		itemKey := fmt.Sprintf("game_%d", i)
@@ -174,11 +180,23 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		}
 	}
 
+	if skipCount > 0 {
+		if _, err := h.db.NewRaw(
+			`UPDATE jobs SET total_items = total_items - ? WHERE id = ?`,
+			skipCount, job.ID,
+		).Exec(ctx); err != nil {
+			slog.Error("import: update total_items failed", "err", err, "job_id", job.ID)
+		} else {
+			job.TotalItems -= skipCount
+		}
+	}
+
 	return c.JSON(http.StatusOK, map[string]any{
-		"job_id":      job.ID,
-		"source":      job.Source,
-		"status":      job.Status,
-		"message":     fmt.Sprintf("Import job created. Processing %d games.", job.TotalItems),
-		"total_items": job.TotalItems,
+		"job_id":        job.ID,
+		"source":        job.Source,
+		"status":        job.Status,
+		"message":       fmt.Sprintf("Import job created. Processing %d games.", job.TotalItems),
+		"total_items":   job.TotalItems,
+		"skipped_count": skipCount,
 	})
 }

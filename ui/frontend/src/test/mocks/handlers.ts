@@ -1,29 +1,22 @@
-import { http, HttpResponse } from "msw";
-import type { User, LoginResponse } from "@/types";
+import { http, HttpResponse } from 'msw';
+import type { User } from '@/types';
 
 // Match the API URL format from env.ts
 // In test mode, NODE_ENV is 'test' so apiUrl is '/api'
 // MSW in Node interprets relative URLs against http://localhost
-const API_URL = "/api";
+const API_URL = '/api';
 
 // Mock data
 const mockUser: User = {
-  id: "test-user-id",
-  username: "testuser",
+  id: 'test-user-id',
+  username: 'testuser',
   isAdmin: false,
 };
 
 const mockAdminUser: User = {
-  id: "admin-user-id",
-  username: "admin",
+  id: 'admin-user-id',
+  username: 'admin',
   isAdmin: true,
-};
-
-const mockTokens = {
-  access_token: "mock-access-token",
-  refresh_token: "mock-refresh-token",
-  token_type: "bearer",
-  expires_in: 3600,
 };
 
 const mockPlatforms = [
@@ -90,50 +83,38 @@ export const handlers = [
   // Auth endpoints
   http.post(`${API_URL}/auth/login`, async ({ request }) => {
     const body = (await request.formData()) as FormData;
-    const username = body.get("username");
-    const password = body.get("password");
+    const username = body.get('username');
+    const password = body.get('password');
 
-    if (username === "testuser" && password === "password123") {
-      return HttpResponse.json<LoginResponse>(mockTokens);
+    if (username === 'testuser' && password === 'password123') {
+      return HttpResponse.json<User>(mockUser);
     }
 
-    if (username === "admin" && password === "admin123") {
-      return HttpResponse.json<LoginResponse>(mockTokens);
+    if (username === 'admin' && password === 'admin123') {
+      return HttpResponse.json<User>(mockAdminUser);
     }
 
-    return HttpResponse.json(
-      { detail: "Invalid credentials" },
-      { status: 401 }
-    );
+    return HttpResponse.json({ detail: 'Invalid credentials' }, { status: 401 });
   }),
 
   http.get(`${API_URL}/auth/me`, ({ request }) => {
-    const authHeader = request.headers.get("Authorization");
+    const authHeader = request.headers.get('Authorization');
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return HttpResponse.json({ detail: "Not authenticated" }, { status: 401 });
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return HttpResponse.json({ detail: 'Not authenticated' }, { status: 401 });
     }
 
     // Return different users based on token for testing
-    const token = authHeader.replace("Bearer ", "");
-    if (token === "admin-token") {
+    const token = authHeader.replace('Bearer ', '');
+    if (token === 'admin-token') {
       return HttpResponse.json(mockAdminUser);
     }
 
     return HttpResponse.json(mockUser);
   }),
 
-  http.post(`${API_URL}/auth/refresh`, async ({ request }) => {
-    const body = (await request.json()) as { refresh_token: string };
-
-    if (body.refresh_token === "mock-refresh-token") {
-      return HttpResponse.json<LoginResponse>({
-        ...mockTokens,
-        access_token: "new-mock-access-token",
-      });
-    }
-
-    return HttpResponse.json({ detail: "Invalid refresh token" }, { status: 401 });
+  http.post(`${API_URL}/auth/logout`, () => {
+    return HttpResponse.json({ message: 'Logged out successfully' });
   }),
 
   // Platform endpoints
@@ -169,7 +150,7 @@ export const handlers = [
         original_platform_name: null,
         created_at: new Date().toISOString(),
       },
-      { status: 201 }
+      { status: 201 },
     );
   }),
 
@@ -196,7 +177,7 @@ export const handlers = [
         original_platform_name: null,
         created_at: new Date().toISOString(),
       });
-    }
+    },
   ),
 
   // Remove platform from user game
@@ -231,9 +212,9 @@ export const handlers = [
     const { id } = params;
     return HttpResponse.json({
       id,
-      title: "Test Game",
+      title: 'Test Game',
       igdb_id: 12345,
-      status: "backlog",
+      status: 'backlog',
     });
   }),
 
@@ -297,19 +278,19 @@ export const handlers = [
   // IGDB endpoints
   http.post(`${API_URL}/games/search/igdb`, async ({ request }) => {
     const url = new URL(request.url);
-    const query = url.searchParams.get("query");
+    const query = url.searchParams.get('query');
 
     if (!query) {
-      return HttpResponse.json({ detail: "Query required" }, { status: 400 });
+      return HttpResponse.json({ detail: 'Query required' }, { status: 400 });
     }
 
     return HttpResponse.json([
       {
         id: 1,
         name: `${query} Game`,
-        cover_url: "https://example.com/cover.jpg",
-        release_date: "2024-01-01",
-        platforms: ["PC", "PS5"],
+        cover_url: 'https://example.com/cover.jpg',
+        release_date: '2024-01-01',
+        platforms: ['PC', 'PS5'],
       },
     ]);
   }),

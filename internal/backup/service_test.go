@@ -6,11 +6,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,7 +139,6 @@ func createDirTarGz(t *testing.T, dir string) string {
 	}
 	return archivePath
 }
-
 
 func TestCreateBackup(t *testing.T) {
 	backup.CheckTools()
@@ -866,5 +867,182 @@ func TestValidateArchive_WithRealArchive(t *testing.T) {
 	_, err = svc.ValidateArchive(archivePath, false, "00000000000000")
 	if err == nil {
 		t.Error("expected error for maxMigrationVersion too old")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ListAvailableArchives
+// ---------------------------------------------------------------------------
+
+func TestListAvailableArchives_NonExistentDir(t *testing.T) {
+	// Backup dir that doesn't exist must produce empty result, not error.
+	svc := backup.NewService(nil, "", "/nonexistent/path/that/does/not/exist", "", "0.1.0")
+	infos, err := svc.ListAvailableArchives(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListAvailableArchives: unexpected error: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Errorf("expected empty list, got %d entries", len(infos))
+	}
+}
+
+func TestListAvailableArchives_EmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	svc := backup.NewService(nil, "", dir, "", "0.1.0")
+	infos, err := svc.ListAvailableArchives(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListAvailableArchives: unexpected error: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Errorf("expected empty list, got %d entries", len(infos))
+	}
+}
+
+// writeValidManifestArchive writes a .tar.gz containing both a manifest.json
+// and a stub database.sql so the listing predicate (which checks for the
+// latter) treats it as restorable. migrationVersion sets the manifest's
+// MigrationVersion field; backupType sets the BackupType field.
+func writeValidManifestArchive(t *testing.T, dir, filename, migrationVersion, backupType string) string {
+	t.Helper()
+	manifest := backup.Manifest{
+		Version:          backup.ManifestVersion,
+		CreatedAt:        time.Now().UTC(),
+		AppVersion:       "0.0.42",
+		MigrationVersion: migrationVersion,
+		BackupType:       backupType,
+		DatabaseFile:     "database.sql",
+		StatsUsers:       2,
+		StatsGames:       1843,
+		StatsTags:        27,
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+
+	path := filepath.Join(dir, filename)
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create archive: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	gw := gzip.NewWriter(f)
+	tw := tar.NewWriter(gw)
+
+	writeFile := func(name string, body []byte) {
+		hdr := &tar.Header{
+			Typeflag: tar.TypeReg,
+			Name:     name,
+			Mode:     0o644,
+			Size:     int64(len(body)),
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatalf("write tar header for %s: %v", name, err)
+		}
+		if _, err := tw.Write(body); err != nil {
+			t.Fatalf("write tar body for %s: %v", name, err)
+		}
+	}
+	writeFile("manifest.json", data)
+	writeFile("database.sql", []byte("-- stub"))
+
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("close gzip: %v", err)
+	}
+	return path
+}
+
+func TestListAvailableArchives_MixedContents(t *testing.T) {
+	dir := t.TempDir()
+
+	// 1. Valid archive at the current migration version (restorable).
+	validPath := writeValidManifestArchive(t, dir, "nexorious-backup-20260520-093015.tar.gz", "20260518120000", "scheduled")
+
+	// 2. Valid archive at a newer migration version (not restorable; version-incompatible).
+	futurePath := writeValidManifestArchive(t, dir, "nexorious-backup-20260521-000001.tar.gz", "20260601000000", "scheduled")
+
+	// 3. Foreign .tar.gz with random bytes (no readable manifest).
+	weirdPath := createMinimalTarGz(t, dir, "not-manifest.txt", "garbage")
+	// Rename so its filename doesn't collide with the helper default.
+	if err := os.Rename(weirdPath, filepath.Join(dir, "weird.tar.gz")); err != nil {
+		t.Fatalf("rename foreign archive: %v", err)
+	}
+
+	// 4. Non-.tar.gz file (must be skipped entirely).
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write notes.txt: %v", err)
+	}
+
+	// 5. Subdirectory containing a .tar.gz (must NOT recurse).
+	subDir := filepath.Join(dir, "subdir")
+	if err := os.Mkdir(subDir, 0o755); err != nil {
+		t.Fatalf("mkdir subdir: %v", err)
+	}
+	writeValidManifestArchive(t, subDir, "should-be-invisible.tar.gz", "20260518120000", "manual")
+
+	// Set mtimes so we can assert sort order: valid newest, weird middle, future oldest.
+	now := time.Now()
+	mustChtime(t, futurePath, now.Add(-2*time.Hour))
+	mustChtime(t, filepath.Join(dir, "weird.tar.gz"), now.Add(-1*time.Hour))
+	mustChtime(t, validPath, now)
+
+	svc := backup.NewService(nil, "", dir, "", "0.1.0")
+	infos, err := svc.ListAvailableArchives(context.Background(), "20260518120000")
+	if err != nil {
+		t.Fatalf("ListAvailableArchives: unexpected error: %v", err)
+	}
+
+	// Expect exactly 3 entries: the two .tar.gz archives and the foreign tar.gz.
+	// notes.txt is filtered by extension; the subdir's tar.gz is filtered by no-recurse.
+	if len(infos) != 3 {
+		t.Fatalf("expected 3 entries, got %d: %+v", len(infos), infos)
+	}
+
+	// Sort order: newest first.
+	if infos[0].Filename != "nexorious-backup-20260520-093015.tar.gz" {
+		t.Errorf("entry[0] = %s, want valid current-version archive", infos[0].Filename)
+	}
+	if infos[1].Filename != "weird.tar.gz" {
+		t.Errorf("entry[1] = %s, want weird.tar.gz", infos[1].Filename)
+	}
+	if infos[2].Filename != "nexorious-backup-20260521-000001.tar.gz" {
+		t.Errorf("entry[2] = %s, want future-version archive", infos[2].Filename)
+	}
+
+	// Per-entry assertions.
+	if !infos[0].Restorable {
+		t.Errorf("entry[0] expected Restorable=true, got false (reason=%q)", infos[0].Reason)
+	}
+	if infos[0].Manifest == nil || infos[0].Manifest.BackupType != "scheduled" {
+		t.Errorf("entry[0] manifest not parsed correctly: %+v", infos[0].Manifest)
+	}
+
+	if infos[1].Restorable {
+		t.Error("entry[1] (weird.tar.gz) expected Restorable=false")
+	}
+	if infos[1].Reason != "unreadable manifest" {
+		t.Errorf("entry[1] reason = %q, want 'unreadable manifest'", infos[1].Reason)
+	}
+	if infos[1].Manifest != nil {
+		t.Errorf("entry[1] expected nil manifest, got %+v", infos[1].Manifest)
+	}
+
+	if infos[2].Restorable {
+		t.Error("entry[2] (future-version) expected Restorable=false")
+	}
+	if !strings.Contains(infos[2].Reason, "newer version") || !strings.Contains(infos[2].Reason, "20260601000000") {
+		t.Errorf("entry[2] reason = %q, expected mention of newer migration version", infos[2].Reason)
+	}
+}
+
+// mustChtime sets a file's mtime; fatal on error.
+func mustChtime(t *testing.T, path string, mtime time.Time) {
+	t.Helper()
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatalf("chtimes %s: %v", path, err)
 	}
 }

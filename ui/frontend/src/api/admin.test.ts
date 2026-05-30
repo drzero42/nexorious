@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
-import { setAuthHandlers } from './client';
 import {
   getUsers,
   getUserById,
@@ -15,22 +14,8 @@ import {
 const API_URL = '/api';
 
 describe('admin.ts', () => {
-  let mockGetAccessToken: Mock<() => string | null>;
-  let mockRefreshTokens: Mock<() => Promise<boolean>>;
-  let mockLogout: Mock<() => void>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetAccessToken = vi.fn<() => string | null>().mockReturnValue('test-access-token');
-    mockRefreshTokens = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
-    mockLogout = vi.fn<() => void>();
-
-    setAuthHandlers(mockGetAccessToken, mockRefreshTokens, mockLogout);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('getUsers', () => {
@@ -55,7 +40,7 @@ describe('admin.ts', () => {
               updated_at: '2024-01-04T00:00:00Z',
             },
           ]);
-        })
+        }),
       );
 
       const result = await getUsers();
@@ -83,27 +68,18 @@ describe('admin.ts', () => {
       server.use(
         http.get(`${API_URL}/auth/admin/users`, () => {
           return HttpResponse.json([]);
-        })
+        }),
       );
 
       const result = await getUsers();
       expect(result).toEqual([]);
     });
 
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(getUsers()).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
-
     it('throws error on server error', async () => {
       server.use(
         http.get(`${API_URL}/auth/admin/users`, () => {
           return HttpResponse.json({ detail: 'Admin access required' }, { status: 403 });
-        })
+        }),
       );
 
       await expect(getUsers()).rejects.toMatchObject({
@@ -125,7 +101,7 @@ describe('admin.ts', () => {
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-02T00:00:00Z',
           });
-        })
+        }),
       );
 
       const result = await getUserById('user-123');
@@ -140,20 +116,11 @@ describe('admin.ts', () => {
       });
     });
 
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(getUserById('user-123')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
-
     it('throws error when user not found', async () => {
       server.use(
         http.get(`${API_URL}/auth/admin/users/nonexistent`, () => {
           return HttpResponse.json({ detail: 'User not found' }, { status: 404 });
-        })
+        }),
       );
 
       await expect(getUserById('nonexistent')).rejects.toMatchObject({
@@ -184,7 +151,7 @@ describe('admin.ts', () => {
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z',
           });
-        })
+        }),
       );
 
       const result = await createUser({
@@ -221,7 +188,7 @@ describe('admin.ts', () => {
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-01T00:00:00Z',
           });
-        })
+        }),
       );
 
       const result = await createUser({
@@ -232,30 +199,19 @@ describe('admin.ts', () => {
       expect(result.isAdmin).toBe(false);
     });
 
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(
-        createUser({ username: 'test', password: 'test123' })
-      ).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
-
     it('throws error when username is taken', async () => {
       server.use(
         http.post(`${API_URL}/auth/admin/users`, () => {
           return HttpResponse.json({ detail: 'Username already exists' }, { status: 409 });
-        })
+        }),
       );
 
-      await expect(
-        createUser({ username: 'existing', password: 'test123' })
-      ).rejects.toMatchObject({
-        message: 'Username already exists',
-        status: 409,
-      });
+      await expect(createUser({ username: 'existing', password: 'test123' })).rejects.toMatchObject(
+        {
+          message: 'Username already exists',
+          status: 409,
+        },
+      );
     });
   });
 
@@ -280,7 +236,7 @@ describe('admin.ts', () => {
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-02T00:00:00Z',
           });
-        })
+        }),
       );
 
       const result = await updateUser('user-123', {
@@ -319,23 +275,12 @@ describe('admin.ts', () => {
             created_at: '2024-01-01T00:00:00Z',
             updated_at: '2024-01-02T00:00:00Z',
           });
-        })
+        }),
       );
 
       const result = await updateUser('user-123', { is_active: false });
 
       expect(result.isActive).toBe(false);
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(
-        updateUser('user-123', { username: 'test' })
-      ).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
     });
   });
 
@@ -347,33 +292,20 @@ describe('admin.ts', () => {
           expect(body.new_password).toBe('newpassword123');
 
           return HttpResponse.json({ message: 'Password reset successfully' });
-        })
+        }),
       );
 
       await expect(resetUserPassword('user-123', 'newpassword123')).resolves.toBeUndefined();
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(
-        resetUserPassword('user-123', 'newpass')
-      ).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
     });
 
     it('throws error when user not found', async () => {
       server.use(
         http.put(`${API_URL}/auth/admin/users/nonexistent/password`, () => {
           return HttpResponse.json({ detail: 'User not found' }, { status: 404 });
-        })
+        }),
       );
 
-      await expect(
-        resetUserPassword('nonexistent', 'newpass')
-      ).rejects.toMatchObject({
+      await expect(resetUserPassword('nonexistent', 'newpass')).rejects.toMatchObject({
         message: 'User not found',
         status: 404,
       });
@@ -398,21 +330,12 @@ describe('admin.ts', () => {
       server.use(
         http.get(`${API_URL}/auth/admin/users/user-123/deletion-impact`, () => {
           return HttpResponse.json(mockImpact);
-        })
+        }),
       );
 
       const result = await getUserDeletionImpact('user-123');
 
       expect(result).toEqual(mockImpact);
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(getUserDeletionImpact('user-123')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
     });
   });
 
@@ -421,26 +344,17 @@ describe('admin.ts', () => {
       server.use(
         http.delete(`${API_URL}/auth/admin/users/user-123`, () => {
           return new HttpResponse(null, { status: 204 });
-        })
+        }),
       );
 
       await expect(deleteUser('user-123')).resolves.toBeUndefined();
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(deleteUser('user-123')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
     });
 
     it('throws error when user not found', async () => {
       server.use(
         http.delete(`${API_URL}/auth/admin/users/nonexistent`, () => {
           return HttpResponse.json({ detail: 'User not found' }, { status: 404 });
-        })
+        }),
       );
 
       await expect(deleteUser('nonexistent')).rejects.toMatchObject({
@@ -453,7 +367,7 @@ describe('admin.ts', () => {
       server.use(
         http.delete(`${API_URL}/auth/admin/users/current-user`, () => {
           return HttpResponse.json({ detail: 'Cannot delete yourself' }, { status: 400 });
-        })
+        }),
       );
 
       await expect(deleteUser('current-user')).rejects.toMatchObject({

@@ -18,8 +18,7 @@ export const platformKeys = {
   list: (params?: GetPlatformsParams) => [...platformKeys.lists(), params] as const,
   details: () => [...platformKeys.all, 'detail'] as const,
   detail: (id: string) => [...platformKeys.details(), id] as const,
-  storefronts: (platformId: string) =>
-    [...platformKeys.all, 'storefronts', platformId] as const,
+  storefronts: (platformId: string) => [...platformKeys.all, 'storefronts', platformId] as const,
   names: () => [...platformKeys.all, 'names'] as const,
 };
 
@@ -52,9 +51,7 @@ export function usePlatforms(params?: GetPlatformsParams) {
  * Hook to fetch all platforms (convenience wrapper).
  * Uses Infinity staleTime since platforms rarely change.
  */
-export function useAllPlatforms(
-  params?: Omit<GetPlatformsParams, 'page' | 'perPage'>
-) {
+export function useAllPlatforms(params?: Omit<GetPlatformsParams, 'page' | 'perPage'>) {
   return useQuery<Platform[], Error>({
     queryKey: platformKeys.list({ ...params, page: 1, perPage: 100 }),
     queryFn: () => platformsApi.getAllPlatforms(params),
@@ -77,10 +74,7 @@ export function usePlatform(id: string | undefined) {
 /**
  * Hook to fetch storefronts for a specific platform.
  */
-export function usePlatformStorefronts(
-  platformId: string | undefined,
-  activeOnly?: boolean
-) {
+export function usePlatformStorefronts(platformId: string | undefined, activeOnly?: boolean) {
   return useQuery<Storefront[], Error>({
     queryKey: platformKeys.storefronts(platformId ?? ''),
     queryFn: () => platformsApi.getPlatformStorefronts(platformId!, activeOnly),
@@ -121,9 +115,7 @@ export function useStorefronts(params?: GetStorefrontsParams) {
  * Hook to fetch all storefronts (convenience wrapper).
  * Uses Infinity staleTime since storefronts rarely change.
  */
-export function useAllStorefronts(
-  params?: Omit<GetStorefrontsParams, 'page' | 'perPage'>
-) {
+export function useAllStorefronts(params?: Omit<GetStorefrontsParams, 'page' | 'perPage'>) {
   return useQuery<Storefront[], Error>({
     queryKey: storefrontKeys.list({ ...params, page: 1, perPage: 100 }),
     queryFn: () => platformsApi.getAllStorefronts(params),

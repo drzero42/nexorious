@@ -1,0 +1,8 @@
+# Commits listed here are skipped by `git blame` — large mechanical reformats
+# that would otherwise obscure real authorship.
+#
+# Enable locally once:  git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub applies this file automatically.
+
+# chore: adopt Prettier for frontend formatting (#633)
+6dfc76a848ed488a3be727a4db10ad092afc67b8

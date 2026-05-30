@@ -17,7 +17,7 @@ import type {
   PendingReviewCountResponse,
   JobItemDetail,
   RetryFailedResponse,
-  JobItemSummary,
+  SyncChangeItem,
   RecentJobDetail,
   RecentJobsResponse,
 } from '@/types';
@@ -33,7 +33,6 @@ interface JobProgressApiResponse {
   pending_review: number;
   skipped: number;
   failed: number;
-  igdb_failed: number;
   total: number;
   percent: number;
 }
@@ -93,7 +92,8 @@ interface JobItemApiResponse {
   result_user_game_id: string | null;
   created_at: string;
   processed_at: string | null;
-  igdb_candidates_json?: string;  // Optional - present for PENDING_REVIEW items
+  igdb_candidates_json?: string; // Optional - present for PENDING_REVIEW items
+  external_game_id: string | null;
 }
 
 interface JobItemListApiResponse {
@@ -123,24 +123,33 @@ interface RetryFailedApiResponse {
   retried_count: number;
 }
 
-interface JobItemSummaryApiResponse {
-  source_title: string;
-  result_game_title: string | null;
-  result_igdb_id: number | null;
-  result_user_game_id: string | null;
-  error_message: string | null;
-  is_new_addition: boolean;
+interface SyncChangeItemApiResponse {
+  title: string;
+  old_status?: string | null;
+  new_status?: string | null;
 }
 
 interface RecentJobDetailApiResponse {
   id: string;
+  status: string;
   created_at: string;
   completed_at: string | null;
   total_items: number;
-  completed_items: JobItemSummaryApiResponse[];
-  skipped_items: JobItemSummaryApiResponse[];
-  failed_items: JobItemSummaryApiResponse[];
-  igdb_failed_items: JobItemSummaryApiResponse[];
+  progress: {
+    completed: number;
+    skipped: number;
+    failed: number;
+    pending: number;
+    processing: number;
+    pending_review: number;
+    total: number;
+    percent: number;
+  };
+  added_items: SyncChangeItemApiResponse[];
+  removed_items: SyncChangeItemApiResponse[];
+  status_changed_items: SyncChangeItemApiResponse[];
+  skipped_items?: SyncChangeItemApiResponse[];
+  already_in_library_items?: SyncChangeItemApiResponse[];
 }
 
 interface RecentJobsApiResponse {
@@ -159,7 +168,6 @@ function transformProgress(apiProgress: JobProgressApiResponse): JobProgress {
     pendingReview: apiProgress.pending_review,
     skipped: apiProgress.skipped,
     failed: apiProgress.failed,
-    igdbFailed: apiProgress.igdb_failed ?? 0,
     total: apiProgress.total,
     percent: apiProgress.percent,
   };
@@ -185,7 +193,7 @@ function transformJob(apiJob: JobApiResponse): Job {
   };
 }
 
-function transformJobItem(apiItem: JobItemApiResponse): JobItem {
+export function transformJobItem(apiItem: JobItemApiResponse): JobItem {
   return {
     id: apiItem.id,
     jobId: apiItem.job_id,
@@ -199,6 +207,7 @@ function transformJobItem(apiItem: JobItemApiResponse): JobItem {
     createdAt: apiItem.created_at,
     processedAt: apiItem.processed_at,
     igdbCandidatesJson: apiItem.igdb_candidates_json,
+    externalGameId: apiItem.external_game_id,
   };
 }
 
@@ -213,35 +222,39 @@ function transformJobItemDetail(apiItem: JobItemDetailApiResponse): JobItemDetai
   };
 }
 
-function transformJobItemSummary(api: JobItemSummaryApiResponse): JobItemSummary {
+function transformSyncChangeItem(sc: SyncChangeItemApiResponse): SyncChangeItem {
   return {
-    sourceTitle: api.source_title,
-    resultGameTitle: api.result_game_title,
-    resultIgdbId: api.result_igdb_id,
-    resultUserGameId: api.result_user_game_id,
-    errorMessage: api.error_message,
-    isNewAddition: api.is_new_addition,
+    title: sc.title,
+    oldStatus: sc.old_status ?? null,
+    newStatus: sc.new_status ?? null,
   };
 }
 
 function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
-  const completedItems = (api.completed_items ?? []).map(transformJobItemSummary);
-  const skippedItems = (api.skipped_items ?? []).map(transformJobItemSummary);
-  const failedItems = (api.failed_items ?? []).map(transformJobItemSummary);
-  const igdbFailedItems = (api.igdb_failed_items ?? []).map(transformJobItemSummary);
+  const p = api.progress ?? {
+    completed: 0,
+    skipped: 0,
+    failed: 0,
+    pending: 0,
+    processing: 0,
+    pending_review: 0,
+    total: 0,
+    percent: 0,
+  };
   return {
     id: api.id,
+    status: api.status,
     createdAt: api.created_at,
     completedAt: api.completed_at,
     totalItems: api.total_items,
-    completedCount: completedItems.length,
-    skippedCount: skippedItems.length,
-    failedCount: failedItems.length,
-    igdbFailedCount: igdbFailedItems.length,
-    completedItems,
-    skippedItems,
-    failedItems,
-    igdbFailedItems,
+    completedCount: p.completed,
+    skippedCount: p.skipped,
+    failedCount: p.failed,
+    addedItems: (api.added_items ?? []).map(transformSyncChangeItem),
+    removedItems: (api.removed_items ?? []).map(transformSyncChangeItem),
+    statusChangedItems: (api.status_changed_items ?? []).map(transformSyncChangeItem),
+    skippedItems: (api.skipped_items ?? []).map(transformSyncChangeItem),
+    alreadyInLibraryItems: (api.already_in_library_items ?? []).map(transformSyncChangeItem),
   };
 }
 
@@ -255,7 +268,7 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
 export async function getJobs(
   filters?: JobFilters,
   page: number = 1,
-  perPage: number = 20
+  perPage: number = 20,
 ): Promise<JobListResponse> {
   const params: Record<string, string | number> = {
     page,
@@ -330,15 +343,12 @@ export async function getJobItems(
   jobId: string,
   status?: JobItemStatus,
   page: number = 1,
-  pageSize: number = 50
+  pageSize: number = 50,
 ): Promise<JobItemListResponse> {
   const params: Record<string, string | number> = { page, per_page: pageSize };
   if (status) params.status = status;
 
-  const response = await api.get<JobItemListApiResponse>(
-    `/jobs/${jobId}/items`,
-    { params }
-  );
+  const response = await api.get<JobItemListApiResponse>(`/jobs/${jobId}/items`, { params });
 
   return {
     items: response.items.map(transformJobItem),
@@ -371,28 +381,6 @@ export async function getPendingReviewCount(): Promise<PendingReviewCountRespons
 }
 
 /**
- * Resolve a job item to an IGDB game.
- */
-export async function resolveJobItem(itemId: string, igdbId: number): Promise<JobItemDetail> {
-  const response = await api.post<JobItemDetailApiResponse>(
-    `/job-items/${itemId}/resolve`,
-    { igdb_id: igdbId }
-  );
-  return transformJobItemDetail(response);
-}
-
-/**
- * Skip a job item without matching.
- */
-export async function skipJobItem(itemId: string, reason?: string): Promise<JobItemDetail> {
-  const response = await api.post<JobItemDetailApiResponse>(
-    `/job-items/${itemId}/skip`,
-    { reason }
-  );
-  return transformJobItemDetail(response);
-}
-
-/**
  * Retry all failed items in a job.
  */
 export async function retryFailedItems(jobId: string): Promise<RetryFailedResponse> {
@@ -415,7 +403,10 @@ export async function retryJobItem(itemId: string): Promise<JobItemDetail> {
 /**
  * Get recent completed jobs for a specific source with item details.
  */
-export async function getRecentJobs(source: string, limit: number = 5): Promise<RecentJobsResponse> {
+export async function getRecentJobs(
+  source: string,
+  limit: number = 5,
+): Promise<RecentJobsResponse> {
   const response = await api.get<RecentJobsApiResponse>(`/jobs/recent/${source}`, {
     params: { limit },
   });

@@ -1,27 +1,12 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryWrapper } from '@/test/test-utils';
-import { setAuthHandlers } from '@/api/client';
 import { useConfigurePSN, usePSNStatus, useDisconnectPSN, syncKeys } from './use-sync';
 import * as syncApi from '@/api/sync';
 
 describe('PSN Hooks', () => {
-  let mockGetAccessToken: Mock<() => string | null>;
-  let mockRefreshTokens: Mock<() => Promise<boolean>>;
-  let mockLogout: Mock<() => void>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetAccessToken = vi.fn<() => string | null>().mockReturnValue('test-access-token');
-    mockRefreshTokens = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
-    mockLogout = vi.fn<() => void>();
-
-    setAuthHandlers(mockGetAccessToken, mockRefreshTokens, mockLogout);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('useConfigurePSN', () => {
@@ -117,7 +102,7 @@ describe('PSN Hooks', () => {
         configured: true,
         accountId: 'test-account-id',
         onlineId: 'TestUser',
-        tokenExpired: false,
+        credentialsError: false,
       });
 
       const { result } = renderHook(() => usePSNStatus(), {
@@ -132,7 +117,7 @@ describe('PSN Hooks', () => {
         configured: true,
         accountId: 'test-account-id',
         onlineId: 'TestUser',
-        tokenExpired: false,
+        credentialsError: false,
       });
 
       mockGetPSNStatus.mockRestore();
@@ -144,7 +129,7 @@ describe('PSN Hooks', () => {
         configured: true,
         accountId: 'test-account-id',
         onlineId: 'TestUser',
-        tokenExpired: true,
+        credentialsError: true,
       });
 
       const { result } = renderHook(() => usePSNStatus(), {
@@ -155,7 +140,7 @@ describe('PSN Hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.tokenExpired).toBe(true);
+      expect(result.current.data?.credentialsError).toBe(true);
 
       mockGetPSNStatus.mockRestore();
     });

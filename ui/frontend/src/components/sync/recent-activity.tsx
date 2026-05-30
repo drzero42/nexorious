@@ -1,11 +1,7 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,13 +10,13 @@ import {
   ChevronDown,
   ChevronRight,
   CheckCircle,
+  XCircle,
+  ArrowRight,
   SkipForward,
-  AlertCircle,
+  BookMarked,
 } from 'lucide-react';
-import { Link } from '@tanstack/react-router';
-import { useRecentJobs, jobsKeys } from '@/hooks';
-import { retryFailedItems } from '@/api/jobs';
-import type { RecentJobDetail, JobItemSummary } from '@/types';
+import { useRecentJobs } from '@/hooks';
+import type { RecentJobDetail, SyncChangeItem } from '@/types';
 
 interface RecentActivityProps {
   platform: string;
@@ -30,39 +26,25 @@ function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleString();
 }
 
-function ItemsList({
+function SyncChangeList({
   items,
-  type,
+  label,
+  icon,
 }: {
-  items: JobItemSummary[];
-  type: 'completed' | 'skipped' | 'failed' | 'igdb_failed';
+  items: SyncChangeItem[];
+  label: string;
+  icon: ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-
   if (items.length === 0) return null;
-
-  const iconMap = {
-    completed: <CheckCircle className="h-4 w-4 text-green-600" />,
-    skipped: <SkipForward className="h-4 w-4 text-muted-foreground" />,
-    failed: <AlertCircle className="h-4 w-4 text-red-600" />,
-    igdb_failed: <AlertCircle className="h-4 w-4 text-orange-500" />,
-  };
-
-  const labelMap = {
-    completed: 'Completed',
-    skipped: 'Skipped',
-    failed: 'Failed',
-    igdb_failed: 'IGDB Error',
-  };
-
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger asChild>
         <Button variant="ghost" size="sm" className="w-full justify-between h-8 px-2">
           <div className="flex items-center gap-2">
             {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            {iconMap[type]}
-            <span className="text-sm">{labelMap[type]}</span>
+            {icon}
+            <span className="text-sm">{label}</span>
           </div>
           <Badge variant="secondary" className="h-5 text-xs">
             {items.length}
@@ -72,48 +54,12 @@ function ItemsList({
       <CollapsibleContent>
         <div className="ml-6 pl-2 border-l space-y-1 py-1">
           {items.map((item, idx) => (
-            <div key={idx} className="text-sm py-1">
-              {type === 'completed' && (
-                <div>
-                  <span className="text-muted-foreground">{item.sourceTitle}</span>
-                  {item.resultGameTitle && item.resultUserGameId && (
-                    <>
-                      <span className="mx-1">&rarr;</span>
-                      <Link
-                        to="/games/$id" params={{ id: String(item.resultUserGameId) }}
-                        className="font-medium hover:underline"
-                      >
-                        {item.resultGameTitle}
-                      </Link>
-                      <span className="ml-2 text-xs">
-                        {item.isNewAddition ? (
-                          <Badge variant="outline" className="h-4 text-[10px]">Added</Badge>
-                        ) : (
-                          <Badge variant="secondary" className="h-4 text-[10px]">Already in library</Badge>
-                        )}
-                      </span>
-                    </>
-                  )}
-                </div>
-              )}
-              {type === 'skipped' && (
-                <span className="text-muted-foreground">{item.sourceTitle}</span>
-              )}
-              {type === 'failed' && (
-                <div>
-                  <span>{item.sourceTitle}</span>
-                  {item.errorMessage && (
-                    <span className="text-red-600 text-xs ml-2">- {item.errorMessage}</span>
-                  )}
-                </div>
-              )}
-              {type === 'igdb_failed' && (
-                <div>
-                  <span>{item.sourceTitle}</span>
-                  {item.errorMessage && (
-                    <span className="text-orange-600 text-xs ml-2">- {item.errorMessage}</span>
-                  )}
-                </div>
+            <div key={idx} className="text-sm py-1 text-muted-foreground">
+              {item.title}
+              {item.oldStatus && item.newStatus && (
+                <span className="ml-2 text-xs">
+                  {item.oldStatus} → {item.newStatus}
+                </span>
               )}
             </div>
           ))}
@@ -123,21 +69,20 @@ function ItemsList({
   );
 }
 
+function formatSummary(job: RecentJobDetail): string {
+  const parts: string[] = [];
+  if (job.addedItems.length > 0) parts.push(`${job.addedItems.length} added`);
+  if (job.removedItems.length > 0) parts.push(`${job.removedItems.length} removed`);
+  if (job.statusChangedItems.length > 0)
+    parts.push(`${job.statusChangedItems.length} status changed`);
+  if (job.alreadyInLibraryItems.length > 0)
+    parts.push(`${job.alreadyInLibraryItems.length} already in library`);
+  if (job.skippedItems.length > 0) parts.push(`${job.skippedItems.length} skipped`);
+  return parts.join(' · ');
+}
+
 function JobCard({ job }: { job: RecentJobDetail }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const queryClient = useQueryClient();
-
-  const handleRetry = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsRetrying(true);
-    try {
-      await retryFailedItems(job.id);
-      await queryClient.invalidateQueries({ queryKey: jobsKeys.all });
-    } finally {
-      setIsRetrying(false);
-    }
-  };
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -148,29 +93,47 @@ function JobCard({ job }: { job: RecentJobDetail }) {
             <span>{job.completedAt ? formatDate(job.completedAt) : 'In progress'}</span>
           </div>
           <div className="flex items-center gap-2">
-            {job.igdbFailedCount > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={handleRetry}
-                disabled={isRetrying}
-              >
-                {isRetrying
-                  ? 'Retrying…'
-                  : `Retry ${job.igdbFailedCount} IGDB ${job.igdbFailedCount === 1 ? 'error' : 'errors'}`}
-              </Button>
-            )}
-            <Badge variant="outline">{job.totalItems} games processed</Badge>
+            <span className="text-sm text-muted-foreground">{formatSummary(job)}</span>
+            <Badge
+              variant={job.status === 'completed' ? 'outline' : 'destructive'}
+              className={
+                job.status === 'completed'
+                  ? 'h-5 text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                  : 'h-5 text-xs'
+              }
+            >
+              {job.status === 'completed' ? 'Completed' : 'Failed'}
+            </Badge>
           </div>
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="px-4 pb-4 space-y-1">
-          <ItemsList items={job.completedItems} type="completed" />
-          <ItemsList items={job.skippedItems} type="skipped" />
-          <ItemsList items={job.failedItems} type="failed" />
-          <ItemsList items={job.igdbFailedItems} type="igdb_failed" />
+          <SyncChangeList
+            items={job.addedItems}
+            label="Added to library"
+            icon={<CheckCircle className="h-4 w-4 text-green-600" />}
+          />
+          <SyncChangeList
+            items={job.removedItems}
+            label="Removed from storefront"
+            icon={<XCircle className="h-4 w-4 text-muted-foreground" />}
+          />
+          <SyncChangeList
+            items={job.statusChangedItems}
+            label="Status changed"
+            icon={<ArrowRight className="h-4 w-4 text-blue-500" />}
+          />
+          <SyncChangeList
+            items={job.alreadyInLibraryItems}
+            label="Already in library"
+            icon={<BookMarked className="h-4 w-4 text-muted-foreground" />}
+          />
+          <SyncChangeList
+            items={job.skippedItems}
+            label="Skipped"
+            icon={<SkipForward className="h-4 w-4 text-muted-foreground" />}
+          />
         </div>
       </CollapsibleContent>
     </Collapsible>

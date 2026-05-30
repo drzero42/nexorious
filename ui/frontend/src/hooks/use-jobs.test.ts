@@ -1,9 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
 import { QueryWrapper } from '@/test/test-utils';
-import { setAuthHandlers } from '@/api/client';
 import {
   useJobs,
   useJob,
@@ -61,22 +60,8 @@ const mockCompletedJobApi = {
 };
 
 describe('use-jobs hooks', () => {
-  let mockGetAccessToken: Mock<() => string | null>;
-  let mockRefreshTokens: Mock<() => Promise<boolean>>;
-  let mockLogout: Mock<() => void>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetAccessToken = vi.fn<() => string | null>().mockReturnValue('test-access-token');
-    mockRefreshTokens = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
-    mockLogout = vi.fn<() => void>();
-
-    setAuthHandlers(mockGetAccessToken, mockRefreshTokens, mockLogout);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('jobsKeys', () => {
@@ -89,7 +74,11 @@ describe('use-jobs hooks', () => {
     });
 
     it('generates correct query keys for list with filters', () => {
-      expect(jobsKeys.list()).toEqual(['jobs', 'list', { filters: undefined, page: undefined, perPage: undefined }]);
+      expect(jobsKeys.list()).toEqual([
+        'jobs',
+        'list',
+        { filters: undefined, page: undefined, perPage: undefined },
+      ]);
       expect(jobsKeys.list({ jobType: JobType.SYNC }, 1, 20)).toEqual([
         'jobs',
         'list',
@@ -117,7 +106,7 @@ describe('use-jobs hooks', () => {
             per_page: 20,
             pages: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useJobs(), {
@@ -152,7 +141,7 @@ describe('use-jobs hooks', () => {
             per_page: 10,
             pages: 0,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(
@@ -160,9 +149,9 @@ describe('use-jobs hooks', () => {
           useJobs(
             { jobType: JobType.IMPORT, source: JobSource.DARKADIA, status: JobStatus.COMPLETED },
             2,
-            10
+            10,
           ),
-        { wrapper: QueryWrapper }
+        { wrapper: QueryWrapper },
       );
 
       await waitFor(() => {
@@ -181,7 +170,7 @@ describe('use-jobs hooks', () => {
       server.use(
         http.get(`${API_URL}/jobs/`, () => {
           return HttpResponse.json({ detail: 'Failed to fetch jobs' }, { status: 500 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useJobs(), {
@@ -201,7 +190,7 @@ describe('use-jobs hooks', () => {
       server.use(
         http.get(`${API_URL}/jobs/job-1`, () => {
           return HttpResponse.json(mockJobApi);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useJob('job-1'), {
@@ -230,7 +219,7 @@ describe('use-jobs hooks', () => {
       server.use(
         http.get(`${API_URL}/jobs/non-existent`, () => {
           return HttpResponse.json({ detail: 'Job not found' }, { status: 404 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useJob('non-existent'), {
@@ -260,7 +249,7 @@ describe('use-jobs hooks', () => {
             message: 'Job cancelled successfully',
             job: cancelledJob,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useCancelJob(), {
@@ -283,7 +272,7 @@ describe('use-jobs hooks', () => {
       server.use(
         http.post(`${API_URL}/jobs/job-1/cancel`, () => {
           return HttpResponse.json({ detail: 'Cannot cancel completed job' }, { status: 400 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useCancelJob(), {
@@ -315,7 +304,7 @@ describe('use-jobs hooks', () => {
             message: 'Job deleted successfully',
             deleted_job_id: 'job-2',
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useDeleteJob(), {
@@ -339,9 +328,9 @@ describe('use-jobs hooks', () => {
         http.delete(`${API_URL}/jobs/job-1`, () => {
           return HttpResponse.json(
             { detail: 'Cannot delete job that is not in terminal state' },
-            { status: 400 }
+            { status: 400 },
           );
-        })
+        }),
       );
 
       const { result } = renderHook(() => useDeleteJob(), {
@@ -373,7 +362,7 @@ describe('use-jobs hooks', () => {
             message: 'Retrying 3 items',
             retried_count: 3,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useRetryFailedItems(), {
@@ -396,7 +385,7 @@ describe('use-jobs hooks', () => {
       server.use(
         http.post(`${API_URL}/jobs/job-123/retry-failed`, () => {
           return HttpResponse.json({ detail: 'No failed items to retry' }, { status: 400 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useRetryFailedItems(), {
@@ -440,7 +429,7 @@ describe('use-jobs hooks', () => {
             resolved_igdb_id: null,
             resolved_at: null,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useRetryJobItem(), {
@@ -463,7 +452,7 @@ describe('use-jobs hooks', () => {
       server.use(
         http.post(`${API_URL}/job-items/item-123/retry`, () => {
           return HttpResponse.json({ detail: 'Item is not in failed state' }, { status: 400 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useRetryJobItem(), {

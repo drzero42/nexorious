@@ -1,9 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
 import { QueryWrapper } from '@/test/test-utils';
-import { setAuthHandlers } from '@/api/client';
 import {
   useSyncConfigs,
   useSyncConfig,
@@ -15,7 +14,7 @@ import {
   useDisconnectEpic,
   syncKeys,
 } from './use-sync';
-import { SyncPlatform, SyncFrequency } from '@/types';
+import { SyncStorefront, SyncFrequency } from '@/types';
 import * as syncApi from '@/api/sync';
 
 const API_URL = '/api';
@@ -26,7 +25,6 @@ const mockSyncConfigApi = {
   user_id: 'user-1',
   storefront: 'steam',
   frequency: 'daily',
-  auto_add: true,
   last_synced_at: null,
   created_at: '2025-01-01T00:00:00Z',
   updated_at: '2025-01-01T00:00:00Z',
@@ -41,22 +39,8 @@ const mockSyncStatusApi = {
 };
 
 describe('use-sync hooks', () => {
-  let mockGetAccessToken: Mock<() => string | null>;
-  let mockRefreshTokens: Mock<() => Promise<boolean>>;
-  let mockLogout: Mock<() => void>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetAccessToken = vi.fn<() => string | null>().mockReturnValue('test-access-token');
-    mockRefreshTokens = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
-    mockLogout = vi.fn<() => void>();
-
-    setAuthHandlers(mockGetAccessToken, mockRefreshTokens, mockLogout);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('syncKeys', () => {
@@ -69,8 +53,8 @@ describe('use-sync hooks', () => {
     });
 
     it('generates correct query keys for config with platform', () => {
-      expect(syncKeys.config(SyncPlatform.STEAM)).toEqual(['sync', 'configs', 'steam']);
-      expect(syncKeys.config(SyncPlatform.GOG)).toEqual(['sync', 'configs', 'gog']);
+      expect(syncKeys.config(SyncStorefront.STEAM)).toEqual(['sync', 'configs', 'steam']);
+      expect(syncKeys.config(SyncStorefront.GOG)).toEqual(['sync', 'configs', 'gog']);
     });
 
     it('generates correct query keys for statuses', () => {
@@ -78,10 +62,9 @@ describe('use-sync hooks', () => {
     });
 
     it('generates correct query keys for status with platform', () => {
-      expect(syncKeys.status(SyncPlatform.STEAM)).toEqual(['sync', 'statuses', 'steam']);
-      expect(syncKeys.status(SyncPlatform.GOG)).toEqual(['sync', 'statuses', 'gog']);
+      expect(syncKeys.status(SyncStorefront.STEAM)).toEqual(['sync', 'statuses', 'steam']);
+      expect(syncKeys.status(SyncStorefront.GOG)).toEqual(['sync', 'statuses', 'gog']);
     });
-
   });
 
   describe('useSyncConfigs', () => {
@@ -92,7 +75,7 @@ describe('use-sync hooks', () => {
             configs: [mockSyncConfigApi],
             total: 1,
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useSyncConfigs(), {
@@ -106,20 +89,16 @@ describe('use-sync hooks', () => {
       });
 
       expect(result.current.data?.configs).toHaveLength(1);
-      expect(result.current.data?.configs[0].platform).toBe(SyncPlatform.STEAM);
+      expect(result.current.data?.configs[0].storefront).toBe(SyncStorefront.STEAM);
       expect(result.current.data?.configs[0].frequency).toBe(SyncFrequency.DAILY);
-      expect(result.current.data?.configs[0].autoAdd).toBe(true);
       expect(result.current.data?.total).toBe(1);
     });
 
     it('handles error state', async () => {
       server.use(
         http.get(`${API_URL}/sync/config`, () => {
-          return HttpResponse.json(
-            { detail: 'Failed to fetch sync configs' },
-            { status: 500 }
-          );
-        })
+          return HttpResponse.json({ detail: 'Failed to fetch sync configs' }, { status: 500 });
+        }),
       );
 
       const { result } = renderHook(() => useSyncConfigs(), {
@@ -139,10 +118,10 @@ describe('use-sync hooks', () => {
       server.use(
         http.get(`${API_URL}/sync/config/steam`, () => {
           return HttpResponse.json(mockSyncConfigApi);
-        })
+        }),
       );
 
-      const { result } = renderHook(() => useSyncConfig(SyncPlatform.STEAM), {
+      const { result } = renderHook(() => useSyncConfig(SyncStorefront.STEAM), {
         wrapper: QueryWrapper,
       });
 
@@ -150,7 +129,7 @@ describe('use-sync hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.platform).toBe(SyncPlatform.STEAM);
+      expect(result.current.data?.storefront).toBe(SyncStorefront.STEAM);
       expect(result.current.data?.frequency).toBe(SyncFrequency.DAILY);
       expect(result.current.data?.isConfigured).toBe(true);
     });
@@ -159,10 +138,10 @@ describe('use-sync hooks', () => {
       server.use(
         http.get(`${API_URL}/sync/config/epic`, () => {
           return HttpResponse.json({ detail: 'Config not found' }, { status: 404 });
-        })
+        }),
       );
 
-      const { result } = renderHook(() => useSyncConfig(SyncPlatform.EPIC), {
+      const { result } = renderHook(() => useSyncConfig(SyncStorefront.EPIC), {
         wrapper: QueryWrapper,
       });
 
@@ -179,10 +158,10 @@ describe('use-sync hooks', () => {
       server.use(
         http.get(`${API_URL}/sync/steam/status`, () => {
           return HttpResponse.json(mockSyncStatusApi);
-        })
+        }),
       );
 
-      const { result } = renderHook(() => useSyncStatus(SyncPlatform.STEAM), {
+      const { result } = renderHook(() => useSyncStatus(SyncStorefront.STEAM), {
         wrapper: QueryWrapper,
       });
 
@@ -190,7 +169,7 @@ describe('use-sync hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.platform).toBe(SyncPlatform.STEAM);
+      expect(result.current.data?.storefront).toBe(SyncStorefront.STEAM);
       expect(result.current.data?.isSyncing).toBe(false);
       expect(result.current.data?.lastSyncedAt).toBe('2025-01-01T12:00:00Z');
       expect(result.current.data?.activeJobId).toBeNull();
@@ -204,10 +183,10 @@ describe('use-sync hooks', () => {
             is_syncing: true,
             active_job_id: 'job-123',
           });
-        })
+        }),
       );
 
-      const { result } = renderHook(() => useSyncStatus(SyncPlatform.STEAM), {
+      const { result } = renderHook(() => useSyncStatus(SyncStorefront.STEAM), {
         wrapper: QueryWrapper,
       });
 
@@ -225,19 +204,16 @@ describe('use-sync hooks', () => {
       const updatedConfig = {
         ...mockSyncConfigApi,
         frequency: 'weekly',
-        auto_add: false,
       };
 
       server.use(
         http.put(`${API_URL}/sync/config/steam`, async ({ request }) => {
           const body = (await request.json()) as {
             frequency?: string;
-            auto_add?: boolean;
           };
           expect(body.frequency).toBe('weekly');
-          expect(body.auto_add).toBe(false);
           return HttpResponse.json(updatedConfig);
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUpdateSyncConfig(), {
@@ -246,10 +222,9 @@ describe('use-sync hooks', () => {
 
       await act(async () => {
         await result.current.mutateAsync({
-          platform: SyncPlatform.STEAM,
+          storefront: SyncStorefront.STEAM,
           data: {
             frequency: SyncFrequency.WEEKLY,
-            autoAdd: false,
           },
         });
       });
@@ -259,14 +234,13 @@ describe('use-sync hooks', () => {
       });
 
       expect(result.current.data?.frequency).toBe(SyncFrequency.WEEKLY);
-      expect(result.current.data?.autoAdd).toBe(false);
     });
 
     it('handles update error', async () => {
       server.use(
         http.put(`${API_URL}/sync/config/steam`, () => {
           return HttpResponse.json({ detail: 'Update failed' }, { status: 400 });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useUpdateSyncConfig(), {
@@ -276,8 +250,8 @@ describe('use-sync hooks', () => {
       await act(async () => {
         try {
           await result.current.mutateAsync({
-            platform: SyncPlatform.STEAM,
-            data: { autoAdd: false },
+            storefront: SyncStorefront.STEAM,
+            data: { frequency: SyncFrequency.WEEKLY },
           });
         } catch {
           // Expected error
@@ -302,7 +276,7 @@ describe('use-sync hooks', () => {
             storefront: 'steam',
             status: 'queued',
           });
-        })
+        }),
       );
 
       const { result } = renderHook(() => useTriggerSync(), {
@@ -310,7 +284,7 @@ describe('use-sync hooks', () => {
       });
 
       await act(async () => {
-        await result.current.mutateAsync(SyncPlatform.STEAM);
+        await result.current.mutateAsync(SyncStorefront.STEAM);
       });
 
       await waitFor(() => {
@@ -318,7 +292,7 @@ describe('use-sync hooks', () => {
       });
 
       expect(result.current.data?.jobId).toBe('job-123');
-      expect(result.current.data?.platform).toBe('steam');
+      expect(result.current.data?.storefront).toBe('steam');
       expect(result.current.data?.status).toBe('queued');
       expect(result.current.data?.message).toBe('Sync started');
     });
@@ -326,11 +300,8 @@ describe('use-sync hooks', () => {
     it('handles sync already in progress error', async () => {
       server.use(
         http.post(`${API_URL}/sync/steam`, () => {
-          return HttpResponse.json(
-            { detail: 'Sync already in progress' },
-            { status: 409 }
-          );
-        })
+          return HttpResponse.json({ detail: 'Sync already in progress' }, { status: 409 });
+        }),
       );
 
       const { result } = renderHook(() => useTriggerSync(), {
@@ -339,7 +310,7 @@ describe('use-sync hooks', () => {
 
       await act(async () => {
         try {
-          await result.current.mutateAsync(SyncPlatform.STEAM);
+          await result.current.mutateAsync(SyncStorefront.STEAM);
         } catch {
           // Expected error
         }

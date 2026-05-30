@@ -14,7 +14,7 @@ import { config } from '@/lib/env';
 import type { UserGame, PlayStatus } from '@/types';
 import { cn } from '@/lib/utils';
 import { Timer } from 'lucide-react';
-import { formatTtb, formatIgdbRating } from '@/lib/game-utils';
+import { formatTtb, formatIgdbRating, formatHoursPlayed } from '@/lib/game-utils';
 
 export interface GameListProps {
   games: UserGame[];
@@ -105,9 +105,7 @@ export function GameList({
     return (
       <div className="text-center py-12 text-muted-foreground">
         <p>No games found</p>
-        <p className="text-sm">
-          Try adjusting your filters or add some games to your library.
-        </p>
+        <p className="text-sm">Try adjusting your filters or add some games to your library.</p>
       </div>
     );
   }
@@ -138,18 +136,12 @@ export function GameList({
             return (
               <TableRow
                 key={game.id}
-                className={cn(
-                  'cursor-pointer',
-                  isSelected && 'bg-muted'
-                )}
+                className={cn('cursor-pointer', isSelected && 'bg-muted')}
                 onClick={() => onClickGame?.(game)}
               >
                 {onSelectGame && (
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => onSelectGame(game.id)}
-                    />
+                    <Checkbox checked={isSelected} onCheckedChange={() => onSelectGame(game.id)} />
                   </TableCell>
                 )}
                 <TableCell>
@@ -173,30 +165,19 @@ export function GameList({
                     <span className="font-medium truncate max-w-xs">
                       {game.game?.title ?? 'Unknown Game'}
                     </span>
-                    {game.is_loved && (
-                      <span className="text-red-500 text-sm">&#9829;</span>
-                    )}
+                    {game.is_loved && <span className="text-red-500 text-sm">&#9829;</span>}
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    className={cn(
-                      'text-white border-0',
-                      statusColors[game.play_status]
-                    )}
-                  >
+                  <Badge className={cn('text-white border-0', statusColors[game.play_status])}>
                     {statusLabels[game.play_status]}
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <PlatformIconList
-                    platforms={game.platforms ?? []}
-                    size="sm"
-                    showLabels
-                  />
+                  <PlatformIconList platforms={game.platforms ?? []} size="sm" showLabels />
                 </TableCell>
                 <TableCell>
-                  <span className="text-sm">{game.hours_played || 0}h</span>
+                  <span className="text-sm">{formatHoursPlayed(game.hours_played)}</span>
                 </TableCell>
                 <TableCell>
                   {game.game?.howlongtobeat_main != null ||
@@ -218,9 +199,7 @@ export function GameList({
                   {game.personal_rating ? (
                     <div className="flex items-center gap-1">
                       <span className="text-yellow-400">&#9733;</span>
-                      <span className="text-sm font-medium">
-                        {game.personal_rating}
-                      </span>
+                      <span className="text-sm font-medium">{game.personal_rating}</span>
                     </div>
                   ) : (
                     <span className="text-sm text-muted-foreground">-</span>

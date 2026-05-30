@@ -31,6 +31,13 @@ export interface IGDBSearchProps {
   autoFocus?: boolean;
   /** Pre-fill the search field with this query */
   initialQuery?: string;
+  /**
+   * When set, the search is scoped to platforms IGDB tags for the given
+   * external_game (issue #615). Used by the sync pending-review manual-match
+   * dialog. The generic "Add game from IGDB" page leaves this undefined for
+   * unfiltered behaviour.
+   */
+  externalGameId?: string;
 }
 
 // ============================================================================
@@ -112,9 +119,7 @@ function GameResultItem({ game, onSelect }: GameResultItemProps) {
           </div>
 
           {game.description && (
-            <p className="text-xs text-muted-foreground line-clamp-2">
-              {game.description}
-            </p>
+            <p className="text-xs text-muted-foreground line-clamp-2">{game.description}</p>
           )}
         </div>
       </div>
@@ -133,11 +138,17 @@ export function IGDBSearch({
   className,
   autoFocus = false,
   initialQuery = '',
+  externalGameId,
 }: IGDBSearchProps) {
   const [query, setQuery] = React.useState(initialQuery);
   const debouncedQuery = useDebounce(query, 300);
 
-  const { data: results, isLoading, isFetching, error } = useSearchIGDB(debouncedQuery);
+  const {
+    data: results,
+    isLoading,
+    isFetching,
+    error,
+  } = useSearchIGDB(debouncedQuery, { externalGameId });
 
   React.useEffect(() => {
     if (error instanceof ApiErrorException && error.status === 503) {
@@ -147,7 +158,8 @@ export function IGDBSearch({
 
   const showLoading = isLoading || isFetching;
   const showResults = !showLoading && results && results.length > 0;
-  const showEmpty = !showLoading && debouncedQuery.length >= 3 && (!results || results.length === 0);
+  const showEmpty =
+    !showLoading && debouncedQuery.length >= 3 && (!results || results.length === 0);
   const showMinChars = debouncedQuery.length > 0 && debouncedQuery.length < 3;
 
   const handleSelect = (game: IGDBGameCandidate) => {
@@ -169,9 +181,7 @@ export function IGDBSearch({
           {showLoading && (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">
-                Searching IGDB...
-              </span>
+              <span className="ml-2 text-sm text-muted-foreground">Searching IGDB...</span>
             </div>
           )}
 
@@ -191,16 +201,16 @@ export function IGDBSearch({
                 <p className="text-sm text-muted-foreground">
                   No games found for &quot;{debouncedQuery}&quot;
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Try a different search term
-                </p>
+                <p className="text-xs text-muted-foreground mt-1">Try a different search term</p>
               </div>
             </CommandEmpty>
           )}
 
           {/* Results */}
           {showResults && (
-            <CommandGroup heading={`Found ${results.length} game${results.length !== 1 ? 's' : ''}`}>
+            <CommandGroup
+              heading={`Found ${results.length} game${results.length !== 1 ? 's' : ''}`}
+            >
               {results.map((game) => (
                 <GameResultItem
                   key={game.igdb_id}
@@ -216,9 +226,7 @@ export function IGDBSearch({
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
               <Search className="h-10 w-10 mb-3 opacity-50" />
               <p className="text-sm font-medium">Search IGDB</p>
-              <p className="text-xs mt-1">
-                Find games from the Internet Game Database
-              </p>
+              <p className="text-xs mt-1">Find games from the Internet Game Database</p>
             </div>
           )}
         </CommandList>

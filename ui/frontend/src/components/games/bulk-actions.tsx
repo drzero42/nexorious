@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -93,10 +92,12 @@ export function BulkActions({
   const hasSelection = selectedCount > 0;
 
   // Determine checkbox state
-  const isAllVisibleSelected = selectionMode === 'all-visible' ||
+  const isAllVisibleSelected =
+    selectionMode === 'all-visible' ||
     (selectionMode === 'manual' && selectedCount === visibleCount && visibleCount > 0);
   const isAllCollectionSelected = selectionMode === 'all-collection';
-  const isIndeterminate = selectionMode === 'manual' && selectedCount > 0 && selectedCount < visibleCount;
+  const isIndeterminate =
+    selectionMode === 'manual' && selectedCount > 0 && selectedCount < visibleCount;
   const isChecked = isAllVisibleSelected || isAllCollectionSelected;
 
   // Determine label text
@@ -124,10 +125,7 @@ export function BulkActions({
           onCheckedChange={() => onSelectAllClick()}
           disabled={isLoading}
         />
-        <label
-          htmlFor="select-all"
-          className="text-sm font-medium cursor-pointer select-none"
-        >
+        <label htmlFor="select-all" className="text-sm font-medium cursor-pointer select-none">
           {getSelectionLabel()}
         </label>
       </div>

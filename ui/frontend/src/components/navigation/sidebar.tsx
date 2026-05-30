@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { LogOut, User, ChevronDown, ArrowLeftRight } from 'lucide-react';
+import { LogOut, User, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -8,17 +8,20 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/providers';
+import { useVersion } from '@/hooks';
 import { useNavItems, NavLink, NavSectionCollapsible } from './index';
 
 export function Sidebar() {
   const { user, logout } = useAuth();
   const { mainItems, adminSection } = useNavItems();
+  const { data: versionInfo } = useVersion();
 
   return (
     <aside className="hidden md:flex md:fixed md:left-0 md:top-0 w-64 bg-card border-r flex-col h-screen">
       {/* Logo */}
       <div className="p-4 border-b">
-        <Link to="/games" className="block">
+        <Link to="/games" className="flex items-center gap-2">
+          <img src="/logo.svg" alt="" className="h-8 w-8" />
           <h1 className="text-xl font-bold">Nexorious</h1>
         </Link>
       </div>
@@ -61,19 +64,20 @@ export function Sidebar() {
                 <span>Profile</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link to="/import-export">
-                <ArrowLeftRight className="mr-2 h-4 w-4" />
-                <span>Import / Export</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={logout} className="cursor-pointer">
+            <DropdownMenuItem onClick={() => void logout()} className="cursor-pointer">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Version */}
+      {versionInfo?.version && (
+        <div className="px-4 pb-3 text-xs text-muted-foreground">
+          {versionInfo.version.startsWith('v') ? versionInfo.version : `v${versionInfo.version}`}
+        </div>
+      )}
     </aside>
   );
 }

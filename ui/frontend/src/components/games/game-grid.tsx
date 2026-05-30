@@ -1,4 +1,3 @@
-
 import { GameCard } from './game-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { UserGame } from '@/types';
@@ -42,9 +41,7 @@ export function GameGrid({
     return (
       <div className="text-center py-12 text-muted-foreground">
         <p>No games found</p>
-        <p className="text-sm">
-          Try adjusting your filters or add some games to your library.
-        </p>
+        <p className="text-sm">Try adjusting your filters or add some games to your library.</p>
       </div>
     );
   }

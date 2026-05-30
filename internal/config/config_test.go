@@ -16,7 +16,7 @@ func TestLoad_DatabaseURLFromIndividualVars(t *testing.T) {
 	t.Setenv("DB_PASSWORD", "p@ss word!")
 	t.Setenv("DB_NAME", "mydb")
 	// Required fields.
-	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	t.Setenv("IGDB_CLIENT_ID", "testclientid")
 	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
 
@@ -34,7 +34,7 @@ func TestLoad_DatabaseURLFromIndividualVars(t *testing.T) {
 
 func TestLoad_DatabaseURLExplicit(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgresql://override:pass@host/db")
-	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	t.Setenv("IGDB_CLIENT_ID", "testclientid")
 	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
 
@@ -49,27 +49,27 @@ func TestLoad_DatabaseURLExplicit(t *testing.T) {
 }
 
 func TestLoad_RequiredFieldsMissing(t *testing.T) {
-	// Only SECRET_KEY is required now — IGDB vars are optional.
-	saved := os.Getenv("SECRET_KEY")
-	os.Unsetenv("SECRET_KEY") //nolint:errcheck
+	// DB_ENCRYPTION_KEY is required.
+	saved := os.Getenv("DB_ENCRYPTION_KEY")
+	os.Unsetenv("DB_ENCRYPTION_KEY") //nolint:errcheck
 	t.Cleanup(func() {
 		if saved != "" {
-			os.Setenv("SECRET_KEY", saved) //nolint:errcheck
+			os.Setenv("DB_ENCRYPTION_KEY", saved) //nolint:errcheck
 		} else {
-			os.Unsetenv("SECRET_KEY") //nolint:errcheck
+			os.Unsetenv("DB_ENCRYPTION_KEY") //nolint:errcheck
 		}
 	})
 
 	_, err := config.Load()
 	if err == nil {
-		t.Fatal("expected error when SECRET_KEY is missing, got nil")
+		t.Fatal("expected error when DB_ENCRYPTION_KEY is missing, got nil")
 	}
 }
 
 func TestLoad_SucceedsWithoutIGDBVars(t *testing.T) {
-	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	// Explicitly unset IGDB vars to ensure they're not inherited.
-	os.Unsetenv("IGDB_CLIENT_ID")   //nolint:errcheck
+	os.Unsetenv("IGDB_CLIENT_ID")     //nolint:errcheck
 	os.Unsetenv("IGDB_CLIENT_SECRET") //nolint:errcheck
 
 	cfg, err := config.Load()
@@ -85,7 +85,7 @@ func TestLoad_SucceedsWithoutIGDBVars(t *testing.T) {
 }
 
 func TestLoad_Defaults(t *testing.T) {
-	t.Setenv("SECRET_KEY", "testsecretkey")
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	t.Setenv("IGDB_CLIENT_ID", "testclientid")
 	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
 
@@ -99,8 +99,8 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.WorkerCount != 4 {
 		t.Errorf("WorkerCount = %d; want 4", cfg.WorkerCount)
 	}
-	if cfg.AccessTokenExpireMinutes != 15 {
-		t.Errorf("AccessTokenExpireMinutes = %d; want 15", cfg.AccessTokenExpireMinutes)
+	if cfg.SessionExpireDays != 30 {
+		t.Errorf("SessionExpireDays = %d; want 30", cfg.SessionExpireDays)
 	}
 	if cfg.RateLimiterBackend != "local" {
 		t.Errorf("RateLimiterBackend = %q; want local", cfg.RateLimiterBackend)

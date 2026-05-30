@@ -1,4 +1,3 @@
-
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,10 +10,27 @@ import {
 import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
 import { useAllPlatforms, useAllStorefronts, useAllTags, useFilterOptions } from '@/hooks';
 import { PlayStatus, OwnershipStatus } from '@/types';
-import { ArrowDownAZ, ArrowUpAZ, ArrowDown, ArrowUp, Grid, List, X, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  ArrowDownAZ,
+  ArrowUpAZ,
+  ArrowDown,
+  ArrowUp,
+  Grid,
+  List,
+  X,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
 import { useState } from 'react';
 
-type SortField = 'title' | 'created_at' | 'howlongtobeat_main' | 'personal_rating' | 'release_date' | 'hours_played' | 'rating_average';
+type SortField =
+  | 'title'
+  | 'created_at'
+  | 'howlongtobeat_main'
+  | 'personal_rating'
+  | 'release_date'
+  | 'hours_played'
+  | 'rating_average';
 type SortOrder = 'asc' | 'desc';
 
 interface SortOption {
@@ -36,15 +52,16 @@ export interface GameFiltersProps {
   filters: {
     search: string;
     status?: PlayStatus;
-    ownershipStatus?: OwnershipStatus;  // Filter by ownership status (matches if ANY platform has this status)
-    platformId?: string;           // Keep for backwards compat (but will migrate to platforms)
-    platforms?: string[];          // New: multi-select
-    storefronts?: string[];        // New
-    genres?: string[];             // New
-    gameModes?: string[];          // New: game modes from IGDB
-    themes?: string[];             // New: themes from IGDB
+    ownershipStatus?: OwnershipStatus; // Filter by ownership status (matches if ANY platform has this status)
+    isLoved?: boolean; // Filter by whether the game is marked as loved
+    platformId?: string; // Keep for backwards compat (but will migrate to platforms)
+    platforms?: string[]; // New: multi-select
+    storefronts?: string[]; // New
+    genres?: string[]; // New
+    gameModes?: string[]; // New: game modes from IGDB
+    themes?: string[]; // New: themes from IGDB
     playerPerspectives?: string[]; // New: player perspectives from IGDB
-    tags?: string[];               // New
+    tags?: string[]; // New
   };
   onFiltersChange: (filters: GameFiltersProps['filters']) => void;
   viewMode: 'grid' | 'list';
@@ -105,7 +122,8 @@ export function GameFilters({
   const genreOptions = filterOptions?.genres?.map((g) => ({ value: g, label: g })) ?? [];
   const gameModeOptions = filterOptions?.gameModes?.map((gm) => ({ value: gm, label: gm })) ?? [];
   const themeOptions = filterOptions?.themes?.map((t) => ({ value: t, label: t })) ?? [];
-  const playerPerspectiveOptions = filterOptions?.playerPerspectives?.map((pp) => ({ value: pp, label: pp })) ?? [];
+  const playerPerspectiveOptions =
+    filterOptions?.playerPerspectives?.map((pp) => ({ value: pp, label: pp })) ?? [];
   const tagOptions = tags?.map((t) => ({ value: t.name, label: t.name })) ?? [];
 
   // Count active filters in the "more filters" section
@@ -122,6 +140,7 @@ export function GameFilters({
     filters.search ||
     filters.status ||
     filters.ownershipStatus ||
+    filters.isLoved !== undefined ||
     filters.platformId ||
     (filters.platforms && filters.platforms.length > 0) ||
     (filters.storefronts && filters.storefronts.length > 0) ||
@@ -136,6 +155,7 @@ export function GameFilters({
       search: '',
       status: undefined,
       ownershipStatus: undefined,
+      isLoved: undefined,
       platformId: undefined,
       platforms: [],
       storefronts: [],
@@ -154,10 +174,7 @@ export function GameFilters({
         <span className="text-sm text-muted-foreground w-14">Sort by:</span>
 
         {/* Sort dropdown */}
-        <Select
-          value={sortBy}
-          onValueChange={(value) => onSortByChange(value as SortField)}
-        >
+        <Select value={sortBy} onValueChange={(value) => onSortByChange(value as SortField)}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Sort by" />
           </SelectTrigger>
@@ -268,6 +285,26 @@ export function GameFilters({
                 {option.label}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+
+        {/* Loved filter */}
+        <Select
+          value={filters.isLoved === undefined ? 'all' : String(filters.isLoved)}
+          onValueChange={(value) =>
+            onFiltersChange({
+              ...filters,
+              isLoved: value === 'all' ? undefined : value === 'true',
+            })
+          }
+        >
+          <SelectTrigger className="w-36">
+            <SelectValue placeholder="Loved" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All games</SelectItem>
+            <SelectItem value="true">Loved only</SelectItem>
+            <SelectItem value="false">Not loved</SelectItem>
           </SelectContent>
         </Select>
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"slices"
@@ -37,12 +38,11 @@ func NewUserGamesHandler(db *bun.DB, cfg *config.Config) *UserGamesHandler {
 
 // createUserGameRequest is the body for POST /api/user-games.
 type createUserGameRequest struct {
-	GameID         int32    `json:"game_id"`
-	PlayStatus     *string  `json:"play_status"`
-	PersonalRating *int32   `json:"personal_rating"`
-	IsLoved        bool     `json:"is_loved"`
-	HoursPlayed    *float64 `json:"hours_played"`
-	PersonalNotes  *string  `json:"personal_notes"`
+	GameID         int32   `json:"game_id"`
+	PlayStatus     *string `json:"play_status"`
+	PersonalRating *int32  `json:"personal_rating"`
+	IsLoved        bool    `json:"is_loved"`
+	PersonalNotes  *string `json:"personal_notes"`
 }
 
 // userGamePlatformResponse is the API DTO for a user game platform entry with nested detail objects.
@@ -97,17 +97,24 @@ func toUserGamePlatformResponse(ugp models.UserGamePlatform) userGamePlatformRes
 	return resp
 }
 
-// userGameWithPlatformsResponse wraps UserGame but serialises Platforms as DTOs with nested details.
+// userGameWithPlatformsResponse wraps UserGame but serialises Platforms as DTOs with
+// nested details and exposes a calculated game-level HoursPlayed (sum of platform hours).
 type userGameWithPlatformsResponse struct {
 	models.UserGame
-	Platforms []userGamePlatformResponse `json:"platforms"`
+	HoursPlayed float64                    `json:"hours_played"`
+	Platforms   []userGamePlatformResponse `json:"platforms"`
 }
 
 func toUserGameWithPlatformsResponse(ug models.UserGame) userGameWithPlatformsResponse {
 	resp := userGameWithPlatformsResponse{UserGame: ug}
+	var totalHours float64
 	for _, p := range ug.Platforms {
+		if p.HoursPlayed != nil {
+			totalHours += *p.HoursPlayed
+		}
 		resp.Platforms = append(resp.Platforms, toUserGamePlatformResponse(p))
 	}
+	resp.HoursPlayed = totalHours
 	if resp.Platforms == nil {
 		resp.Platforms = []userGamePlatformResponse{}
 	}
@@ -130,13 +137,33 @@ var allowedUserGameSortFields = map[string]string{
 	"play_status":     "ug.play_status",
 	"personal_rating": "ug.personal_rating",
 	"is_loved":        "ug.is_loved",
-	"hours_played":    "ug.hours_played",
 	"release_date":    "g.release_date",
+	// hours_played sorts on the joined aggregate alias `hp`; COALESCE so games with no
+	// platforms (LEFT JOIN → NULL) sort as 0 instead of NULL-first under DESC.
+	"hours_played":       "COALESCE(hp.total, 0)",
+	"howlongtobeat_main": "g.howlongtobeat_main",
+	"rating_average":     "g.rating_average",
 }
 
 var sortFieldsRequiringGamesJoin = map[string]bool{
-	"title":        true,
-	"release_date": true,
+	"title":              true,
+	"release_date":       true,
+	"howlongtobeat_main": true,
+	"rating_average":     true,
+}
+
+var sortFieldsRequiringHoursJoin = map[string]bool{
+	"hours_played": true,
+}
+
+// sortFieldsNullsLast lists sort fields whose ORDER BY clause should append
+// "NULLS LAST", so games without IGDB data (NULL) sink to the bottom regardless
+// of sort direction. release_date is intentionally NOT in this set — changing
+// its NULL ordering would be a user-visible behavior change beyond the scope
+// of issue #639.
+var sortFieldsNullsLast = map[string]bool{
+	"howlongtobeat_main": true,
+	"rating_average":     true,
 }
 
 // HandleListUserGames handles GET /api/user-games.
@@ -174,6 +201,15 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	if sortOrder != "asc" && sortOrder != "desc" {
 		sortOrder = "desc"
 	}
+	// Compose the ORDER BY expression once so both phases of the two-phase
+	// list query stay in sync. NULLS LAST is opt-in per field.
+	var orderExpr string
+	if sortCol != "" {
+		orderExpr = sortCol + " " + sortOrder
+		if sortFieldsNullsLast[sortBy] {
+			orderExpr += " NULLS LAST"
+		}
+	}
 
 	// Build filter.
 	fb := filter.NewFilterBuilder()
@@ -210,6 +246,10 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	// If sort field needs games join, add it.
 	if sortBy != "" && sortFieldsRequiringGamesJoin[sortBy] {
 		fb.AddJoin("g", "LEFT JOIN games AS g ON g.id = ug.game_id")
+	}
+	// If sort field needs the aggregated platform-hours join, add it.
+	if sortBy != "" && sortFieldsRequiringHoursJoin[sortBy] {
+		fb.AddJoin("hp", "LEFT JOIN (SELECT user_game_id, COALESCE(SUM(hours_played), 0) AS total FROM user_game_platforms GROUP BY user_game_id) hp ON hp.user_game_id = ug.id")
 	}
 
 	ctx := context.Background()
@@ -249,10 +289,11 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		ColumnExpr(colExpr).
 		Where("ug.user_id = ?", userID)
 	idQ = fb.Apply(idQ)
-	if sortCol != "" {
-		idQ = idQ.OrderExpr(sortCol + " " + sortOrder)
+	if orderExpr != "" {
+		idQ = idQ.OrderExpr(orderExpr)
 	}
-	idQ = idQ.OrderExpr("ug.created_at DESC"). // stable secondary sort
+	// stable secondary sort
+	idQ = idQ.OrderExpr("ug.created_at DESC").
 		Offset((page - 1) * perPage).
 		Limit(perPage)
 
@@ -294,7 +335,10 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		if sortFieldsRequiringGamesJoin[sortBy] {
 			q = q.Join("LEFT JOIN games AS g ON g.id = user_game.game_id")
 		}
-		q = q.OrderExpr(sortCol + " " + sortOrder)
+		if sortFieldsRequiringHoursJoin[sortBy] {
+			q = q.Join("LEFT JOIN (SELECT user_game_id, COALESCE(SUM(hours_played), 0) AS total FROM user_game_platforms GROUP BY user_game_id) hp ON hp.user_game_id = user_game.id")
+		}
+		q = q.OrderExpr(orderExpr)
 	}
 	q = q.OrderExpr("user_game.created_at DESC")
 
@@ -357,7 +401,6 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		PlayStatus:     req.PlayStatus,
 		PersonalRating: req.PersonalRating,
 		IsLoved:        req.IsLoved,
-		HoursPlayed:    req.HoursPlayed,
 		PersonalNotes:  req.PersonalNotes,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -425,7 +468,6 @@ var allowedUpdateFields = map[string]bool{
 	"play_status":     true,
 	"personal_rating": true,
 	"is_loved":        true,
-	"hours_played":    true,
 	"personal_notes":  true,
 }
 
@@ -485,7 +527,6 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 		"play_status":     "play_status",
 		"personal_rating": "personal_rating",
 		"is_loved":        "is_loved",
-		"hours_played":    "hours_played",
 		"personal_notes":  "personal_notes",
 	}
 
@@ -499,7 +540,7 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 
 	query := fmt.Sprintf(
 		`UPDATE user_games SET %s WHERE id = ? AND user_id = ?
-		 RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, hours_played, personal_notes, created_at, updated_at`,
+		 RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, created_at, updated_at`,
 		strings.Join(setClauses, ", "),
 	)
 	args = append(args, id, userID)
@@ -557,8 +598,7 @@ func (h *UserGamesHandler) HandleDeleteUserGame(c *echo.Context) error {
 }
 
 type updateProgressRequest struct {
-	HoursPlayed *float64 `json:"hours_played"`
-	PlayStatus  *string  `json:"play_status"`
+	PlayStatus *string `json:"play_status"`
 }
 
 func (h *UserGamesHandler) HandleUpdateProgress(c *echo.Context) error {
@@ -573,34 +613,17 @@ func (h *UserGamesHandler) HandleUpdateProgress(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	if req.HoursPlayed == nil && req.PlayStatus == nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "at least one of hours_played or play_status is required")
+	if req.PlayStatus == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "play_status is required")
 	}
 
-	if req.PlayStatus != nil {
-		if !enum.PlayStatus(*req.PlayStatus).Valid() {
-			return echo.NewHTTPError(http.StatusBadRequest, "invalid play_status")
-		}
+	if !enum.PlayStatus(*req.PlayStatus).Valid() {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid play_status")
 	}
 
-	setClauses := []string{"updated_at = ?"}
-	args := []any{time.Now().UTC()}
+	args := []any{time.Now().UTC(), *req.PlayStatus, id, userID}
 
-	if req.HoursPlayed != nil {
-		setClauses = append(setClauses, "hours_played = ?")
-		args = append(args, *req.HoursPlayed)
-	}
-	if req.PlayStatus != nil {
-		setClauses = append(setClauses, "play_status = ?")
-		args = append(args, *req.PlayStatus)
-	}
-
-	args = append(args, id, userID)
-
-	query := fmt.Sprintf(
-		`UPDATE user_games SET %s WHERE id = ? AND user_id = ? RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, hours_played, personal_notes, created_at, updated_at`,
-		strings.Join(setClauses, ", "),
-	)
+	query := `UPDATE user_games SET updated_at = ?, play_status = ? WHERE id = ? AND user_id = ? RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, created_at, updated_at`
 
 	ctx := context.Background()
 	var ug models.UserGame
@@ -776,7 +799,7 @@ func (h *UserGamesHandler) HandleBulkAddPlatforms(c *echo.Context) error {
 		if insertErr != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 		}
-		rows, _ := result.RowsAffected()
+		rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 		added += rows
 	}
 
@@ -820,7 +843,7 @@ func (h *UserGamesHandler) HandleBulkRemovePlatforms(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	return c.JSON(http.StatusOK, map[string]int64{"removed": rows})
 }
 
@@ -944,11 +967,14 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	_ = h.db.NewSelect().Model(plat).
+	if err := h.db.NewSelect().Model(plat).
 		Where("id = ?", plat.ID).
 		Relation("PlatformRecord").
 		Relation("StorefrontRecord").
-		Scan(ctx)
+		Scan(ctx); err != nil {
+		slog.Error("user_games: load platform relations failed", "err", err, "platform_id", plat.ID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load platform")
+	}
 	return c.JSON(http.StatusCreated, toUserGamePlatformResponse(*plat))
 }
 
@@ -1039,11 +1065,14 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	_ = h.db.NewSelect().Model(&plat).
+	if err := h.db.NewSelect().Model(&plat).
 		Where("id = ?", plat.ID).
 		Relation("PlatformRecord").
 		Relation("StorefrontRecord").
-		Scan(ctx)
+		Scan(ctx); err != nil {
+		slog.Error("user_games: load platform relations failed", "err", err, "platform_id", plat.ID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load platform")
+	}
 	return c.JSON(http.StatusOK, toUserGamePlatformResponse(plat))
 }
 
@@ -1065,7 +1094,7 @@ func (h *UserGamesHandler) HandleDeletePlatform(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows == 0 {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found"})
 	}
@@ -1414,31 +1443,16 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.AverageRating = &v
 	}
 
-	// 9. total_hours_played
-	type hoursRow struct {
-		UserGameID    string          `bun:"id"`
-		LegacyHours   sql.NullFloat64 `bun:"hours_played"`
-		PlatformHours sql.NullFloat64 `bun:"platform_hours"`
-	}
-	var hoursRows []hoursRow
+	// 9. total_hours_played — sum platform hours across all user_game_platforms
+	var totalHours float64
 	err = h.db.NewSelect().
 		TableExpr("user_games AS ug").
-		ColumnExpr("ug.id, ug.hours_played, COALESCE(SUM(ugp.hours_played), 0) AS platform_hours").
+		ColumnExpr("COALESCE(SUM(ugp.hours_played), 0)").
 		Join("LEFT JOIN user_game_platforms AS ugp ON ugp.user_game_id = ug.id").
 		Where("ug.user_id = ?", userID).
-		GroupExpr("ug.id, ug.hours_played").
-		Scan(ctx, &hoursRows)
+		Scan(ctx, &totalHours)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-	}
-	var totalHours float64
-	for _, hr := range hoursRows {
-		ph := hr.PlatformHours.Float64
-		if ph > 0 {
-			totalHours += ph
-		} else if hr.LegacyHours.Valid {
-			totalHours += hr.LegacyHours.Float64
-		}
 	}
 	resp.TotalHoursPlayed = totalHours
 

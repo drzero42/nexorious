@@ -10,7 +10,6 @@ vi.mock('@/hooks', () => ({
   useBulkDeleteUserGames: vi.fn(),
 }));
 
-
 // Mock lucide-react icons
 vi.mock('lucide-react', () => ({
   Trash2: ({ className }: { className?: string }) => (
@@ -74,8 +73,12 @@ describe('BulkActions', () => {
 
     // Default mock implementations
     const { useBulkUpdateUserGames, useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
-    useBulkUpdateUserGames.mockReturnValue(createMockMutation() as unknown as ReturnType<typeof useBulkUpdateUserGames>);
-    useBulkDeleteUserGames.mockReturnValue(createMockMutation() as unknown as ReturnType<typeof useBulkDeleteUserGames>);
+    useBulkUpdateUserGames.mockReturnValue(
+      createMockMutation() as unknown as ReturnType<typeof useBulkUpdateUserGames>,
+    );
+    useBulkDeleteUserGames.mockReturnValue(
+      createMockMutation() as unknown as ReturnType<typeof useBulkDeleteUserGames>,
+    );
   });
 
   describe('rendering', () => {
@@ -157,7 +160,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkUpdateUserGames } = vi.mocked(await import('@/hooks'));
       useBulkUpdateUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkUpdateUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkUpdateUserGames
+        >,
       );
 
       const props = createDefaultProps();
@@ -178,7 +183,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkUpdateUserGames } = vi.mocked(await import('@/hooks'));
       useBulkUpdateUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkUpdateUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkUpdateUserGames
+        >,
       );
 
       const onClearSelection = vi.fn();
@@ -198,7 +205,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkUpdateUserGames } = vi.mocked(await import('@/hooks'));
       useBulkUpdateUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkUpdateUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkUpdateUserGames
+        >,
       );
 
       const onSuccess = vi.fn();
@@ -218,7 +227,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkUpdateUserGames } = vi.mocked(await import('@/hooks'));
       useBulkUpdateUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkUpdateUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkUpdateUserGames
+        >,
       );
 
       const props = createDefaultProps({ onSuccess: undefined });
@@ -239,7 +250,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockRejectedValue(new Error('Update failed'));
       const { useBulkUpdateUserGames } = vi.mocked(await import('@/hooks'));
       useBulkUpdateUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkUpdateUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkUpdateUserGames
+        >,
       );
 
       const props = createDefaultProps();
@@ -249,10 +262,7 @@ describe('BulkActions', () => {
       await user.click(screen.getByRole('option', { name: 'Completed' }));
 
       await waitFor(() => {
-        expect(consoleErrorSpy).toHaveBeenCalledWith(
-          'Failed to update games:',
-          expect.any(Error)
-        );
+        expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to update games:', expect.any(Error));
       });
 
       consoleErrorSpy.mockRestore();
@@ -281,9 +291,7 @@ describe('BulkActions', () => {
       await user.click(screen.getByRole('button', { name: /delete/i }));
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/Are you sure you want to delete 1 game\?/)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/Are you sure you want to delete 1 game\?/)).toBeInTheDocument();
       });
     });
 
@@ -295,9 +303,7 @@ describe('BulkActions', () => {
       await user.click(screen.getByRole('button', { name: /delete/i }));
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/Are you sure you want to delete 2 games\?/)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/Are you sure you want to delete 2 games\?/)).toBeInTheDocument();
       });
     });
 
@@ -306,7 +312,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
       useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkDeleteUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkDeleteUserGames
+        >,
       );
 
       const props = createDefaultProps({ selectedIds: new Set(['game-1', 'game-2']) });
@@ -328,7 +336,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
       useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkDeleteUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkDeleteUserGames
+        >,
       );
 
       const props = createDefaultProps();
@@ -352,7 +362,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
       useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkDeleteUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkDeleteUserGames
+        >,
       );
 
       const onClearSelection = vi.fn();
@@ -377,7 +389,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
       useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkDeleteUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkDeleteUserGames
+        >,
       );
 
       const onSuccess = vi.fn();
@@ -402,7 +416,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
       useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkDeleteUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkDeleteUserGames
+        >,
       );
 
       const props = createDefaultProps({ onSuccess: undefined });
@@ -444,7 +460,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
       useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkDeleteUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkDeleteUserGames
+        >,
       );
 
       const props = createDefaultProps();
@@ -466,7 +484,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockRejectedValue(new Error('Delete failed'));
       const { useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
       useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkDeleteUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkDeleteUserGames
+        >,
       );
 
       const props = createDefaultProps();
@@ -503,13 +523,15 @@ describe('BulkActions', () => {
 
   describe('loading states', () => {
     it('disables buttons when bulk update is pending', async () => {
-      const { useBulkUpdateUserGames, useBulkDeleteUserGames } = vi.mocked(
-        await import('@/hooks')
-      );
+      const { useBulkUpdateUserGames, useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
       useBulkUpdateUserGames.mockReturnValue(
-        createMockMutation({ isPending: true }) as unknown as ReturnType<typeof useBulkUpdateUserGames>
+        createMockMutation({ isPending: true }) as unknown as ReturnType<
+          typeof useBulkUpdateUserGames
+        >,
       );
-      useBulkDeleteUserGames.mockReturnValue(createMockMutation() as unknown as ReturnType<typeof useBulkDeleteUserGames>);
+      useBulkDeleteUserGames.mockReturnValue(
+        createMockMutation() as unknown as ReturnType<typeof useBulkDeleteUserGames>,
+      );
 
       const props = createDefaultProps();
       render(<BulkActions {...props} />);
@@ -520,12 +542,14 @@ describe('BulkActions', () => {
     });
 
     it('disables buttons when bulk delete is pending', async () => {
-      const { useBulkUpdateUserGames, useBulkDeleteUserGames } = vi.mocked(
-        await import('@/hooks')
+      const { useBulkUpdateUserGames, useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
+      useBulkUpdateUserGames.mockReturnValue(
+        createMockMutation() as unknown as ReturnType<typeof useBulkUpdateUserGames>,
       );
-      useBulkUpdateUserGames.mockReturnValue(createMockMutation() as unknown as ReturnType<typeof useBulkUpdateUserGames>);
       useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ isPending: true }) as unknown as ReturnType<typeof useBulkDeleteUserGames>
+        createMockMutation({ isPending: true }) as unknown as ReturnType<
+          typeof useBulkDeleteUserGames
+        >,
       );
 
       const props = createDefaultProps();
@@ -537,12 +561,14 @@ describe('BulkActions', () => {
     });
 
     it('delete button is disabled when bulk delete is pending', async () => {
-      const { useBulkUpdateUserGames, useBulkDeleteUserGames } = vi.mocked(
-        await import('@/hooks')
+      const { useBulkUpdateUserGames, useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
+      useBulkUpdateUserGames.mockReturnValue(
+        createMockMutation() as unknown as ReturnType<typeof useBulkUpdateUserGames>,
       );
-      useBulkUpdateUserGames.mockReturnValue(createMockMutation() as unknown as ReturnType<typeof useBulkUpdateUserGames>);
       useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ isPending: true }) as unknown as ReturnType<typeof useBulkDeleteUserGames>
+        createMockMutation({ isPending: true }) as unknown as ReturnType<
+          typeof useBulkDeleteUserGames
+        >,
       );
 
       const props = createDefaultProps();
@@ -575,7 +601,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkUpdateUserGames } = vi.mocked(await import('@/hooks'));
       useBulkUpdateUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkUpdateUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkUpdateUserGames
+        >,
       );
 
       const props = createDefaultProps({ selectedIds: new Set(['single-game']) });
@@ -595,7 +623,9 @@ describe('BulkActions', () => {
       const mockMutateAsync = vi.fn().mockResolvedValue({});
       const { useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
       useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<typeof useBulkDeleteUserGames>
+        createMockMutation({ mutateAsync: mockMutateAsync }) as unknown as ReturnType<
+          typeof useBulkDeleteUserGames
+        >,
       );
 
       const props = createDefaultProps({

@@ -41,7 +41,7 @@ describe('NavBadge', () => {
     render(
       <div onClick={parentClick}>
         <NavBadge count={5} onClick={badgeClick} />
-      </div>
+      </div>,
     );
 
     await user.click(screen.getByText('5'));

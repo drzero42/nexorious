@@ -1,25 +1,43 @@
 import { describe, it, expect } from 'vitest';
-import { formatTtb, formatIgdbRating } from './game-utils';
+import { formatTtb, formatIgdbRating, formatHoursPlayed } from './game-utils';
+
+describe('formatHoursPlayed', () => {
+  it.each([
+    [0, '0h'],
+    [null, '0h'],
+    [undefined, '0h'],
+    [1.2, '1h'],
+    [1.3, '1.5h'],
+    [7.4, '7.5h'],
+    [9.74, '9.5h'],
+    [9.75, '10h'],
+    [9.8, '10h'],
+    [10, '10h'],
+    [30.299999999999997, '30h'],
+    [134, '134h'],
+  ])('formats %s as %s', (input, expected) => {
+    expect(formatHoursPlayed(input as number | null | undefined)).toBe(expected);
+  });
+});
 
 describe('formatTtb', () => {
-  it('formats a whole number of hours', () => {
-    expect(formatTtb(10)).toBe('10h');
-  });
-
-  it('formats 0 hours', () => {
-    expect(formatTtb(0)).toBe('0h');
-  });
-
-  it('formats decimal hours', () => {
-    expect(formatTtb(12.5)).toBe('12.5h');
-  });
-
-  it('returns em-dash for null', () => {
-    expect(formatTtb(null)).toBe('—');
-  });
-
-  it('returns em-dash for undefined', () => {
-    expect(formatTtb(undefined)).toBe('—');
+  // Same half-hour-bucket rule as formatHoursPlayed; only null handling differs
+  // (TTB uses an em-dash placeholder because "no HLTB data" is meaningfully
+  // distinct from "0 hours").
+  it.each([
+    [null, '—'],
+    [undefined, '—'],
+    [0, '0h'],
+    [1.2, '1h'],
+    [1.3, '1.5h'],
+    [7.4, '7.5h'],
+    [9.75, '10h'], // boundary: half-hour rule rounds to exactly 10
+    [10, '10h'],
+    [12.5, '13h'], // ≥10, integer rule (Math.round half-up)
+    [13.14, '13h'], // canonical case from HLTB display in issue #641 follow-up
+    [134, '134h'],
+  ])('formats %s as %s', (input, expected) => {
+    expect(formatTtb(input as number | null | undefined)).toBe(expected);
   });
 });
 
@@ -28,7 +46,7 @@ describe('formatIgdbRating', () => {
     expect(formatIgdbRating(85.42)).toBe('8.5');
   });
   it('converts 72.10 to "7.2"', () => {
-    expect(formatIgdbRating(72.10)).toBe('7.2');
+    expect(formatIgdbRating(72.1)).toBe('7.2');
   });
   it('converts 100 to "10.0"', () => {
     expect(formatIgdbRating(100)).toBe('10.0');

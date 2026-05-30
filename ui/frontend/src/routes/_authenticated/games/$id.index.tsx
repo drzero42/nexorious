@@ -18,8 +18,12 @@ import {
 import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink, Gamepad2 } from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
 import { config } from '@/lib/env';
-import { formatIgdbRating } from '@/lib/game-utils';
-import { OwnershipStatus, type PlayStatus, type OwnershipStatus as OwnershipStatusType } from '@/types';
+import { formatIgdbRating, formatHoursPlayed, formatTtb } from '@/lib/game-utils';
+import {
+  OwnershipStatus,
+  type PlayStatus,
+  type OwnershipStatus as OwnershipStatusType,
+} from '@/types';
 
 export const Route = createFileRoute('/_authenticated/games/$id/')({
   component: GameDetailPage,
@@ -134,7 +138,10 @@ export function GameDetailPage() {
           Back to Games
         </Button>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => navigate({ to: '/games/$id/edit', params: { id: gameId } })}>
+          <Button
+            variant="outline"
+            onClick={() => navigate({ to: '/games/$id/edit', params: { id: gameId } })}
+          >
             <Edit className="mr-2 h-4 w-4" />
             Edit
           </Button>
@@ -197,9 +204,7 @@ export function GameDetailPage() {
                     <p className="text-muted-foreground mt-1">{game.game.developer}</p>
                   )}
                 </div>
-                {game.is_loved && (
-                  <Heart className="h-8 w-8 text-red-500 fill-red-500" />
-                )}
+                {game.is_loved && <Heart className="h-8 w-8 text-red-500 fill-red-500" />}
               </div>
 
               {/* Quick Stats */}
@@ -283,7 +288,10 @@ export function GameDetailPage() {
                   <h3 className="font-medium mb-2">Platforms & Ownership</h3>
                   <div className="space-y-2">
                     {game.platforms.map((p) => (
-                      <div key={p.id} className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-lg">
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-lg"
+                      >
                         <div className="flex items-center gap-2">
                           <span className="font-medium">
                             {p.platform_details?.display_name || p.platform || 'Unknown'}
@@ -321,7 +329,7 @@ export function GameDetailPage() {
                       <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg text-center">
                         <div className="text-xs text-muted-foreground">Main Story</div>
                         <div className="font-bold text-blue-700 dark:text-blue-300">
-                          {game.game.howlongtobeat_main}h
+                          {formatTtb(game.game.howlongtobeat_main)}
                         </div>
                       </div>
                     )}
@@ -329,7 +337,7 @@ export function GameDetailPage() {
                       <div className="bg-green-50 dark:bg-green-950 p-3 rounded-lg text-center">
                         <div className="text-xs text-muted-foreground">Main + Extra</div>
                         <div className="font-bold text-green-700 dark:text-green-300">
-                          {game.game.howlongtobeat_extra}h
+                          {formatTtb(game.game.howlongtobeat_extra)}
                         </div>
                       </div>
                     )}
@@ -337,7 +345,7 @@ export function GameDetailPage() {
                       <div className="bg-purple-50 dark:bg-purple-950 p-3 rounded-lg text-center">
                         <div className="text-xs text-muted-foreground">Completionist</div>
                         <div className="font-bold text-purple-700 dark:text-purple-300">
-                          {game.game.howlongtobeat_completionist}h
+                          {formatTtb(game.game.howlongtobeat_completionist)}
                         </div>
                       </div>
                     )}
@@ -384,7 +392,7 @@ export function GameDetailPage() {
               <dt className="text-sm text-muted-foreground flex items-center gap-1">
                 <Clock className="h-4 w-4" /> Hours Played
               </dt>
-              <dd className="mt-1 font-medium">{game.hours_played || 0}h</dd>
+              <dd className="mt-1 font-medium">{formatHoursPlayed(game.hours_played)}</dd>
               {/* Playtime breakdown by storefront */}
               {game.platforms.some((p) => p.hours_played > 0) && (
                 <div className="mt-2 space-y-1 text-xs text-muted-foreground">
@@ -399,7 +407,7 @@ export function GameDetailPage() {
                             p.platform ||
                             'Unknown'}
                         </span>
-                        <span>{p.hours_played}h</span>
+                        <span>{formatHoursPlayed(p.hours_played)}</span>
                       </div>
                     ))}
                 </div>

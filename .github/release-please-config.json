@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "9e1e5516e9d74fd1f9b974a773fc537f1b49bb1d",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "include-component-in-tag": false,
+  "separate-pull-requests": false,
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "changelog-path": "CHANGELOG.md",
+      "initial-version": "0.1.0",
+      "draft": true,
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "deploy/helm/Chart.yaml"
+        },
+        {
+          "type": "generic",
+          "path": "deploy/docker/docker-compose.yml"
+        },
+        {
+          "type": "generic",
+          "path": "flake.nix"
+        }
+      ]
+    }
+  }
+}

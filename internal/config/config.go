@@ -29,12 +29,13 @@ type Config struct {
 	// Security
 	// -------------------------------------------------------------------------
 
-	// SecretKey is used for JWT signing and credential encryption.
-	SecretKey string `env:"SECRET_KEY,required"`
+	// DBEncryptionKey is used for at-rest encryption of storefront credentials.
+	// Generate with: openssl rand -base64 32
+	DBEncryptionKey string `env:"DB_ENCRYPTION_KEY,required"`
 
-	// JWT lifetimes. Go port uses 15 min access (Python defaulted to 30).
-	AccessTokenExpireMinutes int `env:"ACCESS_TOKEN_EXPIRE_MINUTES" envDefault:"15"`
-	RefreshTokenExpireDays   int `env:"REFRESH_TOKEN_EXPIRE_DAYS"   envDefault:"30"`
+	// SessionExpireDays controls Max-Age of the session cookie and the
+	// expires_at stored in user_sessions. Default 30 days.
+	SessionExpireDays int `env:"SESSION_EXPIRE_DAYS" envDefault:"30"`
 
 	// -------------------------------------------------------------------------
 	// IGDB
@@ -44,7 +45,7 @@ type Config struct {
 	IGDBClientSecret      string  `env:"IGDB_CLIENT_SECRET"`
 	IGDBAccessToken       string  `env:"IGDB_ACCESS_TOKEN"`
 	IGDBRequestsPerSecond float64 `env:"IGDB_REQUESTS_PER_SECOND" envDefault:"4.0"`
-	IGDBBurstCapacity     int     `env:"IGDB_BURST_CAPACITY"      envDefault:"8"`
+	IGDBBurstCapacity     int     `env:"IGDB_BURST_CAPACITY"      envDefault:"4"`
 	IGDBMaxRetries        int     `env:"IGDB_MAX_RETRIES"         envDefault:"3"`
 	IGDBBackoffFactor     float64 `env:"IGDB_BACKOFF_FACTOR"      envDefault:"1.0"`
 
@@ -69,7 +70,7 @@ type Config struct {
 
 	Port     int    `env:"PORT"      envDefault:"8000"`
 	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
-	Debug bool `env:"DEBUG"`
+	Debug    bool   `env:"DEBUG"`
 
 	// CORSOrigins is only needed in development; production is same-origin.
 	CORSOrigins []string `env:"CORS_ORIGINS" envSeparator:","`
@@ -92,6 +93,10 @@ type Config struct {
 	// a pending/processing metadata_refresh job as failed when it has no
 	// unfinished items. Default 4h matches the Phase 5 spec.
 	StaleJobThreshold string `env:"STALE_JOB_THRESHOLD" envDefault:"4h"`
+
+	// SyncHistoryRetentionDays is the number of days sync_changes rows are kept.
+	// Rows older than this are deleted by the nightly CleanupSyncChangesWorker.
+	SyncHistoryRetentionDays int `env:"SYNC_HISTORY_RETENTION_DAYS" envDefault:"90"`
 
 	// -------------------------------------------------------------------------
 	// Rate limiter

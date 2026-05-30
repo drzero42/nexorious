@@ -94,12 +94,12 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 
 	ctx := context.Background()
 	var statsUsers, statsGames, statsTags int
-	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&statsUsers)
-	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT game_id) FROM user_games").Scan(&statsGames)
-	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&statsTags)
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&statsUsers)                     //nolint:errcheck // cosmetic stat; zero value acceptable on error
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT game_id) FROM user_games").Scan(&statsGames) //nolint:errcheck // cosmetic stat; zero value acceptable on error
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tags").Scan(&statsTags)                       //nolint:errcheck // cosmetic stat; zero value acceptable on error
 
 	var migrationVersion string
-	_ = s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(name), '') FROM bun_migrations").Scan(&migrationVersion)
+	_ = s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(name), '') FROM bun_migrations").Scan(&migrationVersion) //nolint:errcheck // cosmetic stat; zero value acceptable on error
 
 	dbChecksum, dbSize := checksumFile(dbSQLPath)
 	coverArtChecksum := checksumDir(coverArtDst)
@@ -155,12 +155,15 @@ func (s *Service) ListBackups() ([]BackupInfo, error) {
 			slog.Warn("skipping invalid backup archive", "path", archivePath, "err", err)
 			continue
 		}
-		info, _ := os.Stat(archivePath)
+		var sizeBytes int64
+		if info, statErr := os.Stat(archivePath); statErr == nil {
+			sizeBytes = info.Size()
+		}
 		bi := BackupInfo{
 			ID:         strings.TrimSuffix(filepath.Base(archivePath), ".tar.gz"),
 			CreatedAt:  manifest.CreatedAt,
 			BackupType: manifest.BackupType,
-			SizeBytes:  info.Size(),
+			SizeBytes:  sizeBytes,
 		}
 		bi.Stats.Users = manifest.StatsUsers
 		bi.Stats.Games = manifest.StatsGames
@@ -228,6 +231,107 @@ func (s *Service) ValidateArchive(archivePath string, verifyChecksums bool, maxM
 	}
 
 	return manifest, nil
+}
+
+// ArchiveInfo summarizes one candidate backup archive found in the backup
+// directory. Files that fail to validate end-to-end (corrupt manifest,
+// migration version newer than this binary supports, etc.) are still returned
+// with Restorable=false and a human-readable Reason so the UI can show them.
+type ArchiveInfo struct {
+	Filename   string    `json:"filename"` // base name only
+	SizeBytes  int64     `json:"size_bytes"`
+	ModTime    time.Time `json:"mtime"`
+	Manifest   *Manifest `json:"manifest,omitempty"`
+	Restorable bool      `json:"restorable"`
+	Reason     string    `json:"reason,omitempty"`
+}
+
+// BackupPath returns the configured backup directory path. Exposed so handlers
+// can safely resolve a user-supplied filename to a full path under it.
+func (s *Service) BackupPath() string {
+	return s.backupPath
+}
+
+// ListAvailableArchives scans the configured backup directory (top-level only)
+// for *.tar.gz files and returns metadata for each. Files appear regardless of
+// whether they validate so callers can show non-restorable files with an
+// explanation. Sorted newest mtime first.
+//
+// Returns an empty slice (not an error) when the directory is empty,
+// unreadable, or doesn't exist — listing is best-effort discovery.
+func (s *Service) ListAvailableArchives(ctx context.Context, maxMigrationVersion string) ([]ArchiveInfo, error) {
+	if s.backupPath == "" {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(s.backupPath)
+	if err != nil {
+		// Missing dir / permission error is not fatal — listing is best-effort.
+		slog.Debug("ListAvailableArchives: ReadDir failed", "path", s.backupPath, "err", err)
+		return nil, nil
+	}
+
+	infos := make([]ArchiveInfo, 0, len(entries))
+	for _, ent := range entries {
+		if ent.IsDir() {
+			continue
+		}
+		name := ent.Name()
+		if !strings.HasSuffix(name, ".tar.gz") {
+			continue
+		}
+		fullPath := filepath.Join(s.backupPath, name)
+		fi, err := os.Lstat(fullPath)
+		if err != nil {
+			continue
+		}
+		// Only regular files. Skip symlinks, sockets, devices.
+		if !fi.Mode().IsRegular() {
+			continue
+		}
+
+		info := ArchiveInfo{
+			Filename:  name,
+			SizeBytes: fi.Size(),
+			ModTime:   fi.ModTime().UTC(),
+		}
+
+		manifest, mErr := readManifestFromArchive(fullPath)
+		switch {
+		case mErr != nil:
+			info.Restorable = false
+			info.Reason = "unreadable manifest"
+		case manifest.Version > MaxManifestVersion:
+			info.Restorable = false
+			info.Reason = fmt.Sprintf("unknown manifest version %d (max supported: %d)", manifest.Version, MaxManifestVersion)
+			info.Manifest = manifest
+		case maxMigrationVersion != "" && manifest.MigrationVersion > maxMigrationVersion:
+			info.Restorable = false
+			info.Reason = fmt.Sprintf(
+				"backup was created by a newer version of Nexorious (migration %s); this binary only supports up to migration %s — upgrade before restoring",
+				manifest.MigrationVersion, maxMigrationVersion,
+			)
+			info.Manifest = manifest
+		default:
+			// Final restorability check: database.sql must be present in the
+			// archive. Mirrors the assertion ValidateArchive makes at restore
+			// time, so a Restorable=true entry is a real promise.
+			found, fErr := archiveContainsFile(fullPath, "database.sql")
+			if fErr != nil || !found {
+				info.Restorable = false
+				info.Reason = "archive is missing database.sql"
+			} else {
+				info.Restorable = true
+			}
+			info.Manifest = manifest
+		}
+
+		infos = append(infos, info)
+	}
+
+	sort.Slice(infos, func(i, j int) bool {
+		return infos[i].ModTime.After(infos[j].ModTime)
+	})
+	return infos, nil
 }
 
 // archiveContainsFile returns true if the .tar.gz archive contains an entry
@@ -317,13 +421,13 @@ func checksumFile(path string) (string, int64) {
 	}
 	defer func() { _ = f.Close() }()
 	h := sha256.New()
-	size, _ := io.Copy(h, f)
+	size, _ := io.Copy(h, f) //nolint:errcheck // hashing a file; hash.Hash.Write never errors
 	return hex.EncodeToString(h.Sum(nil)), size
 }
 
 func checksumDir(dir string) string {
 	h := sha256.New()
-	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error { //nolint:errcheck // best-effort directory checksum; non-fatal
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -332,7 +436,7 @@ func checksumDir(dir string) string {
 			return err
 		}
 		defer func() { _ = f.Close() }()
-		_, _ = io.Copy(h, f)
+		_, _ = io.Copy(h, f) //nolint:errcheck // hash.Hash.Write never returns an error
 		return nil
 	})
 	return hex.EncodeToString(h.Sum(nil))
@@ -349,7 +453,7 @@ func copyDir(src, dst string) (fileCount int, totalSize int64, err error) {
 		if err != nil {
 			return err
 		}
-		relPath, _ := filepath.Rel(src, path)
+		relPath, _ := filepath.Rel(src, path) //nolint:errcheck // path is always under src; cannot fail here
 		dstPath := filepath.Join(dst, relPath)
 		if d.IsDir() {
 			return os.MkdirAll(dstPath, 0o755)
@@ -380,7 +484,7 @@ func createTarGz(archivePath, baseDir, dirName string) error {
 		if err != nil {
 			return err
 		}
-		relPath, _ := filepath.Rel(baseDir, path)
+		relPath, _ := filepath.Rel(baseDir, path) //nolint:errcheck // path is always under baseDir; cannot fail here
 		info, err := d.Info()
 		if err != nil {
 			return err
@@ -557,7 +661,7 @@ func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (stri
 	}
 	defer s.mu.Unlock()
 
-	manifest, err := s.ValidateArchive(uploadedPath, true, opts.MaxMigration)
+	_, err := s.ValidateArchive(uploadedPath, true, opts.MaxMigration)
 	if err != nil {
 		return "", fmt.Errorf("validate uploaded archive: %w", err)
 	}
@@ -573,9 +677,33 @@ func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (stri
 		}
 		_ = os.Remove(uploadedPath)
 	}
-	_ = manifest
 
 	return id, s.doRestore(destPath, id, opts)
+}
+
+// RestoreFromArchive restores from an archive that already lives at its final
+// location (typically inside the configured backup directory) without renaming
+// or moving it. Unlike RestoreFromUpload — which "promotes" a temp upload to
+// a timestamped name inside the backup dir — this method preserves the input
+// path. Used by the setup-zone disk-restore handler so the operator's curated
+// on-disk backup is not mutated by the restore operation.
+//
+// Returns a derived backup ID (the archive's filename without the .tar.gz
+// suffix) and any error from the underlying restore.
+func (s *Service) RestoreFromArchive(archivePath string, opts RestoreOpts) (string, error) {
+	if !s.mu.TryLock() {
+		return "", ErrOperationInProgress
+	}
+	defer s.mu.Unlock()
+
+	if _, err := s.ValidateArchive(archivePath, true, opts.MaxMigration); err != nil {
+		return "", fmt.Errorf("validate archive: %w", err)
+	}
+
+	// Derive an ID from the filename for logging/return value. doRestore reads
+	// directly from archivePath, so the file stays where it is.
+	id := strings.TrimSuffix(filepath.Base(archivePath), ".tar.gz")
+	return id, s.doRestore(archivePath, id, opts)
 }
 
 func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) error {
@@ -697,7 +825,7 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
 	}
 
-	entries, _ := os.ReadDir(tmpDir)
+	entries, _ := os.ReadDir(tmpDir) //nolint:errcheck // already in restore-failure path; empty result handled below
 	if len(entries) == 0 {
 		opts.SetAppState("db_unavailable")
 		return fmt.Errorf("restore failed AND rollback failed (empty archive). Original: %w", originalErr)
@@ -705,8 +833,16 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 	extractedDir := filepath.Join(tmpDir, entries[0].Name())
 
 	terminateCmd := "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();"
-	_ = RunPsqlCommand(conn, terminateCmd)
-	_ = RunPsqlCommand(conn, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+	if err := RunPsqlCommand(conn, terminateCmd); err != nil {
+		slog.Error("rollback failed: terminate connections", "err", err, "original_err", originalErr)
+		opts.SetAppState("db_unavailable")
+		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
+	}
+	if err := RunPsqlCommand(conn, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
+		slog.Error("rollback failed: drop/recreate schema", "err", err, "original_err", originalErr)
+		opts.SetAppState("db_unavailable")
+		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
+	}
 
 	sqlFile := filepath.Join(extractedDir, "database.sql")
 	if err := RunPsqlFile(conn, sqlFile); err != nil {
@@ -721,7 +857,7 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 	coverArtDst := filepath.Join(s.storagePath, "cover_art")
 	_ = os.RemoveAll(coverArtDst)
 	if _, err := os.Stat(coverArtSrc); err == nil {
-		_, _, _ = copyDir(coverArtSrc, coverArtDst)
+		_, _, _ = copyDir(coverArtSrc, coverArtDst) //nolint:errcheck // best-effort cover-art restore; DB already restored
 	}
 
 	newDB, err := opts.ReconnectDB()

@@ -1,10 +1,10 @@
-
 import {
   LayoutDashboard,
   Library,
   Plus,
   RefreshCw,
   Tag,
+  ArrowLeftRight,
   Users,
   Shield,
   Wrench,
@@ -43,6 +43,11 @@ export function useNavItems() {
       href: '/tags',
       label: 'Tags',
       icon: <Tag className="h-4 w-4" />,
+    },
+    {
+      href: '/import-export',
+      label: 'Import / Export',
+      icon: <ArrowLeftRight className="h-4 w-4" />,
     },
   ];
 

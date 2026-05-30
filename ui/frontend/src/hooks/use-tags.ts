@@ -75,11 +75,7 @@ export function useCreateTag() {
 export function useCreateOrGetTag() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    { tag: Tag; created: boolean },
-    Error,
-    { name: string; color?: string }
-  >({
+  return useMutation<{ tag: Tag; created: boolean }, Error, { name: string; color?: string }>({
     mutationFn: ({ name, color }) => tagsApi.createOrGetTag(name, color),
     onSuccess: (result) => {
       if (result.created) {
@@ -129,8 +125,7 @@ export function useAssignTagsToGame() {
     Error,
     { userGameId: string; tagIds: string[] }
   >({
-    mutationFn: ({ userGameId, tagIds }) =>
-      tagsApi.assignTagsToGame(userGameId, tagIds),
+    mutationFn: ({ userGameId, tagIds }) => tagsApi.assignTagsToGame(userGameId, tagIds),
     onSuccess: (_result, { userGameId }) => {
       queryClient.invalidateQueries({ queryKey: gameKeys.detail(userGameId) });
       queryClient.invalidateQueries({ queryKey: tagKeys.lists() });
@@ -149,8 +144,7 @@ export function useRemoveTagsFromGame() {
     Error,
     { userGameId: string; tagIds: string[] }
   >({
-    mutationFn: ({ userGameId, tagIds }) =>
-      tagsApi.removeTagsFromGame(userGameId, tagIds),
+    mutationFn: ({ userGameId, tagIds }) => tagsApi.removeTagsFromGame(userGameId, tagIds),
     onSuccess: (_result, { userGameId }) => {
       queryClient.invalidateQueries({ queryKey: gameKeys.detail(userGameId) });
       queryClient.invalidateQueries({ queryKey: tagKeys.lists() });

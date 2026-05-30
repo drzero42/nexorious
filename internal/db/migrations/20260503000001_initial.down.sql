@@ -1,19 +1,20 @@
 -- Drop in reverse dependency order
-
 DROP TABLE IF EXISTS rate_limiter_tokens;
 DROP TABLE IF EXISTS backup_config;
--- River tables (river_job, river_leader, etc.) are managed by rivermigrate, not this file.
+DROP TABLE IF EXISTS sync_changes;
 DROP TABLE IF EXISTS job_items;
 DROP TABLE IF EXISTS jobs;
 DROP TABLE IF EXISTS user_sync_configs;
 DROP TABLE IF EXISTS user_game_tags;
 DROP TABLE IF EXISTS tags;
 DROP TABLE IF EXISTS user_game_platforms;
+DROP TABLE IF EXISTS external_game_platforms;
 DROP TABLE IF EXISTS external_games;
 DROP TABLE IF EXISTS user_games;
 DROP TABLE IF EXISTS platform_storefronts;
 DROP TABLE IF EXISTS platforms;
 DROP TABLE IF EXISTS storefronts;
 DROP TABLE IF EXISTS games;
+DROP TABLE IF EXISTS api_keys;
 DROP TABLE IF EXISTS user_sessions;
 DROP TABLE IF EXISTS users;

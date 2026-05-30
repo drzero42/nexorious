@@ -14,6 +14,7 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/migrate"
 )
@@ -33,18 +34,6 @@ func NewSetupHandler(db *bun.DB, cfg *config.Config, migrator *migrate.Migrator)
 type setupAdminRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-}
-
-type setupAdminResponse struct {
-	User struct {
-		ID        string    `json:"id"`
-		Username  string    `json:"username"`
-		IsAdmin   bool      `json:"is_admin"`
-		IsActive  bool      `json:"is_active"`
-		CreatedAt time.Time `json:"created_at"`
-	} `json:"user"`
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
 }
 
 // HandleSetupAdmin handles POST /api/auth/setup/admin.
@@ -76,9 +65,8 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
-	var createdAt time.Time
 	for attempt := range 2 {
-		createdAt, err = h.tryCreateAdmin(context.Background(), userID, req.Username, string(hash))
+		_, err = h.tryCreateAdmin(context.Background(), userID, req.Username, string(hash))
 		if err == nil {
 			break
 		}
@@ -92,30 +80,26 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
-	accessToken, refreshToken, tokenErr := issueTokensAndSession(
-		context.Background(), h.db, h.cfg, userID,
-		c.Request().Header.Get("User-Agent"),
-		c.RealIP(),
-	)
-
 	// Always clear needsSetup — the user row has committed.
 	h.migrator.SetNeedsSetup(false)
 
-	if tokenErr != nil {
-		slog.Error("setup admin: issue tokens", "err", tokenErr)
+	sessionID, sessionErr := issueSession(h.db, h.cfg.SessionExpireDays, userID,
+		c.Request().Header.Get("User-Agent"),
+		c.RealIP(),
+	)
+	if sessionErr != nil {
+		slog.Error("setup admin: issue session", "err", sessionErr)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "setup succeeded but session could not be created — please log in",
 		})
 	}
+	auth.SetSessionCookie(c, sessionID, h.cfg.SessionExpireDays)
 
-	var resp setupAdminResponse
-	resp.User.ID = userID
-	resp.User.Username = req.Username
-	resp.User.IsAdmin = true
-	resp.User.IsActive = true
-	resp.User.CreatedAt = createdAt
-	resp.AccessToken = accessToken
-	resp.RefreshToken = refreshToken
+	resp, loadErr := loadMeResponse(context.Background(), h.db, userID)
+	if loadErr != nil {
+		slog.Error("setup admin: load user", "err", loadErr)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
 	return c.JSON(http.StatusCreated, resp)
 }
 

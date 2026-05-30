@@ -44,14 +44,14 @@ make frontend    # builds React SPA into ui/frontend/dist/
 make build       # compiles the Go binary
 ```
 
-`ui/frontend/dist/` is gitignored and must be populated by `make frontend` before `go build`. The Go binary embeds four UI dirs via `//go:embed`: `all:frontend/dist`, `all:migrate`, `db-error`, and `setup` (see `ui/ui.go`).
+`ui/frontend/dist/` is gitignored and must be populated by `make frontend` before `go build`. The Go binary embeds five UI dirs via `//go:embed`: `all:frontend/dist`, `all:migrate`, `db-error`, `setup`, and `all:shared` (see `ui/ui.go`).
 
 ### Initial Setup
 ```bash
 devenv shell
 make                     # builds everything
 export DATABASE_URL="postgres://..."
-export SECRET_KEY="<random-secret>"   # required; used for JWT signing and encryption
+export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -base64 32
 # Optional: IGDB_CLIENT_ID + IGDB_CLIENT_SECRET for metadata enrichment
 # Optional: PORT (default 8000), LOG_LEVEL (default info), WORKER_COUNT (default 4)
 ./nexorious              # starts server; visits /migrate if schema is pending
@@ -67,7 +67,7 @@ export SECRET_KEY="<random-secret>"   # required; used for JWT signing and encry
 - `internal/migrate/` — migration state machine + Echo handlers for `/migrate` and `/api/migrate/*`
 - `internal/worker/` — River job worker implementations; `tasks/` contains workers for sync, import, export, and metadata refresh
 - `internal/scheduler/` — River worker implementations for periodic maintenance jobs (cleanup, backup polling, stale job pruning); `BuildPeriodicJobs()` registers cron-scheduled River `PeriodicJob` entries
-- `internal/services/` — IGDB client, Steam/PSN sync, game matching, platform resolution
+- `internal/services/` — IGDB client, storefront sync (Steam, PSN, GOG, Epic), game matching, platform resolution
 - `internal/auth/` — JWT generation/validation + Echo middleware
 - `internal/filter/` — dynamic query builder (Bun) for user-game list filtering
 - `internal/ratelimit/` — interface + local (`x/time/rate`) and PostgreSQL implementations
@@ -93,7 +93,7 @@ Echo middleware blocks all non-migration routes until state is `Ready`. River wo
 - **Migrations**: Bun migrate (`uptrace/bun/migrate`); SQL files live in `internal/db/migrations/` with timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); discovered automatically via `Migrations.Discover(FS)` in `migrations.go`.
 
 ### Frontend Embedding (Stash pattern)
-`ui/ui.go` exposes four `embed.FS` vars:
+`ui/ui.go` exposes five `embed.FS` vars:
 ```go
 //go:embed all:frontend/dist
 var UIBox embed.FS      // main React SPA
@@ -106,11 +106,14 @@ var DBErrorBox embed.FS
 
 //go:embed setup
 var SetupBox embed.FS
+
+//go:embed all:shared
+var SharedBox embed.FS
 ```
 The Go binary serves the React SPA itself.
 
 ### Frontend Stack
-- Vite 6 + React 19 + TypeScript
+- Vite 8 + React 19 + TypeScript
 - TanStack Router (file-based routes in `ui/frontend/src/routes/`)
 - TanStack Query, Tailwind CSS v4, shadcn/ui, React Hook Form + Zod, TipTap
 - Vitest + @testing-library/react
@@ -121,7 +124,7 @@ The Go binary serves the React SPA itself.
 - **API zone** — gated by state middleware, then JWT where required
 
 ### Workers & Scheduler
-River (`riverqueue/river`) is the job queue. Worker structs live under `worker/tasks/` (sync, import, export, metadata refresh) and `internal/scheduler/` (cleanup jobs, backup polling). Periodic schedules are registered in `scheduler.BuildPeriodicJobs()` using `robfig/cron/v3` expressions and River `PeriodicJob`. Backup orchestration still lives in `internal/backup/` and is invoked by the `CheckScheduledBackupWorker`. Sync workers cover Steam, PSN, GOG (via Legendary), and IGDB metadata refresh.
+River (`riverqueue/river`) is the job queue. Worker structs live under `worker/tasks/` (sync, import, export, metadata refresh) and `internal/scheduler/` (cleanup jobs, backup polling). Periodic schedules are registered in `scheduler.BuildPeriodicJobs()` using `robfig/cron/v3` expressions and River `PeriodicJob`. Backup orchestration still lives in `internal/backup/` and is invoked by the `CheckScheduledBackupWorker`. Sync workers cover Steam, PSN, GOG, and Epic (via Legendary), plus IGDB metadata refresh.
 
 ### Rate Limiting
 `ratelimit.Limiter` interface with two implementations:
@@ -165,7 +168,7 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 1. **Planning**: Read `docs/superpowers/specs/` for design context
 2. **Branching**: Create a feature branch before starting any task
 3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
-4. **Testing**: Run `go test ./...` after any Go changes; `npm run check && npm run knip && npm run test` after any frontend changes
+4. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)) — format/lint on every edit, build + typecheck when a turn ends, and the full suites at `git push`. You don't need to re-run the whole suites by hand; do run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.
 5. **Plan files**: `docs/superpowers/plans/` is tracked — always commit the plan file on the feature branch
 
 ### Branch Workflow (MANDATORY)
@@ -189,9 +192,40 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 - shadcn/ui components in `ui/frontend/src/components/ui/` follow an "include and prune" policy — knip removes any unused component or sub-export. If a feature needs a missing one (e.g. `Form`, `Tabs`, `Separator`), re-add it via `npx shadcn@latest add <component>` and import it.
 
 ### Quality Gates
+Enforced automatically by the hooks in [Automated Checks](#automated-checks); this list is the contract they uphold:
 - Zero Go build errors and zero `golangci-lint` errors before committing
 - Zero TypeScript/lint errors (`npm run check`) and zero knip findings (`npm run knip`) before committing
 - All tests must pass before committing
+
+### Automated Checks
+
+Format, lint, build, and test gates run automatically — you rarely invoke them by hand. **Launch Claude Code from inside `devenv shell`** (or an active direnv) so `go`, `golangci-lint`, `node`, and `jq` are on `PATH`; otherwise the Claude Code hooks silently no-op.
+
+| When | Mechanism | What runs |
+|---|---|---|
+| After each file edit | `PostToolUse` hook → `.claude/hooks/post-edit.sh` | Go: `gofmt -w` + `golangci-lint` on the file's package. Frontend: `prettier --write` + `eslint --fix` on the file. Remaining findings are fed back to fix. |
+| When a turn ends | `Stop` hook → `.claude/hooks/stop-check.sh` | `go build ./...` if any `.go` is dirty; `tsc --noEmit` if `ui/frontend/` is dirty. Build/typecheck only — a one-time nudge, not the hard gate. |
+| `git push` | devenv `git-hooks` (pre-push) | Full `go test ./...` (when `.go` files change) and `npm run check && npm run knip && npm run test` (when `ui/frontend/` changes). The hard gate. |
+
+Config lives in `.claude/settings.json` (Claude Code hooks) and `devenv.nix` → `git-hooks.hooks` (git). Pre-push hooks install/refresh on `devenv shell`; bypass in a pinch with `git push --no-verify`.
+
+### Nix Flake Maintenance
+
+The `nix/` directory contains the Nix package and NixOS module. Two hashes must be kept in sync with their respective lock files:
+
+- **`npmDepsHash` in `nix/frontend.nix`** — update after any `ui/frontend/package-lock.json` change:
+  ```bash
+  nix run nixpkgs#prefetch-npm-deps -- ui/frontend/package-lock.json
+  # paste the output hash into nix/frontend.nix → npmDepsHash
+  ```
+- **`vendorHash` in `nix/package.nix`** — update after any `go.mod` / `go.sum` change:
+  ```bash
+  # Set vendorHash = pkgs.lib.fakeHash; in nix/package.nix, then:
+  nix build .#nexorious 2>&1 | grep "got:"
+  # paste the "got:" hash into nix/package.nix → vendorHash
+  ```
+
+The `version` field in `flake.nix` is managed automatically by release-please (same as `Chart.yaml`).
 
 ### Slumber Collection Maintenance
 When adding a new API route, always add a corresponding request to `slumber.yaml`:
@@ -201,6 +235,54 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
 - Run `slumber collection` to verify the collection loads without errors after any change
 
+## Release Process
+
+Releases are produced by [release-please](https://github.com/googleapis/release-please) from the Conventional Commits on `main`. The full design is in [docs/superpowers/specs/2026-05-20-release-process-design.md](docs/superpowers/specs/2026-05-20-release-process-design.md).
+
+### Commit message convention (MANDATORY)
+
+All commits on `main` must follow [Conventional Commits](https://www.conventionalcommits.org/). PRs are squash-merged, so the **PR title** is the commit message release-please parses.
+
+| Prefix | Effect (pre-1.0) | Effect (post-1.0) |
+|---|---|---|
+| `feat: …` | patch bump | minor bump |
+| `fix: …` | patch bump | patch bump |
+| `feat!: …` or `BREAKING CHANGE:` footer | **minor bump** | **major bump** |
+| `chore:`, `ci:`, `docs:`, `refactor:`, `test:` | no release | no release |
+
+During the 0.x window the minor digit is reserved for breaking changes; everything else bumps patch.
+
+### Cutting a release
+
+1. Wait until there is a `feat:` or `fix:` on `main` since the last release (otherwise release-please's Release PR will be empty).
+2. Find the open PR titled `chore(main): release X.Y.Z` (opened by `release-please-action`).
+3. Review the proposed `CHANGELOG.md` diff, `Chart.yaml` / `docker-compose.yml` version bumps.
+4. Merge the Release PR. release-please creates the `vX.Y.Z` tag, publishes a GitHub Release, and `build-push.yaml` pushes the image and chart (semver tag + `latest`).
+
+### Overrides
+
+To force the next release to a specific version, push an empty commit directly to `main` with a `Release-As:` footer:
+
+```bash
+git commit --allow-empty -m "chore: release X.Y.Z" -m "Release-As: X.Y.Z"
+git push origin main
+```
+
+release-please sees the footer on a real `main` commit (not mangled by squash) and updates the Release PR to the specified version. No config file changes needed, no follow-up cleanup.
+
+To skip a release after an unwanted `feat:` / `fix:` lands: close the Release PR; release-please reopens it on the next push to main, so a true skip requires absorbing the change into the next legitimate release.
+
+### Promoting to 1.0.0
+
+Push an empty commit to `main` with both the version override and a note to update the versioning config:
+
+```bash
+git commit --allow-empty -m "chore: release 1.0.0" -m "Release-As: 1.0.0"
+git push origin main
+```
+
+Then open a PR that removes `bump-minor-pre-major` and `bump-patch-for-minor-pre-major` from `.github/release-please-config.json` and merges it before or alongside the Release PR. From the next commit onward, post-1.0 SemVer applies.
+
 ## Known Gotchas
 
 - **`sql.ErrNoRows` vs DB errors** — always `errors.Is(err, sql.ErrNoRows)` to distinguish "not found" (→ 404/401) from real connection failures (→ 500); import `"database/sql"` for the sentinel. Bun wraps pgx errors into `sql.ErrNoRows`, so use the stdlib sentinel (not `pgx.ErrNoRows`)
@@ -208,7 +290,7 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - **Package name `migrate`** — `internal/migrate` uses package name `migrate`; when importing `uptrace/bun/migrate` inside that package, alias it: `bunmigrate "github.com/uptrace/bun/migrate"` to avoid the collision
 - **`os.Exit` skips deferred calls** — call `pool.Close()` explicitly before any `os.Exit` in main; deferred `pool.Close()` will not run
 - **Background goroutines** — use `context.Background()`, not `c.Request().Context()`, for work that outlives an HTTP handler
-- **`errcheck` linter and `resp.Body`** — always `defer func() { _ = resp.Body.Close() }()`; bare `defer resp.Body.Close()` is flagged by errcheck
+- **`errcheck` runs with `check-blank`** (`.golangci.yml`) — every `_ =` / `_, _ =` error discard fails CI. Default fix is to **handle** it (API handler → `slog.Error` + `echo.NewHTTPError(500, …)`; worker/scheduler → log-only `slog.Error(...)`). Suppress only a genuinely-acceptable discard, via one of: the `std-error-handling` preset (covers the `Close`/`Fprint` family — so `defer func() { _ = resp.Body.Close() }()` needs no annotation), the `(bun.Tx).Rollback` allowlist, or a per-site `//nolint:errcheck // <one-line reason>` (e.g. clamped param parse, advisory `RowsAffected`, marshal of a fixed struct). `_ =` in `_test.go` is exempt.
 - **Priority type mismatch** — `jobs.priority` is TEXT (`'high'`/`'low'`); `pending_tasks.priority` is INTEGER; don't conflate the two columns
 - **Echo v5 route order** — register static routes before parameterised ones (e.g. `GET /sync/steam/status` before `GET /sync/:id`); Echo v5 doesn't auto-sort and will match the wrong handler otherwise
 - **Service package import cycles** — if `internal/api` imports `internal/services/steam` and vice-versa, break the cycle by having each service package define its own local summary types; `router.go` bridges them with adapter structs that satisfy the handler's interface
@@ -216,5 +298,6 @@ When adding a new API route, always add a corresponding request to `slumber.yaml
 - **River queue is independent of `job_items`** — `UPDATE job_items SET status='pending'` does NOT re-enqueue the item. River only processes rows in `river_job`. Always use `POST /api/jobs/{id}/retry-failed` or `POST /api/job-items/{id}/retry` which call `retryInsert` and write both tables. A direct DB reset leaves the item permanently stuck.
 - **bun raw scan struct tags** — when scanning raw SQL into a struct, bun maps columns by snake_casing the field name. If the column alias doesn't match exactly (e.g. `is_new_addition` → field `IsNewAdd` → bun expects `is_new_add`), the scan silently returns nil rows. Use explicit `bun:"column_name"` tags on all fields in raw-query result structs.
 - **psql dev connection** — `psql "${DATABASE_URL/\/.s.PGSQL.5432/}"` — `DATABASE_URL` includes the full socket path; this substitution strips the socket filename so psql gets just the directory as `host`.
-- **`pending_review` is settled, not active** — in `syncCheckJobCompletion` and similar job-completion checks, only `pending` and `processing` count as active remaining work. `pending_review` items wait indefinitely for user action and must not block auto-retry or job termination logic.
+- **`pending_review` is settled, not active** — in `syncCheckJobCompletion`, only `pending` and `processing` count as "active" remaining work. However, `pending_review` items DO block job termination: the job stays in `processing` until the user resolves every pending_review item (manually matches, skips, etc.). Never mark a job `completed` while `pending_review` items exist.
+- **Helm `values.schema.json` must stay in sync** — `deploy/helm/values.schema.json` uses `"additionalProperties": false` on the `nexorious` object; any new field added to `values.yaml` under `nexorious:` must also be registered in the schema or `helm lint --strict` fails. Also add `--set nexorious.<field>=x` to the lint step in `.github/workflows/test.yaml` if the field has a `fail` guard for its default placeholder value. Conversely, when **removing** a field, also remove its `--set nexorious.<field>=x` flag from `test.yaml` — `additionalProperties: false` will reject it and fail the lint.
 

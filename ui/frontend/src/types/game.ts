@@ -126,4 +126,3 @@ export interface IGDBGameCandidate {
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;
 }
-

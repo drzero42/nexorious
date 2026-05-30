@@ -73,8 +73,8 @@ func TestCleanupExpiredSessions_DeletesExpiredSessions(t *testing.T) {
 
 	// Insert an expired session.
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at, created_at)
-		 VALUES (?, ?, 'abc123hash', 'abc123refresh', now() - interval '1 hour', now() - interval '2 hours')`,
+		`INSERT INTO user_sessions (id, user_id, session_id_hash, expires_at, created_at)
+		 VALUES (?, ?, 'abc123hash', now() - interval '1 hour', now() - interval '2 hours')`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
 	if err != nil {
@@ -83,8 +83,8 @@ func TestCleanupExpiredSessions_DeletesExpiredSessions(t *testing.T) {
 
 	// Insert a valid session.
 	_, err = testDB.NewRaw(
-		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at, created_at)
-		 VALUES (?, ?, 'def456hash', 'def456refresh', now() + interval '1 hour', now() - interval '10 minutes')`,
+		`INSERT INTO user_sessions (id, user_id, session_id_hash, expires_at, created_at)
+		 VALUES (?, ?, 'def456hash', now() + interval '1 hour', now() - interval '10 minutes')`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
 	if err != nil {
@@ -94,14 +94,14 @@ func TestCleanupExpiredSessions_DeletesExpiredSessions(t *testing.T) {
 	scheduler.CleanupExpiredSessions(ctx, testDB)
 
 	var count int
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE token_hash = 'abc123hash'`).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE session_id_hash = 'abc123hash'`).Scan(ctx, &count); err != nil {
 		t.Fatalf("check expired session: %v", err)
 	}
 	if count != 0 {
 		t.Errorf("expected expired session deleted, got count=%d", count)
 	}
 
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE token_hash = 'def456hash'`).Scan(ctx, &count); err != nil {
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sessions WHERE session_id_hash = 'def456hash'`).Scan(ctx, &count); err != nil {
 		t.Fatalf("check valid session: %v", err)
 	}
 	if count != 1 {
@@ -239,8 +239,8 @@ func TestCheckPendingSyncs_OverdueSyncDispatched(t *testing.T) {
 	configID := uuid.NewString()
 	lastSynced := time.Now().UTC().Add(-2 * 24 * time.Hour) // 2 days ago
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at)
-		 VALUES (?, ?, 'steam', 'daily', false, ?)`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at)
+		 VALUES (?, ?, 'steam', 'daily', ?)`,
 		configID, userID, lastSynced,
 	).Exec(ctx)
 	if err != nil {
@@ -272,8 +272,8 @@ func TestCheckPendingSyncs_NotOverdue_NotDispatched(t *testing.T) {
 	configID := uuid.NewString()
 	lastSynced := time.Now().UTC().Add(-1 * time.Hour)
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at)
-		 VALUES (?, ?, 'steam', 'daily', false, ?)`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at)
+		 VALUES (?, ?, 'steam', 'daily', ?)`,
 		configID, userID, lastSynced,
 	).Exec(ctx)
 	if err != nil {
@@ -300,8 +300,8 @@ func TestCheckPendingSyncs_NeverSynced_Dispatched(t *testing.T) {
 	// last_synced_at is NULL (never synced) — should always dispatch.
 	configID := uuid.NewString()
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add)
-		 VALUES (?, ?, 'steam', 'weekly', false)`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency)
+		 VALUES (?, ?, 'steam', 'weekly')`,
 		configID, userID,
 	).Exec(ctx)
 	if err != nil {
@@ -323,34 +323,6 @@ func TestCheckPendingSyncs_NeverSynced_Dispatched(t *testing.T) {
 	}
 }
 
-func TestCheckPendingSyncs_EpicSkipped(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := insertUser(t, ctx, nil)
-
-	// Epic storefront — should always be skipped.
-	configID := uuid.NewString()
-	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add)
-		 VALUES (?, ?, 'epic', 'daily', false)`,
-		configID, userID,
-	).Exec(ctx)
-	if err != nil {
-		t.Fatalf("insert sync config: %v", err)
-	}
-
-	w := &scheduler.CheckPendingSyncsWorker{DB: testDB, RiverClient: newTestRiverClient(t)}
-	_ = w.Work(ctx, &river.Job[scheduler.CheckPendingSyncsArgs]{})
-
-	var count int
-	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ? AND job_type = 'sync'`, userID).Scan(ctx, &count); err != nil {
-		t.Fatalf("count jobs: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("expected 0 sync jobs for epic storefront, got %d", count)
-	}
-}
-
 func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
@@ -360,8 +332,8 @@ func TestCheckPendingSyncs_AlreadyRunning_NotDuplicated(t *testing.T) {
 	configID := uuid.NewString()
 	lastSynced := time.Now().UTC().Add(-2 * 24 * time.Hour)
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add, last_synced_at)
-		 VALUES (?, ?, 'steam', 'daily', false, ?)`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, last_synced_at)
+		 VALUES (?, ?, 'steam', 'daily', ?)`,
 		configID, userID, lastSynced,
 	).Exec(ctx)
 	if err != nil {
@@ -398,8 +370,8 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 	// manual frequency — should never be auto-dispatched.
 	configID := uuid.NewString()
 	_, err := testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, auto_add)
-		 VALUES (?, ?, 'steam', 'manual', false)`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency)
+		 VALUES (?, ?, 'steam', 'manual')`,
 		configID, userID,
 	).Exec(ctx)
 	if err != nil {
@@ -415,6 +387,69 @@ func TestCheckPendingSyncs_ManualFrequency_Skipped(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("expected 0 sync jobs for manual frequency, got %d", count)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BuildPeriodicJobs — guard branches for invalid config durations
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// CleanupSyncChanges
+// ---------------------------------------------------------------------------
+
+func TestCleanupSyncChanges_DeletesOldRows(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := insertUser(t, ctx, nil)
+
+	// Insert a job so sync_changes can reference it.
+	jobID := uuid.NewString()
+	_, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at)
+         VALUES (?, ?, 'sync', 'steam', 'completed', 'low', now())`,
+		jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+
+	// 100-day-old row — should be deleted when retention=90.
+	_, err = testDB.NewRaw(
+		`INSERT INTO sync_changes (id, job_id, user_id, change_type, title, created_at)
+         VALUES (?, ?, ?, 'added', 'Old Game', now() - interval '100 days')`,
+		uuid.NewString(), jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert old sync_change: %v", err)
+	}
+	// 50-day-old row — should remain.
+	_, err = testDB.NewRaw(
+		`INSERT INTO sync_changes (id, job_id, user_id, change_type, title, created_at)
+         VALUES (?, ?, ?, 'added', 'Mid Game', now() - interval '50 days')`,
+		uuid.NewString(), jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert mid sync_change: %v", err)
+	}
+	// 1-day-old row — should remain.
+	_, err = testDB.NewRaw(
+		`INSERT INTO sync_changes (id, job_id, user_id, change_type, title, created_at)
+         VALUES (?, ?, ?, 'added', 'New Game', now() - interval '1 day')`,
+		uuid.NewString(), jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert new sync_change: %v", err)
+	}
+
+	scheduler.CleanupSyncChanges(ctx, testDB, 90)
+
+	var count int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM sync_changes`).Scan(ctx, &count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 rows remaining, got %d", count)
 	}
 }
 

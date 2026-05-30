@@ -1,17 +1,19 @@
 package platformresolution
 
-// RawPlatformToSlug maps a raw platform string from a sync adapter to a canonical platforms.name slug.
+// PlatformToSlug maps a raw platform string from a sync adapter to a canonical platforms.name slug.
 // Returns ("", false) for unknown raw platforms.
-func RawPlatformToSlug(raw string) (string, bool) {
+func PlatformToSlug(raw string) (string, bool) {
 	switch raw {
 	case "pc-windows":
 		return "pc-windows", true
 	case "pc-linux":
 		return "pc-linux", true
+	case "pc-mac":
+		return "mac", true
 	case "playstation-5":
-		return "ps5", true
+		return "playstation-5", true
 	case "playstation-4":
-		return "ps4", true
+		return "playstation-4", true
 	default:
 		return "", false
 	}

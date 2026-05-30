@@ -2,20 +2,85 @@
 name: Build and Push Container Image
 
 on:
-  push:
-    branches: [main]
+  schedule:
+    # Nightly at 02:00 UTC. The exact minute is intentionally not :00 in GitHub's
+    # docs ("we recommend not running on the hour, since traffic spikes there"),
+    # but :00 is fine for a low-traffic repo and matches the spec verbatim.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
   release:
-    types: [published]
+    types: [created, published]
 
 jobs:
-  test:
-    name: Run Tests
-    uses: ./.github/workflows/test.yaml
+  pre-check:
+    name: Pre-check
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - name: Determine if a build is needed
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Non-schedule triggers always build. workflow_dispatch is the manual
+          # escape hatch; release builds must always run regardless of API state.
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "Trigger=${{ github.event_name }} -> always build"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # No checkout needed — the first 7 chars of GITHUB_SHA match
+          # docker/metadata-action's default {{sha}} length used by build-push.
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "HEAD short SHA: ${SHORT_SHA}"
+
+          # Query BOTH image (nexorious) and chart (charts/nexorious) packages
+          # for a tag ending in -<short-sha>. The image tag format is
+          # main-YYYYMMDD-<short-sha>; the chart tag is 0.0.0-dev-YYYYMMDD-<short-sha>;
+          # both end with -<short-sha>. We skip the build only if BOTH packages
+          # already have one for HEAD — otherwise a prior nightly's chart-push
+          # failure would leave the chart permanently absent (the image alone
+          # would short-circuit pre-check forever).
+          # The chart package path needs URL-encoding (%2F) for the slash.
+          # Fail-open: if either API call fails, default to building.
+          if ! IMAGE_MATCHES=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            --paginate \
+            "/users/drzero42/packages/container/nexorious/versions" \
+            --jq "[.[] | (.metadata.container.tags // [])[]] | map(select(endswith(\"-${SHORT_SHA}\"))) | length"); then
+            echo "::warning::gh api failed for nexorious; defaulting to should_build=true"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Image tags ending in -${SHORT_SHA}: ${IMAGE_MATCHES}"
+
+          if ! CHART_MATCHES=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            --paginate \
+            "/users/drzero42/packages/container/charts%2Fnexorious/versions" \
+            --jq "[.[] | (.metadata.container.tags // [])[]] | map(select(endswith(\"-${SHORT_SHA}\"))) | length"); then
+            echo "::warning::gh api failed for charts/nexorious; defaulting to should_build=true"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Chart tags ending in -${SHORT_SHA}: ${CHART_MATCHES}"
+
+          if [[ "${IMAGE_MATCHES}" -gt 0 && "${CHART_MATCHES}" -gt 0 ]]; then
+            echo "Both image and chart already exist for HEAD; skipping downstream jobs."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "At least one package missing for HEAD; will build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
 
   build-push:
     name: Build and Push
     runs-on: ubuntu-latest
-    needs: test
+    needs: pre-check
+    if: needs.pre-check.outputs.should_build == 'true' && (github.event_name != 'release' || github.event.action == 'published')
 
     permissions:
       contents: read
@@ -33,7 +98,17 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
+
+      - name: Compute VERSION
+        id: build-version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "value=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$(make print-version)" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Extract image metadata
         id: meta
@@ -43,8 +118,10 @@ jobs:
           tags: |
             # Release tags: v1.2.3 → 1.2.3
             type=semver,pattern={{version}}
-            # Main branch builds: YYYYMMDD-<short-sha> + dev
-            type=raw,value={{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
+            # Release floating tag
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            # Main branch builds: main-YYYYMMDD-<short-sha> + dev
+            type=raw,value=main-{{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push image
@@ -55,7 +132,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+            VERSION=${{ steps.build-version.outputs.value }}
             COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -113,3 +190,112 @@ jobs:
 
       - name: Push Helm chart
         run: helm push "${{ steps.helm-package.outputs.path }}" oci://ghcr.io/drzero42/charts
+
+      - name: Push Helm chart (moving dev tag)
+        if: github.event_name != 'release'
+        run: |
+          PKG=$(helm package deploy/helm/ \
+            --version "0.0.0-dev" \
+            --app-version "dev" \
+            | awk '{print $NF}')
+          helm push "$PKG" oci://ghcr.io/drzero42/charts
+
+
+  update-release-branch:
+    name: Advance release branch
+    runs-on: ubuntu-latest
+    needs: build-push
+    if: github.event_name == 'release' && github.event.action == 'published'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Fast-forward release branch and pin nix version
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          RELEASE_SHA="${{ github.sha }}"
+
+          # Fast-forward (or create) the release branch to the release commit.
+          if gh api "repos/${{ github.repository }}/git/refs/heads/release" -q .ref 2>/dev/null; then
+            gh api "repos/${{ github.repository }}/git/refs/heads/release" \
+              -X PATCH --field sha="${RELEASE_SHA}" --field force=true
+          else
+            gh api "repos/${{ github.repository }}/git/refs" \
+              -X POST --field ref="refs/heads/release" --field sha="${RELEASE_SHA}"
+          fi
+
+          # Add one commit on top of the release branch that creates
+          # nix/release-version.txt. This file is absent from main, so
+          # nix builds from main get "main-<shortrev>" while builds from
+          # the release branch get the clean semver.
+          BASE_TREE=$(gh api "repos/${{ github.repository }}/git/commits/${RELEASE_SHA}" -q .tree.sha)
+          BLOB=$(gh api "repos/${{ github.repository }}/git/blobs" \
+            -X POST --field content="${VERSION}" --field encoding="utf-8" -q .sha)
+          NEW_TREE=$(gh api "repos/${{ github.repository }}/git/trees" \
+            -X POST --input - <<EOF
+          {"base_tree":"${BASE_TREE}","tree":[{"path":"nix/release-version.txt","mode":"100644","type":"blob","sha":"${BLOB}"}]}
+          EOF
+          )
+          NEW_TREE_SHA=$(echo "${NEW_TREE}" | jq -r .sha)
+          NEW_COMMIT=$(gh api "repos/${{ github.repository }}/git/commits" \
+            -X POST --input - <<EOF
+          {"message":"chore: pin nix version to ${VERSION}","tree":"${NEW_TREE_SHA}","parents":["${RELEASE_SHA}"]}
+          EOF
+          )
+          NEW_COMMIT_SHA=$(echo "${NEW_COMMIT}" | jq -r .sha)
+          gh api "repos/${{ github.repository }}/git/refs/heads/release" \
+            -X PATCH --field sha="${NEW_COMMIT_SHA}" --field force=true
+
+  cleanup:
+    name: Cleanup old dev versions
+    runs-on: ubuntu-latest
+    needs: build-push
+    if: github.event_name != 'release'
+
+    permissions:
+      packages: write
+
+    steps:
+      # vlaurin/action-ghcr-prune (not actions/delete-package-versions) because
+      # the latter's ignore-versions regex matches against the OCI manifest
+      # digest (sha256:...), not against tags — making tag-based protection
+      # impossible. vlaurin's keep-tags-regexes / prune-tags-regexes evaluate
+      # against the version's container tags, which is what we need.
+      - name: Prune old dev container image versions
+        uses: vlaurin/action-ghcr-prune@v0.6.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          user: drzero42
+          container: nexorious
+          # Protect release images (semver, with optional pre-release suffix)
+          # and the floating 'dev' tag. Exclusion always wins over inclusion,
+          # so a manifest carrying BOTH 'dev' and main-YYYYMMDD-<sha> is preserved.
+          keep-tags-regexes: |
+            ^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$
+            ^dev$
+          # Prune dev-build tags: main-YYYYMMDD-<short-sha> and legacy YYYYMMDD-<short-sha>.
+          # keep-last keeps the 30 most recent of the matched-for-pruning versions.
+          prune-tags-regexes: |
+            ^main-\d{8}-[a-f0-9]+$
+            ^\d{8}-[a-f0-9]+$
+          keep-last: 30
+
+      - name: Prune old dev Helm chart versions
+        uses: vlaurin/action-ghcr-prune@v0.6.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          user: drzero42
+          container: charts/nexorious
+          # Protect release charts and the moving '0.0.0-dev' chart tag.
+          keep-tags-regexes: |
+            ^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$
+            ^0\.0\.0-dev$
+          # Prune dev-build chart tags: 0.0.0-dev-YYYYMMDD-<short-sha>.
+          prune-tags-regexes: |
+            ^0\.0\.0-dev-\d{8}-[a-f0-9]+$
+          keep-last: 30

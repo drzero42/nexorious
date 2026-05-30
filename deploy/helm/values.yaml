@@ -10,16 +10,26 @@
 #   global.fullnameOverride: nexorious
 # =============================================================================
 
-# -- Global values used by the bjw-s common library.
+# -- Global values.
 # fullnameOverride: set this if installing with a release name other than
 # "nexorious" to keep service names predictable (e.g. nexorious-nexorious,
 # nexorious-postgresql).
-global: {}
+# storageClass: applied to every enabled PVC in `persistence:` that does not
+# set its own `storageClass`. Leave empty to fall back to the cluster's
+# default StorageClass. Set to "-" to disable dynamic provisioning.
+global:
+  storageClass: ""
 
 # -- Custom nexorious configuration (not part of the common library)
 nexorious:
-  # -- JWT signing secret key. REQUIRED. Generate with: openssl rand -hex 32
-  secretKey: "change-me-in-production"
+  # -- At-rest credential encryption key. REQUIRED. Generate with: openssl rand -base64 32
+  dbEncryptionKey: "change-me-in-production"
+
+  # -- Supply DB_ENCRYPTION_KEY from an existing Secret instead of inline.
+  # -- If set, dbEncryptionKey is ignored.
+  dbEncryptionKeyFrom:
+    name: ""
+    key: ""
 
   # -- IGDB API client ID. REQUIRED. nexorious will not function without valid IGDB credentials.
   # -- Obtain from: https://api.igdb.com/v4/getting-started
@@ -33,23 +43,28 @@ nexorious:
   # -- Example: postgresql://user:pass@my-postgres:5432/nexorious
   databaseUrl: ""
 
-  # -- Legendary work directory. Set to a writable absolute path to enable
-  # -- Epic Games Store sync (e.g. /var/lib/legendary). When non-empty, the
-  # -- chart injects LEGENDARY_WORK_DIR on the main container and mounts an
-  # -- emptyDir volume at this path. Leave empty to disable Epic sync.
+  # -- Legendary work directory. Injected as LEGENDARY_WORK_DIR and mounted
+  # -- as an emptyDir volume. Set to empty to disable Epic sync entirely.
   # -- Note: legendary auth state is snapshotted to the database after each
   # -- sync, so the emptyDir is safe to lose on pod restarts — state is
   # -- restored from the DB before every invocation.
-  legendaryWorkDir: ""
+  legendaryWorkDir: "/var/lib/legendary"
+
+  # -- Writable /tmp emptyDir for the main container. The main container
+  # -- runs with readOnlyRootFilesystem: true, so /tmp must be a separate
+  # -- volume. Scheduled and manual backups stage pg_dump output and a copy
+  # -- of the cover-art directory here before producing the final archive,
+  # -- and restore endpoints buffer uploaded tarballs here before extracting.
+  # -- Bump sizeLimit if your cover-art library or restore payloads are
+  # -- larger than the default.
+  tmpDir:
+    sizeLimit: 2Gi
 
   # -- External secret references (*From pattern)
   # When *From.name and *From.key are both non-empty, the external secret is used
   # and the corresponding inline value is ignored.
 
   # Non-DB credentials
-  secretKeyFrom:
-    name: ""
-    key: ""
   igdbClientIdFrom:
     name: ""
     key: ""
@@ -84,18 +99,34 @@ nexorious:
 
   postgresql:
     # -- PostgreSQL username
-    # WARNING: this value is cosmetic. Changing it also requires updating
-    # controllers.postgresql.containers.main.env.POSTGRES_USER and the
-    # pg_isready probe commands below; otherwise the StatefulSet will
-    # reference a user that does not exist.
     username: nexorious
-    # -- PostgreSQL password. REQUIRED. Change before deploying.
+    # -- PostgreSQL password.
+    # -- Leave empty (the default) to auto-generate a 32-character random
+    # -- password on first install. The generated value is read back from the
+    # -- existing credentials Secret on subsequent upgrades, so it remains
+    # -- stable. Set explicitly to override.
     # -- The auto-built DATABASE_URL URL-encodes the password, so special
-    # -- characters (: @ / ? #) are safe. To skip auto-build entirely, set
-    # -- nexorious.databaseUrl explicitly.
-    password: "change-me-in-production"
+    # -- characters (: @ / ? #) are safe.
+    password: ""
     # -- PostgreSQL database name
     database: nexorious
+
+    # -- External secret references for the in-cluster Postgres pod
+    # credentials. When *From.name and *From.key are both set, the postgres
+    # pod's POSTGRES_USER / POSTGRES_DB / POSTGRES_PASSWORD env vars are
+    # sourced from that secret instead of the inline values above. Useful
+    # with external-secrets-operator, SealedSecrets, Vault, etc.
+    # To connect the nexorious app to the same external secret, also
+    # configure nexorious.databaseUrlFrom or nexorious.db*From.
+    usernameFrom:
+      name: ""
+      key: ""
+    passwordFrom:
+      name: ""
+      key: ""
+    databaseFrom:
+      name: ""
+      key: ""
 
 # =============================================================================
 # Default Pod options (applied to all controllers unless overridden)
@@ -149,15 +180,21 @@ controllers:
           tag: 18-alpine
           pullPolicy: IfNotPresent
         env:
-          # WARNING: must match nexorious.postgresql.username.
-          POSTGRES_USER: nexorious
-          # WARNING: must match nexorious.postgresql.database.
-          POSTGRES_DB: nexorious
+          POSTGRES_USER:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.postgresUsernameSecretName" . }}'
+                key: '{{ include "nexorious.postgresUsernameSecretKey" . }}'
+          POSTGRES_DB:
+            valueFrom:
+              secretKeyRef:
+                name: '{{ include "nexorious.postgresDatabaseSecretName" . }}'
+                key: '{{ include "nexorious.postgresDatabaseSecretKey" . }}'
           POSTGRES_PASSWORD:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious.credentialsSecretName" . }}'
-                key: POSTGRES_PASSWORD
+                name: '{{ include "nexorious.postgresPasswordSecretName" . }}'
+                key: '{{ include "nexorious.postgresPasswordSecretKey" . }}'
           PGDATA: /var/lib/postgresql/data/pgdata
         securityContext:
           allowPrivilegeEscalation: false
@@ -170,18 +207,20 @@ controllers:
             cpu: 100m
             memory: 256Mi
           limits:
-            memory: 1Gi
+            memory: 256Mi
         probes:
+          # pg_isready is invoked via 'sh -c' so $POSTGRES_USER expands at
+          # runtime — works whether the env var is sourced inline or from an
+          # external secret via nexorious.postgresql.usernameFrom.
           liveness:
             enabled: true
             custom: true
             spec:
               exec:
                 command:
-                  - pg_isready
-                  # WARNING: must match nexorious.postgresql.username.
-                  - -U
-                  - nexorious
+                  - sh
+                  - -c
+                  - 'pg_isready -U "$POSTGRES_USER"'
               initialDelaySeconds: 10
               periodSeconds: 10
               failureThreshold: 5
@@ -191,10 +230,9 @@ controllers:
             spec:
               exec:
                 command:
-                  - pg_isready
-                  # WARNING: must match nexorious.postgresql.username.
-                  - -U
-                  - nexorious
+                  - sh
+                  - -c
+                  - 'pg_isready -U "$POSTGRES_USER"'
               initialDelaySeconds: 5
               periodSeconds: 5
               failureThreshold: 5
@@ -204,16 +242,14 @@ controllers:
             spec:
               exec:
                 command:
-                  - pg_isready
-                  # WARNING: must match nexorious.postgresql.username.
-                  - -U
-                  - nexorious
+                  - sh
+                  - -c
+                  - 'pg_isready -U "$POSTGRES_USER"'
               failureThreshold: 30
               periodSeconds: 5
 
   # ---------------------------------------------------------------------------
-  # nexorious -- Go binary (Deployment)
-  # The Go port runs API, workers, and scheduler in-process as a single binary.
+  # nexorious
   # A 'migrate' initContainer applies pending migrations before the main
   # container starts serving HTTP.
   # ---------------------------------------------------------------------------
@@ -241,17 +277,15 @@ controllers:
             cpu: 100m
             memory: 128Mi
           limits:
-            memory: 512Mi
+            memory: 128Mi
         env:
-          STORAGE_PATH: /app/storage
-          BACKUP_PATH: /app/storage/backups
           LOG_LEVEL: info
           DEBUG: "false"
-          SECRET_KEY:
+          DB_ENCRYPTION_KEY:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious.secretKeySecretName" . }}'
-                key: '{{ include "nexorious.secretKeySecretKey" . }}'
+                name: '{{ include "nexorious.dbEncryptionKeySecretName" . }}'
+                key: '{{ include "nexorious.dbEncryptionKeySecretKey" . }}'
           IGDB_CLIENT_ID:
             valueFrom:
               secretKeyRef:
@@ -319,7 +353,7 @@ controllers:
             cpu: 100m
             memory: 128Mi
           limits:
-            memory: 512Mi
+            memory: 128Mi
         env:
           PORT: "8000"
           STORAGE_PATH: /app/storage
@@ -327,11 +361,11 @@ controllers:
           LOG_LEVEL: info
           DEBUG: "false"
           RATE_LIMITER_BACKEND: postgres
-          SECRET_KEY:
+          DB_ENCRYPTION_KEY:
             valueFrom:
               secretKeyRef:
-                name: '{{ include "nexorious.secretKeySecretName" . }}'
-                key: '{{ include "nexorious.secretKeySecretKey" . }}'
+                name: '{{ include "nexorious.dbEncryptionKeySecretName" . }}'
+                key: '{{ include "nexorious.dbEncryptionKeySecretKey" . }}'
           IGDB_CLIENT_ID:
             valueFrom:
               secretKeyRef:
@@ -478,8 +512,6 @@ persistence:
     advancedMounts:
       nexorious:
         main:
-          - path: /app/storage
-        migrate:
           - path: /app/storage
 
   # -- PostgreSQL data volume

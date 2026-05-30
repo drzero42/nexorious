@@ -9,6 +9,8 @@ ui/frontend/node_modules/
 # devenv
 .devenv/
 .devenv.flake.nix
+# Generated from devenv.nix git-hooks on shell entry; do not commit.
+.pre-commit-config.yaml
 
 .env
 
@@ -21,8 +23,17 @@ storage
 coverage.out
 coverage.html
 
+# Log files
+*.log
+
 # Legendary per-user working directories
 .legendary-work/
 
 # Superpowers brainstorm artifacts
 .superpowers/
+
+# Test deployment values for helm chart
+deploy/nexorious-values.yaml
+
+# Nix build artifact
+result

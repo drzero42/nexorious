@@ -172,18 +172,18 @@ func exportsDir(storagePath string) (string, error) {
 // ── JSON format helpers ───────────────────────────────────────────────────────
 
 type exportGameJSON struct {
-	IGDBID         int32               `json:"igdb_id"`
-	Title          string              `json:"title"`
-	ReleaseYear    *int                `json:"release_year"`
-	PlayStatus     *string             `json:"play_status"`
-	PersonalRating *int32              `json:"personal_rating"`
-	IsLoved        bool                `json:"is_loved"`
-	HoursPlayed    *float64            `json:"hours_played"`
-	PersonalNotes  *string             `json:"personal_notes"`
+	IGDBID         int32                `json:"igdb_id"`
+	Title          string               `json:"title"`
+	ReleaseYear    *int                 `json:"release_year"`
+	PlayStatus     *string              `json:"play_status"`
+	PersonalRating *int32               `json:"personal_rating"`
+	IsLoved        bool                 `json:"is_loved"`
+	HoursPlayed    *float64             `json:"hours_played"`
+	PersonalNotes  *string              `json:"personal_notes"`
 	Platforms      []exportPlatformJSON `json:"platforms"`
-	Tags           []exportTagJSON     `json:"tags"`
-	CreatedAt      string              `json:"created_at"`
-	UpdatedAt      string              `json:"updated_at"`
+	Tags           []exportTagJSON      `json:"tags"`
+	CreatedAt      string               `json:"created_at"`
+	UpdatedAt      string               `json:"updated_at"`
 }
 
 type exportPlatformJSON struct {
@@ -265,9 +265,6 @@ func buildJSONDoc(userID string, ugs []models.UserGame) exportDocJSON {
 		if ug.PlayStatus != nil {
 			stats.ByStatus[*ug.PlayStatus]++
 		}
-		if ug.HoursPlayed != nil {
-			stats.TotalHours += *ug.HoursPlayed
-		}
 		if ug.PersonalRating != nil {
 			stats.RatedCount++
 		}
@@ -282,9 +279,13 @@ func buildJSONDoc(userID string, ugs []models.UserGame) exportDocJSON {
 			releaseYear = &y
 		}
 
-		// Platforms.
+		// Platforms — accumulate per-game total hours from platform rows.
+		var ugTotalHours float64
 		platforms := make([]exportPlatformJSON, 0, len(ug.Platforms))
 		for _, p := range ug.Platforms {
+			if p.HoursPlayed != nil {
+				ugTotalHours += *p.HoursPlayed
+			}
 			pj := exportPlatformJSON{
 				PlatformID:      p.Platform,
 				StorefrontID:    p.Storefront,
@@ -314,6 +315,11 @@ func buildJSONDoc(userID string, ugs []models.UserGame) exportDocJSON {
 			}
 			platforms = append(platforms, pj)
 		}
+		stats.TotalHours += ugTotalHours
+		var ugHoursPtr *float64
+		if ugTotalHours > 0 {
+			ugHoursPtr = &ugTotalHours
+		}
 
 		// Tags.
 		tags := make([]exportTagJSON, 0, len(ug.Tags))
@@ -339,7 +345,7 @@ func buildJSONDoc(userID string, ugs []models.UserGame) exportDocJSON {
 			PlayStatus:     ug.PlayStatus,
 			PersonalRating: ug.PersonalRating,
 			IsLoved:        ug.IsLoved,
-			HoursPlayed:    ug.HoursPlayed,
+			HoursPlayed:    ugHoursPtr,
 			PersonalNotes:  ug.PersonalNotes,
 			Platforms:      platforms,
 			Tags:           tags,
@@ -422,9 +428,15 @@ func buildCSVRow(ug models.UserGame) []string {
 		rating = strconv.Itoa(int(*ug.PersonalRating))
 	}
 
+	var totalHoursF float64
+	for _, p := range ug.Platforms {
+		if p.HoursPlayed != nil {
+			totalHoursF += *p.HoursPlayed
+		}
+	}
 	hours := ""
-	if ug.HoursPlayed != nil {
-		hours = strconv.FormatFloat(*ug.HoursPlayed, 'f', -1, 64)
+	if totalHoursF > 0 {
+		hours = strconv.FormatFloat(totalHoursF, 'f', -1, 64)
 	}
 
 	notes := ""

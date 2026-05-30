@@ -1,11 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
-import { setAuthHandlers } from './client';
 import {
   login,
+  logout,
   getMe,
-  refreshToken,
   changeUsername,
   changePassword,
   checkUsernameAvailability,
@@ -15,52 +14,41 @@ import {
 const API_URL = '/api';
 
 describe('auth.ts', () => {
-  let mockGetAccessToken: Mock<() => string | null>;
-  let mockRefreshTokens: Mock<() => Promise<boolean>>;
-  let mockLogout: Mock<() => void>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockGetAccessToken = vi.fn<() => string | null>().mockReturnValue('test-access-token');
-    mockRefreshTokens = vi.fn<() => Promise<boolean>>().mockResolvedValue(false);
-    mockLogout = vi.fn<() => void>();
-
-    setAuthHandlers(mockGetAccessToken, mockRefreshTokens, mockLogout);
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
   });
 
   describe('login', () => {
-    it('successfully logs in and returns tokens', async () => {
-      const mockResponse = {
-        access_token: 'new-access-token',
-        refresh_token: 'new-refresh-token',
-        token_type: 'bearer',
-        expires_in: 3600,
-      };
-
+    it('successfully logs in and returns user data', async () => {
       server.use(
         http.post(`${API_URL}/auth/login`, async ({ request }) => {
           const body = (await request.json()) as { username: string; password: string };
           expect(body.username).toBe('testuser');
           expect(body.password).toBe('password123');
-          return HttpResponse.json(mockResponse);
-        })
+          return HttpResponse.json({
+            id: 'user-123',
+            username: 'testuser',
+            is_admin: false,
+            preferences: null,
+          });
+        }),
       );
 
       const result = await login('testuser', 'password123');
 
-      expect(result).toEqual(mockResponse);
+      expect(result).toEqual({
+        id: 'user-123',
+        username: 'testuser',
+        isAdmin: false,
+        preferences: null,
+      });
     });
 
     it('throws error on invalid credentials', async () => {
       server.use(
         http.post(`${API_URL}/auth/login`, () => {
           return HttpResponse.json({ detail: 'Invalid credentials' }, { status: 401 });
-        })
+        }),
       );
 
       await expect(login('baduser', 'badpass')).rejects.toMatchObject({
@@ -68,24 +56,17 @@ describe('auth.ts', () => {
         status: 401,
       });
     });
+  });
 
-    it('does not require authentication (skipAuth)', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
+  describe('logout', () => {
+    it('logs out successfully', async () => {
       server.use(
-        http.post(`${API_URL}/auth/login`, () => {
-          return HttpResponse.json({
-            access_token: 'token',
-            refresh_token: 'refresh',
-            token_type: 'bearer',
-            expires_in: 3600,
-          });
-        })
+        http.post(`${API_URL}/auth/logout`, () => {
+          return HttpResponse.json({ message: 'Logged out successfully' });
+        }),
       );
 
-      // Should not throw even without auth token
-      const result = await login('user', 'pass');
-      expect(result.access_token).toBe('token');
+      await expect(logout()).resolves.toBeUndefined();
     });
   });
 
@@ -99,7 +80,7 @@ describe('auth.ts', () => {
             is_admin: true,
             preferences: { theme: 'dark' },
           });
-        })
+        }),
       );
 
       const result = await getMe();
@@ -120,75 +101,12 @@ describe('auth.ts', () => {
             username: 'regularuser',
             is_admin: false,
           });
-        })
+        }),
       );
 
       const result = await getMe();
 
       expect(result.isAdmin).toBe(false);
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(getMe()).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
-  });
-
-  describe('refreshToken', () => {
-    it('refreshes token successfully', async () => {
-      const mockResponse = {
-        access_token: 'refreshed-access-token',
-        refresh_token: 'new-refresh-token',
-        token_type: 'bearer',
-        expires_in: 3600,
-      };
-
-      server.use(
-        http.post(`${API_URL}/auth/refresh`, async ({ request }) => {
-          const body = (await request.json()) as { refresh_token: string };
-          expect(body.refresh_token).toBe('old-refresh-token');
-          return HttpResponse.json(mockResponse);
-        })
-      );
-
-      const result = await refreshToken('old-refresh-token');
-
-      expect(result).toEqual(mockResponse);
-    });
-
-    it('does not require authentication (skipAuth)', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      server.use(
-        http.post(`${API_URL}/auth/refresh`, () => {
-          return HttpResponse.json({
-            access_token: 'token',
-            refresh_token: 'refresh',
-            token_type: 'bearer',
-            expires_in: 3600,
-          });
-        })
-      );
-
-      const result = await refreshToken('refresh-token');
-      expect(result.access_token).toBe('token');
-    });
-
-    it('throws error on invalid refresh token', async () => {
-      server.use(
-        http.post(`${API_URL}/auth/refresh`, () => {
-          return HttpResponse.json({ detail: 'Invalid refresh token' }, { status: 401 });
-        })
-      );
-
-      await expect(refreshToken('bad-token')).rejects.toMatchObject({
-        message: 'Invalid refresh token',
-        status: 401,
-      });
     });
   });
 
@@ -203,7 +121,7 @@ describe('auth.ts', () => {
             username: 'newusername',
             is_admin: false,
           });
-        })
+        }),
       );
 
       const result = await changeUsername('newusername');
@@ -216,20 +134,11 @@ describe('auth.ts', () => {
       });
     });
 
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(changeUsername('newname')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
-
     it('throws error when username is taken', async () => {
       server.use(
         http.put(`${API_URL}/auth/username`, () => {
           return HttpResponse.json({ detail: 'Username already taken' }, { status: 409 });
-        })
+        }),
       );
 
       await expect(changeUsername('takenname')).rejects.toMatchObject({
@@ -250,27 +159,18 @@ describe('auth.ts', () => {
           expect(body.current_password).toBe('oldpass');
           expect(body.new_password).toBe('newpass');
           return HttpResponse.json({ message: 'Password changed successfully' });
-        })
+        }),
       );
 
       // Should not throw
       await expect(changePassword('oldpass', 'newpass')).resolves.toBeUndefined();
     });
 
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(changePassword('old', 'new')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
-    });
-
     it('throws error on incorrect current password', async () => {
       server.use(
         http.put(`${API_URL}/auth/change-password`, () => {
           return HttpResponse.json({ detail: 'Current password is incorrect' }, { status: 400 });
-        })
+        }),
       );
 
       await expect(changePassword('wrongpass', 'newpass')).rejects.toMatchObject({
@@ -285,7 +185,7 @@ describe('auth.ts', () => {
       server.use(
         http.get(`${API_URL}/auth/username/check/newuser`, () => {
           return HttpResponse.json({ available: true, username: 'newuser' });
-        })
+        }),
       );
 
       const result = await checkUsernameAvailability('newuser');
@@ -297,7 +197,7 @@ describe('auth.ts', () => {
       server.use(
         http.get(`${API_URL}/auth/username/check/takenuser`, () => {
           return HttpResponse.json({ available: false, username: 'takenuser' });
-        })
+        }),
       );
 
       const result = await checkUsernameAvailability('takenuser');
@@ -309,21 +209,12 @@ describe('auth.ts', () => {
       server.use(
         http.get(`${API_URL}/auth/username/check/user%40name`, () => {
           return HttpResponse.json({ available: true, username: 'user@name' });
-        })
+        }),
       );
 
       const result = await checkUsernameAvailability('user@name');
 
       expect(result.available).toBe(true);
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(checkUsernameAvailability('username')).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
-      });
     });
   });
 
@@ -341,7 +232,7 @@ describe('auth.ts', () => {
             is_admin: false,
             preferences: newPreferences,
           });
-        })
+        }),
       );
 
       const result = await updatePreferences(newPreferences);
@@ -351,15 +242,6 @@ describe('auth.ts', () => {
         username: 'testuser',
         isAdmin: false,
         preferences: newPreferences,
-      });
-    });
-
-    it('requires authentication', async () => {
-      mockGetAccessToken.mockReturnValue(null);
-
-      await expect(updatePreferences({ theme: 'light' })).rejects.toMatchObject({
-        message: 'Not authenticated',
-        status: 401,
       });
     });
 
@@ -374,7 +256,7 @@ describe('auth.ts', () => {
             is_admin: false,
             preferences: {},
           });
-        })
+        }),
       );
 
       const result = await updatePreferences({});

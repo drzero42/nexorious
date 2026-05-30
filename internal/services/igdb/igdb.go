@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,12 +32,14 @@ const (
 
 // Client provides access to the IGDB API with rate limiting and authentication.
 type Client struct {
-	httpClient *http.Client
-	auth       *AuthManager
-	limiter    ratelimit.Limiter
-	apiURL     string
-	configured bool
-	status     string
+	httpClient    *http.Client
+	auth          *AuthManager
+	limiter       ratelimit.Limiter
+	apiURL        string
+	configured    bool
+	status        string
+	maxRetries    int
+	backoffFactor float64
 }
 
 // NewClient creates an IGDB client from config. If IGDB credentials are missing,
@@ -46,12 +50,14 @@ func NewClient(cfg *config.Config, limiter ratelimit.Limiter) *Client {
 	}
 
 	return &Client{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		auth:       NewAuthManager(cfg.IGDBClientID, cfg.IGDBClientSecret, cfg.IGDBAccessToken),
-		limiter:    limiter,
-		apiURL:     defaultIGDBAPIURL,
-		configured: true,
-		status:     StatusOK,
+		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		auth:          NewAuthManager(cfg.IGDBClientID, cfg.IGDBClientSecret, cfg.IGDBAccessToken),
+		limiter:       limiter,
+		apiURL:        defaultIGDBAPIURL,
+		configured:    true,
+		status:        StatusOK,
+		maxRetries:    cfg.IGDBMaxRetries,
+		backoffFactor: cfg.IGDBBackoffFactor,
 	}
 }
 
@@ -105,14 +111,23 @@ type scoredCandidate struct {
 
 const (
 	// igdbGameFields is the common field list for all /games queries.
-	igdbGameFields = `name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name`
+	// platforms.id is requested explicitly so SearchGames' post-filter can
+	// intersect each candidate's platforms against the requested platformIDs
+	// (issue #615) — relying on IGDB's "id always returned for reference
+	// fields" default would be brittle.
+	igdbGameFields = `name,slug,summary,first_release_date,cover.image_id,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,platforms.id,platforms.name,total_rating,total_rating_count,game_modes.name,themes.name,player_perspectives.name`
 )
 
-// SearchGames implements the full IGDB search pipeline.
-func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]GameMetadata, error) {
+// SearchGames implements the full IGDB search pipeline. When platformIDs is
+// non-empty, every IGDB query is scoped to those platforms; if the filtered
+// search returns zero candidates, SearchGames retries once unfiltered (IGDB's
+// platform tagging is incomplete and some legitimate titles lack PC tags).
+func (c *Client) SearchGames(ctx context.Context, query string, limit int, platformIDs []int) ([]GameMetadata, error) {
 	if !c.configured {
 		return nil, ErrIGDBNotConfigured
 	}
+
+	whereSuffix, searchTail := buildPlatformsClause(platformIDs)
 
 	queries := expandQueries(query)
 	original := queries[0]
@@ -126,13 +141,13 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 
 	g.Go(func() error {
 		var err error
-		fuzzyResults, err = c.searchIGDB(gctx, fmt.Sprintf(`search "%s"; fields %s; limit %d;`, escapeIGDB(original), igdbGameFields, limit))
+		fuzzyResults, err = c.searchIGDB(gctx, fmt.Sprintf(`search "%s"; fields %s; limit %d;%s`, escapeIGDB(original), igdbGameFields, limit, searchTail))
 		return err
 	})
 
 	g.Go(func() error {
 		var err error
-		exactResults, err = c.searchIGDB(gctx, fmt.Sprintf(`fields %s; where name = "%s"; limit %d;`, igdbGameFields, escapeIGDB(original), limit))
+		exactResults, err = c.searchIGDB(gctx, fmt.Sprintf(`fields %s; where name = "%s"%s; limit %d;`, igdbGameFields, escapeIGDB(original), whereSuffix, limit))
 		return err
 	})
 
@@ -162,7 +177,7 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 	// "Batman: Arkham Knight", whose exact search finds the base game (score 1.0)
 	// and beats DLC skins (score 0.88) in post-ranking.
 	for _, expandedQuery := range queries[1:] {
-		exactExp, err := c.searchIGDB(ctx, fmt.Sprintf(`fields %s; where name = "%s"; limit %d;`, igdbGameFields, escapeIGDB(expandedQuery), limit))
+		exactExp, err := c.searchIGDB(ctx, fmt.Sprintf(`fields %s; where name = "%s"%s; limit %d;`, igdbGameFields, escapeIGDB(expandedQuery), whereSuffix, limit))
 		if err == nil {
 			for _, game := range exactExp {
 				if !seen[game.ID] {
@@ -171,7 +186,7 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 				}
 			}
 		}
-		fuzzyExp, err := c.searchIGDB(ctx, fmt.Sprintf(`search "%s"; fields %s; limit %d;`, escapeIGDB(expandedQuery), igdbGameFields, limit))
+		fuzzyExp, err := c.searchIGDB(ctx, fmt.Sprintf(`search "%s"; fields %s; limit %d;%s`, escapeIGDB(expandedQuery), igdbGameFields, limit, searchTail))
 		if err == nil {
 			for _, game := range fuzzyExp {
 				if !seen[game.ID] {
@@ -195,10 +210,45 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 		}
 	}
 
-	// Sort by score descending
-	sortByScore(candidates)
+	// Step 3.5: Post-filter by platform. IGDB's `where platforms = (...)` clause
+	// is honored on exact-name queries but ignored on `search "..."` queries —
+	// so the fuzzy half of our pipeline can leak wrong-platform candidates
+	// (issue #615). Drop them in Go. Candidates with no platforms data are
+	// kept (IGDB tagging is sometimes incomplete; same recall-preserving
+	// philosophy as the empty-result fallback below).
+	if len(platformIDs) > 0 {
+		wanted := make(map[int]bool, len(platformIDs))
+		for _, id := range platformIDs {
+			wanted[id] = true
+		}
+		filtered := candidates[:0]
+		dropped := 0
+		for _, sc := range candidates {
+			if len(sc.metadata.PlatformIDs) == 0 {
+				filtered = append(filtered, sc)
+				continue
+			}
+			match := false
+			for _, pid := range sc.metadata.PlatformIDs {
+				if wanted[pid] {
+					match = true
+					break
+				}
+			}
+			if match {
+				filtered = append(filtered, sc)
+			} else {
+				dropped++
+			}
+		}
+		if dropped > 0 {
+			slog.Debug("igdb: post-filter dropped wrong-platform candidates",
+				"query", query, "platform_ids", platformIDs, "dropped", dropped, "kept", len(filtered))
+		}
+		candidates = filtered
+	}
 
-	// Truncate to limit
+	sortByScore(candidates)
 	if len(candidates) > limit {
 		candidates = candidates[:limit]
 	}
@@ -207,6 +257,16 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int) ([]Ga
 	for i, c := range candidates {
 		results[i] = c.metadata
 	}
+
+	// Empty-result fallback: if a platform filter was applied and produced no
+	// candidates, retry once without the filter. IGDB's platform tagging is
+	// incomplete; legitimate Steam games occasionally lack a PC platform tag.
+	if len(results) == 0 && len(platformIDs) > 0 {
+		slog.Debug("igdb: platform-filtered search returned 0 candidates, retrying unfiltered",
+			"query", query, "platform_ids", platformIDs)
+		return c.SearchGames(ctx, query, limit, nil)
+	}
+
 	return results, nil
 }
 
@@ -326,28 +386,10 @@ type igdbTimeToBeatResponse struct {
 // fetchTimeToBeat fetches time-to-beat data from the separate IGDB endpoint.
 // Returns nil (no error) if no data exists for the game.
 func (c *Client) fetchTimeToBeat(ctx context.Context, igdbID int) (*timeToBeatResult, error) {
-	if err := c.limiter.Wait(ctx); err != nil {
-		return nil, err
-	}
-
-	token, err := c.auth.GetAccessToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	body := fmt.Sprintf(`fields hastily, normally, completely; where game_id = %d;`, igdbID)
-	url := c.apiURL + "/game_time_to_beats"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
+	resp, err := c.doPost(ctx, c.apiURL+"/game_time_to_beats", body)
 	if err != nil {
 		return nil, err
-	}
-	req.Header.Set("Client-ID", c.auth.clientID)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "text/plain")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("IGDB time-to-beat request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -380,16 +422,64 @@ func (c *Client) fetchTimeToBeat(ctx context.Context, igdbID int) (*timeToBeatRe
 }
 
 func (c *Client) searchIGDB(ctx context.Context, body string) ([]igdbGameResponse, error) {
+	resp, err := c.doPost(ctx, c.apiURL+"/games", body)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("IGDB API returned status %d", resp.StatusCode)
+	}
+
+	var games []igdbGameResponse
+	if err := json.NewDecoder(resp.Body).Decode(&games); err != nil {
+		return nil, fmt.Errorf("decode IGDB response: %w", err)
+	}
+	return games, nil
+}
+
+// doPost executes a POST against IGDB with rate limiting, auth, and transparent
+// retries: a single 401 retry that refreshes the access token, plus up to
+// c.maxRetries 429 retries that honor the Retry-After header (integer seconds)
+// or fall back to exponential backoff scaled by c.backoffFactor. The caller
+// owns resp.Body and must close it.
+func (c *Client) doPost(ctx context.Context, url, body string) (*http.Response, error) {
+	triedRefresh := false
+	rateLimitRetries := 0
+	for {
+		resp, err := c.executePost(ctx, url, body)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized && !triedRefresh {
+			triedRefresh = true
+			drainAndClose(resp.Body)
+			c.auth.InvalidateToken()
+			continue
+		}
+		if resp.StatusCode == http.StatusTooManyRequests && rateLimitRetries < c.maxRetries {
+			d := c.retryAfterDelay(resp.Header.Get("Retry-After"), rateLimitRetries)
+			rateLimitRetries++
+			drainAndClose(resp.Body)
+			if err := sleepCtx(ctx, d); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		return resp, nil
+	}
+}
+
+func (c *Client) executePost(ctx context.Context, url, body string) (*http.Response, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
 		return nil, err
 	}
-
 	token, err := c.auth.GetAccessToken(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	url := c.apiURL + "/games"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -402,41 +492,43 @@ func (c *Client) searchIGDB(ctx context.Context, body string) ([]igdbGameRespons
 	if err != nil {
 		return nil, fmt.Errorf("IGDB request failed: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	return resp, nil
+}
 
-	// Handle 401 — invalidate token and retry once
-	if resp.StatusCode == http.StatusUnauthorized {
-		c.auth.InvalidateToken()
-		token, err = c.auth.GetAccessToken(ctx)
-		if err != nil {
-			return nil, err
+// retryAfterDelay returns the sleep duration before the next 429 retry.
+// It honors a Retry-After header expressed as integer seconds (the IGDB form);
+// otherwise it falls back to exponential backoff of c.backoffFactor * 2^attempt
+// seconds. A non-positive result means "no sleep" (retry immediately).
+func (c *Client) retryAfterDelay(header string, attempt int) time.Duration {
+	if header != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && secs >= 0 {
+			return time.Duration(secs) * time.Second
 		}
-
-		if err := c.limiter.Wait(ctx); err != nil {
-			return nil, err
-		}
-
-		req, _ = http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
-		req.Header.Set("Client-ID", c.auth.clientID)
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Content-Type", "text/plain")
-
-		resp, err = c.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("IGDB retry failed: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
 	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("IGDB API returned status %d", resp.StatusCode)
+	if c.backoffFactor <= 0 {
+		return 0
 	}
+	multiplier := 1 << attempt
+	return time.Duration(c.backoffFactor * float64(multiplier) * float64(time.Second))
+}
 
-	var games []igdbGameResponse
-	if err := json.NewDecoder(resp.Body).Decode(&games); err != nil {
-		return nil, fmt.Errorf("decode IGDB response: %w", err)
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
 	}
-	return games, nil
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+func drainAndClose(body io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, body) //nolint:errcheck // draining body for connection reuse
+	_ = body.Close()
 }
 
 // convertToGameMetadata converts an IGDB API response to our internal DTO.
@@ -519,6 +611,30 @@ func namedItemNames(items []igdbNamedItem) string {
 
 func escapeIGDB(s string) string {
 	return strings.ReplaceAll(s, `"`, `\"`)
+}
+
+// buildPlatformsClause builds Apicalypse fragments that scope a query to a
+// platform set. Returns ("", "") when platformIDs is empty.
+//
+// For queries that already carry a `where ... = "..."` clause (exact-name
+// lookups), the caller appends whereSuffix — " & platforms = (6,14,3)" — to
+// the existing where (Apicalypse AND-joins with &).
+//
+// For `search "..."; fields ...` queries (which take an optional standalone
+// `where` placed after fields), the caller appends searchTail — a fully-formed
+// ` where platforms = (6,14,3);` statement.
+func buildPlatformsClause(platformIDs []int) (whereSuffix, searchTail string) {
+	if len(platformIDs) == 0 {
+		return "", ""
+	}
+	parts := make([]string, len(platformIDs))
+	for i, id := range platformIDs {
+		parts[i] = strconv.Itoa(id)
+	}
+	csv := strings.Join(parts, ",")
+	whereSuffix = " & platforms = (" + csv + ")"
+	searchTail = " where platforms = (" + csv + ");"
+	return
 }
 
 // sortByScore sorts candidates by score descending (insertion sort — lists are small).

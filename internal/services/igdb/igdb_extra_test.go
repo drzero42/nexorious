@@ -378,7 +378,7 @@ func TestSearchIGDB_NonOKStatus(t *testing.T) {
 
 func TestClient_SearchGames_NotConfigured(t *testing.T) {
 	c := &Client{configured: false}
-	_, err := c.SearchGames(context.Background(), "anything", 10)
+	_, err := c.SearchGames(context.Background(), "anything", 10, nil)
 	if err != ErrIGDBNotConfigured {
 		t.Errorf("expected ErrIGDBNotConfigured, got %v", err)
 	}
@@ -419,5 +419,161 @@ func TestFetchTimeToBeat_NonOKStatus(t *testing.T) {
 	_, err := client.fetchTimeToBeat(context.Background(), 42)
 	if err == nil {
 		t.Error("expected error for non-200 status from time-to-beat endpoint")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// searchIGDB — 429 retry path
+// ---------------------------------------------------------------------------
+
+func TestSearchIGDB_429_RetryAfterHeader_RetriesAndSucceeds(t *testing.T) {
+	var callCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		if n == 1 {
+			// First call: 429 with Retry-After=0 so the test runs fast.
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
+			{ID: 7, Name: "Retried", Slug: "retried"},
+		})
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		httpClient: srv.Client(),
+		auth: &AuthManager{
+			accessToken: "tok", expiresAt: time.Now().Add(1 * time.Hour),
+			clientID: "cid", clientSecret: "cs",
+			httpClient: srv.Client(), tokenURL: srv.URL,
+		},
+		limiter:       rate.NewLimiter(rate.Inf, 1),
+		apiURL:        srv.URL,
+		configured:    true,
+		maxRetries:    3,
+		backoffFactor: 0,
+	}
+
+	results, err := client.searchIGDB(context.Background(), `fields name; where id = 7;`)
+	if err != nil {
+		t.Fatalf("searchIGDB 429 retry failed: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != 7 {
+		t.Fatalf("expected one result with ID 7, got %#v", results)
+	}
+	if got := callCount.Load(); got != 2 {
+		t.Fatalf("expected 2 HTTP calls (1 fail + 1 retry), got %d", got)
+	}
+}
+
+func TestSearchIGDB_429_NoRetryAfter_UsesBackoffFactorAndSucceeds(t *testing.T) {
+	var callCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		if n == 1 {
+			// 429 without Retry-After header — client must fall back to
+			// IGDBBackoffFactor (set to 0 here to keep the test fast).
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
+			{ID: 9, Name: "Backoff", Slug: "backoff"},
+		})
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		httpClient: srv.Client(),
+		auth: &AuthManager{
+			accessToken: "tok", expiresAt: time.Now().Add(1 * time.Hour),
+			clientID: "cid", clientSecret: "cs",
+			httpClient: srv.Client(), tokenURL: srv.URL,
+		},
+		limiter:       rate.NewLimiter(rate.Inf, 1),
+		apiURL:        srv.URL,
+		configured:    true,
+		maxRetries:    3,
+		backoffFactor: 0,
+	}
+
+	results, err := client.searchIGDB(context.Background(), `fields name; where id = 9;`)
+	if err != nil {
+		t.Fatalf("searchIGDB 429 backoff retry failed: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != 9 {
+		t.Fatalf("expected one result with ID 9, got %#v", results)
+	}
+	if got := callCount.Load(); got != 2 {
+		t.Fatalf("expected 2 HTTP calls (1 fail + 1 retry), got %d", got)
+	}
+}
+
+func TestSearchIGDB_429_ExhaustsRetriesReturnsError(t *testing.T) {
+	var callCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount.Add(1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		httpClient: srv.Client(),
+		auth: &AuthManager{
+			accessToken: "tok", expiresAt: time.Now().Add(1 * time.Hour),
+			clientID: "cid", clientSecret: "cs",
+			httpClient: srv.Client(), tokenURL: srv.URL,
+		},
+		limiter:       rate.NewLimiter(rate.Inf, 1),
+		apiURL:        srv.URL,
+		configured:    true,
+		maxRetries:    2,
+		backoffFactor: 0,
+	}
+
+	_, err := client.searchIGDB(context.Background(), `fields name; where id = 1;`)
+	if err == nil {
+		t.Fatal("expected error after retries exhausted, got nil")
+	}
+	// 1 initial attempt + 2 retries = 3 total calls.
+	if got := callCount.Load(); got != 3 {
+		t.Fatalf("expected 3 HTTP calls (initial + maxRetries), got %d", got)
+	}
+}
+
+func TestFetchTimeToBeat_429_RetriesAndSucceeds(t *testing.T) {
+	var callCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		if n == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]igdbTimeToBeatResponse{{}})
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		httpClient: srv.Client(),
+		auth: &AuthManager{
+			accessToken: "tok", expiresAt: time.Now().Add(1 * time.Hour),
+			clientID: "cid", clientSecret: "cs",
+			httpClient: srv.Client(), tokenURL: srv.URL,
+		},
+		limiter:       rate.NewLimiter(rate.Inf, 1),
+		apiURL:        srv.URL,
+		configured:    true,
+		maxRetries:    3,
+		backoffFactor: 0,
+	}
+
+	if _, err := client.fetchTimeToBeat(context.Background(), 42); err != nil {
+		t.Fatalf("fetchTimeToBeat 429 retry failed: %v", err)
+	}
+	if got := callCount.Load(); got != 2 {
+		t.Fatalf("expected 2 HTTP calls (1 fail + 1 retry), got %d", got)
 	}
 }

@@ -1,5 +1,36 @@
 # Development Guide
 
+## Releases
+
+Releases are managed by [release-please](https://github.com/googleapis/release-please), which watches commits on `main` and maintains an open Release PR. Merge the Release PR when you're ready to ship.
+
+### Normal release
+
+1. Merge one or more `feat:` or `fix:` PRs to `main`.
+2. release-please opens (or updates) a PR titled `chore: release main` proposing the next version.
+3. Review the `CHANGELOG.md` diff and version bumps in `Chart.yaml`, `docker-compose.yml`, and `flake.nix`.
+4. Merge the Release PR. CI automatically tags the commit, publishes a GitHub Release, pushes the container image and Helm chart, and advances the `release` branch.
+
+### Forcing a specific version
+
+If you want the next release to be a specific version (e.g. bump minor instead of patch), push an empty commit to `main` with a `Release-As:` footer before merging the Release PR:
+
+```bash
+git commit --allow-empty -m "chore: release 0.2.0" -m "Release-As: 0.2.0"
+git push origin main
+```
+
+release-please will update the open Release PR to propose `0.2.0`. No config file changes needed.
+
+### Version bump rules (pre-1.0)
+
+| Commit prefix | Version bump |
+|---|---|
+| `fix:` | patch (0.1.0 → 0.1.1) |
+| `feat:` | patch (0.1.0 → 0.1.1) |
+| `feat!:` or `BREAKING CHANGE:` footer | minor (0.1.0 → 0.2.0) |
+| `chore:`, `docs:`, `ci:`, etc. | no release |
+
 ## Prerequisites
 
 - [devenv](https://devenv.sh) installed

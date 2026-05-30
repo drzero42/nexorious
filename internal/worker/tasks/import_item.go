@@ -214,7 +214,6 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			PlayStatus:     gd.PlayStatus,
 			PersonalRating: personalRating,
 			IsLoved:        gd.IsLoved,
-			HoursPlayed:    gd.HoursPlayed,
 			PersonalNotes:  gd.PersonalNotes,
 			CreatedAt:      createdAt,
 			UpdatedAt:      updatedAt,
@@ -250,6 +249,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 
+	gameHoursApplied := false
 	for _, pd := range gd.Platforms {
 		if pd.PlatformID == "" {
 			continue
@@ -286,6 +286,15 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			continue
 		}
 
+		// Backward-compat: old exports stored hours at game level only.
+		// If this platform has no per-platform hours but the game record has a
+		// total, apply it to the first platform row as a best-effort migration.
+		hoursPlayed := pd.HoursPlayed
+		if hoursPlayed == nil && gd.HoursPlayed != nil && !gameHoursApplied {
+			hoursPlayed = gd.HoursPlayed
+			gameHoursApplied = true
+		}
+
 		ugp := &models.UserGamePlatform{
 			ID:              uuid.NewString(),
 			UserGameID:      ug.ID,
@@ -294,7 +303,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			StoreGameID:     pd.StoreGameID,
 			StoreUrl:        pd.StoreUrl,
 			IsAvailable:     pd.IsAvailable,
-			HoursPlayed:     pd.HoursPlayed,
+			HoursPlayed:     hoursPlayed,
 			OwnershipStatus: pd.OwnershipStatus,
 			AcquiredDate:    parseFlexibleDate(pd.AcquiredDate),
 			CreatedAt:       now,
@@ -403,7 +412,7 @@ func markItemFailed(db *bun.DB, item *models.JobItem, errMsg string) {
 // was cancelled during graceful shutdown.
 func markItemCompleted(db *bun.DB, item *models.JobItem, result any) {
 	now := time.Now().UTC()
-	resultJSON, _ := json.Marshal(result)
+	resultJSON, _ := json.Marshal(result) //nolint:errcheck // marshaling the job result struct cannot fail
 	item.Status = models.JobItemStatusCompleted
 	item.Result = resultJSON
 	item.ProcessedAt = &now
@@ -445,12 +454,12 @@ func igdbMetadataToGame(md *igdb.GameMetadata) *models.Game {
 		}
 	}
 	if len(md.PlatformIDs) > 0 {
-		b, _ := json.Marshal(md.PlatformIDs)
+		b, _ := json.Marshal(md.PlatformIDs) //nolint:errcheck // marshaling a fixed slice cannot fail
 		s := string(b)
 		game.IgdbPlatformIds = &s
 	}
 	if len(md.PlatformNames) > 0 {
-		b, _ := json.Marshal(md.PlatformNames)
+		b, _ := json.Marshal(md.PlatformNames) //nolint:errcheck // marshaling a fixed slice cannot fail
 		s := string(b)
 		game.IgdbPlatformNames = &s
 	}
@@ -487,9 +496,6 @@ func checkJobCompletion(db *bun.DB, jobID string) {
 	}
 
 	finalStatus := models.JobStatusCompleted
-	if failedCount > 0 {
-		finalStatus = models.JobStatusCompletedWithErrors
-	}
 
 	now := time.Now().UTC()
 	_, err := db.NewRaw(

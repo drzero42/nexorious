@@ -9,7 +9,7 @@
 #   docker compose down         # Stop (keeps volumes)
 #   docker compose down -v      # Stop and remove volumes (fresh DB)
 #
-# Configuration: copy .env.example to .env at the repo root and fill in values.
+# Configuration: copy .env.example to .env in this directory and fill in values.
 
 services:
   db:
@@ -19,15 +19,21 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: nexorious
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nexorious"]
       interval: 5s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 256m
 
   app:
-    image: ghcr.io/drzero42/nexorious:dev
+    image: ghcr.io/drzero42/nexorious:0.1.2 # x-release-please-version
     ports:
       - "8000:8000"
     depends_on:
@@ -35,9 +41,21 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://nexorious:${POSTGRES_PASSWORD}@db:5432/nexorious?sslmode=disable
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      DB_ENCRYPTION_KEY: ${DB_ENCRYPTION_KEY:?DB_ENCRYPTION_KEY is required}
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:?IGDB_CLIENT_ID is required}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:?IGDB_CLIENT_SECRET is required}
+      LEGENDARY_WORK_DIR: /var/lib/legendary
+    volumes:
+      - type: tmpfs
+        target: /var/lib/legendary
+        tmpfs:
+          mode: 0777
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+        reservations:
+          memory: 128m
 
 volumes:
   postgres_data:

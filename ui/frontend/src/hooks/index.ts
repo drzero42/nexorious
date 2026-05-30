@@ -59,6 +59,7 @@ export {
   useTriggerSync,
   useVerifySteamCredentials,
   useDisconnectSteam,
+  useSteamConnection,
   useConnectEpic,
   useEpicConnection,
   useDisconnectEpic,
@@ -95,8 +96,10 @@ export {
   useDeleteJob,
   usePendingReviewCount,
   useRecentJobs,
-  useResolveJobItem,
-  useSkipJobItem,
   useRetryFailedItems,
   useRetryJobItem,
 } from './use-jobs';
+
+// Version hooks
+export { useVersion } from './use-version';
+export type { VersionInfo } from './use-version';

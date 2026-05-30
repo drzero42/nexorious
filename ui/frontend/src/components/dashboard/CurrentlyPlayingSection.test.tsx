@@ -14,7 +14,6 @@ vi.mock('@/hooks/use-games', async () => {
   };
 });
 
-
 const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
   id: 'game-1' as UserGameId,
   game: {
@@ -57,9 +56,7 @@ const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
 });
 
 describe('CurrentlyPlayingSection', () => {
-  const mockUseActiveGames = useGamesHook.useActiveGames as ReturnType<
-    typeof vi.fn
-  >;
+  const mockUseActiveGames = useGamesHook.useActiveGames as ReturnType<typeof vi.fn>;
 
   describe('Rendering conditions', () => {
     it('does not render when no active games exist', () => {

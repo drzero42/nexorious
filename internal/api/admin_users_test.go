@@ -991,12 +991,12 @@ func seedDeletionImpactRows(t *testing.T, db *bun.DB, userID string) {
 		t.Fatalf("seed user_sync_configs: %v", err)
 	}
 
-	// user_sessions (1) — use a unique token hash so it doesn't collide with
-	// any token issued by setupAdminUser/loginAndGetToken in this test.
+	// user_sessions (1) — use a unique session hash so it doesn't collide with
+	// any session issued by setupAdminUser/loginAndGetToken in this test.
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO user_sessions (id, user_id, token_hash, refresh_token_hash, expires_at)
-		 VALUES (gen_random_uuid()::text, ?, ?, ?, now() + interval '30 days')`,
-		userID, auth.HashToken(userID+"-seed-access"), auth.HashToken(userID+"-seed-refresh"),
+		`INSERT INTO user_sessions (id, user_id, session_id_hash, expires_at)
+		 VALUES (gen_random_uuid()::text, ?, ?, now() + interval '30 days')`,
+		userID, auth.HashToken(userID+"-seed-session"),
 	); err != nil {
 		t.Fatalf("seed user_sessions: %v", err)
 	}

@@ -81,6 +81,23 @@ func (w *CleanupExpiredSessionsWorker) Work(ctx context.Context, _ *river.Job[Cl
 	return nil
 }
 
+// ── RescueOrphanedPendingItems ────────────────────────────────────────────────
+
+type RescueOrphanedPendingItemsArgs struct{}
+
+func (RescueOrphanedPendingItemsArgs) Kind() string { return "rescue_orphaned_pending_items" }
+
+type RescueOrphanedPendingItemsWorker struct {
+	river.WorkerDefaults[RescueOrphanedPendingItemsArgs]
+	DB          *bun.DB
+	RiverClient *river.Client[pgx.Tx]
+}
+
+func (w *RescueOrphanedPendingItemsWorker) Work(ctx context.Context, _ *river.Job[RescueOrphanedPendingItemsArgs]) error {
+	RescueOrphanedPendingItems(ctx, w.DB, w.RiverClient, time.Hour)
+	return nil
+}
+
 // ── CleanupStaleJobs ──────────────────────────────────────────────────────────
 
 type CleanupStaleJobsArgs struct {
@@ -131,10 +148,6 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 	}
 
 	for _, cfg := range configs {
-		if cfg.Storefront == "epic" {
-			continue
-		}
-
 		needsSync := false
 		if cfg.LastSyncedAt == nil {
 			needsSync = true
@@ -165,13 +178,49 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 			continue
 		}
 
-		_, _ = w.RiverClient.Insert(ctx, tasks.DispatchSyncArgs{
+		if _, err := w.RiverClient.Insert(ctx, tasks.DispatchSyncArgs{
 			JobID:      jobID,
 			UserID:     cfg.UserID,
 			Storefront: cfg.Storefront,
-		}, nil)
+		}, nil); err != nil {
+			slog.Error("CheckPendingSyncs: enqueue dispatch failed", "err", err, "job_id", jobID, "user_id", cfg.UserID)
+		}
 	}
 	return nil
+}
+
+// ── CleanupSyncChanges ────────────────────────────────────────────────────────
+
+type CleanupSyncChangesArgs struct {
+	RetentionDays int `json:"retention_days"`
+}
+
+func (CleanupSyncChangesArgs) Kind() string { return "cleanup_sync_changes" }
+
+type CleanupSyncChangesWorker struct {
+	river.WorkerDefaults[CleanupSyncChangesArgs]
+	DB *bun.DB
+}
+
+func (w *CleanupSyncChangesWorker) Work(ctx context.Context, job *river.Job[CleanupSyncChangesArgs]) error {
+	CleanupSyncChanges(ctx, w.DB, job.Args.RetentionDays)
+	return nil
+}
+
+// CleanupSyncChanges deletes sync_changes rows older than retentionDays days.
+func CleanupSyncChanges(ctx context.Context, db *bun.DB, retentionDays int) {
+	result, err := db.NewRaw(
+		`DELETE FROM sync_changes WHERE created_at < now() - make_interval(days => ?)`,
+		retentionDays,
+	).Exec(ctx)
+	if err != nil {
+		slog.Error("cleanup: failed to delete old sync_changes", "err", err)
+		return
+	}
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
+	if rows > 0 {
+		slog.Info("cleanup: deleted old sync_changes", "count", rows)
+	}
 }
 
 // ── BuildPeriodicJobs ─────────────────────────────────────────────────────────
@@ -230,6 +279,18 @@ func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*rive
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 		river.NewPeriodicJob(
+			mustCron("*/30 * * * *"),
+			func() (river.JobArgs, *river.InsertOpts) { return RescueOrphanedPendingItemsArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			mustCron("0 2 * * *"),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return CleanupSyncChangesArgs{RetentionDays: cfg.SyncHistoryRetentionDays}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
 			river.PeriodicInterval(interval),
 			func() (river.JobArgs, *river.InsertOpts) { return tasks.MetadataRefreshDispatchArgs{}, nil },
 			&river.PeriodicJobOpts{RunOnStart: false},
@@ -255,7 +316,7 @@ func CleanupOldJobs(ctx context.Context, db *bun.DB) {
 		slog.Error("cleanup: failed to delete old jobs", "err", err)
 		return
 	}
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
 		slog.Info("cleanup: deleted old jobs", "count", rows)
 	}
@@ -292,10 +353,12 @@ func CleanupExports(ctx context.Context, db *bun.DB) {
 	for i, j := range jobs {
 		ids[i] = j.ID
 	}
-	_, _ = db.NewRaw(
+	if _, err := db.NewRaw(
 		`UPDATE jobs SET file_path = NULL WHERE id IN (?)`,
 		bun.List(ids),
-	).Exec(ctx)
+	).Exec(ctx); err != nil {
+		slog.Error("cleanup: clear expired export file_paths failed", "err", err)
+	}
 	slog.Info("cleanup: cleaned expired exports", "count", len(jobs))
 }
 
@@ -309,7 +372,7 @@ func CleanupUnreferencedGames(ctx context.Context, db *bun.DB) {
 		slog.Error("cleanup: failed to delete unreferenced games", "err", err)
 		return
 	}
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
 		slog.Info("cleanup: deleted unreferenced games", "count", rows)
 	}
@@ -324,7 +387,7 @@ func CleanupExpiredSessions(ctx context.Context, db *bun.DB) {
 		slog.Error("cleanup: failed to delete expired sessions", "err", err)
 		return
 	}
-	rows, _ := result.RowsAffected()
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
 		slog.Info("cleanup: deleted expired sessions", "count", rows)
 	}

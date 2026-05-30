@@ -135,7 +135,7 @@ describe('GameEditForm', () => {
 
     // Hours played is now shown as aggregate total, not as an editable input
     // The per-platform playtime inputs are in the Platforms section
-    expect(screen.getByText('10 hours total')).toBeInTheDocument();
+    expect(screen.getByText('10h total')).toBeInTheDocument();
   });
 
   it('renders acquired date input per platform with current value', () => {
@@ -154,7 +154,9 @@ describe('GameEditForm', () => {
     const cancelButtons = screen.getAllByRole('button', { name: /cancel/i });
     await user.click(cancelButtons[0]);
 
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/games/f47ac10b-58cc-4372-a567-0e02b2c3d479' });
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/games/f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    });
   });
 
   it('renders save button', () => {

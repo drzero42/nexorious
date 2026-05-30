@@ -16,7 +16,7 @@ import {
   getImportSourceDisplayInfo,
   getExportFormatDisplayInfo,
 } from '@/types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/jobs';
@@ -28,7 +28,6 @@ import {
   FileSpreadsheet,
   Check,
   Loader2,
-  ExternalLink,
   RotateCcw,
 } from 'lucide-react';
 
@@ -60,9 +59,8 @@ function ImportCard({ source, onFileSelect, isUploading, disabled }: ImportCardP
     }
   };
 
-  const acceptTypes = source === ImportSource.NEXORIOUS
-    ? '.json,application/json'
-    : '.csv,text/csv';
+  const acceptTypes =
+    source === ImportSource.NEXORIOUS ? '.json,application/json' : '.csv,text/csv';
 
   const colorClasses = {
     indigo: {
@@ -85,7 +83,9 @@ function ImportCard({ source, onFileSelect, isUploading, disabled }: ImportCardP
   const isDisabled = disabled || isUploading;
 
   return (
-    <Card className={`${colors.bg} ${colors.border} border-2 transition-all ${!isDisabled ? colors.hover : 'opacity-60'}`}>
+    <Card
+      className={`${colors.bg} ${colors.border} border-2 transition-all ${!isDisabled ? colors.hover : 'opacity-60'}`}
+    >
       <CardContent className="pb-2 pt-6">
         <div className="flex items-center gap-3 mb-2">
           <div className={`${colors.icon} rounded-lg p-3`}>
@@ -150,7 +150,9 @@ function ExportCard({ format, onExport, isExporting, disabled }: ExportCardProps
   const isDisabled = disabled || isExporting;
 
   return (
-    <Card className={`bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 border-2 transition-all ${!isDisabled ? 'hover:border-green-400 dark:hover:border-green-600' : 'opacity-60'}`}>
+    <Card
+      className={`bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 border-2 transition-all ${!isDisabled ? 'hover:border-green-400 dark:hover:border-green-600' : 'opacity-60'}`}
+    >
       <CardContent className="pb-2 pt-6">
         <div className="flex items-center gap-3 mb-2">
           <div className="bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 rounded-lg p-3">
@@ -195,7 +197,9 @@ function ExportCard({ format, onExport, isExporting, disabled }: ExportCardProps
 
 function ImportExportPage() {
   const [isUploading, setIsUploading] = useState(false);
-  const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(null);
+  const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(
+    null,
+  );
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
   const { mutateAsync: importNexorious } = useImportNexorious();
@@ -220,8 +224,12 @@ function ImportExportPage() {
     // Then, show the most recently completed job
     if (importNotDismissed && exportNotDismissed) {
       // Compare completion times, show the most recent
-      const importTime = activeImportJob.completedAt ? new Date(activeImportJob.completedAt).getTime() : 0;
-      const exportTime = activeExportJob.completedAt ? new Date(activeExportJob.completedAt).getTime() : 0;
+      const importTime = activeImportJob.completedAt
+        ? new Date(activeImportJob.completedAt).getTime()
+        : 0;
+      const exportTime = activeExportJob.completedAt
+        ? new Date(activeExportJob.completedAt).getTime()
+        : 0;
       return exportTime > importTime ? activeExportJob : activeImportJob;
     }
 
@@ -235,8 +243,11 @@ function ImportExportPage() {
   // Check if there's an active job that should show inline progress
   const showJobProgress = activeJob != null;
   const hasActiveJob = activeJob != null && !activeJob.isTerminal;
+  // Exclude IDs for recent activity
+  const excludeJobIds = activeJob && !activeJob.isTerminal ? [activeJob.id] : [];
   // Check if the currently displayed job is a completed export (for download button)
-  const isActiveJobCompletedExport = activeJob?.isTerminal &&
+  const isActiveJobCompletedExport =
+    activeJob?.isTerminal &&
     activeJob?.status === JobStatus.COMPLETED &&
     activeJob?.jobType === JobType.EXPORT;
 
@@ -330,11 +341,7 @@ function ImportExportPage() {
       {/* Active Job Progress View */}
       {showJobProgress && activeJob && (
         <section className="mb-8 space-y-4">
-          <JobProgressCard
-            job={activeJob}
-            onCancel={handleCancelJob}
-            isCancelling={isCancelling}
-          />
+          <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
 
           {activeJob.progress && (
             <JobItemsDetails
@@ -369,10 +376,7 @@ function ImportExportPage() {
               )}
 
               {/* Start New button */}
-              <Button
-                variant="outline"
-                onClick={handleDismissJob}
-              >
+              <Button variant="outline" onClick={handleDismissJob}>
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Start New
               </Button>
@@ -423,57 +427,21 @@ function ImportExportPage() {
         <AlertTitle>About Import / Export</AlertTitle>
         <AlertDescription>
           <p className="mb-2">
-            <strong>Nexorious JSON</strong> is the recommended format for importing on other Nexorious instances. It preserves all
-            metadata including IGDB IDs, ratings, notes, and platform associations.
+            <strong>Nexorious JSON</strong> is the recommended format for importing on other
+            Nexorious instances. It preserves all metadata including IGDB IDs, ratings, notes, and
+            platform associations.
           </p>
           <p>
-            <strong>CSV exports</strong> are useful for spreadsheet analysis but are not
-            recommended for re-import due to potential data loss.
+            <strong>CSV exports</strong> are useful for spreadsheet analysis but are not recommended
+            for re-import due to potential data loss.
           </p>
         </AlertDescription>
       </Alert>
 
       {/* Recent Activity - shows completed jobs from last 7 days */}
-      {!showJobProgress && (
-        <section className="mb-6">
-          <RecentActivity
-            excludeJobIds={[activeImportJob?.id, activeExportJob?.id].filter((id): id is string => !!id)}
-          />
-        </section>
-      )}
-
-      {/* Quick Links - always visible */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Links</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Link
-            to="/sync"
-            className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted"
-          >
-            <div>
-              <div className="font-medium">Sync Settings</div>
-              <div className="text-sm text-muted-foreground">
-                Connect and sync your Steam library
-              </div>
-            </div>
-            <ExternalLink className="h-4 w-4 text-muted-foreground" />
-          </Link>
-          <Link
-            to="/games"
-            className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-muted"
-          >
-            <div>
-              <div className="font-medium">View Collection</div>
-              <div className="text-sm text-muted-foreground">
-                Browse and manage your game library
-              </div>
-            </div>
-            <ExternalLink className="h-4 w-4 text-muted-foreground" />
-          </Link>
-        </CardContent>
-      </Card>
+      <section className="mb-6">
+        <RecentActivity excludeJobIds={excludeJobIds} />
+      </section>
     </div>
   );
 }
