@@ -28,6 +28,11 @@ jobs:
           # PAT below so there is no credential conflict on push.
           persist-credentials: false
 
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Rebase open renovate PRs
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
@@ -88,6 +93,13 @@ jobs:
               git checkout -f main
               continue
             fi
+
+            # Update flake inputs so the PR picks up the latest nixpkgs
+            # (and therefore the latest Go toolchain / other packages).
+            nix flake update
+            git add flake.lock
+            git diff --cached --quiet || \
+              git commit -m "chore(nix): update flake inputs for ${branch}"
 
             # Push via PAT. PRs that touch .github/workflows/ require the PAT
             # to have the `workflow` scope — skip them gracefully if the push
