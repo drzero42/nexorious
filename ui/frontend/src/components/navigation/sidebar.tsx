@@ -8,11 +8,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/providers';
+import { useVersion } from '@/hooks';
 import { useNavItems, NavLink, NavSectionCollapsible } from './index';
 
 export function Sidebar() {
   const { user, logout } = useAuth();
   const { mainItems, adminSection } = useNavItems();
+  const { data: versionInfo } = useVersion();
 
   return (
     <aside className="hidden md:flex md:fixed md:left-0 md:top-0 w-64 bg-card border-r flex-col h-screen">
@@ -69,6 +71,11 @@ export function Sidebar() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Version */}
+      {versionInfo?.version && (
+        <div className="px-4 pb-3 text-xs text-muted-foreground">v{versionInfo.version}</div>
+      )}
     </aside>
   );
 }
