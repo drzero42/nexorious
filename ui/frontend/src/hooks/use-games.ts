@@ -30,6 +30,7 @@ export const gameKeys = {
   stats: () => [...gameKeys.all, 'stats'] as const,
   filterOptions: () => [...gameKeys.all, 'filterOptions'] as const,
   igdbSearch: (query: string) => ['igdbSearch', query] as const,
+  igdbById: (id: number) => ['igdbById', id] as const,
 };
 
 // ============================================================================
@@ -101,6 +102,18 @@ export function useSearchIGDB(
     // ID lookup: always enabled (no min chars)
     // Name search: require 3+ characters
     enabled: isIdLookup || query.length >= 3,
+  });
+}
+
+/**
+ * Hook to fetch a single IGDB game by its IGDB ID.
+ * Used as a fallback on the confirm page when sessionStorage is empty (e.g. page reload).
+ */
+export function useIGDBGameByID(igdbId: number | null) {
+  return useQuery<IGDBGameCandidate[], Error>({
+    queryKey: gameKeys.igdbById(igdbId ?? 0),
+    queryFn: () => gamesApi.getGameByIGDBId(igdbId!),
+    enabled: igdbId !== null,
   });
 }
 

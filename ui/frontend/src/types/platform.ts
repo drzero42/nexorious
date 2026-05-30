@@ -2,6 +2,7 @@ export interface Platform {
   name: string;
   display_name: string;
   icon_url?: string;
+  igdb_platform_id?: number | null;
   is_active: boolean;
   source: string;
   default_storefront?: string;

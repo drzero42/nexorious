@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PlatformSelectorCompact } from '@/components/ui/platform-selector';
 import type { PlatformSelection } from '@/components/ui/platform-selector';
-import { useImportFromIGDB, useCreateUserGame } from '@/hooks/use-games';
+import { useImportFromIGDB, useCreateUserGame, useIGDBGameByID } from '@/hooks/use-games';
 import { useAllPlatforms } from '@/hooks/use-platforms';
 import type { IGDBGameCandidate } from '@/types';
 import type { Platform } from '@/types/platform';
@@ -66,12 +66,19 @@ function formatPlaytime(hours?: number): string | null {
 }
 
 /**
- * Check if a platform matches any of the IGDB platform names.
- * Uses case-insensitive comparison on both display_name and name.
+ * Check if a platform matches any of the IGDB platforms for a game.
+ * Prefers numeric igdb_platform_id matching; falls back to case-insensitive
+ * name comparison for platforms that have no IGDB ID assigned.
  */
-function isPlatformInIGDB(platform: Platform, igdbPlatforms: string[]): boolean {
+function isPlatformInIGDB(
+  platform: Platform,
+  igdbPlatforms: string[],
+  igdbPlatformIds?: number[],
+): boolean {
+  if (platform.igdb_platform_id != null && igdbPlatformIds && igdbPlatformIds.length > 0) {
+    return igdbPlatformIds.includes(platform.igdb_platform_id);
+  }
   if (!igdbPlatforms || igdbPlatforms.length === 0) return false;
-
   return igdbPlatforms.some(
     (igdbPlatform) =>
       igdbPlatform.toLowerCase() === platform.display_name.toLowerCase() ||
@@ -79,20 +86,24 @@ function isPlatformInIGDB(platform: Platform, igdbPlatforms: string[]): boolean 
   );
 }
 
-/**
- * Filter platforms to only those available on IGDB for this game.
- */
-function getIGDBPlatforms(platforms: Platform[], igdbPlatforms: string[]): Platform[] {
+function getIGDBPlatforms(
+  platforms: Platform[],
+  igdbPlatforms: string[],
+  igdbPlatformIds?: number[],
+): Platform[] {
   if (!igdbPlatforms || igdbPlatforms.length === 0) return [];
-  return platforms.filter((platform) => isPlatformInIGDB(platform, igdbPlatforms));
+  return platforms.filter((platform) => isPlatformInIGDB(platform, igdbPlatforms, igdbPlatformIds));
 }
 
-/**
- * Filter platforms to those NOT available on IGDB for this game.
- */
-function getOtherPlatforms(platforms: Platform[], igdbPlatforms: string[]): Platform[] {
+function getOtherPlatforms(
+  platforms: Platform[],
+  igdbPlatforms: string[],
+  igdbPlatformIds?: number[],
+): Platform[] {
   if (!igdbPlatforms || igdbPlatforms.length === 0) return platforms;
-  return platforms.filter((platform) => !isPlatformInIGDB(platform, igdbPlatforms));
+  return platforms.filter(
+    (platform) => !isPlatformInIGDB(platform, igdbPlatforms, igdbPlatformIds),
+  );
 }
 
 // ============================================================================
@@ -186,6 +197,7 @@ function GamePreviewCard({ game }: GamePreviewProps) {
 interface PlatformSelectionSectionProps {
   platforms: Platform[];
   igdbPlatformNames: string[];
+  igdbPlatformIds?: number[];
   selectedPlatforms: PlatformSelection[];
   onChange: (selections: PlatformSelection[]) => void;
   disabled?: boolean;
@@ -194,6 +206,7 @@ interface PlatformSelectionSectionProps {
 function PlatformSelectionSection({
   platforms,
   igdbPlatformNames,
+  igdbPlatformIds,
   selectedPlatforms,
   onChange,
   disabled = false,
@@ -202,12 +215,12 @@ function PlatformSelectionSection({
 
   // Filter platforms based on IGDB data
   const igdbPlatforms = React.useMemo(
-    () => getIGDBPlatforms(platforms, igdbPlatformNames),
-    [platforms, igdbPlatformNames],
+    () => getIGDBPlatforms(platforms, igdbPlatformNames, igdbPlatformIds),
+    [platforms, igdbPlatformNames, igdbPlatformIds],
   );
   const otherPlatforms = React.useMemo(
-    () => getOtherPlatforms(platforms, igdbPlatformNames),
-    [platforms, igdbPlatformNames],
+    () => getOtherPlatforms(platforms, igdbPlatformNames, igdbPlatformIds),
+    [platforms, igdbPlatformNames, igdbPlatformIds],
   );
 
   const hasIGDBPlatforms = igdbPlatforms.length > 0;
@@ -413,12 +426,19 @@ function GameConfirmPage() {
     return null;
   });
 
+  // Fallback: fetch from API when sessionStorage is empty (e.g. page reload)
+  const { data: igdbResults, isLoading: isIGDBLoading } = useIGDBGameByID(
+    game === null && igdbId !== null ? Number(igdbId) : null,
+  );
+  const resolvedGame = game ?? igdbResults?.[0] ?? null;
+
   // Derive error message rather than storing it in state
   const gameLoadError = React.useMemo<string | null>(() => {
     if (!igdbId) return 'No game ID provided. Please search for a game first.';
-    if (!game) return 'Game data not found. Please search for the game again.';
+    if (!isIGDBLoading && !resolvedGame)
+      return 'Game data not found. Please search for the game again.';
     return null;
-  }, [igdbId, game]);
+  }, [igdbId, isIGDBLoading, resolvedGame]);
 
   // Fetch available platforms
   const { data: platforms, isLoading: isPlatformsLoading } = useAllPlatforms();
@@ -428,14 +448,14 @@ function GameConfirmPage() {
   const createUserGame = useCreateUserGame();
 
   // Show loading while platforms or game data are still being fetched
-  const isLoading = isPlatformsLoading || (!game && !gameLoadError);
+  const isLoading = isPlatformsLoading || isIGDBLoading;
 
   const handleBack = () => {
     navigate({ to: '/games/add' });
   };
 
   const handleAddToLibrary = async () => {
-    if (!igdbId || !game) {
+    if (!igdbId || !resolvedGame) {
       toast.error('No game selected');
       return;
     }
@@ -458,7 +478,7 @@ function GameConfirmPage() {
         })),
       });
 
-      toast.success(`Added "${game.title}" to your library!`);
+      toast.success(`Added "${resolvedGame.title}" to your library!`);
 
       // Navigate to the newly created user game
       navigate({ to: '/games/$id', params: { id: userGame.id } });
@@ -475,7 +495,7 @@ function GameConfirmPage() {
   }
 
   // Error state - game not found
-  if (gameLoadError || !game) {
+  if (gameLoadError || !resolvedGame) {
     return (
       <ErrorState
         message={
@@ -503,12 +523,13 @@ function GameConfirmPage() {
       </div>
 
       {/* Game Preview Card */}
-      <GamePreviewCard game={game} />
+      <GamePreviewCard game={resolvedGame} />
 
       {/* Platform Selection */}
       <PlatformSelectionSection
         platforms={platforms ?? []}
-        igdbPlatformNames={game.platforms}
+        igdbPlatformNames={resolvedGame.platforms}
+        igdbPlatformIds={resolvedGame.platform_ids}
         selectedPlatforms={selectedPlatforms}
         onChange={setSelectedPlatforms}
         disabled={isSubmitting}

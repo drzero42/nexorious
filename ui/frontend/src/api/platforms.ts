@@ -9,6 +9,7 @@ interface PlatformApiResponse {
   name: string;
   display_name: string;
   icon_url?: string;
+  igdb_platform_id?: number | null;
   is_active: boolean;
   source: string;
   default_storefront?: string;
@@ -104,6 +105,7 @@ function transformPlatform(apiPlatform: PlatformApiResponse): Platform {
     name: apiPlatform.name,
     display_name: apiPlatform.display_name,
     icon_url: apiPlatform.icon_url,
+    igdb_platform_id: apiPlatform.igdb_platform_id,
     is_active: apiPlatform.is_active,
     source: apiPlatform.source,
     default_storefront: apiPlatform.default_storefront,

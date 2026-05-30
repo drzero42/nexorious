@@ -113,6 +113,31 @@ func TestCreateUserGame(t *testing.T) {
 			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 		}
 	})
+
+	t.Run("platforms are persisted on create", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Test Game With Platforms")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id": gameID,
+			"platforms": []map[string]any{
+				{"platform": "pc-windows", "storefront": "steam"},
+				{"platform": "pc-windows", "storefront": "epic-games-store"},
+			},
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		platforms, ok := resp["platforms"].([]any)
+		if !ok {
+			t.Fatalf("expected platforms array in response, got: %T", resp["platforms"])
+		}
+		if len(platforms) != 2 {
+			t.Fatalf("expected 2 platform associations, got %d", len(platforms))
+		}
+	})
 }
 
 func TestGetUserGame(t *testing.T) {
