@@ -1,0 +1,87 @@
+---
+name: Rebase Renovate PRs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'go.sum'
+      - 'ui/frontend/package-lock.json'
+
+jobs:
+  rebase:
+    name: Rebase open renovate PRs onto main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          # Full history is required so git can compute merge bases when merging
+          # PR branches that diverged from an older main commit.
+          fetch-depth: 0
+
+      - name: Rebase open renovate PRs
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Inject the PAT into the remote URL so git push triggers downstream
+          # workflows (GITHUB_TOKEN pushes do not trigger workflow runs).
+          git remote set-url origin \
+            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+
+          # Find open PRs whose branch names start with renovate/.
+          mapfile -t pr_entries < <(
+            gh pr list --state open --json number,headRefName --limit 100 |
+            jq -r '.[] | select(.headRefName | startswith("renovate/")) | "\(.number) \(.headRefName)"'
+          )
+
+          if [ "${#pr_entries[@]}" -eq 0 ]; then
+            echo "No open renovate PRs found."
+            exit 0
+          fi
+
+          for entry in "${pr_entries[@]}"; do
+            pr_number="${entry%% *}"
+            branch="${entry#* }"
+            echo "--- PR #${pr_number}: ${branch} ---"
+
+            # Fetch the tip of the PR branch.
+            if ! git fetch origin "${branch}"; then
+              echo "  Could not fetch ${branch}; skipping."
+              continue
+            fi
+
+            # Skip if the branch already contains the latest main commit.
+            if git merge-base --is-ancestor origin/main "origin/${branch}"; then
+              echo "  Already up to date; skipping."
+              continue
+            fi
+
+            # Check out a local copy of the PR branch.
+            git checkout -B "${branch}" "origin/${branch}"
+
+            # Merge main. -X theirs resolves any conflict (including the
+            # npmDepsHash / vendorHash line both this PR and main modified) by
+            # taking main's version. W1 will replace it with the correct hash
+            # for the combined lockfile immediately after this push.
+            if git merge origin/main -X theirs --no-edit \
+                -m "chore: merge main into ${branch}"; then
+              git push origin "${branch}:${branch}"
+              echo "  Pushed updated branch for PR #${pr_number}."
+            else
+              echo "  Unresolvable conflict for PR #${pr_number}; skipping."
+              git merge --abort 2>/dev/null || true
+            fi
+
+            # Return to main before processing the next PR.
+            git checkout main
+          done
