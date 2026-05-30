@@ -147,7 +147,7 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int, platf
 
 	g.Go(func() error {
 		var err error
-		exactResults, err = c.searchIGDB(gctx, fmt.Sprintf(`fields %s; where name = "%s"%s; limit %d;`, igdbGameFields, escapeIGDB(original), whereSuffix, limit))
+		exactResults, err = c.searchIGDB(gctx, fmt.Sprintf(`fields %s; where name ~ "%s"%s; limit %d;`, igdbGameFields, escapeIGDB(original), whereSuffix, limit))
 		return err
 	})
 
@@ -177,7 +177,7 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int, platf
 	// "Batman: Arkham Knight", whose exact search finds the base game (score 1.0)
 	// and beats DLC skins (score 0.88) in post-ranking.
 	for _, expandedQuery := range queries[1:] {
-		exactExp, err := c.searchIGDB(ctx, fmt.Sprintf(`fields %s; where name = "%s"%s; limit %d;`, igdbGameFields, escapeIGDB(expandedQuery), whereSuffix, limit))
+		exactExp, err := c.searchIGDB(ctx, fmt.Sprintf(`fields %s; where name ~ "%s"%s; limit %d;`, igdbGameFields, escapeIGDB(expandedQuery), whereSuffix, limit))
 		if err == nil {
 			for _, game := range exactExp {
 				if !seen[game.ID] {
