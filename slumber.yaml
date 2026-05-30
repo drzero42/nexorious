@@ -295,6 +295,14 @@ requests:
         method: GET
         url: "{{base_url}}/health"
 
+  version:
+    name: Version
+    requests:
+      get_version:
+        name: Get Version
+        method: GET
+        url: "{{base_url}}/api/version"
+
   import:
     name: Import
     requests:
