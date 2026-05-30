@@ -74,7 +74,9 @@ export function Sidebar() {
 
       {/* Version */}
       {versionInfo?.version && (
-        <div className="px-4 pb-3 text-xs text-muted-foreground">v{versionInfo.version}</div>
+        <div className="px-4 pb-3 text-xs text-muted-foreground">
+          {versionInfo.version.startsWith('v') ? versionInfo.version : `v${versionInfo.version}`}
+        </div>
       )}
     </aside>
   );
