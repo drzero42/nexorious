@@ -45,4 +45,29 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 	if rows > 0 {
 		slog.Info("cleanup_stale_jobs: marked stale jobs failed", "count", rows)
 	}
+
+	syncResult, err := db.NewRaw(
+		`UPDATE jobs
+		   SET status = 'failed',
+		       error_message = 'stale_job_cleaned_up',
+		       completed_at = now()
+		 WHERE job_type = 'sync'
+		   AND status IN ('pending', 'processing')
+		   AND dispatch_complete = false
+		   AND created_at < now() - (? || ' seconds')::interval
+		   AND NOT EXISTS (
+		     SELECT 1 FROM job_items
+		      WHERE job_items.job_id = jobs.id
+		        AND job_items.status NOT IN ('completed', 'failed', 'skipped', 'cancelled')
+		   )`,
+		int64(threshold.Seconds()),
+	).Exec(ctx)
+	if err != nil {
+		slog.Error("cleanup_stale_jobs: sync cleanup failed", "err", err)
+		return
+	}
+	syncRows, _ := syncResult.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
+	if syncRows > 0 {
+		slog.Info("cleanup_stale_jobs: marked stale sync jobs failed", "count", syncRows)
+	}
 }
