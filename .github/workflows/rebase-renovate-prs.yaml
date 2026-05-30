@@ -59,20 +59,21 @@ jobs:
             branch="${entry#* }"
             echo "--- PR #${pr_number}: ${branch} ---"
 
-            # Fetch the tip of the PR branch.
-            if ! git fetch origin "refs/heads/${branch}"; then
+            # Fetch the tip of the PR branch into a remote tracking ref so
+            # subsequent git commands can resolve origin/${branch}.
+            if ! git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"; then
               echo "  Could not fetch ${branch}; skipping."
               continue
             fi
 
             # Skip if the branch already contains the latest main commit.
-            if git merge-base --is-ancestor origin/main "refs/heads/${branch}"; then
+            if git merge-base --is-ancestor origin/main "origin/${branch}"; then
               echo "  Already up to date; skipping."
               continue
             fi
 
             # Check out a local copy of the PR branch.
-            git checkout -B "${branch}" "refs/heads/${branch}"
+            git checkout -B "${branch}" "origin/${branch}"
 
             # Merge main. -X theirs resolves any conflict (including the
             # npmDepsHash / vendorHash line both this PR and main modified) by
