@@ -335,6 +335,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			default:
 			}
 			if migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() {
+				reconcileOrphanedDispatchJobs(context.Background(), db)
 				if err := riverClient.Start(ctx); err != nil {
 					slog.Error("failed to start River client", "err", err)
 				}
@@ -378,6 +379,38 @@ func parseSlogLevel(s string) slog.Level {
 		return slog.LevelError
 	default:
 		return slog.LevelInfo
+	}
+}
+
+// reconcileOrphanedDispatchJobs rescues dispatch_sync River jobs that are
+// stuck in 'running' state because the process that claimed them is no longer
+// heartbeating. Called once at startup before riverClient.Start so River picks
+// them up for retry within seconds.
+func reconcileOrphanedDispatchJobs(ctx context.Context, db *bun.DB) {
+	result, err := db.NewRaw(`
+		UPDATE river_job
+		   SET state = 'retryable',
+		       scheduled_at = now(),
+		       errors = array_append(errors, jsonb_build_object(
+		         'at', now(),
+		         'error', 'rescued at startup: client no longer heartbeating'
+		       ))
+		 WHERE kind = 'dispatch_sync'
+		   AND state = 'running'
+		   AND attempt < max_attempts
+		   AND NOT EXISTS (
+		     SELECT 1 FROM river_client rc
+		      WHERE rc.id = ANY(river_job.attempted_by)
+		        AND rc.updated_at > now() - interval '30 seconds'
+		   )`,
+	).Exec(ctx)
+	if err != nil {
+		slog.Error("startup: reconcile orphaned dispatch_sync failed", "err", err)
+		return
+	}
+	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
+	if rows > 0 {
+		slog.Info("startup: rescued orphaned dispatch_sync jobs", "count", rows)
 	}
 }
 

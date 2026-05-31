@@ -122,6 +122,7 @@ export interface IGDBGameCandidate {
   cover_art_url?: string;
   description?: string;
   platforms: string[];
+  platform_ids?: number[];
   howlongtobeat_main?: number;
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;

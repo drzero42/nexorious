@@ -52,6 +52,7 @@ type IGDBGameCandidate struct {
 	CoverArtUrl                *string  `json:"cover_art_url"`
 	Description                *string  `json:"description"`
 	Platforms                  []string `json:"platforms"`
+	PlatformIDs                []int    `json:"platform_ids"`
 	HowlongtobeatMain          *float64 `json:"howlongtobeat_main"`
 	HowlongtobeatExtra         *float64 `json:"howlongtobeat_extra"`
 	HowlongtobeatCompletionist *float64 `json:"howlongtobeat_completionist"`
@@ -382,6 +383,10 @@ func metadataToCandidate(md igdb.GameMetadata) IGDBGameCandidate {
 	if platforms == nil {
 		platforms = []string{}
 	}
+	platformIDs := md.PlatformIDs
+	if platformIDs == nil {
+		platformIDs = []int{}
+	}
 	return IGDBGameCandidate{
 		IgdbID:                     md.IgdbID,
 		IgdbSlug:                   md.IgdbSlug,
@@ -390,6 +395,7 @@ func metadataToCandidate(md igdb.GameMetadata) IGDBGameCandidate {
 		CoverArtUrl:                md.CoverArtURL,
 		Description:                md.Description,
 		Platforms:                  platforms,
+		PlatformIDs:                platformIDs,
 		HowlongtobeatMain:          md.HowlongtobeatMain,
 		HowlongtobeatExtra:         md.HowlongtobeatExtra,
 		HowlongtobeatCompletionist: md.HowlongtobeatCompletionist,

@@ -11,6 +11,7 @@ import * as adminApi from '@/api/admin';
 import type { AdminStatistics } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/admin/')({
+  head: () => ({ meta: [{ title: 'Admin | Nexorious' }] }),
   component: AdminDashboardPage,
 });
 

@@ -127,6 +127,7 @@ interface IGDBGameCandidateApiResponse {
   cover_art_url?: string;
   description?: string;
   platforms: string[];
+  platform_ids?: number[];
   howlongtobeat_main?: number;
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;
@@ -337,6 +338,7 @@ function transformIGDBGameCandidate(apiCandidate: IGDBGameCandidateApiResponse):
     cover_art_url: apiCandidate.cover_art_url,
     description: apiCandidate.description,
     platforms: apiCandidate.platforms,
+    platform_ids: apiCandidate.platform_ids,
     howlongtobeat_main: apiCandidate.howlongtobeat_main,
     howlongtobeat_extra: apiCandidate.howlongtobeat_extra,
     howlongtobeat_completionist: apiCandidate.howlongtobeat_completionist,
@@ -486,6 +488,13 @@ export async function updateUserGame(id: string, data: UserGameUpdateData): Prom
  */
 export async function deleteUserGame(id: string): Promise<void> {
   await api.delete(`/user-games/${id}`);
+}
+
+/**
+ * Remove all games from the authenticated user's library.
+ */
+export async function clearLibrary(): Promise<{ deleted: number }> {
+  return api.delete<{ deleted: number }>('/user-games');
 }
 
 /**

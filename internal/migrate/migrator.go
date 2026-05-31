@@ -109,6 +109,7 @@ func (mg *Migrator) DetermineState() error {
 }
 
 func (mg *Migrator) TransitionToReady() {
+	mg.lastError.Store("") // Ready implies no outstanding failure; clear before state flip so any observer seeing Ready sees empty LastError
 	mg.state.Store(int32(AppStateReady))
 }
 

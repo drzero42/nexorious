@@ -198,7 +198,7 @@ nexorious/
 │   ├── worker/          # River job workers (sync, import, export, metadata)
 │   ├── scheduler/       # Periodic maintenance jobs (cleanup, backup polling)
 │   ├── services/        # IGDB client, Steam/PSN sync, game matching
-│   ├── auth/            # JWT generation and validation
+│   ├── auth/            # Session and API key auth + Echo middleware
 │   └── config/          # Environment variable config
 ├── ui/
 │   ├── frontend/        # React + Vite SPA source

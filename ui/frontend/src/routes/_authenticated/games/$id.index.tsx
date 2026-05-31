@@ -26,6 +26,7 @@ import {
 } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/games/$id/')({
+  head: () => ({ meta: [{ title: 'Game Details | Nexorious' }] }),
   component: GameDetailPage,
 });
 

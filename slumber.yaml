@@ -193,6 +193,15 @@ requests:
         url: "{{base_url}}/api/auth/admin/users/{{response('list_users', trigger='no_history') | jsonpath('$[*].id', mode='array') | select()}}"
         $ref: "#/.authenticated"
 
+      reset_database:
+        name: Reset Database
+        method: POST
+        url: "{{base_url}}/api/auth/admin/reset"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data: {}
+
   auth:
     name: Auth
     requests:
@@ -891,3 +900,9 @@ requests:
             platform: "{{response('platforms_simple_list', trigger='1d') | jsonpath('$[*].name', mode='array') | select()}}"
             storefront: "{{response('storefronts_simple_list', trigger='1d') | jsonpath('$[*].name', mode='array') | select()}}"
             ownership_status: "{{select(['owned', 'subscription', 'trial', 'free_to_play'])}}"
+
+      clear_library:
+        name: Clear Library
+        method: DELETE
+        url: "{{base_url}}/api/user-games"
+        $ref: "#/.authenticated"

@@ -38,11 +38,12 @@ func NewUserGamesHandler(db *bun.DB, cfg *config.Config) *UserGamesHandler {
 
 // createUserGameRequest is the body for POST /api/user-games.
 type createUserGameRequest struct {
-	GameID         int32   `json:"game_id"`
-	PlayStatus     *string `json:"play_status"`
-	PersonalRating *int32  `json:"personal_rating"`
-	IsLoved        bool    `json:"is_loved"`
-	PersonalNotes  *string `json:"personal_notes"`
+	GameID         int32             `json:"game_id"`
+	PlayStatus     *string           `json:"play_status"`
+	PersonalRating *int32            `json:"personal_rating"`
+	IsLoved        bool              `json:"is_loved"`
+	PersonalNotes  *string           `json:"personal_notes"`
+	Platforms      []platformRequest `json:"platforms"`
 }
 
 // userGamePlatformResponse is the API DTO for a user game platform entry with nested detail objects.
@@ -412,6 +413,34 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusConflict, "game already in collection")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+
+	if len(req.Platforms) > 0 {
+		plats := make([]*models.UserGamePlatform, len(req.Platforms))
+		for i, p := range req.Platforms {
+			pl := &models.UserGamePlatform{
+				ID:              uuid.New().String(),
+				UserGameID:      ug.ID,
+				Platform:        p.Platform,
+				Storefront:      p.Storefront,
+				StoreGameID:     p.StoreGameID,
+				StoreUrl:        p.StoreUrl,
+				HoursPlayed:     p.HoursPlayed,
+				OwnershipStatus: p.OwnershipStatus,
+				CreatedAt:       now,
+				UpdatedAt:       now,
+			}
+			if p.IsAvailable != nil {
+				pl.IsAvailable = *p.IsAvailable
+			} else {
+				pl.IsAvailable = true
+			}
+			plats[i] = pl
+		}
+		if _, err := h.db.NewInsert().Model(&plats).Exec(ctx); err != nil {
+			slog.Error("user_games: failed to insert platforms on create", "err", err, "user_game_id", ug.ID)
+			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		}
 	}
 
 	// Eager-load relations so the response includes the game, platforms and tags.
@@ -1135,6 +1164,48 @@ type CollectionStatsResponse struct {
 }
 
 // ── Utility helpers ─────────────────────────────────────────────────────
+
+// HandleClearLibrary handles DELETE /api/user-games.
+// Removes all games and jobs for the authenticated user. Sync configs are
+// intentionally preserved so storefronts can be re-synced to repopulate the library.
+func (h *UserGamesHandler) HandleClearLibrary(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	ctx := context.Background()
+	var deleted int64
+	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		// Cancel active River jobs whose items belong to this user.
+		if _, err := tx.NewRaw(`
+			UPDATE river_job
+			SET state = 'cancelled', finalized_at = NOW()
+			WHERE state IN ('available', 'scheduled', 'retryable', 'pending')
+			  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE user_id = ?)`,
+			userID,
+		).Exec(ctx); err != nil {
+			return err
+		}
+		// Delete jobs (cascades job_items + sync_changes).
+		if _, err := tx.NewDelete().Model((*models.Job)(nil)).
+			Where("user_id = ?", userID).Exec(ctx); err != nil {
+			return err
+		}
+		// Delete user games (cascades user_game_platforms + user_game_tags).
+		res, err := tx.NewDelete().Model((*models.UserGame)(nil)).
+			Where("user_id = ?", userID).Exec(ctx)
+		if err != nil {
+			return err
+		}
+		deleted, err = res.RowsAffected()
+		return err
+	})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	return c.JSON(http.StatusOK, map[string]any{"deleted": deleted})
+}
 
 // splitAndCollect splits a comma-separated string and adds trimmed non-empty
 // values to the provided set.

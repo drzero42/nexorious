@@ -190,7 +190,7 @@ func TestAdminCreateUser_EmptyPassword(t *testing.T) {
 	}
 }
 
-func TestAdminCreateUser_RequiresJWT(t *testing.T) {
+func TestAdminCreateUser_RequiresAuth(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEcho(t, testDB, testCfg())
 	rec := postJSON(t, e, "/api/auth/admin/users", map[string]any{
@@ -256,7 +256,7 @@ func TestAdminListUsers_RequiresAdmin(t *testing.T) {
 	}
 }
 
-func TestAdminListUsers_RequiresJWT(t *testing.T) {
+func TestAdminListUsers_RequiresAuth(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEcho(t, testDB, testCfg())
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/admin/users", nil)
@@ -509,7 +509,7 @@ func TestAdminUpdateUser_PromoteDoesNotInvalidateSessions(t *testing.T) {
 		t.Errorf("expected sessions to be preserved after promotion, got 0")
 	}
 
-	// Token still works on a JWT-protected route, and the new role is reflected.
+	// Session still works on an auth-protected route, and the new role is reflected.
 	rec = getAuth(t, e, "/api/auth/me", targetTok)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("after promotion, /me status = %d, want 200; body=%s", rec.Code, rec.Body)

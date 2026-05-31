@@ -8,17 +8,21 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// CleanupStaleJobs marks metadata_refresh jobs that are stuck in pending or
-// processing with no remaining unfinished items as failed. This releases the
-// duplicate-run guard in metadata_refresh_dispatch after a crash during
-// dispatch.
+// CleanupStaleJobs marks jobs that are stuck in pending or processing with no
+// remaining unfinished items as failed. This releases duplicate-run guards and
+// unblocks scheduled syncs after a crash.
 //
 // A job is stale when ALL of:
-//   - job_type = 'metadata_refresh'
+//   - job_type is in the handled set (see below)
 //   - status IN ('pending', 'processing')
 //   - created_at < now() - threshold
 //   - no associated job_items rows are in pending/processing/pending_review
 //     (i.e. items are either all terminal or never existed)
+//
+// Handled job types:
+//   - metadata_refresh: guards against stuck dispatch after a crash
+//   - sync: guards against orphaned dispatch (dispatch_complete=false) after
+//     all River retries are exhausted; dispatch_complete=true jobs are never touched
 //
 // Action: UPDATE jobs SET status='failed', error_message='stale_job_cleaned_up'.
 func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) {
@@ -44,5 +48,30 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
 		slog.Info("cleanup_stale_jobs: marked stale jobs failed", "count", rows)
+	}
+
+	syncResult, err := db.NewRaw(
+		`UPDATE jobs
+		   SET status = 'failed',
+		       error_message = 'stale_job_cleaned_up',
+		       completed_at = now()
+		 WHERE job_type = 'sync'
+		   AND status IN ('pending', 'processing')
+		   AND dispatch_complete = false
+		   AND created_at < now() - (? || ' seconds')::interval
+		   AND NOT EXISTS (
+		     SELECT 1 FROM job_items
+		      WHERE job_items.job_id = jobs.id
+		        AND job_items.status NOT IN ('completed', 'failed', 'skipped', 'cancelled')
+		   )`,
+		int64(threshold.Seconds()),
+	).Exec(ctx)
+	if err != nil {
+		slog.Error("cleanup_stale_jobs: sync cleanup failed", "err", err)
+		return
+	}
+	syncRows, _ := syncResult.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
+	if syncRows > 0 {
+		slog.Info("cleanup_stale_jobs: marked stale sync jobs failed", "count", syncRows)
 	}
 }

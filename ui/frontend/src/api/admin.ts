@@ -125,3 +125,10 @@ export async function startMetadataRefreshJob(
     jobId: response.job_id,
   };
 }
+
+/**
+ * Reset the database to post-admin-creation state (admin only).
+ */
+export async function resetDatabase(): Promise<{ deleted: number }> {
+  return api.post<{ deleted: number }>('/auth/admin/reset', {});
+}

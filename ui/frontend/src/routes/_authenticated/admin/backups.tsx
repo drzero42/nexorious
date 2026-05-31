@@ -61,6 +61,7 @@ import { triggerBlobDownload } from '@/api/import-export';
 import type { BackupConfig, BackupInfo, BackupSchedule, RetentionMode } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/admin/backups')({
+  head: () => ({ meta: [{ title: 'Backups | Nexorious' }] }),
   component: BackupPage,
 });
 

@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 
 export const Route = createFileRoute('/_authenticated/import-export')({
+  head: () => ({ meta: [{ title: 'Import & Export | Nexorious' }] }),
   component: ImportExportPage,
 });
 

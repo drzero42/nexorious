@@ -10,11 +10,6 @@ on:
     # is updated in-place; this is idempotent.
     - cron: '0 6 * * *'
   workflow_dispatch:
-    inputs:
-      tag_name:
-        description: 'Existing draft release tag to build and publish (e.g. v0.1.2). Leave empty for normal reconciliation.'
-        required: false
-        default: ''
 
 jobs:
   release-please:
@@ -25,103 +20,10 @@ jobs:
       contents: write
       pull-requests: write
 
-    outputs:
-      tag_name: ${{ steps.resolve.outputs.tag_name }}
-      should_build: ${{ steps.resolve.outputs.should_build }}
-
     steps:
       - name: Run release-please
-        id: release-please
-        # Skip on workflow_dispatch — we are re-processing an existing release,
-        # not asking release-please to create a new one.
-        if: github.event_name != 'workflow_dispatch'
         uses: googleapis/release-please-action@v5
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-
-      - name: Resolve tag and build flag
-        id: resolve
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.tag_name }}" ]]; then
-            echo "tag_name=${{ github.event.inputs.tag_name }}" >> "$GITHUB_OUTPUT"
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ steps.release-please.outputs.release_created }}" == "true" ]]; then
-            echo "tag_name=${{ steps.release-please.outputs.tag_name }}" >> "$GITHUB_OUTPUT"
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_build=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  build-and-publish:
-    name: Build Binaries and Publish Release
-    runs-on: ubuntu-latest
-    needs: release-please
-    if: needs.release-please.outputs.should_build == 'true'
-
-    permissions:
-      contents: write
-
-    steps:
-      - name: Resolve commit SHA
-        id: commitish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
-        run: |
-          # The git tag does not exist yet (release-please only creates it on
-          # publish, not on draft creation). Fetch the SHA from the draft release.
-          SHA=$(gh api "repos/${{ github.repository }}/releases" \
-            --jq ".[] | select(.tag_name == \"$TAG_NAME\") | .target_commitish")
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout code at release commit
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ steps.commitish.outputs.sha }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - name: Build frontend
-        run: cd ui/frontend && npm install && npm run build
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Build binaries
-        env:
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
-          CGO_ENABLED: '0'
-        run: |
-          set -euo pipefail
-          VERSION="${TAG_NAME#v}"
-          COMMIT=$(git rev-parse HEAD)
-          mkdir -p dist
-          for GOOS in linux; do
-            for GOARCH in amd64 arm64; do
-              NAME="nexorious_${VERSION}_${GOOS}_${GOARCH}"
-              GOOS=$GOOS GOARCH=$GOARCH go build \
-                -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT}" \
-                -o "dist/${NAME}" \
-                ./cmd/nexorious
-            done
-          done
-          cd dist && sha256sum nexorious_* > sha256sums.txt
-
-      - name: Upload binaries to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
-        run: gh release upload "$TAG_NAME" dist/nexorious_* dist/sha256sums.txt
-
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
-        run: gh release edit "$TAG_NAME" --draft=false --repo "${{ github.repository }}"

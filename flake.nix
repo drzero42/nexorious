@@ -2,7 +2,7 @@
   description = "Nexorious — self-hosted game collection manager";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
   };
 
   outputs = { self, nixpkgs }:
@@ -13,7 +13,7 @@
 
       # release-please keeps this in sync with Chart.yaml etc.
       # On the release branch a CI-created nix/release-version.txt overrides it.
-      _releaseVersion = "0.1.2"; # x-release-please-version
+      _releaseVersion = "0.2.0"; # x-release-please-version
       version =
         if builtins.pathExists ./nix/release-version.txt
         then builtins.readFile ./nix/release-version.txt

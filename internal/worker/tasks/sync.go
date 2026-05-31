@@ -45,7 +45,7 @@ type DispatchSyncArgs struct {
 func (DispatchSyncArgs) Kind() string { return "dispatch_sync" }
 
 func (DispatchSyncArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 1, Priority: 1}
+	return river.InsertOpts{MaxAttempts: 3, Priority: 1}
 }
 
 // Timeout overrides River's 1-minute default so large libraries (hundreds of
@@ -78,6 +78,7 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 	var row struct {
 		ID        string `bun:"id"`
 		IsSkipped bool   `bun:"is_skipped"`
+		IsNew     bool   `bun:"is_new"`
 	}
 	if err := db.NewRaw(`
 		INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, created_at, updated_at)
@@ -88,13 +89,32 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 			ownership_status = EXCLUDED.ownership_status,
 			is_available = true,
 			updated_at = now()
-		RETURNING id, is_skipped`,
+		RETURNING id, is_skipped, (xmax = 0) AS is_new`,
 		uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
 		e.IsSubscription, e.OwnershipStatus,
 	).Scan(ctx, &row); err != nil {
 		slog.Error("dispatch_sync: upsert external_game failed", "err", err, "job_id", p.JobID, "external_id", e.ExternalID)
 		return "", false
 	}
+
+	if row.IsNew {
+		var parentID string
+		if err := db.NewRaw(`
+			SELECT id FROM external_games
+			WHERE user_id = ? AND storefront = ? AND title = ?
+			  AND id != ? AND parent_id IS NULL
+			LIMIT 1`,
+			p.UserID, p.Storefront, e.Title, row.ID,
+		).Scan(ctx, &parentID); err == nil && parentID != "" {
+			if _, err := db.NewRaw(`
+				UPDATE external_games SET parent_id = ? WHERE id = ? AND parent_id IS NULL`,
+				parentID, row.ID,
+			).Exec(ctx); err != nil {
+				slog.Error("dispatch_sync: set parent_id failed", "err", err, "external_game_id", row.ID)
+			}
+		}
+	}
+
 	return row.ID, row.IsSkipped
 }
 
@@ -399,29 +419,34 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		return w.enqueueUserGame(ctx, item.ID, item.JobID)
 	}
 
-	// Sibling check: same user/storefront/title already resolved by another SKU.
-	var sibling models.ExternalGame
-	if err := w.DB.NewSelect().Model(&sibling).
-		Where("user_id = ? AND storefront = ? AND title = ? AND id != ? AND resolved_igdb_id IS NOT NULL",
-			eg.UserID, eg.Storefront, eg.Title, eg.ID).
-		Limit(1).
-		Scan(ctx); err == nil && sibling.ResolvedIGDBID != nil {
-		igdbID := *sibling.ResolvedIGDBID
-		slog.Debug("igdb_match: sibling match, inheriting resolution",
-			"item_id", p.JobItemID, "title", eg.Title, "igdb_id", igdbID, "sibling_id", sibling.ID)
-		if _, err := w.DB.NewRaw(
-			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
-			igdbID, eg.Title,
-		).Exec(ctx); err != nil {
-			slog.Error("igdb_match: insert game row (sibling)", "err", err, "igdb_id", igdbID)
+	// Child check: if this row has a parent, inherit or wait.
+	if eg.ParentID != nil {
+		var parent models.ExternalGame
+		if err := w.DB.NewSelect().Model(&parent).
+			Where("id = ?", *eg.ParentID).
+			Scan(ctx); err == nil && parent.ResolvedIGDBID != nil {
+			igdbID := *parent.ResolvedIGDBID
+			slog.Debug("igdb_match: child inheriting from resolved parent",
+				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", igdbID, "parent_id", *eg.ParentID)
+			if _, err := w.DB.NewRaw(
+				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+				igdbID, eg.Title,
+			).Exec(ctx); err != nil {
+				slog.Error("igdb_match: insert game row (child inherit)", "err", err, "igdb_id", igdbID)
+			}
+			if _, err := w.DB.NewRaw(
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+				igdbID, eg.ID,
+			).Exec(ctx); err != nil {
+				slog.Error("igdb_match: apply child inherit", "err", err, "external_game_id", eg.ID)
+			}
+			return w.enqueueUserGame(ctx, item.ID, item.JobID)
 		}
-		if _, err := w.DB.NewRaw(
-			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
-			igdbID, eg.ID,
-		).Exec(ctx); err != nil {
-			slog.Error("igdb_match: apply sibling resolution", "err", err, "external_game_id", eg.ID)
-		}
-		return w.enqueueUserGame(ctx, item.ID, item.JobID)
+		// Parent not yet resolved — leave job_item in pending.
+		// Stage 3 of the parent will re-enqueue Stage 2 for this child.
+		slog.Debug("igdb_match: parent unresolved, waiting",
+			"item_id", p.JobItemID, "parent_id", *eg.ParentID)
+		return nil
 	}
 
 	// IGDB search.
@@ -618,14 +643,15 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	ugID := uuid.NewString()
 	now := time.Now().UTC()
 	var isNewRow struct {
-		ID    string `bun:"id"`
-		IsNew bool   `bun:"is_new"`
+		ID         string  `bun:"id"`
+		IsNew      bool    `bun:"is_new"`
+		PlayStatus *string `bun:"play_status"`
 	}
 	if err := w.DB.NewRaw(
 		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT (user_id, game_id) DO UPDATE SET updated_at = now()
-		 RETURNING id, (xmax = 0) AS is_new`,
+		 RETURNING id, (xmax = 0) AS is_new, play_status`,
 		ugID, item.UserID, *eg.ResolvedIGDBID, now, now,
 	).Scan(ctx, &isNewRow); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("upsert user_game: %v", err))
@@ -734,6 +760,18 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		}
 	}
 
+	var totalHours float64
+	for _, egp := range egPlatforms {
+		totalHours += egp.HoursPlayed
+	}
+	if totalHours > 0 && (isNewRow.IsNew || (isNewRow.PlayStatus != nil && *isNewRow.PlayStatus == "not_started")) {
+		if _, err := w.DB.NewRaw(
+			`UPDATE user_games SET play_status = 'in_progress' WHERE id = ?`, ugID,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: update play_status", "err", err, "item_id", p.JobItemID)
+		}
+	}
+
 	if _, err := w.DB.NewRaw(
 		`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
 	).Exec(ctx); err != nil {
@@ -767,6 +805,33 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	w.maybeEnqueueImmediateMetadataFetch(ctx, *eg.ResolvedIGDBID)
 
 	syncMarkItemCompleted(ctx, w.DB, &item)
+
+	// Sibling trigger: re-enqueue Stage 2 for children waiting on this parent.
+	if w.RiverClient != nil {
+		var childItems []struct {
+			JobItemID      string `bun:"job_item_id"`
+			ExternalGameID string `bun:"external_game_id"`
+		}
+		if err := w.DB.NewRaw(`
+			SELECT ji.id AS job_item_id, eg.id AS external_game_id
+			FROM external_games eg
+			JOIN job_items ji ON ji.external_game_id = eg.id
+			WHERE eg.parent_id = ?
+			  AND eg.resolved_igdb_id IS NULL
+			  AND NOT eg.is_skipped
+			  AND ji.status = 'pending'
+			ORDER BY ji.created_at DESC`,
+			eg.ID,
+		).Scan(ctx, &childItems); err == nil {
+			for _, child := range childItems {
+				if _, err := w.RiverClient.Insert(ctx, IGDBMatchArgs{JobItemID: child.JobItemID}, nil); err != nil {
+					slog.Error("user_game_write: enqueue sibling Stage 2",
+						"err", err, "child_eg_id", child.ExternalGameID, "job_item_id", child.JobItemID)
+				}
+			}
+		}
+	}
+
 	SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 	return nil
 }

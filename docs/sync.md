@@ -38,7 +38,7 @@ The sync system reads and writes these core tables:
 | Table | Role |
 |---|---|
 | `user_sync_configs` | Credentials, sync frequency, and last sync timestamp per user and storefront |
-| `external_games` | One row per user + storefront + game; persists across sync runs |
+| `external_games` | One row per user + storefront + game; persists across sync runs. `parent_id` (nullable FK to self) marks duplicate-SKU siblings established at Stage 1 |
 | `external_game_platforms` | Platform slugs and per-platform playtime for each ExternalGame |
 | `jobs` | One row per sync run; tracks status and lifecycle |
 | `job_items` | One row per game per sync run; tracks matching progress |
@@ -203,12 +203,15 @@ Before searching, titles are normalised (trademark symbols removed, diacritics f
 
 A sibling is another `external_games` row for the same user, storefront, and title. This occurs on storefronts that assign separate identifiers to different platform releases of the same game — for example, PSN assigns distinct title IDs to the PS4 and PS5 versions of a game.
 
-The sibling mechanic prevents the same game from requiring repeated manual resolution. It operates in two places:
+The sibling relationship is established explicitly during **Stage 1**: when a new `external_games` row is inserted with the same `(user_id, storefront, title)` as an existing row that has no `parent_id` itself, the new row's `parent_id` is set to the existing row's `id`. This produces a flat tree — all siblings point to one parent; no chaining.
 
-- **Stage 2 (pull):** before searching IGDB, check whether a sibling is already resolved and inherit its match
-- **Manual match (push):** when the user resolves a `pending_review` item, any unresolved siblings with the same title are resolved with the same IGDB ID and a Stage 3 job is enqueued for each
+The sibling relationship is acted on in three places:
 
-The timing of Stage 2 processing means one sibling may land in `pending_review` before the other has been resolved. In that case the push mechanic ensures that resolving one automatically resolves the other.
+- **Stage 2 (child):** if the external game has `parent_id IS NOT NULL`, check whether the parent already has `resolved_igdb_id`. If yes, inherit it and proceed to Stage 3. If no (parent still in flight or in `pending_review`), return without advancing the job item — the child waits in `pending` state.
+- **Stage 3 (sibling trigger):** after writing the parent's library entries, query for child rows with `parent_id = eg.id` that are not yet resolved and have a `pending` job item. Re-enqueue Stage 2 for each. This handles the case where the child's Stage 2 ran before the parent was resolved, and also handles siblings that arrive in the library after the parent was already matched.
+- **Manual match / skip (cascade):** `HandleRematchExternalGame` and `HandleSkipGame` look up children via `parent_id = eg.id` and propagate the resolution or skip flag to each child, then enqueue Stage 3 (rematch) or mark job items skipped (skip).
+
+Child rows (`parent_id IS NOT NULL`) are filtered from all UI lists and counts — only the parent row is visible and actionable by the user.
 
 ---
 
@@ -225,6 +228,17 @@ One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a user action.
    - Set `external_game_id` to the specific ExternalGame row that produced this platform entry
 5. Update `external_game.updated_at` — always, whether the game was skipped or not
 6. After writing all platform rows, if IGDB is configured and the `games` row has no description, an immediate metadata fetch is enqueued for that game. This ensures newly added games have cover art and full IGDB data within seconds rather than waiting for the next scheduled bulk refresh. The enqueue is fire-and-forget and non-fatal — the periodic bulk refresh (see [docs/maintenance.md](maintenance.md) § "Metadata refresh") remains the safety net.
+
+### Play Status
+
+`user_games.play_status` defaults to `'not_started'`. Sync infers an initial status from the incoming hours:
+
+- If total `hours_played` across all `external_game_platforms` rows for the game is **> 0**, and the current `play_status` is `'not_started'` (either because the row is new, or because it was previously unplayed), sync sets `play_status = 'in_progress'`.
+- If total hours = 0, the DB default (`'not_started'`) applies and nothing is changed.
+
+Sync can only auto-promote `not_started → in_progress`. Any other status the user has explicitly set (e.g. `'completed'`, `'on_hold'`) is never touched by sync.
+
+Manually added games that omit `play_status` default to `'not_started'` via the DB default. The sync worker applies the same inference when it later processes that game from a storefront.
 
 ### Ownership rank guard
 
@@ -275,7 +289,7 @@ A job is complete only when every job_item is either `completed` or `skipped`. I
 
 ### Resolving a pending_review item
 
-The user searches IGDB and selects a match. Once a match is chosen, the resolve endpoint sets `resolved_igdb_id` on the `job_item` and enqueues a Stage 3 job immediately. Stage 3 then propagates `resolved_igdb_id` from the `job_item` to the `external_game` as its first write step — the `external_game` is not updated at the time of the user's action, only when Stage 3 runs. Any unresolved siblings (same user, storefront, and title) are resolved with the same IGDB ID and also enqueued for Stage 3 at the time of the user's action.
+The user searches IGDB and selects a match. Once a match is chosen, the resolve endpoint (`HandleRematchExternalGame`) sets `resolved_igdb_id` on the parent `external_game` and enqueues Stage 3 immediately. Any children (`parent_id = eg.id`) are resolved with the same IGDB ID and also enqueued for Stage 3 at the time of the user's action. Siblings never appear in the Needs Review list — only the parent does.
 
 ### Skipping a game
 

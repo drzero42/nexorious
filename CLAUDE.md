@@ -68,7 +68,7 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 - `internal/worker/` — River job worker implementations; `tasks/` contains workers for sync, import, export, and metadata refresh
 - `internal/scheduler/` — River worker implementations for periodic maintenance jobs (cleanup, backup polling, stale job pruning); `BuildPeriodicJobs()` registers cron-scheduled River `PeriodicJob` entries
 - `internal/services/` — IGDB client, storefront sync (Steam, PSN, GOG, Epic), game matching, platform resolution
-- `internal/auth/` — JWT generation/validation + Echo middleware
+- `internal/auth/` — session + API key auth + Echo middleware
 - `internal/filter/` — dynamic query builder (Bun) for user-game list filtering
 - `internal/ratelimit/` — interface + local (`x/time/rate`) and PostgreSQL implementations
 - `internal/config/` — config struct via `caarlos0/env`
@@ -90,7 +90,7 @@ Echo middleware blocks all non-migration routes until state is `Ready`. River wo
 - **Exception**: `internal/auth` uses raw `db.NewRaw`/`db.QueryRow` directly (not Bun models) to keep auth isolated.
 - **Dynamic filter queries**: Bun query builder used in `internal/filter/` for user-game list filtering.
 - **Driver**: `pgx/v5` via Bun's own `pgdriver` (`uptrace/bun/driver/pgdriver`).
-- **Migrations**: Bun migrate (`uptrace/bun/migrate`); SQL files live in `internal/db/migrations/` with timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); discovered automatically via `Migrations.Discover(FS)` in `migrations.go`.
+- **Migrations**: Bun migrate (`uptrace/bun/migrate`); SQL files live in `internal/db/migrations/` with timestamp-prefix naming (`YYYYMMDD<nnnnnn>_name.up.sql`, where `<nnnnnn>` is a zero-padded running number, e.g. `20260503000001_name.up.sql`); discovered automatically via `Migrations.Discover(FS)` in `migrations.go`.
 
 ### Frontend Embedding (Stash pattern)
 `ui/ui.go` exposes five `embed.FS` vars:
@@ -120,8 +120,8 @@ The Go binary serves the React SPA itself.
 
 ### Route Zones
 - **Migration zone** (`/migrate`, `/api/migrate/*`) — always available, bypasses state middleware
-- **Setup zone** (`/api/auth/setup/*`) — requires `Ready` state, no JWT (no users exist yet)
-- **API zone** — gated by state middleware, then JWT where required
+- **Setup zone** (`/api/auth/setup/*`) — requires `Ready` state, no auth (no users exist yet)
+- **API zone** — gated by state middleware, then `AuthMiddleware` where required
 
 ### Workers & Scheduler
 River (`riverqueue/river`) is the job queue. Worker structs live under `worker/tasks/` (sync, import, export, metadata refresh) and `internal/scheduler/` (cleanup jobs, backup polling). Periodic schedules are registered in `scheduler.BuildPeriodicJobs()` using `robfig/cron/v3` expressions and River `PeriodicJob`. Backup orchestration still lives in `internal/backup/` and is invoked by the `CheckScheduledBackupWorker`. Sync workers cover Steam, PSN, GOG, and Epic (via Legendary), plus IGDB metadata refresh.
@@ -167,7 +167,7 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 ### Essential Workflow
 1. **Planning**: Read `docs/superpowers/specs/` for design context
 2. **Branching**: Create a feature branch before starting any task
-3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
+3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using the naming convention `YYYYMMDD<nnnnnn>_name.up.sql` where `<nnnnnn>` is a zero-padded running number (e.g. `20260503000001_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
 4. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)) — format/lint on every edit, build + typecheck when a turn ends, and the full suites at `git push`. You don't need to re-run the whole suites by hand; do run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.
 5. **Plan files**: `docs/superpowers/plans/` is tracked — always commit the plan file on the feature branch
 
@@ -230,7 +230,7 @@ The `version` field in `flake.nix` is managed automatically by release-please (s
 ### Slumber Collection Maintenance
 When adding a new API route, always add a corresponding request to `slumber.yaml`:
 - Add it to the matching domain folder (e.g. a new `GET /api/games` goes in a `games/` folder)
-- If the route requires JWT, add the `authentication: type: bearer` block with `"{{response('login', trigger='no_history') | jsonpath('$.access_token')}}"`
+- If the route requires auth, add the `authentication: type: bearer` block with `"{{response('bootstrap.create_api_key', trigger='no_history') | jsonpath('$.key')}}"`
 - If it's a new domain with no existing folder, add new domain folders in alphabetical order; `bootstrap/` always stays first as the workflow anchor
 - Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
 - Run `slumber collection` to verify the collection loads without errors after any change
@@ -243,14 +243,12 @@ Releases are produced by [release-please](https://github.com/googleapis/release-
 
 All commits on `main` must follow [Conventional Commits](https://www.conventionalcommits.org/). PRs are squash-merged, so the **PR title** is the commit message release-please parses.
 
-| Prefix | Effect (pre-1.0) | Effect (post-1.0) |
-|---|---|---|
-| `feat: …` | patch bump | minor bump |
-| `fix: …` | patch bump | patch bump |
-| `feat!: …` or `BREAKING CHANGE:` footer | **minor bump** | **major bump** |
-| `chore:`, `ci:`, `docs:`, `refactor:`, `test:` | no release | no release |
-
-During the 0.x window the minor digit is reserved for breaking changes; everything else bumps patch.
+| Prefix | Effect |
+|---|---|
+| `feat: …` | minor bump |
+| `fix: …` | patch bump |
+| `feat!: …` or `BREAKING CHANGE:` footer | **major bump** |
+| `chore:`, `ci:`, `docs:`, `refactor:`, `test:` | no release |
 
 ### Cutting a release
 
@@ -261,27 +259,20 @@ During the 0.x window the minor digit is reserved for breaking changes; everythi
 
 ### Overrides
 
-To force the next release to a specific version, push an empty commit directly to `main` with a `Release-As:` footer:
+To force the next release to a specific version, add a `Release-As: X.Y.Z` line to the **PR description** before squash-merging. The repo is configured with `squash_merge_commit_message=PR_BODY`, so GitHub uses the PR description as the commit body — release-please will find the trailer there.
+
+Alternatively, push an empty commit directly to `main`:
 
 ```bash
 git commit --allow-empty -m "chore: release X.Y.Z" -m "Release-As: X.Y.Z"
 git push origin main
 ```
 
-release-please sees the footer on a real `main` commit (not mangled by squash) and updates the Release PR to the specified version. No config file changes needed, no follow-up cleanup.
-
 To skip a release after an unwanted `feat:` / `fix:` lands: close the Release PR; release-please reopens it on the next push to main, so a true skip requires absorbing the change into the next legitimate release.
 
 ### Promoting to 1.0.0
 
-Push an empty commit to `main` with both the version override and a note to update the versioning config:
-
-```bash
-git commit --allow-empty -m "chore: release 1.0.0" -m "Release-As: 1.0.0"
-git push origin main
-```
-
-Then open a PR that removes `bump-minor-pre-major` and `bump-patch-for-minor-pre-major` from `.github/release-please-config.json` and merges it before or alongside the Release PR. From the next commit onward, post-1.0 SemVer applies.
+A `feat!:` commit (or `BREAKING CHANGE:` footer) will naturally produce a `1.0.0` Release PR when the current version is `0.x.y`. Merge that PR to cut 1.0.0.
 
 ## Known Gotchas
 
@@ -291,6 +282,8 @@ Then open a PR that removes `bump-minor-pre-major` and `bump-patch-for-minor-pre
 - **`os.Exit` skips deferred calls** — call `pool.Close()` explicitly before any `os.Exit` in main; deferred `pool.Close()` will not run
 - **Background goroutines** — use `context.Background()`, not `c.Request().Context()`, for work that outlives an HTTP handler
 - **`errcheck` runs with `check-blank`** (`.golangci.yml`) — every `_ =` / `_, _ =` error discard fails CI. Default fix is to **handle** it (API handler → `slog.Error` + `echo.NewHTTPError(500, …)`; worker/scheduler → log-only `slog.Error(...)`). Suppress only a genuinely-acceptable discard, via one of: the `std-error-handling` preset (covers the `Close`/`Fprint` family — so `defer func() { _ = resp.Body.Close() }()` needs no annotation), the `(bun.Tx).Rollback` allowlist, or a per-site `//nolint:errcheck // <one-line reason>` (e.g. clamped param parse, advisory `RowsAffected`, marshal of a fixed struct). `_ =` in `_test.go` is exempt.
+- **`jobs` table columns** — `id`, `user_id`, `job_type`, `source`, `status`, `priority`, `file_path`, `total_items`, `error_message`, `auto_retry_done`, `dispatch_complete`, `created_at`, `started_at`, `completed_at`. There is **no `updated_at`** column.
+- **`job_items` table columns** — `id`, `job_id`, `user_id`, `external_game_id`, `item_key`, `source_title`, `source_metadata` (jsonb), `status`, `result` (jsonb), `error_message`, `igdb_candidates` (jsonb), `resolved_igdb_id`, `match_confidence`, `created_at`, `processed_at`, `resolved_at`. There is **no `error`** column (it's `error_message`).
 - **Priority type mismatch** — `jobs.priority` is TEXT (`'high'`/`'low'`); `pending_tasks.priority` is INTEGER; don't conflate the two columns
 - **Echo v5 route order** — register static routes before parameterised ones (e.g. `GET /sync/steam/status` before `GET /sync/:id`); Echo v5 doesn't auto-sort and will match the wrong handler otherwise
 - **Service package import cycles** — if `internal/api` imports `internal/services/steam` and vice-versa, break the cycle by having each service package define its own local summary types; `router.go` bridges them with adapter structs that satisfy the handler's interface

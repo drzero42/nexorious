@@ -9,6 +9,7 @@ import type { IGDBGameCandidate } from '@/types';
 export const SELECTED_GAME_STORAGE_KEY = 'nexorious_selected_game';
 
 export const Route = createFileRoute('/_authenticated/games/add/')({
+  head: () => ({ meta: [{ title: 'Add Game | Nexorious' }] }),
   component: AddGamePage,
 });
 

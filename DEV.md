@@ -13,14 +13,16 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 
 ### Forcing a specific version
 
-If you want the next release to be a specific version (e.g. bump minor instead of patch), push an empty commit to `main` with a `Release-As:` footer before merging the Release PR:
+If you want the next release to be a specific version (e.g. bump minor instead of patch), add a `Release-As: X.Y.Z` line to the **PR description** before squash-merging. The repo uses `squash_merge_commit_message=PR_BODY`, so GitHub includes the PR description in the commit body and release-please picks up the trailer automatically.
+
+Alternatively, push an empty commit directly to `main`:
 
 ```bash
 git commit --allow-empty -m "chore: release 0.2.0" -m "Release-As: 0.2.0"
 git push origin main
 ```
 
-release-please will update the open Release PR to propose `0.2.0`. No config file changes needed.
+Either way, release-please will update the open Release PR to propose the specified version.
 
 ### Version bump rules (pre-1.0)
 
@@ -219,5 +221,5 @@ After that, any request requiring authentication will automatically log in on fi
 
 **Day-to-day use:**
 
-Open `slumber`, select the `local` profile, and run any request. JWT-protected routes auto-login when needed using the cached credentials from the `local` profile.
+Open `slumber`, select the `local` profile, and run any request. Auth-protected routes auto-authenticate when needed using the cached credentials from the `local` profile.
 

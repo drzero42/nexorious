@@ -19,6 +19,7 @@ import { SUPPORTED_SYNC_STOREFRONTS, SyncStorefront, SyncFrequency } from '@/typ
 import type { SyncConfig } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/sync/')({
+  head: () => ({ meta: [{ title: 'Sync | Nexorious' }] }),
   component: SyncPage,
 });
 

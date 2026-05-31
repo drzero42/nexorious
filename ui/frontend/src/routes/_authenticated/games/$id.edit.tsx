@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
 
 export const Route = createFileRoute('/_authenticated/games/$id/edit')({
+  head: () => ({ meta: [{ title: 'Edit Game | Nexorious' }] }),
   component: GameEditPage,
 });
 

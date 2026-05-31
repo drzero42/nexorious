@@ -878,6 +878,40 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 	}
 
+	// Cascade skip to children.
+	var childIDs []string
+	if err := h.db.NewRaw(
+		`SELECT id FROM external_games WHERE parent_id = ?`, id,
+	).Scan(ctx, &childIDs); err == nil {
+		for _, childID := range childIDs {
+			if _, err := h.db.NewRaw(
+				`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ?`, childID,
+			).Exec(ctx); err != nil {
+				slog.Error("sync: skip game: cascade child failed", "err", err, "child_id", childID)
+				continue
+			}
+			var childItem struct {
+				ID    string `bun:"id"`
+				JobID string `bun:"job_id"`
+			}
+			if err := h.db.NewRaw(`
+				SELECT id, job_id FROM job_items
+				WHERE external_game_id = ? AND status IN ('pending_review', 'pending')
+				ORDER BY created_at DESC
+				LIMIT 1`, childID,
+			).Scan(ctx, &childItem); err == nil {
+				if _, err := h.db.NewRaw(
+					`UPDATE job_items SET status = 'skipped', processed_at = now() WHERE id = ?`,
+					childItem.ID,
+				).Exec(ctx); err != nil {
+					slog.Error("sync: skip game: cascade child job_item", "err", err, "job_item_id", childItem.ID)
+				} else {
+					tasks.SyncCheckJobCompletion(ctx, h.db, childItem.JobID)
+				}
+			}
+		}
+	}
+
 	// Mark the most recent pending_review or pending job_item for this game as skipped,
 	// then check whether the job can now complete.
 	var jobItemRow struct {
@@ -932,6 +966,13 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 	).Exec(ctx); err != nil {
 		slog.Error("sync: unskip game failed", "err", err, "external_game_id", id)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to unskip game")
+	}
+
+	// Cascade unskip to children (job_items unchanged; children re-process on next sync).
+	if _, err := h.db.NewRaw(
+		`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE parent_id = ?`, id,
+	).Exec(ctx); err != nil {
+		slog.Error("sync: unskip game: cascade children failed", "err", err, "parent_id", id)
 	}
 
 	// Enqueue immediate re-processing. Failure here is non-fatal — the game
@@ -1024,14 +1065,19 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 				LIMIT 1
 			) AS failed_job_item_id,
 			COALESCE(
-				(SELECT string_agg(egp.platform, ',' ORDER BY egp.platform)
+				(SELECT string_agg(DISTINCT egp.platform, ',' ORDER BY egp.platform)
 				 FROM external_game_platforms egp
-				 WHERE egp.external_game_id = eg.id),
+				 WHERE egp.external_game_id = eg.id
+				    OR egp.external_game_id IN (
+				        SELECT id FROM external_games WHERE parent_id = eg.id
+				    )
+				),
 				''
 			) AS platforms_csv
 		FROM external_games eg
 		LEFT JOIN games g ON g.id = eg.resolved_igdb_id
 		WHERE eg.user_id = ? AND eg.storefront = ?
+		  AND eg.parent_id IS NULL
 		  AND NOT EXISTS (
 		      SELECT 1 FROM job_items ji
 		      WHERE ji.external_game_id = eg.id
@@ -1258,8 +1304,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		}
 	}
 
-	// Resolve siblings: other external_games for the same (user, storefront, title) that are
-	// still unresolved. Each gets the same IGDB ID and its own Stage 3 job.
+	// Resolve children: external_games with parent_id pointing to this row.
 	var siblings []struct {
 		ID         string `bun:"id"`
 		ExternalID string `bun:"external_id"`
@@ -1267,9 +1312,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 	if err := h.db.NewRaw(`
 		SELECT id, external_id, title FROM external_games
-		WHERE user_id = ? AND storefront = ? AND title = ?
-		  AND id != ? AND is_skipped = false`,
-		userID, eg.Storefront, eg.Title, id,
+		WHERE parent_id = ? AND is_skipped = false`, id,
 	).Scan(ctx, &siblings); err == nil {
 		for _, sib := range siblings {
 			if _, err := h.db.NewRaw(

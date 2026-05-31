@@ -37,6 +37,11 @@ type Config struct {
 	// expires_at stored in user_sessions. Default 30 days.
 	SessionExpireDays int `env:"SESSION_EXPIRE_DAYS" envDefault:"30"`
 
+	// SessionCookieSecure controls the Secure flag on the session cookie.
+	// Set to false when running behind plain HTTP (e.g. local LAN testing).
+	// Default true; should remain true in production (HTTPS only).
+	SessionCookieSecure bool `env:"SESSION_COOKIE_SECURE" envDefault:"true"`
+
 	// -------------------------------------------------------------------------
 	// IGDB
 	// -------------------------------------------------------------------------

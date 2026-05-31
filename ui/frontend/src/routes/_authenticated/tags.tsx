@@ -41,6 +41,7 @@ import { useAllTags, useCreateTag, useUpdateTag, useDeleteTag } from '@/hooks';
 import type { Tag } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/tags')({
+  head: () => ({ meta: [{ title: 'Tags | Nexorious' }] }),
   component: TagsPage,
 });
 

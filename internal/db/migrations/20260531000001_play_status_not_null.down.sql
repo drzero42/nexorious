@@ -1,0 +1,2 @@
+ALTER TABLE user_games ALTER COLUMN play_status DROP DEFAULT;
+ALTER TABLE user_games ALTER COLUMN play_status DROP NOT NULL;
