@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/providers';
 import { useActiveJob, useCancelJob } from '@/hooks';
 import { JobType } from '@/types';
@@ -41,6 +42,7 @@ function MaintenancePageSkeleton() {
 
 function MaintenancePage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
   const [isRefreshLoading, setIsRefreshLoading] = useState(false);
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
@@ -57,6 +59,8 @@ function MaintenancePage() {
     setIsResetting(true);
     try {
       await adminApi.resetDatabase();
+      // Clear the entire query cache — every data type was wiped by the reset.
+      queryClient.clear();
       toast.success('Database reset complete');
       setResetStep(0);
       setResetConfirmText('');
