@@ -177,6 +177,17 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 - ❌ Never commit directly to main unless instructed to
 - ❌ Never merge a PR on your own initiative — only when the user explicitly instructs
 
+### Merging Renovate PRs
+
+All Renovate dependency PRs that touch `ui/frontend/package-lock.json`, `flake.lock`, or `nix/frontend.nix` conflict with each other — merging one immediately invalidates the others' lockfiles. **Never attempt to merge multiple such PRs in a single step.**
+
+The correct workflow:
+1. Verify all CI checks pass on the target PR (use `gh run list --branch <branch>` — the GitHub API's `statusCheckRollup` field lags and often shows stale/empty data)
+2. Merge **one PR** with `gh pr merge <n> --squash --delete-branch`
+3. The remaining PRs are now conflicting — trigger a rebase on each: `gh pr comment <n> --body "@renovatebot rebase"`
+4. Wait for Renovate to push the rebase (~1–2 min) and CI to pass (~4 min), then repeat from step 1
+5. Do **not** batch-trigger `@renovatebot rebase` on more PRs than you intend to merge in this cycle — each rebase triggers a full CI run and generates GitHub notification emails
+
 ### Code Style
 
 **Go (Backend)**
