@@ -109,6 +109,17 @@ func TestHandleAdminReset(t *testing.T) {
 		}
 	})
 
+	t.Run("all job_items are cleared", func(t *testing.T) {
+		var count int
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM job_items`).
+			Scan(context.Background(), &count); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("job_items count = %d, want 0", count)
+		}
+	})
+
 	t.Run("all sync configs are cleared", func(t *testing.T) {
 		var count int
 		if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sync_configs`).
