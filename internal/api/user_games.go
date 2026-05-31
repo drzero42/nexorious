@@ -1166,7 +1166,8 @@ type CollectionStatsResponse struct {
 // ── Utility helpers ─────────────────────────────────────────────────────
 
 // HandleClearLibrary handles DELETE /api/user-games.
-// Removes all games, jobs, and sync configs for the authenticated user.
+// Removes all games and jobs for the authenticated user. Sync configs are
+// intentionally preserved so storefronts can be re-synced to repopulate the library.
 func (h *UserGamesHandler) HandleClearLibrary(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -1188,11 +1189,6 @@ func (h *UserGamesHandler) HandleClearLibrary(c *echo.Context) error {
 		}
 		// Delete jobs (cascades job_items + sync_changes).
 		if _, err := tx.NewDelete().Model((*models.Job)(nil)).
-			Where("user_id = ?", userID).Exec(ctx); err != nil {
-			return err
-		}
-		// Delete sync configs.
-		if _, err := tx.NewDelete().Model((*models.UserSyncConfig)(nil)).
 			Where("user_id = ?", userID).Exec(ctx); err != nil {
 			return err
 		}

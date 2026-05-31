@@ -1515,14 +1515,14 @@ func TestHandleClearLibrary(t *testing.T) {
 		}
 	})
 
-	t.Run("clears sync configs", func(t *testing.T) {
+	t.Run("preserves sync configs", func(t *testing.T) {
 		var count int
 		if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sync_configs WHERE user_id = ?`, userID).
 			Scan(context.Background(), &count); err != nil {
 			t.Fatalf("count: %v", err)
 		}
-		if count != 0 {
-			t.Errorf("sync_configs count = %d, want 0", count)
+		if count != 1 {
+			t.Errorf("sync_configs count = %d, want 1 (sync configs must survive library clear)", count)
 		}
 	})
 
