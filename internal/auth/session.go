@@ -37,26 +37,28 @@ func GenerateAPIKey() (string, error) {
 }
 
 // SetSessionCookie writes an HttpOnly SameSite=Strict session cookie.
-func SetSessionCookie(c *echo.Context, sessionID string, expireDays int) {
+// secure should be true in production (HTTPS) and false for plain-HTTP deployments.
+func SetSessionCookie(c *echo.Context, sessionID string, expireDays int, secure bool) {
 	cookie := new(http.Cookie)
 	cookie.Name = sessionCookieName
 	cookie.Value = sessionID
 	cookie.HttpOnly = true
 	cookie.SameSite = http.SameSiteStrictMode
-	cookie.Secure = true
+	cookie.Secure = secure
 	cookie.Path = "/"
 	cookie.MaxAge = expireDays * 86400
 	c.SetCookie(cookie)
 }
 
 // ClearSessionCookie expires the session cookie.
-func ClearSessionCookie(c *echo.Context) {
+// secure must match the flag used when the cookie was set, or browsers may not clear it.
+func ClearSessionCookie(c *echo.Context, secure bool) {
 	cookie := new(http.Cookie)
 	cookie.Name = sessionCookieName
 	cookie.Value = ""
 	cookie.HttpOnly = true
 	cookie.SameSite = http.SameSiteStrictMode
-	cookie.Secure = true
+	cookie.Secure = secure
 	cookie.Path = "/"
 	cookie.MaxAge = 0
 	c.SetCookie(cookie)
