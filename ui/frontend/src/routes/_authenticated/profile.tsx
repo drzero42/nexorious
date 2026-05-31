@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/providers';
-import { useCollectionStats } from '@/hooks';
+import { useCollectionStats, gameKeys } from '@/hooks';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,6 +96,7 @@ function ProfilePage() {
 
   const { data: stats } = useCollectionStats();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // Clear library state
   const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
@@ -105,6 +107,8 @@ function ProfilePage() {
     setIsClearing(true);
     try {
       const result = await gamesApi.clearLibrary();
+      // Remove all user-games cache so /games renders empty immediately, not from stale data.
+      queryClient.removeQueries({ queryKey: gameKeys.all });
       toast.success(
         `Cleared ${result.deleted} game${result.deleted === 1 ? '' : 's'} from your library`,
       );
