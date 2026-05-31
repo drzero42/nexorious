@@ -32,7 +32,7 @@ import {
 } from '@/hooks';
 import { SyncStorefront, SyncFrequency } from '@/types/sync';
 import { config } from '@/lib/env';
-import { formatHoursPlayed } from '@/lib/game-utils';
+import { formatHoursPlayed, formatPlatformLabel } from '@/lib/game-utils';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame } from '@/types';
 import { ArrowLeft, Save, Loader2, Heart } from 'lucide-react';
@@ -415,12 +415,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
                       ownershipStatus: p.ownership_status,
                       acquiredDate: p.acquired_date ?? '',
                     };
-                    const platformName =
-                      p.storefront_details?.display_name ||
-                      p.storefront ||
-                      p.platform_details?.display_name ||
-                      p.platform ||
-                      'Unknown';
+                    const platformName = formatPlatformLabel(p);
 
                     return (
                       <div key={p.id} className="p-4 rounded-lg border bg-muted/30">
