@@ -28,6 +28,7 @@ import * as adminApi from '@/api/admin';
 import type { AdminUser } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/admin/users/')({
+  head: () => ({ meta: [{ title: 'Users | Nexorious' }] }),
   component: AdminUsersPage,
 });
 

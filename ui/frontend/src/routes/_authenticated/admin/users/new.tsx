@@ -13,6 +13,7 @@ import { ArrowLeft, AlertCircle, Loader2, Eye, EyeOff, UserPlus } from 'lucide-r
 import * as adminApi from '@/api/admin';
 
 export const Route = createFileRoute('/_authenticated/admin/users/new')({
+  head: () => ({ meta: [{ title: 'New User | Nexorious' }] }),
   component: CreateUserPage,
 });
 

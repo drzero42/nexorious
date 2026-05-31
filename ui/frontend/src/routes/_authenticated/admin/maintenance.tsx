@@ -24,6 +24,7 @@ import { useHealthStatus } from '@/hooks/use-health-status';
 import * as adminApi from '@/api/admin';
 
 export const Route = createFileRoute('/_authenticated/admin/maintenance')({
+  head: () => ({ meta: [{ title: 'Maintenance | Nexorious' }] }),
   component: MaintenancePage,
 });
 
