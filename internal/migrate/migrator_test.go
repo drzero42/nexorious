@@ -322,6 +322,18 @@ func TestTransitionToFailed_SetsStateAndStoresError(t *testing.T) {
 	}
 }
 
+func TestTransitionToReady_ClearsLastError(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateMigrating)
+	m.TransitionToFailed(errors.New("boom"))
+	m.TransitionToReady()
+	if got := m.LastError(); got != "" {
+		t.Errorf("LastError after TransitionToReady = %q, want empty", got)
+	}
+	if m.State() != migrate.AppStateReady {
+		t.Errorf("State = %v, want AppStateReady", m.State())
+	}
+}
+
 func TestTransitionToFailed_OverwritesPreviousError(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateMigrating)
 	m.TransitionToFailed(errors.New("first"))
