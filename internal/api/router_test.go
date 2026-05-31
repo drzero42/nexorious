@@ -318,8 +318,8 @@ func TestVersionEndpoint(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 	cc := rec.Header().Get("Cache-Control")
-	if cc != "public, max-age=3600" {
-		t.Errorf("Cache-Control = %q, want %q", cc, "public, max-age=3600")
+	if cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want %q", cc, "no-store")
 	}
 	var body map[string]string
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
