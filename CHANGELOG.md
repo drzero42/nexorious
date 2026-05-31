@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/drzero42/nexorious/compare/v0.2.0...v0.3.0) (2026-05-31)
+
+
+### Features
+
+* move sync schedule into header card ([#710](https://github.com/drzero42/nexorious/issues/710)) ([5868f11](https://github.com/drzero42/nexorious/commit/5868f118d05885730259fb0f604783463005e2eb))
+
+
+### Bug Fixes
+
+* add SESSION_COOKIE_SECURE config flag (default true) ([#703](https://github.com/drzero42/nexorious/issues/703)) ([1f9bb0f](https://github.com/drzero42/nexorious/commit/1f9bb0f2960e12a00a9578e70a0c9911b7decbb5))
+* extract GameFiltersValue type to eliminate duplicate filter shape ([#705](https://github.com/drzero42/nexorious/issues/705)) ([23505a4](https://github.com/drzero42/nexorious/commit/23505a466d6d8274ff54a411ac368442a8efe5dc))
+* play_status NULL handling — DB default, sync inference, and filter bug ([#706](https://github.com/drzero42/nexorious/issues/706)) ([#707](https://github.com/drzero42/nexorious/issues/707)) ([d0e064b](https://github.com/drzero42/nexorious/commit/d0e064ba350269a0a7035e144c005690c4c89484))
+* set per-route page titles to fix mobile Firefox tab title bug ([#702](https://github.com/drzero42/nexorious/issues/702)) ([36ee7b9](https://github.com/drzero42/nexorious/commit/36ee7b93d8b75577982137188c9e0bd52cbbd13e))
+* show Continue button after migration instead of auto-redirecting ([#714](https://github.com/drzero42/nexorious/issues/714)) ([b041eec](https://github.com/drzero42/nexorious/commit/b041eec3d3876349d20ab2f0f46a91ad3041db95))
+* show platform name in edit form storefront cards and playtime breakdown ([#712](https://github.com/drzero42/nexorious/issues/712)) ([8f8c094](https://github.com/drzero42/nexorious/commit/8f8c094f63285d725a67812181e93a2b96d95e47))
+* **test:** mock document.elementFromPoint in JSDOM setup ([22abe00](https://github.com/drzero42/nexorious/commit/22abe00c3f935efbfabba07b1b85b95f0ad77b1c))
+
 ## [0.2.0](https://github.com/drzero42/nexorious/compare/v0.1.3...v0.2.0) (2026-05-31)
 
 
