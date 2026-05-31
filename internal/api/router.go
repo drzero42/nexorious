@@ -258,6 +258,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		userGamesGroup := e.Group("/api/user-games", auth.AuthMiddleware(db))
 		userGamesGroup.GET("", ugh.HandleListUserGames)
 		userGamesGroup.POST("", ugh.HandleCreateUserGame)
+		userGamesGroup.DELETE("", ugh.HandleClearLibrary)
 		userGamesGroup.PUT("/bulk-update", ugh.HandleBulkUpdate)
 		userGamesGroup.DELETE("/bulk-delete", ugh.HandleBulkDelete)
 		userGamesGroup.POST("/bulk-add-platforms", ugh.HandleBulkAddPlatforms)
@@ -322,6 +323,9 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		// Admin user management routes (auth + admin required)
 		auh := NewAdminUsersHandler(db)
 		auh.RegisterRoutes(adminGroup)
+
+		arh := NewAdminResetHandler(db)
+		adminGroup.POST("/api/auth/admin/reset", arh.HandleReset)
 
 		// Sync routes (all auth-protected)
 		steamSvc := steamsvc.NewClient()

@@ -1338,7 +1338,6 @@ func TestListUserGamesSortByGameNumerics(t *testing.T) {
 	}
 
 	for _, field := range []string{"rating_average", "howlongtobeat_main"} {
-		field := field // capture
 		t.Run(field+" desc orders high, low, null", func(t *testing.T) {
 			ids := idsInOrder(t, field, "desc")
 			want := []string{"ug-high", "ug-low", "ug-null"}
@@ -1449,6 +1448,129 @@ func TestUserGamesNoStoredHoursColumn(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("user_games.hours_played must not be a stored column; found %d", count)
 	}
+}
+
+func TestHandleClearLibrary(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "clear")
+
+	// Seed 3 games + user games.
+	g1 := insertTestGame(t, testDB, "Clear Game 1")
+	g2 := insertTestGame(t, testDB, "Clear Game 2")
+	g3 := insertTestGame(t, testDB, "Clear Game 3")
+	insertTestUserGame(t, testDB, "ug-cl-1", userID, int(g1))
+	insertTestUserGame(t, testDB, "ug-cl-2", userID, int(g2))
+	insertTestUserGame(t, testDB, "ug-cl-3", userID, int(g3))
+
+	// Seed a job + job item + active river job.
+	insertJob(t, testDB, "job-cl-1", userID, "sync", "steam", "processing")
+	insertJobItem(t, testDB, "ji-cl-1", "job-cl-1", userID, "key-1", "Game 1", "pending")
+	riverID := insertRiverJob(t, testDB, "sync_item", "available", "ji-cl-1")
+
+	// Seed a sync config.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO user_sync_configs (id, user_id, storefront) VALUES (?, ?, 'steam')`,
+		"sc-cl-1", userID,
+	)
+	if err != nil {
+		t.Fatalf("seed sync_config: %v", err)
+	}
+
+	t.Run("deletes library and returns count", func(t *testing.T) {
+		rec := deleteAuth(t, e, "/api/user-games", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body)
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if resp["deleted"] != float64(3) {
+			t.Errorf("deleted = %v, want 3", resp["deleted"])
+		}
+	})
+
+	t.Run("clears user_games", func(t *testing.T) {
+		var count int
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_games WHERE user_id = ?`, userID).
+			Scan(context.Background(), &count); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("user_games count = %d, want 0", count)
+		}
+	})
+
+	t.Run("clears jobs", func(t *testing.T) {
+		var count int
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE user_id = ?`, userID).
+			Scan(context.Background(), &count); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("jobs count = %d, want 0", count)
+		}
+	})
+
+	t.Run("preserves sync configs", func(t *testing.T) {
+		var count int
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_sync_configs WHERE user_id = ?`, userID).
+			Scan(context.Background(), &count); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if count != 1 {
+			t.Errorf("sync_configs count = %d, want 1 (sync configs must survive library clear)", count)
+		}
+	})
+
+	t.Run("cancels active river jobs", func(t *testing.T) {
+		var state string
+		if err := testDB.NewRaw(`SELECT state FROM river_job WHERE id = ?`, riverID).
+			Scan(context.Background(), &state); err != nil {
+			t.Fatalf("river state: %v", err)
+		}
+		if state != "cancelled" {
+			t.Errorf("river state = %q, want cancelled", state)
+		}
+	})
+
+	t.Run("idempotent on empty library", func(t *testing.T) {
+		rec := deleteAuth(t, e, "/api/user-games", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body)
+		}
+		var resp map[string]any
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if resp["deleted"] != float64(0) {
+			t.Errorf("deleted = %v, want 0", resp["deleted"])
+		}
+	})
+
+	t.Run("does not touch other users", func(t *testing.T) {
+		otherID, _ := setupUserGamesUser(t, testDB, e, "clear-other")
+		otherGame := insertTestGame(t, testDB, "Other User Game")
+		insertTestUserGame(t, testDB, "ug-cl-other", otherID, int(otherGame))
+
+		// Clear the original user again (already empty).
+		rec := deleteAuth(t, e, "/api/user-games", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d", rec.Code)
+		}
+
+		var count int
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_games WHERE user_id = ?`, otherID).
+			Scan(context.Background(), &count); err != nil {
+			t.Fatalf("count other: %v", err)
+		}
+		if count != 1 {
+			t.Errorf("other user_games count = %d, want 1", count)
+		}
+	})
 }
 
 func TestManualPlatformHoursReflectedInSum(t *testing.T) {

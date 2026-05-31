@@ -491,6 +491,13 @@ export async function deleteUserGame(id: string): Promise<void> {
 }
 
 /**
+ * Remove all games from the authenticated user's library.
+ */
+export async function clearLibrary(): Promise<{ deleted: number }> {
+  return api.delete<{ deleted: number }>('/user-games');
+}
+
+/**
  * Search for games in the IGDB database.
  */
 export async function searchIGDB(
