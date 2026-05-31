@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const Route = createFileRoute('/_public/login')({
+  head: () => ({ meta: [{ title: 'Login | Nexorious' }] }),
   component: LoginPage,
 });
 
