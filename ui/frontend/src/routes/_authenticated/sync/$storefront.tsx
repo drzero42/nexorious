@@ -427,7 +427,7 @@ function SyncDetailPage() {
                 Last synced: {formatLastSync(config.lastSyncedAt)}
               </CardDescription>
             </div>
-            <div className="ml-auto">
+            <div className="ml-auto flex flex-col items-end gap-2">
               <Badge
                 variant={credentialsError ? 'destructive' : 'outline'}
                 className={
@@ -462,6 +462,24 @@ function SyncDetailPage() {
                   </>
                 )}
               </Badge>
+              {config.isConfigured && (
+                <Select
+                  value={effectiveFrequency}
+                  onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
+                  disabled={isUpdating}
+                >
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.values(SyncFrequency).map((freq) => (
+                      <SelectItem key={freq} value={freq}>
+                        {getSyncFrequencyLabel(freq)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -520,34 +538,6 @@ function SyncDetailPage() {
                 queryClient.invalidateQueries({ queryKey: authKeys.me() });
               }}
             />
-          )}
-          {config.isConfigured && (
-            <Card>
-              <CardContent className="flex items-center justify-between py-4">
-                <div>
-                  <div className="font-medium">Sync Frequency</div>
-                  <div className="text-sm text-muted-foreground">
-                    How often to automatically sync
-                  </div>
-                </div>
-                <Select
-                  value={effectiveFrequency}
-                  onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
-                  disabled={isUpdating}
-                >
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.values(SyncFrequency).map((freq) => (
-                      <SelectItem key={freq} value={freq}>
-                        {getSyncFrequencyLabel(freq)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </CardContent>
-            </Card>
           )}
         </CollapsibleContent>
       </Collapsible>
