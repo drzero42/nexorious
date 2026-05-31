@@ -226,6 +226,17 @@ One `UserGameWorker` job runs per game, enqueued by Stage 2 or by a user action.
 5. Update `external_game.updated_at` — always, whether the game was skipped or not
 6. After writing all platform rows, if IGDB is configured and the `games` row has no description, an immediate metadata fetch is enqueued for that game. This ensures newly added games have cover art and full IGDB data within seconds rather than waiting for the next scheduled bulk refresh. The enqueue is fire-and-forget and non-fatal — the periodic bulk refresh (see [docs/maintenance.md](maintenance.md) § "Metadata refresh") remains the safety net.
 
+### Play Status
+
+`user_games.play_status` defaults to `'not_started'`. Sync infers an initial status from the incoming hours:
+
+- If total `hours_played` across all `external_game_platforms` rows for the game is **> 0**, and the current `play_status` is `'not_started'` (either because the row is new, or because it was previously unplayed), sync sets `play_status = 'in_progress'`.
+- If total hours = 0, the DB default (`'not_started'`) applies and nothing is changed.
+
+Sync can only auto-promote `not_started → in_progress`. Any other status the user has explicitly set (e.g. `'completed'`, `'on_hold'`) is never touched by sync.
+
+Manually added games that omit `play_status` default to `'not_started'` via the DB default. The sync worker applies the same inference when it later processes that game from a storefront.
+
 ### Ownership rank guard
 
 Ownership statuses have a fixed rank. A stored status is never replaced by one of lower rank:
