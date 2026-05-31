@@ -177,6 +177,8 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 - ❌ Never commit directly to main unless instructed to
 - ❌ Never merge a PR on your own initiative — only when the user explicitly instructs
 
+**`gh pr merge` handles everything locally:** when you run `gh pr merge --squash --delete-branch` while checked out on the PR's branch, `gh` switches your local checkout to `main`, deletes the local feature branch, **and pulls `main`** so it is already up to date with the new squash commit. Do **not** run `git checkout main`, `git branch -D`, `git pull`, or `git reset --hard origin/main` afterward — `gh` has already done it. Just confirm with `git status` (expect `## main...origin/main`, no divergence).
+
 ### Merging Renovate PRs
 
 All Renovate dependency PRs that touch `ui/frontend/package-lock.json`, `flake.lock`, or `nix/frontend.nix` conflict with each other — merging one immediately invalidates the others' lockfiles. **Never attempt to merge multiple such PRs in a single step.**
