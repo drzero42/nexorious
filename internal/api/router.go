@@ -153,9 +153,9 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		})
 	})
 
-	// Version — public, aggressively cached
+	// Version — public, not cached (changes on every deploy)
 	e.GET("/api/version", func(c *echo.Context) error {
-		c.Response().Header().Set("Cache-Control", "public, max-age=3600")
+		c.Response().Header().Set("Cache-Control", "no-store")
 		return c.JSON(http.StatusOK, map[string]string{
 			"version": version,
 			"commit":  commit,

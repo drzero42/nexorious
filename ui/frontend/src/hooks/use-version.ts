@@ -9,7 +9,7 @@ export function useVersion() {
   return useQuery<VersionInfo>({
     queryKey: ['version'],
     queryFn: () => fetch('/api/version').then((r) => r.json() as Promise<VersionInfo>),
-    staleTime: 60 * 60 * 1000,
-    gcTime: 24 * 60 * 60 * 1000,
+    staleTime: 0,
+    gcTime: 5 * 60 * 1000,
   });
 }
