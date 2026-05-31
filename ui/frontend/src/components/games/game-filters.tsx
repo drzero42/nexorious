@@ -72,6 +72,8 @@ export interface GameFiltersProps {
   onSortOrderToggle: () => void;
 }
 
+export type GameFiltersValue = GameFiltersProps['filters'];
+
 const statusOptions: { value: PlayStatus; label: string }[] = [
   { value: PlayStatus.NOT_STARTED, label: 'Not Started' },
   { value: PlayStatus.IN_PROGRESS, label: 'In Progress' },
