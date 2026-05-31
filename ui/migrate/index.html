@@ -78,6 +78,25 @@
       btn.textContent = 'Retry';
     }
 
+    function showSuccess() {
+      var btn = document.getElementById('btn');
+      var status = document.getElementById('status');
+      status.textContent = 'Migrations complete — click Continue to proceed';
+      status.className = 'meta meta--success';
+      btn.textContent = 'Continue';
+      btn.onclick = function() {
+        btn.disabled = true;
+        checkStatusAndAct()
+          .then(function() { startPolling(); })
+          .catch(function() {
+            status.textContent = 'Could not verify migration status. Refresh to retry.';
+            status.className = 'meta meta--error';
+            btn.disabled = false;
+          });
+      };
+      btn.disabled = false;
+    }
+
     function runMigrations() {
       stopPolling();
       var btn = document.getElementById('btn');
@@ -110,18 +129,7 @@
           es.addEventListener('complete', function() {
             completed = true;
             es.close();
-            // RunMigrations closes the SSE channel before the handler runs
-            // InitNeedsSetup and calls TransitionToReady, so the server may
-            // still report state="migrating" briefly. checkStatusAndAct
-            // handles ready/migration_failed; the resumed poll catches up
-            // for the brief still-migrating window.
-            checkStatusAndAct()
-              .then(function() { startPolling(); })
-              .catch(function() {
-                status.textContent = 'Could not verify migration status. Refresh to retry.';
-                status.className = 'meta meta--error';
-                btn.disabled = false;
-              });
+            showSuccess();
           });
 
           es.onerror = function() {
