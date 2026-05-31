@@ -90,7 +90,7 @@ Echo middleware blocks all non-migration routes until state is `Ready`. River wo
 - **Exception**: `internal/auth` uses raw `db.NewRaw`/`db.QueryRow` directly (not Bun models) to keep auth isolated.
 - **Dynamic filter queries**: Bun query builder used in `internal/filter/` for user-game list filtering.
 - **Driver**: `pgx/v5` via Bun's own `pgdriver` (`uptrace/bun/driver/pgdriver`).
-- **Migrations**: Bun migrate (`uptrace/bun/migrate`); SQL files live in `internal/db/migrations/` with timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); discovered automatically via `Migrations.Discover(FS)` in `migrations.go`.
+- **Migrations**: Bun migrate (`uptrace/bun/migrate`); SQL files live in `internal/db/migrations/` with timestamp-prefix naming (`YYYYMMDD<nnnnnn>_name.up.sql`, where `<nnnnnn>` is a zero-padded running number, e.g. `20260503000001_name.up.sql`); discovered automatically via `Migrations.Discover(FS)` in `migrations.go`.
 
 ### Frontend Embedding (Stash pattern)
 `ui/ui.go` exposes five `embed.FS` vars:
@@ -167,7 +167,7 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 ### Essential Workflow
 1. **Planning**: Read `docs/superpowers/specs/` for design context
 2. **Branching**: Create a feature branch before starting any task
-3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using timestamp-prefix naming (`YYYYMMDDHHmmss_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
+3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using the naming convention `YYYYMMDD<nnnnnn>_name.up.sql` where `<nnnnnn>` is a zero-padded running number (e.g. `20260503000001_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
 4. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)) — format/lint on every edit, build + typecheck when a turn ends, and the full suites at `git push`. You don't need to re-run the whole suites by hand; do run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.
 5. **Plan files**: `docs/superpowers/plans/` is tracked — always commit the plan file on the feature branch
 
