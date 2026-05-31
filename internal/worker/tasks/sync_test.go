@@ -2560,3 +2560,222 @@ func TestDispatchSync_EmptyLibrary_Finalizes(t *testing.T) {
 		t.Errorf("empty library: expected job 'completed', got %q", status)
 	}
 }
+
+func TestUserGameWorker_PlayStatus_NewGame_WithHours_SetsInProgress(t *testing.T) {
+	// New user_games row + incoming hours > 0 → play_status = 'in_progress'.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(1001)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Test Game', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	egID := uuid.NewString()
+	igdbIDVal := igdbID
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', 'ext-1001', 'Test Game', false, true, false, ?)`,
+		egID, userID, igdbIDVal,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 10.0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'ext-1001', 'Test Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var playStatus string
+	if err := testDB.NewRaw(
+		`SELECT play_status FROM user_games WHERE user_id = ? AND game_id = ?`, userID, igdbID,
+	).Scan(ctx, &playStatus); err != nil {
+		t.Fatalf("scan play_status: %v", err)
+	}
+	if playStatus != "in_progress" {
+		t.Errorf("play_status: want 'in_progress', got %q", playStatus)
+	}
+}
+
+func TestUserGameWorker_PlayStatus_NewGame_NoHours_SetsNotStarted(t *testing.T) {
+	// New user_games row + incoming hours = 0 → play_status = 'not_started' (DB default).
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(1002)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Test Game 2', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	egID := uuid.NewString()
+	igdbIDVal := igdbID
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', 'ext-1002', 'Test Game 2', false, true, false, ?)`,
+		egID, userID, igdbIDVal,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'ext-1002', 'Test Game 2', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var playStatus string
+	if err := testDB.NewRaw(
+		`SELECT play_status FROM user_games WHERE user_id = ? AND game_id = ?`, userID, igdbID,
+	).Scan(ctx, &playStatus); err != nil {
+		t.Fatalf("scan play_status: %v", err)
+	}
+	if playStatus != "not_started" {
+		t.Errorf("play_status: want 'not_started', got %q", playStatus)
+	}
+}
+
+func TestUserGameWorker_PlayStatus_ExistingNotStarted_WithHours_PromotesToInProgress(t *testing.T) {
+	// Existing row with play_status='not_started' + hours > 0 → promoted to 'in_progress'.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(1003)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Test Game 3', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	ugID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_games (id, user_id, game_id, play_status, created_at, updated_at) VALUES (?, ?, ?, 'not_started', now(), now())`,
+		ugID, userID, igdbID,
+	)
+	egID := uuid.NewString()
+	igdbIDVal := igdbID
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', 'ext-1003', 'Test Game 3', false, true, false, ?)`,
+		egID, userID, igdbIDVal,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 5.0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'ext-1003', 'Test Game 3', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var playStatus string
+	if err := testDB.NewRaw(
+		`SELECT play_status FROM user_games WHERE user_id = ? AND game_id = ?`, userID, igdbID,
+	).Scan(ctx, &playStatus); err != nil {
+		t.Fatalf("scan play_status: %v", err)
+	}
+	if playStatus != "in_progress" {
+		t.Errorf("play_status: want 'in_progress', got %q", playStatus)
+	}
+}
+
+func TestUserGameWorker_PlayStatus_ExistingUserSet_NeverOverwritten(t *testing.T) {
+	// Existing row with play_status='completed' (user-set) must never be overwritten by sync,
+	// even when incoming hours > 0.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(1004)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Test Game 4', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+	ugID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_games (id, user_id, game_id, play_status, created_at, updated_at) VALUES (?, ?, ?, 'completed', now(), now())`,
+		ugID, userID, igdbID,
+	)
+	egID := uuid.NewString()
+	igdbIDVal := igdbID
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', 'ext-1004', 'Test Game 4', false, true, false, ?)`,
+		egID, userID, igdbIDVal,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 50.0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'ext-1004', 'Test Game 4', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var playStatus string
+	if err := testDB.NewRaw(
+		`SELECT play_status FROM user_games WHERE user_id = ? AND game_id = ?`, userID, igdbID,
+	).Scan(ctx, &playStatus); err != nil {
+		t.Fatalf("scan play_status: %v", err)
+	}
+	if playStatus != "completed" {
+		t.Errorf("play_status: want 'completed' (unchanged), got %q", playStatus)
+	}
+}

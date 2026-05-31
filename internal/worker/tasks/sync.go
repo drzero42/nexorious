@@ -618,14 +618,15 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	ugID := uuid.NewString()
 	now := time.Now().UTC()
 	var isNewRow struct {
-		ID    string `bun:"id"`
-		IsNew bool   `bun:"is_new"`
+		ID         string  `bun:"id"`
+		IsNew      bool    `bun:"is_new"`
+		PlayStatus *string `bun:"play_status"`
 	}
 	if err := w.DB.NewRaw(
 		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT (user_id, game_id) DO UPDATE SET updated_at = now()
-		 RETURNING id, (xmax = 0) AS is_new`,
+		 RETURNING id, (xmax = 0) AS is_new, play_status`,
 		ugID, item.UserID, *eg.ResolvedIGDBID, now, now,
 	).Scan(ctx, &isNewRow); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("upsert user_game: %v", err))
@@ -731,6 +732,18 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			).Exec(ctx); err != nil {
 				slog.Error("user_game_write: update ugp", "err", err, "item_id", p.JobItemID)
 			}
+		}
+	}
+
+	var totalHours float64
+	for _, egp := range egPlatforms {
+		totalHours += egp.HoursPlayed
+	}
+	if totalHours > 0 && (isNewRow.IsNew || (isNewRow.PlayStatus != nil && *isNewRow.PlayStatus == "not_started")) {
+		if _, err := w.DB.NewRaw(
+			`UPDATE user_games SET play_status = 'in_progress' WHERE id = ?`, ugID,
+		).Exec(ctx); err != nil {
+			slog.Error("user_game_write: update play_status", "err", err, "item_id", p.JobItemID)
 		}
 	}
 
