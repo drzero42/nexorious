@@ -878,6 +878,40 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 	}
 
+	// Cascade skip to children.
+	var childIDs []string
+	if err := h.db.NewRaw(
+		`SELECT id FROM external_games WHERE parent_id = ?`, id,
+	).Scan(ctx, &childIDs); err == nil {
+		for _, childID := range childIDs {
+			if _, err := h.db.NewRaw(
+				`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ?`, childID,
+			).Exec(ctx); err != nil {
+				slog.Error("sync: skip game: cascade child failed", "err", err, "child_id", childID)
+				continue
+			}
+			var childItem struct {
+				ID    string `bun:"id"`
+				JobID string `bun:"job_id"`
+			}
+			if err := h.db.NewRaw(`
+				SELECT id, job_id FROM job_items
+				WHERE external_game_id = ? AND status IN ('pending_review', 'pending')
+				ORDER BY created_at DESC
+				LIMIT 1`, childID,
+			).Scan(ctx, &childItem); err == nil {
+				if _, err := h.db.NewRaw(
+					`UPDATE job_items SET status = 'skipped', processed_at = now() WHERE id = ?`,
+					childItem.ID,
+				).Exec(ctx); err != nil {
+					slog.Error("sync: skip game: cascade child job_item", "err", err, "job_item_id", childItem.ID)
+				} else {
+					tasks.SyncCheckJobCompletion(ctx, h.db, childItem.JobID)
+				}
+			}
+		}
+	}
+
 	// Mark the most recent pending_review or pending job_item for this game as skipped,
 	// then check whether the job can now complete.
 	var jobItemRow struct {
@@ -932,6 +966,13 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 	).Exec(ctx); err != nil {
 		slog.Error("sync: unskip game failed", "err", err, "external_game_id", id)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to unskip game")
+	}
+
+	// Cascade unskip to children (job_items unchanged; children re-process on next sync).
+	if _, err := h.db.NewRaw(
+		`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE parent_id = ?`, id,
+	).Exec(ctx); err != nil {
+		slog.Error("sync: unskip game: cascade children failed", "err", err, "parent_id", id)
 	}
 
 	// Enqueue immediate re-processing. Failure here is non-fatal — the game

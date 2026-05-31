@@ -560,6 +560,89 @@ func TestSkipGame_MarksJobItemSkippedAndCompletesJob(t *testing.T) {
 	}
 }
 
+func TestSkipGame_CascadesToChildren(t *testing.T) {
+	// Skipping a parent must also skip its children and their job_items.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "skip-cascade")
+
+	insertExternalGame(t, testDB, "eg-skip-parent", userID, "psn", "CUSA001", "Horizon")
+	insertChildExternalGame(t, testDB, "eg-skip-child", userID, "psn", "PPSA001", "Horizon", "eg-skip-parent")
+	insertJob(t, testDB, "job-skip-cascade", userID, "sync", "psn", "processing")
+
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-skip-child', 'job-skip-cascade', ?, 'PPSA001', 'Horizon', 'eg-skip-child', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert child job_item: %v", err)
+	}
+
+	rec := postJSONAuth(t, e, "/api/sync/ignored/eg-skip-parent", nil, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	// Child external_game must be skipped.
+	var childSkipped bool
+	if err := testDB.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-skip-child'`).Scan(ctx, &childSkipped); err != nil {
+		t.Fatalf("scan child is_skipped: %v", err)
+	}
+	if !childSkipped {
+		t.Error("expected child external_game to be skipped")
+	}
+
+	// Child job_item must be skipped.
+	var childItemStatus string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-skip-child'`).Scan(ctx, &childItemStatus); err != nil {
+		t.Fatalf("scan child job_item status: %v", err)
+	}
+	if childItemStatus != "skipped" {
+		t.Errorf("expected child job_item status=skipped, got %q", childItemStatus)
+	}
+}
+
+func TestUnskipGame_CascadesToChildren(t *testing.T) {
+	// Unskipping a parent must also unskip its children.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "unskip-cascade")
+
+	// Insert parent and child, both pre-skipped.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
+		 VALUES ('eg-unskip-parent', ?, 'psn', 'CUSA002', 'Ratchet', true, true, false, now(), now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert parent: %v", err)
+	}
+	_, err = testDB.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
+		 VALUES ('eg-unskip-child', ?, 'psn', 'PPSA002', 'Ratchet', true, true, false, 'eg-unskip-parent', now(), now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert child: %v", err)
+	}
+
+	rec := deleteAuth(t, e, "/api/sync/ignored/eg-unskip-parent", token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var childSkipped bool
+	if err := testDB.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-unskip-child'`).Scan(context.Background(), &childSkipped); err != nil {
+		t.Fatalf("scan child is_skipped: %v", err)
+	}
+	if childSkipped {
+		t.Error("expected child external_game to be unskipped after parent unskip")
+	}
+}
+
 func TestIgnored_404ForUnknown(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
