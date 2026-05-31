@@ -180,6 +180,7 @@ type ExternalGame struct {
 	IsAvailable     bool      `bun:"is_available,notnull"     json:"is_available"`
 	IsSubscription  bool      `bun:"is_subscription,notnull"  json:"is_subscription"`
 	OwnershipStatus *string   `bun:"ownership_status"         json:"ownership_status"`
+	ParentID        *string   `bun:"parent_id"                json:"parent_id,omitempty"`
 	CreatedAt       time.Time `bun:"created_at,notnull"       json:"created_at"`
 	UpdatedAt       time.Time `bun:"updated_at,notnull"       json:"updated_at"`
 

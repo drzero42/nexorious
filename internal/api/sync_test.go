@@ -420,6 +420,32 @@ func insertExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID,
 	}
 }
 
+// insertChildExternalGame inserts an external_game row with parent_id set.
+func insertChildExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID, title, parentID string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, false, true, false, ?, now(), now())`,
+		id, userID, storefront, extID, title, parentID,
+	)
+	if err != nil {
+		t.Fatalf("insertChildExternalGame: %v", err)
+	}
+}
+
+// insertExternalGamePlatform inserts a platform row for an external_game.
+func insertExternalGamePlatform(t *testing.T, db *bun.DB, egID, platform string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+		 VALUES (gen_random_uuid()::text, ?, ?, 0, now())`,
+		egID, platform,
+	)
+	if err != nil {
+		t.Fatalf("insertExternalGamePlatform: %v", err)
+	}
+}
+
 func TestIgnored_EmptyList(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
@@ -531,6 +557,89 @@ func TestSkipGame_MarksJobItemSkippedAndCompletesJob(t *testing.T) {
 	}
 	if sc.Title != "Skip Me" {
 		t.Errorf("sync_change title: want 'Skip Me', got %q", sc.Title)
+	}
+}
+
+func TestSkipGame_CascadesToChildren(t *testing.T) {
+	// Skipping a parent must also skip its children and their job_items.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "skip-cascade")
+
+	insertExternalGame(t, testDB, "eg-skip-parent", userID, "psn", "CUSA001", "Horizon")
+	insertChildExternalGame(t, testDB, "eg-skip-child", userID, "psn", "PPSA001", "Horizon", "eg-skip-parent")
+	insertJob(t, testDB, "job-skip-cascade", userID, "sync", "psn", "processing")
+
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-skip-child', 'job-skip-cascade', ?, 'PPSA001', 'Horizon', 'eg-skip-child', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert child job_item: %v", err)
+	}
+
+	rec := postJSONAuth(t, e, "/api/sync/ignored/eg-skip-parent", nil, token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	// Child external_game must be skipped.
+	var childSkipped bool
+	if err := testDB.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-skip-child'`).Scan(ctx, &childSkipped); err != nil {
+		t.Fatalf("scan child is_skipped: %v", err)
+	}
+	if !childSkipped {
+		t.Error("expected child external_game to be skipped")
+	}
+
+	// Child job_item must be skipped.
+	var childItemStatus string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = 'ji-skip-child'`).Scan(ctx, &childItemStatus); err != nil {
+		t.Fatalf("scan child job_item status: %v", err)
+	}
+	if childItemStatus != "skipped" {
+		t.Errorf("expected child job_item status=skipped, got %q", childItemStatus)
+	}
+}
+
+func TestUnskipGame_CascadesToChildren(t *testing.T) {
+	// Unskipping a parent must also unskip its children.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "unskip-cascade")
+
+	// Insert parent and child, both pre-skipped.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
+		 VALUES ('eg-unskip-parent', ?, 'psn', 'CUSA002', 'Ratchet', true, true, false, now(), now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert parent: %v", err)
+	}
+	_, err = testDB.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
+		 VALUES ('eg-unskip-child', ?, 'psn', 'PPSA002', 'Ratchet', true, true, false, 'eg-unskip-parent', now(), now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert child: %v", err)
+	}
+
+	rec := deleteAuth(t, e, "/api/sync/ignored/eg-unskip-parent", token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var childSkipped bool
+	if err := testDB.NewRaw(`SELECT is_skipped FROM external_games WHERE id = 'eg-unskip-child'`).Scan(context.Background(), &childSkipped); err != nil {
+		t.Fatalf("scan child is_skipped: %v", err)
+	}
+	if childSkipped {
+		t.Error("expected child external_game to be unskipped after parent unskip")
 	}
 }
 
@@ -860,6 +969,66 @@ func TestListExternalGames_IsolatedByUser(t *testing.T) {
 	}
 }
 
+func TestListExternalGames_ExcludesChildren(t *testing.T) {
+	// A child row (parent_id IS NOT NULL) must never appear in the list.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "list-excludes-children")
+
+	insertExternalGame(t, testDB, "eg-parent-1", userID, "psn", "CUSA001", "Horizon")
+	insertChildExternalGame(t, testDB, "eg-child-1", userID, "psn", "PPSA001", "Horizon", "eg-parent-1")
+
+	rec := getAuth(t, e, "/api/sync/psn/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 result (parent only), got %d", len(resp))
+	}
+	if resp[0]["id"] != "eg-parent-1" {
+		t.Errorf("expected parent row, got id=%v", resp[0]["id"])
+	}
+}
+
+func TestListExternalGames_AggregatesChildPlatforms(t *testing.T) {
+	// The parent entry must include platform slugs from child rows.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "list-agg-platforms")
+
+	insertExternalGame(t, testDB, "eg-par-2", userID, "psn", "CUSA002", "God of War")
+	insertExternalGamePlatform(t, testDB, "eg-par-2", "playstation-4")
+	insertChildExternalGame(t, testDB, "eg-chi-2", userID, "psn", "PPSA002", "God of War", "eg-par-2")
+	insertExternalGamePlatform(t, testDB, "eg-chi-2", "playstation-5")
+
+	rec := getAuth(t, e, "/api/sync/psn/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(resp))
+	}
+	platforms, ok := resp[0]["platforms"].([]any)
+	if !ok {
+		t.Fatalf("expected platforms array, got %T", resp[0]["platforms"])
+	}
+	platformSet := make(map[string]bool)
+	for _, p := range platforms {
+		platformSet[p.(string)] = true
+	}
+	if !platformSet["playstation-4"] || !platformSet["playstation-5"] {
+		t.Errorf("expected both playstation-4 and playstation-5 in platforms, got %v", platforms)
+	}
+}
+
 // ─── TestRematchExternalGame ──────────────────────────────────────────────────
 
 func insertUserGameAndPlatform(t *testing.T, db *bun.DB, ugID, userID, gameIDInt, ugpID, externalGameID string) {
@@ -997,9 +1166,9 @@ func TestRematchExternalGame_ResolvesSiblings(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-siblings")
 
-	// Two PSN external_games for the same game title (PS4 + PS5 variants).
+	// Two PSN external_games for the same game title (PS4 parent + PS5 child variant).
 	insertExternalGame(t, testDB, "eg-ps4", userID, "psn", "PPSA-001", "Spider-Man 2")
-	insertExternalGame(t, testDB, "eg-ps5", userID, "psn", "PPSA-002", "Spider-Man 2")
+	insertChildExternalGame(t, testDB, "eg-ps5", userID, "psn", "PPSA-002", "Spider-Man 2", "eg-ps4")
 
 	// A recent sync job for the sibling fallback path.
 	insertJob(t, testDB, "job-sib", userID, "sync", "psn", "processing")
@@ -1094,7 +1263,7 @@ func TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending(t *testing.T) 
 	userID, token := setupTagUser(t, testDB, e, "rm-sib-status")
 
 	insertExternalGame(t, testDB, "eg-sib-s1", userID, "psn", "PPSA-101", "God of War")
-	insertExternalGame(t, testDB, "eg-sib-s2", userID, "psn", "PPSA-102", "God of War")
+	insertChildExternalGame(t, testDB, "eg-sib-s2", userID, "psn", "PPSA-102", "God of War", "eg-sib-s1")
 	insertJob(t, testDB, "job-sib-s", userID, "sync", "psn", "processing")
 
 	for _, row := range []struct{ id, egID, extID string }{
@@ -1185,7 +1354,7 @@ func TestRematchExternalGame_SiblingAfterSyncCompleted(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "rm-sib-postcomplete")
 
 	insertExternalGame(t, testDB, "eg-sib-pc1", userID, "psn", "CUSA-001", "Horizon")
-	insertExternalGame(t, testDB, "eg-sib-pc2", userID, "psn", "CUSA-002", "Horizon")
+	insertChildExternalGame(t, testDB, "eg-sib-pc2", userID, "psn", "CUSA-002", "Horizon", "eg-sib-pc1")
 	insertJob(t, testDB, "job-sib-pc", userID, "sync", "psn", "completed")
 
 	for _, row := range []struct{ id, egID, extID string }{
@@ -1220,6 +1389,58 @@ func TestRematchExternalGame_SiblingAfterSyncCompleted(t *testing.T) {
 	}
 	if count != 2 {
 		t.Errorf("expected both sibling job_items reset to pending, got count=%d", count)
+	}
+}
+
+func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
+	// Rematching a parent must cascade resolved_igdb_id to children via parent_id,
+	// not title search. A second game with the same title but different user must NOT
+	// be affected.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userA, tokenA := setupTagUser(t, testDB, e, "rm-fk-userA")
+	userB, _ := setupTagUser(t, testDB, e, "rm-fk-userB")
+
+	// User A: parent + child, same title.
+	insertExternalGame(t, testDB, "eg-fk-parent", userA, "psn", "CUSA100", "Spider-Man")
+	insertChildExternalGame(t, testDB, "eg-fk-child", userA, "psn", "PPSA100", "Spider-Man", "eg-fk-parent")
+	insertJob(t, testDB, "job-fk", userA, "sync", "psn", "processing")
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-fk-child', 'job-fk', ?, 'PPSA100', 'Spider-Man', 'eg-fk-child', '{}', 'pending', '{}', '[]', now())`,
+		userA,
+	)
+	if err != nil {
+		t.Fatalf("insert child job_item: %v", err)
+	}
+
+	// User B: unrelated game with same title — must NOT be touched.
+	insertExternalGame(t, testDB, "eg-fk-other", userB, "psn", "CUSA200", "Spider-Man")
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-fk-parent/rematch",
+		map[string]any{"igdb_id": 4242}, tokenA)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	// Child must have inherited resolved_igdb_id.
+	var childResolved *int32
+	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-fk-child'`).Scan(ctx, &childResolved); err != nil {
+		t.Fatalf("scan child resolved_igdb_id: %v", err)
+	}
+	if childResolved == nil || *childResolved != 4242 {
+		t.Errorf("child resolved_igdb_id: want 4242, got %v", childResolved)
+	}
+
+	// User B's game must NOT have been touched.
+	var otherResolved *int32
+	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-fk-other'`).Scan(ctx, &otherResolved); err != nil {
+		t.Fatalf("scan other resolved_igdb_id: %v", err)
+	}
+	if otherResolved != nil {
+		t.Errorf("other user's game must not be resolved, got %v", *otherResolved)
 	}
 }
 
@@ -1305,7 +1526,7 @@ func TestRematchExternalGame_SiblingAlreadyMatchedWrong(t *testing.T) {
 		t.Fatalf("insert wrong game: %v", err)
 	}
 	insertExternalGame(t, testDB, "eg-aw-win", userID, "steam", "2100", "Another World")
-	insertExternalGame(t, testDB, "eg-aw-lin", userID, "steam", "2101", "Another World")
+	insertChildExternalGame(t, testDB, "eg-aw-lin", userID, "steam", "2101", "Another World", "eg-aw-win")
 	if _, err := testDB.ExecContext(context.Background(),
 		`UPDATE external_games SET resolved_igdb_id = 1111 WHERE id IN ('eg-aw-win', 'eg-aw-lin')`); err != nil {
 		t.Fatalf("set wrong match: %v", err)

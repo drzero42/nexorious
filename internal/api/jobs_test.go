@@ -417,14 +417,49 @@ func TestPendingReviewCount_AllJobStatuses(t *testing.T) {
 }
 
 func TestPendingReviewCount_Deduplicates(t *testing.T) {
+	// A child row with a pending_review job_item must not be counted — only the
+	// parent counts. Dedup now comes from parent_id IS NULL, not DISTINCT title.
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "prc-dedup")
 
 	insertJob(t, testDB, "job-prc-dedup", userID, "sync", "psn", "processing")
-	// Same source_title, different item_key (PS4 and PS5 SKUs of the same game).
-	insertJobItem(t, testDB, "ji-prc-dedup-1", "job-prc-dedup", userID, "CUSA12345_00", "Call of Duty", "pending_review")
-	insertJobItem(t, testDB, "ji-prc-dedup-2", "job-prc-dedup", userID, "PPSA07890_00", "Call of Duty", "pending_review")
+
+	// Insert parent external_game and link its job_item.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
+		 VALUES ('eg-prc-parent', ?, 'psn', 'CUSA12345_00', 'Call of Duty', false, true, false, now(), now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert parent eg: %v", err)
+	}
+	_, err = testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-prc-dedup-1', 'job-prc-dedup', ?, 'CUSA12345_00', 'Call of Duty', 'eg-prc-parent', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert parent job_item: %v", err)
+	}
+
+	// Insert child external_game and link its job_item.
+	_, err = testDB.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
+		 VALUES ('eg-prc-child', ?, 'psn', 'PPSA07890_00', 'Call of Duty', false, true, false, 'eg-prc-parent', now(), now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert child eg: %v", err)
+	}
+	_, err = testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-prc-dedup-2', 'job-prc-dedup', ?, 'PPSA07890_00', 'Call of Duty', 'eg-prc-child', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert child job_item: %v", err)
+	}
 
 	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
 	if rec.Code != http.StatusOK {
@@ -435,11 +470,51 @@ func TestPendingReviewCount_Deduplicates(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if resp["pending_review_count"].(float64) != 1 {
-		t.Fatalf("expected pending_review_count=1 (deduplicated), got %v", resp["pending_review_count"])
+		t.Fatalf("expected pending_review_count=1 (child excluded), got %v", resp["pending_review_count"])
 	}
 	bySource := resp["counts_by_source"].(map[string]any)
 	if bySource["psn"].(float64) != 1 {
-		t.Fatalf("expected counts_by_source.psn=1 (deduplicated), got %v", bySource["psn"])
+		t.Fatalf("expected counts_by_source.psn=1, got %v", bySource["psn"])
+	}
+}
+
+func TestPendingReviewCount_ExcludesChildren(t *testing.T) {
+	// A pending_review item linked to a child external_game must be excluded
+	// from the count even when the parent has no pending_review item.
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "prc-exclude-child")
+
+	insertJob(t, testDB, "job-prc-child", userID, "sync", "psn", "processing")
+
+	// Parent: no pending_review item.
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
+		 VALUES ('eg-prc-ex-parent', ?, 'psn', 'CUSA999', 'Ratchet', false, true, false, now(), now())`,
+		userID,
+	)
+	// Child: has a pending_review item — must NOT be counted.
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
+		 VALUES ('eg-prc-ex-child', ?, 'psn', 'PPSA999', 'Ratchet', false, true, false, 'eg-prc-ex-parent', now(), now())`,
+		userID,
+	)
+	_, _ = testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-prc-ex-child', 'job-prc-child', ?, 'PPSA999', 'Ratchet', 'eg-prc-ex-child', '{}', 'pending_review', '{}', '[]', now())`,
+		userID,
+	)
+
+	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["pending_review_count"].(float64) != 0 {
+		t.Fatalf("expected pending_review_count=0 (child excluded), got %v", resp["pending_review_count"])
 	}
 }
 
