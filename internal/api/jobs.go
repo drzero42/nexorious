@@ -238,7 +238,6 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 		FROM job_items ji
 		JOIN jobs j ON ji.job_id = j.id
 		WHERE ji.user_id = ? AND ji.status = ?
-		  AND j.status IN ('pending', 'processing')
 		GROUP BY j.source`,
 		userID, models.JobItemStatusPendingReview,
 	).Scan(context.Background(), &rows)
