@@ -17,3 +17,15 @@ export function formatIgdbRating(value: number | null | undefined): string {
   if (value == null) return '—';
   return (value / 10).toFixed(1);
 }
+
+export function formatPlatformLabel(p: {
+  platform?: string | null;
+  storefront?: string | null;
+  platform_details?: { display_name: string } | null;
+  storefront_details?: { display_name: string } | null;
+}): string {
+  const platform = p.platform_details?.display_name || p.platform;
+  const storefront = p.storefront_details?.display_name || p.storefront;
+  if (platform && storefront) return `${platform} (${storefront})`;
+  return platform || storefront || 'Unknown';
+}
