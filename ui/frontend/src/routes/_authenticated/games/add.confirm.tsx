@@ -25,6 +25,7 @@ import { toGameId } from '@/types';
 import { SELECTED_GAME_STORAGE_KEY } from './add';
 
 export const Route = createFileRoute('/_authenticated/games/add/confirm')({
+  head: () => ({ meta: [{ title: 'Add Game | Nexorious' }] }),
   component: GameConfirmPage,
 });
 

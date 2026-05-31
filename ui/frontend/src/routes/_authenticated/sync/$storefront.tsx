@@ -63,6 +63,16 @@ import { config as envConfig } from '@/lib/env';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 
 export const Route = createFileRoute('/_authenticated/sync/$storefront')({
+  head: ({ params }) => {
+    const names: Record<string, string> = {
+      steam: 'Steam',
+      psn: 'PSN',
+      gog: 'GOG',
+      epic: 'Epic',
+    };
+    const name = names[params.storefront] ?? params.storefront;
+    return { meta: [{ title: `${name} Sync | Nexorious` }] };
+  },
   component: SyncDetailPage,
 });
 

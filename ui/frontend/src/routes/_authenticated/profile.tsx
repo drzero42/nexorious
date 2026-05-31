@@ -24,6 +24,7 @@ import * as authApi from '@/api/auth';
 import * as gamesApi from '@/api/games';
 
 export const Route = createFileRoute('/_authenticated/profile')({
+  head: () => ({ meta: [{ title: 'Profile | Nexorious' }] }),
   component: ProfilePage,
 });
 

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { PlayStatus } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
+  head: () => ({ meta: [{ title: 'Dashboard | Nexorious' }] }),
   component: DashboardPage,
 });
 

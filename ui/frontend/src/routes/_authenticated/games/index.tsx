@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import type { PlayStatus, OwnershipStatus, UserGame, SelectionMode } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/games/')({
+  head: () => ({ meta: [{ title: 'Library | Nexorious' }] }),
   component: GamesPage,
 });
 
