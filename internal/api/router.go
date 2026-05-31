@@ -324,6 +324,9 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		auh := NewAdminUsersHandler(db)
 		auh.RegisterRoutes(adminGroup)
 
+		arh := NewAdminResetHandler(db)
+		adminGroup.POST("/api/auth/admin/reset", arh.HandleReset)
+
 		// Sync routes (all auth-protected)
 		steamSvc := steamsvc.NewClient()
 		psnSvc := psnsvc.NewClient()
