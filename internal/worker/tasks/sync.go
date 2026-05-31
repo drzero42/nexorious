@@ -419,29 +419,34 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		return w.enqueueUserGame(ctx, item.ID, item.JobID)
 	}
 
-	// Sibling check: same user/storefront/title already resolved by another SKU.
-	var sibling models.ExternalGame
-	if err := w.DB.NewSelect().Model(&sibling).
-		Where("user_id = ? AND storefront = ? AND title = ? AND id != ? AND resolved_igdb_id IS NOT NULL",
-			eg.UserID, eg.Storefront, eg.Title, eg.ID).
-		Limit(1).
-		Scan(ctx); err == nil && sibling.ResolvedIGDBID != nil {
-		igdbID := *sibling.ResolvedIGDBID
-		slog.Debug("igdb_match: sibling match, inheriting resolution",
-			"item_id", p.JobItemID, "title", eg.Title, "igdb_id", igdbID, "sibling_id", sibling.ID)
-		if _, err := w.DB.NewRaw(
-			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
-			igdbID, eg.Title,
-		).Exec(ctx); err != nil {
-			slog.Error("igdb_match: insert game row (sibling)", "err", err, "igdb_id", igdbID)
+	// Child check: if this row has a parent, inherit or wait.
+	if eg.ParentID != nil {
+		var parent models.ExternalGame
+		if err := w.DB.NewSelect().Model(&parent).
+			Where("id = ?", *eg.ParentID).
+			Scan(ctx); err == nil && parent.ResolvedIGDBID != nil {
+			igdbID := *parent.ResolvedIGDBID
+			slog.Debug("igdb_match: child inheriting from resolved parent",
+				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", igdbID, "parent_id", *eg.ParentID)
+			if _, err := w.DB.NewRaw(
+				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
+				igdbID, eg.Title,
+			).Exec(ctx); err != nil {
+				slog.Error("igdb_match: insert game row (child inherit)", "err", err, "igdb_id", igdbID)
+			}
+			if _, err := w.DB.NewRaw(
+				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
+				igdbID, eg.ID,
+			).Exec(ctx); err != nil {
+				slog.Error("igdb_match: apply child inherit", "err", err, "external_game_id", eg.ID)
+			}
+			return w.enqueueUserGame(ctx, item.ID, item.JobID)
 		}
-		if _, err := w.DB.NewRaw(
-			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
-			igdbID, eg.ID,
-		).Exec(ctx); err != nil {
-			slog.Error("igdb_match: apply sibling resolution", "err", err, "external_game_id", eg.ID)
-		}
-		return w.enqueueUserGame(ctx, item.ID, item.JobID)
+		// Parent not yet resolved — leave job_item in pending.
+		// Stage 3 of the parent will re-enqueue Stage 2 for this child.
+		slog.Debug("igdb_match: parent unresolved, waiting",
+			"item_id", p.JobItemID, "parent_id", *eg.ParentID)
+		return nil
 	}
 
 	// IGDB search.

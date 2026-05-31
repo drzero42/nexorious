@@ -1373,9 +1373,9 @@ func TestDispatchSync_RemovedGames_WritesSyncChange(t *testing.T) {
 // IGDBMatchWorker — Stage 2
 // ---------------------------------------------------------------------------
 
-func TestIGDBMatchWorker_SiblingResolution(t *testing.T) {
-	// A sibling external_game row already has resolved_igdb_id set.
-	// IGDBMatchWorker must inherit it and enqueue UserGameArgs without calling IGDB.
+func TestIGDBMatchWorker_ChildInheritsFromResolvedParent(t *testing.T) {
+	// When a child row's parent already has resolved_igdb_id, Stage 2 must
+	// inherit it without calling IGDB and enqueue Stage 3.
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -1383,37 +1383,41 @@ func TestIGDBMatchWorker_SiblingResolution(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'processing', 'normal', 1)`,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
+		 VALUES (?, ?, 'sync', 'psn', 'processing', 'normal', 2)`,
 		jobID, userID,
 	)
 	const igdbID = int32(7777)
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Sibling Game', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Horizon', now(), now()) ON CONFLICT (id) DO NOTHING`,
+		igdbID,
 	)
-	// Sibling: same user/storefront/title, different external_id, already resolved.
-	siblingID := uuid.NewString()
+
+	// Parent row: already resolved.
+	parentID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
-		 VALUES (?, ?, 'psn', 'CUSA001', 'Sibling Game', false, true, false, ?)`,
-		siblingID, userID, igdbID,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'CUSA001', 'Horizon', false, true, false, ?, now(), now())`,
+		parentID, userID, igdbID,
 	)
-	// Target: same title, unresolved.
-	egID := uuid.NewString()
+	// Child row: points to parent, not yet resolved.
+	childID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
-		 VALUES (?, ?, 'psn', 'PPSA001', 'Sibling Game', false, true, false)`,
-		egID, userID,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'PPSA001', 'Horizon', false, true, false, ?, now(), now())`,
+		childID, userID, parentID,
 	)
 	_, _ = testDB.NewRaw(
 		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'playstation-5', 0, now())`,
-		uuid.NewString(), egID,
+		uuid.NewString(), childID,
 	).Exec(ctx)
+
 	rc := newTestRiverClient(t)
 	itemID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, 'PPSA001', 'Sibling Game', ?, '{}', 'pending', '{}', '[]')`,
-		itemID, jobID, userID, egID,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, 'PPSA001', 'Horizon', ?, '{}', 'pending', '{}', '[]', now())`,
+		itemID, jobID, userID, childID,
 	)
 
 	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: rc}
@@ -1425,9 +1429,9 @@ func TestIGDBMatchWorker_SiblingResolution(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// external_game must have inherited resolved_igdb_id.
+	// Child must have inherited resolved_igdb_id.
 	var resolvedID *int32
-	_ = testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = ?`, egID).Scan(ctx, &resolvedID)
+	_ = testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = ?`, childID).Scan(ctx, &resolvedID)
 	if resolvedID == nil || *resolvedID != igdbID {
 		t.Errorf("resolved_igdb_id: want %d, got %v", igdbID, resolvedID)
 	}
@@ -1435,7 +1439,72 @@ func TestIGDBMatchWorker_SiblingResolution(t *testing.T) {
 	var status string
 	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)
 	if status != "pending" {
-		t.Errorf("item status after sibling resolution: want 'pending', got %q", status)
+		t.Errorf("item status: want 'pending', got %q", status)
+	}
+}
+
+func TestIGDBMatchWorker_ChildWaitsForUnresolvedParent(t *testing.T) {
+	// When a child row's parent has no resolved_igdb_id yet, Stage 2 must
+	// return nil without advancing the job_item — leaving it pending.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
+		 VALUES (?, ?, 'sync', 'psn', 'processing', 'normal', 2)`,
+		jobID, userID,
+	)
+
+	// Parent row: not yet resolved.
+	parentID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'CUSA001', 'Horizon', false, true, false, now(), now())`,
+		parentID, userID,
+	)
+	// Child row: points to parent.
+	childID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'PPSA001', 'Horizon', false, true, false, ?, now(), now())`,
+		childID, userID, parentID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'playstation-5', 0, now())`,
+		uuid.NewString(), childID,
+	).Exec(ctx)
+
+	rc := newTestRiverClient(t)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, 'PPSA001', 'Horizon', ?, '{}', 'pending', '{}', '[]', now())`,
+		itemID, jobID, userID, childID,
+	)
+
+	w := &tasks.IGDBMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: rc}
+	job := &river.Job[tasks.IGDBMatchArgs]{
+		JobRow: &rivertype.JobRow{MaxAttempts: 5},
+		Args:   tasks.IGDBMatchArgs{JobItemID: itemID},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Child must NOT have resolved_igdb_id.
+	var resolvedID *int32
+	_ = testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = ?`, childID).Scan(ctx, &resolvedID)
+	if resolvedID != nil {
+		t.Errorf("resolved_igdb_id: expected nil for waiting child, got %v", *resolvedID)
+	}
+	// Job item must remain pending.
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)
+	if status != "pending" {
+		t.Errorf("item status: want 'pending' (waiting), got %q", status)
 	}
 }
 
