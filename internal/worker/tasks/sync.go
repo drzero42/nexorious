@@ -805,6 +805,33 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	w.maybeEnqueueImmediateMetadataFetch(ctx, *eg.ResolvedIGDBID)
 
 	syncMarkItemCompleted(ctx, w.DB, &item)
+
+	// Sibling trigger: re-enqueue Stage 2 for children waiting on this parent.
+	if w.RiverClient != nil {
+		var childItems []struct {
+			JobItemID      string `bun:"job_item_id"`
+			ExternalGameID string `bun:"external_game_id"`
+		}
+		if err := w.DB.NewRaw(`
+			SELECT ji.id AS job_item_id, eg.id AS external_game_id
+			FROM external_games eg
+			JOIN job_items ji ON ji.external_game_id = eg.id
+			WHERE eg.parent_id = ?
+			  AND eg.resolved_igdb_id IS NULL
+			  AND NOT eg.is_skipped
+			  AND ji.status = 'pending'
+			ORDER BY ji.created_at DESC`,
+			eg.ID,
+		).Scan(ctx, &childItems); err == nil {
+			for _, child := range childItems {
+				if _, err := w.RiverClient.Insert(ctx, IGDBMatchArgs{JobItemID: child.JobItemID}, nil); err != nil {
+					slog.Error("user_game_write: enqueue sibling Stage 2",
+						"err", err, "child_eg_id", child.ExternalGameID, "job_item_id", child.JobItemID)
+				}
+			}
+		}
+	}
+
 	SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 	return nil
 }

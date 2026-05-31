@@ -1508,6 +1508,84 @@ func TestIGDBMatchWorker_ChildWaitsForUnresolvedParent(t *testing.T) {
 	}
 }
 
+func TestUserGameWorker_SiblingTrigger(t *testing.T) {
+	// After Stage 3 completes for a parent, it must re-enqueue Stage 2 for
+	// any children that have pending job_items and are not yet resolved.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, dispatch_complete)
+		 VALUES (?, ?, 'sync', 'psn', 'processing', 'normal', 2, true)`,
+		jobID, userID,
+	)
+	const igdbID = int32(9999)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Elden Ring', now(), now()) ON CONFLICT (id) DO NOTHING`,
+		igdbID,
+	)
+	// Seed platform and storefront for user_game_platforms FK constraints.
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('playstation-4', 'PlayStation 4') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('playstation-store', 'PlayStation Store') ON CONFLICT DO NOTHING`)
+
+	// Parent: already resolved.
+	parentID := insertTestExternalGame(t, userID, "psn", "CUSA001", "Elden Ring", "playstation-4")
+	_, _ = testDB.NewRaw(
+		`UPDATE external_games SET resolved_igdb_id = ? WHERE id = ?`, igdbID, parentID,
+	).Exec(ctx)
+
+	// Child: parent_id set, not yet resolved, has a pending job_item.
+	childID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
+		 VALUES (?, ?, 'psn', 'PPSA001', 'Elden Ring', false, true, false, ?, now(), now())`,
+		childID, userID, parentID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'playstation-5', 0, now())`,
+		uuid.NewString(), childID,
+	).Exec(ctx)
+	childItemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, 'PPSA001', 'Elden Ring', ?, '{}', 'pending', '{}', '[]', now())`,
+		childItemID, jobID, userID, childID,
+	)
+
+	// Parent job_item.
+	parentItemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, resolved_igdb_id, created_at)
+		 VALUES (?, ?, ?, 'CUSA001', 'Elden Ring', ?, '{}', 'pending', '{}', '[]', ?, now())`,
+		parentItemID, jobID, userID, parentID, igdbID,
+	)
+
+	rc := newTestRiverClient(t)
+	w := &tasks.UserGameWorker{DB: testDB, IGDBClient: nil, RiverClient: rc}
+	rj := &river.Job[tasks.UserGameArgs]{
+		JobRow: &rivertype.JobRow{MaxAttempts: 5},
+		Args:   tasks.UserGameArgs{JobItemID: parentItemID},
+	}
+	if err := w.Work(ctx, rj); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify a River job was enqueued for the child's job_item (Stage 2).
+	var enqueuedCount int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM river_job WHERE kind = 'igdb_match' AND args->>'job_item_id' = ?`,
+		childItemID,
+	).Scan(ctx, &enqueuedCount); err != nil {
+		t.Fatalf("scan river_job count: %v", err)
+	}
+	if enqueuedCount < 1 {
+		t.Errorf("expected at least one igdb_match river job for child item, got %d", enqueuedCount)
+	}
+}
+
 func TestIGDBMatchWorker_NoIGDBClient_PendingReview(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
