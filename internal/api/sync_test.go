@@ -420,6 +420,32 @@ func insertExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID,
 	}
 }
 
+// insertChildExternalGame inserts an external_game row with parent_id set.
+func insertChildExternalGame(t *testing.T, db *bun.DB, id, userID, storefront, extID, title, parentID string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, false, true, false, ?, now(), now())`,
+		id, userID, storefront, extID, title, parentID,
+	)
+	if err != nil {
+		t.Fatalf("insertChildExternalGame: %v", err)
+	}
+}
+
+// insertExternalGamePlatform inserts a platform row for an external_game.
+func insertExternalGamePlatform(t *testing.T, db *bun.DB, egID, platform string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+		 VALUES (gen_random_uuid()::text, ?, ?, 0, now())`,
+		egID, platform,
+	)
+	if err != nil {
+		t.Fatalf("insertExternalGamePlatform: %v", err)
+	}
+}
+
 func TestIgnored_EmptyList(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
@@ -857,6 +883,66 @@ func TestListExternalGames_IsolatedByUser(t *testing.T) {
 	_ = json.Unmarshal(rec2.Body.Bytes(), &respB)
 	if len(respB) != 0 {
 		t.Fatalf("user B should see 0 games, got %d", len(respB))
+	}
+}
+
+func TestListExternalGames_ExcludesChildren(t *testing.T) {
+	// A child row (parent_id IS NOT NULL) must never appear in the list.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "list-excludes-children")
+
+	insertExternalGame(t, testDB, "eg-parent-1", userID, "psn", "CUSA001", "Horizon")
+	insertChildExternalGame(t, testDB, "eg-child-1", userID, "psn", "PPSA001", "Horizon", "eg-parent-1")
+
+	rec := getAuth(t, e, "/api/sync/psn/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 result (parent only), got %d", len(resp))
+	}
+	if resp[0]["id"] != "eg-parent-1" {
+		t.Errorf("expected parent row, got id=%v", resp[0]["id"])
+	}
+}
+
+func TestListExternalGames_AggregatesChildPlatforms(t *testing.T) {
+	// The parent entry must include platform slugs from child rows.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userID, token := setupTagUser(t, testDB, e, "list-agg-platforms")
+
+	insertExternalGame(t, testDB, "eg-par-2", userID, "psn", "CUSA002", "God of War")
+	insertExternalGamePlatform(t, testDB, "eg-par-2", "playstation-4")
+	insertChildExternalGame(t, testDB, "eg-chi-2", userID, "psn", "PPSA002", "God of War", "eg-par-2")
+	insertExternalGamePlatform(t, testDB, "eg-chi-2", "playstation-5")
+
+	rec := getAuth(t, e, "/api/sync/psn/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(resp))
+	}
+	platforms, ok := resp[0]["platforms"].([]any)
+	if !ok {
+		t.Fatalf("expected platforms array, got %T", resp[0]["platforms"])
+	}
+	platformSet := make(map[string]bool)
+	for _, p := range platforms {
+		platformSet[p.(string)] = true
+	}
+	if !platformSet["playstation-4"] || !platformSet["playstation-5"] {
+		t.Errorf("expected both playstation-4 and playstation-5 in platforms, got %v", platforms)
 	}
 }
 

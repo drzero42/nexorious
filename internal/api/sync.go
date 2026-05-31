@@ -1024,14 +1024,19 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 				LIMIT 1
 			) AS failed_job_item_id,
 			COALESCE(
-				(SELECT string_agg(egp.platform, ',' ORDER BY egp.platform)
+				(SELECT string_agg(DISTINCT egp.platform, ',' ORDER BY egp.platform)
 				 FROM external_game_platforms egp
-				 WHERE egp.external_game_id = eg.id),
+				 WHERE egp.external_game_id = eg.id
+				    OR egp.external_game_id IN (
+				        SELECT id FROM external_games WHERE parent_id = eg.id
+				    )
+				),
 				''
 			) AS platforms_csv
 		FROM external_games eg
 		LEFT JOIN games g ON g.id = eg.resolved_igdb_id
 		WHERE eg.user_id = ? AND eg.storefront = ?
+		  AND eg.parent_id IS NULL
 		  AND NOT EXISTS (
 		      SELECT 1 FROM job_items ji
 		      WHERE ji.external_game_id = eg.id
