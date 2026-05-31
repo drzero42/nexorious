@@ -135,7 +135,7 @@ func (h *AuthHandler) HandleLogin(c *echo.Context) error {
 		slog.Error("login: issue session", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
-	auth.SetSessionCookie(c, sessionID, h.cfg.SessionExpireDays)
+	auth.SetSessionCookie(c, sessionID, h.cfg.SessionExpireDays, h.cfg.SessionCookieSecure)
 
 	resp, err := loadMeResponse(context.Background(), h.db, userID)
 	if err != nil {
@@ -156,7 +156,7 @@ func (h *AuthHandler) HandleLogout(c *echo.Context) error {
 			slog.Error("logout: delete session", "err", err)
 		}
 	}
-	auth.ClearSessionCookie(c)
+	auth.ClearSessionCookie(c, h.cfg.SessionCookieSecure)
 	return c.JSON(http.StatusOK, messageResponse{Message: "Successfully logged out"})
 }
 
@@ -432,7 +432,7 @@ func (h *AuthHandler) HandleRevokeSession(c *echo.Context) error {
 
 	currentHash, _ := c.Get("session_hash").(string)
 	if sessionHash == currentHash {
-		auth.ClearSessionCookie(c)
+		auth.ClearSessionCookie(c, h.cfg.SessionCookieSecure)
 	}
 	return c.NoContent(http.StatusNoContent)
 }

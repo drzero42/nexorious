@@ -93,7 +93,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 			"error": "setup succeeded but session could not be created — please log in",
 		})
 	}
-	auth.SetSessionCookie(c, sessionID, h.cfg.SessionExpireDays)
+	auth.SetSessionCookie(c, sessionID, h.cfg.SessionExpireDays, h.cfg.SessionCookieSecure)
 
 	resp, loadErr := loadMeResponse(context.Background(), h.db, userID)
 	if loadErr != nil {

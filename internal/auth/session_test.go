@@ -57,37 +57,48 @@ func newSessionTestContext(t *testing.T) (*echo.Context, *httptest.ResponseRecor
 }
 
 func TestSetSessionCookie(t *testing.T) {
-	c, rec := newSessionTestContext(t)
-	auth.SetSessionCookie(c, "test-session-id-value", 30)
+	tests := []struct {
+		name   string
+		secure bool
+	}{
+		{"secure=true", true},
+		{"secure=false", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, rec := newSessionTestContext(t)
+			auth.SetSessionCookie(c, "test-session-id-value", 30, tt.secure)
 
-	cookies := rec.Result().Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("expected 1 cookie, got %d", len(cookies))
-	}
-	cookie := cookies[0]
-	if cookie.Name != "session_id" {
-		t.Errorf("Name = %q, want %q", cookie.Name, "session_id")
-	}
-	if cookie.Value != "test-session-id-value" {
-		t.Errorf("Value = %q, want %q", cookie.Value, "test-session-id-value")
-	}
-	if !cookie.HttpOnly {
-		t.Error("HttpOnly = false, want true")
-	}
-	if cookie.SameSite != http.SameSiteStrictMode {
-		t.Errorf("SameSite = %v, want Strict", cookie.SameSite)
-	}
-	if !cookie.Secure {
-		t.Error("Secure = false, want true")
-	}
-	if cookie.MaxAge != 30*86400 {
-		t.Errorf("MaxAge = %d, want %d", cookie.MaxAge, 30*86400)
+			cookies := rec.Result().Cookies()
+			if len(cookies) != 1 {
+				t.Fatalf("expected 1 cookie, got %d", len(cookies))
+			}
+			cookie := cookies[0]
+			if cookie.Name != "session_id" {
+				t.Errorf("Name = %q, want %q", cookie.Name, "session_id")
+			}
+			if cookie.Value != "test-session-id-value" {
+				t.Errorf("Value = %q, want %q", cookie.Value, "test-session-id-value")
+			}
+			if !cookie.HttpOnly {
+				t.Error("HttpOnly = false, want true")
+			}
+			if cookie.SameSite != http.SameSiteStrictMode {
+				t.Errorf("SameSite = %v, want Strict", cookie.SameSite)
+			}
+			if cookie.Secure != tt.secure {
+				t.Errorf("Secure = %v, want %v", cookie.Secure, tt.secure)
+			}
+			if cookie.MaxAge != 30*86400 {
+				t.Errorf("MaxAge = %d, want %d", cookie.MaxAge, 30*86400)
+			}
+		})
 	}
 }
 
 func TestClearSessionCookie(t *testing.T) {
 	c, rec := newSessionTestContext(t)
-	auth.ClearSessionCookie(c)
+	auth.ClearSessionCookie(c, true)
 
 	cookies := rec.Result().Cookies()
 	if len(cookies) != 1 {
