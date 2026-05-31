@@ -1,16 +1,26 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useAuth } from '@/providers';
+import { useCollectionStats } from '@/hooks';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Check, X, Loader2, AlertCircle, User } from 'lucide-react';
+import { Eye, EyeOff, Check, X, Loader2, AlertCircle, User, Trash2 } from 'lucide-react';
 import * as authApi from '@/api/auth';
+import * as gamesApi from '@/api/games';
 
 export const Route = createFileRoute('/_authenticated/profile')({
   component: ProfilePage,
@@ -82,6 +92,31 @@ function ProfilePage() {
   // Derived values
   const passwordStrength = useMemo(() => calculatePasswordStrength(newPassword), [newPassword]);
   const passwordsMatch = newPassword && confirmPassword && newPassword === confirmPassword;
+
+  const { data: stats } = useCollectionStats();
+  const navigate = useNavigate();
+
+  // Clear library state
+  const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState('');
+  const [isClearing, setIsClearing] = useState(false);
+
+  const handleClearLibrary = async () => {
+    setIsClearing(true);
+    try {
+      const result = await gamesApi.clearLibrary();
+      toast.success(
+        `Cleared ${result.deleted} game${result.deleted === 1 ? '' : 's'} from your library`,
+      );
+      setIsClearDialogOpen(false);
+      setClearConfirmText('');
+      void navigate({ to: '/games' });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to clear library');
+    } finally {
+      setIsClearing(false);
+    }
+  };
 
   // Debounced username availability check
   const checkUsername = useCallback(
@@ -448,6 +483,81 @@ function ProfilePage() {
           </Card>
         </div>
       </div>
+
+      {/* Danger Zone */}
+      <Card className="border-red-200 dark:border-red-800">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
+            <Trash2 className="h-5 w-5" />
+            Danger Zone
+          </CardTitle>
+          <CardDescription>These actions are permanent and cannot be undone.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Clear Library</p>
+              <p className="text-sm text-muted-foreground">Remove all games from your library.</p>
+            </div>
+            <Button variant="destructive" onClick={() => setIsClearDialogOpen(true)}>
+              Clear Library
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={isClearDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIsClearDialogOpen(false);
+            setClearConfirmText('');
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clear Library</DialogTitle>
+            <DialogDescription>
+              This will permanently remove all{' '}
+              <strong>
+                {stats?.totalGames ?? '?'} game{stats?.totalGames === 1 ? '' : 's'}
+              </strong>{' '}
+              from your library. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Type <strong>DELETE</strong> to confirm:
+            </p>
+            <Input
+              value={clearConfirmText}
+              onChange={(e) => setClearConfirmText(e.target.value)}
+              placeholder="Type DELETE to confirm"
+              autoComplete="off"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsClearDialogOpen(false);
+                setClearConfirmText('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={clearConfirmText !== 'DELETE' || isClearing}
+              onClick={handleClearLibrary}
+            >
+              {isClearing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Clear Library
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
