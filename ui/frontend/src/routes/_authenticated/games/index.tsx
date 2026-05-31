@@ -2,7 +2,14 @@ import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-r
 import { Suspense, useMemo, useCallback, useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { useUserGames, useUserGameIds } from '@/hooks';
-import { GameFilters, GameGrid, GameList, BulkActions, GamesPagination } from '@/components/games';
+import {
+  GameFilters,
+  GameGrid,
+  GameList,
+  BulkActions,
+  GamesPagination,
+  type GameFiltersValue,
+} from '@/components/games';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import type { PlayStatus, OwnershipStatus, UserGame, SelectionMode } from '@/types';
@@ -170,19 +177,7 @@ function GamesPageContent() {
 
   // Wrap filter changes to also clear selection and update URL
   const handleFiltersChange = useCallback(
-    (newFilters: {
-      search: string;
-      status?: PlayStatus;
-      ownershipStatus?: OwnershipStatus;
-      isLoved?: boolean;
-      platforms?: string[];
-      storefronts?: string[];
-      genres?: string[];
-      gameModes?: string[];
-      themes?: string[];
-      playerPerspectives?: string[];
-      tags?: string[];
-    }) => {
+    (newFilters: GameFiltersValue) => {
       updateParams({
         q: newFilters.search || undefined,
         status: newFilters.status,
