@@ -468,7 +468,7 @@ function SyncDetailPage() {
                   onValueChange={(value) => handleFrequencyChange(value as SyncFrequency)}
                   disabled={isUpdating}
                 >
-                  <SelectTrigger className="w-[140px]">
+                  <SelectTrigger className="w-[140px]" aria-label="Sync frequency">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
