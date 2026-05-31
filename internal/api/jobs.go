@@ -234,10 +234,12 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 
 	var rows []sourceCount
 	err := h.db.NewRaw(`
-		SELECT j.source, COUNT(DISTINCT ji.source_title) AS count
+		SELECT j.source, COUNT(*) AS count
 		FROM job_items ji
 		JOIN jobs j ON ji.job_id = j.id
+		LEFT JOIN external_games eg ON eg.id = ji.external_game_id
 		WHERE ji.user_id = ? AND ji.status = ?
+		  AND (eg.id IS NULL OR eg.parent_id IS NULL)
 		GROUP BY j.source`,
 		userID, models.JobItemStatusPendingReview,
 	).Scan(context.Background(), &rows)
