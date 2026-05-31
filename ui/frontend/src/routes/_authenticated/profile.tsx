@@ -552,8 +552,14 @@ function ProfilePage() {
               disabled={clearConfirmText !== 'DELETE' || isClearing}
               onClick={handleClearLibrary}
             >
-              {isClearing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Clear Library
+              {isClearing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Clearing...
+                </>
+              ) : (
+                'Clear Library'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
