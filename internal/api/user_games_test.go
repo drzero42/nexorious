@@ -1338,7 +1338,6 @@ func TestListUserGamesSortByGameNumerics(t *testing.T) {
 	}
 
 	for _, field := range []string{"rating_average", "howlongtobeat_main"} {
-		field := field // capture
 		t.Run(field+" desc orders high, low, null", func(t *testing.T) {
 			ids := idsInOrder(t, field, "desc")
 			want := []string{"ug-high", "ug-low", "ug-null"}
