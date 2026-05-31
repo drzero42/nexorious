@@ -1166,9 +1166,9 @@ func TestRematchExternalGame_ResolvesSiblings(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-siblings")
 
-	// Two PSN external_games for the same game title (PS4 + PS5 variants).
+	// Two PSN external_games for the same game title (PS4 parent + PS5 child variant).
 	insertExternalGame(t, testDB, "eg-ps4", userID, "psn", "PPSA-001", "Spider-Man 2")
-	insertExternalGame(t, testDB, "eg-ps5", userID, "psn", "PPSA-002", "Spider-Man 2")
+	insertChildExternalGame(t, testDB, "eg-ps5", userID, "psn", "PPSA-002", "Spider-Man 2", "eg-ps4")
 
 	// A recent sync job for the sibling fallback path.
 	insertJob(t, testDB, "job-sib", userID, "sync", "psn", "processing")
@@ -1263,7 +1263,7 @@ func TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending(t *testing.T) 
 	userID, token := setupTagUser(t, testDB, e, "rm-sib-status")
 
 	insertExternalGame(t, testDB, "eg-sib-s1", userID, "psn", "PPSA-101", "God of War")
-	insertExternalGame(t, testDB, "eg-sib-s2", userID, "psn", "PPSA-102", "God of War")
+	insertChildExternalGame(t, testDB, "eg-sib-s2", userID, "psn", "PPSA-102", "God of War", "eg-sib-s1")
 	insertJob(t, testDB, "job-sib-s", userID, "sync", "psn", "processing")
 
 	for _, row := range []struct{ id, egID, extID string }{
@@ -1354,7 +1354,7 @@ func TestRematchExternalGame_SiblingAfterSyncCompleted(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "rm-sib-postcomplete")
 
 	insertExternalGame(t, testDB, "eg-sib-pc1", userID, "psn", "CUSA-001", "Horizon")
-	insertExternalGame(t, testDB, "eg-sib-pc2", userID, "psn", "CUSA-002", "Horizon")
+	insertChildExternalGame(t, testDB, "eg-sib-pc2", userID, "psn", "CUSA-002", "Horizon", "eg-sib-pc1")
 	insertJob(t, testDB, "job-sib-pc", userID, "sync", "psn", "completed")
 
 	for _, row := range []struct{ id, egID, extID string }{
@@ -1389,6 +1389,58 @@ func TestRematchExternalGame_SiblingAfterSyncCompleted(t *testing.T) {
 	}
 	if count != 2 {
 		t.Errorf("expected both sibling job_items reset to pending, got count=%d", count)
+	}
+}
+
+func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
+	// Rematching a parent must cascade resolved_igdb_id to children via parent_id,
+	// not title search. A second game with the same title but different user must NOT
+	// be affected.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	userA, tokenA := setupTagUser(t, testDB, e, "rm-fk-userA")
+	userB, _ := setupTagUser(t, testDB, e, "rm-fk-userB")
+
+	// User A: parent + child, same title.
+	insertExternalGame(t, testDB, "eg-fk-parent", userA, "psn", "CUSA100", "Spider-Man")
+	insertChildExternalGame(t, testDB, "eg-fk-child", userA, "psn", "PPSA100", "Spider-Man", "eg-fk-parent")
+	insertJob(t, testDB, "job-fk", userA, "sync", "psn", "processing")
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES ('ji-fk-child', 'job-fk', ?, 'PPSA100', 'Spider-Man', 'eg-fk-child', '{}', 'pending', '{}', '[]', now())`,
+		userA,
+	)
+	if err != nil {
+		t.Fatalf("insert child job_item: %v", err)
+	}
+
+	// User B: unrelated game with same title — must NOT be touched.
+	insertExternalGame(t, testDB, "eg-fk-other", userB, "psn", "CUSA200", "Spider-Man")
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-fk-parent/rematch",
+		map[string]any{"igdb_id": 4242}, tokenA)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := context.Background()
+
+	// Child must have inherited resolved_igdb_id.
+	var childResolved *int32
+	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-fk-child'`).Scan(ctx, &childResolved); err != nil {
+		t.Fatalf("scan child resolved_igdb_id: %v", err)
+	}
+	if childResolved == nil || *childResolved != 4242 {
+		t.Errorf("child resolved_igdb_id: want 4242, got %v", childResolved)
+	}
+
+	// User B's game must NOT have been touched.
+	var otherResolved *int32
+	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM external_games WHERE id = 'eg-fk-other'`).Scan(ctx, &otherResolved); err != nil {
+		t.Fatalf("scan other resolved_igdb_id: %v", err)
+	}
+	if otherResolved != nil {
+		t.Errorf("other user's game must not be resolved, got %v", *otherResolved)
 	}
 }
 
@@ -1474,7 +1526,7 @@ func TestRematchExternalGame_SiblingAlreadyMatchedWrong(t *testing.T) {
 		t.Fatalf("insert wrong game: %v", err)
 	}
 	insertExternalGame(t, testDB, "eg-aw-win", userID, "steam", "2100", "Another World")
-	insertExternalGame(t, testDB, "eg-aw-lin", userID, "steam", "2101", "Another World")
+	insertChildExternalGame(t, testDB, "eg-aw-lin", userID, "steam", "2101", "Another World", "eg-aw-win")
 	if _, err := testDB.ExecContext(context.Background(),
 		`UPDATE external_games SET resolved_igdb_id = 1111 WHERE id IN ('eg-aw-win', 'eg-aw-lin')`); err != nil {
 		t.Fatalf("set wrong match: %v", err)

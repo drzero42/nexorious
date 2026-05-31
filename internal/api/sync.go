@@ -1304,8 +1304,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		}
 	}
 
-	// Resolve siblings: other external_games for the same (user, storefront, title) that are
-	// still unresolved. Each gets the same IGDB ID and its own Stage 3 job.
+	// Resolve children: external_games with parent_id pointing to this row.
 	var siblings []struct {
 		ID         string `bun:"id"`
 		ExternalID string `bun:"external_id"`
@@ -1313,9 +1312,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 	}
 	if err := h.db.NewRaw(`
 		SELECT id, external_id, title FROM external_games
-		WHERE user_id = ? AND storefront = ? AND title = ?
-		  AND id != ? AND is_skipped = false`,
-		userID, eg.Storefront, eg.Title, id,
+		WHERE parent_id = ? AND is_skipped = false`, id,
 	).Scan(ctx, &siblings); err == nil {
 		for _, sib := range siblings {
 			if _, err := h.db.NewRaw(
