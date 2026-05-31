@@ -114,6 +114,10 @@ Object.defineProperty(window, 'IntersectionObserver', {
 // Mock scrollIntoView for cmdk and other components that use it
 Element.prototype.scrollIntoView = vi.fn();
 
+// JSDOM 29 doesn't implement document.elementFromPoint; TipTap's Placeholder extension
+// calls posAtCoords() during plugin initialisation which hits this method.
+document.elementFromPoint = vi.fn().mockReturnValue(null);
+
 // Mock hasPointerCapture for Radix UI components
 Element.prototype.hasPointerCapture = vi.fn(() => false);
 Element.prototype.setPointerCapture = vi.fn();
