@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTtb, formatIgdbRating, formatHoursPlayed } from './game-utils';
+import { formatTtb, formatIgdbRating, formatHoursPlayed, formatPlatformLabel } from './game-utils';
 
 describe('formatHoursPlayed', () => {
   it.each([
@@ -59,5 +59,62 @@ describe('formatIgdbRating', () => {
   });
   it('returns "—" for undefined', () => {
     expect(formatIgdbRating(undefined)).toBe('—');
+  });
+});
+
+describe('formatPlatformLabel', () => {
+  it('returns "Platform (Storefront)" when both details are present', () => {
+    expect(
+      formatPlatformLabel({
+        platform: 'windows',
+        storefront: 'gog',
+        platform_details: { display_name: 'Windows' },
+        storefront_details: { display_name: 'GOG' },
+      }),
+    ).toBe('Windows (GOG)');
+  });
+
+  it('falls back to raw names when details are absent', () => {
+    expect(
+      formatPlatformLabel({
+        platform: 'windows',
+        storefront: 'gog',
+        platform_details: null,
+        storefront_details: null,
+      }),
+    ).toBe('windows (gog)');
+  });
+
+  it('shows only storefront when platform is missing', () => {
+    expect(
+      formatPlatformLabel({
+        platform: null,
+        storefront: null,
+        platform_details: null,
+        storefront_details: { display_name: 'Steam' },
+      }),
+    ).toBe('Steam');
+  });
+
+  it('shows only platform when storefront is missing', () => {
+    expect(
+      formatPlatformLabel({
+        platform: 'linux',
+        storefront: null,
+        platform_details: { display_name: 'Linux PC' },
+        storefront_details: null,
+      }),
+    ).toBe('Linux PC');
+  });
+
+  it('returns "Unknown" when everything is absent', () => {
+    expect(
+      formatPlatformLabel({
+        platform: null,
+        storefront: null,
+        platform_details: null,
+        storefront_details: null,
+      }),
+    ).toBe('Unknown');
   });
 });

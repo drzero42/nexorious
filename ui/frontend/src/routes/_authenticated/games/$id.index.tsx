@@ -18,7 +18,12 @@ import {
 import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink, Gamepad2 } from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
 import { config } from '@/lib/env';
-import { formatIgdbRating, formatHoursPlayed, formatTtb } from '@/lib/game-utils';
+import {
+  formatIgdbRating,
+  formatHoursPlayed,
+  formatTtb,
+  formatPlatformLabel,
+} from '@/lib/game-utils';
 import {
   OwnershipStatus,
   type PlayStatus,
@@ -401,13 +406,7 @@ export function GameDetailPage() {
                     .filter((p) => p.hours_played > 0)
                     .map((p) => (
                       <div key={p.id} className="flex justify-between">
-                        <span>
-                          {p.storefront_details?.display_name ||
-                            p.storefront ||
-                            p.platform_details?.display_name ||
-                            p.platform ||
-                            'Unknown'}
-                        </span>
+                        <span>{formatPlatformLabel(p)}</span>
                         <span>{formatHoursPlayed(p.hours_played)}</span>
                       </div>
                     ))}
