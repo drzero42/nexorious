@@ -308,6 +308,9 @@ function MaintenancePage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Type <strong>RESET</strong> to confirm:
+            </p>
             <Input
               value={resetConfirmText}
               onChange={(e) => setResetConfirmText(e.target.value)}
