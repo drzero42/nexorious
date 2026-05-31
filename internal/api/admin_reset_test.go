@@ -50,6 +50,10 @@ func TestHandleAdminReset(t *testing.T) {
 	insertTag(t, testDB, "tag-r-admin", adminID, "Admin Tag", nil)
 	insertTag(t, testDB, "tag-r-u1", user1ID, "User1 Tag", nil)
 
+	// Seed external games — admin's rows must be cleared even though the admin account is preserved.
+	insertExternalGame(t, testDB, "eg-r-admin", adminID, "steam", "730", "CS2")
+	insertExternalGame(t, testDB, "eg-r-u1", user1ID, "steam", "440", "TF2")
+
 	t.Run("admin can reset", func(t *testing.T) {
 		rec := postJSONAuth(t, e, "/api/auth/admin/reset", nil, adminTok)
 		if rec.Code != http.StatusOK {
@@ -139,6 +143,17 @@ func TestHandleAdminReset(t *testing.T) {
 		}
 		if count != 0 {
 			t.Errorf("tags count = %d, want 0", count)
+		}
+	})
+
+	t.Run("all external_games are cleared", func(t *testing.T) {
+		var count int
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM external_games`).
+			Scan(context.Background(), &count); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("external_games count = %d, want 0 (admin rows must be cleared explicitly)", count)
 		}
 	})
 
