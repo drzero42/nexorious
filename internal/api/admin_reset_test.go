@@ -50,9 +50,25 @@ func TestHandleAdminReset(t *testing.T) {
 	insertTag(t, testDB, "tag-r-admin", adminID, "Admin Tag", nil)
 	insertTag(t, testDB, "tag-r-u1", user1ID, "User1 Tag", nil)
 
-	// Seed external games — admin's rows must be cleared even though the admin account is preserved.
+	// Seed external games + a platform row (cascades from external_games).
+	// Admin's rows must be cleared even though the admin account is preserved.
 	insertExternalGame(t, testDB, "eg-r-admin", adminID, "steam", "730", "CS2")
 	insertExternalGame(t, testDB, "eg-r-u1", user1ID, "steam", "440", "TF2")
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, created_at)
+		 VALUES ('egp-r-admin', 'eg-r-admin', 'pc-windows', now())`,
+	); err != nil {
+		t.Fatalf("seed external_game_platforms: %v", err)
+	}
+
+	// Seed a sync_change (cascades from jobs).
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO sync_changes (id, job_id, user_id, title, change_type, created_at)
+		 VALUES ('sc-chg-r', 'job-r-admin', ?, 'CS2', 'added', now())`,
+		adminID,
+	); err != nil {
+		t.Fatalf("seed sync_changes: %v", err)
+	}
 
 	t.Run("admin can reset", func(t *testing.T) {
 		rec := postJSONAuth(t, e, "/api/auth/admin/reset", nil, adminTok)
@@ -154,6 +170,28 @@ func TestHandleAdminReset(t *testing.T) {
 		}
 		if count != 0 {
 			t.Errorf("external_games count = %d, want 0 (admin rows must be cleared explicitly)", count)
+		}
+	})
+
+	t.Run("all external_game_platforms are cleared", func(t *testing.T) {
+		var count int
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM external_game_platforms`).
+			Scan(context.Background(), &count); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("external_game_platforms count = %d, want 0", count)
+		}
+	})
+
+	t.Run("all sync_changes are cleared", func(t *testing.T) {
+		var count int
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM sync_changes`).
+			Scan(context.Background(), &count); err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("sync_changes count = %d, want 0", count)
 		}
 	})
 
