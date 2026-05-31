@@ -78,6 +78,7 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 	var row struct {
 		ID        string `bun:"id"`
 		IsSkipped bool   `bun:"is_skipped"`
+		IsNew     bool   `bun:"is_new"`
 	}
 	if err := db.NewRaw(`
 		INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, created_at, updated_at)
@@ -88,13 +89,32 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 			ownership_status = EXCLUDED.ownership_status,
 			is_available = true,
 			updated_at = now()
-		RETURNING id, is_skipped`,
+		RETURNING id, is_skipped, (xmax = 0) AS is_new`,
 		uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
 		e.IsSubscription, e.OwnershipStatus,
 	).Scan(ctx, &row); err != nil {
 		slog.Error("dispatch_sync: upsert external_game failed", "err", err, "job_id", p.JobID, "external_id", e.ExternalID)
 		return "", false
 	}
+
+	if row.IsNew {
+		var parentID string
+		if err := db.NewRaw(`
+			SELECT id FROM external_games
+			WHERE user_id = ? AND storefront = ? AND title = ?
+			  AND id != ? AND parent_id IS NULL
+			LIMIT 1`,
+			p.UserID, p.Storefront, e.Title, row.ID,
+		).Scan(ctx, &parentID); err == nil && parentID != "" {
+			if _, err := db.NewRaw(`
+				UPDATE external_games SET parent_id = ? WHERE id = ? AND parent_id IS NULL`,
+				parentID, row.ID,
+			).Exec(ctx); err != nil {
+				slog.Error("dispatch_sync: set parent_id failed", "err", err, "external_game_id", row.ID)
+			}
+		}
+	}
+
 	return row.ID, row.IsSkipped
 }
 

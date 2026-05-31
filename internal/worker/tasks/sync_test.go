@@ -317,6 +317,65 @@ func TestDispatchSync_SteamSuccess(t *testing.T) {
 	}
 }
 
+func TestDispatchSync_SetsSiblingParentID(t *testing.T) {
+	// When two library entries have the same (storefront, title) but different
+	// external_ids, the second row must have parent_id set to the first row's id.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
+		 VALUES (?, ?, 'sync', 'psn', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'psn', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
+		{
+			{ExternalID: "CUSA12345_00", Title: "Horizon", Platforms: []string{"playstation-4"}},
+			{ExternalID: "PPSA67890_00", Title: "Horizon", Platforms: []string{"playstation-5"}},
+		},
+	}}
+	rc := newTestRiverClient(t)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+	}
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	type egRow struct {
+		ExternalID string  `bun:"external_id"`
+		ParentID   *string `bun:"parent_id"`
+	}
+	var rows []egRow
+	if err := testDB.NewRaw(
+		`SELECT external_id, parent_id FROM external_games WHERE user_id = ? ORDER BY created_at ASC`,
+		userID,
+	).Scan(ctx, &rows); err != nil {
+		t.Fatalf("scan external_games: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 external_game rows, got %d", len(rows))
+	}
+
+	// First row (PS4) must have no parent.
+	if rows[0].ParentID != nil {
+		t.Errorf("first row should have no parent_id, got %v", *rows[0].ParentID)
+	}
+	// Second row (PS5) must point to first row.
+	if rows[1].ParentID == nil {
+		t.Error("second row should have parent_id set")
+	}
+}
+
 func TestDispatchSync_Steam_MultiPlatform_WindowsAndLinux(t *testing.T) {
 	// Adapter yields Windows+Linux for appid 730 →
 	// expect 1 external_games row, 2 external_game_platforms rows, 1 job_item keyed "730".
