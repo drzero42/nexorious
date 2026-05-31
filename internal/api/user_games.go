@@ -1169,6 +1169,9 @@ type CollectionStatsResponse struct {
 // Removes all games, jobs, and sync configs for the authenticated user.
 func (h *UserGamesHandler) HandleClearLibrary(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
 
 	ctx := context.Background()
 	var deleted int64
