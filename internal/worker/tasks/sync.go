@@ -45,7 +45,7 @@ type DispatchSyncArgs struct {
 func (DispatchSyncArgs) Kind() string { return "dispatch_sync" }
 
 func (DispatchSyncArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 1, Priority: 1}
+	return river.InsertOpts{MaxAttempts: 3, Priority: 1}
 }
 
 // Timeout overrides River's 1-minute default so large libraries (hundreds of
