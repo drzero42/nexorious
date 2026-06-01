@@ -8,6 +8,7 @@ import type {
   JobDeleteResponse,
   JobItemStatus,
   JobType,
+  JobTypeStatus,
   JobItemDetail,
   RetryFailedResponse,
 } from '@/types';
@@ -26,7 +27,7 @@ export const jobsKeys = {
   detail: (id: string) => [...jobsKeys.details(), id] as const,
   items: (jobId: string, status?: JobItemStatus, page?: number) =>
     [...jobsKeys.detail(jobId), 'items', { status, page }] as const,
-  active: (jobType: JobType) => [...jobsKeys.all, 'active', jobType] as const,
+  typeStatus: (jobType: JobType) => [...jobsKeys.all, 'typeStatus', jobType] as const,
   recent: (source: string, limit?: number) =>
     limit !== undefined
       ? ([...jobsKeys.all, 'recent', source, limit] as const)
@@ -113,19 +114,18 @@ export function useJobItems(
 }
 
 /**
- * Hook to check for an active job of a specific type.
- * Polls every 3 seconds when there's an active job.
- * Returns null if no active job exists.
+ * Hook to fetch lightweight status for a job type. Polls every 30 s at baseline
+ * and every 3 s while a job is active — the baseline poll catches background
+ * jobs and reliably detects completion.
  */
-export function useActiveJob(jobType: JobType, options?: { enabled?: boolean }) {
+export function useJobTypeStatus(jobType: JobType, options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: jobsKeys.active(jobType),
-    queryFn: () => jobsApi.getActiveJob(jobType),
+    queryKey: jobsKeys.typeStatus(jobType),
+    queryFn: () => jobsApi.getJobTypeStatus(jobType),
     enabled: options?.enabled !== false,
     refetchInterval: (query) => {
-      // Poll every 3 seconds if there's an active job
-      const job = query.state.data as Job | null;
-      return job && !job.isTerminal ? 3000 : false;
+      const data = query.state.data as JobTypeStatus | undefined;
+      return data?.isActive ? 3000 : 30000;
     },
   });
 }

@@ -1,5 +1,7 @@
+import { createElement, type ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
 import { QueryWrapper } from '@/test/test-utils';
@@ -9,9 +11,35 @@ import {
   useDownloadExport,
   importExportKeys,
 } from './use-import-export';
-import { ExportFormat } from '@/types';
+import { jobsKeys } from './use-jobs';
+import { ExportFormat, JobType } from '@/types';
+import type { JobTypeStatus } from '@/types';
 
 const API_URL = '/api';
+
+// Build a QueryWrapper bound to a caller-owned QueryClient so the test can read
+// the cache the hook writes to. The shared QueryWrapper creates its own internal
+// client, which is invisible from the test. This file is .ts (no JSX), so the
+// provider element is created via createElement.
+function wrapperFor(queryClient: QueryClient) {
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return createElement(QueryClientProvider, { client: queryClient }, children);
+  };
+}
+
+// A QueryClient that retains cache entries without an active observer. The hook
+// only mounts a mutation observer, so the optimistic typeStatus write (followed
+// by an invalidateQueries call) would be garbage-collected under gcTime: 0
+// before the test can read it. In production useJobTypeStatus keeps the entry
+// alive; here a non-zero gcTime stands in for that observer.
+function createCacheReadableQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity, staleTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+}
 
 describe('use-import-export hooks', () => {
   beforeEach(() => {
@@ -119,6 +147,52 @@ describe('use-import-export hooks', () => {
 
       expect(result.current.error?.message).toContain('Import already in progress');
     });
+
+    it('optimistically marks the import job type active on success, preserving prior last-completed info', async () => {
+      server.use(
+        http.post(`${API_URL}/import/nexorious`, () => {
+          return HttpResponse.json({
+            job_id: 'job-new',
+            source: 'nexorious',
+            status: 'pending',
+            message: 'Import job created.',
+            total_items: 3,
+          });
+        }),
+      );
+
+      const queryClient = createCacheReadableQueryClient();
+
+      // Seed a prior status with non-null last-completed info.
+      const prior: JobTypeStatus = {
+        isActive: false,
+        activeJobId: null,
+        lastCompletedJobId: 'job-prev',
+        lastCompletedAt: '2026-01-01T00:00:00Z',
+      };
+      queryClient.setQueryData(jobsKeys.typeStatus(JobType.IMPORT), prior);
+
+      const { result } = renderHook(() => useImportNexorious(), {
+        wrapper: wrapperFor(queryClient),
+      });
+
+      const mockFile = new File(['{"games": []}'], 'backup.json', { type: 'application/json' });
+
+      await act(async () => {
+        await result.current.mutateAsync(mockFile);
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(queryClient.getQueryData(jobsKeys.typeStatus(JobType.IMPORT))).toEqual({
+        isActive: true,
+        activeJobId: 'job-new',
+        lastCompletedJobId: 'job-prev',
+        lastCompletedAt: '2026-01-01T00:00:00Z',
+      });
+    });
   });
 
   describe('useExportCollection', () => {
@@ -205,6 +279,49 @@ describe('use-import-export hooks', () => {
       });
 
       expect(result.current.error?.message).toBe('No games in collection to export.');
+    });
+
+    it('optimistically marks the export job type active on success, preserving prior last-completed info', async () => {
+      server.use(
+        http.post(`${API_URL}/export/json`, () => {
+          return HttpResponse.json({
+            job_id: 'export-new',
+            status: 'pending',
+            message: 'Export job created.',
+            estimated_items: 42,
+          });
+        }),
+      );
+
+      const queryClient = createCacheReadableQueryClient();
+
+      // Seed a prior status with non-null last-completed info.
+      const prior: JobTypeStatus = {
+        isActive: false,
+        activeJobId: null,
+        lastCompletedJobId: 'export-prev',
+        lastCompletedAt: '2026-02-02T00:00:00Z',
+      };
+      queryClient.setQueryData(jobsKeys.typeStatus(JobType.EXPORT), prior);
+
+      const { result } = renderHook(() => useExportCollection(), {
+        wrapper: wrapperFor(queryClient),
+      });
+
+      await act(async () => {
+        await result.current.mutateAsync(ExportFormat.JSON);
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(queryClient.getQueryData(jobsKeys.typeStatus(JobType.EXPORT))).toEqual({
+        isActive: true,
+        activeJobId: 'export-new',
+        lastCompletedJobId: 'export-prev',
+        lastCompletedAt: '2026-02-02T00:00:00Z',
+      });
     });
   });
 

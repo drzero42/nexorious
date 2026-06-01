@@ -91,7 +91,7 @@ export {
   useJob,
   useJobsSummary,
   useJobItems,
-  useActiveJob,
+  useJobTypeStatus,
   useCancelJob,
   useDeleteJob,
   usePendingReviewCount,
@@ -99,6 +99,9 @@ export {
   useRetryFailedItems,
   useRetryJobItem,
 } from './use-jobs';
+
+// Job completion effect hook
+export { useJobCompletionEffect } from './use-job-completion-effect';
 
 // Version hooks
 export { useVersion } from './use-version';

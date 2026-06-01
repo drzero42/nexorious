@@ -271,8 +271,13 @@ export const handlers = [
   }),
 
   // Jobs endpoints
-  http.get(`${API_URL}/jobs/active/:job_type`, () => {
-    return HttpResponse.json(null);
+  http.get(`${API_URL}/jobs/status/:job_type`, () => {
+    return HttpResponse.json({
+      is_active: false,
+      active_job_id: null,
+      last_completed_job_id: null,
+      last_completed_at: null,
+    });
   }),
 
   // IGDB endpoints

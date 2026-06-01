@@ -282,7 +282,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		jobsGroup.GET("", jh.HandleListJobs)
 		jobsGroup.GET("/summary", jh.HandleJobsSummary)
 		jobsGroup.GET("/pending-review-count", jh.HandlePendingReviewCount)
-		jobsGroup.GET("/active/:job_type", jh.HandleActiveJob)
+		jobsGroup.GET("/status/:job_type", jh.HandleJobTypeStatus)
 		jobsGroup.GET("/recent/:source", jh.HandleRecentJobs)
 		jobsGroup.GET("/:id", jh.HandleGetJob)
 		jobsGroup.GET("/:id/items", jh.HandleGetJobItems)
@@ -431,6 +431,13 @@ func spaHandler() echo.HandlerFunc {
 	fileServer := http.FileServer(http.FS(fsys))
 	return func(c *echo.Context) error {
 		path := c.Request().URL.Path
+		// Never serve the SPA shell for unmatched API routes — return a JSON
+		// 404 instead. Otherwise a mistyped or trailing-slash API path (e.g.
+		// "/api/jobs/" vs the registered "/api/jobs") silently returns
+		// index.html with a 200, which clients then fail to parse as JSON.
+		if strings.HasPrefix(path, "/api/") {
+			return echo.NewHTTPError(http.StatusNotFound, "not found")
+		}
 		if _, err := fs.Stat(fsys, strings.TrimPrefix(path, "/")); err != nil {
 			// File not found → serve index.html for SPA routing
 			c.Request().URL.Path = "/"

@@ -1,12 +1,16 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   useImportNexorious,
   useExportCollection,
-  useActiveJob,
+  useJob,
+  useJobTypeStatus,
+  useJobCompletionEffect,
   useCancelJob,
   useDownloadExport,
+  jobsKeys,
 } from '@/hooks';
 import {
   ImportSource,
@@ -208,9 +212,26 @@ function ImportExportPage() {
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
   const { mutate: downloadExport, isPending: isDownloading } = useDownloadExport();
 
-  // Check for active import and export jobs
-  const { data: activeImportJob, refetch: refetchImport } = useActiveJob(JobType.IMPORT);
-  const { data: activeExportJob, refetch: refetchExport } = useActiveJob(JobType.EXPORT);
+  const queryClient = useQueryClient();
+
+  // Track import/export job status (active + most recent completed) and fetch
+  // the displayed job by id — falling back to the last completed job so the
+  // result card (e.g. the export Download button) survives completion.
+  const { data: importStatus } = useJobTypeStatus(JobType.IMPORT);
+  const { data: exportStatus } = useJobTypeStatus(JobType.EXPORT);
+
+  const importJobId = importStatus?.activeJobId ?? importStatus?.lastCompletedJobId ?? undefined;
+  const exportJobId = exportStatus?.activeJobId ?? exportStatus?.lastCompletedJobId ?? undefined;
+
+  const { data: activeImportJob } = useJob(importJobId);
+  const { data: activeExportJob } = useJob(exportJobId);
+
+  // Refresh Recent Activity when either job completes.
+  const handleJobComplete = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: jobsKeys.lists() });
+  }, [queryClient]);
+  useJobCompletionEffect(importStatus?.activeJobId, handleJobComplete);
+  useJobCompletionEffect(exportStatus?.activeJobId, handleJobComplete);
 
   // Determine which job to display
   // Priority: 1) In-progress jobs, 2) Most recently completed job
@@ -258,10 +279,8 @@ function ImportExportPage() {
     try {
       const result = await importNexorious(file);
       toast.success(`Import started: ${result.message}`);
-      // Reset dismissed job to show the new job
+      // Reset dismissed job; the mutation optimistically marks the job active.
       setDismissedJobId(null);
-      // Refetch to get the new job
-      refetchImport();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Import failed';
       toast.error(message);
@@ -276,10 +295,8 @@ function ImportExportPage() {
     try {
       const result = await exportCollection(format);
       toast.success(`Export started: ${result.message}`);
-      // Reset dismissed job to show the new job
+      // Reset dismissed job; the mutation optimistically marks the job active.
       setDismissedJobId(null);
-      // Refetch to get the new job
-      refetchExport();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Export failed';
       toast.error(message);
@@ -294,8 +311,8 @@ function ImportExportPage() {
     cancelJob(activeJob.id, {
       onSuccess: () => {
         toast.success('Job cancelled');
-        refetchImport();
-        refetchExport();
+        queryClient.invalidateQueries({ queryKey: jobsKeys.typeStatus(JobType.IMPORT) });
+        queryClient.invalidateQueries({ queryKey: jobsKeys.typeStatus(JobType.EXPORT) });
       },
       onError: (error) => {
         toast.error(error.message || 'Failed to cancel job');

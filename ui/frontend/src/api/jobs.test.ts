@@ -59,7 +59,7 @@ describe('jobsApi', () => {
 
       const result = await jobsApi.getJobs();
 
-      expect(api.get).toHaveBeenCalledWith('/jobs/', {
+      expect(api.get).toHaveBeenCalledWith('/jobs', {
         params: { page: 1, per_page: 20 },
       });
       expect(result.jobs).toHaveLength(1);
@@ -106,7 +106,7 @@ describe('jobsApi', () => {
         10,
       );
 
-      expect(api.get).toHaveBeenCalledWith('/jobs/', {
+      expect(api.get).toHaveBeenCalledWith('/jobs', {
         params: {
           page: 2,
           per_page: 10,
@@ -132,7 +132,7 @@ describe('jobsApi', () => {
 
       await jobsApi.getJobs({ jobType: JobType.SYNC });
 
-      expect(api.get).toHaveBeenCalledWith('/jobs/', {
+      expect(api.get).toHaveBeenCalledWith('/jobs', {
         params: {
           page: 1,
           per_page: 20,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -103,6 +104,28 @@ func TestListJobs(t *testing.T) {
 
 	if resp["page"].(float64) != 1 {
 		t.Fatalf("expected page=1, got %v", resp["page"])
+	}
+}
+
+// TestUnmatchedAPIPathReturns404 guards against the SPA catch-all silently
+// serving index.html (HTTP 200) for unmatched API paths. A trailing-slash
+// mismatch ("/api/jobs/" vs the registered "/api/jobs") previously fell through
+// to the SPA handler and returned HTML with a 200, which the frontend then
+// failed to parse as JSON — leaving the import/export Recent Activity blank.
+func TestUnmatchedAPIPathReturns404(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	_, token := setupTagUser(t, testDB, e, "jobs-unmatched")
+
+	for _, path := range []string{"/api/jobs/", "/api/does-not-exist"} {
+		rec := getAuth(t, e, path, token)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("GET %s: expected 404, got %d (body[:60]=%q)",
+				path, rec.Code, rec.Body.String()[:min(60, len(rec.Body.String()))])
+		}
+		if ct := rec.Header().Get("Content-Type"); strings.Contains(ct, "text/html") {
+			t.Fatalf("GET %s: expected JSON 404, got HTML (Content-Type=%q)", path, ct)
+		}
 	}
 }
 
@@ -547,27 +570,14 @@ func TestPendingReviewCount_IncludesTerminalJobItems(t *testing.T) {
 	}
 }
 
-// ─── TestHandleActiveJob ──────────────────────────────────────────────────────
+// ─── TestHandleJobTypeStatus ──────────────────────────────────────────────────
 
-func TestHandleActiveJob_NoJobs(t *testing.T) {
+func TestHandleJobTypeStatus_NoJobs(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
-	_, token := setupTagUser(t, testDB, e, "jobs-active-none")
+	_, token := setupTagUser(t, testDB, e, "jobs-status-none")
 
-	rec := getAuth(t, e, "/api/jobs/active/import", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestHandleActiveJob_ActiveJobExists(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "jobs-active-exists")
-
-	insertJob(t, testDB, "job-active-1", userID, "import", "steam", "processing")
-
-	rec := getAuth(t, e, "/api/jobs/active/import", token)
+	rec := getAuth(t, e, "/api/jobs/status/import", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -575,20 +585,25 @@ func TestHandleActiveJob_ActiveJobExists(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["id"] != "job-active-1" {
-		t.Fatalf("expected id=job-active-1, got %v", resp["id"])
+	if resp["is_active"].(bool) {
+		t.Fatal("expected is_active=false")
+	}
+	if resp["active_job_id"] != nil {
+		t.Fatalf("expected active_job_id=null, got %v", resp["active_job_id"])
+	}
+	if resp["last_completed_job_id"] != nil {
+		t.Fatalf("expected last_completed_job_id=null, got %v", resp["last_completed_job_id"])
 	}
 }
 
-func TestHandleActiveJob_FallbackToCompleted(t *testing.T) {
+func TestHandleJobTypeStatus_ActiveJob(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "jobs-active-fallback")
+	userID, token := setupTagUser(t, testDB, e, "jobs-status-active")
 
-	// No active job, but there is a completed one.
-	insertJob(t, testDB, "job-fallback-1", userID, "sync", "steam", "completed")
+	insertJob(t, testDB, "job-status-active", userID, "import", "nexorious", "processing")
 
-	rec := getAuth(t, e, "/api/jobs/active/sync", token)
+	rec := getAuth(t, e, "/api/jobs/status/import", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -596,8 +611,70 @@ func TestHandleActiveJob_FallbackToCompleted(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["id"] != "job-fallback-1" {
-		t.Fatalf("expected id=job-fallback-1, got %v", resp["id"])
+	if !resp["is_active"].(bool) {
+		t.Fatal("expected is_active=true")
+	}
+	if resp["active_job_id"] != "job-status-active" {
+		t.Fatalf("expected active_job_id=job-status-active, got %v", resp["active_job_id"])
+	}
+}
+
+func TestHandleJobTypeStatus_LastCompleted(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-status-completed")
+
+	// Completed job with an explicit completed_at; no active job of this type.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at, completed_at)
+		 VALUES ('job-status-done', ?, 'export', 'nexorious', 'completed', 'high', now(), now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert completed job: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/jobs/status/export", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["is_active"].(bool) {
+		t.Fatal("expected is_active=false")
+	}
+	if resp["last_completed_job_id"] != "job-status-done" {
+		t.Fatalf("expected last_completed_job_id=job-status-done, got %v", resp["last_completed_job_id"])
+	}
+	if resp["last_completed_at"] == nil {
+		t.Fatal("expected last_completed_at to be set")
+	}
+}
+
+func TestHandleJobTypeStatus_ScopedToUser(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	_, tokenA := setupTagUser(t, testDB, e, "jobs-status-user-a")
+	userB, _ := setupTagUser(t, testDB, e, "jobs-status-user-b")
+
+	// User B has an active import job; user A has none.
+	insertJob(t, testDB, "job-other-user", userB, "import", "nexorious", "processing")
+
+	rec := getAuth(t, e, "/api/jobs/status/import", tokenA)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["is_active"].(bool) {
+		t.Fatal("expected is_active=false — must not see another user's job")
+	}
+	if resp["active_job_id"] != nil {
+		t.Fatalf("expected active_job_id=null, got %v", resp["active_job_id"])
 	}
 }
 

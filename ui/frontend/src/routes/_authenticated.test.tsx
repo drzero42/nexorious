@@ -22,7 +22,8 @@ vi.mock('@/components/navigation', () => ({
 }));
 
 vi.mock('@/hooks', () => ({
-  useActiveJob: () => ({ data: undefined }),
+  useJobTypeStatus: () => ({ data: undefined }),
+  useJobCompletionEffect: () => {},
 }));
 
 vi.mock('@tanstack/react-query', () => ({
