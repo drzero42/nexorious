@@ -73,6 +73,16 @@ describe('GOGConnectionCard', () => {
     expect(screen.getByRole('button', { name: 'Connect GOG' })).toBeInTheDocument();
   });
 
+  it('tells the user they can paste the full URL or just the code', () => {
+    render(<GOGConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />, {
+      wrapper: createWrapper(),
+    });
+
+    expect(
+      screen.getByPlaceholderText('Paste the full GOG URL or just the code'),
+    ).toBeInTheDocument();
+  });
+
   it('renders connected state with username', () => {
     stubGOGConnection({ connected: true, username: 'goguser', userId: 'u1' });
 
