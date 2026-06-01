@@ -1606,3 +1606,133 @@ func TestManualPlatformHoursReflectedInSum(t *testing.T) {
 		t.Fatalf("expected calculated hours_played=42.5, got %v", resp["hours_played"])
 	}
 }
+
+// readPlayStatus returns the play_status for a user game directly from the DB.
+func readPlayStatus(t *testing.T, userGameID string) string {
+	t.Helper()
+	var status string
+	err := testDB.NewRaw(
+		`SELECT play_status FROM user_games WHERE id = ?`, userGameID,
+	).Scan(context.Background(), &status)
+	if err != nil {
+		t.Fatalf("readPlayStatus: %v", err)
+	}
+	return status
+}
+
+// TestAutoPromotePlayStatus covers the not_started → in_progress auto-promotion
+// triggered from the manual edit paths (issue #713).
+func TestAutoPromotePlayStatus(t *testing.T) {
+	cfg := testCfg()
+
+	t.Run("update platform hours promotes not_started", func(t *testing.T) {
+		truncateAllTables(t)
+		e := newTestEcho(t, testDB, cfg)
+		userID, token := setupUserGamesUser(t, testDB, e, "promote-upd")
+		g := insertTestGame(t, testDB, "Promote Update Game")
+		insertTestUserGame(t, testDB, "ug-pr-1", userID, int(g))
+		pc := "pc-windows"
+		insertTestUserGamePlatform(t, testDB, "ugp-pr-1", "ug-pr-1", &pc, nil)
+
+		if got := readPlayStatus(t, "ug-pr-1"); got != "not_started" {
+			t.Fatalf("precondition: expected not_started, got %q", got)
+		}
+
+		rec := putJSONAuth(t, e, "/api/user-games/ug-pr-1/platforms/ugp-pr-1", map[string]any{
+			"hours_played": 3.0,
+		}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := readPlayStatus(t, "ug-pr-1"); got != "in_progress" {
+			t.Fatalf("expected in_progress after adding hours, got %q", got)
+		}
+	})
+
+	t.Run("create platform with hours promotes not_started", func(t *testing.T) {
+		truncateAllTables(t)
+		e := newTestEcho(t, testDB, cfg)
+		userID, token := setupUserGamesUser(t, testDB, e, "promote-create-plat")
+		g := insertTestGame(t, testDB, "Promote Create Plat Game")
+		insertTestUserGame(t, testDB, "ug-pr-2", userID, int(g))
+
+		rec := postJSONAuth(t, e, "/api/user-games/ug-pr-2/platforms", map[string]any{
+			"platform":     "pc-windows",
+			"storefront":   "steam",
+			"hours_played": 1.5,
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := readPlayStatus(t, "ug-pr-2"); got != "in_progress" {
+			t.Fatalf("expected in_progress, got %q", got)
+		}
+	})
+
+	t.Run("create user game with played platform promotes", func(t *testing.T) {
+		truncateAllTables(t)
+		e := newTestEcho(t, testDB, cfg)
+		_, token := setupUserGamesUser(t, testDB, e, "promote-create-ug")
+		g := insertTestGame(t, testDB, "Promote Create UG Game")
+
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id": g,
+			"platforms": []map[string]any{
+				{"platform": "pc-windows", "storefront": "steam", "hours_played": 5.0},
+			},
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		ugID := resp["id"].(string)
+		if got := readPlayStatus(t, ugID); got != "in_progress" {
+			t.Fatalf("expected in_progress, got %q", got)
+		}
+	})
+
+	t.Run("does not clobber a chosen status", func(t *testing.T) {
+		truncateAllTables(t)
+		e := newTestEcho(t, testDB, cfg)
+		userID, token := setupUserGamesUser(t, testDB, e, "promote-guard")
+		g := insertTestGame(t, testDB, "Promote Guard Game")
+		insertTestUserGame(t, testDB, "ug-pr-3", userID, int(g))
+		if _, err := testDB.ExecContext(context.Background(),
+			`UPDATE user_games SET play_status = 'completed' WHERE id = 'ug-pr-3'`); err != nil {
+			t.Fatalf("set completed: %v", err)
+		}
+		pc := "pc-windows"
+		insertTestUserGamePlatform(t, testDB, "ugp-pr-3", "ug-pr-3", &pc, nil)
+
+		rec := putJSONAuth(t, e, "/api/user-games/ug-pr-3/platforms/ugp-pr-3", map[string]any{
+			"hours_played": 10.0,
+		}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := readPlayStatus(t, "ug-pr-3"); got != "completed" {
+			t.Fatalf("expected completed to be preserved, got %q", got)
+		}
+	})
+
+	t.Run("no promotion when hours stay zero", func(t *testing.T) {
+		truncateAllTables(t)
+		e := newTestEcho(t, testDB, cfg)
+		userID, token := setupUserGamesUser(t, testDB, e, "promote-zero")
+		g := insertTestGame(t, testDB, "Promote Zero Game")
+		insertTestUserGame(t, testDB, "ug-pr-4", userID, int(g))
+		pc := "pc-windows"
+		insertTestUserGamePlatform(t, testDB, "ugp-pr-4", "ug-pr-4", &pc, nil)
+
+		rec := putJSONAuth(t, e, "/api/user-games/ug-pr-4/platforms/ugp-pr-4", map[string]any{
+			"ownership_status": "owned",
+		}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := readPlayStatus(t, "ug-pr-4"); got != "not_started" {
+			t.Fatalf("expected not_started to be preserved, got %q", got)
+		}
+	})
+}

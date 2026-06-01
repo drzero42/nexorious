@@ -19,6 +19,7 @@ import (
 	"github.com/drzero42/nexorious/internal/services/matching"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
+	"github.com/drzero42/nexorious/internal/usergame"
 )
 
 // ExternalGameEntry is the normalised game representation yielded by any storefront adapter.
@@ -643,15 +644,14 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	ugID := uuid.NewString()
 	now := time.Now().UTC()
 	var isNewRow struct {
-		ID         string  `bun:"id"`
-		IsNew      bool    `bun:"is_new"`
-		PlayStatus *string `bun:"play_status"`
+		ID    string `bun:"id"`
+		IsNew bool   `bun:"is_new"`
 	}
 	if err := w.DB.NewRaw(
 		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT (user_id, game_id) DO UPDATE SET updated_at = now()
-		 RETURNING id, (xmax = 0) AS is_new, play_status`,
+		 RETURNING id, (xmax = 0) AS is_new`,
 		ugID, item.UserID, *eg.ResolvedIGDBID, now, now,
 	).Scan(ctx, &isNewRow); err != nil {
 		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("upsert user_game: %v", err))
@@ -760,16 +760,12 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		}
 	}
 
-	var totalHours float64
-	for _, egp := range egPlatforms {
-		totalHours += egp.HoursPlayed
-	}
-	if totalHours > 0 && (isNewRow.IsNew || (isNewRow.PlayStatus != nil && *isNewRow.PlayStatus == "not_started")) {
-		if _, err := w.DB.NewRaw(
-			`UPDATE user_games SET play_status = 'in_progress' WHERE id = ?`, ugID,
-		).Exec(ctx); err != nil {
-			slog.Error("user_game_write: update play_status", "err", err, "item_id", p.JobItemID)
-		}
+	// Auto-promote not_started → in_progress when the game has any played
+	// hours. The shared helper keys off the SUM of all the game's platforms in
+	// the DB and its play_status = 'not_started' guard covers freshly-upserted
+	// rows (which default to not_started), so no separate isNew check is needed.
+	if err := usergame.PromoteToInProgressIfPlayed(ctx, w.DB, ugID); err != nil {
+		slog.Error("user_game_write: auto-promote play_status", "err", err, "item_id", p.JobItemID)
 	}
 
 	if _, err := w.DB.NewRaw(

@@ -193,20 +193,20 @@ func TestHandleLogin_ValidCredentials(t *testing.T) {
 		t.Errorf("username = %q, want %q", resp["username"], "alice")
 	}
 
-	var sessionCookie *http.Cookie
+	var sessionValue string
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == "session_id" {
-			sessionCookie = c
+			sessionValue = c.Value
 		}
 	}
-	if sessionCookie == nil {
+	if sessionValue == "" {
 		t.Fatal("no session_id cookie set")
 	}
 
 	var count int
 	if err := testDB.QueryRowContext(context.Background(),
 		"SELECT COUNT(*) FROM user_sessions WHERE user_id = ? AND session_id_hash = ?",
-		"user-001", auth.HashToken(sessionCookie.Value),
+		"user-001", auth.HashToken(sessionValue),
 	).Scan(&count); err != nil {
 		t.Fatalf("session query: %v", err)
 	}
