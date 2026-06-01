@@ -92,6 +92,7 @@ export {
   useJobsSummary,
   useJobItems,
   useActiveJob,
+  useJobTypeStatus,
   useCancelJob,
   useDeleteJob,
   usePendingReviewCount,

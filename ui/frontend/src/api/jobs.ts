@@ -6,6 +6,7 @@ import type {
   JobCancelResponse,
   JobDeleteResponse,
   JobsSummary,
+  JobTypeStatus,
   JobType,
   JobSource,
   JobStatus,
@@ -78,6 +79,13 @@ interface JobDeleteApiResponse {
 interface JobsSummaryApiResponse {
   running_count: number;
   failed_count: number;
+}
+
+interface JobTypeStatusApiResponse {
+  is_active: boolean;
+  active_job_id: string | null;
+  last_completed_job_id: string | null;
+  last_completed_at: string | null;
 }
 
 interface JobItemApiResponse {
@@ -298,6 +306,20 @@ export async function getJobs(
 export async function getJob(jobId: string): Promise<Job> {
   const response = await api.get<JobApiResponse>(`/jobs/${jobId}`);
   return transformJob(response);
+}
+
+/**
+ * Get lightweight status for a job type: the active job (if any) and the most
+ * recent terminal job. Used for continuous polling + completion detection.
+ */
+export async function getJobTypeStatus(jobType: JobType): Promise<JobTypeStatus> {
+  const response = await api.get<JobTypeStatusApiResponse>(`/jobs/status/${jobType}`);
+  return {
+    isActive: response.is_active,
+    activeJobId: response.active_job_id,
+    lastCompletedJobId: response.last_completed_job_id,
+    lastCompletedAt: response.last_completed_at,
+  };
 }
 
 /**

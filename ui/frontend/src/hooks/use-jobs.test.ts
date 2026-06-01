@@ -10,6 +10,7 @@ import {
   useDeleteJob,
   useRetryFailedItems,
   useRetryJobItem,
+  useJobTypeStatus,
   jobsKeys,
 } from './use-jobs';
 import { JobType, JobSource, JobStatus, JobItemStatus } from '@/types';
@@ -472,6 +473,33 @@ describe('use-jobs hooks', () => {
       });
 
       expect(result.current.error?.message).toBe('Item is not in failed state');
+    });
+  });
+
+  describe('useJobTypeStatus', () => {
+    it('fetches and transforms job type status', async () => {
+      server.use(
+        http.get(`${API_URL}/jobs/status/import`, () =>
+          HttpResponse.json({
+            is_active: true,
+            active_job_id: 'job-9',
+            last_completed_job_id: 'job-8',
+            last_completed_at: '2026-01-01T00:00:00Z',
+          }),
+        ),
+      );
+
+      const { result } = renderHook(() => useJobTypeStatus(JobType.IMPORT), {
+        wrapper: QueryWrapper,
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(result.current.data).toEqual({
+        isActive: true,
+        activeJobId: 'job-9',
+        lastCompletedJobId: 'job-8',
+        lastCompletedAt: '2026-01-01T00:00:00Z',
+      });
     });
   });
 });

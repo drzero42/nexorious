@@ -78,6 +78,13 @@ export interface Job {
   durationSeconds: number | null;
 }
 
+export interface JobTypeStatus {
+  isActive: boolean;
+  activeJobId: string | null;
+  lastCompletedJobId: string | null;
+  lastCompletedAt: string | null;
+}
+
 export interface JobFilters {
   jobType?: JobType;
   source?: JobSource;
