@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -16,6 +16,7 @@ import {
   useEpicConnection,
   useGOGConnection,
   jobsKeys,
+  useJobCompletionEffect,
 } from '@/hooks';
 import { useCurrentUser, authKeys } from '@/hooks/use-auth';
 import {
@@ -179,16 +180,11 @@ function SyncDetailPage() {
     enabled: !!status?.activeJobId,
   });
 
-  const previousActiveJobIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const previous = previousActiveJobIdRef.current;
-    const current = status?.activeJobId ?? null;
-    previousActiveJobIdRef.current = current;
-    if (previous && !current) {
-      queryClient.invalidateQueries({ queryKey: jobsKeys.recent(storefront) });
-      queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(storefront) });
-    }
-  }, [status?.activeJobId, storefront, queryClient]);
+  const handleSyncComplete = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: jobsKeys.recent(storefront) });
+    queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(storefront) });
+  }, [queryClient, storefront]);
+  useJobCompletionEffect(status?.activeJobId, handleSyncComplete);
 
   // Mutations
   const { mutateAsync: updateConfig, isPending: isUpdating } = useUpdateSyncConfig();
