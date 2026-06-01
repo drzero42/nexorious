@@ -3,9 +3,11 @@ package gog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 const (
@@ -37,6 +39,37 @@ type tokenAPIResponse struct {
 type userDataResponse struct {
 	UserID   string `json:"userId"`
 	Username string `json:"username"`
+}
+
+// ParseAuthCode extracts a GOG authorization code from user input. The input
+// may be either a bare code or the full redirect URL the user lands on after
+// logging in, e.g.:
+//
+//	https://embed.gog.com/on_login_success?origin=client&code=XXX
+//
+// If the input is a URL it must be the GOG redirect URL (host embed.gog.com,
+// path /on_login_success) and carry a non-empty code query parameter;
+// otherwise an error is returned. Input that is not a URL is treated as a bare
+// code and returned trimmed, preserving the original paste-the-code flow.
+func ParseAuthCode(input string) (string, error) {
+	trimmed := strings.TrimSpace(input)
+
+	u, err := url.Parse(trimmed)
+	if err != nil || u.Host == "" {
+		// Not a URL — treat the whole input as a bare authorization code.
+		return trimmed, nil
+	}
+
+	if !strings.EqualFold(u.Host, "embed.gog.com") || u.Path != "/on_login_success" {
+		return "", errors.New("that doesn't look like a GOG login URL — paste the URL you were redirected to, or just the code")
+	}
+
+	code := u.Query().Get("code")
+	if code == "" {
+		return "", errors.New("couldn't find an authorization code in that URL — make sure you copied the full URL after logging in")
+	}
+
+	return code, nil
 }
 
 // BuildAuthURL returns the GOG OAuth login URL. The user opens this in a
