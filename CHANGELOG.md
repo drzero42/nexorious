@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.1](https://github.com/drzero42/nexorious/compare/v0.3.0...v0.3.1) (2026-06-01)
+
+
+### Bug Fixes
+
+* emit full socket path in createLocally DATABASE_URL ([#721](https://github.com/drzero42/nexorious/issues/721)) ([88cedc7](https://github.com/drzero42/nexorious/commit/88cedc77c0fd2d5934b8b935a057f33050767e9e)), closes [#720](https://github.com/drzero42/nexorious/issues/720)
+* keep Continue button disabled when migration verification fails ([#715](https://github.com/drzero42/nexorious/issues/715)) ([dd51183](https://github.com/drzero42/nexorious/commit/dd51183a53bc98de96818fdcb4e61a37d80d88e9))
+* route single-value URL filters through getOne helper ([#718](https://github.com/drzero42/nexorious/issues/718)) ([6494032](https://github.com/drzero42/nexorious/commit/6494032a319ea3c68926a6c974ae191d27d012a6)), closes [#649](https://github.com/drzero42/nexorious/issues/649)
+* use background ctx for dispatch_complete gate write ([#719](https://github.com/drzero42/nexorious/issues/719)) ([01c16dc](https://github.com/drzero42/nexorious/commit/01c16dc07c7291de4b428c3e2376b5a459b0bc09)), closes [#699](https://github.com/drzero42/nexorious/issues/699)
+
 ## [0.3.0](https://github.com/drzero42/nexorious/compare/v0.2.0...v0.3.0) (2026-05-31)
 
 
