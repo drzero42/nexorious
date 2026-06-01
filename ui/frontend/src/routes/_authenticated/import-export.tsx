@@ -220,11 +220,11 @@ function ImportExportPage() {
   const { data: importStatus } = useJobTypeStatus(JobType.IMPORT);
   const { data: exportStatus } = useJobTypeStatus(JobType.EXPORT);
 
-  const importJobId = importStatus?.activeJobId ?? importStatus?.lastCompletedJobId ?? null;
-  const exportJobId = exportStatus?.activeJobId ?? exportStatus?.lastCompletedJobId ?? null;
+  const importJobId = importStatus?.activeJobId ?? importStatus?.lastCompletedJobId ?? undefined;
+  const exportJobId = exportStatus?.activeJobId ?? exportStatus?.lastCompletedJobId ?? undefined;
 
-  const { data: activeImportJob } = useJob(importJobId ?? undefined);
-  const { data: activeExportJob } = useJob(exportJobId ?? undefined);
+  const { data: activeImportJob } = useJob(importJobId);
+  const { data: activeExportJob } = useJob(exportJobId);
 
   // Refresh Recent Activity when either job completes.
   const handleJobComplete = useCallback(() => {
