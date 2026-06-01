@@ -52,6 +52,7 @@ func TestRootCmd_StructureAndSubcommands(t *testing.T) {
 		"version": false,
 		"login":   false,
 		"logout":  false,
+		"whoami":  false,
 	}
 	for _, sub := range root.Commands() {
 		if _, ok := wantSubcommands[sub.Name()]; ok {
@@ -127,7 +128,7 @@ func TestHelp_MentionsAllSubcommands(t *testing.T) {
 		t.Fatalf("execute --help: %v", err)
 	}
 	help := buf.String()
-	for _, name := range []string{"serve", "migrate", "version", "login", "logout"} {
+	for _, name := range []string{"serve", "migrate", "version", "login", "logout", "whoami"} {
 		if !strings.Contains(help, name) {
 			t.Errorf("help output missing subcommand %q. Got:\n%s", name, help)
 		}
