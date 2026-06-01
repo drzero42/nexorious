@@ -332,6 +332,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		nh := NewNotificationsHandler(db, encrypter, notify.NewShoutrrrSender())
 		notificationsGroup := e.Group("/api/notifications", auth.AuthMiddleware(db))
 		// static segments before parameterized (Echo v5 does not auto-sort)
+		notificationsGroup.POST("/test", nh.HandleTestURL)
 		notificationsGroup.GET("/channels", nh.HandleListChannels)
 		notificationsGroup.POST("/channels", nh.HandleCreateChannel)
 		notificationsGroup.POST("/channels/:id/test", nh.HandleTestChannel)

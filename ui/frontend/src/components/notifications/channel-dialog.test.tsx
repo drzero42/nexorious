@@ -5,9 +5,10 @@ import { ChannelDialog } from './channel-dialog';
 
 // Hoist mutation mocks so they can be referenced inside the vi.mock factory
 // and also asserted against in tests.
-const { createMutateAsync, updateMutateAsync } = vi.hoisted(() => ({
+const { createMutateAsync, updateMutateAsync, testUrlMutateAsync } = vi.hoisted(() => ({
   createMutateAsync: vi.fn().mockResolvedValue(undefined),
   updateMutateAsync: vi.fn().mockResolvedValue(undefined),
+  testUrlMutateAsync: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/hooks/use-notifications', () => ({
@@ -23,6 +24,11 @@ vi.mock('@/hooks/use-notifications', () => ({
   }),
   useTestChannel: () => ({
     mutateAsync: vi.fn().mockResolvedValue(undefined),
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+  useTestUrl: () => ({
+    mutateAsync: testUrlMutateAsync,
     mutate: vi.fn(),
     isPending: false,
   }),
@@ -46,6 +52,23 @@ describe('ChannelDialog', () => {
       expect(screen.getByText('URL is required')).toBeInTheDocument();
     });
     expect(createMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('add mode: typing a URL and clicking Send test calls testUrl with that URL', async () => {
+    const user = userEvent.setup();
+    testUrlMutateAsync.mockClear();
+
+    render(<ChannelDialog open={true} onOpenChange={noop} channel={null} />);
+
+    // Type a URL into the URL field
+    const urlInput = screen.getByLabelText(/shoutrrr url/i);
+    await user.type(urlInput, 'ntfy://ntfy.sh/my-topic');
+
+    await user.click(screen.getByRole('button', { name: /send test/i }));
+
+    await waitFor(() => {
+      expect(testUrlMutateAsync).toHaveBeenCalledWith('ntfy://ntfy.sh/my-topic');
+    });
   });
 
   it('edit mode allows a blank URL and omits it from the update payload', async () => {

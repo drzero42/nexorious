@@ -440,6 +440,57 @@ func TestTestChannelSendsViaRecorder(t *testing.T) {
 	}
 }
 
+// ─── TestTestURLSendsViaRecorder ──────────────────────────────────────────────
+
+func TestTestURLSendsViaRecorder(t *testing.T) {
+	rec := notify.NewRecorderSender()
+	h := api.NewNotificationsHandler(testDB, newNotifTestEncrypter(t), rec)
+
+	userID := "u-notif-testurl"
+	// No DB setup needed — HandleTestURL doesn't touch the DB.
+	c, testRec := notifCtx(t, http.MethodPost, "/api/notifications/test",
+		map[string]any{"url": "noop://x"}, userID, false, "")
+	if err := h.HandleTestURL(c); err != nil {
+		t.Fatalf("HandleTestURL: %v", err)
+	}
+	if testRec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", testRec.Code, testRec.Body)
+	}
+	sent := rec.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("expected 1 recorded send, got %d", len(sent))
+	}
+	if sent[0].URL != "noop://x" {
+		t.Fatalf("recorder URL mismatch: got %q want %q", sent[0].URL, "noop://x")
+	}
+}
+
+// ─── TestTestURLRejectsBlankURL ───────────────────────────────────────────────
+
+func TestTestURLRejectsBlankURL(t *testing.T) {
+	h := api.NewNotificationsHandler(testDB, newNotifTestEncrypter(t), notify.NewRecorderSender())
+
+	userID := "u-notif-testurl-blank"
+	c, _ := notifCtx(t, http.MethodPost, "/api/notifications/test",
+		map[string]any{"url": ""}, userID, false, "")
+	err := h.HandleTestURL(c)
+	assertHTTPError(t, err, http.StatusBadRequest)
+}
+
+// ─── TestTestURLReturns502OnSendError ─────────────────────────────────────────
+
+func TestTestURLReturns502OnSendError(t *testing.T) {
+	failRec := notify.NewRecorderSender()
+	failRec.Err = errors.New("smtp down")
+	h := api.NewNotificationsHandler(testDB, newNotifTestEncrypter(t), failRec)
+
+	userID := "u-notif-testurl-502"
+	c, _ := notifCtx(t, http.MethodPost, "/api/notifications/test",
+		map[string]any{"url": "noop://x"}, userID, false, "")
+	err := h.HandleTestURL(c)
+	assertHTTPError(t, err, http.StatusBadGateway)
+}
+
 // ─── shared assert helpers ────────────────────────────────────────────────────
 
 // assertHTTPError asserts err is an *echo.HTTPError with the expected status.

@@ -59,6 +59,10 @@ export function useTestChannel() {
   return useMutation({ mutationFn: (id: string) => notificationsApi.testChannel(id) });
 }
 
+export function useTestUrl() {
+  return useMutation({ mutationFn: (url: string) => notificationsApi.testUrl(url) });
+}
+
 export function usePutSubscriptions() {
   const qc = useQueryClient();
   return useMutation({

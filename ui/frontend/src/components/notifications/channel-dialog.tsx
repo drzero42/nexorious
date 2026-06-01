@@ -15,7 +15,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Send } from 'lucide-react';
-import { useCreateChannel, useUpdateChannel, useTestChannel } from '@/hooks/use-notifications';
+import {
+  useCreateChannel,
+  useUpdateChannel,
+  useTestChannel,
+  useTestUrl,
+} from '@/hooks/use-notifications';
 import type { NotificationChannel } from '@/api/notifications';
 
 const addSchema = z.object({
@@ -50,11 +55,13 @@ function ChannelDialogForm({ open, onOpenChange, channel, isEdit }: ChannelDialo
   const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
   const testChannel = useTestChannel();
+  const testUrl = useTestUrl();
 
   const {
     register,
     handleSubmit,
     reset,
+    getValues,
     formState: { errors },
   } = useForm<AddFormValues | EditFormValues>({
     resolver: zodResolver(isEdit ? editSchema : addSchema),
@@ -91,9 +98,19 @@ function ChannelDialogForm({ open, onOpenChange, channel, isEdit }: ChannelDialo
   };
 
   const handleTest = async () => {
-    if (!channel) return;
+    const typedUrl = getValues('url').trim();
     try {
-      await testChannel.mutateAsync(channel.id);
+      if (typedUrl) {
+        // URL field has a value — test the typed URL without saving
+        await testUrl.mutateAsync(typedUrl);
+      } else if (isEdit && channel) {
+        // Edit mode with blank URL field — test the already-saved channel URL
+        await testChannel.mutateAsync(channel.id);
+      } else {
+        // Add mode with blank URL — nothing to test yet
+        toast.error('Enter a URL to test first');
+        return;
+      }
       toast.success('Test notification sent');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Test failed');
@@ -101,6 +118,7 @@ function ChannelDialogForm({ open, onOpenChange, channel, isEdit }: ChannelDialo
   };
 
   const isPending = createChannel.isPending || updateChannel.isPending;
+  const isTestPending = testChannel.isPending || testUrl.isPending;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
@@ -138,21 +156,14 @@ function ChannelDialogForm({ open, onOpenChange, channel, isEdit }: ChannelDialo
       </div>
 
       <DialogFooter className="gap-2 sm:gap-0">
-        {isEdit && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleTest}
-            disabled={testChannel.isPending}
-          >
-            {testChannel.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="mr-2 h-4 w-4" />
-            )}
-            Send test
-          </Button>
-        )}
+        <Button type="button" variant="outline" onClick={handleTest} disabled={isTestPending}>
+          {isTestPending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="mr-2 h-4 w-4" />
+          )}
+          Send test
+        </Button>
         <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>

@@ -207,6 +207,32 @@ func (h *NotificationsHandler) HandleTestChannel(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+type testURLRequest struct {
+	URL string `json:"url"`
+}
+
+// HandleTestURL handles POST /api/notifications/test.
+// It sends a test notification to a URL provided in the request body (no save,
+// no encryption needed — it's the user's own URL being tried out).
+func (h *NotificationsHandler) HandleTestURL(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	var req testURLRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	req.URL = strings.TrimSpace(req.URL)
+	if req.URL == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "url is required")
+	}
+	if err := h.sender.Send(context.Background(), req.URL, "Nexorious test notification", "This is a test notification from Nexorious."); err != nil {
+		return echo.NewHTTPError(http.StatusBadGateway, "test send failed: "+err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 // HandleListEventTypes handles GET /api/notifications/event-types.
 // Admin-scoped event types are only returned to admins.
 func (h *NotificationsHandler) HandleListEventTypes(c *echo.Context) error {

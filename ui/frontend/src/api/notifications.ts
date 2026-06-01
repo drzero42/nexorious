@@ -22,6 +22,7 @@ export const notificationsApi = {
     api.patch<NotificationChannel>(`/notifications/channels/${id}`, data),
   deleteChannel: (id: string) => api.delete<void>(`/notifications/channels/${id}`),
   testChannel: (id: string) => api.post<void>(`/notifications/channels/${id}/test`),
+  testUrl: (url: string) => api.post<void>('/notifications/test', { url }),
   listEventTypes: () => api.get<EventTypeMeta[]>('/notifications/event-types'),
   listSubscriptions: () => api.get<{ event_types: string[] }>('/notifications/subscriptions'),
   putSubscriptions: (eventTypes: string[]) =>

@@ -454,6 +454,15 @@ requests:
         method: DELETE
         url: "{{base_url}}/api/notifications/channels/REPLACE_ID"
         $ref: "#/.authenticated"
+      test_url:
+        name: Test URL (unsaved)
+        method: POST
+        url: "{{base_url}}/api/notifications/test"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            url: "ntfy://ntfy.sh/my-topic"
       test_channel:
         name: Test Channel
         method: POST
