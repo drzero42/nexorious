@@ -9,7 +9,7 @@ buildGoModule {
   pname = "nexorious";
   inherit version src;
 
-  vendorHash = "sha256-uDBPt/XL27td/xvadMYPjqvFpVT8W5fMGTUawwWA5K0=";
+  vendorHash = "sha256-0Uqwq0Qn6wSveuG6J9EkbF+Yqj5/By1rBp9cNjJuXro=";
 
   subPackages = [ "cmd/nexorious" ];
 
