@@ -39,6 +39,20 @@ func runLogout(cmd *cobra.Command) error {
 		}
 	}
 
+	if err := clearStoredKey(cfg); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "Logged out of %s.\n", p.URL)
+	return nil
+}
+
+// clearStoredKey removes the stored API key (Key/KeyID/KeyName) from the current
+// profile and saves the config, leaving the CLI logged out. URL and username are
+// retained. Used by `logout` and by `api-key revoke` when revoking the CLI's own
+// key. It does not touch the server.
+func clearStoredKey(cfg *clicfg.Config) error {
+	p, _ := cfg.CurrentProfile()
 	p.Key = ""
 	p.KeyID = ""
 	p.KeyName = ""
@@ -46,7 +60,5 @@ func runLogout(cmd *cobra.Command) error {
 	if err := clicfg.Save(cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
-
-	fmt.Fprintf(out, "Logged out of %s.\n", p.URL)
 	return nil
 }
