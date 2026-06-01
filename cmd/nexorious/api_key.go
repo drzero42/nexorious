@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -100,15 +102,58 @@ func runGenerate(cmd *cobra.Command, name, scopes, expiresAt string) error {
 	return nil
 }
 
-// --- Temporary stubs, replaced in Tasks 4 and 5. Keep the package compiling. ---
-
 func newAPIKeyListCmd() *cobra.Command {
-	return &cobra.Command{Use: "list", RunE: func(cmd *cobra.Command, _ []string) error { return runListKeys(cmd, false) }}
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List your API keys",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runListKeys(cmd, asJSON)
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Emit raw JSON instead of a table")
+	return cmd
 }
 
-func runListKeys(_ *cobra.Command, _ bool) error {
-	return fmt.Errorf("not implemented")
+func runListKeys(cmd *cobra.Command, asJSON bool) error {
+	out := cmd.OutOrStdout()
+	p, _, err := currentProfile()
+	if err != nil {
+		return err
+	}
+	keys, err := cliclient.New(p.URL).ListAPIKeys(p.Key)
+	if err != nil {
+		return fmt.Errorf("list API keys failed: %w", err)
+	}
+
+	if asJSON {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(keys); err != nil {
+			return fmt.Errorf("encode JSON: %w", err)
+		}
+		return nil
+	}
+
+	if len(keys) == 0 {
+		fmt.Fprintln(out, "No API keys.")
+		return nil
+	}
+
+	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tSCOPES\tCREATED\tLAST USED\tEXPIRES")
+	for _, k := range keys {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			k.ID, k.Name, k.Scopes,
+			k.CreatedAt.Local().Format("2006-01-02 15:04"),
+			formatNullableTime(k.LastUsedAt, "never"),
+			formatNullableTime(k.ExpiresAt, "–"),
+		)
+	}
+	return tw.Flush()
 }
+
+// --- Temporary stub, replaced in Task 5. Keep the package compiling. ---
 
 func newAPIKeyRevokeCmd() *cobra.Command {
 	return &cobra.Command{Use: "revoke"}

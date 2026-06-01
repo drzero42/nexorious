@@ -146,3 +146,69 @@ func TestGenerateServerError(t *testing.T) {
 		t.Fatalf("error = %v, want it to surface the server message", err)
 	}
 }
+
+func TestListTable(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[{"id":"k1","name":"laptop","scopes":"write","last_used_at":null,"created_at":"2026-01-01T00:00:00Z","expires_at":null}]`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	out, err := runCmd(t, "api-key", "list")
+	if err != nil {
+		t.Fatalf("list: %v\n%s", err, out)
+	}
+	for _, want := range []string{"ID", "NAME", "SCOPES", "k1", "laptop", "never"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestListEmpty(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[]`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	out, err := runCmd(t, "api-key", "list")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if !strings.Contains(out, "No API keys.") {
+		t.Fatalf("output = %q, want 'No API keys.'", out)
+	}
+}
+
+func TestListJSON(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[{"id":"k1","name":"laptop","scopes":"write","last_used_at":null,"created_at":"2026-01-01T00:00:00Z","expires_at":null}]`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	out, err := runCmd(t, "api-key", "list", "--json")
+	if err != nil {
+		t.Fatalf("list --json: %v", err)
+	}
+	var parsed []map[string]any
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON array: %v\n%s", err, out)
+	}
+	if len(parsed) != 1 || parsed[0]["id"] != "k1" {
+		t.Fatalf("parsed = %+v, want one key k1", parsed)
+	}
+}
