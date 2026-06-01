@@ -158,7 +158,16 @@ PORT=8000                                  # default: 8000
 STORAGE_PATH=/path/to/storage             # default: ./storage
 BACKUP_PATH=/path/to/backups              # default: ./storage/backups
 LOG_LEVEL=info                             # default: info
+SESSION_COOKIE_SECURE=true                 # default: true; set false to serve over plain HTTP (see below)
 ```
+
+> **`SESSION_COOKIE_SECURE`** — controls the `Secure` flag on the session cookie.
+> It defaults to `true`, which tells browsers to send the cookie only over HTTPS.
+> Browsers treat `localhost` as a secure context, so login works over
+> `http://localhost` even with the default. But if you reach the instance over
+> **plain HTTP on any other host** (e.g. a LAN IP or hostname), the browser will
+> drop the cookie and login will silently fail — set `SESSION_COOKIE_SECURE=false`
+> in that case. Keep it `true` in production behind HTTPS.
 
 ### Production Checklist
 
@@ -168,6 +177,7 @@ LOG_LEVEL=info                             # default: info
 - [ ] IGDB API credentials configured
 - [ ] Storage directory writable
 - [ ] Backup procedures in place
+- [ ] `SESSION_COOKIE_SECURE` left at `true` (HTTPS); set `false` only when serving over plain HTTP
 
 ## Development
 
