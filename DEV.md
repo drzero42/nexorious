@@ -102,7 +102,7 @@ For iterating on frontend changes, use Vite's dev server instead of rebuilding t
 
 ```bash
 # Terminal 1 — build and run the Go server
-go build -o nexorious ./cmd/nexorious && ./nexorious
+go build -o nexorious ./cmd/nexorious && ./nexorious serve
 
 # Terminal 2 — Vite dev server with HMR on :3000
 cd ui/frontend && npm run dev
@@ -122,12 +122,12 @@ The `nexorious` binary uses [cobra](https://github.com/spf13/cobra) subcommands:
 
 | Subcommand       | What it does                                                   |
 |------------------|----------------------------------------------------------------|
-| `serve`          | Start the HTTP server (default when no subcommand is given)    |
+| `serve`          | Start the HTTP server                                          |
 | `migrate`        | Apply all pending DB migrations and exit                       |
 | `migrate status` | Print pending migrations without applying them                 |
 | `version`        | Print build version and commit SHA                             |
 
-Running `./nexorious` with no arguments is equivalent to `./nexorious serve`.
+Running `./nexorious` with no subcommand prints the help overview and exits non-zero; `serve` must be explicit to start the server.
 
 A persistent `--config <file>` flag on the root command loads a `.env`-style file before parsing environment variables.
 

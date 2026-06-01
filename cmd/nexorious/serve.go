@@ -33,13 +33,13 @@ import (
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
-// newServeCmd returns the `serve` subcommand. Bare `./nexorious` also routes
-// here via the root command's RunE for backwards compatibility.
+// newServeCmd returns the `serve` subcommand, the explicit way to start the
+// HTTP server. A bare `./nexorious` prints the help overview instead.
 func newServeCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
-		Short: "Start the HTTP server (default action)",
-		Long:  "Start the Echo HTTP server, River worker client, and scheduler. This is the default action when no subcommand is supplied.",
+		Short: "Start the HTTP server",
+		Long:  "Start the Echo HTTP server, River worker client, and scheduler.",
 		RunE:  runServe,
 	}
 }

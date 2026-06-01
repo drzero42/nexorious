@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -13,6 +14,11 @@ var (
 	commit  = "unknown"
 )
 
+// errNoSubcommand is returned by the root command when invoked with no
+// subcommand. It signals a non-zero exit after the help overview is printed,
+// without main() emitting a redundant error line on top of the help text.
+var errNoSubcommand = errors.New("no subcommand provided")
+
 // newRootCmd constructs the cobra root command. Exposed for tests.
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
@@ -20,12 +26,21 @@ func newRootCmd() *cobra.Command {
 		Short: "Nexorious — self-hosted game collection manager",
 		Long: "Nexorious manages a self-hosted personal game collection with IGDB metadata,\n" +
 			"Steam and PSN sync, and JSON/CSV import/export.\n\n" +
-			"Running the binary with no subcommand starts the HTTP server (alias for `serve`).",
+			"Run `nexorious serve` to start the HTTP server. Invoking the binary with no\n" +
+			"subcommand prints this help overview.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		// Default action (no subcommand) is `serve` for backwards compatibility
-		// with the previous `./nexorious` invocation.
-		RunE: runServe,
+		// A bare `./nexorious` prints the help overview and exits non-zero,
+		// rather than silently starting the server. The default legacyArgs
+		// validator still rejects unknown subcommands (typos) before this
+		// runs, so this fires only for a genuine no-subcommand invocation.
+		// `serve` is the explicit way to start the HTTP server.
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := cmd.Help(); err != nil {
+				return err
+			}
+			return errNoSubcommand
+		},
 	}
 
 	root.PersistentFlags().String("config", "", "Path to a .env file (default: .env in working directory)")
@@ -43,7 +58,11 @@ func newRootCmd() *cobra.Command {
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		// errNoSubcommand means the help overview has already been printed;
+		// just exit non-zero without a redundant error line.
+		if !errors.Is(err, errNoSubcommand) {
+			fmt.Fprintln(os.Stderr, "error:", err)
+		}
 		os.Exit(1)
 	}
 }

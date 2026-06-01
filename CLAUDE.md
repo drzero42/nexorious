@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Build backend            | `make build`                                             |
 | Build frontend           | `make frontend`                                          |
 | Build everything         | `make`                                                   |
-| Run server               | `./nexorious` or `./nexorious serve`                     |
+| Run server               | `./nexorious serve`                                      |
 | Run migrations           | `./nexorious migrate`                                    |
 | Migration status         | `./nexorious migrate status`                             |
 | Run tests (Go)           | `go test -timeout 600s ./...`                            |
@@ -54,7 +54,7 @@ export DATABASE_URL="postgres://..."
 export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -base64 32
 # Optional: IGDB_CLIENT_ID + IGDB_CLIENT_SECRET for metadata enrichment
 # Optional: PORT (default 8000), LOG_LEVEL (default info), WORKER_COUNT (default 4)
-./nexorious              # starts server; visits /migrate if schema is pending
+./nexorious serve        # starts server; visits /migrate if schema is pending
 ```
 
 ## Project Structure
