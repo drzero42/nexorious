@@ -11,6 +11,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/notify"
 )
 
 type CheckScheduledBackupArgs struct{}
@@ -43,9 +44,19 @@ func (w *CheckScheduledBackupWorker) Work(ctx context.Context, _ *river.Job[Chec
 	id, err := w.BackupSvc.CreateBackup("scheduled")
 	if err != nil {
 		slog.Error("scheduled backup failed", "err", err)
+		notify.Emit(ctx, w.DB, notify.EmitParams{
+			Type:    notify.TypeAdminBackupFailed,
+			Scope:   notify.ScopeAdmin,
+			Payload: map[string]any{"error": err.Error()},
+		})
 		return nil
 	}
 	slog.Info("scheduled backup created", "id", id)
+	notify.Emit(ctx, w.DB, notify.EmitParams{
+		Type:    notify.TypeAdminBackupCompleted,
+		Scope:   notify.ScopeAdmin,
+		Payload: map[string]any{"backup_id": id},
+	})
 	if err := w.BackupSvc.ApplyRetention(cfg.RetentionMode, cfg.RetentionValue); err != nil {
 		slog.Warn("scheduled backup retention cleanup failed", "err", err)
 	}

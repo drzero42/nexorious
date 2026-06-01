@@ -1,4 +1,4 @@
-package scheduler_test
+package notify
 
 import (
 	"context"
@@ -6,14 +6,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/riverqueue/river"
-	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
-	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
-	"github.com/riverqueue/river/rivermigrate"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -22,13 +15,13 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 	bunmigrate "github.com/uptrace/bun/migrate"
 
+	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
+	"github.com/riverqueue/river/rivermigrate"
+
 	"github.com/drzero42/nexorious/internal/db/migrations"
 )
 
-var (
-	testDB      *bun.DB
-	testConnStr string
-)
+var testDB *bun.DB
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
@@ -54,7 +47,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "failed to get connection string: %v\n", err)
 		os.Exit(1)
 	}
-	testConnStr = connStr
 
 	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
 	testDB = bun.NewDB(sqldb, pgdialect.New())
@@ -90,36 +82,9 @@ func truncateAllTables(t *testing.T) {
 		users, user_sessions, games, external_games, platforms, storefronts,
 		platform_storefronts, tags, user_games, user_game_tags, user_game_platforms,
 		jobs, job_items, river_job, backup_config, user_sync_configs, rate_limiter_tokens,
-		events
+		events, notification_channels, notification_subscriptions
 		RESTART IDENTITY CASCADE`).Exec(ctx)
 	if err != nil {
 		t.Fatalf("truncate tables: %v", err)
 	}
-}
-
-func newTestRiverClient(t *testing.T) *river.Client[pgx.Tx] {
-	t.Helper()
-	pool, err := pgxpool.New(context.Background(), testConnStr)
-	if err != nil {
-		t.Fatalf("pgxpool.New: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
-	if err != nil {
-		t.Fatalf("river.NewClient: %v", err)
-	}
-	return rc
-}
-
-func insertUser(t *testing.T, ctx context.Context, _ *bun.DB) string {
-	t.Helper()
-	id := fmt.Sprintf("user-%d", time.Now().UnixNano())
-	_, err := testDB.NewRaw(
-		`INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)`,
-		id, id, "hash",
-	).Exec(ctx)
-	if err != nil {
-		t.Fatalf("insert user: %v", err)
-	}
-	return id
 }

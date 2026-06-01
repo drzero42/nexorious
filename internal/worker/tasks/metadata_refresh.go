@@ -16,6 +16,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/notify"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 )
 
@@ -128,6 +129,10 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		return nil
 	}); err != nil {
 		slog.Error("metadata_refresh_dispatch: transaction failed", "err", err)
+		notify.Emit(ctx, w.DB, notify.EmitParams{
+			Type: notify.TypeAdminMaintFailed, Scope: notify.ScopeAdmin,
+			Payload: map[string]any{"action": "metadata_refresh_dispatch", "error": err.Error()},
+		})
 		return nil
 	}
 
@@ -139,6 +144,10 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 	}
 
 	slog.Info("metadata_refresh_dispatch: job created", "job_id", jobID, "game_count", len(games))
+	notify.Emit(ctx, w.DB, notify.EmitParams{
+		Type: notify.TypeAdminMaintCompleted, Scope: notify.ScopeAdmin,
+		Payload: map[string]any{"action": "metadata_refresh_dispatch", "count": len(games)},
+	})
 	return nil
 }
 

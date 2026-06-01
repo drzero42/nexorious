@@ -43,6 +43,7 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 	).Exec(ctx)
 	if err != nil {
 		slog.Error("cleanup_stale_jobs: failed", "err", err)
+		emitMaint(ctx, db, true, "stale_jobs_cleanup", map[string]any{"error": err.Error()})
 		return
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
@@ -68,10 +69,15 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 	).Exec(ctx)
 	if err != nil {
 		slog.Error("cleanup_stale_jobs: sync cleanup failed", "err", err)
+		emitMaint(ctx, db, true, "stale_jobs_cleanup", map[string]any{"error": err.Error()})
 		return
 	}
 	syncRows, _ := syncResult.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if syncRows > 0 {
 		slog.Info("cleanup_stale_jobs: marked stale sync jobs failed", "count", syncRows)
+	}
+
+	if rows+syncRows > 0 {
+		emitMaint(ctx, db, false, "stale_jobs_cleanup", map[string]any{"count": rows + syncRows})
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	"github.com/drzero42/nexorious/internal/migrate"
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/scheduler"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
@@ -204,6 +205,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, checkPendingSyncsWorker)
 	river.AddWorker(workers, rescueOrphanedWorker)
 	river.AddWorker(workers, &scheduler.CheckScheduledBackupWorker{DB: db, BackupSvc: backupSvc})
+	river.AddWorker(workers, &notify.NotifyWorker{DB: db, Encrypter: encrypter, Sender: notify.NewShoutrrrSender()})
+	river.AddWorker(workers, &notify.PruneEventsWorker{DB: db})
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
 		Workers:      workers,
@@ -213,6 +216,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("river.NewClient: %w", err)
 	}
+	notify.SetRiverClient(riverClient)
 
 	// Wire River client into workers that submit sub-jobs.
 	dispatchSyncWorker.RiverClient = riverClient
@@ -281,6 +285,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			river.AddWorker(newWorkers, newCheckSyncs)
 			river.AddWorker(newWorkers, newRescueOrphaned)
 			river.AddWorker(newWorkers, &scheduler.CheckScheduledBackupWorker{DB: newDB, BackupSvc: backupSvc})
+			river.AddWorker(newWorkers, &notify.NotifyWorker{DB: newDB, Encrypter: encrypter, Sender: notify.NewShoutrrrSender()})
+			river.AddWorker(newWorkers, &notify.PruneEventsWorker{DB: newDB})
 
 			newClient, err := river.NewClient(riverpgxv5.New(newPgxPool), &river.Config{
 				Workers:      newWorkers,
@@ -303,6 +309,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			}
 
 			riverClient = newClient
+			notify.SetRiverClient(riverClient)
 			pgxPool = newPgxPool
 			slog.Info("services rebuilt after restore")
 			return nil

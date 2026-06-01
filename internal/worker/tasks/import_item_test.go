@@ -11,6 +11,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -739,5 +740,105 @@ func TestImportItem_StorefrontNotFound(t *testing.T) {
 	}
 	if !sfNull {
 		t.Error("expected NULL storefront for unknown storefront")
+	}
+}
+
+// TestImportItem_EmitsImportCompleted verifies that processing the last item of a job
+// causes an import.completed event to be written to the events table.
+func TestImportItem_EmitsImportCompleted(t *testing.T) {
+	truncateAllTables(t)
+	notify.SetRiverClient(nil)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	gameData := map[string]any{
+		"igdb_id": int32(38001),
+		"title":   "Notify Import Game",
+	}
+	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	// Job must be completed first.
+	var jobStatus string
+	if err := testDB.QueryRowContext(ctx, "SELECT status FROM jobs WHERE id = ?", jobID).Scan(&jobStatus); err != nil {
+		t.Fatalf("query job status: %v", err)
+	}
+	if jobStatus != "completed" {
+		t.Fatalf("job status = %q, want completed (prerequisite for event assertion)", jobStatus)
+	}
+
+	dedupKey := jobID + ":" + notify.TypeImportCompleted
+	var count int
+	if err := testDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM events WHERE dedup_key = ?", dedupKey,
+	).Scan(&count); err != nil {
+		t.Fatalf("query events: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("events count for dedup_key %q = %d, want 1", dedupKey, count)
+	}
+}
+
+// TestImportItem_EmitsImportFailedWhenItemsFail verifies that when the last item
+// of a job fails (here: missing igdb_id), the job finalizes with an import.failed
+// event and no import.completed event.
+func TestImportItem_EmitsImportFailedWhenItemsFail(t *testing.T) {
+	truncateAllTables(t)
+	notify.SetRiverClient(nil)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	// Missing igdb_id forces the worker to mark the item failed (no handler error).
+	gameData := map[string]any{
+		"title": "Failing Import Game",
+	}
+	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	// Item must have failed.
+	var itemStatus string
+	if err := testDB.QueryRowContext(ctx, "SELECT status FROM job_items WHERE id = ?", itemID).Scan(&itemStatus); err != nil {
+		t.Fatalf("query item status: %v", err)
+	}
+	if itemStatus != string(models.JobItemStatusFailed) {
+		t.Fatalf("item status = %q, want failed (prerequisite)", itemStatus)
+	}
+
+	failedKey := jobID + ":" + notify.TypeImportFailed
+	var failedCount int
+	if err := testDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM events WHERE dedup_key = ?", failedKey,
+	).Scan(&failedCount); err != nil {
+		t.Fatalf("query failed events: %v", err)
+	}
+	if failedCount != 1 {
+		t.Errorf("events count for dedup_key %q = %d, want 1", failedKey, failedCount)
+	}
+
+	completedKey := jobID + ":" + notify.TypeImportCompleted
+	var completedCount int
+	if err := testDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM events WHERE dedup_key = ?", completedKey,
+	).Scan(&completedCount); err != nil {
+		t.Fatalf("query completed events: %v", err)
+	}
+	if completedCount != 0 {
+		t.Errorf("events count for dedup_key %q = %d, want 0", completedKey, completedCount)
 	}
 }

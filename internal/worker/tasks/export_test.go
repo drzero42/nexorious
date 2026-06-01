@@ -14,6 +14,7 @@ import (
 	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -352,5 +353,91 @@ func TestExportCSV_MarkJobFailed_OnWriteError(t *testing.T) {
 	}
 	if status != "failed" {
 		t.Errorf("expected job status=failed when write fails, got %q", status)
+	}
+}
+
+func TestExportJSON_EmitsExportCompleted(t *testing.T) {
+	truncateAllTables(t)
+	notify.SetRiverClient(nil)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	game := &models.Game{
+		ID:          42100,
+		Title:       "Notify Export Game",
+		LastUpdated: time.Now().UTC(),
+		CreatedAt:   time.Now().UTC(),
+	}
+	if _, err := testDB.NewInsert().Model(game).Exec(ctx); err != nil {
+		t.Fatalf("insert game: %v", err)
+	}
+
+	jobID := uuid.NewString()
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
+		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+
+	w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: tmpDir}
+	if err := w.Work(ctx, &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: jobID}}); err != nil {
+		t.Fatalf("worker returned error: %v", err)
+	}
+
+	dedupKey := jobID + ":" + notify.TypeExportCompleted
+	var count int
+	if err := testDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM events WHERE dedup_key = ?", dedupKey,
+	).Scan(&count); err != nil {
+		t.Fatalf("query events: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("events count for dedup_key %q = %d, want 1", dedupKey, count)
+	}
+}
+
+func TestExportJSON_EmitsExportFailed(t *testing.T) {
+	truncateAllTables(t)
+	notify.SetRiverClient(nil)
+	ctx := context.Background()
+
+	// Create a file where the exports dir would be — forces markJobFailed.
+	tmpDir := t.TempDir()
+	exportsPath := filepath.Join(tmpDir, "exports")
+	if err := os.WriteFile(exportsPath, []byte("block"), 0o444); err != nil {
+		t.Fatalf("create blocking file: %v", err)
+	}
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	jobID := uuid.NewString()
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
+		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+
+	w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: tmpDir}
+	if err := w.Work(ctx, &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: jobID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	dedupKey := jobID + ":" + notify.TypeExportFailed
+	var count int
+	if err := testDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM events WHERE dedup_key = ?", dedupKey,
+	).Scan(&count); err != nil {
+		t.Fatalf("query events: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("events count for dedup_key %q = %d, want 1", dedupKey, count)
 	}
 }

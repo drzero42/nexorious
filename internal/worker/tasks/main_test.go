@@ -109,7 +109,8 @@ func truncateAllTables(t *testing.T) {
 			platforms, storefronts, platform_storefronts,
 			tags, user_games, user_game_tags, user_game_platforms,
 			jobs, job_items, river_job, backup_config,
-			user_sync_configs, rate_limiter_tokens
+			user_sync_configs, rate_limiter_tokens,
+			events, sync_changes
 		RESTART IDENTITY CASCADE
 	`)
 	if err != nil {

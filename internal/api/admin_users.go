@@ -16,6 +16,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/notify"
 )
 
 // adminUserResponse is the serialised user shape returned by every admin endpoint.
@@ -166,6 +167,10 @@ func (h *AdminUsersHandler) HandleCreate(c *echo.Context) error {
 	if _, err := h.db.NewInsert().Model(user).Exec(ctx); err != nil {
 		slog.Error("admin create user: insert", "err", err)
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
+	}
+
+	if err := notify.SeedDefaultSubscriptions(ctx, h.db, user.ID, user.IsAdmin); err != nil {
+		slog.Error("admin create user: seed notification subscriptions", "user_id", user.ID, "err", err)
 	}
 
 	return c.JSON(http.StatusCreated, newAdminUserResponse(user))

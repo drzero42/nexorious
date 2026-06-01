@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/notify"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/matching"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
@@ -339,6 +341,13 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 	).Exec(ctx); err != nil {
 		slog.Error("dispatch_sync: cancel pending items failed", "err", err, "job_id", jobID)
 	}
+
+	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
+	notify.Emit(ctx, db, notify.EmitParams{
+		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: userID,
+		Payload:  map[string]any{"storefront": storefront, "error": msg, "job_id": jobID},
+		DedupKey: jobID + ":" + notify.TypeSyncFailed,
+	})
 }
 
 // ownershipRank returns a numeric rank for an ownership status string.
@@ -959,15 +968,108 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 		return
 	}
 	if pendingReviewCount > 0 {
+		userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
+		notify.Emit(ctx, db, notify.EmitParams{
+			Type: notify.TypeSyncNeedsReview, Scope: notify.ScopeUser, ActorUserID: userID,
+			Payload:  map[string]any{"storefront": storefront, "count": pendingReviewCount, "job_id": jobID},
+			DedupKey: jobID + ":" + notify.TypeSyncNeedsReview,
+		})
 		return
 	}
 
 	now := time.Now().UTC()
 	finalStatus := "completed"
-	if _, err := db.NewRaw(
+	res, err := db.NewRaw(
 		`UPDATE jobs SET status = ?, completed_at = ? WHERE id = ? AND status IN ('pending', 'processing') AND dispatch_complete = true`,
 		finalStatus, now, jobID,
-	).Exec(ctx); err != nil {
+	).Exec(ctx)
+	if err != nil {
 		slog.Error("sync: SyncCheckJobCompletion finalize job failed", "err", err, "job_id", jobID, "final_status", finalStatus)
+		return
 	}
+	// Only emit completion notifications when this call actually finalized the
+	// job (dispatch still streaming or already-terminal jobs match 0 rows).
+	if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // advisory RowsAffected
+		return
+	}
+
+	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
+	var failedCount int
+	if err := db.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'failed'`, jobID).Scan(ctx, &failedCount); err != nil {
+		slog.Error("sync: count failed items for notify", "job_id", jobID, "err", err)
+		return
+	}
+	if failedCount > 0 {
+		notify.Emit(ctx, db, notify.EmitParams{
+			Type: notify.TypeSyncCompletedWithErrors, Scope: notify.ScopeUser, ActorUserID: userID,
+			Payload:  map[string]any{"storefront": storefront, "failed": failedCount, "job_id": jobID},
+			DedupKey: jobID + ":" + notify.TypeSyncCompletedWithErrors,
+		})
+	} else {
+		notify.Emit(ctx, db, notify.EmitParams{
+			Type: notify.TypeSyncCompleted, Scope: notify.ScopeUser, ActorUserID: userID,
+			Payload:  map[string]any{"storefront": storefront, "job_id": jobID},
+			DedupKey: jobID + ":" + notify.TypeSyncCompleted,
+		})
+	}
+	emitSyncDiff(ctx, db, jobID, userID)
+}
+
+// syncJobUserAndStorefront fetches the owning user_id and storefront (source)
+// for a job. Returns ("","") on error.
+func syncJobUserAndStorefront(ctx context.Context, db *bun.DB, jobID string) (userID, storefront string) {
+	var row struct {
+		UserID string `bun:"user_id"`
+		Source string `bun:"source"`
+	}
+	if err := db.NewRaw(`SELECT user_id, source FROM jobs WHERE id = ?`, jobID).Scan(ctx, &row); err != nil {
+		slog.Error("sync: lookup job user/storefront", "job_id", jobID, "err", err)
+		return "", ""
+	}
+	return row.UserID, row.Source
+}
+
+// emitSyncDiff emits sync.diff iff sync_changes rows exist for the job.
+func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID string) {
+	var rows []struct {
+		ChangeType string `bun:"change_type"`
+		Title      string `bun:"title"`
+		Platforms  string `bun:"platforms"`
+	}
+	if err := db.NewRaw(
+		`SELECT sc.change_type,
+		        sc.title,
+		        COALESCE(string_agg(egp.platform, ',' ORDER BY egp.platform), '') AS platforms
+		   FROM sync_changes sc
+		   LEFT JOIN external_game_platforms egp ON egp.external_game_id = sc.external_game_id
+		  WHERE sc.job_id = ? AND sc.change_type IN ('added','removed')
+		  GROUP BY sc.id, sc.change_type, sc.title, sc.created_at
+		  ORDER BY sc.created_at`,
+		jobID,
+	).Scan(ctx, &rows); err != nil {
+		slog.Error("sync: load sync_changes for diff notify", "job_id", jobID, "err", err)
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+	added := []map[string]any{}
+	removed := []map[string]any{}
+	for _, r := range rows {
+		platforms := []string{}
+		if r.Platforms != "" {
+			platforms = strings.Split(r.Platforms, ",")
+		}
+		entry := map[string]any{"title": r.Title, "platforms": platforms}
+		if r.ChangeType == "added" {
+			added = append(added, entry)
+		} else {
+			removed = append(removed, entry)
+		}
+	}
+	notify.Emit(ctx, db, notify.EmitParams{
+		Type: notify.TypeSyncDiff, Scope: notify.ScopeUser, ActorUserID: userID,
+		Payload:  map[string]any{"added": added, "removed": removed, "job_id": jobID},
+		DedupKey: jobID + ":" + notify.TypeSyncDiff,
+	})
 }

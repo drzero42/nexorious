@@ -46,9 +46,11 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		int64(age.Seconds()),
 	).Scan(ctx, &orphans); err != nil {
 		slog.Error("rescue_orphaned_items: query failed", "err", err)
+		emitMaint(ctx, db, true, "rescue_orphaned_items", map[string]any{"error": err.Error()})
 		return
 	}
 
+	var successCount, failureCount int
 	for _, o := range orphans {
 		var args river.JobArgs
 		switch o.JobType {
@@ -64,8 +66,13 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		}
 		if _, err := rc.Insert(ctx, args, nil); err != nil {
 			slog.Error("rescue_orphaned_items: re-enqueue failed", "item_id", o.ID, "err", err)
+			failureCount++
 		} else {
 			slog.Info("rescue_orphaned_items: re-enqueued orphaned item", "item_id", o.ID, "job_type", o.JobType)
+			successCount++
 		}
+	}
+	if successCount+failureCount > 0 {
+		emitMaint(ctx, db, false, "rescue_orphaned_items", map[string]any{"rescued": successCount, "failed": failureCount})
 	}
 }
