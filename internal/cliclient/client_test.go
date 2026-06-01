@@ -188,6 +188,44 @@ func TestMeUnauthorized(t *testing.T) {
 	}
 }
 
+// errServer returns a server that answers every request with the given status
+// and an Echo-style {"message":...} body, for exercising client error paths.
+func errServer(t *testing.T, status int) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "boom"})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestCreateAPIKeyServerError(t *testing.T) {
+	c := New(errServer(t, http.StatusInternalServerError).URL)
+	_, _, err := c.CreateAPIKey("sess-123", "cli@host")
+	if err == nil {
+		t.Fatal("expected error on 500")
+	}
+	if !contains(err.Error(), "boom") {
+		t.Fatalf("error = %q, want server message", err.Error())
+	}
+}
+
+func TestRevokeWithBearerServerError(t *testing.T) {
+	// A non-204 (here 404) must surface as an error: the key was not found.
+	c := New(errServer(t, http.StatusNotFound).URL)
+	if err := c.RevokeAPIKeyWithBearer("nxr_rawkey", "missing"); err == nil {
+		t.Fatal("expected error on 404 revoke")
+	}
+}
+
+func TestLogoutServerError(t *testing.T) {
+	c := New(errServer(t, http.StatusInternalServerError).URL)
+	if err := c.Logout("sess-123"); err == nil {
+		t.Fatal("expected error on 500 logout")
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || indexOf(s, sub) >= 0)
 }
