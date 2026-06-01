@@ -289,7 +289,7 @@ export async function getJobs(
   if (filters?.sortBy) params.sort_by = filters.sortBy;
   if (filters?.sortOrder) params.sort_order = filters.sortOrder;
 
-  const response = await api.get<JobListApiResponse>('/jobs/', { params });
+  const response = await api.get<JobListApiResponse>('/jobs', { params });
 
   return {
     jobs: response.jobs.map(transformJob),

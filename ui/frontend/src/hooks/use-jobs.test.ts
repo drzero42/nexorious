@@ -99,7 +99,7 @@ describe('use-jobs hooks', () => {
   describe('useJobs', () => {
     it('fetches jobs list successfully', async () => {
       server.use(
-        http.get(`${API_URL}/jobs/`, () => {
+        http.get(`${API_URL}/jobs`, () => {
           return HttpResponse.json({
             jobs: [mockJobApi, mockCompletedJobApi],
             total: 2,
@@ -131,7 +131,7 @@ describe('use-jobs hooks', () => {
       let capturedParams: URLSearchParams | null = null;
 
       server.use(
-        http.get(`${API_URL}/jobs/`, ({ request }) => {
+        http.get(`${API_URL}/jobs`, ({ request }) => {
           const url = new URL(request.url);
           capturedParams = url.searchParams;
 
@@ -169,7 +169,7 @@ describe('use-jobs hooks', () => {
 
     it('handles error state', async () => {
       server.use(
-        http.get(`${API_URL}/jobs/`, () => {
+        http.get(`${API_URL}/jobs`, () => {
           return HttpResponse.json({ detail: 'Failed to fetch jobs' }, { status: 500 });
         }),
       );

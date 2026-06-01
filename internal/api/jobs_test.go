@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -103,6 +104,28 @@ func TestListJobs(t *testing.T) {
 
 	if resp["page"].(float64) != 1 {
 		t.Fatalf("expected page=1, got %v", resp["page"])
+	}
+}
+
+// TestUnmatchedAPIPathReturns404 guards against the SPA catch-all silently
+// serving index.html (HTTP 200) for unmatched API paths. A trailing-slash
+// mismatch ("/api/jobs/" vs the registered "/api/jobs") previously fell through
+// to the SPA handler and returned HTML with a 200, which the frontend then
+// failed to parse as JSON — leaving the import/export Recent Activity blank.
+func TestUnmatchedAPIPathReturns404(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	_, token := setupTagUser(t, testDB, e, "jobs-unmatched")
+
+	for _, path := range []string{"/api/jobs/", "/api/does-not-exist"} {
+		rec := getAuth(t, e, path, token)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("GET %s: expected 404, got %d (body[:60]=%q)",
+				path, rec.Code, rec.Body.String()[:min(60, len(rec.Body.String()))])
+		}
+		if ct := rec.Header().Get("Content-Type"); strings.Contains(ct, "text/html") {
+			t.Fatalf("GET %s: expected JSON 404, got HTML (Content-Type=%q)", path, ct)
+		}
 	}
 }
 
