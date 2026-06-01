@@ -40,7 +40,7 @@ devenv shell       # enters reproducible shell with Go, Node, golangci-lint, mak
 devenv up -d       # starts PostgreSQL in the background
 make               # builds frontend then Go binary
 export DATABASE_URL="postgres:///nexorious"  # devenv uses a Unix socket
-./nexorious        # starts server on :8000; visits /migrate if schema is pending
+./nexorious serve  # starts server on :8000; visits /migrate if schema is pending
 ```
 
 #### Option 2: Manual Setup
@@ -50,7 +50,7 @@ git clone https://github.com/drzero42/nexorious.git
 cd nexorious
 make               # builds frontend (npm ci + vite build) then Go binary
 export DATABASE_URL="postgres://user:password@localhost:5432/nexorious"
-./nexorious        # starts server; auto-runs migrations on first launch
+./nexorious serve  # starts server; auto-runs migrations on first launch
 ```
 
 ### Initial Setup
@@ -188,7 +188,7 @@ SESSION_COOKIE_SECURE=true                 # default: true; set false to serve o
 | Build everything | `make` |
 | Build backend only | `make build` |
 | Build frontend only | `make frontend` |
-| Run server | `./nexorious` or `./nexorious serve` |
+| Run server | `./nexorious serve` |
 | Run migrations only | `./nexorious migrate` |
 | Migration status | `./nexorious migrate status` |
 | Run Go tests | `go test -timeout 600s ./...` |

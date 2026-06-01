@@ -3,27 +3,16 @@ package main
 import (
 	"bytes"
 	"context"
-	"reflect"
-	"runtime"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/migrate"
 )
 
-// fnName returns the fully-qualified name of the function pointed at by v.
-// Used to verify that the root command's RunE delegates to runServe.
-func fnName(v any) string {
-	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Func {
-		return ""
-	}
-	return runtime.FuncForPC(rv.Pointer()).Name()
-}
-
 // TestRootCmd_StructureAndSubcommands confirms the cobra tree exposes
-// serve, migrate, migrate status, and version, that --config is a persistent
-// flag, and that bare invocation routes to runServe via the root RunE.
+// serve, migrate, migrate status, and version, and that --config is a
+// persistent flag.
 func TestRootCmd_StructureAndSubcommands(t *testing.T) {
 	root := newRootCmd()
 
@@ -34,16 +23,6 @@ func TestRootCmd_StructureAndSubcommands(t *testing.T) {
 	// --config must be on persistent flags so subcommands inherit it.
 	if root.PersistentFlags().Lookup("config") == nil {
 		t.Error("expected --config to be a persistent flag on root")
-	}
-
-	// Bare `./nexorious` must run serve via root RunE for backwards compat.
-	if root.RunE == nil {
-		t.Fatal("root.RunE must be set so bare invocation defaults to serve")
-	}
-	got := fnName(root.RunE)
-	want := fnName(runServe)
-	if got != want {
-		t.Errorf("root.RunE = %q, want %q (so bare ./nexorious runs serve)", got, want)
 	}
 
 	wantSubcommands := map[string]bool{
@@ -83,6 +62,48 @@ func TestRootCmd_StructureAndSubcommands(t *testing.T) {
 	}
 	if statusCmd == nil {
 		t.Error("expected `migrate status` child subcommand")
+	}
+}
+
+// TestRootCmd_NoSubcommandPrintsHelp verifies a bare `./nexorious` prints the
+// help overview and returns errNoSubcommand (so main exits non-zero) rather
+// than starting the server.
+func TestRootCmd_NoSubcommandPrintsHelp(t *testing.T) {
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{})
+
+	err := root.Execute()
+	if !errors.Is(err, errNoSubcommand) {
+		t.Fatalf("bare invocation err = %v, want errNoSubcommand", err)
+	}
+	help := out.String()
+	if !strings.Contains(help, "Usage:") || !strings.Contains(help, "serve") {
+		t.Errorf("bare invocation should print the help overview, got:\n%s", help)
+	}
+}
+
+// TestRootCmd_UnknownSubcommandErrors verifies a mistyped subcommand reports an
+// "unknown command" error (with a suggestion) instead of falling through to the
+// server, and that the error is not errNoSubcommand.
+func TestRootCmd_UnknownSubcommandErrors(t *testing.T) {
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"serv"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected an error for an unknown subcommand")
+	}
+	if errors.Is(err, errNoSubcommand) {
+		t.Error("unknown subcommand must not be treated as a bare invocation")
+	}
+	if !strings.Contains(err.Error(), "unknown command") {
+		t.Errorf("err = %q, want it to mention 'unknown command'", err.Error())
 	}
 }
 
