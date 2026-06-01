@@ -89,9 +89,12 @@
         checkStatusAndAct()
           .then(function() { startPolling(); })
           .catch(function() {
+            // Verification failed. The only recovery is a page refresh
+            // (the status message says so), so leave the button disabled
+            // rather than re-enabling a "Continue" that would just re-run
+            // the same failing check.
             status.textContent = 'Could not verify migration status. Refresh to retry.';
             status.className = 'meta meta--error';
-            btn.disabled = false;
           });
       };
       btn.disabled = false;
