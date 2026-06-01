@@ -23,9 +23,9 @@ func newLoginCmd() *cobra.Command {
 		Use:   "login",
 		Short: "Authenticate to a Nexorious server and store an API key",
 		Long: "Exchange a username and password for an API key and store it in the\n" +
-			"local config file (" + configPathHint() + "). Subsequent commands use the\n" +
-			"stored key. The password is read from the NEXORIOUS_PASSWORD environment\n" +
-			"variable when set, otherwise prompted for interactively.",
+			"local CLI config file. Subsequent commands use the stored key. The\n" +
+			"password is read from the NEXORIOUS_PASSWORD environment variable when\n" +
+			"set, otherwise prompted for interactively.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runLogin(cmd, urlFlag, usernameFlag)
 		},
@@ -65,7 +65,7 @@ func runLogin(cmd *cobra.Command, urlFlag, usernameFlag string) error {
 		return fmt.Errorf("username is required")
 	}
 
-	password, err := readPassword(out)
+	password, err := readPassword(in, out)
 	if err != nil {
 		return err
 	}
@@ -109,14 +109,19 @@ func runLogin(cmd *cobra.Command, urlFlag, usernameFlag string) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	fmt.Fprintf(out, "Logged in to %s as %s.\nStored API key %q (%s).\n",
-		url, username, keyName, maskKey(key))
+	fmt.Fprintf(out, "Logged in to %s as %s.\nStored API key %q (%s)", url, username, keyName, maskKey(key))
+	if path, err := clicfg.Path(); err == nil {
+		fmt.Fprintf(out, " in %s", path)
+	}
+	fmt.Fprintln(out, ".")
 	return nil
 }
 
 // readPassword reads the password from NEXORIOUS_PASSWORD, or prompts without
-// echo on a TTY, or reads a plain line from stdin when not a TTY (e.g. piped).
-func readPassword(out io.Writer) (string, error) {
+// echo on a TTY, or reads a plain line from the provided reader when not a TTY
+// (e.g. piped input). The non-TTY path reuses the caller's reader so it does not
+// race with the URL/username prompts over os.Stdin.
+func readPassword(in *bufio.Reader, out io.Writer) (string, error) {
 	if env := os.Getenv("NEXORIOUS_PASSWORD"); env != "" {
 		return env, nil
 	}
@@ -130,7 +135,7 @@ func readPassword(out io.Writer) (string, error) {
 		}
 		return strings.TrimSpace(string(b)), nil
 	}
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	line, err := in.ReadString('\n')
 	if err != nil && line == "" {
 		return "", fmt.Errorf("read password: %w", err)
 	}
@@ -168,12 +173,4 @@ func maskKey(key string) string {
 		return "****"
 	}
 	return key[:4] + "…" + key[len(key)-4:]
-}
-
-func configPathHint() string {
-	p, err := clicfg.Path()
-	if err != nil {
-		return "~/.config/nexorious/config.yaml"
-	}
-	return p
 }
