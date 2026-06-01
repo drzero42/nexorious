@@ -15,6 +15,11 @@ func TestLogoutRevokesAndClearsKey(t *testing.T) {
 	var revokedID, gotAuth string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/auth/api-keys/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("revoke method = %q, want DELETE", r.Method)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		revokedID = r.URL.Path[len("/api/auth/api-keys/"):]
 		gotAuth = r.Header.Get("Authorization")
 		w.WriteHeader(http.StatusNoContent)

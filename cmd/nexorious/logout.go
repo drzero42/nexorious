@@ -33,7 +33,8 @@ func runLogout(cmd *cobra.Command) error {
 
 	// Best-effort server-side revocation; a failure still clears local config.
 	if p.KeyID != "" {
-		if err := cliclient.New(p.URL).RevokeAPIKeyWithBearer(p.Key, p.KeyID); err != nil {
+		client := cliclient.New(p.URL)
+		if err := client.RevokeAPIKeyWithBearer(p.Key, p.KeyID); err != nil {
 			fmt.Fprintf(out, "warning: could not revoke key on server: %v\n", err)
 		}
 	}
