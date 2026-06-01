@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/providers';
-import { useActiveJob, useCancelJob } from '@/hooks';
+import { useJob, useJobTypeStatus, useJobCompletionEffect, useCancelJob, jobsKeys } from '@/hooks';
 import { JobType } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -73,11 +73,18 @@ function MaintenancePage() {
     }
   };
 
-  // Track active maintenance job
-  const { data: activeMaintenanceJob, refetch: refetchMaintenanceJob } = useActiveJob(
-    JobType.METADATA_REFRESH,
-  );
+  // Track the metadata-refresh job status, fetching the displayed job by id
+  // (active job, falling back to the last completed one so the result card
+  // survives completion).
+  const { data: refreshStatus } = useJobTypeStatus(JobType.METADATA_REFRESH);
+  const refreshJobId = refreshStatus?.activeJobId ?? refreshStatus?.lastCompletedJobId ?? undefined;
+  const { data: activeMaintenanceJob } = useJob(refreshJobId);
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
+
+  const handleRefreshComplete = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: jobsKeys.lists() });
+  }, [queryClient]);
+  useJobCompletionEffect(refreshStatus?.activeJobId, handleRefreshComplete);
 
   // Determine which job to display (not dismissed)
   const activeJob =
@@ -101,7 +108,7 @@ function MaintenancePage() {
       setDismissedJobId(null);
       await adminApi.startMetadataRefreshJob();
       toast.success('Metadata refresh job started');
-      refetchMaintenanceJob();
+      queryClient.invalidateQueries({ queryKey: jobsKeys.typeStatus(JobType.METADATA_REFRESH) });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start metadata refresh';
       toast.error(message);
@@ -116,7 +123,7 @@ function MaintenancePage() {
     cancelJob(activeJob.id, {
       onSuccess: () => {
         toast.success('Job cancelled');
-        refetchMaintenanceJob();
+        queryClient.invalidateQueries({ queryKey: jobsKeys.typeStatus(JobType.METADATA_REFRESH) });
       },
       onError: (error) => {
         toast.error(error.message || 'Failed to cancel job');
