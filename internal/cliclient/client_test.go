@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -99,7 +100,7 @@ func TestLoginBadCredsReturnsServerMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for bad creds")
 	}
-	if got := err.Error(); got == "" || !contains(got, "incorrect username or password") {
+	if got := err.Error(); got == "" || !strings.Contains(got, "incorrect username or password") {
 		t.Fatalf("error = %q, want server message", got)
 	}
 }
@@ -186,6 +187,9 @@ func TestMeUnauthorized(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for bad key")
 	}
+	if !strings.Contains(err.Error(), "unauthorized") {
+		t.Fatalf("error = %q, want server message", err.Error())
+	}
 }
 
 // errServer returns a server that answers every request with the given status
@@ -206,7 +210,7 @@ func TestCreateAPIKeyServerError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 500")
 	}
-	if !contains(err.Error(), "boom") {
+	if !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("error = %q, want server message", err.Error())
 	}
 }
@@ -224,17 +228,4 @@ func TestLogoutServerError(t *testing.T) {
 	if err := c.Logout("sess-123"); err == nil {
 		t.Fatal("expected error on 500 logout")
 	}
-}
-
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || indexOf(s, sub) >= 0)
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }

@@ -14,6 +14,10 @@ import (
 
 const sessionCookieName = "session_id"
 
+// defaultScopes is the scope requested for CLI-minted keys. The server accepts
+// "read" or "write"; the CLI always mints write-scoped keys.
+const defaultScopes = "write"
+
 // Client talks to one Nexorious server.
 type Client struct {
 	baseURL string
@@ -85,7 +89,7 @@ type createAPIKeyResp struct {
 // CreateAPIKey mints a write-scoped key named `name`, authenticating with the
 // session cookie. Returns the raw key and its server-side id.
 func (c *Client) CreateAPIKey(sessionID, name string) (string, string, error) {
-	payload, err := json.Marshal(map[string]string{"name": name, "scopes": "write"})
+	payload, err := json.Marshal(map[string]string{"name": name, "scopes": defaultScopes})
 	if err != nil {
 		return "", "", fmt.Errorf("marshal create key: %w", err)
 	}
