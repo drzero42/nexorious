@@ -141,7 +141,7 @@ export function useJobTypeStatus(jobType: JobType, options?: { enabled?: boolean
   return useQuery({
     queryKey: jobsKeys.typeStatus(jobType),
     queryFn: () => jobsApi.getJobTypeStatus(jobType),
-    enabled: options?.enabled,
+    enabled: options?.enabled !== false,
     refetchInterval: (query) => {
       const data = query.state.data as JobTypeStatus | undefined;
       return data?.isActive ? 3000 : 30000;
