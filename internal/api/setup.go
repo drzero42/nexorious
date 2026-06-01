@@ -84,7 +84,8 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 	// Always clear needsSetup — the user row has committed.
 	h.migrator.SetNeedsSetup(false)
 
-	if err := notify.SeedDefaultSubscriptions(context.Background(), h.db, userID); err != nil {
+	// The initial setup user is always an admin.
+	if err := notify.SeedDefaultSubscriptions(context.Background(), h.db, userID, true); err != nil {
 		slog.Error("setup: seed notification subscriptions", "user_id", userID, "err", err)
 	}
 

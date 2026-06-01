@@ -292,7 +292,13 @@ func TestResetSubscriptionsRestoresDefaults(t *testing.T) {
 	}
 
 	got := notifSubsList(t, h, userID)
-	want := notify.DefaultSubscriptions()
+	// The reset context user is a non-admin, so admin-scoped defaults are skipped.
+	var want []string
+	for _, eventType := range notify.DefaultSubscriptions() {
+		if !notify.IsAdminType(eventType) {
+			want = append(want, eventType)
+		}
+	}
 	assertStringSetEqual(t, got, want)
 }
 

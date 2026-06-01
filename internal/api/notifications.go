@@ -302,11 +302,12 @@ func (h *NotificationsHandler) HandleResetSubscriptions(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	ctx := context.Background()
+	isAdmin := auth.IsAdminFromContext(c)
 	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if _, err := tx.NewRaw(`DELETE FROM notification_subscriptions WHERE user_id = ?`, userID).Exec(ctx); err != nil {
 			return err
 		}
-		return notify.SeedDefaultSubscriptions(ctx, tx, userID)
+		return notify.SeedDefaultSubscriptions(ctx, tx, userID, isAdmin)
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to reset subscriptions")

@@ -169,7 +169,7 @@ func (h *AdminUsersHandler) HandleCreate(c *echo.Context) error {
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
-	if err := notify.SeedDefaultSubscriptions(ctx, h.db, user.ID); err != nil {
+	if err := notify.SeedDefaultSubscriptions(ctx, h.db, user.ID, user.IsAdmin); err != nil {
 		slog.Error("admin create user: seed notification subscriptions", "user_id", user.ID, "err", err)
 	}
 
