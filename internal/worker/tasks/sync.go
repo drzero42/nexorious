@@ -309,7 +309,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	//    empty library), and lets per-item checks finalize it from here on.
 	if _, err := w.DB.NewRaw(
 		`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, p.JobID,
-	).Exec(ctx); err != nil {
+	).Exec(context.Background()); err != nil {
 		// The gate write failed, so the gate stays closed and the completion
 		// check below would be a guaranteed no-op — skip it. The job stays in
 		// 'processing'; the user can cancel the stuck sync (recovery of such
