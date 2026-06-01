@@ -14,6 +14,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -298,6 +299,13 @@ func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*rive
 		river.NewPeriodicJob(
 			river.PeriodicInterval(time.Minute),
 			func() (river.JobArgs, *river.InsertOpts) { return CheckScheduledBackupArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
+		river.NewPeriodicJob(
+			mustCron("0 5 * * *"),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return notify.PruneEventsArgs{RetentionDays: cfg.NotifyEventsRetentionDays}, nil
+			},
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 	}
