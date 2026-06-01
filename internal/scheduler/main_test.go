@@ -89,7 +89,8 @@ func truncateAllTables(t *testing.T) {
 	_, err := testDB.NewRaw(`TRUNCATE TABLE
 		users, user_sessions, games, external_games, platforms, storefronts,
 		platform_storefronts, tags, user_games, user_game_tags, user_game_platforms,
-		jobs, job_items, river_job, backup_config, user_sync_configs, rate_limiter_tokens
+		jobs, job_items, river_job, backup_config, user_sync_configs, rate_limiter_tokens,
+		events
 		RESTART IDENTITY CASCADE`).Exec(ctx)
 	if err != nil {
 		t.Fatalf("truncate tables: %v", err)

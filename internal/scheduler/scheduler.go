@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"os"
 	"time"
 
@@ -17,6 +18,17 @@ import (
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
+
+// emitMaint emits an admin.maintenance.{completed,failed} event.
+func emitMaint(ctx context.Context, db *bun.DB, failed bool, action string, extra map[string]any) {
+	typ := notify.TypeAdminMaintCompleted
+	if failed {
+		typ = notify.TypeAdminMaintFailed
+	}
+	payload := map[string]any{"action": action}
+	maps.Copy(payload, extra)
+	notify.Emit(ctx, db, notify.EmitParams{Type: typ, Scope: notify.ScopeAdmin, Payload: payload})
+}
 
 // ── CleanupOldJobs ─────────────────────────────────────────────────────────────
 

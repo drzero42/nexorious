@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/scheduler"
 )
 
@@ -305,6 +306,35 @@ func TestCleanupStaleJobs_SyncJob_WithPendingReviewItem_LeftAlone(t *testing.T) 
 	}
 	if status != "processing" {
 		t.Fatalf("sync job with pending_review items should not be touched, got %s", status)
+	}
+}
+
+func TestCleanupStaleJobs_EmitsMaintenanceCompleted(t *testing.T) {
+	truncateAllTables(t)
+	notify.SetRiverClient(nil)
+	ctx := context.Background()
+	userID := insertUser(t, ctx, nil)
+	jobID := uuid.NewString()
+	_, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+		 VALUES (?, ?, 'metadata_refresh', 'system', 'pending', 'low', 0, now() - interval '5 hours')`,
+		jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+
+	scheduler.CleanupStaleJobs(ctx, testDB, 4*time.Hour)
+
+	var count int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM events WHERE type = ? AND payload->>'action' = 'stale_jobs_cleanup'`,
+		notify.TypeAdminMaintCompleted,
+	).Scan(ctx, &count); err != nil {
+		t.Fatalf("query events: %v", err)
+	}
+	if count < 1 {
+		t.Fatalf("expected at least 1 admin.maintenance.completed event for stale_jobs_cleanup, got %d", count)
 	}
 }
 
