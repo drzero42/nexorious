@@ -37,8 +37,16 @@ interface ChannelDialogProps {
   channel?: NotificationChannel | null;
 }
 
-export function ChannelDialog({ open, onOpenChange, channel }: ChannelDialogProps) {
-  const isEdit = Boolean(channel);
+interface ChannelDialogFormProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  channel?: NotificationChannel | null;
+  isEdit: boolean;
+}
+
+// Inner component that owns useForm — rendered with a key so it remounts (and
+// re-initialises with the correct resolver) whenever the add↔edit mode changes.
+function ChannelDialogForm({ open, onOpenChange, channel, isEdit }: ChannelDialogFormProps) {
   const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
   const testChannel = useTestChannel();
@@ -53,7 +61,7 @@ export function ChannelDialog({ open, onOpenChange, channel }: ChannelDialogProp
     defaultValues: { name: channel?.name ?? '', url: '' },
   });
 
-  // Reset form when dialog opens/channel changes
+  // Reset form when dialog opens or the channel being edited changes
   useEffect(() => {
     if (open) {
       reset({ name: channel?.name ?? '', url: '' });
@@ -95,6 +103,72 @@ export function ChannelDialog({ open, onOpenChange, channel }: ChannelDialogProp
   const isPending = createChannel.isPending || updateChannel.isPending;
 
   return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
+      <div className="space-y-2">
+        <Label htmlFor="channel-name">Name</Label>
+        <Input
+          id="channel-name"
+          placeholder="e.g. My Phone"
+          {...register('name')}
+          disabled={isPending}
+        />
+        {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="channel-url">Shoutrrr URL{isEdit ? ' (optional)' : ''}</Label>
+        <Input
+          id="channel-url"
+          type="password"
+          placeholder={
+            isEdit
+              ? 'Leave blank to keep current URL'
+              : 'ntfy://ntfy.sh/topic or discord://token@id'
+          }
+          autoComplete="off"
+          {...register('url')}
+          disabled={isPending}
+        />
+        {errors.url && <p className="text-sm text-destructive">{errors.url.message}</p>}
+        <p className="text-xs text-muted-foreground">
+          Shoutrrr URL, e.g. <code className="rounded bg-muted px-1">ntfy://ntfy.sh/topic</code>,{' '}
+          <code className="rounded bg-muted px-1">discord://token@id</code>,{' '}
+          <code className="rounded bg-muted px-1">smtp://user:pass@host</code>
+        </p>
+      </div>
+
+      <DialogFooter className="gap-2 sm:gap-0">
+        {isEdit && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleTest}
+            disabled={testChannel.isPending}
+          >
+            {testChannel.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
+            Send test
+          </Button>
+        )}
+        <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isEdit ? 'Save' : 'Add Channel'}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+export function ChannelDialog({ open, onOpenChange, channel }: ChannelDialogProps) {
+  const isEdit = Boolean(channel);
+
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
@@ -106,65 +180,14 @@ export function ChannelDialog({ open, onOpenChange, channel }: ChannelDialogProp
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="channel-name">Name</Label>
-            <Input
-              id="channel-name"
-              placeholder="e.g. My Phone"
-              {...register('name')}
-              disabled={isPending}
-            />
-            {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="channel-url">Shoutrrr URL{isEdit ? ' (optional)' : ''}</Label>
-            <Input
-              id="channel-url"
-              type="password"
-              placeholder={
-                isEdit
-                  ? 'Leave blank to keep current URL'
-                  : 'ntfy://ntfy.sh/topic or discord://token@id'
-              }
-              autoComplete="off"
-              {...register('url')}
-              disabled={isPending}
-            />
-            {errors.url && <p className="text-sm text-destructive">{errors.url.message}</p>}
-            <p className="text-xs text-muted-foreground">
-              Shoutrrr URL, e.g. <code className="rounded bg-muted px-1">ntfy://ntfy.sh/topic</code>
-              , <code className="rounded bg-muted px-1">discord://token@id</code>,{' '}
-              <code className="rounded bg-muted px-1">smtp://user:pass@host</code>
-            </p>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            {isEdit && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleTest}
-                disabled={testChannel.isPending}
-              >
-                {testChannel.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="mr-2 h-4 w-4" />
-                )}
-                Send test
-              </Button>
-            )}
-            <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isPending}>
-              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEdit ? 'Save' : 'Add Channel'}
-            </Button>
-          </DialogFooter>
-        </form>
+        {/* key ensures useForm remounts with the correct resolver when mode switches */}
+        <ChannelDialogForm
+          key={isEdit ? 'edit' : 'add'}
+          open={open}
+          onOpenChange={onOpenChange}
+          channel={channel}
+          isEdit={isEdit}
+        />
       </DialogContent>
     </Dialog>
   );
