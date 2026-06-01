@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,8 +42,9 @@ func TestWhoamiPrintsUser(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("whoami: %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "alice") {
-		t.Fatalf("output missing username: %q", out.String())
+	want := fmt.Sprintf("alice @ %s", srv.URL)
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("output = %q, want it to contain %q", out.String(), want)
 	}
 }
 
