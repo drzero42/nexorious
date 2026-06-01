@@ -11,6 +11,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -739,5 +740,49 @@ func TestImportItem_StorefrontNotFound(t *testing.T) {
 	}
 	if !sfNull {
 		t.Error("expected NULL storefront for unknown storefront")
+	}
+}
+
+// TestImportItem_EmitsImportCompleted verifies that processing the last item of a job
+// causes an import.completed event to be written to the events table.
+func TestImportItem_EmitsImportCompleted(t *testing.T) {
+	truncateAllTables(t)
+	notify.SetRiverClient(nil)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	gameData := map[string]any{
+		"igdb_id": int32(38001),
+		"title":   "Notify Import Game",
+	}
+	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	// Job must be completed first.
+	var jobStatus string
+	if err := testDB.QueryRowContext(ctx, "SELECT status FROM jobs WHERE id = ?", jobID).Scan(&jobStatus); err != nil {
+		t.Fatalf("query job status: %v", err)
+	}
+	if jobStatus != "completed" {
+		t.Fatalf("job status = %q, want completed (prerequisite for event assertion)", jobStatus)
+	}
+
+	dedupKey := jobID + ":" + notify.TypeImportCompleted
+	var count int
+	if err := testDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM events WHERE dedup_key = ?", dedupKey,
+	).Scan(&count); err != nil {
+		t.Fatalf("query events: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("events count for dedup_key %q = %d, want 1", dedupKey, count)
 	}
 }

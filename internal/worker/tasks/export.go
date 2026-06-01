@@ -16,6 +16,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/notify"
 )
 
 // ── JSON export ───────────────────────────────────────────────────────────────
@@ -144,6 +145,11 @@ func markJobFailed(ctx context.Context, db *bun.DB, job *models.Job, errMsg stri
 		Exec(ctx); err != nil {
 		slog.Error("export: markJobFailed", "job_id", job.ID, "err", err)
 	}
+	notify.Emit(ctx, db, notify.EmitParams{
+		Type: notify.TypeExportFailed, Scope: notify.ScopeUser, ActorUserID: job.UserID,
+		Payload:  map[string]any{"job_id": job.ID, "error": errMsg},
+		DedupKey: job.ID + ":" + notify.TypeExportFailed,
+	})
 }
 
 // markJobCompleted sets the job status to completed, recording the output file path.
@@ -158,6 +164,11 @@ func markJobCompleted(ctx context.Context, db *bun.DB, job *models.Job, filePath
 		Exec(ctx); err != nil {
 		slog.Error("export: markJobCompleted", "job_id", job.ID, "err", err)
 	}
+	notify.Emit(ctx, db, notify.EmitParams{
+		Type: notify.TypeExportCompleted, Scope: notify.ScopeUser, ActorUserID: job.UserID,
+		Payload:  map[string]any{"job_id": job.ID, "file_path": filePath},
+		DedupKey: job.ID + ":" + notify.TypeExportCompleted,
+	})
 }
 
 // exportsDir returns (and creates) the exports subdirectory under storagePath.

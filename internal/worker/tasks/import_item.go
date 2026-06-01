@@ -14,6 +14,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 )
 
@@ -505,4 +506,10 @@ func checkJobCompletion(db *bun.DB, jobID string) {
 	if err != nil {
 		slog.Error("import_item: update job status", "job_id", jobID, "err", err)
 	}
+	uid, _ := syncJobUserAndStorefront(ctx, db, jobID)
+	notify.Emit(ctx, db, notify.EmitParams{
+		Type: notify.TypeImportCompleted, Scope: notify.ScopeUser, ActorUserID: uid,
+		Payload:  map[string]any{"job_id": jobID},
+		DedupKey: jobID + ":" + notify.TypeImportCompleted,
+	})
 }
