@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -1033,9 +1034,17 @@ func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID string) {
 	var rows []struct {
 		ChangeType string `bun:"change_type"`
 		Title      string `bun:"title"`
+		Platforms  string `bun:"platforms"`
 	}
 	if err := db.NewRaw(
-		`SELECT change_type, title FROM sync_changes WHERE job_id = ? AND change_type IN ('added','removed') ORDER BY created_at`,
+		`SELECT sc.change_type,
+		        sc.title,
+		        COALESCE(string_agg(egp.platform, ',' ORDER BY egp.platform), '') AS platforms
+		   FROM sync_changes sc
+		   LEFT JOIN external_game_platforms egp ON egp.external_game_id = sc.external_game_id
+		  WHERE sc.job_id = ? AND sc.change_type IN ('added','removed')
+		  GROUP BY sc.id, sc.change_type, sc.title, sc.created_at
+		  ORDER BY sc.created_at`,
 		jobID,
 	).Scan(ctx, &rows); err != nil {
 		slog.Error("sync: load sync_changes for diff notify", "job_id", jobID, "err", err)
@@ -1047,7 +1056,11 @@ func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID string) {
 	added := []map[string]any{}
 	removed := []map[string]any{}
 	for _, r := range rows {
-		entry := map[string]any{"title": r.Title, "platforms": []string{}}
+		platforms := []string{}
+		if r.Platforms != "" {
+			platforms = strings.Split(r.Platforms, ",")
+		}
+		entry := map[string]any{"title": r.Title, "platforms": platforms}
 		if r.ChangeType == "added" {
 			added = append(added, entry)
 		} else {

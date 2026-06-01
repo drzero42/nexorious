@@ -31,6 +31,24 @@ func TestFormatSyncDiff(t *testing.T) {
 	}
 }
 
+func TestFormatSyncDiff_EmptyPlatformsOmitsBrackets(t *testing.T) {
+	// A game with no platforms must render without any bracket notation.
+	payload, _ := json.Marshal(map[string]any{
+		"added":   []map[string]any{{"title": "NoPlat", "platforms": []string{}}},
+		"removed": []map[string]any{},
+	})
+	_, body := Format(TypeSyncDiff, payload)
+	if !strings.Contains(body, "NoPlat") {
+		t.Errorf("expected body to contain 'NoPlat', got: %q", body)
+	}
+	if strings.Contains(body, "NoPlat []") {
+		t.Errorf("expected no empty brackets for no-platform game, got: %q", body)
+	}
+	if strings.Contains(body, "[]") {
+		t.Errorf("expected no empty brackets anywhere in body, got: %q", body)
+	}
+}
+
 func TestFormatUnknownTypeIsSafe(t *testing.T) {
 	title, body := Format("totally.unknown", json.RawMessage(`{}`))
 	if title == "" || body == "" {

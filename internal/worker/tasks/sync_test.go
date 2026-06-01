@@ -3168,12 +3168,30 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	// Insert two sync_changes rows: one added, one removed.
+	// Insert two sync_changes rows: one added (with platform rows), one removed.
+	// The added game has explicit platform rows so we can assert they appear in the payload.
+	addedEgID := uuid.NewString()
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
+		 VALUES (?, ?, 'steam', '12345', 'Hades', false, true, false)`,
+		addedEgID, userID,
+	); err != nil {
+		t.Fatalf("insert external_game for added: %v", err)
+	}
+	for _, plat := range []string{"mac", "pc-windows"} {
+		if _, err := testDB.ExecContext(ctx,
+			`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+			 VALUES (?, ?, ?, 0, now())`,
+			uuid.NewString(), addedEgID, plat,
+		); err != nil {
+			t.Fatalf("insert external_game_platform %s: %v", plat, err)
+		}
+	}
 	egID := insertTestExternalGame(t, userID, "steam", "999", "Old Game", "pc-windows")
 	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO sync_changes (id, job_id, user_id, change_type, title, created_at)
-		 VALUES (?, ?, ?, 'added', 'Hades', now())`,
-		uuid.NewString(), jobID, userID,
+		`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+		 VALUES (?, ?, ?, ?, 'added', 'Hades', now())`,
+		uuid.NewString(), jobID, userID, addedEgID,
 	); err != nil {
 		t.Fatalf("insert sync_change added: %v", err)
 	}
@@ -3196,7 +3214,7 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 		t.Fatalf("expected 1 sync.diff event, got %d", diffCount)
 	}
 
-	// Payload must mention both game titles.
+	// Payload must mention both game titles and the platforms for the added game.
 	var payloadText string
 	if err := testDB.NewRaw(`SELECT payload::text FROM events WHERE dedup_key = ?`, jobID+":sync.diff").Scan(ctx, &payloadText); err != nil {
 		t.Fatalf("scan diff payload: %v", err)
@@ -3206,6 +3224,12 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 	}
 	if !strings.Contains(payloadText, "Old Game") {
 		t.Fatalf("expected diff payload to contain 'Old Game', got: %s", payloadText)
+	}
+	if !strings.Contains(payloadText, "pc-windows") {
+		t.Fatalf("expected diff payload to contain 'pc-windows', got: %s", payloadText)
+	}
+	if !strings.Contains(payloadText, "mac") {
+		t.Fatalf("expected diff payload to contain 'mac', got: %s", payloadText)
 	}
 }
 

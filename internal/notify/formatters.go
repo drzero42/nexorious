@@ -113,13 +113,21 @@ func formatDiff(added, removed []DiffGame) string {
 	if len(added) > 0 {
 		fmt.Fprintf(&b, "Added (%d):\n", len(added))
 		for _, g := range added {
-			fmt.Fprintf(&b, "  + %s [%s]\n", g.Title, strings.Join(g.Platforms, ", "))
+			suffix := ""
+			if len(g.Platforms) > 0 {
+				suffix = " [" + strings.Join(g.Platforms, ", ") + "]"
+			}
+			fmt.Fprintf(&b, "  + %s%s\n", g.Title, suffix)
 		}
 	}
 	if len(removed) > 0 {
 		fmt.Fprintf(&b, "Removed (%d):\n", len(removed))
 		for _, g := range removed {
-			fmt.Fprintf(&b, "  - %s [%s]\n", g.Title, strings.Join(g.Platforms, ", "))
+			suffix := ""
+			if len(g.Platforms) > 0 {
+				suffix = " [" + strings.Join(g.Platforms, ", ") + "]"
+			}
+			fmt.Fprintf(&b, "  - %s%s\n", g.Title, suffix)
 		}
 	}
 	if b.Len() == 0 {
