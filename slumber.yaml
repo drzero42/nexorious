@@ -362,12 +362,6 @@ requests:
         url: "{{base_url}}/api/jobs/pending-review-count"
         $ref: "#/.authenticated"
 
-      active_job:
-        name: Active Job
-        method: GET
-        url: "{{base_url}}/api/jobs/active/sync"
-        $ref: "#/.authenticated"
-
       get_status:
         name: Get Job Type Status
         method: GET

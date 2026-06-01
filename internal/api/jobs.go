@@ -260,51 +260,6 @@ func (h *JobsHandler) HandlePendingReviewCount(c *echo.Context) error {
 	})
 }
 
-// HandleActiveJob handles GET /api/jobs/active/:job_type.
-func (h *JobsHandler) HandleActiveJob(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
-	jobType := c.Param("job_type")
-	ctx := context.Background()
-
-	// Try in-progress job first.
-	var job models.Job
-	err := h.db.NewSelect().Model(&job).
-		Where("user_id = ? AND job_type = ? AND status IN ('pending', 'processing')", userID, jobType).
-		OrderExpr("created_at DESC").
-		Limit(1).
-		Scan(ctx)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get active job")
-	}
-
-	// Fall back to most recent terminal job — order by completed_at so the
-	// result is deterministic even for old rows that have zero created_at.
-	if errors.Is(err, sql.ErrNoRows) {
-		err = h.db.NewSelect().Model(&job).
-			Where("user_id = ? AND job_type = ?", userID, jobType).
-			OrderExpr("completed_at DESC NULLS LAST, created_at DESC NULLS LAST").
-			Limit(1).
-			Scan(ctx)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return c.JSON(http.StatusOK, nil)
-			}
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get active job")
-		}
-	}
-
-	progress, err := h.jobItemCounts(ctx, job.ID)
-	if err != nil {
-		slog.Error("jobs: fetch item counts failed", "err", err, "job_id", job.ID)
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load job progress")
-	}
-	return c.JSON(http.StatusOK, toJobResponse(&job, progress))
-}
-
 // HandleJobTypeStatus handles GET /api/jobs/status/:job_type.
 // Lightweight status for any job type: the current active job (if any) plus the
 // most recent terminal job, so the UI can poll continuously and detect

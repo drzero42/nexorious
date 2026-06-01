@@ -282,7 +282,6 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		jobsGroup.GET("", jh.HandleListJobs)
 		jobsGroup.GET("/summary", jh.HandleJobsSummary)
 		jobsGroup.GET("/pending-review-count", jh.HandlePendingReviewCount)
-		jobsGroup.GET("/active/:job_type", jh.HandleActiveJob)
 		jobsGroup.GET("/status/:job_type", jh.HandleJobTypeStatus)
 		jobsGroup.GET("/recent/:source", jh.HandleRecentJobs)
 		jobsGroup.GET("/:id", jh.HandleGetJob)

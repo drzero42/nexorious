@@ -547,60 +547,6 @@ func TestPendingReviewCount_IncludesTerminalJobItems(t *testing.T) {
 	}
 }
 
-// ─── TestHandleActiveJob ──────────────────────────────────────────────────────
-
-func TestHandleActiveJob_NoJobs(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithPool(t, testDB)
-	_, token := setupTagUser(t, testDB, e, "jobs-active-none")
-
-	rec := getAuth(t, e, "/api/jobs/active/import", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestHandleActiveJob_ActiveJobExists(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "jobs-active-exists")
-
-	insertJob(t, testDB, "job-active-1", userID, "import", "steam", "processing")
-
-	rec := getAuth(t, e, "/api/jobs/active/import", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["id"] != "job-active-1" {
-		t.Fatalf("expected id=job-active-1, got %v", resp["id"])
-	}
-}
-
-func TestHandleActiveJob_FallbackToCompleted(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "jobs-active-fallback")
-
-	// No active job, but there is a completed one.
-	insertJob(t, testDB, "job-fallback-1", userID, "sync", "steam", "completed")
-
-	rec := getAuth(t, e, "/api/jobs/active/sync", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["id"] != "job-fallback-1" {
-		t.Fatalf("expected id=job-fallback-1, got %v", resp["id"])
-	}
-}
-
 // ─── TestHandleJobTypeStatus ──────────────────────────────────────────────────
 
 func TestHandleJobTypeStatus_NoJobs(t *testing.T) {
