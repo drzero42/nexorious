@@ -1922,6 +1922,7 @@ type stubGOGClient struct {
 	authURL string
 	token   *api.GOGTokenResponse
 	err     error
+	gotCode string
 }
 
 func (s *stubGOGClient) BuildAuthURL() string {
@@ -1931,7 +1932,8 @@ func (s *stubGOGClient) BuildAuthURL() string {
 	return "https://login.gog.com/auth?test=1"
 }
 
-func (s *stubGOGClient) ExchangeCode(_ context.Context, _ string) (*api.GOGTokenResponse, error) {
+func (s *stubGOGClient) ExchangeCode(_ context.Context, code string) (*api.GOGTokenResponse, error) {
+	s.gotCode = code
 	return s.token, s.err
 }
 
@@ -2237,6 +2239,30 @@ func TestGOGConnect_Success(t *testing.T) {
 	_ = json.NewDecoder(rec.Body).Decode(&body)
 	if body["username"] != "goguser" {
 		t.Errorf("username: got %q", body["username"])
+	}
+}
+
+func TestGOGConnect_FullURL(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubGOGClient{
+		token: &api.GOGTokenResponse{
+			AccessToken:  "acc",
+			RefreshToken: "ref",
+			UserID:       "u1",
+			Username:     "goguser",
+		},
+	}
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	_, token := setupTagUser(t, testDB, app, "gog-conn-url")
+
+	rec := postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{
+		"auth_code": "https://embed.gog.com/on_login_success?origin=client&code=XXX",
+	}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if stub.gotCode != "XXX" {
+		t.Errorf("ExchangeCode received %q, want extracted code %q", stub.gotCode, "XXX")
 	}
 }
 

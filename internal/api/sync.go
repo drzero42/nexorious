@@ -22,6 +22,7 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
+	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -1421,7 +1422,12 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "auth_code is required")
 	}
 
-	tok, err := h.gogClient.ExchangeCode(c.Request().Context(), body.AuthCode)
+	code, err := gogsvc.ParseAuthCode(body.AuthCode)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	tok, err := h.gogClient.ExchangeCode(c.Request().Context(), code)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("gog auth failed: %v", err))
 	}
