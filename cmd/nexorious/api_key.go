@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -153,8 +155,85 @@ func runListKeys(cmd *cobra.Command, asJSON bool) error {
 	return tw.Flush()
 }
 
-// --- Temporary stub, replaced in Task 5. Keep the package compiling. ---
-
 func newAPIKeyRevokeCmd() *cobra.Command {
-	return &cobra.Command{Use: "revoke"}
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "revoke <id-or-name>",
+		Short: "Revoke an API key by id or name (from `api-key list`)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRevoke(cmd, args[0], yes)
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false,
+		"Skip the confirmation prompt when revoking the key this CLI is using")
+	return cmd
+}
+
+func runRevoke(cmd *cobra.Command, idOrName string, yes bool) error {
+	out := cmd.OutOrStdout()
+	p, cfg, err := currentProfile()
+	if err != nil {
+		return err
+	}
+	client := cliclient.New(p.URL)
+
+	keys, err := client.ListAPIKeys(p.Key)
+	if err != nil {
+		return fmt.Errorf("list API keys failed: %w", err)
+	}
+	targetID, err := resolveKeyID(keys, idOrName)
+	if err != nil {
+		return err
+	}
+
+	self := targetID == p.KeyID
+	if self && !yes {
+		fmt.Fprint(out, "Revoke the key this CLI is currently using? This will log you out. [y/N] ")
+		answer, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n') //nolint:errcheck // EOF/partial line still yields the typed answer
+		answer = strings.ToLower(strings.TrimSpace(answer))
+		if answer != "y" && answer != "yes" {
+			return fmt.Errorf("aborted")
+		}
+	}
+
+	if err := client.RevokeAPIKeyWithBearer(p.Key, targetID); err != nil {
+		return fmt.Errorf("revoke failed: %w", err)
+	}
+
+	if self {
+		url := p.URL
+		if err := clearStoredKey(cfg); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "Revoked API key %s.\nThat was the key this CLI was using — you have been logged out of %s.\n", targetID, url)
+		return nil
+	}
+
+	fmt.Fprintf(out, "Revoked API key %s.\n", targetID)
+	return nil
+}
+
+// resolveKeyID maps an id-or-name argument to a single key id. An exact id match
+// wins; otherwise it matches active keys by name, requiring exactly one match.
+func resolveKeyID(keys []cliclient.APIKey, idOrName string) (string, error) {
+	for _, k := range keys {
+		if k.ID == idOrName {
+			return k.ID, nil
+		}
+	}
+	var matches []string
+	for _, k := range keys {
+		if k.Name == idOrName {
+			matches = append(matches, k.ID)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", fmt.Errorf("no API key with id or name %q", idOrName)
+	default:
+		return "", fmt.Errorf("multiple active keys named %q; revoke by id instead (see `api-key list`)", idOrName)
+	}
 }

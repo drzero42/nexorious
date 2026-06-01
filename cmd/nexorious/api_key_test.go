@@ -212,3 +212,124 @@ func TestListJSON(t *testing.T) {
 		t.Fatalf("parsed = %+v, want one key k1", parsed)
 	}
 }
+
+// revokeServer serves a list of the given keys and records DELETEs into revoked.
+func revokeServer(t *testing.T, listJSON string, revoked *[]string) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(listJSON))
+	})
+	mux.HandleFunc("/api/auth/api-keys/", func(w http.ResponseWriter, r *http.Request) {
+		*revoked = append(*revoked, r.URL.Path[len("/api/auth/api-keys/"):])
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestRevokeByID(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var revoked []string
+	srv := revokeServer(t, `[{"id":"k1","name":"laptop","scopes":"write","last_used_at":null,"created_at":"2026-01-01T00:00:00Z","expires_at":null}]`, &revoked)
+	seedProfile(t, srv.URL)
+
+	out, err := runCmd(t, "api-key", "revoke", "k1")
+	if err != nil {
+		t.Fatalf("revoke: %v\n%s", err, out)
+	}
+	if len(revoked) != 1 || revoked[0] != "k1" {
+		t.Fatalf("revoked = %v, want [k1]", revoked)
+	}
+}
+
+func TestRevokeByName(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var revoked []string
+	srv := revokeServer(t, `[{"id":"k1","name":"laptop","scopes":"write","last_used_at":null,"created_at":"2026-01-01T00:00:00Z","expires_at":null}]`, &revoked)
+	seedProfile(t, srv.URL)
+
+	if _, err := runCmd(t, "api-key", "revoke", "laptop"); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if len(revoked) != 1 || revoked[0] != "k1" {
+		t.Fatalf("revoked = %v, want [k1]", revoked)
+	}
+}
+
+func TestRevokeAmbiguousName(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var revoked []string
+	srv := revokeServer(t, `[{"id":"k1","name":"dup","scopes":"write","last_used_at":null,"created_at":"2026-01-01T00:00:00Z","expires_at":null},{"id":"k2","name":"dup","scopes":"write","last_used_at":null,"created_at":"2026-01-01T00:00:00Z","expires_at":null}]`, &revoked)
+	seedProfile(t, srv.URL)
+
+	if _, err := runCmd(t, "api-key", "revoke", "dup"); err == nil {
+		t.Fatal("expected ambiguous-name error")
+	}
+	if len(revoked) != 0 {
+		t.Fatalf("nothing should be revoked on ambiguity, got %v", revoked)
+	}
+}
+
+func TestRevokeUnknown(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var revoked []string
+	srv := revokeServer(t, `[]`, &revoked)
+	seedProfile(t, srv.URL)
+
+	if _, err := runCmd(t, "api-key", "revoke", "nope"); err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+func TestRevokeSelfWithYesLogsOut(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var revoked []string
+	// seedProfile stores KeyID "self-key"; list returns that id.
+	srv := revokeServer(t, `[{"id":"self-key","name":"cli@host","scopes":"write","last_used_at":null,"created_at":"2026-01-01T00:00:00Z","expires_at":null}]`, &revoked)
+	seedProfile(t, srv.URL)
+
+	out, err := runCmd(t, "api-key", "revoke", "self-key", "--yes")
+	if err != nil {
+		t.Fatalf("revoke: %v\n%s", err, out)
+	}
+	if len(revoked) != 1 || revoked[0] != "self-key" {
+		t.Fatalf("revoked = %v, want [self-key]", revoked)
+	}
+	if !strings.Contains(out, "logged out") {
+		t.Fatalf("output = %q, want logged-out message", out)
+	}
+	cfg, _ := clicfg.Load()
+	p, _ := cfg.CurrentProfile()
+	if p.Key != "" || p.KeyID != "" {
+		t.Fatalf("config not cleared after self-revoke: %+v", p)
+	}
+}
+
+func TestRevokeSelfDeclinedAborts(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var revoked []string
+	srv := revokeServer(t, `[{"id":"self-key","name":"cli@host","scopes":"write","last_used_at":null,"created_at":"2026-01-01T00:00:00Z","expires_at":null}]`, &revoked)
+	seedProfile(t, srv.URL)
+
+	// Drive stdin with "n\n" to decline the prompt.
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader("n\n"))
+	root.SetArgs([]string{"api-key", "revoke", "self-key"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected abort error when prompt declined")
+	}
+	if len(revoked) != 0 {
+		t.Fatalf("nothing should be revoked when declined, got %v", revoked)
+	}
+	cfg, _ := clicfg.Load()
+	p, _ := cfg.CurrentProfile()
+	if p.Key == "" {
+		t.Fatal("config should be untouched when aborted")
+	}
+}
