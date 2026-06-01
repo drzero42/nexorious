@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0](https://github.com/drzero42/nexorious/compare/v0.4.0...v0.5.0) (2026-06-01)
+
+
+### Features
+
+* add notifications ([#738](https://github.com/drzero42/nexorious/issues/738)) ([9dea81c](https://github.com/drzero42/nexorious/commit/9dea81cffc2735c5e9d9b8f03e586e2d5db782bd))
+* CLI api-key subcommand for managing API keys ([#626](https://github.com/drzero42/nexorious/issues/626)) ([#733](https://github.com/drzero42/nexorious/issues/733)) ([104e8aa](https://github.com/drzero42/nexorious/commit/104e8aa27d12d8d7a240c76fd130f96100cc618b))
+* CLI login/logout/whoami for API-key bootstrap ([#723](https://github.com/drzero42/nexorious/issues/723)) ([4bfbf2d](https://github.com/drzero42/nexorious/commit/4bfbf2d34e6eaba14b4f34971481ea061e4d24f5))
+* unify import/export and sync job tracking ([#670](https://github.com/drzero42/nexorious/issues/670)) ([#722](https://github.com/drzero42/nexorious/issues/722)) ([cfe1108](https://github.com/drzero42/nexorious/commit/cfe11080e62b7d1d5b4a9835ac15c6bd75b76848))
+
 ## [0.4.0](https://github.com/drzero42/nexorious/compare/v0.3.1...v0.4.0) (2026-06-01)
 
 
