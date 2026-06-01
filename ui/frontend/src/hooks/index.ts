@@ -101,6 +101,9 @@ export {
   useRetryJobItem,
 } from './use-jobs';
 
+// Job completion effect hook
+export { useJobCompletionEffect } from './use-job-completion-effect';
+
 // Version hooks
 export { useVersion } from './use-version';
 export type { VersionInfo } from './use-version';
