@@ -106,7 +106,10 @@ func runLogin(cmd *cobra.Command, urlFlag, usernameFlag string) error {
 		Key:      key,
 	})
 	if err := clicfg.Save(cfg); err != nil {
-		return fmt.Errorf("save config: %w", err)
+		// The key was already minted server-side. Surface its id so the user can
+		// revoke the now-orphaned key (it is not recorded locally) from the web UI.
+		return fmt.Errorf("API key %q (id %s) was created but saving config failed; "+
+			"revoke it from the web UI to avoid an orphaned key: %w", keyName, keyID, err)
 	}
 
 	fmt.Fprintf(out, "Logged in to %s as %s.\nStored API key %q (%s)", url, username, keyName, maskKey(key))
