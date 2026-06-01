@@ -87,6 +87,9 @@ func TestNotifyWorkerUserScopeDelivers(t *testing.T) {
 	if len(rec.Sent()) != 1 {
 		t.Fatalf("expected 1 delivery, got %d", len(rec.Sent()))
 	}
+	if got := rec.Sent()[0].URL; got != "noop://alice" {
+		t.Errorf("expected delivery to noop://alice, got %q", got)
+	}
 }
 
 func TestNotifyWorkerUserNotSubscribedNoDelivery(t *testing.T) {
@@ -150,5 +153,8 @@ func TestNotifyWorkerSendFailureSwallowed(t *testing.T) {
 	w := &NotifyWorker{DB: testDB, Encrypter: enc, Sender: rec}
 	if err := w.Work(ctx, &river.Job[NotifyArgs]{Args: NotifyArgs{EventID: eventID}}); err != nil {
 		t.Fatalf("send failure should be swallowed, got err: %v", err)
+	}
+	if len(rec.Sent()) != 1 {
+		t.Fatalf("expected exactly 1 send attempt, got %d", len(rec.Sent()))
 	}
 }
