@@ -63,20 +63,25 @@ function GamesPageContent() {
 
   // Read filters from URL params
   const filters = useMemo(() => {
-    const statusParam = (search as Record<string, string>)['status'];
-    const ownershipParam = (search as Record<string, string>)['ownership'];
-    // Handle "null" string or empty string as undefined
-    const status = statusParam && statusParam !== 'null' ? (statusParam as PlayStatus) : undefined;
-    const ownershipStatus =
-      ownershipParam && ownershipParam !== 'null' ? (ownershipParam as OwnershipStatus) : undefined;
-    const lovedParam = (search as Record<string, string>)['loved'];
-    const isLoved = lovedParam === 'true' ? true : lovedParam === 'false' ? false : undefined;
     const s = search as Record<string, string | string[]>;
+    const getOne = (key: string): string | undefined => {
+      const val = s[key];
+      if (!val) return undefined;
+      return Array.isArray(val) ? val[0] : val;
+    };
     const getAll = (key: string): string[] => {
       const val = s[key];
       if (!val) return [];
       return Array.isArray(val) ? val : [val];
     };
+    const statusParam = getOne('status');
+    const ownershipParam = getOne('ownership');
+    // Handle "null" string or empty string as undefined
+    const status = statusParam && statusParam !== 'null' ? (statusParam as PlayStatus) : undefined;
+    const ownershipStatus =
+      ownershipParam && ownershipParam !== 'null' ? (ownershipParam as OwnershipStatus) : undefined;
+    const lovedParam = getOne('loved');
+    const isLoved = lovedParam === 'true' ? true : lovedParam === 'false' ? false : undefined;
     return {
       search: (s['q'] as string) ?? '',
       status,
