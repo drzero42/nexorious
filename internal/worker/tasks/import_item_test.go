@@ -786,3 +786,59 @@ func TestImportItem_EmitsImportCompleted(t *testing.T) {
 		t.Errorf("events count for dedup_key %q = %d, want 1", dedupKey, count)
 	}
 }
+
+// TestImportItem_EmitsImportFailedWhenItemsFail verifies that when the last item
+// of a job fails (here: missing igdb_id), the job finalizes with an import.failed
+// event and no import.completed event.
+func TestImportItem_EmitsImportFailedWhenItemsFail(t *testing.T) {
+	truncateAllTables(t)
+	notify.SetRiverClient(nil)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	// Missing igdb_id forces the worker to mark the item failed (no handler error).
+	gameData := map[string]any{
+		"title": "Failing Import Game",
+	}
+	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+
+	// Item must have failed.
+	var itemStatus string
+	if err := testDB.QueryRowContext(ctx, "SELECT status FROM job_items WHERE id = ?", itemID).Scan(&itemStatus); err != nil {
+		t.Fatalf("query item status: %v", err)
+	}
+	if itemStatus != string(models.JobItemStatusFailed) {
+		t.Fatalf("item status = %q, want failed (prerequisite)", itemStatus)
+	}
+
+	failedKey := jobID + ":" + notify.TypeImportFailed
+	var failedCount int
+	if err := testDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM events WHERE dedup_key = ?", failedKey,
+	).Scan(&failedCount); err != nil {
+		t.Fatalf("query failed events: %v", err)
+	}
+	if failedCount != 1 {
+		t.Errorf("events count for dedup_key %q = %d, want 1", failedKey, failedCount)
+	}
+
+	completedKey := jobID + ":" + notify.TypeImportCompleted
+	var completedCount int
+	if err := testDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM events WHERE dedup_key = ?", completedKey,
+	).Scan(&completedCount); err != nil {
+		t.Fatalf("query completed events: %v", err)
+	}
+	if completedCount != 0 {
+		t.Errorf("events count for dedup_key %q = %d, want 0", completedKey, completedCount)
+	}
+}
