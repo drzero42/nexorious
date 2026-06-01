@@ -996,6 +996,7 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 	var failedCount int
 	if err := db.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'failed'`, jobID).Scan(ctx, &failedCount); err != nil {
 		slog.Error("sync: count failed items for notify", "job_id", jobID, "err", err)
+		return
 	}
 	if failedCount > 0 {
 		notify.Emit(ctx, db, notify.EmitParams{

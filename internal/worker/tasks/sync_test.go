@@ -3058,3 +3058,189 @@ func TestSyncCheckJobCompletionEmitsCompletedWithErrors(t *testing.T) {
 		t.Fatalf("expected sync.completed_with_errors, got %d", count)
 	}
 }
+
+func TestSyncCheckJobCompletionEmitsNeedsReview(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	notify.SetRiverClient(nil)
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	jobID := uuid.NewString()
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, dispatch_complete, created_at)
+		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', true, now())`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, 'k', 't', '{}'::jsonb, 'pending_review', '{}'::jsonb, '[]'::jsonb, now())`,
+		uuid.NewString(), jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+
+	// sync.needs_review event must have been emitted.
+	var nrCount int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.needs_review").Scan(ctx, &nrCount); err != nil {
+		t.Fatalf("count needs_review events: %v", err)
+	}
+	if nrCount != 1 {
+		t.Fatalf("expected 1 sync.needs_review event, got %d", nrCount)
+	}
+
+	// sync.completed must NOT have been emitted while pending_review items exist.
+	var completedCount int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.completed").Scan(ctx, &completedCount); err != nil {
+		t.Fatalf("count completed events: %v", err)
+	}
+	if completedCount != 0 {
+		t.Fatalf("expected no sync.completed event while pending_review items exist, got %d", completedCount)
+	}
+}
+
+func TestFailSyncJobEmitsFailed(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	notify.SetRiverClient(nil)
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	jobID := uuid.NewString()
+
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 0)`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+	if _, err := testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert user_sync_config: %v", err)
+	}
+
+	// Drive the real worker with a fetch error — this triggers failSyncJob internally.
+	w := &tasks.DispatchSyncWorker{
+		DB:          testDB,
+		Adapter:     fetchErrFactory(errors.New("network error")),
+		RiverClient: nil,
+	}
+	_ = w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	})
+
+	// sync.failed event must exist with the correct dedup_key.
+	var count int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.failed").Scan(ctx, &count); err != nil {
+		t.Fatalf("count failed events: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 sync.failed event, got %d", count)
+	}
+}
+
+func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	notify.SetRiverClient(nil)
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	jobID := uuid.NewString()
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, dispatch_complete, created_at)
+		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', true, now())`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, 'k', 't', '{}'::jsonb, 'completed', '{}'::jsonb, '[]'::jsonb, now())`,
+		uuid.NewString(), jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+
+	// Insert two sync_changes rows: one added, one removed.
+	egID := insertTestExternalGame(t, userID, "steam", "999", "Old Game", "pc-windows")
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO sync_changes (id, job_id, user_id, change_type, title, created_at)
+		 VALUES (?, ?, ?, 'added', 'Hades', now())`,
+		uuid.NewString(), jobID, userID,
+	); err != nil {
+		t.Fatalf("insert sync_change added: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+		 VALUES (?, ?, ?, ?, 'removed', 'Old Game', now())`,
+		uuid.NewString(), jobID, userID, egID,
+	); err != nil {
+		t.Fatalf("insert sync_change removed: %v", err)
+	}
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+
+	// sync.diff event must have been emitted.
+	var diffCount int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.diff").Scan(ctx, &diffCount); err != nil {
+		t.Fatalf("count diff events: %v", err)
+	}
+	if diffCount != 1 {
+		t.Fatalf("expected 1 sync.diff event, got %d", diffCount)
+	}
+
+	// Payload must mention both game titles.
+	var payloadText string
+	if err := testDB.NewRaw(`SELECT payload::text FROM events WHERE dedup_key = ?`, jobID+":sync.diff").Scan(ctx, &payloadText); err != nil {
+		t.Fatalf("scan diff payload: %v", err)
+	}
+	if !strings.Contains(payloadText, "Hades") {
+		t.Fatalf("expected diff payload to contain 'Hades', got: %s", payloadText)
+	}
+	if !strings.Contains(payloadText, "Old Game") {
+		t.Fatalf("expected diff payload to contain 'Old Game', got: %s", payloadText)
+	}
+}
+
+func TestNoSyncDiffWhenNoChanges(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	notify.SetRiverClient(nil)
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	jobID := uuid.NewString()
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, dispatch_complete, created_at)
+		 VALUES (?, ?, 'sync', 'steam', 'processing', 'low', true, now())`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, 'k', 't', '{}'::jsonb, 'completed', '{}'::jsonb, '[]'::jsonb, now())`,
+		uuid.NewString(), jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+	// No sync_changes rows inserted.
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+
+	// No sync.diff event should have been emitted.
+	var diffCount int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.diff").Scan(ctx, &diffCount); err != nil {
+		t.Fatalf("count diff events: %v", err)
+	}
+	if diffCount != 0 {
+		t.Fatalf("expected no sync.diff event when no changes, got %d", diffCount)
+	}
+}
