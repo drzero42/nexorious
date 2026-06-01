@@ -229,3 +229,80 @@ func TestLogoutServerError(t *testing.T) {
 		t.Fatal("expected error on 500 logout")
 	}
 }
+
+func TestListAPIKeys(t *testing.T) {
+	var gotAuth string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[{"id":"k1","name":"laptop","scopes":"write","last_used_at":null,"created_at":"2026-01-01T00:00:00Z","expires_at":null}]`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	keys, err := New(srv.URL).ListAPIKeys("nxr_secret")
+	if err != nil {
+		t.Fatalf("ListAPIKeys: %v", err)
+	}
+	if gotAuth != "Bearer nxr_secret" {
+		t.Fatalf("auth = %q, want Bearer nxr_secret", gotAuth)
+	}
+	if len(keys) != 1 || keys[0].ID != "k1" || keys[0].Name != "laptop" {
+		t.Fatalf("keys = %+v, want one key k1/laptop", keys)
+	}
+	if keys[0].LastUsedAt != nil {
+		t.Fatalf("LastUsedAt = %v, want nil", keys[0].LastUsedAt)
+	}
+}
+
+func TestCreateAPIKeyWithBearer(t *testing.T) {
+	var gotAuth string
+	var gotBody map[string]string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"k2","name":"ci","scopes":"read","key":"nxr_rawkey","created_at":"2026-01-01T00:00:00Z","expires_at":null}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	key, err := New(srv.URL).CreateAPIKeyWithBearer("nxr_secret", "ci", "read", nil)
+	if err != nil {
+		t.Fatalf("CreateAPIKeyWithBearer: %v", err)
+	}
+	if gotAuth != "Bearer nxr_secret" {
+		t.Fatalf("auth = %q, want Bearer nxr_secret", gotAuth)
+	}
+	if _, ok := gotBody["expires_at"]; ok {
+		t.Fatalf("expires_at should be omitted when nil, got body %+v", gotBody)
+	}
+	if gotBody["name"] != "ci" || gotBody["scopes"] != "read" {
+		t.Fatalf("body = %+v, want name=ci scopes=read", gotBody)
+	}
+	if key.Key != "nxr_rawkey" || key.ID != "k2" {
+		t.Fatalf("key = %+v, want raw key nxr_rawkey id k2", key)
+	}
+}
+
+func TestCreateAPIKeyWithBearerSendsExpiry(t *testing.T) {
+	var gotBody map[string]string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/api-keys", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"k3","name":"temp","scopes":"write","key":"nxr_x","created_at":"2026-01-01T00:00:00Z","expires_at":"2027-01-01T00:00:00Z"}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	exp := "2027-01-01T00:00:00Z"
+	if _, err := New(srv.URL).CreateAPIKeyWithBearer("nxr_secret", "temp", "write", &exp); err != nil {
+		t.Fatalf("CreateAPIKeyWithBearer: %v", err)
+	}
+	if gotBody["expires_at"] != exp {
+		t.Fatalf("expires_at = %q, want %q", gotBody["expires_at"], exp)
+	}
+}

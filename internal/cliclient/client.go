@@ -116,6 +116,80 @@ func (c *Client) CreateAPIKey(sessionID, name string) (string, string, error) {
 	return out.Key, out.ID, nil
 }
 
+// APIKey describes one API key as returned by the /api/auth/api-keys endpoints.
+// Key is only populated by CreateAPIKeyWithBearer (the raw value is shown once at
+// creation); list responses never include it.
+type APIKey struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Scopes     string     `json:"scopes"`
+	Key        string     `json:"key,omitempty"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+}
+
+// ListAPIKeys returns the caller's non-revoked API keys, authenticating with the
+// key itself as a Bearer token.
+func (c *Client) ListAPIKeys(key string) ([]APIKey, error) {
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/auth/api-keys", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build list keys request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list keys request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, httpError(resp)
+	}
+	var out []APIKey
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode list keys response: %w", err)
+	}
+	return out, nil
+}
+
+// CreateAPIKeyWithBearer mints a key authenticating with an existing key as a
+// Bearer token (used by `api-key generate`). When expiresAt is non-nil it is sent
+// as the request's expires_at (the server validates the RFC3339 format). The
+// returned APIKey includes the raw Key, shown exactly once.
+func (c *Client) CreateAPIKeyWithBearer(key, name, scopes string, expiresAt *string) (APIKey, error) {
+	body := map[string]string{"name": name, "scopes": scopes}
+	if expiresAt != nil {
+		body["expires_at"] = *expiresAt
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return APIKey{}, fmt.Errorf("marshal create key: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/auth/api-keys", bytes.NewReader(payload))
+	if err != nil {
+		return APIKey{}, fmt.Errorf("build create key request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key)
+
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return APIKey{}, fmt.Errorf("create key request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return APIKey{}, httpError(resp)
+	}
+	var out APIKey
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return APIKey{}, fmt.Errorf("decode create key response: %w", err)
+	}
+	return out, nil
+}
+
 // revoke issues DELETE /api/auth/api-keys/:id with caller-supplied auth.
 func (c *Client) revoke(keyID string, auth func(*http.Request)) error {
 	req, err := http.NewRequest(http.MethodDelete, c.baseURL+"/api/auth/api-keys/"+keyID, nil)
