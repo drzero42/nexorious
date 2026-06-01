@@ -23,6 +23,7 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/filter"
+	"github.com/drzero42/nexorious/internal/usergame"
 )
 
 // UserGamesHandler handles /api/user-games endpoints.
@@ -440,6 +441,9 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		if _, err := h.db.NewInsert().Model(&plats).Exec(ctx); err != nil {
 			slog.Error("user_games: failed to insert platforms on create", "err", err, "user_game_id", ug.ID)
 			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		}
+		if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, ug.ID); err != nil {
+			slog.Error("user_games: auto-promote play_status on create", "err", err, "user_game_id", ug.ID)
 		}
 	}
 
@@ -996,6 +1000,9 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
+	if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, userGameID); err != nil {
+		slog.Error("user_games: auto-promote play_status on create platform", "err", err, "user_game_id", userGameID)
+	}
 	if err := h.db.NewSelect().Model(plat).
 		Where("id = ?", plat.ID).
 		Relation("PlatformRecord").
@@ -1093,6 +1100,9 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "platform/storefront combination already exists"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
+	}
+	if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, userGameID); err != nil {
+		slog.Error("user_games: auto-promote play_status on update platform", "err", err, "user_game_id", userGameID)
 	}
 	if err := h.db.NewSelect().Model(&plat).
 		Where("id = ?", plat.ID).
