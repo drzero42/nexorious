@@ -601,6 +601,89 @@ func TestHandleActiveJob_FallbackToCompleted(t *testing.T) {
 	}
 }
 
+// ─── TestHandleJobTypeStatus ──────────────────────────────────────────────────
+
+func TestHandleJobTypeStatus_NoJobs(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	_, token := setupTagUser(t, testDB, e, "jobs-status-none")
+
+	rec := getAuth(t, e, "/api/jobs/status/import", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["is_active"].(bool) {
+		t.Fatal("expected is_active=false")
+	}
+	if resp["active_job_id"] != nil {
+		t.Fatalf("expected active_job_id=null, got %v", resp["active_job_id"])
+	}
+	if resp["last_completed_job_id"] != nil {
+		t.Fatalf("expected last_completed_job_id=null, got %v", resp["last_completed_job_id"])
+	}
+}
+
+func TestHandleJobTypeStatus_ActiveJob(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-status-active")
+
+	insertJob(t, testDB, "job-status-active", userID, "import", "nexorious", "processing")
+
+	rec := getAuth(t, e, "/api/jobs/status/import", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !resp["is_active"].(bool) {
+		t.Fatal("expected is_active=true")
+	}
+	if resp["active_job_id"] != "job-status-active" {
+		t.Fatalf("expected active_job_id=job-status-active, got %v", resp["active_job_id"])
+	}
+}
+
+func TestHandleJobTypeStatus_LastCompleted(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-status-completed")
+
+	// Completed job with an explicit completed_at; no active job of this type.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at, completed_at)
+		 VALUES ('job-status-done', ?, 'export', 'nexorious', 'completed', 'high', now(), now())`,
+		userID,
+	)
+	if err != nil {
+		t.Fatalf("insert completed job: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/jobs/status/export", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["is_active"].(bool) {
+		t.Fatal("expected is_active=false")
+	}
+	if resp["last_completed_job_id"] != "job-status-done" {
+		t.Fatalf("expected last_completed_job_id=job-status-done, got %v", resp["last_completed_job_id"])
+	}
+	if resp["last_completed_at"] == nil {
+		t.Fatal("expected last_completed_at to be set")
+	}
+}
+
 // ─── TestHandleRecentJobs ─────────────────────────────────────────────────────
 
 func TestHandleRecentJobs_Empty(t *testing.T) {

@@ -305,6 +305,57 @@ func (h *JobsHandler) HandleActiveJob(c *echo.Context) error {
 	return c.JSON(http.StatusOK, toJobResponse(&job, progress))
 }
 
+// HandleJobTypeStatus handles GET /api/jobs/status/:job_type.
+// Lightweight status for any job type: the current active job (if any) plus the
+// most recent terminal job, so the UI can poll continuously and detect
+// completion via the active_job_id non-null → null transition.
+func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	jobType := c.Param("job_type")
+	ctx := context.Background()
+
+	var activeJobID *string
+	var activeID string
+	err := h.db.NewRaw(
+		`SELECT id FROM jobs WHERE user_id = ? AND job_type = ? AND status IN ('pending', 'processing') ORDER BY created_at DESC LIMIT 1`,
+		userID, jobType,
+	).Scan(ctx, &activeID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job status")
+	}
+	if err == nil {
+		activeJobID = &activeID
+	}
+
+	var lastCompletedJobID *string
+	var lastCompletedAt *time.Time
+	var last struct {
+		ID          string     `bun:"id"`
+		CompletedAt *time.Time `bun:"completed_at"`
+	}
+	err = h.db.NewRaw(
+		`SELECT id, completed_at FROM jobs WHERE user_id = ? AND job_type = ? AND status IN ('completed', 'failed', 'cancelled') ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 1`,
+		userID, jobType,
+	).Scan(ctx, &last)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get job status")
+	}
+	if err == nil {
+		lastCompletedJobID = &last.ID
+		lastCompletedAt = last.CompletedAt
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"is_active":             activeJobID != nil,
+		"active_job_id":         activeJobID,
+		"last_completed_job_id": lastCompletedJobID,
+		"last_completed_at":     lastCompletedAt,
+	})
+}
+
 // syncChangeItem is a summary of a sync_changes row for the recent jobs endpoint.
 type syncChangeItem struct {
 	Title     string  `bun:"title"      json:"title"`
