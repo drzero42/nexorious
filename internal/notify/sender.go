@@ -22,6 +22,7 @@ type ShoutrrrSender struct{}
 func NewShoutrrrSender() *ShoutrrrSender { return &ShoutrrrSender{} }
 
 // Send delivers body (with title param) to the given Shoutrrr URL.
+// ctx is accepted for interface compatibility; shoutrrr v0.8.0 has no context support.
 func (s *ShoutrrrSender) Send(_ context.Context, url, title, body string) error {
 	sender, err := shoutrrr.CreateSender(url)
 	if err != nil {
