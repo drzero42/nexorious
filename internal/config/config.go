@@ -103,6 +103,8 @@ type Config struct {
 	// Rows older than this are deleted by the nightly CleanupSyncChangesWorker.
 	SyncHistoryRetentionDays int `env:"SYNC_HISTORY_RETENTION_DAYS" envDefault:"90"`
 
+	NotifyEventsRetentionDays int `env:"NOTIFY_EVENTS_RETENTION_DAYS" envDefault:"90"`
+
 	// -------------------------------------------------------------------------
 	// Rate limiter
 	// -------------------------------------------------------------------------
