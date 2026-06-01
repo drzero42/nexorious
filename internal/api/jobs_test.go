@@ -684,6 +684,31 @@ func TestHandleJobTypeStatus_LastCompleted(t *testing.T) {
 	}
 }
 
+func TestHandleJobTypeStatus_ScopedToUser(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	_, tokenA := setupTagUser(t, testDB, e, "jobs-status-user-a")
+	userB, _ := setupTagUser(t, testDB, e, "jobs-status-user-b")
+
+	// User B has an active import job; user A has none.
+	insertJob(t, testDB, "job-other-user", userB, "import", "nexorious", "processing")
+
+	rec := getAuth(t, e, "/api/jobs/status/import", tokenA)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["is_active"].(bool) {
+		t.Fatal("expected is_active=false — must not see another user's job")
+	}
+	if resp["active_job_id"] != nil {
+		t.Fatalf("expected active_job_id=null, got %v", resp["active_job_id"])
+	}
+}
+
 // ─── TestHandleRecentJobs ─────────────────────────────────────────────────────
 
 func TestHandleRecentJobs_Empty(t *testing.T) {
