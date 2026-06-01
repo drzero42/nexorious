@@ -23,6 +23,7 @@ import (
 	"github.com/drzero42/nexorious/internal/crypto"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	migrate "github.com/drzero42/nexorious/internal/migrate"
+	"github.com/drzero42/nexorious/internal/notify"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/services/igdb"
@@ -326,6 +327,20 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 		arh := NewAdminResetHandler(db)
 		adminGroup.POST("/api/auth/admin/reset", arh.HandleReset)
+
+		// Notifications routes (all auth-protected)
+		nh := NewNotificationsHandler(db, encrypter, notify.NewShoutrrrSender())
+		notificationsGroup := e.Group("/api/notifications", auth.AuthMiddleware(db))
+		// static segments before parameterized (Echo v5 does not auto-sort)
+		notificationsGroup.GET("/channels", nh.HandleListChannels)
+		notificationsGroup.POST("/channels", nh.HandleCreateChannel)
+		notificationsGroup.POST("/channels/:id/test", nh.HandleTestChannel)
+		notificationsGroup.PATCH("/channels/:id", nh.HandleUpdateChannel)
+		notificationsGroup.DELETE("/channels/:id", nh.HandleDeleteChannel)
+		notificationsGroup.GET("/event-types", nh.HandleListEventTypes)
+		notificationsGroup.GET("/subscriptions", nh.HandleListSubscriptions)
+		notificationsGroup.PUT("/subscriptions", nh.HandlePutSubscriptions)
+		notificationsGroup.POST("/subscriptions/reset", nh.HandleResetSubscriptions)
 
 		// Sync routes (all auth-protected)
 		steamSvc := steamsvc.NewClient()

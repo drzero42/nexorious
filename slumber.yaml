@@ -422,6 +422,68 @@ requests:
         method: GET
         url: "{{base_url}}/api/migrate/progress"
 
+  notifications:
+    name: Notifications
+    requests:
+      list_channels:
+        name: List Channels
+        method: GET
+        url: "{{base_url}}/api/notifications/channels"
+        $ref: "#/.authenticated"
+      create_channel:
+        name: Create Channel
+        method: POST
+        url: "{{base_url}}/api/notifications/channels"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            name: "My phone"
+            url: "ntfy://ntfy.sh/my-topic"
+      update_channel:
+        name: Update Channel
+        method: PATCH
+        url: "{{base_url}}/api/notifications/channels/REPLACE_ID"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            name: "Renamed"
+      delete_channel:
+        name: Delete Channel
+        method: DELETE
+        url: "{{base_url}}/api/notifications/channels/REPLACE_ID"
+        $ref: "#/.authenticated"
+      test_channel:
+        name: Test Channel
+        method: POST
+        url: "{{base_url}}/api/notifications/channels/REPLACE_ID/test"
+        $ref: "#/.authenticated"
+      list_event_types:
+        name: List Event Types
+        method: GET
+        url: "{{base_url}}/api/notifications/event-types"
+        $ref: "#/.authenticated"
+      list_subscriptions:
+        name: List Subscriptions
+        method: GET
+        url: "{{base_url}}/api/notifications/subscriptions"
+        $ref: "#/.authenticated"
+      put_subscriptions:
+        name: Replace Subscriptions
+        method: PUT
+        url: "{{base_url}}/api/notifications/subscriptions"
+        $ref: "#/.authenticated"
+        body:
+          type: json
+          data:
+            event_types: ["sync.failed", "import.failed"]
+      reset_subscriptions:
+        name: Reset Subscriptions
+        method: POST
+        url: "{{base_url}}/api/notifications/subscriptions/reset"
+        $ref: "#/.authenticated"
+
   platforms:
     name: Platforms
     requests:
