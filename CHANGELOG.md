@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/drzero42/nexorious/compare/v0.3.1...v0.4.0) (2026-06-01)
+
+
+### Features
+
+* auto-promote play_status to in_progress when hours added ([#725](https://github.com/drzero42/nexorious/issues/725)) ([768db37](https://github.com/drzero42/nexorious/commit/768db37f3d89677db001940bab197327936c387d))
+
 ## [0.3.1](https://github.com/drzero42/nexorious/compare/v0.3.0...v0.3.1) (2026-06-01)
 
 
