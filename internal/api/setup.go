@@ -17,6 +17,7 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/migrate"
+	"github.com/drzero42/nexorious/internal/notify"
 )
 
 // SetupHandler handles the one-time admin setup endpoint.
@@ -82,6 +83,10 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 
 	// Always clear needsSetup — the user row has committed.
 	h.migrator.SetNeedsSetup(false)
+
+	if err := notify.SeedDefaultSubscriptions(context.Background(), h.db, userID); err != nil {
+		slog.Error("setup: seed notification subscriptions", "user_id", userID, "err", err)
+	}
 
 	sessionID, sessionErr := issueSession(h.db, h.cfg.SessionExpireDays, userID,
 		c.Request().Header.Get("User-Agent"),
