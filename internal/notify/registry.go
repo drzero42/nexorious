@@ -59,7 +59,11 @@ var metaByType = func() map[string]EventTypeMeta {
 }()
 
 // Registry returns all event types in declaration order.
-func Registry() []EventTypeMeta { return registry }
+func Registry() []EventTypeMeta {
+	out := make([]EventTypeMeta, len(registry))
+	copy(out, registry)
+	return out
+}
 
 // Meta returns the metadata for a type and whether it is known.
 func Meta(eventType string) (EventTypeMeta, bool) {
