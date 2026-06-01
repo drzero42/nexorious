@@ -28,4 +28,27 @@ describe('useJobCompletionEffect', () => {
     rerender({ id: null });
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
+
+  it('does not fire when the id stays constant across rerenders', () => {
+    const onComplete = vi.fn();
+    const { rerender } = renderHook(({ id }) => useJobCompletionEffect(id, onComplete), {
+      initialProps: { id: 'job-1' as string | null },
+    });
+    rerender({ id: 'job-1' });
+    rerender({ id: 'job-1' });
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('re-arms: fires again for a new job after the first completion', () => {
+    const onComplete = vi.fn();
+    const { rerender } = renderHook(({ id }) => useJobCompletionEffect(id, onComplete), {
+      initialProps: { id: 'job-1' as string | null },
+    });
+    rerender({ id: null });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    rerender({ id: 'job-2' });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    rerender({ id: null });
+    expect(onComplete).toHaveBeenCalledTimes(2);
+  });
 });
