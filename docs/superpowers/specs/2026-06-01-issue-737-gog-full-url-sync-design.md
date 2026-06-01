@@ -57,8 +57,7 @@ package.
 2. Parse with `net/url`. If the parsed result has a **non-empty host** (i.e. it
    is a real URL, e.g. starts with `https://`):
    - The host must equal `embed.gog.com` (compared case-insensitively).
-   - The path must be `/on_login_success` (a single trailing slash is
-     tolerated).
+   - The path must be exactly `/on_login_success`.
    - If host or path do not match → return an error → handler responds `400`
      with a human-readable message:
      *"That doesn't look like a GOG login URL — paste the URL you were
@@ -128,7 +127,8 @@ messages surface identically — durably inline, plus a toast.
 - URL with reordered / extra query params → still extracts `code`
 - URL whose host is not `embed.gog.com` → error
 - URL with correct host but no `code` param → error
-- path with a trailing slash (`/on_login_success/`) → accepted
+- path with a trailing slash (`/on_login_success/`) → error (path must match
+  exactly)
 - surrounding whitespace trimmed (both bare code and URL forms)
 
 **Go handler test — `internal/api/sync_test.go`**: extend the existing
