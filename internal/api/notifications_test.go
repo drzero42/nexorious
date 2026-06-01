@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -465,5 +466,210 @@ func assertStringSetEqual(t *testing.T, got, want []string) {
 		if g[i] != w[i] {
 			t.Fatalf("set mismatch: got %v want %v", got, want)
 		}
+	}
+}
+
+// ─── TestUpdateChannelOwnershipEnforced ───────────────────────────────────────
+
+func TestUpdateChannelOwnershipEnforced(t *testing.T) {
+	truncateAllTables(t)
+	enc := newNotifTestEncrypter(t)
+	h := api.NewNotificationsHandler(testDB, enc, notify.NewRecorderSender())
+
+	userA := "u-notif-upd-owner-a"
+	userB := "u-notif-upd-owner-b"
+	insertAuthTestUser(t, testDB, userA, "notif-upd-owner-a", "pass123", true, false)
+	insertAuthTestUser(t, testDB, userB, "notif-upd-owner-b", "pass123", true, false)
+
+	// User A creates a channel.
+	cc, ccRec := notifCtx(t, http.MethodPost, "/api/notifications/channels",
+		map[string]any{"name": "A original name", "url": "slack://atoken"}, userA, false, "")
+	if err := h.HandleCreateChannel(cc); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(ccRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	channelID, _ := created["id"].(string)
+	if channelID == "" {
+		t.Fatal("expected non-empty channel id")
+	}
+
+	// User B tries to rename A's channel → 404.
+	newName := "B renamed it"
+	cUpd, _ := notifCtx(t, http.MethodPatch, "/api/notifications/channels/"+channelID,
+		map[string]any{"name": newName}, userB, false, channelID)
+	err := h.HandleUpdateChannel(cUpd)
+	assertHTTPError(t, err, http.StatusNotFound)
+
+	// A's channel name must be unchanged in the DB.
+	var storedName string
+	if err := testDB.QueryRowContext(context.Background(),
+		`SELECT name FROM notification_channels WHERE id = ?`, channelID,
+	).Scan(&storedName); err != nil {
+		t.Fatalf("query name: %v", err)
+	}
+	if storedName != "A original name" {
+		t.Fatalf("channel name must be unchanged, got %q", storedName)
+	}
+}
+
+// ─── TestTestChannelOwnershipEnforced ─────────────────────────────────────────
+
+func TestTestChannelOwnershipEnforced(t *testing.T) {
+	truncateAllTables(t)
+	enc := newNotifTestEncrypter(t)
+	rec := notify.NewRecorderSender()
+	h := api.NewNotificationsHandler(testDB, enc, rec)
+
+	userA := "u-notif-tst-owner-a"
+	userB := "u-notif-tst-owner-b"
+	insertAuthTestUser(t, testDB, userA, "notif-tst-owner-a", "pass123", true, false)
+	insertAuthTestUser(t, testDB, userB, "notif-tst-owner-b", "pass123", true, false)
+
+	// User A creates a channel.
+	cc, ccRec := notifCtx(t, http.MethodPost, "/api/notifications/channels",
+		map[string]any{"name": "A's chan", "url": "slack://atoken"}, userA, false, "")
+	if err := h.HandleCreateChannel(cc); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(ccRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	channelID, _ := created["id"].(string)
+	if channelID == "" {
+		t.Fatal("expected non-empty channel id")
+	}
+
+	// User B tries to test A's channel → 404.
+	cTest, _ := notifCtx(t, http.MethodPost, "/api/notifications/channels/"+channelID+"/test",
+		nil, userB, false, channelID)
+	err := h.HandleTestChannel(cTest)
+	assertHTTPError(t, err, http.StatusNotFound)
+
+	// No sends must have been recorded.
+	if got := len(rec.Sent()); got != 0 {
+		t.Fatalf("expected 0 sends, got %d", got)
+	}
+}
+
+// ─── TestPutSubscriptionsRejectsUnknownType ───────────────────────────────────
+
+func TestPutSubscriptionsRejectsUnknownType(t *testing.T) {
+	truncateAllTables(t)
+	h := api.NewNotificationsHandler(testDB, newNotifTestEncrypter(t), notify.NewRecorderSender())
+
+	userID := "u-notif-unk-type"
+	insertAuthTestUser(t, testDB, userID, "notif-unk-type", "pass123", true, false)
+
+	c, _ := notifCtx(t, http.MethodPut, "/api/notifications/subscriptions",
+		map[string]any{"event_types": []string{"totally.bogus.type"}}, userID, false, "")
+	err := h.HandlePutSubscriptions(c)
+	assertHTTPError(t, err, http.StatusBadRequest)
+
+	// No subscription rows must have been written for this user.
+	var count int
+	if err := testDB.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM notification_subscriptions WHERE user_id = ?`, userID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count subscriptions: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 subscription rows, got %d", count)
+	}
+}
+
+// ─── TestTestChannelReturns502OnSendError ─────────────────────────────────────
+
+func TestTestChannelReturns502OnSendError(t *testing.T) {
+	truncateAllTables(t)
+	enc := newNotifTestEncrypter(t)
+	failRec := notify.NewRecorderSender()
+	failRec.Err = errors.New("smtp down")
+	h := api.NewNotificationsHandler(testDB, enc, failRec)
+
+	userID := "u-notif-502"
+	insertAuthTestUser(t, testDB, userID, "notif-502", "pass123", true, false)
+
+	// Create a channel for the user.
+	cc, ccRec := notifCtx(t, http.MethodPost, "/api/notifications/channels",
+		map[string]any{"name": "Failing chan", "url": "slack://failtoken"}, userID, false, "")
+	if err := h.HandleCreateChannel(cc); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(ccRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	channelID, _ := created["id"].(string)
+	if channelID == "" {
+		t.Fatal("expected non-empty channel id")
+	}
+
+	// Test the channel → sender fails → expect 502.
+	cTest, _ := notifCtx(t, http.MethodPost, "/api/notifications/channels/"+channelID+"/test",
+		nil, userID, false, channelID)
+	err := h.HandleTestChannel(cTest)
+	assertHTTPError(t, err, http.StatusBadGateway)
+}
+
+// ─── TestListChannelsIsolatedPerUser ──────────────────────────────────────────
+
+func TestListChannelsIsolatedPerUser(t *testing.T) {
+	truncateAllTables(t)
+	enc := newNotifTestEncrypter(t)
+	h := api.NewNotificationsHandler(testDB, enc, notify.NewRecorderSender())
+
+	userA := "u-notif-iso-a"
+	userB := "u-notif-iso-b"
+	insertAuthTestUser(t, testDB, userA, "notif-iso-a", "pass123", true, false)
+	insertAuthTestUser(t, testDB, userB, "notif-iso-b", "pass123", true, false)
+
+	// User A creates 2 channels.
+	for _, ch := range []map[string]any{
+		{"name": "Chan One", "url": "slack://token1"},
+		{"name": "Chan Two", "url": "slack://token2"},
+	} {
+		cc, ccRec := notifCtx(t, http.MethodPost, "/api/notifications/channels", ch, userA, false, "")
+		if err := h.HandleCreateChannel(cc); err != nil {
+			t.Fatalf("create channel %q: %v", ch["name"], err)
+		}
+		if ccRec.Code != http.StatusCreated {
+			t.Fatalf("create channel %q: expected 201, got %d: %s", ch["name"], ccRec.Code, ccRec.Body)
+		}
+	}
+
+	// User B (no channels) GETs /channels → empty list.
+	cB, recB := notifCtx(t, http.MethodGet, "/api/notifications/channels", nil, userB, false, "")
+	if err := h.HandleListChannels(cB); err != nil {
+		t.Fatalf("list (user B): %v", err)
+	}
+	if recB.Code != http.StatusOK {
+		t.Fatalf("list (user B): expected 200, got %d: %s", recB.Code, recB.Body)
+	}
+	var itemsB []map[string]any
+	if err := json.Unmarshal(recB.Body.Bytes(), &itemsB); err != nil {
+		t.Fatalf("unmarshal (user B): %v", err)
+	}
+	if len(itemsB) != 0 {
+		t.Fatalf("user B must see 0 channels, got %d", len(itemsB))
+	}
+
+	// User A GETs /channels → 2 items.
+	cA, recA := notifCtx(t, http.MethodGet, "/api/notifications/channels", nil, userA, false, "")
+	if err := h.HandleListChannels(cA); err != nil {
+		t.Fatalf("list (user A): %v", err)
+	}
+	if recA.Code != http.StatusOK {
+		t.Fatalf("list (user A): expected 200, got %d: %s", recA.Code, recA.Body)
+	}
+	var itemsA []map[string]any
+	if err := json.Unmarshal(recA.Body.Bytes(), &itemsA); err != nil {
+		t.Fatalf("unmarshal (user A): %v", err)
+	}
+	if len(itemsA) != 2 {
+		t.Fatalf("user A must see 2 channels, got %d", len(itemsA))
 	}
 }
