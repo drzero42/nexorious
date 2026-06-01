@@ -177,8 +177,12 @@ in
         LEGENDARY_WORK_DIR = "/var/lib/nexorious/legendary";
       }
       // optionalAttrs cfg.database.createLocally {
+        # bun's pgdriver uses the `host` value verbatim as the socket address (it
+        # does not append `/.s.PGSQL.<port>` like pgx does), so emit the full socket
+        # file path. bun connects to the socket directly; pgx strips the trailing
+        # `/.s.PGSQL.<port>` and re-appends it, so both drivers agree. See issue #720.
         DATABASE_URL =
-          "postgresql://nexorious@/${cfg.database.name}?host=/run/postgresql&sslmode=disable";
+          "postgresql://nexorious@/${cfg.database.name}?host=/run/postgresql/.s.PGSQL.${toString config.services.postgresql.settings.port}&sslmode=disable";
       }
       // cfg.settings;
 
