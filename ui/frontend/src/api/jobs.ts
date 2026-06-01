@@ -382,15 +382,6 @@ export async function getJobItems(
 }
 
 /**
- * Get the currently active job for a specific job type.
- * Returns null if no active job exists.
- */
-export async function getActiveJob(jobType: JobType): Promise<Job | null> {
-  const response = await api.get<JobApiResponse | null>(`/jobs/active/${jobType}`);
-  return response ? transformJob(response) : null;
-}
-
-/**
  * Get total count of items needing review across all jobs.
  * Used for nav badge display.
  */
