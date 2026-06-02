@@ -126,6 +126,11 @@ The `nexorious` binary uses [cobra](https://github.com/spf13/cobra) subcommands:
 | `migrate`        | Apply all pending DB migrations and exit                       |
 | `migrate status` | Print pending migrations without applying them                 |
 | `version`        | Print build version and commit SHA                             |
+| `login`          | Authenticate to a server and store an API key locally          |
+| `logout`         | Revoke the stored API key and clear the local profile          |
+| `whoami`         | Print the account behind the stored API key                    |
+| `api-key`        | Manage API keys (generate, list, revoke)                       |
+| `reset-password` | Reset a user's password directly in the database (offline)     |
 
 Running `./nexorious` with no subcommand prints the help overview and exits non-zero; `serve` must be explicit to start the server.
 
