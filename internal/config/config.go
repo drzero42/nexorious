@@ -100,7 +100,7 @@ type Config struct {
 	StaleJobThreshold string `env:"STALE_JOB_THRESHOLD" envDefault:"4h"`
 
 	// SyncHistoryRetentionDays is the number of days changes rows are kept.
-	// Rows older than this are deleted by the nightly CleanupSyncChangesWorker.
+	// Rows older than this are deleted by the nightly cleanup worker (CleanupSyncChangesWorker).
 	SyncHistoryRetentionDays int `env:"SYNC_HISTORY_RETENTION_DAYS" envDefault:"90"`
 
 	NotifyEventsRetentionDays int `env:"NOTIFY_EVENTS_RETENTION_DAYS" envDefault:"90"`
