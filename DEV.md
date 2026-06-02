@@ -205,27 +205,4 @@ docker run --rm nexorious:local version
 
 All configuration is via environment variables (see `internal/config/`). The `ENTRYPOINT` is the `nexorious` binary, so the `CMD` (default `serve`) is the cobra subcommand — pass `migrate`, `migrate status`, `version`, etc. as arguments.
 
-## API Client (Slumber)
-
-The project includes a [Slumber](https://github.com/LucasPickering/slumber) collection for testing the API from the terminal. Slumber is included in the devenv shell — no separate install needed.
-
-**Starting Slumber:**
-
-```bash
-slumber
-```
-
-**First-time setup (fresh database):**
-
-Run these requests in order from the `bootstrap/` folder:
-
-1. `bootstrap/run_migrations` — applies all pending database migrations
-2. `bootstrap/migration_status` — check until status shows `ready` (run a few times if needed)
-3. `bootstrap/create_admin` — creates the admin user (`admin` / `abcd1234`)
-
-After that, any request requiring authentication will automatically log in on first use — no manual token handling.
-
-**Day-to-day use:**
-
-Open `slumber`, select the `local` profile, and run any request. Auth-protected routes auto-authenticate when needed using the cached credentials from the `local` profile.
 

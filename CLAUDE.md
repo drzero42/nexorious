@@ -22,7 +22,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Dead-code check (frontend)| `npm run knip`   (from `ui/frontend/`)                   |
 | Run frontend tests       | `npm run test`   (from `ui/frontend/`)                   |
 | Lint Go                  | `golangci-lint run`                                      |
-| Run API client           | `slumber`                                                |
 
 ### Environment Validation
 ```bash
@@ -239,14 +238,6 @@ The `nix/` directory contains the Nix package and NixOS module. Two hashes must 
   ```
 
 The `version` field in `flake.nix` is managed automatically by release-please (same as `Chart.yaml`).
-
-### Slumber Collection Maintenance
-When adding a new API route, always add a corresponding request to `slumber.yaml`:
-- Add it to the matching domain folder (e.g. a new `GET /api/games` goes in a `games/` folder)
-- If the route requires auth, add the `authentication: type: bearer` block with `"{{response('bootstrap.create_api_key', trigger='no_history') | jsonpath('$.key')}}"`
-- If it's a new domain with no existing folder, add new domain folders in alphabetical order; `bootstrap/` always stays first as the workflow anchor
-- Use profile variables (`{{base_url}}`) for all URLs — never hardcode `localhost:8000`
-- Run `slumber collection` to verify the collection loads without errors after any change
 
 ## Release Process
 
