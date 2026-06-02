@@ -279,13 +279,17 @@ func TestImportItem_PlatformsSkippedWithoutSeed(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 	insertTestJob(t, testDB, jobID, userID, 1)
 
-	// No platform/storefront seed data — tables are empty.
+	// Use a platform name that is not seeded by the migration and is not inserted
+	// by any other test, so the "skipped because not in the platforms table" path
+	// is exercised regardless of test execution order. (Reference tables are no
+	// longer truncated between tests, so a generic name like "pc" could leak in
+	// from a sibling test that seeds it.)
 	gameData := map[string]any{
 		"igdb_id": int32(66666),
 		"title":   "Unseeded Platform Game",
 		"platforms": []any{
 			map[string]any{
-				"platform_name":    "pc",
+				"platform_name":    "unseeded-platform",
 				"storefront_name":  "steam",
 				"ownership_status": "owned",
 				"is_available":     true,

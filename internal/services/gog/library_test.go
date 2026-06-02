@@ -205,7 +205,7 @@ func TestGetLibrary_MacGameEmitsMacEntry(t *testing.T) {
 	if entries[0].Title != "Mac Game" {
 		t.Errorf("Title: got %q", entries[0].Title)
 	}
-	if len(entries[0].Platforms) == 0 || entries[0].Platforms[0] != "pc-mac" {
+	if len(entries[0].Platforms) == 0 || entries[0].Platforms[0] != "mac" {
 		t.Errorf("Platforms: got %v", entries[0].Platforms)
 	}
 }

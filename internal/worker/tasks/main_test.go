@@ -101,12 +101,17 @@ func TestMain(m *testing.M) {
 }
 
 // truncateAllTables resets all application tables between tests.
+//
+// Reference/seed tables (platforms, storefronts, platform_storefronts) are
+// intentionally excluded — they are populated by migrations and are referenced
+// by foreign keys (e.g. external_game_platforms.platform -> platforms.name), so
+// wiping them would leave the schema unable to satisfy those FKs. This mirrors
+// the convention in internal/api's truncateAllTables.
 func truncateAllTables(t *testing.T) {
 	t.Helper()
 	_, err := testDB.ExecContext(context.Background(), `
 		TRUNCATE TABLE
 			users, user_sessions, games, external_games, external_game_platforms,
-			platforms, storefronts, platform_storefronts,
 			tags, user_games, user_game_tags, user_game_platforms,
 			jobs, job_items, river_job, backup_config,
 			user_sync_configs, rate_limiter_tokens,

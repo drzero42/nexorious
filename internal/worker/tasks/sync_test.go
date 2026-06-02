@@ -318,6 +318,90 @@ func TestDispatchSync_SteamSuccess(t *testing.T) {
 	}
 }
 
+// TestDispatchSync_MacPlatformPersisted is a regression test for #756: a "mac"
+// platform emitted by an adapter must survive end-to-end into
+// external_game_platforms. Previously the raw string "mac" was silently dropped
+// because the code allowlist only recognised "pc-mac".
+func TestDispatchSync_MacPlatformPersisted(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
+		{{ExternalID: "1145360", Title: "Hades", PlaytimeHours: 50, Platforms: []string{"mac"}, OwnershipStatus: "owned"}},
+	}}
+	rc := newTestRiverClient(t)
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var platform string
+	if err := testDB.NewRaw(
+		`SELECT egp.platform FROM external_game_platforms egp
+		 JOIN external_games eg ON eg.id = egp.external_game_id
+		 WHERE eg.user_id = ? AND eg.external_id = '1145360'`,
+		userID,
+	).Scan(ctx, &platform); err != nil {
+		t.Fatalf("expected a platform row for the mac game, got error: %v", err)
+	}
+	if platform != "mac" {
+		t.Errorf("platform: got %q, want %q", platform, "mac")
+	}
+}
+
+// TestExternalGamePlatformsFK verifies the external_game_platforms.platform ->
+// platforms(name) foreign key rejects an unknown platform slug. This guarantee
+// replaces the former code-level PlatformToSlug allowlist.
+func TestExternalGamePlatformsFK(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	egID := uuid.NewString()
+	if _, err := testDB.NewRaw(
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, created_at, updated_at)
+		 VALUES (?, ?, 'steam', '1', 'Test Game', true, false, 'owned', now(), now())`,
+		egID, userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("failed to insert external_game: %v", err)
+	}
+
+	// A canonical slug is accepted.
+	if _, err := testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+		 VALUES (?, ?, 'mac', 0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("expected canonical platform 'mac' to be accepted, got: %v", err)
+	}
+
+	// An unknown raw string (the kind the old allowlist silently dropped) is rejected by the FK.
+	if _, err := testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
+		 VALUES (?, ?, 'pc-mac', 0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx); err == nil {
+		t.Error("expected FK violation inserting unknown platform 'pc-mac', got nil error")
+	}
+}
+
 func TestDispatchSync_SetsSiblingParentID(t *testing.T) {
 	// When two library entries have the same (storefront, title) but different
 	// external_ids, the second row must have parent_id set to the first row's id.

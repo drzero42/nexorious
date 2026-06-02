@@ -64,19 +64,6 @@ type DispatchSyncWorker struct {
 	RiverClient *river.Client[pgx.Tx]
 }
 
-func resolvePlatforms(platforms []string) []string {
-	var resolved []string
-	for _, p := range platforms {
-		if slug, ok := platformresolution.PlatformToSlug(p); ok {
-			resolved = append(resolved, slug)
-		}
-	}
-	if len(resolved) == 0 {
-		resolved = []string{"pc-windows"}
-	}
-	return resolved
-}
-
 func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p DispatchSyncArgs) (egID string, isSkipped bool) {
 	var row struct {
 		ID        string `bun:"id"`
@@ -209,7 +196,14 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		skippedInBatch := 0
 		for _, e := range batch {
 			fetchedIDs[e.ExternalID] = struct{}{}
-			platforms := resolvePlatforms(e.Platforms)
+			// Every external game must have at least one platform; default to PC
+			// (Windows) when the adapter reports none. Platform-slug validity is
+			// enforced by the external_game_platforms -> platforms(name) foreign key,
+			// so adapters must emit canonical platforms.name slugs.
+			platforms := e.Platforms
+			if len(platforms) == 0 {
+				platforms = []string{"pc-windows"}
+			}
 			egID, isSkipped := upsertExternalGame(ctx, w.DB, e, p)
 			if egID == "" {
 				continue

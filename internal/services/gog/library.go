@@ -114,7 +114,7 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 			platforms = append(platforms, "pc-windows")
 		}
 		if p.WorksOn.Mac {
-			platforms = append(platforms, "pc-mac")
+			platforms = append(platforms, "mac")
 		}
 		if p.WorksOn.Linux {
 			platforms = append(platforms, "pc-linux")
