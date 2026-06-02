@@ -76,9 +76,12 @@ After the `GET /health` preflight, branch on the reported `status`:
 
 | `status` | with `--migrate` | without `--migrate` |
 |---|---|---|
-| `ready` | skip migrate step; proceed to admin setup | proceed to admin setup |
-| `needs_migration` / `migration_failed` | `POST /api/migrate/run`, then poll until `ready` | abort: `migrations are pending — pass --migrate or run "nexorious migrate" first` |
+| `ok` / `ready` | skip migrate step; proceed to admin setup | proceed to admin setup |
+| `needs_migration` | `POST /api/migrate/run`, then poll until `ready` | abort: `migrations are pending — pass --migrate or run "nexorious migrate" first` |
+| `migration_failed` | `POST /api/migrate/run` (retry), then poll until `ready` | abort: `migrations previously failed — pass --migrate to retry, or check the server logs` |
+| `migrating` | poll until `ready` (the `run` POST returns 409, which is tolerated) | abort: `migrations are already in progress — wait for them to finish, or pass --migrate to wait for them` |
 | `db_unavailable` | abort: `database is unavailable` | abort: `database is unavailable` |
+| any other | abort: `server is not ready (status: <status>)` | abort: `server is not ready (status: <status>)` |
 
 When migrating:
 1. `POST /api/migrate/run`. Treat `202 {"status":"migration started"}` as
