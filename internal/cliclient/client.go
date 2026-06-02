@@ -382,27 +382,30 @@ func (c *Client) RunMigrations() error {
 type migrationStatusResp struct {
 	State        string `json:"state"`
 	PendingCount int    `json:"pending_count"`
+	Error        string `json:"error"`
 }
 
 // MigrationStatus returns the server's migration state from
 // GET /api/migrate/status ("needs_migration", "migrating", "ready",
-// "migration_failed", or "db_unavailable").
-func (c *Client) MigrationStatus() (string, error) {
+// "migration_failed", or "db_unavailable") along with the server's failure
+// detail (the "error" field, populated only in the "migration_failed" state;
+// empty otherwise).
+func (c *Client) MigrationStatus() (state, detail string, err error) {
 	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/migrate/status", nil)
 	if err != nil {
-		return "", fmt.Errorf("build status request: %w", err)
+		return "", "", fmt.Errorf("build status request: %w", err)
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("status request: %w", err)
+		return "", "", fmt.Errorf("status request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", httpError(resp)
+		return "", "", httpError(resp)
 	}
 	var out migrationStatusResp
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", fmt.Errorf("decode status response: %w", err)
+		return "", "", fmt.Errorf("decode status response: %w", err)
 	}
-	return out.State, nil
+	return out.State, out.Error, nil
 }

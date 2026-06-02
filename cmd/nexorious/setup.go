@@ -129,7 +129,7 @@ func runMigrateAndWait(out io.Writer, client *cliclient.Client) error {
 	}
 	deadline := time.Now().Add(migrateTimeout)
 	for {
-		state, err := client.MigrationStatus()
+		state, detail, err := client.MigrationStatus()
 		if err != nil {
 			return fmt.Errorf("poll migration status: %w", err)
 		}
@@ -138,6 +138,9 @@ func runMigrateAndWait(out io.Writer, client *cliclient.Client) error {
 			fmt.Fprintln(out, "Migrations complete.")
 			return nil
 		case "migration_failed":
+			if detail != "" {
+				return fmt.Errorf("migrations failed: %s", detail)
+			}
 			return fmt.Errorf("migrations failed — check the server logs")
 		}
 		if time.Now().After(deadline) {
@@ -162,14 +165,11 @@ func resolveSetupPassword(in *bufio.Reader, out io.Writer, passwordStdin bool) (
 		}
 		return pw, nil
 	}
+	// Reuse promptSecret (from reset_password.go): hidden entry on a TTY, line
+	// read otherwise. The non-TTY case never reaches here — runSetup rejects a
+	// non-TTY stdin without --password-stdin before calling this.
 	read := func(label string) (string, error) {
-		fmt.Fprint(out, label)
-		b, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(out)
-		if err != nil {
-			return "", fmt.Errorf("read password: %w", err)
-		}
-		return strings.TrimSpace(string(b)), nil
+		return promptSecret(in, out, label)
 	}
 	return confirmInteractivePassword(read)
 }

@@ -427,12 +427,35 @@ func TestMigrationStatusReturnsState(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	state, err := New(srv.URL).MigrationStatus()
+	state, detail, err := New(srv.URL).MigrationStatus()
 	if err != nil {
 		t.Fatalf("MigrationStatus: %v", err)
 	}
 	if state != "ready" {
 		t.Fatalf("state = %q; want ready", state)
+	}
+	if detail != "" {
+		t.Fatalf("detail = %q; want empty when not failed", detail)
+	}
+}
+
+func TestMigrationStatusReturnsFailureDetail(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/migrate/status", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"state": "migration_failed", "pending_count": 1, "error": "migration 003 failed: syntax error",
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	state, detail, err := New(srv.URL).MigrationStatus()
+	if err != nil {
+		t.Fatalf("MigrationStatus: %v", err)
+	}
+	if state != "migration_failed" || detail != "migration 003 failed: syntax error" {
+		t.Fatalf("state=%q detail=%q; want migration_failed + detail", state, detail)
 	}
 }
 
