@@ -139,9 +139,13 @@ interface SyncChangeItemApiResponse {
 
 interface RecentJobDetailApiResponse {
   id: string;
+  job_type: string;
+  source: string;
   status: string;
   created_at: string;
   completed_at: string | null;
+  error_message: string | null;
+  started_at: string | null;
   total_items: number;
   progress: {
     completed: number;
@@ -154,6 +158,7 @@ interface RecentJobDetailApiResponse {
     percent: number;
   };
   added_items: SyncChangeItemApiResponse[];
+  updated_items?: SyncChangeItemApiResponse[];
   removed_items: SyncChangeItemApiResponse[];
   status_changed_items: SyncChangeItemApiResponse[];
   skipped_items?: SyncChangeItemApiResponse[];
@@ -251,14 +256,28 @@ function transformRecentJob(api: RecentJobDetailApiResponse): RecentJobDetail {
   };
   return {
     id: api.id,
+    jobType: api.job_type as JobType,
+    source: api.source as JobSource,
     status: api.status,
     createdAt: api.created_at,
     completedAt: api.completed_at,
+    errorMessage: api.error_message,
     totalItems: api.total_items,
     completedCount: p.completed,
     skippedCount: p.skipped,
     failedCount: p.failed,
+    progress: {
+      pending: p.pending,
+      processing: p.processing,
+      completed: p.completed,
+      pendingReview: p.pending_review,
+      skipped: p.skipped,
+      failed: p.failed,
+      total: p.total,
+      percent: p.percent,
+    },
     addedItems: (api.added_items ?? []).map(transformSyncChangeItem),
+    updatedItems: (api.updated_items ?? []).map(transformSyncChangeItem),
     removedItems: (api.removed_items ?? []).map(transformSyncChangeItem),
     statusChangedItems: (api.status_changed_items ?? []).map(transformSyncChangeItem),
     skippedItems: (api.skipped_items ?? []).map(transformSyncChangeItem),
@@ -413,16 +432,28 @@ export async function retryJobItem(itemId: string): Promise<JobItemDetail> {
   return transformJobItemDetail(response);
 }
 
+export interface RecentJobsFilters {
+  source?: string;
+  jobTypes?: JobType[];
+  daysBack?: number;
+  limit?: number;
+}
+
 /**
- * Get recent completed jobs for a specific source with item details.
+ * Get recent completed/failed jobs with optional filters and per-item change details.
  */
-export async function getRecentJobs(
-  source: string,
-  limit: number = 5,
-): Promise<RecentJobsResponse> {
-  const response = await api.get<RecentJobsApiResponse>(`/jobs/recent/${source}`, {
-    params: { limit },
-  });
+export async function getRecentJobs(filters: RecentJobsFilters = {}): Promise<RecentJobsResponse> {
+  const params: Record<string, string | number> = {
+    limit: filters.limit ?? 5,
+    days_back: filters.daysBack ?? 7,
+  };
+  if (filters.source) {
+    params.source = filters.source;
+  }
+  if (filters.jobTypes && filters.jobTypes.length > 0) {
+    params.job_type = filters.jobTypes.join(',');
+  }
+  const response = await api.get<RecentJobsApiResponse>('/jobs/recent', { params });
   return {
     jobs: response.jobs.map(transformRecentJob),
   };
