@@ -25,7 +25,6 @@ type setupOpts struct {
 	url           string
 	username      string
 	passwordStdin bool
-	migrateFirst  bool
 }
 
 // newSetupCmd returns the `setup` subcommand. It drives the server's existing
@@ -36,8 +35,8 @@ func newSetupCmd() *cobra.Command {
 		Use:   "setup",
 		Short: "Create the first admin user on a running server",
 		Long: "Create the first admin user by driving the server's setup endpoint over\n" +
-			"HTTP. The server must already be running and reachable. Pass --migrate to\n" +
-			"run any pending database migrations first, bringing a fresh instance up in\n" +
+			"HTTP. The server must already be running and reachable. Pending database\n" +
+			"migrations are applied automatically first, bringing a fresh instance up in\n" +
 			"one command. Intended to be run via `docker exec` / `kubectl exec` into the\n" +
 			"running container.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -47,7 +46,6 @@ func newSetupCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.url, "url", "", "Server URL (default "+defaultServerURL+")")
 	cmd.Flags().StringVar(&opts.username, "username", "", "Admin username (prompted if omitted; required with --password-stdin)")
 	cmd.Flags().BoolVar(&opts.passwordStdin, "password-stdin", false, "Read the password from stdin instead of prompting")
-	cmd.Flags().BoolVar(&opts.migrateFirst, "migrate", false, "Run pending migrations before creating the admin")
 	return cmd
 }
 
@@ -67,7 +65,7 @@ func runSetup(cmd *cobra.Command, opts setupOpts) error {
 	url := firstNonEmpty(opts.url, defaultServerURL)
 	client := cliclient.New(url)
 
-	if err := preflight(out, client, url, opts.migrateFirst); err != nil {
+	if err := preflight(out, client, url); err != nil {
 		return err
 	}
 
@@ -95,10 +93,13 @@ func runSetup(cmd *cobra.Command, opts setupOpts) error {
 	return reportSetupResult(out, username, res)
 }
 
-// preflight checks server health before credentials are read. With
-// migrateFirst it runs pending migrations and waits for the server to become
-// ready; without it, a non-ready state is a fatal error.
-func preflight(out io.Writer, client *cliclient.Client, url string, migrateFirst bool) error {
+// preflight checks server health before credentials are read. Pending
+// migrations (and a migration another process is already running) are applied
+// and waited on automatically so a fresh instance comes up in one command. A
+// migration that previously *failed* is the one state setup will not paper
+// over — it surfaces the failure detail and aborts, because re-running a broken
+// migration almost never fixes it; the operator must investigate first.
+func preflight(out io.Writer, client *cliclient.Client, url string) error {
 	status, err := client.Health()
 	if err != nil {
 		return fmt.Errorf("could not reach server at %s — is it running? (%w)", url, err)
@@ -108,21 +109,27 @@ func preflight(out io.Writer, client *cliclient.Client, url string, migrateFirst
 		return nil
 	case "db_unavailable":
 		return fmt.Errorf("database is unavailable")
-	case "needs_migration", "migration_failed", "migrating":
-		if migrateFirst {
-			return runMigrateAndWait(out, client)
-		}
-		switch status {
-		case "migration_failed":
-			return fmt.Errorf("migrations previously failed — pass --migrate to retry, or check the server logs")
-		case "migrating":
-			return fmt.Errorf("migrations are already in progress — wait for them to finish, or pass --migrate to wait for them")
-		default: // needs_migration
-			return fmt.Errorf("migrations are pending — pass --migrate or run \"nexorious migrate\" first")
-		}
+	case "needs_migration", "migrating":
+		// needs_migration: run them. migrating: another process is already
+		// applying them; runMigrateAndWait's POST returns 409 (tolerated) and
+		// we fall through to polling until ready.
+		return runMigrateAndWait(out, client)
+	case "migration_failed":
+		return migrationFailedErr(client)
 	default:
 		return fmt.Errorf("server is not ready (status: %s)", status)
 	}
+}
+
+// migrationFailedErr builds the abort error for a server stuck in
+// migration_failed, surfacing the failure detail from the status endpoint when
+// available so the operator has something to investigate.
+func migrationFailedErr(client *cliclient.Client) error {
+	_, detail, err := client.MigrationStatus()
+	if err == nil && detail != "" {
+		return fmt.Errorf("migrations previously failed: %s — resolve the underlying problem (check the server logs) before retrying", detail)
+	}
+	return fmt.Errorf("migrations previously failed — resolve the underlying problem (check the server logs) before retrying")
 }
 
 // runMigrateAndWait triggers migrations on the server and polls until the
@@ -223,7 +230,7 @@ func reportSetupResult(out io.Writer, username string, res *cliclient.SetupResul
 		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
 		switch {
 		case strings.HasPrefix(res.Location, "/migrate"):
-			return fmt.Errorf("migrations are pending — run \"nexorious migrate\" first (or pass --migrate)")
+			return fmt.Errorf("migrations are pending — run \"nexorious migrate\" first")
 		case strings.HasPrefix(res.Location, "/db-error"):
 			return fmt.Errorf("database is unavailable")
 		default:

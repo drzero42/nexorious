@@ -19,7 +19,7 @@ directly to Postgres. Setup must go over HTTP so the server's serializable
 ## Command
 
 ```
-nexorious setup [--username U] [--url URL] [--password-stdin] [--migrate]
+nexorious setup [--username U] [--url URL] [--password-stdin]
 ```
 
 - `--username` — optional; prompted interactively when stdin is a TTY.
@@ -30,9 +30,9 @@ nexorious setup [--username U] [--url URL] [--password-stdin] [--migrate]
   operator passes `--url`.
 - `--password-stdin` — read the password from stdin instead of prompting.
   The password is **never** accepted as a flag value.
-- `--migrate` — if the server reports pending (or previously failed)
-  migrations, run them before creating the admin, so a fresh instance becomes
-  usable in one command. See "Run migrations first" below.
+
+Pending migrations are applied automatically (no flag) — see "Run migrations
+first" below.
 
 ### Password source (explicit, modelled on `docker login`)
 
@@ -45,11 +45,19 @@ TTY detection is **not** used to silently slurp stdin. The source is explicit:
 - else (no `--password-stdin`, non-TTY) → error:
   `no password: pass --password-stdin to read it from stdin, or run interactively`.
 
-## Run migrations first (`--migrate`)
+## Run migrations first (automatic)
 
-Lets an operator bring up a brand-new instance with one command: start the
-server (which sits in `needs_migration`, redirecting the UI to `/migrate`),
-then `nexorious setup --migrate` to migrate **and** create the admin.
+Brings up a brand-new instance with one command: start the server (which sits
+in `needs_migration`, redirecting the UI to `/migrate`), then `nexorious setup`
+to migrate **and** create the admin.
+
+There is **no `--migrate` flag**. `setup` only ever creates the *first* admin
+(the server's setup endpoint 403s once an admin exists), so it is inherently a
+fresh-instance command — and a fresh instance always has pending migrations.
+Requiring an opt-in flag would mean every first run hits a "pass --migrate"
+detour for zero safety benefit: there is nothing on an empty DB to protect.
+So `setup` applies pending migrations itself. The one exception is a migration
+that previously *failed* — see the state table below.
 
 This is driven over HTTP, not DB-direct, and that is a hard constraint — not a
 preference:
@@ -74,14 +82,22 @@ running server learns migrations are done.
 
 After the `GET /health` preflight, branch on the reported `status`:
 
-| `status` | with `--migrate` | without `--migrate` |
-|---|---|---|
-| `ok` / `ready` | skip migrate step; proceed to admin setup | proceed to admin setup |
-| `needs_migration` | `POST /api/migrate/run`, then poll until `ready` | abort: `migrations are pending — pass --migrate or run "nexorious migrate" first` |
-| `migration_failed` | `POST /api/migrate/run` (retry), then poll until `ready` | abort: `migrations previously failed — pass --migrate to retry, or check the server logs` |
-| `migrating` | poll until `ready` (the `run` POST returns 409, which is tolerated) | abort: `migrations are already in progress — wait for them to finish, or pass --migrate to wait for them` |
-| `db_unavailable` | abort: `database is unavailable` | abort: `database is unavailable` |
-| any other | abort: `server is not ready (status: <status>)` | abort: `server is not ready (status: <status>)` |
+| `status` | behavior |
+|---|---|
+| `ok` / `ready` | proceed to admin setup |
+| `needs_migration` | `POST /api/migrate/run`, then poll until `ready`, then proceed |
+| `migrating` | poll until `ready` (the `run` POST returns 409, which is tolerated), then proceed |
+| `migration_failed` | abort: `migrations previously failed: <detail> — resolve the underlying problem (check the server logs) before retrying` |
+| `db_unavailable` | abort: `database is unavailable` |
+| any other | abort: `server is not ready (status: <status>)` |
+
+`migration_failed` is the **one state setup will not auto-resolve.** Re-running
+a migration that already failed almost never fixes it — the failure is usually
+a bad statement or data that conflicts with the schema change, and a retry just
+hits the same error. So instead of silently re-running, `setup` surfaces the
+failure detail (fetched from `GET /api/migrate/status`) and aborts, leaving the
+operator to investigate. Once they have actually fixed the underlying problem,
+re-running `setup` (or `nexorious migrate`) is their deliberate next step.
 
 When migrating:
 1. `POST /api/migrate/run`. Treat `202 {"status":"migration started"}` as
@@ -98,8 +114,8 @@ When migrating:
 ## Architecture
 
 `setup` is a **pure HTTP client** — it never opens the database, so it does not
-use `loadEnvAndConfig` / `openBunDB`. `--migrate` is likewise HTTP-driven (see
-above), preserving this property.
+use `loadEnvAndConfig` / `openBunDB`. The automatic migrate step is likewise
+HTTP-driven (see above), preserving this property.
 
 ### `internal/cliclient` additions
 
@@ -127,13 +143,14 @@ to know it succeeded.
 `SetupResult` (or an equivalent typed return) carries enough to map the
 outcome: the status code and, for a `302`, the `Location` header.
 
-For `--migrate`, two more methods:
+For the automatic migrate step, two more methods:
 
 - `RunMigrations() error` — `POST /api/migrate/run`. `202` → success;
   `400 "already up to date"` → treated as success (nil); other codes →
   decoded error.
-- `MigrationStatus() (state string, err error)` — `GET /api/migrate/status`;
-  decodes `{"state": "...", "pending_count": N}` and returns `state`.
+- `MigrationStatus() (state, detail string, err error)` — `GET /api/migrate/status`;
+  decodes `{"state": "...", "error": "...", "pending_count": N}` and returns the
+  `state` plus any failure `detail`.
 
 ### `cmd/nexorious/setup.go`
 
@@ -143,10 +160,10 @@ For `--migrate`, two more methods:
   2. **Preflight** `client.Health()`. Connection error → abort
      "could not reach server". Then branch on `status`:
      - `db_unavailable` → abort.
-     - `needs_migration` / `migration_failed` → with `--migrate`, run the
-       migrate-first flow (above) and continue once `ready`; without
-       `--migrate`, abort telling the operator to pass `--migrate` or run
-       `nexorious migrate`.
+     - `needs_migration` / `migrating` → run the migrate-first flow (above)
+       and continue once `ready`.
+     - `migration_failed` → abort, surfacing the status detail (do **not**
+       retry).
      - `ready` → continue.
      All of this happens **before** reading any credentials.
   3. Resolve username (flag → TTY prompt; required under `--password-stdin`).
@@ -162,7 +179,7 @@ For `--migrate`, two more methods:
 | `201` | `Admin user "<username>" created.` | 0 |
 | `403` | `setup already complete; an admin user already exists` | 1 |
 | `400` | the server's validation message (e.g. password ≥ 8) | 1 |
-| `302` → `Location: /migrate` | `migrations are pending — run "nexorious migrate" first` | 1 |
+| `302` → `Location: /migrate` | `migrations are pending — run "nexorious migrate" first` (defensive fallback; preflight normally migrates first) | 1 |
 | `302` → `Location: /db-error` | `database is unavailable` | 1 |
 | connection error | `could not reach server at <url> — is it running?` | 1 |
 
@@ -172,9 +189,8 @@ POST.
 
 ## Operational note
 
-The server must already be running and reachable. Without `--migrate` it must
-also be migrated and in `Ready` + `NeedsSetup` state; with `--migrate` it may
-still be in `needs_migration` and `setup` will migrate it first. Intended
+The server must already be running and reachable. It may still be in
+`needs_migration` — `setup` migrates it first automatically. Intended
 workflow is `docker exec` / `kubectl exec` into the running container (or
 running alongside a live server on the host) — same pattern as
 `reset-password`.
@@ -201,9 +217,11 @@ running alongside a live server on the host) — same pattern as
   - `--password-stdin` piped path (no confirmation)
   - password-mismatch path errors without sending a request
   - missing `--username` under `--password-stdin` → error
-  - `--migrate` happy path: `needs_migration` → run → poll → `ready` → `201`
-  - `--migrate` with `migration_failed` outcome → abort
-  - `needs_migration` without `--migrate` → abort (credentials never read)
+  - auto-migrate happy path: `needs_migration` → run → poll → `ready` → `201`
+  - auto-migrate where the run ends in `migration_failed` → abort (detail surfaced)
+  - `migrating` preflight → poll until `ready` → `201` (no double run)
+  - `migration_failed` preflight → abort surfacing the status detail, **without**
+    re-running migrations (credentials never read)
   The existing `cmd/nexorious/setup_test.go` DB harness is **not** reused for
   this command (it's an HTTP client, not a DB writer).
 - **`internal/cliclient/client_test.go`** — unit tests for `Health`,

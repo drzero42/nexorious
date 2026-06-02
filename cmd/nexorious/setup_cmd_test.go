@@ -137,27 +137,36 @@ func TestSetupRedirectToDBError(t *testing.T) {
 	}
 }
 
-func TestSetupUnhealthyPreflightAborts(t *testing.T) {
-	srv := setupStub{healthStatus: "needs_migration"}.server(t)
-	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin")
-	if err == nil || !strings.Contains(err.Error(), "--migrate") {
-		t.Fatalf("err = %v; want pending-migrations preflight error", err)
-	}
-}
-
+// TestSetupMigrationFailedPreflight covers the one migration state setup will
+// not auto-resolve: a prior failure aborts, surfacing the status detail so the
+// operator can investigate rather than blindly retrying a broken migration.
 func TestSetupMigrationFailedPreflight(t *testing.T) {
-	srv := setupStub{healthStatus: "migration_failed"}.server(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "migration_failed"})
+	})
+	mux.HandleFunc("/api/migrate/status", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"state": "migration_failed", "error": "migration 003 failed: boom",
+		})
+	})
+	ranMigrate := false
+	mux.HandleFunc("/api/migrate/run", func(w http.ResponseWriter, _ *http.Request) {
+		ranMigrate = true
+		w.WriteHeader(http.StatusAccepted)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
 	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin")
 	if err == nil || !strings.Contains(err.Error(), "previously failed") {
-		t.Fatalf("err = %v; want previously-failed message (not 'pending')", err)
+		t.Fatalf("err = %v; want previously-failed message", err)
 	}
-}
-
-func TestSetupMigratingPreflight(t *testing.T) {
-	srv := setupStub{healthStatus: "migrating"}.server(t)
-	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin")
-	if err == nil || !strings.Contains(err.Error(), "already in progress") {
-		t.Fatalf("err = %v; want already-in-progress message", err)
+	if !strings.Contains(err.Error(), "migration 003 failed: boom") {
+		t.Fatalf("err = %v; want surfaced failure detail", err)
+	}
+	if ranMigrate {
+		t.Fatal("setup must not retry a previously-failed migration")
 	}
 }
 
@@ -224,9 +233,9 @@ func (s *migrateStub) server(t *testing.T) *httptest.Server {
 func TestSetupMigrateHappyPath(t *testing.T) {
 	stub := &migrateStub{finalState: "ready"}
 	srv := stub.server(t)
-	out, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin", "--migrate")
+	out, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin")
 	if err != nil {
-		t.Fatalf("setup --migrate: %v\noutput: %s", err, out)
+		t.Fatalf("setup: %v\noutput: %s", err, out)
 	}
 	if !stub.ranMigrate {
 		t.Fatal("migrations were not triggered")
@@ -239,7 +248,7 @@ func TestSetupMigrateHappyPath(t *testing.T) {
 func TestSetupMigrateFailed(t *testing.T) {
 	stub := &migrateStub{finalState: "migration_failed"}
 	srv := stub.server(t)
-	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin", "--migrate")
+	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin")
 	if err == nil || !strings.Contains(err.Error(), "migrations failed") {
 		t.Fatalf("err = %v; want migrations-failed error", err)
 	}
@@ -261,15 +270,15 @@ func TestSetupMigrateFailedSurfacesDetail(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin", "--migrate")
+	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin")
 	if err == nil || !strings.Contains(err.Error(), "migration 003 failed: boom") {
 		t.Fatalf("err = %v; want surfaced server failure detail", err)
 	}
 }
 
-// TestSetupMigrateWhenAlreadyMigrating covers health="migrating" + --migrate:
-// the POST /api/migrate/run returns 409, which RunMigrations tolerates, and the
-// command then polls to completion.
+// TestSetupMigrateWhenAlreadyMigrating covers health="migrating": the POST
+// /api/migrate/run returns 409, which RunMigrations tolerates, and the command
+// then polls to completion.
 func TestSetupMigrateWhenAlreadyMigrating(t *testing.T) {
 	polls := 0
 	mux := http.NewServeMux()
@@ -290,9 +299,9 @@ func TestSetupMigrateWhenAlreadyMigrating(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	out, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin", "--migrate")
+	out, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin")
 	if err != nil {
-		t.Fatalf("setup --migrate (already migrating): %v\noutput: %s", err, out)
+		t.Fatalf("setup (already migrating): %v\noutput: %s", err, out)
 	}
 	if polls == 0 {
 		t.Fatal("expected the command to poll migration status")
