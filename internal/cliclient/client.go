@@ -354,3 +354,55 @@ func (c *Client) Me(key string) (string, error) {
 	}
 	return out.Username, nil
 }
+
+// RunMigrations triggers POST /api/migrate/run on the running server, so the
+// server's own migrator applies pending migrations and its in-memory state
+// transitions to ready. 202 ("migration started"), 400 ("already up to date"),
+// and 409 ("in progress") are all treated as success (nil) — the caller then
+// polls MigrationStatus to learn the outcome. Other responses return an error.
+func (c *Client) RunMigrations() error {
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/migrate/run", nil)
+	if err != nil {
+		return fmt.Errorf("build migrate request: %w", err)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("migrate request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	switch resp.StatusCode {
+	case http.StatusAccepted, http.StatusBadRequest, http.StatusConflict:
+		return nil
+	default:
+		return httpError(resp)
+	}
+}
+
+type migrationStatusResp struct {
+	State        string `json:"state"`
+	PendingCount int    `json:"pending_count"`
+}
+
+// MigrationStatus returns the server's migration state from
+// GET /api/migrate/status ("needs_migration", "migrating", "ready",
+// "migration_failed", or "db_unavailable").
+func (c *Client) MigrationStatus() (string, error) {
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/migrate/status", nil)
+	if err != nil {
+		return "", fmt.Errorf("build status request: %w", err)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("status request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", httpError(resp)
+	}
+	var out migrationStatusResp
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode status response: %w", err)
+	}
+	return out.State, nil
+}

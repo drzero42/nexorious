@@ -389,3 +389,49 @@ func TestSetupAdminForbiddenMessage(t *testing.T) {
 		t.Fatalf("res = %+v; want 403 / setup already complete", res)
 	}
 }
+
+func TestRunMigrationsAcceptsStarted(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/migrate/run", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "migration started"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	if err := New(srv.URL).RunMigrations(); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+}
+
+func TestRunMigrationsAcceptsAlreadyUpToDate(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/migrate/run", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "already up to date"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	if err := New(srv.URL).RunMigrations(); err != nil {
+		t.Fatalf("RunMigrations(already up to date) should be nil, got: %v", err)
+	}
+}
+
+func TestMigrationStatusReturnsState(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/migrate/status", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"state": "ready", "pending_count": 0})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	state, err := New(srv.URL).MigrationStatus()
+	if err != nil {
+		t.Fatalf("MigrationStatus: %v", err)
+	}
+	if state != "ready" {
+		t.Fatalf("state = %q; want ready", state)
+	}
+}
