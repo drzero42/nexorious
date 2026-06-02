@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0](https://github.com/drzero42/nexorious/compare/v0.5.0...v0.6.0) (2026-06-02)
+
+
+### Features
+
+* accept full GOG redirect URL when connecting sync ([#743](https://github.com/drzero42/nexorious/issues/743)) ([347fe2d](https://github.com/drzero42/nexorious/commit/347fe2d71ac2ae9328d21816b2180d0c94ef9616))
+* add admin activity/events view ([#747](https://github.com/drzero42/nexorious/issues/747)) ([dc8b7bb](https://github.com/drzero42/nexorious/commit/dc8b7bb2d1c2246bb3ac31497f7e79354b63ab4b))
+* add reset-password CLI command ([#744](https://github.com/drzero42/nexorious/issues/744)) ([2fd5b75](https://github.com/drzero42/nexorious/commit/2fd5b75bcee2805222e56326a371ae2030a0ffb0))
+* add setup CLI command to create the first admin user ([#745](https://github.com/drzero42/nexorious/issues/745)) ([9c14b31](https://github.com/drzero42/nexorious/commit/9c14b31cd167388bcef09fde0be2420ec5c5b250))
+* add web UI for managing API keys ([#746](https://github.com/drzero42/nexorious/issues/746)) ([9b53b19](https://github.com/drzero42/nexorious/commit/9b53b198db457666f97e4e3d4522a37f6269f6f3)), closes [#732](https://github.com/drzero42/nexorious/issues/732)
+* print help instead of starting server on bare invocation ([#741](https://github.com/drzero42/nexorious/issues/741)) ([18ac3b4](https://github.com/drzero42/nexorious/commit/18ac3b44ea87f34eeb04e16e4cb9a7eea37a8521))
+
+
+### Bug Fixes
+
+* **deps:** update react monorepo ([#739](https://github.com/drzero42/nexorious/issues/739)) ([ed11dd3](https://github.com/drzero42/nexorious/commit/ed11dd3188089a5c456d22401197d2b169d467b0))
+
 ## [0.5.0](https://github.com/drzero42/nexorious/compare/v0.4.0...v0.5.0) (2026-06-01)
 
 
