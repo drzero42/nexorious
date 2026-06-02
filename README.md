@@ -3,6 +3,8 @@
 > [!WARNING]
 > **Work in Progress — Not Ready for Use**
 > Nexorious is under active development and is not ready for production use or general adoption. Expect breaking changes, missing features, incomplete documentation, and rough edges. Use at your own risk.
+>
+> **Heads up about version 1.0.0:** The first stable release will be a clean break. When 1.0.0 lands, there will be no automatic upgrade path. To move to it you'll need to export any games you've added, start over with a fresh, empty database, and import your games again. Keep this in mind before you put a lot of data into Nexorious in the meantime.
 
 A self-hostable web application for managing personal video game collections with comprehensive IGDB integration for tracking, organizing, and discovering games across multiple platforms and storefronts.
 
