@@ -106,3 +106,6 @@ export { useJobCompletionEffect } from './use-job-completion-effect';
 // Version hooks
 export { useVersion } from './use-version';
 export type { VersionInfo } from './use-version';
+
+// API key hooks
+export { apiKeysKeys, useApiKeys, useCreateApiKey, useRevokeApiKey } from './use-api-keys';

@@ -111,6 +111,27 @@ Object.defineProperty(window, 'IntersectionObserver', {
   value: IntersectionObserverMock,
 });
 
+// @testing-library/user-event v14's `setup()` unconditionally swaps
+// `navigator.clipboard` for its own internal stub. That clobbers any clipboard
+// spy a test installs in `beforeEach` (e.g. `Object.assign(navigator, {
+// clipboard: { writeText: vi.fn() } })`), so assertions on the spy never fire.
+// Wrap `setup()` to preserve whatever clipboard the test already installed:
+// snapshot it before delegating, then restore it afterwards.
+vi.mock('@testing-library/user-event', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@testing-library/user-event')>();
+  const realSetup = actual.default.setup.bind(actual.default);
+  const wrappedSetup: typeof actual.default.setup = (options) => {
+    const preserved = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const api = realSetup(options);
+    if (preserved) {
+      Object.defineProperty(navigator, 'clipboard', preserved);
+    }
+    return api;
+  };
+  const wrapped = { ...actual.default, setup: wrappedSetup };
+  return { ...actual, default: wrapped, userEvent: wrapped };
+});
+
 // Mock scrollIntoView for cmdk and other components that use it
 Element.prototype.scrollIntoView = vi.fn();
 
