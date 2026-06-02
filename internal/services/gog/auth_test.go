@@ -140,3 +140,43 @@ func TestRefreshToken_Expired(t *testing.T) {
 		t.Fatal("expected error for expired refresh token")
 	}
 }
+
+func TestParseAuthCode(t *testing.T) {
+	const fullURL = "https://embed.gog.com/on_login_success?origin=client&code=XXX"
+
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{"bare code", "XXX", "XXX", false},
+		{"full url", fullURL, "XXX", false},
+		{"reordered params", "https://embed.gog.com/on_login_success?code=XXX&origin=client", "XXX", false},
+		{"extra params", "https://embed.gog.com/on_login_success?origin=client&code=XXX&foo=bar", "XXX", false},
+		{"uppercase host", "https://EMBED.GOG.COM/on_login_success?code=XXX", "XXX", false},
+		{"whitespace around bare code", "  XXX  ", "XXX", false},
+		{"whitespace around url", "  " + fullURL + "  ", "XXX", false},
+		{"wrong host", "https://evil.example.com/on_login_success?code=XXX", "", true},
+		{"missing code", "https://embed.gog.com/on_login_success?origin=client", "", true},
+		{"trailing slash path", "https://embed.gog.com/on_login_success/?code=XXX", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := gog.ParseAuthCode(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got code %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

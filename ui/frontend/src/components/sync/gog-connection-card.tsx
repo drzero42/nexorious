@@ -30,7 +30,7 @@ import { useConnectGOG, useDisconnectGOG, useGOGConnection } from '@/hooks';
 import { GOG_AUTH_URL } from '@/types';
 
 const gogAuthCodeSchema = z.object({
-  authCode: z.string().trim().min(1, 'Authorization code is required'),
+  authCode: z.string().trim().min(1, 'Enter the GOG URL or authorization code'),
 });
 
 type GOGAuthCodeForm = z.infer<typeof gogAuthCodeSchema>;
@@ -193,11 +193,11 @@ export function GOGConnectionCard({
               </Alert>
 
               <div className="space-y-2">
-                <Label htmlFor="authCode">Authorization Code</Label>
+                <Label htmlFor="authCode">GOG URL or Authorization Code</Label>
                 <Input
                   id="authCode"
                   type="text"
-                  placeholder="Paste the authorization code from GOG"
+                  placeholder="Paste the full GOG URL or just the code"
                   autoComplete="off"
                   {...register('authCode')}
                   disabled={isConnecting}
@@ -230,11 +230,13 @@ export function GOGConnectionCard({
                           </li>
                           <li>Sign in with your GOG account if prompted</li>
                           <li>
-                            After login, you will be redirected to a GOG page — copy the{' '}
-                            <code>code</code> value from the URL (it appears as <code>?code=…</code>
-                            )
+                            After login, you will be redirected to a GOG page — copy the entire URL
+                            from your browser&apos;s address bar (it contains <code>?code=…</code>)
                           </li>
-                          <li>Paste the code into the field above</li>
+                          <li>
+                            Paste the URL into the field above (you can also paste just the{' '}
+                            <code>code</code> value if you prefer)
+                          </li>
                         </ol>
                         <div className="mt-2 rounded border border-yellow-200 bg-yellow-50 p-2 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
                           <strong>Note:</strong> The authorization code is single-use and expires
