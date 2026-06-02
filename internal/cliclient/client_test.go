@@ -435,3 +435,17 @@ func TestMigrationStatusReturnsState(t *testing.T) {
 		t.Fatalf("state = %q; want ready", state)
 	}
 }
+
+func TestRunMigrationsAcceptsInProgress(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/migrate/run", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "migration already in progress"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	if err := New(srv.URL).RunMigrations(); err != nil {
+		t.Fatalf("RunMigrations(in progress) should be nil, got: %v", err)
+	}
+}
