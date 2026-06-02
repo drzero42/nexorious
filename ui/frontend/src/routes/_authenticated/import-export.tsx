@@ -458,7 +458,7 @@ function ImportExportPage() {
 
       {/* Recent Activity - shows completed jobs from last 7 days */}
       <section className="mb-6">
-        <RecentActivity excludeJobIds={excludeJobIds} />
+        <RecentActivity jobTypes={[JobType.IMPORT, JobType.EXPORT]} excludeJobIds={excludeJobIds} />
       </section>
     </div>
   );
