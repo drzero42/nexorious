@@ -69,7 +69,7 @@ describe('GOGConnectionCard', () => {
 
     expect(screen.getByText('GOG Connection')).toBeInTheDocument();
     expect(screen.getByText('Not Configured')).toBeInTheDocument();
-    expect(screen.getByLabelText('Authorization Code')).toBeInTheDocument();
+    expect(screen.getByLabelText('GOG URL or Authorization Code')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Connect GOG' })).toBeInTheDocument();
   });
 
@@ -102,7 +102,7 @@ describe('GOGConnectionCard', () => {
       wrapper: createWrapper(),
     });
 
-    await userEvent.type(screen.getByLabelText('Authorization Code'), 'my-gog-code');
+    await userEvent.type(screen.getByLabelText('GOG URL or Authorization Code'), 'my-gog-code');
     await userEvent.click(screen.getByRole('button', { name: 'Connect GOG' }));
 
     await waitFor(() => {
@@ -118,7 +118,7 @@ describe('GOGConnectionCard', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Connect GOG' }));
 
-    expect(await screen.findByText('Authorization code is required')).toBeInTheDocument();
+    expect(await screen.findByText('Enter the GOG URL or authorization code')).toBeInTheDocument();
   });
 
   it('calls disconnect and onConnectionChange on disconnect', async () => {

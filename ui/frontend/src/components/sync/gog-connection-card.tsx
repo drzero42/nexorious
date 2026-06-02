@@ -30,7 +30,7 @@ import { useConnectGOG, useDisconnectGOG, useGOGConnection } from '@/hooks';
 import { GOG_AUTH_URL } from '@/types';
 
 const gogAuthCodeSchema = z.object({
-  authCode: z.string().trim().min(1, 'Authorization code is required'),
+  authCode: z.string().trim().min(1, 'Enter the GOG URL or authorization code'),
 });
 
 type GOGAuthCodeForm = z.infer<typeof gogAuthCodeSchema>;
@@ -193,7 +193,7 @@ export function GOGConnectionCard({
               </Alert>
 
               <div className="space-y-2">
-                <Label htmlFor="authCode">Authorization Code</Label>
+                <Label htmlFor="authCode">GOG URL or Authorization Code</Label>
                 <Input
                   id="authCode"
                   type="text"
