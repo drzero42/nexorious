@@ -250,6 +250,8 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 
+	newPlatformCount := 0
+	newTagCount := 0
 	gameHoursApplied := false
 	for _, pd := range gd.Platforms {
 		if pd.PlatformID == "" {
@@ -312,6 +314,8 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 		if _, err := w.DB.NewInsert().Model(ugp).Exec(ctx); err != nil {
 			slog.Error("import_item: insert user_game_platform", "err", err)
+		} else {
+			newPlatformCount++
 		}
 	}
 
@@ -347,10 +351,29 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 		if _, err := w.DB.NewInsert().Model(ugt).Exec(ctx); err != nil {
 			slog.Error("import_item: insert user_game_tag", "err", err)
+		} else {
+			newTagCount++
 		}
 	}
 
 	// ── 9. Mark item completed ───────────────────────────────────────────
+	// Record a per-item change row mirroring the sync worker's `changes` writes.
+	changeType := "added"
+	if alreadyExists {
+		if newPlatformCount+newTagCount > 0 {
+			changeType = "updated"
+		} else {
+			changeType = "already_in_library"
+		}
+	}
+	if _, err := w.DB.NewRaw(
+		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+		 VALUES (?, ?, ?, NULL, ?, ?, now())`,
+		uuid.NewString(), item.JobID, item.UserID, changeType, item.SourceTitle,
+	).Exec(ctx); err != nil {
+		slog.Error("import_item: insert change", "err", err)
+	}
+
 	result := map[string]any{
 		"game_id":         gd.IGDBID,
 		"user_game_id":    ug.ID,

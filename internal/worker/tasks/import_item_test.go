@@ -787,6 +787,68 @@ func TestImportItem_EmitsImportCompleted(t *testing.T) {
 	}
 }
 
+// countChangeRows returns how many `changes` rows of a given change_type exist for a job.
+func countChangeRows(t *testing.T, jobID, changeType string) int {
+	t.Helper()
+	ctx := context.Background()
+	var n int
+	if err := testDB.NewRaw(
+		`SELECT count(*) FROM changes WHERE job_id = ? AND change_type = ?`, jobID, changeType,
+	).Scan(ctx, &n); err != nil {
+		t.Fatalf("count changes: %v", err)
+	}
+	return n
+}
+
+func TestImportItem_WritesChangeRows(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	game := func(extraTag string) map[string]any {
+		tags := []map[string]any{}
+		if extraTag != "" {
+			tags = append(tags, map[string]any{"name": extraTag})
+		}
+		return map[string]any{
+			"igdb_id": int32(55501),
+			"title":   "Change Row Game",
+			"tags":    tags,
+		}
+	}
+	runImport := func(jobID string, gd map[string]any) {
+		insertTestJob(t, testDB, jobID, userID, 1)
+		itemID := insertTestJobItem(t, testDB, jobID, userID, gd)
+		w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+		if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+			t.Fatalf("work: %v", err)
+		}
+	}
+
+	// 1) New game → 'added'.
+	job1 := uuid.NewString()
+	runImport(job1, game("RPG"))
+	if got := countChangeRows(t, job1, "added"); got != 1 {
+		t.Fatalf("added rows = %d, want 1", got)
+	}
+
+	// 2) Same game, nothing new merged → 'already_in_library'.
+	job2 := uuid.NewString()
+	runImport(job2, game("RPG"))
+	if got := countChangeRows(t, job2, "already_in_library"); got != 1 {
+		t.Fatalf("already_in_library rows = %d, want 1", got)
+	}
+
+	// 3) Same game, a new tag merged in → 'updated'.
+	job3 := uuid.NewString()
+	runImport(job3, game("Action"))
+	if got := countChangeRows(t, job3, "updated"); got != 1 {
+		t.Fatalf("updated rows = %d, want 1", got)
+	}
+}
+
 // TestImportItem_EmitsImportFailedWhenItemsFail verifies that when the last item
 // of a job fails (here: missing igdb_id), the job finalizes with an import.failed
 // event and no import.completed event.
