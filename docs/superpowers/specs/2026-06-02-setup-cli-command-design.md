@@ -19,7 +19,7 @@ directly to Postgres. Setup must go over HTTP so the server's serializable
 ## Command
 
 ```
-nexorious setup [--username U] [--url URL] [--password-stdin]
+nexorious setup [--username U] [--url URL] [--password-stdin] [--migrate]
 ```
 
 - `--username` — optional; prompted interactively when stdin is a TTY.
@@ -30,6 +30,9 @@ nexorious setup [--username U] [--url URL] [--password-stdin]
   operator passes `--url`.
 - `--password-stdin` — read the password from stdin instead of prompting.
   The password is **never** accepted as a flag value.
+- `--migrate` — if the server reports pending (or previously failed)
+  migrations, run them before creating the admin, so a fresh instance becomes
+  usable in one command. See "Run migrations first" below.
 
 ### Password source (explicit, modelled on `docker login`)
 
@@ -42,10 +45,58 @@ TTY detection is **not** used to silently slurp stdin. The source is explicit:
 - else (no `--password-stdin`, non-TTY) → error:
   `no password: pass --password-stdin to read it from stdin, or run interactively`.
 
+## Run migrations first (`--migrate`)
+
+Lets an operator bring up a brand-new instance with one command: start the
+server (which sits in `needs_migration`, redirecting the UI to `/migrate`),
+then `nexorious setup --migrate` to migrate **and** create the admin.
+
+This is driven over HTTP, not DB-direct, and that is a hard constraint — not a
+preference:
+
+- The `migrate` subcommand (`runMigrate`) creates its **own** throwaway
+  `migrate.NewMigrator(db)`, migrates, and exits. Correct for an
+  init-container where no server is running.
+- `setup` POSTs to a **running** server, which caches its migration state in
+  memory. The server's background poller (`migrator.go`) only re-determines
+  state when recovering from a DB outage — never in the steady
+  "DB reachable, migrations pending" case. So a DB-direct migration would leave
+  the running server stuck in `needs_migration`, and Gate 2 would redirect the
+  subsequent `/api/auth/setup/admin` to `/migrate` indefinitely.
+
+`POST /api/migrate/run` is **not** a separate migration mechanism: its handler
+calls the identical `migrator.RunMigrations(ctx)` that `runMigrate` calls. The
+only difference is that it runs on the **server's own** migrator, so the
+server's state actually transitions to `ready`. That is the only way the
+running server learns migrations are done.
+
+### Migrate-first flow
+
+After the `GET /health` preflight, branch on the reported `status`:
+
+| `status` | with `--migrate` | without `--migrate` |
+|---|---|---|
+| `ready` | skip migrate step; proceed to admin setup | proceed to admin setup |
+| `needs_migration` / `migration_failed` | `POST /api/migrate/run`, then poll until `ready` | abort: `migrations are pending — pass --migrate or run "nexorious migrate" first` |
+| `db_unavailable` | abort: `database is unavailable` | abort: `database is unavailable` |
+
+When migrating:
+1. `POST /api/migrate/run`. Treat `202 {"status":"migration started"}` as
+   success; treat `400 {"error":"already up to date"}` as "already migrated"
+   (proceed); `409` "in progress" → fall through to polling.
+2. Poll `GET /api/migrate/status` (e.g. every ~1s) printing progress, until
+   `state == "ready"` → proceed; `state == "migration_failed"` → abort and
+   surface the status `error`. A bounded timeout guards against hanging.
+3. Proceed to credential resolution + admin setup.
+
+(The migration SSE stream `/api/migrate/progress` is **not** consumed — polling
+`/api/migrate/status` is simpler and sufficient for a CLI.)
+
 ## Architecture
 
 `setup` is a **pure HTTP client** — it never opens the database, so it does not
-use `loadEnvAndConfig` / `openBunDB`.
+use `loadEnvAndConfig` / `openBunDB`. `--migrate` is likewise HTTP-driven (see
+above), preserving this property.
 
 ### `internal/cliclient` additions
 
@@ -73,14 +124,28 @@ to know it succeeded.
 `SetupResult` (or an equivalent typed return) carries enough to map the
 outcome: the status code and, for a `302`, the `Location` header.
 
+For `--migrate`, two more methods:
+
+- `RunMigrations() error` — `POST /api/migrate/run`. `202` → success;
+  `400 "already up to date"` → treated as success (nil); other codes →
+  decoded error.
+- `MigrationStatus() (state string, err error)` — `GET /api/migrate/status`;
+  decodes `{"state": "...", "pending_count": N}` and returns `state`.
+
 ### `cmd/nexorious/setup.go`
 
 - `newSetupCmd()` registers flags and wires `RunE: runSetup`.
 - `runSetup`:
   1. Resolve base URL: `--url` → else `defaultServerURL`.
   2. **Preflight** `client.Health()`. Connection error → abort
-     "could not reach server". `status != "ok"` → abort with the state,
-     **before** reading any credentials.
+     "could not reach server". Then branch on `status`:
+     - `db_unavailable` → abort.
+     - `needs_migration` / `migration_failed` → with `--migrate`, run the
+       migrate-first flow (above) and continue once `ready`; without
+       `--migrate`, abort telling the operator to pass `--migrate` or run
+       `nexorious migrate`.
+     - `ready` → continue.
+     All of this happens **before** reading any credentials.
   3. Resolve username (flag → TTY prompt; required under `--password-stdin`).
   4. Resolve password (per the rules above). Reuses the existing
      `promptSecret` helper from `reset_password.go` for the TTY path.
@@ -104,10 +169,12 @@ POST.
 
 ## Operational note
 
-The server must already be running, migrated, and in `Ready` + `NeedsSetup`
-state for the endpoint to be reachable. Intended workflow is
-`docker exec` / `kubectl exec` into the running container (or running alongside
-a live server on the host) — same pattern as `reset-password`.
+The server must already be running and reachable. Without `--migrate` it must
+also be migrated and in `Ready` + `NeedsSetup` state; with `--migrate` it may
+still be in `needs_migration` and `setup` will migrate it first. Intended
+workflow is `docker exec` / `kubectl exec` into the running container (or
+running alongside a live server on the host) — same pattern as
+`reset-password`.
 
 ## Error handling
 
@@ -131,17 +198,23 @@ a live server on the host) — same pattern as `reset-password`.
   - `--password-stdin` piped path (no confirmation)
   - password-mismatch path errors without sending a request
   - missing `--username` under `--password-stdin` → error
+  - `--migrate` happy path: `needs_migration` → run → poll → `ready` → `201`
+  - `--migrate` with `migration_failed` outcome → abort
+  - `needs_migration` without `--migrate` → abort (credentials never read)
   The existing `cmd/nexorious/setup_test.go` DB harness is **not** reused for
   this command (it's an HTTP client, not a DB writer).
-- **`internal/cliclient/client_test.go`** — unit tests for `Health` and
-  `SetupAdmin`, including that a `302` is returned as an observable response
-  (redirect not followed) with its `Location`.
+- **`internal/cliclient/client_test.go`** — unit tests for `Health`,
+  `SetupAdmin` (including that a `302` is returned as an observable response
+  with its `Location`, redirect not followed), `RunMigrations` (202 success,
+  400 "already up to date" → nil), and `MigrationStatus`.
 
 ## Supporting changes
 
 - `DEV.md` — add a `setup` row to the CLI Subcommands table.
-- `slumber.yaml` — the `create_admin` request (`POST /api/auth/setup/admin`)
-  already exists and is complete; no change. No new route is added.
+- `slumber.yaml` — the `create_admin` (`POST /api/auth/setup/admin`),
+  `migration_run` (`POST /api/migrate/run`), and `migration_status`
+  (`GET /api/migrate/status`) requests all already exist; no change. No new
+  route is added.
 - `login` — **unchanged.** It already defaults to `http://localhost:8000`;
   `setup` reuses that same constant, which is the entirety of the "align them"
   request.
