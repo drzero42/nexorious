@@ -57,6 +57,9 @@ function AdminActivityPage() {
   const [scope, setScope] = useState<string>(ALL);
   const [user, setUser] = useState<string>('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<string>(ALL);
+  const [since, setSince] = useState<string>('');
+  const [until, setUntil] = useState<string>('');
 
   const { data: eventTypes } = useEventTypes();
   const categories = useMemo(() => {
@@ -65,13 +68,21 @@ function AdminActivityPage() {
     return Array.from(set);
   }, [eventTypes]);
 
+  const typeOptions = useMemo(() => {
+    const all = eventTypes ?? [];
+    return category === ALL ? all : all.filter((m) => m.category === category);
+  }, [eventTypes, category]);
+
   const filters: AdminEventFilters = useMemo(
     () => ({
-      category: category === ALL ? undefined : category,
+      type: typeFilter === ALL ? undefined : typeFilter,
+      category: typeFilter === ALL && category !== ALL ? category : undefined,
       scope: scope === ALL ? undefined : (scope as 'user' | 'admin'),
       user: user.trim() || undefined,
+      since: since ? `${since}T00:00:00Z` : undefined,
+      until: until ? `${until}T23:59:59Z` : undefined,
     }),
-    [category, scope, user],
+    [typeFilter, category, scope, user, since, until],
   );
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
@@ -93,7 +104,14 @@ function AdminActivityPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-3">
-            <Select value={category} onValueChange={setCategory}>
+            <Select
+              value={category}
+              onValueChange={(v) => {
+                setCategory(v);
+                setTypeFilter(ALL);
+                setExpanded(null);
+              }}
+            >
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
@@ -107,7 +125,33 @@ function AdminActivityPage() {
               </SelectContent>
             </Select>
 
-            <Select value={scope} onValueChange={setScope}>
+            <Select
+              value={typeFilter}
+              onValueChange={(v) => {
+                setTypeFilter(v);
+                setExpanded(null);
+              }}
+            >
+              <SelectTrigger className="w-56">
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All types</SelectItem>
+                {typeOptions.map((m) => (
+                  <SelectItem key={m.type} value={m.type}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={scope}
+              onValueChange={(v) => {
+                setScope(v);
+                setExpanded(null);
+              }}
+            >
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Scope" />
               </SelectTrigger>
@@ -122,7 +166,30 @@ function AdminActivityPage() {
               className="w-56"
               placeholder="Filter by user…"
               value={user}
-              onChange={(e) => setUser(e.target.value)}
+              onChange={(e) => {
+                setUser(e.target.value);
+                setExpanded(null);
+              }}
+            />
+            <Input
+              type="date"
+              aria-label="From date"
+              className="w-40"
+              value={since}
+              onChange={(e) => {
+                setSince(e.target.value);
+                setExpanded(null);
+              }}
+            />
+            <Input
+              type="date"
+              aria-label="To date"
+              className="w-40"
+              value={until}
+              onChange={(e) => {
+                setUntil(e.target.value);
+                setExpanded(null);
+              }}
             />
           </div>
 
