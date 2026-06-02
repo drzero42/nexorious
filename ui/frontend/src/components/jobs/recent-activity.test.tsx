@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@/test/test-utils';
 import { RecentActivity } from './recent-activity';
 import type { RecentJobDetail } from '@/types';
 import { JobType } from '@/types';
@@ -76,7 +76,9 @@ describe('RecentActivity', () => {
     } as ReturnType<typeof useRecentJobs>);
 
     render(<RecentActivity jobTypes={[JobType.EXPORT]} />);
-    // The expandable row is collapsed by default; the breakdown labels must be absent.
+    // The card itself renders (positive signal), but with no change rows the
+    // breakdown labels must be absent.
+    expect(screen.getByText('Recent Activity')).toBeInTheDocument();
     expect(screen.queryByText('Added to library')).not.toBeInTheDocument();
   });
 });
