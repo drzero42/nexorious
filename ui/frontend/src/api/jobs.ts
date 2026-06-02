@@ -145,7 +145,6 @@ interface RecentJobDetailApiResponse {
   created_at: string;
   completed_at: string | null;
   error_message: string | null;
-  started_at: string | null;
   total_items: number;
   progress: {
     completed: number;
