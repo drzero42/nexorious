@@ -48,8 +48,15 @@ describe('CreateApiKeyDialog', () => {
     await user.click(screen.getByRole('button', { name: /copy/i }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('nxr_secret_raw_value');
 
-    // Closing the dialog clears the key from state.
+    // Clicking Done clears the revealed key from internal state: the raw key must
+    // leave the DOM and the creation form must be restored (open={true} keeps the
+    // dialog mounted, so the re-render from setCreated(null) is observable).
     fireEvent.click(screen.getByRole('button', { name: /done/i }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+    // The revealed key must be gone from the DOM after close, and the form restored.
+    await waitFor(() => {
+      expect(screen.queryByText('nxr_secret_raw_value')).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/name/i)).toBeInTheDocument();
   });
 });
