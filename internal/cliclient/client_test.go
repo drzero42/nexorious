@@ -306,3 +306,86 @@ func TestCreateAPIKeyWithBearerSendsExpiry(t *testing.T) {
 		t.Fatalf("expires_at = %q, want %q", gotBody["expires_at"], exp)
 	}
 }
+
+func TestHealthReturnsStatus(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "needs_migration"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	status, err := New(srv.URL).Health()
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if status != "needs_migration" {
+		t.Fatalf("status = %q; want needs_migration", status)
+	}
+}
+
+func TestSetupAdminCreated(t *testing.T) {
+	var gotUser, gotPass string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/setup/admin", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotUser, gotPass = body["username"], body["password"]
+		http.SetCookie(w, &http.Cookie{Name: "session_id", Value: "sess-1"})
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{"username": "admin"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := New(srv.URL).SetupAdmin("admin", "supersecret")
+	if err != nil {
+		t.Fatalf("SetupAdmin: %v", err)
+	}
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("StatusCode = %d; want 201", res.StatusCode)
+	}
+	if gotUser != "admin" || gotPass != "supersecret" {
+		t.Fatalf("server got user=%q pass=%q", gotUser, gotPass)
+	}
+}
+
+func TestSetupAdminRedirectIsObservable(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/setup/admin", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", "/migrate")
+		w.WriteHeader(http.StatusFound)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := New(srv.URL).SetupAdmin("admin", "supersecret")
+	if err != nil {
+		t.Fatalf("SetupAdmin: %v", err)
+	}
+	if res.StatusCode != http.StatusFound {
+		t.Fatalf("StatusCode = %d; want 302 (redirect must not be followed)", res.StatusCode)
+	}
+	if res.Location != "/migrate" {
+		t.Fatalf("Location = %q; want /migrate", res.Location)
+	}
+}
+
+func TestSetupAdminForbiddenMessage(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/setup/admin", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "setup already complete"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := New(srv.URL).SetupAdmin("admin", "supersecret")
+	if err != nil {
+		t.Fatalf("SetupAdmin: %v", err)
+	}
+	if res.StatusCode != http.StatusForbidden || res.Message != "setup already complete" {
+		t.Fatalf("res = %+v; want 403 / setup already complete", res)
+	}
+}

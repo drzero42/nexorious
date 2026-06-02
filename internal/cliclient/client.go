@@ -24,11 +24,18 @@ type Client struct {
 	hc      *http.Client
 }
 
-// New returns a Client for the given base URL (trailing slash trimmed).
+// New returns a Client for the given base URL (trailing slash trimmed). The
+// client does not follow redirects: a gate's 302 is an observable response, so
+// callers (e.g. setup) can read its Location instead of silently chasing it.
 func New(baseURL string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		hc:      &http.Client{Timeout: 30 * time.Second},
+		hc: &http.Client{
+			Timeout: 30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
@@ -224,6 +231,80 @@ func (c *Client) RevokeAPIKeyWithBearer(key, keyID string) error {
 	return c.revoke(keyID, func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+key)
 	})
+}
+
+type healthResp struct {
+	Status string `json:"status"`
+}
+
+// Health performs the GET /health preflight and returns the reported status
+// ("ok" when the server is ready, otherwise the app-state name such as
+// "needs_migration" or "db_unavailable").
+func (c *Client) Health() (string, error) {
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/health", nil)
+	if err != nil {
+		return "", fmt.Errorf("build health request: %w", err)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("health request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", httpError(resp)
+	}
+	var out healthResp
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode health response: %w", err)
+	}
+	return out.Status, nil
+}
+
+// SetupResult is the interpreted outcome of a setup-admin attempt. The caller
+// maps StatusCode (and Location for a 3xx redirect) to a message and exit code.
+type SetupResult struct {
+	StatusCode int
+	Location   string // Location header, set when StatusCode is a 3xx redirect
+	Message    string // server {"message":...}, set for 4xx when present
+}
+
+// SetupAdmin posts the first-admin credentials to POST /api/auth/setup/admin.
+// It returns a SetupResult for any HTTP response (including 3xx/4xx) so the
+// caller can map the outcome; it returns a non-nil error only for transport
+// failures (e.g. the server is unreachable). Redirects are not followed, so a
+// gate's 302 is observable via Location.
+func (c *Client) SetupAdmin(username, password string) (*SetupResult, error) {
+	payload, err := json.Marshal(map[string]string{"username": username, "password": password})
+	if err != nil {
+		return nil, fmt.Errorf("marshal setup: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/auth/setup/admin", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("build setup request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("setup request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	res := &SetupResult{StatusCode: resp.StatusCode}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		res.Location = resp.Header.Get("Location")
+		return res, nil
+	}
+	if resp.StatusCode >= 400 {
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if readErr == nil {
+			var eb errorBody
+			if json.Unmarshal(body, &eb) == nil {
+				res.Message = eb.Message
+			}
+		}
+	}
+	return res, nil
 }
 
 // Logout drops the throwaway session created during login.
