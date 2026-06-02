@@ -2,7 +2,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { eventsApi } from '@/api/events';
 import type { AdminEventFilters } from '@/types';
 
-export const eventKeys = {
+const eventKeys = {
   all: ['admin-events'] as const,
   lists: () => [...eventKeys.all, 'list'] as const,
   list: (filters: AdminEventFilters) => [...eventKeys.lists(), filters] as const,
