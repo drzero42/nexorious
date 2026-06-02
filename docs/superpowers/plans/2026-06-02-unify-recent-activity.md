@@ -723,13 +723,13 @@ In `ui/frontend/src/api/jobs.ts`, replace the `getRecentJobs` function (lines ~4
 export async function getRecentJobs(filters: RecentJobsFilters = {}): Promise<RecentJobsResponse> {
   const params: Record<string, string | number> = {
     limit: filters.limit ?? 5,
-    daysBack: filters.daysBack ?? 7,
+    days_back: filters.daysBack ?? 7,
   };
   if (filters.source) {
     params.source = filters.source;
   }
   if (filters.jobTypes && filters.jobTypes.length > 0) {
-    params.jobType = filters.jobTypes.join(',');
+    params.job_type = filters.jobTypes.join(',');
   }
   const response = await api.get<RecentJobsApiResponse>('/jobs/recent', { params });
   return {

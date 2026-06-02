@@ -1185,7 +1185,7 @@ func TestHandleRecentJobs_FiltersByJobType(t *testing.T) {
 	insertJobItem(t, testDB, "ji-exp-1", "job-exp-1", userID, "key-exp", "Exp Game", "completed")
 	insertJob(t, testDB, "job-syn-1", userID, "sync", "steam", "completed")
 
-	rec := getAuth(t, e, "/api/jobs/recent?jobType=import,export", token)
+	rec := getAuth(t, e, "/api/jobs/recent?job_type=import,export", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}

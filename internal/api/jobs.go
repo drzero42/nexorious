@@ -319,7 +319,7 @@ type syncChangeItem struct {
 	NewStatus *string `bun:"new_status" json:"new_status,omitempty"`
 }
 
-// HandleRecentJobs handles GET /api/jobs/recent (filters: source, jobType, daysBack, limit).
+// HandleRecentJobs handles GET /api/jobs/recent (filters: source, job_type, days_back, limit).
 func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -329,9 +329,9 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 
 	source := c.QueryParam("source")
 
-	// jobType: accept repeated params and/or comma-separated values.
+	// job_type: accept repeated params and/or comma-separated values.
 	var jobTypes []string
-	for _, raw := range c.QueryParams()["jobType"] {
+	for _, raw := range c.QueryParams()["job_type"] {
 		for t := range strings.SplitSeq(raw, ",") {
 			if t = strings.TrimSpace(t); t != "" {
 				jobTypes = append(jobTypes, t)
@@ -339,7 +339,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		}
 	}
 
-	daysBack, _ := strconv.Atoi(c.QueryParam("daysBack")) //nolint:errcheck // invalid/empty query param clamped to default below
+	daysBack, _ := strconv.Atoi(c.QueryParam("days_back")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if daysBack < 1 {
 		daysBack = 7
 	}
