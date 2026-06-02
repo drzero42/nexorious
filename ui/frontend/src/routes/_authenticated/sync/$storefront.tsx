@@ -181,7 +181,7 @@ function SyncDetailPage() {
   });
 
   const handleSyncComplete = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: jobsKeys.recent({ source: storefront }) });
+    queryClient.invalidateQueries({ queryKey: jobsKeys.recents() });
     queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(storefront) });
   }, [queryClient, storefront]);
   useJobCompletionEffect(status?.activeJobId, handleSyncComplete);

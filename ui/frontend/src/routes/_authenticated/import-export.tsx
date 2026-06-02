@@ -226,9 +226,12 @@ function ImportExportPage() {
   const { data: activeImportJob } = useJob(importJobId);
   const { data: activeExportJob } = useJob(exportJobId);
 
-  // Refresh Recent Activity when either job completes.
+  // Refresh Recent Activity when either job completes. The Recent Activity card
+  // is backed by useRecentJobs (jobsKeys.recent), a separate key branch from the
+  // jobs list — both must be invalidated for it to refresh.
   const handleJobComplete = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: jobsKeys.lists() });
+    queryClient.invalidateQueries({ queryKey: jobsKeys.recents() });
   }, [queryClient]);
   useJobCompletionEffect(importStatus?.activeJobId, handleJobComplete);
   useJobCompletionEffect(exportStatus?.activeJobId, handleJobComplete);

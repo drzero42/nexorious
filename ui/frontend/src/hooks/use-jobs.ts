@@ -29,7 +29,8 @@ export const jobsKeys = {
   items: (jobId: string, status?: JobItemStatus, page?: number) =>
     [...jobsKeys.detail(jobId), 'items', { status, page }] as const,
   typeStatus: (jobType: JobType) => [...jobsKeys.all, 'typeStatus', jobType] as const,
-  recent: (filters: RecentJobsFilters) => [...jobsKeys.all, 'recent', filters] as const,
+  recents: () => [...jobsKeys.all, 'recent'] as const,
+  recent: (filters: RecentJobsFilters) => [...jobsKeys.recents(), filters] as const,
 };
 
 // ============================================================================

@@ -83,6 +83,7 @@ function MaintenancePage() {
 
   const handleRefreshComplete = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: jobsKeys.lists() });
+    queryClient.invalidateQueries({ queryKey: jobsKeys.recents() });
   }, [queryClient]);
   useJobCompletionEffect(refreshStatus?.activeJobId, handleRefreshComplete);
 
