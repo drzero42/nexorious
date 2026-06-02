@@ -1,82 +1,233 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useJobs } from '@/hooks';
+import { useRecentJobs } from '@/hooks';
 import { JobItemsDetails } from './job-items-details';
-import type { Job, JobType as JobTypeEnum } from '@/types';
+import type { RecentJobDetail, SyncChangeItem, JobType as JobTypeEnum } from '@/types';
 import {
-  JobType,
+  JobStatus,
   getJobTypeLabel,
   getJobSourceLabel,
   getJobStatusLabel,
   getJobStatusVariant,
   formatRelativeTime,
-  formatDuration,
 } from '@/types';
-import { ChevronDown, ChevronRight, Clock, History, Inbox } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  History,
+  Inbox,
+  CheckCircle,
+  XCircle,
+  ArrowRight,
+  SkipForward,
+  BookMarked,
+  RefreshCw,
+} from 'lucide-react';
 
 interface RecentActivityProps {
-  /** Job types to show (defaults to import and export) */
+  /** Sync: the storefront to filter by. */
+  source?: string;
+  /** Import/Export, Maintenance: job types to include. */
   jobTypes?: JobTypeEnum[];
-  /** Job IDs to exclude (e.g., currently displayed job) */
+  /** Job IDs to hide (e.g. the currently-displayed job). */
   excludeJobIds?: string[];
-  /** Number of days to look back (defaults to 7) */
+  /** Look-back window in days (default 7). */
   daysBack?: number;
+  /** Max jobs (default 5). */
+  limit?: number;
+}
+
+function hasChangeRows(job: RecentJobDetail): boolean {
+  return (
+    job.addedItems.length > 0 ||
+    job.updatedItems.length > 0 ||
+    job.removedItems.length > 0 ||
+    job.statusChangedItems.length > 0 ||
+    job.skippedItems.length > 0 ||
+    job.alreadyInLibraryItems.length > 0
+  );
+}
+
+function ChangeList({
+  items,
+  label,
+  icon,
+}: {
+  items: SyncChangeItem[];
+  label: string;
+  icon: ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  if (items.length === 0) return null;
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" className="w-full justify-between h-8 px-2">
+          <div className="flex items-center gap-2">
+            {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {icon}
+            <span className="text-sm">{label}</span>
+          </div>
+          <Badge variant="secondary" className="h-5 text-xs">
+            {items.length}
+          </Badge>
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="ml-6 pl-2 border-l space-y-1 py-1">
+          {items.map((item, idx) => (
+            <div key={idx} className="text-sm py-1 text-muted-foreground">
+              {item.title}
+              {item.oldStatus && item.newStatus && (
+                <span className="ml-2 text-xs">
+                  {item.oldStatus} → {item.newStatus}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function ChangeBreakdown({ job }: { job: RecentJobDetail }) {
+  return (
+    <div className="space-y-1">
+      <ChangeList
+        items={job.addedItems}
+        label="Added to library"
+        icon={<CheckCircle className="h-4 w-4 text-green-600" />}
+      />
+      <ChangeList
+        items={job.updatedItems}
+        label="Updated"
+        icon={<RefreshCw className="h-4 w-4 text-blue-500" />}
+      />
+      <ChangeList
+        items={job.removedItems}
+        label="Removed from storefront"
+        icon={<XCircle className="h-4 w-4 text-muted-foreground" />}
+      />
+      <ChangeList
+        items={job.statusChangedItems}
+        label="Status changed"
+        icon={<ArrowRight className="h-4 w-4 text-blue-500" />}
+      />
+      <ChangeList
+        items={job.alreadyInLibraryItems}
+        label="Already in library"
+        icon={<BookMarked className="h-4 w-4 text-muted-foreground" />}
+      />
+      <ChangeList
+        items={job.skippedItems}
+        label="Skipped"
+        icon={<SkipForward className="h-4 w-4 text-muted-foreground" />}
+      />
+    </div>
+  );
+}
+
+function JobActivityItem({
+  job,
+  isExpanded,
+  onToggle,
+}: {
+  job: RecentJobDetail;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const showBreakdown = hasChangeRows(job);
+  return (
+    <Collapsible open={isExpanded} onOpenChange={onToggle}>
+      <div className="rounded-lg border">
+        <CollapsibleTrigger asChild>
+          <button
+            className="w-full p-3 flex items-center justify-between hover:bg-muted/50 transition-colors text-left"
+            type="button"
+          >
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <Badge variant={getJobStatusVariant(job.status as JobStatus)} className="shrink-0">
+                {getJobStatusLabel(job.status as JobStatus)}
+              </Badge>
+              <span className="font-medium truncate">
+                {getJobTypeLabel(job.jobType)} - {getJobSourceLabel(job.source)}
+              </span>
+            </div>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground shrink-0 ml-4">
+              <div className="hidden sm:flex items-center gap-2">
+                <span className="text-green-600">{job.completedCount} completed</span>
+                {job.failedCount > 0 && (
+                  <span className="text-red-600">{job.failedCount} failed</span>
+                )}
+              </div>
+              <span className="text-xs">
+                {formatRelativeTime(job.completedAt || job.createdAt)}
+              </span>
+              {isExpanded ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </div>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="border-t p-3 bg-muted/30">
+            {job.errorMessage && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive mb-3">
+                {job.errorMessage}
+              </div>
+            )}
+            {showBreakdown ? (
+              <ChangeBreakdown job={job} />
+            ) : (
+              <JobItemsDetails jobId={job.id} progress={job.progress} isTerminal />
+            )}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
+}
+
+function EmptyState({ daysBack }: { daysBack: number }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-8 text-center">
+      <div className="rounded-full bg-muted p-3 mb-4">
+        <Inbox className="h-6 w-6 text-muted-foreground" />
+      </div>
+      <h3 className="font-medium text-muted-foreground mb-1">No recent activity</h3>
+      <p className="text-sm text-muted-foreground">
+        Completed activity from the last {daysBack} days will appear here.
+      </p>
+    </div>
+  );
 }
 
 /**
- * Recent Activity section showing completed jobs from the last N days.
- * Jobs are shown in a collapsible list with expandable details.
+ * Recent Activity over completed/failed jobs. Renders a rich per-outcome
+ * breakdown when the job has change rows (sync, import); otherwise falls back to
+ * aggregate counts + per-item details (export, metadata-refresh).
  */
 export function RecentActivity({
-  jobTypes = [JobType.IMPORT, JobType.EXPORT],
+  source,
+  jobTypes,
   excludeJobIds = [],
   daysBack = 7,
+  limit = 5,
 }: RecentActivityProps) {
   const [isOpen, setIsOpen] = useState(true);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const { data, isLoading } = useRecentJobs({ source, jobTypes, daysBack, limit });
 
-  // Fetch recent jobs - filter by job type on backend if single type requested
-  // (date filtering is done client-side since backend doesn't support it)
-  const jobTypeFilter = jobTypes.length === 1 ? { jobType: jobTypes[0] } : undefined;
-  const { data: jobsData, isLoading } = useJobs(jobTypeFilter, 1, 50);
+  if (isLoading) return null;
 
-  // Filter to jobs within the date range and matching types
-  const jobs = jobsData?.jobs;
-  const recentJobs = useMemo(() => {
-    if (!jobs) return [];
-
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysBack);
-
-    return jobs.filter((job) => {
-      // Must be one of the requested types
-      if (!jobTypes.includes(job.jobType)) return false;
-
-      // Must not be in the exclude list
-      if (excludeJobIds.includes(job.id)) return false;
-
-      // Must be within the date range
-      const jobDate = new Date(job.createdAt);
-      if (jobDate < cutoffDate) return false;
-
-      // Must be terminal (completed, failed, cancelled)
-      if (!job.isTerminal) return false;
-
-      return true;
-    });
-  }, [jobs, jobTypes, excludeJobIds, daysBack]);
-
-  const toggleJobExpanded = (jobId: string) => {
-    setExpandedJobId((current) => (current === jobId ? null : jobId));
-  };
-
-  // Don't render anything while loading
-  if (isLoading) {
-    return null;
-  }
+  const jobs = (data?.jobs ?? []).filter((j) => !excludeJobIds.includes(j.id));
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -87,9 +238,9 @@ export function RecentActivity({
               <div className="flex items-center gap-2">
                 <History className="h-5 w-5 text-muted-foreground" />
                 <CardTitle className="text-lg">Recent Activity</CardTitle>
-                {recentJobs.length > 0 && (
+                {jobs.length > 0 && (
                   <Badge variant="secondary" className="ml-2">
-                    {recentJobs.length}
+                    {jobs.length}
                   </Badge>
                 )}
               </div>
@@ -103,19 +254,20 @@ export function RecentActivity({
             </div>
           </CardHeader>
         </CollapsibleTrigger>
-
         <CollapsibleContent>
           <CardContent className="pt-0">
-            {recentJobs.length === 0 ? (
+            {jobs.length === 0 ? (
               <EmptyState daysBack={daysBack} />
             ) : (
               <div className="space-y-2">
-                {recentJobs.map((job) => (
+                {jobs.map((job) => (
                   <JobActivityItem
                     key={job.id}
                     job={job}
                     isExpanded={expandedJobId === job.id}
-                    onToggle={() => toggleJobExpanded(job.id)}
+                    onToggle={() =>
+                      setExpandedJobId((current) => (current === job.id ? null : job.id))
+                    }
                   />
                 ))}
               </div>
@@ -123,118 +275,6 @@ export function RecentActivity({
           </CardContent>
         </CollapsibleContent>
       </Card>
-    </Collapsible>
-  );
-}
-
-interface EmptyStateProps {
-  daysBack: number;
-}
-
-function EmptyState({ daysBack }: EmptyStateProps) {
-  return (
-    <div className="flex flex-col items-center justify-center py-8 text-center">
-      <div className="rounded-full bg-muted p-3 mb-4">
-        <Inbox className="h-6 w-6 text-muted-foreground" />
-      </div>
-      <h3 className="font-medium text-muted-foreground mb-1">No recent activity</h3>
-      <p className="text-sm text-muted-foreground">
-        Completed imports and exports from the last {daysBack} days will appear here.
-      </p>
-    </div>
-  );
-}
-
-interface JobActivityItemProps {
-  job: Job;
-  isExpanded: boolean;
-  onToggle: () => void;
-}
-
-function JobActivityItem({ job, isExpanded, onToggle }: JobActivityItemProps) {
-  return (
-    <Collapsible open={isExpanded} onOpenChange={onToggle}>
-      <div className="rounded-lg border">
-        <CollapsibleTrigger asChild>
-          <button
-            className="w-full p-3 flex items-center justify-between hover:bg-muted/50 transition-colors text-left"
-            type="button"
-          >
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <Badge variant={getJobStatusVariant(job.status)} className="shrink-0">
-                {getJobStatusLabel(job.status)}
-              </Badge>
-              <span className="font-medium truncate">
-                {getJobTypeLabel(job.jobType)} - {getJobSourceLabel(job.source)}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-4 text-sm text-muted-foreground shrink-0 ml-4">
-              {/* Summary counts */}
-              {job.progress && (
-                <div className="hidden sm:flex items-center gap-2">
-                  <span className="text-green-600">{job.progress.completed} completed</span>
-                  {job.progress.failed > 0 && (
-                    <span className="text-red-600">{job.progress.failed} failed</span>
-                  )}
-                </div>
-              )}
-
-              {/* Duration */}
-              {job.durationSeconds !== null && (
-                <div className="hidden md:flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  <span>{formatDuration(job.durationSeconds)}</span>
-                </div>
-              )}
-
-              {/* Time ago */}
-              <span className="text-xs">
-                {formatRelativeTime(job.completedAt || job.createdAt)}
-              </span>
-
-              {/* Expand icon */}
-              {isExpanded ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-            </div>
-          </button>
-        </CollapsibleTrigger>
-
-        <CollapsibleContent>
-          <div className="border-t p-3 bg-muted/30">
-            {/* Summary stats for mobile */}
-            {job.progress && (
-              <div className="sm:hidden mb-3 flex items-center gap-3 text-sm">
-                <span className="text-green-600">{job.progress.completed} completed</span>
-                {job.progress.failed > 0 && (
-                  <span className="text-red-600">{job.progress.failed} failed</span>
-                )}
-                {job.durationSeconds !== null && (
-                  <div className="flex items-center gap-1 text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    <span>{formatDuration(job.durationSeconds)}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Error message if present */}
-            {job.errorMessage && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive mb-3">
-                {job.errorMessage}
-              </div>
-            )}
-
-            {/* Job items details */}
-            {job.progress && (
-              <JobItemsDetails jobId={job.id} progress={job.progress} isTerminal={job.isTerminal} />
-            )}
-          </div>
-        </CollapsibleContent>
-      </div>
     </Collapsible>
   );
 }
