@@ -28,10 +28,10 @@ import (
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
 
-// insertAuthTestUser inserts a user with a real bcrypt hash (cost 12).
+// insertAuthTestUser inserts a user with a real bcrypt hash.
 func insertAuthTestUser(t *testing.T, db *bun.DB, id, username, password string, isActive, isAdmin bool) {
 	t.Helper()
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), auth.BcryptCost)
 	if err != nil {
 		t.Fatalf("bcrypt: %v", err)
 	}
