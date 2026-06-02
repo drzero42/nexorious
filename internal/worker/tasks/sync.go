@@ -221,7 +221,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				slog.Debug("dispatch_sync: game is user-skipped, not enqueuing for matching",
 					"job_id", p.JobID, "external_id", e.ExternalID, "title", e.Title)
 				if _, err := w.DB.NewRaw(
-					`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+					`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 					 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
 					uuid.NewString(), p.JobID, p.UserID, egID, e.Title,
 				).Exec(ctx); err != nil {
@@ -272,7 +272,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 	}
 
-	// 7. Mark removed games as unavailable and write sync_changes('removed').
+	// 7. Mark removed games as unavailable and write changes('removed').
 	var available []models.ExternalGame
 	if err := w.DB.NewSelect().Model(&available).
 		Where("user_id = ? AND storefront = ? AND is_available = true", p.UserID, p.Storefront).
@@ -288,7 +288,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				slog.Error("dispatch_sync: mark game unavailable failed", "err", err, "job_id", p.JobID, "external_game_id", eg.ID)
 			}
 			if _, err := w.DB.NewRaw(
-				`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 				 VALUES (?, ?, ?, ?, 'removed', ?, now())`,
 				uuid.NewString(), p.JobID, p.UserID, eg.ID, eg.Title,
 			).Exec(ctx); err != nil {
@@ -604,7 +604,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			slog.Error("user_game_write: update external_game updated_at (skipped)", "err", err)
 		}
 		if _, err := w.DB.NewRaw(
-			`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 			 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
 			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
 		).Exec(ctx); err != nil {
@@ -648,7 +648,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	}
 
 	// (xmax = 0) detects new vs. updated row; relies on ON CONFLICT DO UPDATE (not DO NOTHING).
-	// NOTE: sync_changes('added') is written after the platform loop to avoid orphans when
+	// NOTE: changes('added') is written after the platform loop to avoid orphans when
 	// platform load fails after the user_games row has already been committed.
 	ugID := uuid.NewString()
 	now := time.Now().UTC()
@@ -746,7 +746,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 				// Insert the status_changed sync_change BEFORE the UPDATE so
 				// that old_status reflects the pre-UPDATE value.
 				if _, err := w.DB.NewRaw(
-					`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, old_status, new_status, created_at)
+					`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, old_status, new_status, created_at)
 					 VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?, now())`,
 					uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title, existingOwnership, &ownership,
 				).Exec(ctx); err != nil {
@@ -783,11 +783,11 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		slog.Error("user_game_write: update external_game updated_at", "err", err)
 	}
 
-	// Write sync_changes('added') only after platforms are confirmed written,
-	// preventing orphan user_games + sync_changes rows on platform-load failure.
+	// Write changes('added') only after platforms are confirmed written,
+	// preventing orphan user_games + changes rows on platform-load failure.
 	if isNewRow.IsNew {
 		if _, err := w.DB.NewRaw(
-			`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 			 VALUES (?, ?, ?, ?, 'added', ?, now())`,
 			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
 		).Exec(ctx); err != nil {
@@ -795,7 +795,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		}
 	} else if !platformUpgraded {
 		if _, err := w.DB.NewRaw(
-			`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 			 VALUES (?, ?, ?, ?, 'already_in_library', ?, now())`,
 			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
 		).Exec(ctx); err != nil {
@@ -1029,7 +1029,7 @@ func syncJobUserAndStorefront(ctx context.Context, db *bun.DB, jobID string) (us
 	return row.UserID, row.Source
 }
 
-// emitSyncDiff emits sync.diff iff sync_changes rows exist for the job.
+// emitSyncDiff emits sync.diff iff changes rows exist for the job.
 func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID string) {
 	var rows []struct {
 		ChangeType string `bun:"change_type"`
@@ -1040,14 +1040,14 @@ func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID string) {
 		`SELECT sc.change_type,
 		        sc.title,
 		        COALESCE(string_agg(egp.platform, ',' ORDER BY egp.platform), '') AS platforms
-		   FROM sync_changes sc
+		   FROM changes sc
 		   LEFT JOIN external_game_platforms egp ON egp.external_game_id = sc.external_game_id
 		  WHERE sc.job_id = ? AND sc.change_type IN ('added','removed')
 		  GROUP BY sc.id, sc.change_type, sc.title, sc.created_at
 		  ORDER BY sc.created_at`,
 		jobID,
 	).Scan(ctx, &rows); err != nil {
-		slog.Error("sync: load sync_changes for diff notify", "job_id", jobID, "err", err)
+		slog.Error("sync: load changes for diff notify", "job_id", jobID, "err", err)
 		return
 	}
 	if len(rows) == 0 {

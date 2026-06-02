@@ -61,13 +61,13 @@ func TestHandleAdminReset(t *testing.T) {
 		t.Fatalf("seed external_game_platforms: %v", err)
 	}
 
-	// Seed a sync_change (cascades from jobs).
+	// Seed a change row (cascades from jobs).
 	if _, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO sync_changes (id, job_id, user_id, title, change_type, created_at)
+		`INSERT INTO changes (id, job_id, user_id, title, change_type, created_at)
 		 VALUES ('sc-chg-r', 'job-r-admin', ?, 'CS2', 'added', now())`,
 		adminID,
 	); err != nil {
-		t.Fatalf("seed sync_changes: %v", err)
+		t.Fatalf("seed changes: %v", err)
 	}
 
 	t.Run("admin can reset", func(t *testing.T) {
@@ -184,14 +184,14 @@ func TestHandleAdminReset(t *testing.T) {
 		}
 	})
 
-	t.Run("all sync_changes are cleared", func(t *testing.T) {
+	t.Run("all changes are cleared", func(t *testing.T) {
 		var count int
-		if err := testDB.NewRaw(`SELECT COUNT(*) FROM sync_changes`).
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM changes`).
 			Scan(context.Background(), &count); err != nil {
 			t.Fatalf("count: %v", err)
 		}
 		if count != 0 {
-			t.Errorf("sync_changes count = %d, want 0", count)
+			t.Errorf("changes count = %d, want 0", count)
 		}
 	})
 

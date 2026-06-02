@@ -377,7 +377,7 @@ requests:
       recent_jobs:
         name: Recent Jobs
         method: GET
-        url: "{{base_url}}/api/jobs/recent/steam?limit=5"
+        url: "{{base_url}}/api/jobs/recent?source=steam&limit=5"
         $ref: "#/.authenticated"
 
       get_job:

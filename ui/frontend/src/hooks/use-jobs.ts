@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as jobsApi from '@/api/jobs';
+import type { RecentJobsFilters } from '@/api/jobs';
 import type {
   Job,
   JobFilters,
@@ -28,10 +29,8 @@ export const jobsKeys = {
   items: (jobId: string, status?: JobItemStatus, page?: number) =>
     [...jobsKeys.detail(jobId), 'items', { status, page }] as const,
   typeStatus: (jobType: JobType) => [...jobsKeys.all, 'typeStatus', jobType] as const,
-  recent: (source: string, limit?: number) =>
-    limit !== undefined
-      ? ([...jobsKeys.all, 'recent', source, limit] as const)
-      : ([...jobsKeys.all, 'recent', source] as const),
+  recents: () => [...jobsKeys.all, 'recent'] as const,
+  recent: (filters: RecentJobsFilters) => [...jobsKeys.recents(), filters] as const,
 };
 
 // ============================================================================
@@ -143,12 +142,12 @@ export function usePendingReviewCount() {
 }
 
 /**
- * Hook to fetch recent completed jobs for a source with item details.
+ * Hook to fetch recent completed/failed jobs (any type) with per-item change details.
  */
-export function useRecentJobs(source: string, limit: number = 5, options?: { enabled?: boolean }) {
+export function useRecentJobs(filters: RecentJobsFilters = {}, options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: jobsKeys.recent(source, limit),
-    queryFn: () => jobsApi.getRecentJobs(source, limit),
+    queryKey: jobsKeys.recent(filters),
+    queryFn: () => jobsApi.getRecentJobs(filters),
     enabled: options?.enabled !== false,
   });
 }

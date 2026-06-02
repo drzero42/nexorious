@@ -1197,7 +1197,7 @@ func (h *UserGamesHandler) HandleClearLibrary(c *echo.Context) error {
 		).Exec(ctx); err != nil {
 			return err
 		}
-		// Delete jobs (cascades job_items + sync_changes).
+		// Delete jobs (cascades job_items + changes).
 		if _, err := tx.NewDelete().Model((*models.Job)(nil)).
 			Where("user_id = ?", userID).Exec(ctx); err != nil {
 			return err

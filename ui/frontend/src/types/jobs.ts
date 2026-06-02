@@ -171,14 +171,19 @@ export interface SyncChangeItem {
 
 export interface RecentJobDetail {
   id: string;
+  jobType: JobType;
+  source: JobSource;
   status: string;
   createdAt: string;
   completedAt: string | null;
+  errorMessage: string | null;
   totalItems: number;
   completedCount: number;
   skippedCount: number;
   failedCount: number;
+  progress: JobProgress;
   addedItems: SyncChangeItem[];
+  updatedItems: SyncChangeItem[];
   removedItems: SyncChangeItem[];
   statusChangedItems: SyncChangeItem[];
   skippedItems: SyncChangeItem[];

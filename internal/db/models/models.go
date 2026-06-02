@@ -214,9 +214,10 @@ type UserSyncConfig struct {
 	UpdatedAt             time.Time  `bun:"updated_at,notnull"      json:"updated_at"`
 }
 
-// SyncChange mirrors the sync_changes table — one row per library event per sync run.
-type SyncChange struct {
-	bun.BaseModel `bun:"table:sync_changes"`
+// JobChange mirrors the changes table — one row per library outcome per job run
+// (sync, import). The job's type is derived by joining jobs.job_type.
+type JobChange struct {
+	bun.BaseModel `bun:"table:changes"`
 
 	ID             string    `bun:"id,pk"               json:"id"`
 	JobID          string    `bun:"job_id,notnull"      json:"job_id"`

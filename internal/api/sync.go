@@ -932,7 +932,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 			slog.Error("sync: skip game: mark job_item skipped", "err", err, "job_item_id", jobItemRow.ID)
 		} else {
 			if _, err := h.db.NewRaw(
-				`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 				 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
 				uuid.NewString(), jobItemRow.JobID, userID, id, ownerRow.Title,
 			).Exec(ctx); err != nil {

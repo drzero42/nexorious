@@ -44,7 +44,7 @@ func (h *AdminResetHandler) HandleReset(c *echo.Context) error {
 		if rowsErr != nil {
 			return rowsErr
 		}
-		// Delete all jobs (cascades job_items + sync_changes).
+		// Delete all jobs (cascades job_items + changes).
 		if _, err := tx.NewRaw("DELETE FROM jobs").Exec(ctx); err != nil {
 			return err
 		}

@@ -24,9 +24,9 @@ import {
   EpicConnectionCard,
   GOGConnectionCard,
   PSNConnectionCard,
-  RecentActivity,
   ExternalGamesSection,
 } from '@/components/sync';
+import { RecentActivity } from '@/components/jobs';
 import {
   SyncStorefront,
   SyncFrequency,
@@ -181,7 +181,7 @@ function SyncDetailPage() {
   });
 
   const handleSyncComplete = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: jobsKeys.recent(storefront) });
+    queryClient.invalidateQueries({ queryKey: jobsKeys.recents() });
     queryClient.invalidateQueries({ queryKey: syncKeys.externalGames(storefront) });
   }, [queryClient, storefront]);
   useJobCompletionEffect(status?.activeJobId, handleSyncComplete);
@@ -547,7 +547,7 @@ function SyncDetailPage() {
       <ExternalGamesSection storefront={storefront} isSyncing={!!isSyncing} />
 
       {/* Recent Sync Activity */}
-      <RecentActivity platform={storefront} />
+      <RecentActivity source={storefront} />
     </div>
   );
 }

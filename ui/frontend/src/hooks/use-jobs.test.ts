@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
 import { QueryWrapper } from '@/test/test-utils';
@@ -11,6 +12,7 @@ import {
   useRetryFailedItems,
   useRetryJobItem,
   useJobTypeStatus,
+  useRecentJobs,
   jobsKeys,
 } from './use-jobs';
 import { JobType, JobSource, JobStatus, JobItemStatus } from '@/types';
@@ -93,6 +95,14 @@ describe('use-jobs hooks', () => {
 
     it('generates correct query keys for detail with id', () => {
       expect(jobsKeys.detail('job-1')).toEqual(['jobs', 'detail', 'job-1']);
+    });
+
+    it('recents() is the shared prefix of every recent() key', () => {
+      expect(jobsKeys.recents()).toEqual(['jobs', 'recent']);
+      // recent(filters) must start with recents() so a recents() invalidation
+      // matches it — and it must NOT start with lists().
+      expect(jobsKeys.recent({ source: 'steam' })).toEqual(['jobs', 'recent', { source: 'steam' }]);
+      expect(jobsKeys.recent({ source: 'steam' }).slice(0, 2)).toEqual(jobsKeys.recents());
     });
   });
 
@@ -500,6 +510,42 @@ describe('use-jobs hooks', () => {
         lastCompletedJobId: 'job-8',
         lastCompletedAt: '2026-01-01T00:00:00Z',
       });
+    });
+  });
+
+  describe('useRecentJobs cache invalidation', () => {
+    it('refetches on recents() invalidation but not on lists() invalidation', async () => {
+      let recentCalls = 0;
+      server.use(
+        http.get(`${API_URL}/jobs/recent`, () => {
+          recentCalls += 1;
+          return HttpResponse.json({ jobs: [] });
+        }),
+      );
+
+      const { result } = renderHook(
+        () => ({
+          query: useRecentJobs({ jobTypes: [JobType.IMPORT, JobType.EXPORT] }),
+          qc: useQueryClient(),
+        }),
+        { wrapper: QueryWrapper },
+      );
+
+      await waitFor(() => expect(recentCalls).toBe(1));
+
+      // The generic jobs-list invalidation must NOT touch the recent query.
+      // This is the regression that left Recent Activity stale after a job
+      // completed on the import/export and maintenance pages.
+      await act(async () => {
+        await result.current.qc.invalidateQueries({ queryKey: jobsKeys.lists() });
+      });
+      expect(recentCalls).toBe(1);
+
+      // The recent-prefix invalidation MUST refetch the mounted recent query.
+      await act(async () => {
+        await result.current.qc.invalidateQueries({ queryKey: jobsKeys.recents() });
+      });
+      await waitFor(() => expect(recentCalls).toBe(2));
     });
   });
 });

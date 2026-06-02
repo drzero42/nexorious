@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -311,21 +312,38 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 	})
 }
 
-// syncChangeItem is a summary of a sync_changes row for the recent jobs endpoint.
+// syncChangeItem is a summary of a changes row for the recent jobs endpoint.
 type syncChangeItem struct {
 	Title     string  `bun:"title"      json:"title"`
 	OldStatus *string `bun:"old_status" json:"old_status,omitempty"`
 	NewStatus *string `bun:"new_status" json:"new_status,omitempty"`
 }
 
-// HandleRecentJobs handles GET /api/jobs/recent/:source.
+// HandleRecentJobs handles GET /api/jobs/recent (filters: source, job_type, days_back, limit).
 func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
+	ctx := context.Background()
 
-	source := c.Param("source")
+	source := c.QueryParam("source")
+
+	// job_type: accept repeated params and/or comma-separated values.
+	var jobTypes []string
+	for _, raw := range c.QueryParams()["job_type"] {
+		for t := range strings.SplitSeq(raw, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				jobTypes = append(jobTypes, t)
+			}
+		}
+	}
+
+	daysBack, _ := strconv.Atoi(c.QueryParam("days_back")) //nolint:errcheck // invalid/empty query param clamped to default below
+	if daysBack < 1 {
+		daysBack = 7
+	}
+
 	limit, _ := strconv.Atoi(c.QueryParam("limit")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if limit < 1 {
 		limit = 5
@@ -335,14 +353,19 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	}
 
 	var jobs []models.Job
-	err := h.db.NewRaw(`
-		SELECT * FROM jobs
-		WHERE user_id = ? AND source = ? AND status IN ('completed', 'failed')
-		ORDER BY created_at DESC
-		LIMIT ?`,
-		userID, source, limit,
-	).Scan(context.Background(), &jobs)
-	if err != nil {
+	q := h.db.NewSelect().Model(&jobs).
+		Where("user_id = ?", userID).
+		Where("status IN ('completed', 'failed')").
+		Where("created_at >= now() - make_interval(days => ?)", daysBack).
+		Order("created_at DESC").
+		Limit(limit)
+	if source != "" {
+		q = q.Where("source = ?", source)
+	}
+	if len(jobTypes) > 0 {
+		q = q.Where("job_type IN (?)", bun.List(jobTypes))
+	}
+	if err := q.Scan(ctx); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get recent jobs")
 	}
 	if jobs == nil {
@@ -353,6 +376,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		models.Job
 		Progress              map[string]any   `json:"progress"`
 		AddedItems            []syncChangeItem `json:"added_items"`
+		UpdatedItems          []syncChangeItem `json:"updated_items"`
 		RemovedItems          []syncChangeItem `json:"removed_items"`
 		StatusChangedItems    []syncChangeItem `json:"status_changed_items"`
 		SkippedItems          []syncChangeItem `json:"skipped_items"`
@@ -361,7 +385,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 
 	result := make([]jobWithChanges, 0, len(jobs))
 	for _, j := range jobs {
-		progress, err := h.jobItemCounts(context.Background(), j.ID)
+		progress, err := h.jobItemCounts(ctx, j.ID)
 		if err != nil {
 			slog.Error("HandleRecentJobs: failed to count job items", "job_id", j.ID, "err", err)
 			progress = map[string]any{
@@ -378,16 +402,17 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		}
 		if err := h.db.NewRaw(`
 			SELECT change_type, title, old_status, new_status
-			FROM sync_changes
+			FROM changes
 			WHERE job_id = ?
 			ORDER BY created_at`,
 			j.ID,
-		).Scan(context.Background(), &allChanges); err != nil {
-			slog.Error("HandleRecentJobs: failed to query sync_changes", "job_id", j.ID, "err", err)
+		).Scan(ctx, &allChanges); err != nil {
+			slog.Error("HandleRecentJobs: failed to query changes", "job_id", j.ID, "err", err)
 			allChanges = nil
 		}
 
 		addedItems := []syncChangeItem{}
+		updatedItems := []syncChangeItem{}
 		removedItems := []syncChangeItem{}
 		statusChangedItems := []syncChangeItem{}
 		skippedItems := []syncChangeItem{}
@@ -396,6 +421,8 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			switch sc.ChangeType {
 			case "added":
 				addedItems = append(addedItems, syncChangeItem{Title: sc.Title})
+			case "updated":
+				updatedItems = append(updatedItems, syncChangeItem{Title: sc.Title})
 			case "removed":
 				removedItems = append(removedItems, syncChangeItem{Title: sc.Title})
 			case "status_changed":
@@ -413,6 +440,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			Job:                   j,
 			Progress:              progress,
 			AddedItems:            addedItems,
+			UpdatedItems:          updatedItems,
 			RemovedItems:          removedItems,
 			StatusChangedItems:    statusChangedItems,
 			SkippedItems:          skippedItems,

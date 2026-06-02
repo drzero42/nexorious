@@ -685,7 +685,7 @@ func TestHandleRecentJobs_Empty(t *testing.T) {
 	e := newTestEchoWithPool(t, testDB)
 	_, token := setupTagUser(t, testDB, e, "jobs-recent-empty")
 
-	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
+	rec := getAuth(t, e, "/api/jobs/recent?source=steam", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -707,7 +707,7 @@ func TestHandleRecentJobs_WithJobs(t *testing.T) {
 	insertJob(t, testDB, "job-recent-1", userID, "sync", "steam", "completed")
 	insertJobItem(t, testDB, "ji-recent-1", "job-recent-1", userID, "key-r1", "Recent Game", "completed")
 
-	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
+	rec := getAuth(t, e, "/api/jobs/recent?source=steam", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -1038,7 +1038,7 @@ func TestRecentJobs_IncludesCompletedWithFailedItems(t *testing.T) {
 	jobID := uuid.NewString()
 	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed")
 
-	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
+	rec := getAuth(t, e, "/api/jobs/recent?source=steam", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -1064,15 +1064,15 @@ func TestRecentJobs_ReturnsProgressAndAddedItems(t *testing.T) {
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k3", "Game C", "skipped")
 
 	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO sync_changes (id, job_id, user_id, title, change_type, created_at)
+		`INSERT INTO changes (id, job_id, user_id, title, change_type, created_at)
          VALUES (gen_random_uuid(), ?, ?, 'Game A', 'added', now())`,
 		jobID, userID,
 	)
 	if err != nil {
-		t.Fatalf("insert sync_changes: %v", err)
+		t.Fatalf("insert changes: %v", err)
 	}
 
-	rec := getAuth(t, e, "/api/jobs/recent/steam", token)
+	rec := getAuth(t, e, "/api/jobs/recent?source=steam", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -1171,6 +1171,99 @@ func TestHandleGetJobItems_SortsPendingReviewAlphabetically(t *testing.T) {
 		if got != title {
 			t.Errorf("position %d: got %q, want %q", i, got, title)
 		}
+	}
+}
+
+func TestHandleRecentJobs_FiltersByJobType(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-recent-type")
+
+	insertJob(t, testDB, "job-imp-1", userID, "import", "nexorious", "completed")
+	insertJobItem(t, testDB, "ji-imp-1", "job-imp-1", userID, "key-imp", "Imp Game", "completed")
+	insertJob(t, testDB, "job-exp-1", userID, "export", "nexorious", "completed")
+	insertJobItem(t, testDB, "ji-exp-1", "job-exp-1", userID, "key-exp", "Exp Game", "completed")
+	insertJob(t, testDB, "job-syn-1", userID, "sync", "steam", "completed")
+
+	rec := getAuth(t, e, "/api/jobs/recent?job_type=import,export", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	jobs, _ := resp["jobs"].([]any)
+	if len(jobs) != 2 {
+		t.Fatalf("expected 2 jobs (import+export), got %d", len(jobs))
+	}
+}
+
+func TestHandleRecentJobs_GroupsUpdatedItems(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-recent-updated")
+
+	insertJob(t, testDB, "job-upd-1", userID, "import", "nexorious", "completed")
+	if _, err := testDB.NewRaw(
+		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+		 VALUES (?, ?, ?, NULL, 'updated', 'Updated Game', now())`,
+		"chg-upd-1", "job-upd-1", userID,
+	).Exec(context.Background()); err != nil {
+		t.Fatalf("insert change: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/jobs/recent?source=nexorious", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Jobs []struct {
+			UpdatedItems []map[string]any `json:"updated_items"`
+		} `json:"jobs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Jobs) != 1 || len(resp.Jobs[0].UpdatedItems) != 1 {
+		t.Fatalf("expected 1 job with 1 updated item, got %+v", resp.Jobs)
+	}
+}
+
+func TestHandleRecentJobs_FiltersByDaysBack(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-recent-days")
+
+	insertJob(t, testDB, "job-new", userID, "sync", "steam", "completed")
+	insertJob(t, testDB, "job-old", userID, "sync", "steam", "completed")
+	// Backdate the old job beyond the default 7-day window.
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE jobs SET created_at = now() - interval '30 days' WHERE id = 'job-old'`,
+	); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+
+	countJobs := func(url string) int {
+		rec := getAuth(t, e, url, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d: %s", url, rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		jobs, _ := resp["jobs"].([]any)
+		return len(jobs)
+	}
+
+	// Default window (7 days) excludes the 30-day-old job.
+	if got := countJobs("/api/jobs/recent?source=steam"); got != 1 {
+		t.Fatalf("default window: expected 1 job, got %d", got)
+	}
+	// A wider window includes both.
+	if got := countJobs("/api/jobs/recent?source=steam&days_back=60"); got != 2 {
+		t.Fatalf("60-day window: expected 2 jobs, got %d", got)
 	}
 }
 
