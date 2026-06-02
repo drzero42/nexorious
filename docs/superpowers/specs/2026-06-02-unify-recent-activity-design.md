@@ -82,17 +82,28 @@ created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 `skipped`, `already_in_library`. Pure rename, no behavioural change.
 
 **Import** (`internal/worker/tasks/import_item.go`) — *new*. The worker already
-computes `alreadyExists` (whether a `user_game` already existed). After the item
-is successfully processed, insert one `changes` row:
+computes `alreadyExists` (whether a `user_game` already existed) and, when it
+does, merges any new platform/storefront pairs and tags into the existing entry
+(it tracks an `existingPlatforms` set and inserts only the missing pairs). After
+the item is successfully processed, insert one `changes` row of the appropriate
+type:
 
-- `already_in_library` when `alreadyExists` is true,
-- `added` otherwise.
+- `added` — the game was new to the library (`alreadyExists` is false).
+- `updated` — the game already existed **and** at least one new
+  platform/storefront pair (or tag) was merged into it this import.
+- `already_in_library` — the game already existed and nothing new was merged
+  (every platform/tag was already present).
 
-Use the matched `external_game_id` and the game title. Failures are **not**
-change rows — they remain on `job_items` (status `failed`, `error_message`) and
-surface via the job's progress counts, exactly as sync does today. The insert is
-best-effort and logged on error (same pattern as the sync writers); a failed
-change-row insert must not fail the import item.
+The worker therefore needs to track whether the merge inserted anything (e.g. a
+count of newly-inserted `user_game_platforms` / `user_game_tags`) to choose
+between `updated` and `already_in_library`.
+
+Use the matched `external_game_id` and the game title. `old_status`/`new_status`
+stay null for import rows. Failures are **not** change rows — they remain on
+`job_items` (status `failed`, `error_message`) and surface via the job's
+progress counts, exactly as sync does today. The insert is best-effort and
+logged on error (same pattern as the sync writers); a failed change-row insert
+must not fail the import item.
 
 **Export** (`internal/worker/tasks/export.go`) — writes **no** change rows.
 Export has no meaningful per-item outcome; it renders via the counts fallback.
@@ -107,15 +118,19 @@ optional query filters:
 - `source` — single value (e.g. `steam`), AND-combined when present.
 - `jobType` — one or more values, comma-separated or repeated (e.g.
   `jobType=import,export`).
+- `daysBack` — integer window (default 7); filters to
+  `created_at >= now() - daysBack`.
+- `limit` — max jobs (default 5).
 
-If neither is supplied, no type/source narrowing is applied (still scoped to the
-authenticated user and terminal statuses). The handler keeps the existing
-behaviour: fetch the N most recent terminal (`completed`/`failed`) jobs for the
-user matching the filters, compute each job's progress counts, and attach the
-job's `changes` rows grouped by `change_type`.
+If neither `source` nor `jobType` is supplied, no type/source narrowing is
+applied (still scoped to the authenticated user, the `daysBack` window, and
+terminal statuses). The handler keeps the existing behaviour: fetch the most
+recent terminal (`completed`/`failed`) jobs for the user matching the filters,
+compute each job's progress counts, and attach the job's `changes` rows grouped
+by `change_type`.
 
-Response shape is unchanged from today's sync endpoint, with **empty arrays**
-when a job has no `changes` rows:
+Response shape adds an `updated_items` bucket to today's sync endpoint shape,
+with **empty arrays** when a job has no rows of that type:
 
 ```json
 {
@@ -127,6 +142,7 @@ when a job has no `changes` rows:
       "added_items": [ { "title": "Game A" } ],
       "removed_items": [],
       "status_changed_items": [],
+      "updated_items": [ { "title": "Game C" } ],
       "skipped_items": [],
       "already_in_library_items": [ { "title": "Game B" } ]
     }
@@ -135,7 +151,8 @@ when a job has no `changes` rows:
 ```
 
 Query change in the handler: the `changes` lookup is `WHERE job_id = ?` against
-the renamed table (the per-job grouping logic is otherwise unchanged).
+the renamed table, with a new `updated` → `updated_items` grouping case added to
+the existing `change_type` switch (otherwise unchanged).
 
 **Callers:** Sync page → `?source=steam`; Import/Export page →
 `?jobType=import,export`; Maintenance page → `?jobType=metadata_refresh`.
@@ -156,17 +173,25 @@ interface RecentActivityProps {
   source?: string;            // sync: storefront
   jobTypes?: JobType[];       // import/export, maintenance
   excludeJobIds?: string[];   // e.g. the currently-displayed job
-  daysBack?: number;          // default 7 (applied server-side or client-side)
+  daysBack?: number;          // default 7 (applied server-side)
   limit?: number;             // default 5
 }
 ```
+
+The `daysBack` window is applied **server-side**: the recent endpoint accepts a
+`daysBack` query param (default 7) and filters jobs to
+`created_at >= now() - daysBack` in SQL. The old client-side date filtering is
+removed.
 
 Per job, the card expands to:
 
 - **Rich breakdown** when the job has change rows (sync, import) — the
   per-outcome collapsible `SyncChangeList` lists, moved over from the sync
-  component. Existing change-type labels map cleanly; import only emits `added`
-  + `already_in_library`, so only those two lists render.
+  component. The component renders one list per non-empty bucket; labels:
+  `added` → "Added to library", `updated` → "Updated", `removed` → "Removed
+  from storefront", `status_changed` → "Status changed", `already_in_library` →
+  "Already in library", `skipped` → "Skipped". Import emits only `added`,
+  `updated`, and `already_in_library`, so only those lists render for imports.
 - **Counts fallback** otherwise (export, metadata-refresh) — the existing
   aggregate completed/failed counts + `JobItemsDetails`, kept and reused.
 
@@ -194,12 +219,15 @@ component instead.
   renamed and existing rows survive (covered by the package's shared-container
   migration run; add an explicit assertion if convenient).
 - **Import writer** (`internal/worker/tasks`) — a new `user_game` produces an
-  `added` row; an existing one produces `already_in_library`; a failed item
-  produces **no** change row and is marked `failed` on `job_items`. This is
-  non-obvious per-item logic and a plausible bug site, so it warrants a test.
+  `added` row; an existing game that gains a new platform/tag produces `updated`;
+  an existing game with nothing new merged produces `already_in_library`; a
+  failed item produces **no** change row and is marked `failed` on `job_items`.
+  This is non-obvious per-item logic and a plausible bug site, so it warrants a
+  test.
 - **Recent endpoint** (`internal/api`) — filtering by `source`, by single
-  `jobType`, by multiple `jobType`s; a job with no change rows returns empty
-  arrays; grouping by `change_type` is correct. Auth gating unchanged.
+  `jobType`, by multiple `jobType`s, and by `daysBack` (a job outside the window
+  is excluded); a job with no change rows returns empty arrays; grouping by
+  `change_type` (including `updated`) is correct. Auth gating unchanged.
 - **Frontend** — `recent-activity.test.tsx`: rich breakdown renders when change
   arrays are populated; counts fallback renders when they are empty; the deleted
   sync component's test is removed/folded in.
@@ -215,6 +243,6 @@ addition. The `events` / `/admin/activity` system is untouched.
 - Per-item `changes` rows for export and metadata-refresh (they keep the counts
   fallback).
 - Any change to the `events` table, its prune job, or `/admin/activity`.
-- A per-item taxonomy for ownership-status changes on import merges (an import
-  that adds a new platform/storefront to an existing game is classified
-  `already_in_library`, not `status_changed`).
+- A finer-grained import taxonomy beyond `added` / `updated` /
+  `already_in_library` (e.g. distinguishing ownership-status upgrades the way
+  sync's `status_changed` does, or recording *which* platform was added).
