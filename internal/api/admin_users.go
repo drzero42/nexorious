@@ -127,8 +127,8 @@ func (h *AdminUsersHandler) HandleCreate(c *echo.Context) error {
 	if req.Password == "" {
 		return errorJSON(c, http.StatusBadRequest, "password is required")
 	}
-	if len(req.Password) < 6 {
-		return errorJSON(c, http.StatusBadRequest, "password must be at least 6 characters")
+	if len(req.Password) < 8 {
+		return errorJSON(c, http.StatusBadRequest, "password must be at least 8 characters")
 	}
 
 	ctx := context.Background()
@@ -304,8 +304,8 @@ func (h *AdminUsersHandler) HandleResetPassword(c *echo.Context) error {
 	if req.NewPassword == "" {
 		return errorJSON(c, http.StatusBadRequest, "new password is required")
 	}
-	if len(req.NewPassword) < 6 {
-		return errorJSON(c, http.StatusBadRequest, "new password must be at least 6 characters")
+	if len(req.NewPassword) < 8 {
+		return errorJSON(c, http.StatusBadRequest, "new password must be at least 8 characters")
 	}
 
 	ctx := context.Background()

@@ -165,8 +165,8 @@ func TestAdminCreateUser_ShortPassword(t *testing.T) {
 	}
 	var resp map[string]string
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["error"] != "password must be at least 6 characters" {
-		t.Errorf("error = %q, want %q", resp["error"], "password must be at least 6 characters")
+	if resp["error"] != "password must be at least 8 characters" {
+		t.Errorf("error = %q, want %q", resp["error"], "password must be at least 8 characters")
 	}
 }
 
@@ -587,8 +587,8 @@ func TestAdminResetPassword_ShortPassword(t *testing.T) {
 	}
 	var resp map[string]string
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["error"] != "new password must be at least 6 characters" {
-		t.Errorf("error = %q", resp["error"])
+	if resp["error"] != "new password must be at least 8 characters" {
+		t.Errorf("error = %q, want %q", resp["error"], "new password must be at least 8 characters")
 	}
 }
 
