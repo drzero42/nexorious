@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/drzero42/nexorious/internal/clicfg"
 )
 
 func TestConfirmInteractivePasswordMismatch(t *testing.T) {
@@ -308,5 +310,88 @@ func TestSetupMigrateWhenAlreadyMigrating(t *testing.T) {
 	}
 	if !strings.Contains(out, `Admin user "admin" created.`) {
 		t.Fatalf("output = %q; want success after waiting for in-progress migration", out)
+	}
+}
+
+// loginStub serves the admin-setup endpoint plus the full login bootstrap
+// (login → create key → logout) so the --login path can run end to end.
+func loginStub(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	})
+	mux.HandleFunc("/api/auth/setup/admin", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, _ *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "session_id", Value: "sess-xyz"})
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"username": "admin"})
+	})
+	mux.HandleFunc("/api/auth/api-keys", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "key-1", "key": "nxr_minted"})
+	})
+	mux.HandleFunc("/api/auth/logout", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestSetupLoginStoresKey covers --login: after the admin is created, the same
+// credentials drive the login bootstrap and the minted key lands in the config.
+func TestSetupLoginStoresKey(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	srv := loginStub(t)
+
+	out, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin", "--login")
+	if err != nil {
+		t.Fatalf("setup --login: %v\noutput: %s", err, out)
+	}
+	if !strings.Contains(out, `Admin user "admin" created.`) || !strings.Contains(out, "Logged in to") {
+		t.Fatalf("output = %q; want both admin-created and logged-in messages", out)
+	}
+
+	cfg, err := clicfg.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	p, ok := cfg.CurrentProfile()
+	if !ok || p.Key != "nxr_minted" || p.KeyID != "key-1" {
+		t.Fatalf("stored profile = %+v (ok=%v); want minted key", p, ok)
+	}
+	if p.URL != srv.URL || p.Username != "admin" {
+		t.Fatalf("stored profile url/username = %+v", p)
+	}
+}
+
+// TestSetupLoginFailsAfterAdminCreated verifies that when the admin is created
+// but the login step then fails, the admin-created success line still prints and
+// the returned error is scoped to login (so the operator does not re-run setup).
+func TestSetupLoginFailsAfterAdminCreated(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	})
+	mux.HandleFunc("/api/auth/setup/admin", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "boom"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin", "--login")
+	if err == nil || !strings.Contains(err.Error(), "admin created, but --login failed") {
+		t.Fatalf("err = %v; want login-scoped error after successful admin creation", err)
+	}
+	if !strings.Contains(out, `Admin user "admin" created.`) {
+		t.Fatalf("output = %q; want the admin-created line to still print", out)
 	}
 }

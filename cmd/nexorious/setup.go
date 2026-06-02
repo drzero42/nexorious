@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/drzero42/nexorious/internal/clicfg"
 	"github.com/drzero42/nexorious/internal/cliclient"
 )
 
@@ -25,6 +26,7 @@ type setupOpts struct {
 	url           string
 	username      string
 	passwordStdin bool
+	login         bool
 }
 
 // newSetupCmd returns the `setup` subcommand. It drives the server's existing
@@ -37,8 +39,9 @@ func newSetupCmd() *cobra.Command {
 		Long: "Create the first admin user by driving the server's setup endpoint over\n" +
 			"HTTP. The server must already be running and reachable. Pending database\n" +
 			"migrations are applied automatically first, bringing a fresh instance up in\n" +
-			"one command. Intended to be run via `docker exec` / `kubectl exec` into the\n" +
-			"running container.",
+			"one command. Pass --login to also log in with the same credentials and store\n" +
+			"an API key, so subsequent CLI commands are ready to use. Intended to be run\n" +
+			"via `docker exec` / `kubectl exec` into the running container.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSetup(cmd, opts)
 		},
@@ -46,6 +49,7 @@ func newSetupCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.url, "url", "", "Server URL (default "+defaultServerURL+")")
 	cmd.Flags().StringVar(&opts.username, "username", "", "Admin username (prompted if omitted; required with --password-stdin)")
 	cmd.Flags().BoolVar(&opts.passwordStdin, "password-stdin", false, "Read the password from stdin instead of prompting")
+	cmd.Flags().BoolVar(&opts.login, "login", false, "After creating the admin, log in with the same credentials and store an API key")
 	return cmd
 }
 
@@ -90,7 +94,24 @@ func runSetup(cmd *cobra.Command, opts setupOpts) error {
 	if err != nil {
 		return fmt.Errorf("could not reach server at %s — is it running? (%w)", url, err)
 	}
-	return reportSetupResult(out, username, res)
+	if err := reportSetupResult(out, username, res); err != nil {
+		return err
+	}
+
+	// --login: the admin now exists; reuse the credentials we already have to log
+	// in and store an API key. The admin creation (above) has already succeeded
+	// and printed its success line, so any failure here is scoped to the login
+	// step — the operator must NOT re-run setup, only `nexorious login`.
+	if opts.login {
+		cfg, err := clicfg.Load()
+		if err != nil {
+			return fmt.Errorf("admin created, but loading CLI config for --login failed (run \"nexorious login\"): %w", err)
+		}
+		if err := loginAndStoreKey(out, client, cfg, url, username, password); err != nil {
+			return fmt.Errorf("admin created, but --login failed (run \"nexorious login\"): %w", err)
+		}
+	}
+	return nil
 }
 
 // preflight checks server health before credentials are read. Pending

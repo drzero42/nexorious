@@ -19,7 +19,7 @@ directly to Postgres. Setup must go over HTTP so the server's serializable
 ## Command
 
 ```
-nexorious setup [--username U] [--url URL] [--password-stdin]
+nexorious setup [--username U] [--url URL] [--password-stdin] [--login]
 ```
 
 - `--username` — optional; prompted interactively when stdin is a TTY.
@@ -30,6 +30,9 @@ nexorious setup [--username U] [--url URL] [--password-stdin]
   operator passes `--url`.
 - `--password-stdin` — read the password from stdin instead of prompting.
   The password is **never** accepted as a flag value.
+- `--login` — after the admin is created, log in with the same credentials and
+  store an API key in the CLI config, so subsequent commands are ready to use.
+  See "Log in after setup" below.
 
 Pending migrations are applied automatically (no flag) — see "Run migrations
 first" below.
@@ -111,6 +114,38 @@ When migrating:
 (The migration SSE stream `/api/migrate/progress` is **not** consumed — polling
 `/api/migrate/status` is simpler and sufficient for a CLI.)
 
+## Log in after setup (`--login`)
+
+An admin running `setup` from the CLI will usually want to run *other* CLI
+commands next, which need a stored API key (`nexorious login`). `--login` folds
+that step in: after a successful admin creation, it reuses the username and
+password just supplied to run the existing login bootstrap (log in → mint key →
+store in the CLI config), so the admin is ready to go in one command.
+
+- **Opt-in, default off.** It writes to the local CLI config — a side effect —
+  and `setup` is often run via `docker/kubectl exec` in an ephemeral container
+  where a stored key is pointless. So it is only done when asked.
+- **Only on a fresh `201`.** On `403` (admin exists) or any other non-success,
+  `setup` aborts as usual and the login step never runs; the operator uses
+  `nexorious login` directly. `setup --login` is *not* a setup-or-login hybrid.
+- **Login-step failure is scoped.** The admin creation is irreversible and has
+  already printed its success line. If the login step then fails (e.g. the
+  config file can't be written), the command returns an error prefixed
+  `admin created, but --login failed (run "nexorious login")` and exits
+  non-zero — signaling the operator must **not** re-run `setup` (which would
+  now `403`), only `nexorious login`.
+- **No re-prompt.** The password is already in memory from either source
+  (`--password-stdin` line or the interactive confirm), so `--login` needs no
+  additional input.
+
+The login bootstrap is the same logic `nexorious login` runs after it resolves
+its url/username/password. That tail (revoke any previously stored key → mint a
+fresh key → drop the bootstrap session → save the profile → print) is extracted
+into a shared `loginAndStoreKey` helper, called by both `login` and
+`setup --login` with the same `cliclient.Client` instance. No new `cliclient`
+methods are needed — `Login`, `CreateAPIKey`, `Logout`, and
+`RevokeAPIKeyWithCookie` already exist.
+
 ## Architecture
 
 `setup` is a **pure HTTP client** — it never opens the database, so it does not
@@ -170,6 +205,10 @@ For the automatic migrate step, two more methods:
   4. Resolve password (per the rules above). Reuses the existing
      `promptSecret` helper from `reset_password.go` for the TTY path.
   5. `client.SetupAdmin(...)` and map the outcome (table below).
+  6. If `--login` and step 5 succeeded (`201`): load the CLI config and call the
+     shared `loginAndStoreKey` helper with the same `client`, `url`, `username`,
+     and `password`. A failure here is wrapped with the `admin created, but
+     --login failed` prefix (see "Log in after setup").
 - Registered via `root.AddCommand(newSetupCmd())` in `main.go`.
 
 ## Outcome → output / exit-code mapping
@@ -222,6 +261,11 @@ running alongside a live server on the host) — same pattern as
   - `migrating` preflight → poll until `ready` → `201` (no double run)
   - `migration_failed` preflight → abort surfacing the status detail, **without**
     re-running migrations (credentials never read)
+  - `--login` happy path: `201` admin → login bootstrap → minted key stored in an
+    isolated (`XDG_CONFIG_HOME`) config; both the admin-created and "Logged in"
+    lines printed
+  - `--login` where the login step fails after the `201`: admin-created line still
+    printed, returned error carries the `admin created, but --login failed` prefix
   The existing `cmd/nexorious/setup_test.go` DB harness is **not** reused for
   this command (it's an HTTP client, not a DB writer).
 - **`internal/cliclient/client_test.go`** — unit tests for `Health`,
