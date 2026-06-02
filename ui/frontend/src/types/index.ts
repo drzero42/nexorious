@@ -1,6 +1,7 @@
 export * from './admin';
 export * from './auth';
 export * from './backup';
+export * from './events';
 export * from './game';
 export * from './import-export';
 export * from './jobs';
