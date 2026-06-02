@@ -61,3 +61,39 @@ export async function updatePreferences(preferences: Record<string, unknown>): P
   const response = await api.put<UserApiResponse>('/auth/me', { preferences });
   return transformUser(response);
 }
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  scopes: 'read' | 'write';
+  last_used_at: string | null;
+  created_at: string;
+  expires_at: string | null;
+}
+
+// The create response returns the raw key exactly once. It omits last_used_at
+// (always null for a brand-new key), so it is not part of this shape.
+export interface CreatedApiKey {
+  id: string;
+  name: string;
+  scopes: 'read' | 'write';
+  key: string;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export function listApiKeys(): Promise<ApiKey[]> {
+  return api.get<ApiKey[]>('/auth/api-keys');
+}
+
+export function createApiKey(body: {
+  name: string;
+  scopes: 'read' | 'write';
+  expires_at: string | null;
+}): Promise<CreatedApiKey> {
+  return api.post<CreatedApiKey>('/auth/api-keys', body);
+}
+
+export function revokeApiKey(id: string): Promise<void> {
+  return api.delete(`/auth/api-keys/${encodeURIComponent(id)}`);
+}
