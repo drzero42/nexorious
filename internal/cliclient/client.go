@@ -1,5 +1,6 @@
-// Package cliclient is a thin HTTP client over the Nexorious /api/auth/*
-// endpoints used by the CLI to bootstrap and manage an API key.
+// Package cliclient is a thin HTTP client over the Nexorious /api/auth/*,
+// /api/migrate/*, and /health endpoints used by the CLI to bootstrap an admin,
+// run migrations, and manage an API key.
 package cliclient
 
 import (
@@ -24,11 +25,18 @@ type Client struct {
 	hc      *http.Client
 }
 
-// New returns a Client for the given base URL (trailing slash trimmed).
+// New returns a Client for the given base URL (trailing slash trimmed). The
+// client does not follow redirects: a gate's 302 is an observable response, so
+// callers (e.g. setup) can read its Location instead of silently chasing it.
 func New(baseURL string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		hc:      &http.Client{Timeout: 30 * time.Second},
+		hc: &http.Client{
+			Timeout: 30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
@@ -226,6 +234,80 @@ func (c *Client) RevokeAPIKeyWithBearer(key, keyID string) error {
 	})
 }
 
+type healthResp struct {
+	Status string `json:"status"`
+}
+
+// Health performs the GET /health preflight and returns the reported status
+// ("ok" when the server is ready, otherwise the app-state name such as
+// "needs_migration" or "db_unavailable").
+func (c *Client) Health() (string, error) {
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/health", nil)
+	if err != nil {
+		return "", fmt.Errorf("build health request: %w", err)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("health request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", httpError(resp)
+	}
+	var out healthResp
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode health response: %w", err)
+	}
+	return out.Status, nil
+}
+
+// SetupResult is the interpreted outcome of a setup-admin attempt. The caller
+// maps StatusCode (and Location for a 3xx redirect) to a message and exit code.
+type SetupResult struct {
+	StatusCode int
+	Location   string // Location header, set when StatusCode is a 3xx redirect
+	Message    string // server {"message":...}, set for 4xx when present
+}
+
+// SetupAdmin posts the first-admin credentials to POST /api/auth/setup/admin.
+// It returns a SetupResult for any HTTP response (including 3xx/4xx) so the
+// caller can map the outcome; it returns a non-nil error only for transport
+// failures (e.g. the server is unreachable). Redirects are not followed, so a
+// gate's 302 is observable via Location.
+func (c *Client) SetupAdmin(username, password string) (*SetupResult, error) {
+	payload, err := json.Marshal(map[string]string{"username": username, "password": password})
+	if err != nil {
+		return nil, fmt.Errorf("marshal setup: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/auth/setup/admin", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("build setup request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("setup request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	res := &SetupResult{StatusCode: resp.StatusCode}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		res.Location = resp.Header.Get("Location")
+		return res, nil
+	}
+	if resp.StatusCode >= 400 {
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if readErr == nil {
+			var eb errorBody
+			if json.Unmarshal(body, &eb) == nil {
+				res.Message = eb.Message
+			}
+		}
+	}
+	return res, nil
+}
+
 // Logout drops the throwaway session created during login.
 func (c *Client) Logout(sessionID string) error {
 	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/auth/logout", nil)
@@ -272,4 +354,59 @@ func (c *Client) Me(key string) (string, error) {
 		return "", fmt.Errorf("decode me response: %w", err)
 	}
 	return out.Username, nil
+}
+
+// RunMigrations triggers POST /api/migrate/run on the running server, so the
+// server's own migrator applies pending migrations and its in-memory state
+// transitions to ready. 202 ("migration started"), 400 ("already up to date"),
+// and 409 ("in progress") are all treated as success (nil) — the caller then
+// polls MigrationStatus to learn the outcome. Other responses return an error.
+func (c *Client) RunMigrations() error {
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/migrate/run", nil)
+	if err != nil {
+		return fmt.Errorf("build migrate request: %w", err)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("migrate request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	switch resp.StatusCode {
+	case http.StatusAccepted, http.StatusBadRequest, http.StatusConflict:
+		return nil
+	default:
+		return httpError(resp)
+	}
+}
+
+type migrationStatusResp struct {
+	State        string `json:"state"`
+	PendingCount int    `json:"pending_count"`
+	Error        string `json:"error"`
+}
+
+// MigrationStatus returns the server's migration state from
+// GET /api/migrate/status ("needs_migration", "migrating", "ready",
+// "migration_failed", or "db_unavailable") along with the server's failure
+// detail (the "error" field, populated only in the "migration_failed" state;
+// empty otherwise).
+func (c *Client) MigrationStatus() (state, detail string, err error) {
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/migrate/status", nil)
+	if err != nil {
+		return "", "", fmt.Errorf("build status request: %w", err)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("status request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", httpError(resp)
+	}
+	var out migrationStatusResp
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", "", fmt.Errorf("decode status response: %w", err)
+	}
+	return out.State, out.Error, nil
 }

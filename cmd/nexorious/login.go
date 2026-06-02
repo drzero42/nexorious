@@ -74,14 +74,21 @@ func runLogin(cmd *cobra.Command, urlFlag, usernameFlag string) error {
 	}
 
 	client := cliclient.New(url)
+	return loginAndStoreKey(out, client, cfg, url, username, password)
+}
 
+// loginAndStoreKey performs the API-key bootstrap: log in with the given
+// credentials, rotate out any previously stored key, mint a fresh CLI key, drop
+// the throwaway session, and save the key to the CLI config profile. Shared by
+// `login` and by `setup --login`, which already holds the admin's credentials.
+func loginAndStoreKey(out io.Writer, client *cliclient.Client, cfg *clicfg.Config, url, username, password string) error {
 	sessionID, err := client.Login(username, password)
 	if err != nil {
 		return fmt.Errorf("login failed: %w", err)
 	}
 
 	// Rotate: revoke the previously stored key (if any) before minting a new one.
-	if existing.KeyID != "" {
+	if existing, _ := cfg.CurrentProfile(); existing.KeyID != "" {
 		if err := client.RevokeAPIKeyWithCookie(sessionID, existing.KeyID); err != nil {
 			fmt.Fprintf(out, "warning: could not revoke previous key %s: %v\n", existing.KeyID, err)
 		}

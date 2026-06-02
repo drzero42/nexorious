@@ -131,6 +131,7 @@ The `nexorious` binary uses [cobra](https://github.com/spf13/cobra) subcommands:
 | `whoami`         | Print the account behind the stored API key                    |
 | `api-key`        | Manage API keys (generate, list, revoke)                       |
 | `reset-password` | Reset a user's password directly in the database (offline)     |
+| `setup`          | Create the first admin user on a running server (via HTTP)     |
 
 Running `./nexorious` with no subcommand prints the help overview and exits non-zero; `serve` must be explicit to start the server.
 
