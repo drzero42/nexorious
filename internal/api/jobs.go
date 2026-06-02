@@ -311,7 +311,7 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 	})
 }
 
-// syncChangeItem is a summary of a sync_changes row for the recent jobs endpoint.
+// syncChangeItem is a summary of a changes row for the recent jobs endpoint.
 type syncChangeItem struct {
 	Title     string  `bun:"title"      json:"title"`
 	OldStatus *string `bun:"old_status" json:"old_status,omitempty"`
@@ -378,12 +378,12 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		}
 		if err := h.db.NewRaw(`
 			SELECT change_type, title, old_status, new_status
-			FROM sync_changes
+			FROM changes
 			WHERE job_id = ?
 			ORDER BY created_at`,
 			j.ID,
 		).Scan(context.Background(), &allChanges); err != nil {
-			slog.Error("HandleRecentJobs: failed to query sync_changes", "job_id", j.ID, "err", err)
+			slog.Error("HandleRecentJobs: failed to query changes", "job_id", j.ID, "err", err)
 			allChanges = nil
 		}
 

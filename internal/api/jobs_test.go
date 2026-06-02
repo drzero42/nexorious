@@ -1064,12 +1064,12 @@ func TestRecentJobs_ReturnsProgressAndAddedItems(t *testing.T) {
 	insertJobItem(t, testDB, uuid.NewString(), jobID, userID, "k3", "Game C", "skipped")
 
 	_, err := testDB.ExecContext(context.Background(),
-		`INSERT INTO sync_changes (id, job_id, user_id, title, change_type, created_at)
+		`INSERT INTO changes (id, job_id, user_id, title, change_type, created_at)
          VALUES (gen_random_uuid(), ?, ?, 'Game A', 'added', now())`,
 		jobID, userID,
 	)
 	if err != nil {
-		t.Fatalf("insert sync_changes: %v", err)
+		t.Fatalf("insert changes: %v", err)
 	}
 
 	rec := getAuth(t, e, "/api/jobs/recent/steam", token)

@@ -638,16 +638,16 @@ func TestDispatchSync_Steam_SkippedGameExcluded(t *testing.T) {
 		t.Error("expected no job_item for skipped CS2")
 	}
 
-	// The pre-skipped CS2 must produce a sync_changes('skipped') row.
+	// The pre-skipped CS2 must produce a changes('skipped') row.
 	var sc struct {
 		ChangeType string `bun:"change_type"`
 		Title      string `bun:"title"`
 	}
 	if err := testDB.NewRaw(
-		`SELECT change_type, title FROM sync_changes WHERE job_id = ? AND external_game_id = ?`,
+		`SELECT change_type, title FROM changes WHERE job_id = ? AND external_game_id = ?`,
 		jobID, egID,
 	).Scan(ctx, &sc); err != nil {
-		t.Fatalf("scan sync_change for skipped game: %v", err)
+		t.Fatalf("scan change for skipped game: %v", err)
 	}
 	if sc.ChangeType != "skipped" {
 		t.Errorf("change_type: want 'skipped', got %q", sc.ChangeType)
@@ -1356,17 +1356,17 @@ func TestDispatchSync_RemovedGames_WritesSyncChange(t *testing.T) {
 
 	var changeCount int
 	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM sync_changes WHERE job_id = ? AND change_type = 'removed'`, jobID,
+		`SELECT COUNT(*) FROM changes WHERE job_id = ? AND change_type = 'removed'`, jobID,
 	).Scan(ctx, &changeCount)
 	if changeCount != 1 {
-		t.Errorf("expected 1 removed sync_change, got %d", changeCount)
+		t.Errorf("expected 1 removed change, got %d", changeCount)
 	}
 	var changeTitle string
 	_ = testDB.NewRaw(
-		`SELECT title FROM sync_changes WHERE job_id = ? AND change_type = 'removed'`, jobID,
+		`SELECT title FROM changes WHERE job_id = ? AND change_type = 'removed'`, jobID,
 	).Scan(ctx, &changeTitle)
 	if changeTitle != "Old Game" {
-		t.Errorf("sync_change title: want 'Old Game', got %q", changeTitle)
+		t.Errorf("change title: want 'Old Game', got %q", changeTitle)
 	}
 }
 
@@ -1823,13 +1823,13 @@ func TestUserGameWorker_CreatesUserGameAndSyncChange(t *testing.T) {
 	if ugpHours == nil || *ugpHours != 42.5 {
 		t.Errorf("hours_played: want 42.5, got %v", ugpHours)
 	}
-	// sync_changes: added.
+	// changes: added.
 	var changeCount int
 	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM sync_changes WHERE job_id = ? AND change_type = 'added'`, jobID,
+		`SELECT COUNT(*) FROM changes WHERE job_id = ? AND change_type = 'added'`, jobID,
 	).Scan(ctx, &changeCount)
 	if changeCount != 1 {
-		t.Errorf("expected 1 added sync_change, got %d", changeCount)
+		t.Errorf("expected 1 added change, got %d", changeCount)
 	}
 	// item status: completed.
 	var status string
@@ -1914,17 +1914,17 @@ func TestUserGameWorker_OwnershipRankGuard(t *testing.T) {
 	if resultHours != 20.0 {
 		t.Errorf("hours_played should update to higher value: want 20.0, got %v", resultHours)
 	}
-	// No sync_change: game already existed (not a new addition).
+	// No change row: game already existed (not a new addition).
 	var changeCount int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM sync_changes WHERE job_id = ? AND change_type = 'added'`, jobID).Scan(ctx, &changeCount)
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM changes WHERE job_id = ? AND change_type = 'added'`, jobID).Scan(ctx, &changeCount)
 	if changeCount != 0 {
-		t.Errorf("expected 0 added sync_changes (game pre-existed), got %d", changeCount)
+		t.Errorf("expected 0 added changes (game pre-existed), got %d", changeCount)
 	}
 }
 
 func TestUserGameWorker_StatusChangedSyncChange(t *testing.T) {
 	// Existing UGP has subscription; new sync says owned (upgrade).
-	// Expect a status_changed sync_change.
+	// Expect a status_changed change row.
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -1981,7 +1981,7 @@ func TestUserGameWorker_StatusChangedSyncChange(t *testing.T) {
 		NewStatus  *string `bun:"new_status"`
 	}
 	_ = testDB.NewRaw(
-		`SELECT change_type, old_status, new_status FROM sync_changes WHERE job_id = ?`, jobID,
+		`SELECT change_type, old_status, new_status FROM changes WHERE job_id = ?`, jobID,
 	).Scan(ctx, &sc)
 	if sc.ChangeType != "status_changed" {
 		t.Errorf("change_type: want 'status_changed', got %q", sc.ChangeType)
@@ -2424,7 +2424,7 @@ func TestSync_IGDBMatch_PassesPlatformIDsFromExternalGame(t *testing.T) {
 
 func TestUserGameWorker_AlreadyInLibrary_WritesSyncChange(t *testing.T) {
 	// A game whose user_games row already exists with no ownership upgrade
-	// must produce a sync_changes('already_in_library') row and no 'added' row.
+	// must produce a changes('already_in_library') row and no 'added' row.
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := uuid.NewString()
@@ -2476,27 +2476,27 @@ func TestUserGameWorker_AlreadyInLibrary_WritesSyncChange(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Must have exactly one already_in_library sync_change.
+	// Must have exactly one already_in_library change row.
 	var alreadyCount int
 	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM sync_changes WHERE job_id = ? AND change_type = 'already_in_library'`, jobID,
+		`SELECT COUNT(*) FROM changes WHERE job_id = ? AND change_type = 'already_in_library'`, jobID,
 	).Scan(ctx, &alreadyCount)
 	if alreadyCount != 1 {
-		t.Errorf("expected 1 already_in_library sync_change, got %d", alreadyCount)
+		t.Errorf("expected 1 already_in_library change, got %d", alreadyCount)
 	}
 
 	// Must have zero 'added' rows.
 	var addedCount int
 	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM sync_changes WHERE job_id = ? AND change_type = 'added'`, jobID,
+		`SELECT COUNT(*) FROM changes WHERE job_id = ? AND change_type = 'added'`, jobID,
 	).Scan(ctx, &addedCount)
 	if addedCount != 0 {
-		t.Errorf("expected 0 added sync_changes, got %d", addedCount)
+		t.Errorf("expected 0 added changes, got %d", addedCount)
 	}
 }
 
 func TestUserGameWorker_WorkerAutoSkip_WritesSyncChange(t *testing.T) {
-	// When eg.IsSkipped=true, the worker must write sync_changes('skipped')
+	// When eg.IsSkipped=true, the worker must write changes('skipped')
 	// before marking the job_item skipped.
 	truncateAllTables(t)
 	ctx := context.Background()
@@ -2530,15 +2530,15 @@ func TestUserGameWorker_WorkerAutoSkip_WritesSyncChange(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// sync_changes('skipped') must exist with the correct title.
+	// changes('skipped') must exist with the correct title.
 	var sc struct {
 		ChangeType string `bun:"change_type"`
 		Title      string `bun:"title"`
 	}
 	if err := testDB.NewRaw(
-		`SELECT change_type, title FROM sync_changes WHERE job_id = ?`, jobID,
+		`SELECT change_type, title FROM changes WHERE job_id = ?`, jobID,
 	).Scan(ctx, &sc); err != nil {
-		t.Fatalf("scan sync_change: %v", err)
+		t.Fatalf("scan change: %v", err)
 	}
 	if sc.ChangeType != "skipped" {
 		t.Errorf("change_type: want 'skipped', got %q", sc.ChangeType)
@@ -3168,7 +3168,7 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	// Insert two sync_changes rows: one added (with platform rows), one removed.
+	// Insert two changes rows: one added (with platform rows), one removed.
 	// The added game has explicit platform rows so we can assert they appear in the payload.
 	addedEgID := uuid.NewString()
 	if _, err := testDB.ExecContext(ctx,
@@ -3189,18 +3189,18 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 	}
 	egID := insertTestExternalGame(t, userID, "steam", "999", "Old Game", "pc-windows")
 	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 		 VALUES (?, ?, ?, ?, 'added', 'Hades', now())`,
 		uuid.NewString(), jobID, userID, addedEgID,
 	); err != nil {
-		t.Fatalf("insert sync_change added: %v", err)
+		t.Fatalf("insert change added: %v", err)
 	}
 	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO sync_changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
+		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 		 VALUES (?, ?, ?, ?, 'removed', 'Old Game', now())`,
 		uuid.NewString(), jobID, userID, egID,
 	); err != nil {
-		t.Fatalf("insert sync_change removed: %v", err)
+		t.Fatalf("insert change removed: %v", err)
 	}
 
 	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
@@ -3255,7 +3255,7 @@ func TestNoSyncDiffWhenNoChanges(t *testing.T) {
 	); err != nil {
 		t.Fatalf("insert job_item: %v", err)
 	}
-	// No sync_changes rows inserted.
+	// No changes rows inserted.
 
 	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
 

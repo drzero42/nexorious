@@ -99,7 +99,7 @@ type Config struct {
 	// unfinished items. Default 4h matches the Phase 5 spec.
 	StaleJobThreshold string `env:"STALE_JOB_THRESHOLD" envDefault:"4h"`
 
-	// SyncHistoryRetentionDays is the number of days sync_changes rows are kept.
+	// SyncHistoryRetentionDays is the number of days changes rows are kept.
 	// Rows older than this are deleted by the nightly CleanupSyncChangesWorker.
 	SyncHistoryRetentionDays int `env:"SYNC_HISTORY_RETENTION_DAYS" envDefault:"90"`
 

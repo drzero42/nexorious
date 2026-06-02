@@ -208,7 +208,7 @@ type CleanupSyncChangesArgs struct {
 	RetentionDays int `json:"retention_days"`
 }
 
-func (CleanupSyncChangesArgs) Kind() string { return "cleanup_sync_changes" }
+func (CleanupSyncChangesArgs) Kind() string { return "cleanup_changes" }
 
 type CleanupSyncChangesWorker struct {
 	river.WorkerDefaults[CleanupSyncChangesArgs]
@@ -220,19 +220,19 @@ func (w *CleanupSyncChangesWorker) Work(ctx context.Context, job *river.Job[Clea
 	return nil
 }
 
-// CleanupSyncChanges deletes sync_changes rows older than retentionDays days.
+// CleanupSyncChanges deletes changes rows older than retentionDays days.
 func CleanupSyncChanges(ctx context.Context, db *bun.DB, retentionDays int) {
 	result, err := db.NewRaw(
-		`DELETE FROM sync_changes WHERE created_at < now() - make_interval(days => ?)`,
+		`DELETE FROM changes WHERE created_at < now() - make_interval(days => ?)`,
 		retentionDays,
 	).Exec(ctx)
 	if err != nil {
-		slog.Error("cleanup: failed to delete old sync_changes", "err", err)
+		slog.Error("cleanup: failed to delete old changes", "err", err)
 		return
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
-		slog.Info("cleanup: deleted old sync_changes", "count", rows)
+		slog.Info("cleanup: deleted old changes", "count", rows)
 	}
 }
 
