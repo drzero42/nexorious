@@ -60,7 +60,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 	}
 
 	userID := uuid.NewString()
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcryptCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), auth.BcryptCost)
 	if err != nil {
 		slog.Error("setup admin: bcrypt", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")

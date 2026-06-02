@@ -19,8 +19,6 @@ import (
 	"github.com/drzero42/nexorious/internal/config"
 )
 
-const bcryptCost = 12
-
 // AuthHandler handles authentication endpoints.
 type AuthHandler struct {
 	db  *bun.DB
@@ -201,7 +199,7 @@ func (h *AuthHandler) HandleChangePassword(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "current password is incorrect")
 	}
 
-	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcryptCost)
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), auth.BcryptCost)
 	if err != nil {
 		slog.Error("change password: bcrypt", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")

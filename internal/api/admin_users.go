@@ -146,7 +146,7 @@ func (h *AdminUsersHandler) HandleCreate(c *echo.Context) error {
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcryptCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), auth.BcryptCost)
 	if err != nil {
 		slog.Error("admin create user: bcrypt", "err", err)
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
@@ -317,7 +317,7 @@ func (h *AdminUsersHandler) HandleResetPassword(c *echo.Context) error {
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcryptCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), auth.BcryptCost)
 	if err != nil {
 		slog.Error("admin reset password: bcrypt", "err", err)
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
