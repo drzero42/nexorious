@@ -34,6 +34,16 @@ func TestConfirmInteractivePasswordMatch(t *testing.T) {
 	}
 }
 
+func TestConfirmInteractivePasswordBothEmpty(t *testing.T) {
+	// Two empty entries "match", so the mismatch check passes; the empty-password
+	// guard must then reject them.
+	read := func(string) (string, error) { return "", nil }
+	_, err := confirmInteractivePassword(read)
+	if err == nil || !strings.Contains(err.Error(), "password is required") {
+		t.Fatalf("err = %v; want password-required error", err)
+	}
+}
+
 // setupStub is a configurable httptest server for the setup command tests.
 type setupStub struct {
 	healthStatus  string // value for /health "status" (default "ok")
@@ -135,6 +145,22 @@ func TestSetupUnhealthyPreflightAborts(t *testing.T) {
 	}
 }
 
+func TestSetupMigrationFailedPreflight(t *testing.T) {
+	srv := setupStub{healthStatus: "migration_failed"}.server(t)
+	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin")
+	if err == nil || !strings.Contains(err.Error(), "previously failed") {
+		t.Fatalf("err = %v; want previously-failed message (not 'pending')", err)
+	}
+}
+
+func TestSetupMigratingPreflight(t *testing.T) {
+	srv := setupStub{healthStatus: "migrating"}.server(t)
+	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin")
+	if err == nil || !strings.Contains(err.Error(), "already in progress") {
+		t.Fatalf("err = %v; want already-in-progress message", err)
+	}
+}
+
 func TestSetupConnectionRefused(t *testing.T) {
 	srv := setupStub{}.server(t)
 	url := srv.URL
@@ -216,5 +242,62 @@ func TestSetupMigrateFailed(t *testing.T) {
 	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin", "--migrate")
 	if err == nil || !strings.Contains(err.Error(), "migrations failed") {
 		t.Fatalf("err = %v; want migrations-failed error", err)
+	}
+}
+
+func TestSetupMigrateFailedSurfacesDetail(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "needs_migration"})
+	})
+	mux.HandleFunc("/api/migrate/run", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+	mux.HandleFunc("/api/migrate/status", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"state": "migration_failed", "error": "migration 003 failed: boom",
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	_, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin", "--migrate")
+	if err == nil || !strings.Contains(err.Error(), "migration 003 failed: boom") {
+		t.Fatalf("err = %v; want surfaced server failure detail", err)
+	}
+}
+
+// TestSetupMigrateWhenAlreadyMigrating covers health="migrating" + --migrate:
+// the POST /api/migrate/run returns 409, which RunMigrations tolerates, and the
+// command then polls to completion.
+func TestSetupMigrateWhenAlreadyMigrating(t *testing.T) {
+	polls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "migrating"})
+	})
+	mux.HandleFunc("/api/migrate/run", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "migration already in progress"})
+	})
+	mux.HandleFunc("/api/migrate/status", func(w http.ResponseWriter, _ *http.Request) {
+		polls++
+		_ = json.NewEncoder(w).Encode(map[string]any{"state": "ready"})
+	})
+	mux.HandleFunc("/api/auth/setup/admin", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runSetupCmd(t, "supersecret\n", "--url", srv.URL, "--username", "admin", "--password-stdin", "--migrate")
+	if err != nil {
+		t.Fatalf("setup --migrate (already migrating): %v\noutput: %s", err, out)
+	}
+	if polls == 0 {
+		t.Fatal("expected the command to poll migration status")
+	}
+	if !strings.Contains(out, `Admin user "admin" created.`) {
+		t.Fatalf("output = %q; want success after waiting for in-progress migration", out)
 	}
 }

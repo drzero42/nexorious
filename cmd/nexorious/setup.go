@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,8 +15,6 @@ import (
 
 	"github.com/drzero42/nexorious/internal/cliclient"
 )
-
-var errPasswordMismatch = fmt.Errorf("passwords do not match")
 
 const (
 	migratePollInterval = 1 * time.Second
@@ -109,12 +108,20 @@ func preflight(out io.Writer, client *cliclient.Client, url string, migrateFirst
 		return nil
 	case "db_unavailable":
 		return fmt.Errorf("database is unavailable")
-	default:
-		// needs_migration, migration_failed, migrating, ...
-		if !migrateFirst {
+	case "needs_migration", "migration_failed", "migrating":
+		if migrateFirst {
+			return runMigrateAndWait(out, client)
+		}
+		switch status {
+		case "migration_failed":
+			return fmt.Errorf("migrations previously failed — pass --migrate to retry, or check the server logs")
+		case "migrating":
+			return fmt.Errorf("migrations are already in progress — wait for them to finish, or pass --migrate to wait for them")
+		default: // needs_migration
 			return fmt.Errorf("migrations are pending — pass --migrate or run \"nexorious migrate\" first")
 		}
-		return runMigrateAndWait(out, client)
+	default:
+		return fmt.Errorf("server is not ready (status: %s)", status)
 	}
 }
 
@@ -124,6 +131,9 @@ func preflight(out io.Writer, client *cliclient.Client, url string, migrateFirst
 // running server's cached state stale; see the design doc).
 func runMigrateAndWait(out io.Writer, client *cliclient.Client) error {
 	fmt.Fprintln(out, "Running pending migrations...")
+	// RunMigrations tolerates 409 ("already in progress"), so this is also the
+	// correct path when health was already "migrating" — we simply fall through
+	// to polling the in-progress migration.
 	if err := client.RunMigrations(); err != nil {
 		return fmt.Errorf("start migrations: %w", err)
 	}
@@ -187,7 +197,7 @@ func confirmInteractivePassword(read func(label string) (string, error)) (string
 		return "", err
 	}
 	if first != second {
-		return "", errPasswordMismatch
+		return "", fmt.Errorf("passwords do not match")
 	}
 	if first == "" {
 		return "", fmt.Errorf("password is required")
@@ -206,9 +216,9 @@ func reportSetupResult(out io.Writer, username string, res *cliclient.SetupResul
 		return fmt.Errorf("setup already complete; an admin user already exists")
 	case http.StatusBadRequest:
 		if res.Message != "" {
-			return fmt.Errorf("%s", res.Message)
+			return errors.New(res.Message)
 		}
-		return fmt.Errorf("invalid request")
+		return errors.New("invalid request")
 	case http.StatusFound, http.StatusMovedPermanently, http.StatusSeeOther,
 		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
 		switch {
