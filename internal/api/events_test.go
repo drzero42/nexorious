@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -127,6 +128,69 @@ func TestAdminEvents_KeysetPaging(t *testing.T) {
 	}
 	if page3.NextCursor != nil {
 		t.Errorf("page3: expected nil next_cursor, got %v", *page3.NextCursor)
+	}
+}
+
+func TestAdminEvents_NonAdminForbidden(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	_, regTok := setupRegularUser(t, testDB, e, "events-forbid")
+
+	rec := getAuth(t, e, "/api/admin/events", regTok)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for non-admin, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminEvents_Unauthenticated(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/events", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 unauthenticated, got %d", rec.Code)
+	}
+}
+
+func TestAdminEvents_SystemEventNullActor(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "events-null")
+
+	insertEvent(t, testDB, "evt-sys", notify.TypeAdminMaintCompleted, notify.ScopeAdmin, nil,
+		`{}`, time.Date(2026, 6, 2, 8, 0, 0, 0, time.UTC))
+
+	rec := getAuth(t, e, "/api/admin/events", adminTok)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp eventsListResp
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(resp.Events))
+	}
+	if resp.Events[0].ActorUserID != nil || resp.Events[0].ActorUsername != nil {
+		t.Errorf("expected null actor id and username, got id=%v name=%v",
+			resp.Events[0].ActorUserID, resp.Events[0].ActorUsername)
+	}
+}
+
+func TestAdminEvents_MalformedCursor(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	_, adminTok := setupAdminUser(t, testDB, e, "events-badcur")
+
+	rec := getAuth(t, e, "/api/admin/events?before=not-a-cursor!!", adminTok)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for malformed cursor, got %d", rec.Code)
 	}
 }
 
