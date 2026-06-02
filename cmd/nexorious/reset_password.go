@@ -14,8 +14,8 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 )
 
-// minPasswordLength is the shared ≥ 8 minimum enforced across every
-// password-setting path (setup, change-password, admin reset, this command).
+// minPasswordLength is the minimum password length this command enforces.
+// It matches the ≥ 8 minimum used independently by the other password-setting paths (setup, change-password, admin create/reset).
 const minPasswordLength = 8
 
 var (
