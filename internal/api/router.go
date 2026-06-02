@@ -328,6 +328,10 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		arh := NewAdminResetHandler(db)
 		adminGroup.POST("/api/auth/admin/reset", arh.HandleReset)
 
+		// Admin activity / events feed (auth + admin required)
+		eh := NewEventsHandler(db)
+		adminGroup.GET("/api/admin/events", eh.HandleList)
+
 		// Notifications routes (all auth-protected)
 		nh := NewNotificationsHandler(db, encrypter, notify.NewShoutrrrSender())
 		notificationsGroup := e.Group("/api/notifications", auth.AuthMiddleware(db))

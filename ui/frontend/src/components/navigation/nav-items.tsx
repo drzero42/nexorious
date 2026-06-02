@@ -9,6 +9,7 @@ import {
   Shield,
   Wrench,
   DatabaseBackup,
+  Activity,
 } from 'lucide-react';
 import type { NavItem, NavSection } from './types';
 import { usePendingReviewCount } from '@/hooks/use-jobs';
@@ -64,6 +65,11 @@ export function useNavItems() {
         href: '/admin/users',
         label: 'User Management',
         icon: <Users className="h-4 w-4" />,
+      },
+      {
+        href: '/admin/activity',
+        label: 'Activity',
+        icon: <Activity className="h-4 w-4" />,
       },
       {
         href: '/admin/maintenance',

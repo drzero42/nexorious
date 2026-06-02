@@ -31,6 +31,7 @@ import { Route as AuthenticatedAdminBackupsRouteImport } from './routes/_authent
 import { Route as AuthenticatedGamesAddIndexRouteImport } from './routes/_authenticated/games/add.index'
 import { Route as AuthenticatedGamesIdIndexRouteImport } from './routes/_authenticated/games/$id.index'
 import { Route as AuthenticatedAdminUsersIndexRouteImport } from './routes/_authenticated/admin/users/index'
+import { Route as AuthenticatedAdminActivityIndexRouteImport } from './routes/_authenticated/admin/activity/index'
 import { Route as AuthenticatedGamesAddConfirmRouteImport } from './routes/_authenticated/games/add.confirm'
 import { Route as AuthenticatedGamesIdEditRouteImport } from './routes/_authenticated/games/$id.edit'
 import { Route as AuthenticatedAdminUsersNewRouteImport } from './routes/_authenticated/admin/users/new'
@@ -151,6 +152,12 @@ const AuthenticatedAdminUsersIndexRoute =
     path: '/admin/users/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminActivityIndexRoute =
+  AuthenticatedAdminActivityIndexRouteImport.update({
+    id: '/admin/activity/',
+    path: '/admin/activity/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedGamesAddConfirmRoute =
   AuthenticatedGamesAddConfirmRouteImport.update({
     id: '/confirm',
@@ -198,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/admin/users/new': typeof AuthenticatedAdminUsersNewRoute
   '/games/$id/edit': typeof AuthenticatedGamesIdEditRoute
   '/games/add/confirm': typeof AuthenticatedGamesAddConfirmRoute
+  '/admin/activity/': typeof AuthenticatedAdminActivityIndexRoute
   '/admin/users/': typeof AuthenticatedAdminUsersIndexRoute
   '/games/$id/': typeof AuthenticatedGamesIdIndexRoute
   '/games/add/': typeof AuthenticatedGamesAddIndexRoute
@@ -222,6 +230,7 @@ export interface FileRoutesByTo {
   '/admin/users/new': typeof AuthenticatedAdminUsersNewRoute
   '/games/$id/edit': typeof AuthenticatedGamesIdEditRoute
   '/games/add/confirm': typeof AuthenticatedGamesAddConfirmRoute
+  '/admin/activity': typeof AuthenticatedAdminActivityIndexRoute
   '/admin/users': typeof AuthenticatedAdminUsersIndexRoute
   '/games/$id': typeof AuthenticatedGamesIdIndexRoute
   '/games/add': typeof AuthenticatedGamesAddIndexRoute
@@ -251,6 +260,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/users/new': typeof AuthenticatedAdminUsersNewRoute
   '/_authenticated/games/$id/edit': typeof AuthenticatedGamesIdEditRoute
   '/_authenticated/games/add/confirm': typeof AuthenticatedGamesAddConfirmRoute
+  '/_authenticated/admin/activity/': typeof AuthenticatedAdminActivityIndexRoute
   '/_authenticated/admin/users/': typeof AuthenticatedAdminUsersIndexRoute
   '/_authenticated/games/$id/': typeof AuthenticatedGamesIdIndexRoute
   '/_authenticated/games/add/': typeof AuthenticatedGamesAddIndexRoute
@@ -279,6 +289,7 @@ export interface FileRouteTypes {
     | '/admin/users/new'
     | '/games/$id/edit'
     | '/games/add/confirm'
+    | '/admin/activity/'
     | '/admin/users/'
     | '/games/$id/'
     | '/games/add/'
@@ -303,6 +314,7 @@ export interface FileRouteTypes {
     | '/admin/users/new'
     | '/games/$id/edit'
     | '/games/add/confirm'
+    | '/admin/activity'
     | '/admin/users'
     | '/games/$id'
     | '/games/add'
@@ -331,6 +343,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users/new'
     | '/_authenticated/games/$id/edit'
     | '/_authenticated/games/add/confirm'
+    | '/_authenticated/admin/activity/'
     | '/_authenticated/admin/users/'
     | '/_authenticated/games/$id/'
     | '/_authenticated/games/add/'
@@ -498,6 +511,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminUsersIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/activity/': {
+      id: '/_authenticated/admin/activity/'
+      path: '/admin/activity'
+      fullPath: '/admin/activity/'
+      preLoaderRoute: typeof AuthenticatedAdminActivityIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/games/add/confirm': {
       id: '/_authenticated/games/add/confirm'
       path: '/confirm'
@@ -575,6 +595,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSyncIndexRoute: typeof AuthenticatedSyncIndexRoute
   AuthenticatedAdminUsersIdRoute: typeof AuthenticatedAdminUsersIdRoute
   AuthenticatedAdminUsersNewRoute: typeof AuthenticatedAdminUsersNewRoute
+  AuthenticatedAdminActivityIndexRoute: typeof AuthenticatedAdminActivityIndexRoute
   AuthenticatedAdminUsersIndexRoute: typeof AuthenticatedAdminUsersIndexRoute
 }
 
@@ -596,6 +617,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSyncIndexRoute: AuthenticatedSyncIndexRoute,
   AuthenticatedAdminUsersIdRoute: AuthenticatedAdminUsersIdRoute,
   AuthenticatedAdminUsersNewRoute: AuthenticatedAdminUsersNewRoute,
+  AuthenticatedAdminActivityIndexRoute: AuthenticatedAdminActivityIndexRoute,
   AuthenticatedAdminUsersIndexRoute: AuthenticatedAdminUsersIndexRoute,
 }
 

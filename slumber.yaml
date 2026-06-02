@@ -132,6 +132,12 @@ requests:
           data:
             file: "{{file(prompt(message='Path to backup .tar.gz file'))}}"
 
+      list_events:
+        name: List Events
+        method: GET
+        url: "{{base_url}}/api/admin/events"
+        $ref: "#/.authenticated"
+
   admin_users:
     name: Admin Users
     requests:
