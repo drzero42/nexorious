@@ -23,6 +23,7 @@ import { Eye, EyeOff, Check, X, Loader2, AlertCircle, User, Trash2 } from 'lucid
 import * as authApi from '@/api/auth';
 import * as gamesApi from '@/api/games';
 import { NotificationsSection } from '@/components/notifications/notifications-section';
+import { ApiKeysSection } from '@/components/api-keys/api-keys-section';
 
 export const Route = createFileRoute('/_authenticated/profile')({
   head: () => ({ meta: [{ title: 'Profile | Nexorious' }] }),
@@ -463,6 +464,9 @@ function ProfilePage() {
 
           {/* Notifications Section */}
           <NotificationsSection />
+
+          {/* API Keys Section */}
+          <ApiKeysSection />
         </div>
 
         {/* Requirements Info Box (Desktop) */}
