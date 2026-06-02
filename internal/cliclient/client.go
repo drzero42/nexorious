@@ -1,5 +1,6 @@
-// Package cliclient is a thin HTTP client over the Nexorious /api/auth/*
-// endpoints used by the CLI to bootstrap and manage an API key.
+// Package cliclient is a thin HTTP client over the Nexorious /api/auth/*,
+// /api/migrate/*, and /health endpoints used by the CLI to bootstrap an admin,
+// run migrations, and manage an API key.
 package cliclient
 
 import (
