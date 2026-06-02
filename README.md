@@ -195,7 +195,6 @@ SESSION_COOKIE_SECURE=true                 # default: true; set false to serve o
 | Run frontend tests | `npm run test` (from `ui/frontend/`) |
 | Type check frontend | `npm run check` (from `ui/frontend/`) |
 | Lint Go | `golangci-lint run` |
-| API client | `slumber` |
 
 ### Project Structure
 
@@ -283,11 +282,7 @@ Requires `legendary-gl` installed and authenticated on the host. See [issue #45]
 
 ## API Documentation
 
-The API is self-documenting. With the server running, explore endpoints via `slumber` (included in the devenv shell):
-
-```bash
-slumber
-```
+The route handlers in `internal/api/` are the source of truth for available endpoints — each domain (games, user_games, auth, platforms, tags, jobs, import, export, sync, …) has its own handler file with the registered routes.
 
 See `DEV.md` for the full development guide including database reset procedures and the two-terminal Vite dev server workflow.
 

@@ -16,7 +16,6 @@
     golangci-lint
     imagemagick
     jq
-    inputs.drzero42.packages.${system}.slumber
     legendary-gl
     librsvg
     nodejs_24
