@@ -30,6 +30,76 @@ func TestAppStateMiddleware_RedirectsToMigrate(t *testing.T) {
 	}
 }
 
+func TestAppStateMiddleware_ApiReturnsJSON503(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 for /api path, got %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Errorf("expected no redirect for /api path, got Location %q", loc)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["app_state"] != "needs_migration" {
+		t.Errorf("expected app_state=needs_migration, got %q", body["app_state"])
+	}
+}
+
+func TestDBUnavailable_ApiReturnsJSON503(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateDBUnavailable)
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 for /api path, got %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Errorf("expected no redirect for /api path, got Location %q", loc)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["app_state"] != "db_unavailable" {
+		t.Errorf("expected app_state=db_unavailable, got %q", body["app_state"])
+	}
+}
+
+func TestSetupGate_ApiReturnsJSON503(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	m.SetNeedsSetup(true)
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 for /api path, got %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Errorf("expected no redirect for /api path, got Location %q", loc)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["app_state"] != "needs_setup" {
+		t.Errorf("expected app_state=needs_setup, got %q", body["app_state"])
+	}
+}
+
 func TestAppStateMiddleware_BypassMigrationPaths(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
 	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
@@ -90,7 +160,7 @@ func TestSetupGate_RedirectsArbitraryRoutes(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	migrator.SetNeedsSetup(true)
 	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
-	req := httptest.NewRequest(http.MethodGet, "/api/games", nil)
+	req := httptest.NewRequest(http.MethodGet, "/some/page", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	if rec.Code != http.StatusFound {

@@ -31,6 +31,37 @@ function buildUrl(
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;
 }
 
+// Maps a backend app_state (see internal/migrate AppState.String) to the page a
+// running SPA must hard-navigate to. Document loads are redirected server-side
+// via 302, but an already-loaded tab never issues a document request, so the
+// gates return a 503 with this app_state instead and the client navigates here.
+const APP_STATE_REDIRECTS: Record<string, string> = {
+  db_unavailable: '/db-error',
+  needs_migration: '/migrate',
+  migrating: '/migrate',
+  migration_failed: '/migrate',
+  needs_setup: '/setup',
+};
+
+// If the response is an app-state 503 (issue #771), hard-navigate the tab to the
+// matching page so it self-heals instead of trying to JSON.parse an HTML page.
+// Clones the response so the body remains readable for downstream error handling.
+async function maybeRedirectForAppState(response: Response): Promise<void> {
+  if (response.status !== 503) return;
+  let appState: string | undefined;
+  try {
+    const data = (await response.clone().json()) as { app_state?: unknown };
+    if (typeof data?.app_state === 'string') appState = data.app_state;
+  } catch {
+    return;
+  }
+  if (!appState) return;
+  const target = APP_STATE_REDIRECTS[appState];
+  if (target && window.location.pathname !== target) {
+    window.location.assign(target);
+  }
+}
+
 async function handleApiError(response: Response): Promise<never> {
   let errorDetails: unknown;
   let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
@@ -67,6 +98,7 @@ export async function apiCall(path: string, options: ApiCallOptions = {}): Promi
     if (response.status === 401 && window.location.pathname !== '/login') {
       window.location.replace('/login');
     }
+    await maybeRedirectForAppState(response);
     await handleApiError(response);
   }
 
@@ -143,6 +175,7 @@ export async function apiUploadFile<T>(
     if (response.status === 401 && window.location.pathname !== '/login') {
       window.location.replace('/login');
     }
+    await maybeRedirectForAppState(response);
     await handleApiError(response);
   }
   return response.json();
@@ -158,6 +191,7 @@ export async function apiDownloadFile(path: string): Promise<{ blob: Blob; filen
     if (response.status === 401 && window.location.pathname !== '/login') {
       window.location.replace('/login');
     }
+    await maybeRedirectForAppState(response);
     await handleApiError(response);
   }
   const contentDisposition = response.headers.get('Content-Disposition');
