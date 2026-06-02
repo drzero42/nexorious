@@ -80,5 +80,9 @@ describe('RecentActivity', () => {
     // breakdown labels must be absent.
     expect(screen.getByText('Recent Activity')).toBeInTheDocument();
     expect(screen.queryByText('Added to library')).not.toBeInTheDocument();
+
+    // Expanding the row reveals the per-item details fallback (not the breakdown).
+    fireEvent.click(screen.getByRole('button', { name: /completed/i }));
+    expect(screen.getByTestId('job-items-details')).toBeInTheDocument();
   });
 });

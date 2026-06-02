@@ -1230,6 +1230,43 @@ func TestHandleRecentJobs_GroupsUpdatedItems(t *testing.T) {
 	}
 }
 
+func TestHandleRecentJobs_FiltersByDaysBack(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-recent-days")
+
+	insertJob(t, testDB, "job-new", userID, "sync", "steam", "completed")
+	insertJob(t, testDB, "job-old", userID, "sync", "steam", "completed")
+	// Backdate the old job beyond the default 7-day window.
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE jobs SET created_at = now() - interval '30 days' WHERE id = 'job-old'`,
+	); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+
+	countJobs := func(url string) int {
+		rec := getAuth(t, e, url, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d: %s", url, rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		jobs, _ := resp["jobs"].([]any)
+		return len(jobs)
+	}
+
+	// Default window (7 days) excludes the 30-day-old job.
+	if got := countJobs("/api/jobs/recent?source=steam"); got != 1 {
+		t.Fatalf("default window: expected 1 job, got %d", got)
+	}
+	// A wider window includes both.
+	if got := countJobs("/api/jobs/recent?source=steam&days_back=60"); got != 2 {
+		t.Fatalf("60-day window: expected 2 jobs, got %d", got)
+	}
+}
+
 func TestHandleGetJobItems_DeduplicatesPendingReview(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)

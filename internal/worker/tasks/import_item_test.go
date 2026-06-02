@@ -117,6 +117,11 @@ func TestImportItem_MissingIGDBID(t *testing.T) {
 	if item.ErrorMessage == nil || *item.ErrorMessage != "missing igdb_id" {
 		t.Errorf("error_message = %v, want 'missing igdb_id'", item.ErrorMessage)
 	}
+
+	// A failed item must not write any change rows.
+	if got := countAllChangeRows(t, jobID); got != 0 {
+		t.Errorf("failed import wrote %d change rows, want 0", got)
+	}
 }
 
 func TestImportItem_DuplicateGame(t *testing.T) {
@@ -794,6 +799,19 @@ func countChangeRows(t *testing.T, jobID, changeType string) int {
 	var n int
 	if err := testDB.NewRaw(
 		`SELECT count(*) FROM changes WHERE job_id = ? AND change_type = ?`, jobID, changeType,
+	).Scan(ctx, &n); err != nil {
+		t.Fatalf("count changes: %v", err)
+	}
+	return n
+}
+
+// countAllChangeRows returns the total number of `changes` rows for a job.
+func countAllChangeRows(t *testing.T, jobID string) int {
+	t.Helper()
+	ctx := context.Background()
+	var n int
+	if err := testDB.NewRaw(
+		`SELECT count(*) FROM changes WHERE job_id = ?`, jobID,
 	).Scan(ctx, &n); err != nil {
 		t.Fatalf("count changes: %v", err)
 	}
