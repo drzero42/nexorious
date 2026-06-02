@@ -82,6 +82,22 @@ type eventResponse struct {
 	Payload       json.RawMessage `json:"payload"`
 }
 
+// eventTypesForCategory returns the event types belonging to a registry
+// category. Returns a single empty string when unknown so the IN clause
+// matches nothing rather than everything.
+func eventTypesForCategory(category string) []string {
+	var types []string
+	for _, m := range notify.Registry() {
+		if m.Category == category {
+			types = append(types, m.Type)
+		}
+	}
+	if len(types) == 0 {
+		return []string{""}
+	}
+	return types
+}
+
 // HandleList serves GET /api/admin/events.
 func (h *EventsHandler) HandleList(c *echo.Context) error {
 	limit, _ := strconv.Atoi(c.QueryParam("limit")) //nolint:errcheck // invalid/empty query param clamped below
@@ -99,6 +115,33 @@ func (h *EventsHandler) HandleList(c *echo.Context) error {
 		Join("LEFT JOIN users AS u ON u.id = e.actor_user_id").
 		OrderExpr("e.occurred_at DESC, e.id DESC").
 		Limit(limit + 1)
+
+	if t := c.QueryParam("type"); t != "" {
+		q = q.Where("e.type = ?", t)
+	}
+	if cat := c.QueryParam("category"); cat != "" {
+		q = q.Where("e.type IN (?)", bun.List(eventTypesForCategory(cat)))
+	}
+	if scope := c.QueryParam("scope"); scope != "" {
+		q = q.Where("e.scope = ?", scope)
+	}
+	if user := c.QueryParam("user"); user != "" {
+		q = q.Where("(e.actor_user_id = ? OR u.username ILIKE ?)", user, "%"+user+"%")
+	}
+	if since := c.QueryParam("since"); since != "" {
+		ts, err := time.Parse(time.RFC3339, since)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid since")
+		}
+		q = q.Where("e.occurred_at >= ?", ts)
+	}
+	if until := c.QueryParam("until"); until != "" {
+		ts, err := time.Parse(time.RFC3339, until)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid until")
+		}
+		q = q.Where("e.occurred_at <= ?", ts)
+	}
 
 	if before := c.QueryParam("before"); before != "" {
 		ts, id, err := DecodeEventCursor(before)

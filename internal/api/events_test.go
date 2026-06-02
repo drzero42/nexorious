@@ -129,3 +129,51 @@ func TestAdminEvents_KeysetPaging(t *testing.T) {
 		t.Errorf("page3: expected nil next_cursor, got %v", *page3.NextCursor)
 	}
 }
+
+func TestAdminEvents_Filters(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	adminID, adminTok := setupAdminUser(t, testDB, e, "events-filters")
+	insertAuthTestUser(t, testDB, "u-bob-filt", "bobfilt", "password123", true, false)
+	bobID := "u-bob-filt"
+
+	base := time.Date(2026, 6, 2, 9, 0, 0, 0, time.UTC)
+	insertEvent(t, testDB, "evt-sync", notify.TypeSyncCompleted, notify.ScopeUser, &adminID, `{}`, base)
+	insertEvent(t, testDB, "evt-imp", notify.TypeImportCompleted, notify.ScopeUser, &bobID, `{}`, base.Add(time.Minute))
+	insertEvent(t, testDB, "evt-bkp", notify.TypeAdminBackupCompleted, notify.ScopeAdmin, nil, `{}`, base.Add(2*time.Minute))
+
+	get := func(query string) eventsListResp {
+		t.Helper()
+		rec := getAuth(t, e, "/api/admin/events"+query, adminTok)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("query %q: expected 200, got %d: %s", query, rec.Code, rec.Body.String())
+		}
+		var resp eventsListResp
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return resp
+	}
+
+	if r := get("?scope=admin"); len(r.Events) != 1 || r.Events[0].ID != "evt-bkp" {
+		t.Errorf("scope filter wrong: %+v", r.Events)
+	}
+	if r := get("?type=" + notify.TypeImportCompleted); len(r.Events) != 1 || r.Events[0].ID != "evt-imp" {
+		t.Errorf("type filter wrong: %+v", r.Events)
+	}
+	if r := get("?category=Backups"); len(r.Events) != 1 || r.Events[0].ID != "evt-bkp" {
+		t.Errorf("category filter wrong: %+v", r.Events)
+	}
+	if r := get("?user=bobfilt"); len(r.Events) != 1 || r.Events[0].ID != "evt-imp" {
+		t.Errorf("user-by-name filter wrong: %+v", r.Events)
+	}
+	if r := get("?user=" + adminID); len(r.Events) != 1 || r.Events[0].ID != "evt-sync" {
+		t.Errorf("user-by-id filter wrong: %+v", r.Events)
+	}
+	since := base.Add(30 * time.Second).Format(time.RFC3339)
+	until := base.Add(90 * time.Second).Format(time.RFC3339)
+	if r := get("?since=" + since + "&until=" + until); len(r.Events) != 1 || r.Events[0].ID != "evt-imp" {
+		t.Errorf("since/until filter wrong: %+v", r.Events)
+	}
+}
