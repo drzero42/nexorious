@@ -54,11 +54,20 @@ function SyncServiceCardWithStatus({
   const { data: reviewData } = usePendingReviewCount();
   const { isPending: isSyncing } = useTriggerSync();
 
-  // Fetch storefront-specific connection data for credentials error state
-  const { data: steamConnection } = useSteamConnection();
-  const { data: psnStatus } = usePSNStatus();
-  const { data: epicConnection } = useEpicConnection();
-  const { data: gogConnection } = useGOGConnection();
+  // Fetch only this card's storefront connection for its credentials-error state,
+  // so each card fires a single connection request instead of all four.
+  const { data: steamConnection } = useSteamConnection({
+    enabled: config.storefront === SyncStorefront.STEAM,
+  });
+  const { data: psnStatus } = usePSNStatus({
+    enabled: config.storefront === SyncStorefront.PSN,
+  });
+  const { data: epicConnection } = useEpicConnection({
+    enabled: config.storefront === SyncStorefront.EPIC,
+  });
+  const { data: gogConnection } = useGOGConnection({
+    enabled: config.storefront === SyncStorefront.GOG,
+  });
 
   const pendingReviewCount = reviewData?.countsBySource?.[config.storefront] ?? 0;
 

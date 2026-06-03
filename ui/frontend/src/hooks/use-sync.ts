@@ -165,12 +165,13 @@ export function useDisconnectSteam() {
  * Hook to fetch Steam connection status.
  * Returns connected state, credentialsError flag, steamId, and username.
  */
-export function useSteamConnection() {
+export function useSteamConnection(options?: { enabled?: boolean }) {
   return useQuery<SteamConnectionData, Error>({
     queryKey: syncKeys.steamConnection(),
     queryFn: syncApi.getSteamConnection,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    enabled: options?.enabled,
   });
 }
 
@@ -197,12 +198,13 @@ export function useResetSyncData() {
  * Tells the UI whether Epic sync is disabled (LEGENDARY_WORK_DIR unset on
  * the backend), connected, or simply not configured.
  */
-export function useEpicConnection() {
+export function useEpicConnection(options?: { enabled?: boolean }) {
   return useQuery<EpicConnectionResponse, Error>({
     queryKey: syncKeys.epicConnection(),
     queryFn: syncApi.getEpicConnection,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    enabled: options?.enabled,
   });
 }
 
@@ -247,12 +249,13 @@ export function useDisconnectEpic() {
 // GOG Auth Hooks
 // ============================================================================
 
-export function useGOGConnection() {
+export function useGOGConnection(options?: { enabled?: boolean }) {
   return useQuery<GOGConnectionResponse, Error>({
     queryKey: syncKeys.gogConnection(),
     queryFn: syncApi.getGOGConnection,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    enabled: options?.enabled,
   });
 }
 
@@ -314,12 +317,13 @@ export function useConfigurePSN() {
  * Hook to check current PSN connection status.
  * Cached for 5 minutes.
  */
-export function usePSNStatus() {
+export function usePSNStatus(options?: { enabled?: boolean }) {
   return useQuery<PSNStatusResponse, Error>({
     queryKey: syncKeys.psnStatus(),
     queryFn: syncApi.getPSNStatus,
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: true,
+    enabled: options?.enabled,
   });
 }
 
