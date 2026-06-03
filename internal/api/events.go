@@ -140,7 +140,10 @@ func (h *EventsHandler) HandleList(c *echo.Context) error {
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid until")
 		}
-		q = q.Where("e.occurred_at <= ?", ts)
+		// Exclusive upper bound: callers pass the start of the day *after* the
+		// range they want, so the whole final day is included with no
+		// sub-second truncation. See ui .../admin/activity dayRangeToUTC.
+		q = q.Where("e.occurred_at < ?", ts)
 	}
 
 	if before := c.QueryParam("before"); before != "" {
