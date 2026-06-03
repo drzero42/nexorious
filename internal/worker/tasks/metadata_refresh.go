@@ -127,7 +127,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		slog.Error("metadata_refresh_dispatch: transaction failed", "err", err)
 		notify.Emit(ctx, w.DB, notify.EmitParams{
 			Type: notify.TypeAdminMaintFailed, Scope: notify.ScopeAdmin,
-			Payload: map[string]any{"action": "metadata_refresh_dispatch", "error": err.Error()},
+			Payload: notify.MaintPayload{Action: "metadata_refresh_dispatch", Error: err.Error()},
 		})
 		return nil
 	}
@@ -142,7 +142,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 	slog.Info("metadata_refresh_dispatch: job created", "job_id", jobID, "game_count", len(games))
 	notify.Emit(ctx, w.DB, notify.EmitParams{
 		Type: notify.TypeAdminMaintCompleted, Scope: notify.ScopeAdmin,
-		Payload: map[string]any{"action": "metadata_refresh_dispatch", "count": len(games)},
+		Payload: notify.MaintPayload{Action: "metadata_refresh_dispatch", Count: len(games)},
 	})
 	return nil
 }

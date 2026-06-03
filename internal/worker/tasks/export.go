@@ -147,7 +147,7 @@ func markJobFailed(ctx context.Context, db *bun.DB, job *models.Job, errMsg stri
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeExportFailed, Scope: notify.ScopeUser, ActorUserID: job.UserID,
-		Payload:  map[string]any{"job_id": job.ID, "error": errMsg},
+		Payload:  notify.ExportFailedPayload{JobID: job.ID, Error: errMsg},
 		DedupKey: job.ID + ":" + notify.TypeExportFailed,
 	})
 }
@@ -166,7 +166,7 @@ func markJobCompleted(ctx context.Context, db *bun.DB, job *models.Job, filePath
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeExportCompleted, Scope: notify.ScopeUser, ActorUserID: job.UserID,
-		Payload:  map[string]any{"job_id": job.ID, "file_path": filePath},
+		Payload:  notify.ExportCompletedPayload{JobID: job.ID, FilePath: filePath},
 		DedupKey: job.ID + ":" + notify.TypeExportCompleted,
 	})
 }

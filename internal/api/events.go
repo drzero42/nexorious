@@ -168,7 +168,10 @@ func (h *EventsHandler) HandleList(c *echo.Context) error {
 	out := make([]eventResponse, 0, len(rows))
 	for i := range rows {
 		r := rows[i]
-		title, body := notify.Format(r.Type, r.Payload)
+		title, body, derr := notify.Format(r.Type, r.Payload)
+		if derr != nil {
+			slog.Warn("notify: payload decode failed", "event_id", r.ID, "type", r.Type, "err", derr)
+		}
 		category := ""
 		if m, ok := notify.Meta(r.Type); ok {
 			category = m.Category

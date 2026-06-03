@@ -45,7 +45,7 @@ func PruneEvents(ctx context.Context, db *bun.DB, retentionDays int) {
 		Emit(ctx, db, EmitParams{
 			Type:    TypeAdminMaintFailed,
 			Scope:   ScopeAdmin,
-			Payload: map[string]any{"action": "prune_events", "error": err.Error()},
+			Payload: MaintPayload{Action: "prune_events", Error: err.Error()},
 		})
 		return
 	}
@@ -54,6 +54,6 @@ func PruneEvents(ctx context.Context, db *bun.DB, retentionDays int) {
 	Emit(ctx, db, EmitParams{
 		Type:    TypeAdminMaintCompleted,
 		Scope:   ScopeAdmin,
-		Payload: map[string]any{"action": "prune_events", "count": rows},
+		Payload: MaintPayload{Action: "prune_events", Count: int(rows)},
 	})
 }

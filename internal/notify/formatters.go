@@ -6,15 +6,12 @@ import (
 	"strings"
 )
 
-// DiffGame is one entry in a sync.diff payload.
-type DiffGame struct {
-	Title     string   `json:"title"`
-	Platforms []string `json:"platforms"`
-}
-
-// Format renders a (title, body) pair for an event type + payload. Unknown
-// types and malformed payloads fall back to a generic, never-empty message.
-func Format(eventType string, payload json.RawMessage) (title, body string) {
+// Format renders a (title, body) pair for an event type + payload, plus any
+// payload-decode error. Unknown types and malformed payloads fall back to a
+// generic, never-empty message; on a decode failure the body omits the
+// untrusted fields rather than rendering zero-valued data. Callers should log
+// a non-nil decodeErr (it signals schema drift or a corrupt stored payload).
+func Format(eventType string, payload json.RawMessage) (title, body string, decodeErr error) {
 	meta, ok := Meta(eventType)
 	label := eventType
 	if ok {
@@ -23,66 +20,87 @@ func Format(eventType string, payload json.RawMessage) (title, body string) {
 
 	switch eventType {
 	case TypeSyncFailed:
-		var p struct {
-			Storefront string `json:"storefront"`
-			Error      string `json:"error"`
-		}
-		_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
+		var p SyncFailedPayload
+		decodeErr = json.Unmarshal(payload, &p)
 		title = "Sync failed"
-		body = fmt.Sprintf("Your %s sync failed: %s", fallback(p.Storefront, "library"), fallback(p.Error, "unknown error"))
+		if decodeErr != nil {
+			body = "Sync failed."
+		} else {
+			body = fmt.Sprintf("Your %s sync failed: %s", fallback(p.Storefront, "library"), fallback(p.Error, "unknown error"))
+		}
 
 	case TypeSyncCompleted:
-		var p struct {
-			Storefront string `json:"storefront"`
-		}
-		_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
+		var p SyncCompletedPayload
+		decodeErr = json.Unmarshal(payload, &p)
 		title = "Sync completed"
-		body = fmt.Sprintf("Your %s sync completed successfully.", fallback(p.Storefront, "library"))
+		if decodeErr != nil {
+			body = "Your sync completed successfully."
+		} else {
+			body = fmt.Sprintf("Your %s sync completed successfully.", fallback(p.Storefront, "library"))
+		}
 
 	case TypeSyncCompletedWithErrors:
-		var p struct {
-			Storefront string `json:"storefront"`
-			Failed     int    `json:"failed"`
-		}
-		_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
+		var p SyncCompletedWithErrorsPayload
+		decodeErr = json.Unmarshal(payload, &p)
 		title = "Sync completed with errors"
-		body = fmt.Sprintf("Your %s sync finished with %d failed item(s).", fallback(p.Storefront, "library"), p.Failed)
+		if decodeErr != nil {
+			body = fmt.Sprintf("Your %s sync finished with some failed item(s).", fallback(p.Storefront, "library"))
+		} else {
+			body = fmt.Sprintf("Your %s sync finished with %d failed item(s).", fallback(p.Storefront, "library"), p.Failed)
+		}
 
 	case TypeSyncNeedsReview:
-		var p struct {
-			Storefront string `json:"storefront"`
-			Count      int    `json:"count"`
-		}
-		_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
+		var p SyncNeedsReviewPayload
+		decodeErr = json.Unmarshal(payload, &p)
 		title = "Sync needs review"
-		body = fmt.Sprintf("Your %s sync has %d item(s) needing review.", fallback(p.Storefront, "library"), p.Count)
+		if decodeErr != nil {
+			body = fmt.Sprintf("Your %s sync has item(s) needing review.", fallback(p.Storefront, "library"))
+		} else {
+			body = fmt.Sprintf("Your %s sync has %d item(s) needing review.", fallback(p.Storefront, "library"), p.Count)
+		}
 
 	case TypeSyncDiff:
-		var p struct {
-			Added   []DiffGame `json:"added"`
-			Removed []DiffGame `json:"removed"`
-		}
-		_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
+		var p SyncDiffPayload
+		decodeErr = json.Unmarshal(payload, &p)
 		title = "Game library changes"
-		body = formatDiff(p.Added, p.Removed)
+		if decodeErr != nil {
+			body = "Your game library changed."
+		} else {
+			body = formatDiff(p.Added, p.Removed)
+		}
 
 	case TypeImportCompleted:
 		title, body = "Import completed", "Your import finished successfully."
 	case TypeImportFailed:
-		title, body = "Import failed", failBody(payload, "Your import failed")
+		var p ImportFailedPayload
+		decodeErr = json.Unmarshal(payload, &p)
+		title = "Import failed"
+		body = failBody(p.Error, "Your import failed", decodeErr)
 	case TypeExportCompleted:
 		title, body = "Export completed", "Your export is ready."
 	case TypeExportFailed:
-		title, body = "Export failed", failBody(payload, "Your export failed")
+		var p ExportFailedPayload
+		decodeErr = json.Unmarshal(payload, &p)
+		title = "Export failed"
+		body = failBody(p.Error, "Your export failed", decodeErr)
 
 	case TypeAdminBackupCompleted:
 		title, body = "Backup completed", "A scheduled backup completed successfully."
 	case TypeAdminBackupFailed:
-		title, body = "Backup failed", failBody(payload, "A scheduled backup failed")
+		var p BackupFailedPayload
+		decodeErr = json.Unmarshal(payload, &p)
+		title = "Backup failed"
+		body = failBody(p.Error, "A scheduled backup failed", decodeErr)
 	case TypeAdminMaintCompleted:
-		title, body = "Maintenance completed", maintBody(payload, "Maintenance task completed")
+		var p MaintPayload
+		decodeErr = json.Unmarshal(payload, &p)
+		title = "Maintenance completed"
+		body = maintBody(p.Action, p.Error, "Maintenance task completed", decodeErr)
 	case TypeAdminMaintFailed:
-		title, body = "Maintenance failed", maintBody(payload, "Maintenance task failed")
+		var p MaintPayload
+		decodeErr = json.Unmarshal(payload, &p)
+		title = "Maintenance failed"
+		body = maintBody(p.Action, p.Error, "Maintenance task failed", decodeErr)
 
 	default:
 		title = label
@@ -95,7 +113,7 @@ func Format(eventType string, payload json.RawMessage) (title, body string) {
 	if body == "" {
 		body = "An event occurred: " + eventType
 	}
-	return title, body
+	return title, body, decodeErr
 }
 
 func formatDiff(added, removed []DiffGame) string {
@@ -126,29 +144,26 @@ func formatDiff(added, removed []DiffGame) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func failBody(payload json.RawMessage, prefix string) string {
-	var p struct {
-		Error string `json:"error"`
-	}
-	_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
-	if p.Error == "" {
+// failBody renders "<prefix>: <error>", or "<prefix>." when the error is empty
+// or the payload failed to decode.
+func failBody(errMsg, prefix string, decodeErr error) string {
+	if decodeErr != nil || errMsg == "" {
 		return prefix + "."
 	}
-	return prefix + ": " + p.Error
+	return prefix + ": " + errMsg
 }
 
-func maintBody(payload json.RawMessage, prefix string) string {
-	var p struct {
-		Action string `json:"action"`
-		Error  string `json:"error"`
-	}
-	_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
+// maintBody renders "<prefix> (action) - error.", omitting any part that is
+// absent or that could not be decoded.
+func maintBody(action, errMsg, prefix string, decodeErr error) string {
 	parts := []string{prefix}
-	if p.Action != "" {
-		parts = append(parts, "("+p.Action+")")
-	}
-	if p.Error != "" {
-		parts = append(parts, "- "+p.Error)
+	if decodeErr == nil {
+		if action != "" {
+			parts = append(parts, "("+action+")")
+		}
+		if errMsg != "" {
+			parts = append(parts, "- "+errMsg)
+		}
 	}
 	return strings.Join(parts, " ") + "."
 }
