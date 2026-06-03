@@ -1,4 +1,3 @@
-// internal/services/igdb/keywords.go
 package igdb
 
 import (

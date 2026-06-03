@@ -17,9 +17,7 @@ import type {
   PlayStatus,
 } from '@/types';
 
-// ============================================================================
 // Query Keys
-// ============================================================================
 
 export const gameKeys = {
   all: ['userGames'] as const,
@@ -33,13 +31,8 @@ export const gameKeys = {
   igdbById: (id: number) => ['igdbById', id] as const,
 };
 
-// ============================================================================
 // Query Hooks
-// ============================================================================
 
-/**
- * Hook to fetch user's game collection with pagination and filtering.
- */
 export function useUserGames(params?: GetUserGamesParams) {
   return useQuery<UserGamesListResponse, Error>({
     queryKey: gameKeys.list(params),
@@ -47,9 +40,6 @@ export function useUserGames(params?: GetUserGamesParams) {
   });
 }
 
-/**
- * Hook to fetch a single user game by ID.
- */
 export function useUserGame(id: string | undefined) {
   return useQuery<UserGame, Error>({
     queryKey: gameKeys.detail(id ?? ''),
@@ -76,8 +66,6 @@ function parseIGDBIdFromQuery(query: string): number | null {
 }
 
 /**
- * Hook to search IGDB for games.
- *
  * Supports two modes:
  * 1. Direct ID lookup: Use "igdb:12345" format (case-insensitive)
  * 2. Name search: Any other query (requires 3+ characters)
@@ -106,7 +94,6 @@ export function useSearchIGDB(
 }
 
 /**
- * Hook to fetch a single IGDB game by its IGDB ID.
  * Used as a fallback on the confirm page when sessionStorage is empty (e.g. page reload).
  */
 export function useIGDBGameByID(igdbId: number | null) {
@@ -117,9 +104,6 @@ export function useIGDBGameByID(igdbId: number | null) {
   });
 }
 
-/**
- * Hook to fetch collection statistics.
- */
 export function useCollectionStats() {
   return useQuery({
     queryKey: gameKeys.stats(),
@@ -127,9 +111,6 @@ export function useCollectionStats() {
   });
 }
 
-/**
- * Hook to fetch unique genres from the user's game collection.
- */
 export function useUserGameGenres() {
   return useQuery<string[], Error>({
     queryKey: [...gameKeys.all, 'genres'] as const,
@@ -139,7 +120,6 @@ export function useUserGameGenres() {
 }
 
 /**
- * Hook to fetch filter options (unique values for all filter dropdowns).
  * Returns genres, game modes, themes, and player perspectives from the user's collection.
  */
 export function useFilterOptions() {
@@ -151,7 +131,6 @@ export function useFilterOptions() {
 }
 
 /**
- * Hook to fetch active games (IN_PROGRESS and REPLAY statuses).
  * Used for the "Currently Playing" dashboard section.
  * Makes two parallel API calls since backend only supports single status filter.
  */
@@ -179,7 +158,6 @@ export function useActiveGames() {
 }
 
 /**
- * Hook to fetch all user game IDs matching filters.
  * Disabled by default - call refetch() to trigger.
  */
 export function useUserGameIds(params?: GetUserGamesParams, options?: { enabled?: boolean }) {
@@ -190,12 +168,9 @@ export function useUserGameIds(params?: GetUserGamesParams, options?: { enabled?
   });
 }
 
-// ============================================================================
 // Mutation Hooks
-// ============================================================================
 
 /**
- * Hook to create a new user game entry.
  * Invalidates the user games list on success.
  */
 export function useCreateUserGame() {
@@ -211,7 +186,6 @@ export function useCreateUserGame() {
 }
 
 /**
- * Hook to update an existing user game.
  * Invalidates both the list and the specific game detail on success.
  */
 export function useUpdateUserGame() {
@@ -231,7 +205,6 @@ export function useUpdateUserGame() {
 }
 
 /**
- * Hook to delete a user game from the collection.
  * Invalidates the user games list on success.
  */
 export function useDeleteUserGame() {
@@ -249,9 +222,6 @@ export function useDeleteUserGame() {
   });
 }
 
-/**
- * Hook to import a game from IGDB.
- */
 export function useImportFromIGDB() {
   return useMutation<Game, Error, { igdbId: GameId; downloadCoverArt?: boolean }>({
     mutationFn: ({ igdbId, downloadCoverArt }) => gamesApi.importFromIGDB(igdbId, downloadCoverArt),
@@ -259,7 +229,6 @@ export function useImportFromIGDB() {
 }
 
 /**
- * Hook to bulk update multiple user games.
  * Invalidates the user games list on success.
  */
 export function useBulkUpdateUserGames() {
@@ -280,7 +249,6 @@ export function useBulkUpdateUserGames() {
 }
 
 /**
- * Hook to bulk delete multiple user games.
  * Invalidates the user games list on success.
  */
 export function useBulkDeleteUserGames() {
@@ -300,9 +268,6 @@ export function useBulkDeleteUserGames() {
   });
 }
 
-/**
- * Hook to add a platform to a user game.
- */
 export function useAddPlatformToUserGame() {
   const queryClient = useQueryClient();
 
@@ -319,9 +284,6 @@ export function useAddPlatformToUserGame() {
   });
 }
 
-/**
- * Hook to update a platform association.
- */
 export function useUpdatePlatformAssociation() {
   const queryClient = useQueryClient();
 
@@ -342,9 +304,6 @@ export function useUpdatePlatformAssociation() {
   });
 }
 
-/**
- * Hook to remove a platform from a user game.
- */
 export function useRemovePlatformFromUserGame() {
   const queryClient = useQueryClient();
 

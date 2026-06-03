@@ -92,14 +92,14 @@ type importTagData struct {
 // Work processes a single import job item. It never returns an error —
 // failures are recorded on the JobItem itself.
 func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemArgs]) error {
-	// ── 1. Load JobItem ───────────────────────────────────────────────────
+	// Load JobItem
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
 		slog.Error("import_item: load job_item", "id", job.Args.JobItemID, "err", err)
 		return nil
 	}
 
-	// ── 2. Parse game data from source_metadata ───────────────────────────
+	// Parse game data from source_metadata
 	var wrapper struct {
 		Data importGameData `json:"data"`
 	}
@@ -112,14 +112,14 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 	}
 	gd := wrapper.Data
 
-	// ── 3. Validate igdb_id ───────────────────────────────────────────────
+	// Validate igdb_id
 	if gd.IGDBID == 0 {
 		markItemFailed(context.Background(), w.DB, &item, "missing igdb_id", "import_item: markItemFailed")
 		checkJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 
-	// ── 4. Upsert Game — fetch from IGDB if not already in DB ────────────
+	// Upsert Game — fetch from IGDB if not already in DB
 	var existingGame models.Game
 	gameExists := w.DB.NewSelect().Model(&existingGame).Where("id = ?", gd.IGDBID).Scan(ctx) == nil
 
@@ -173,7 +173,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 
-	// ── 5. Check for existing UserGame ────────────────────────────────────
+	// Check for existing UserGame
 	var existingUG models.UserGame
 	err = w.DB.NewSelect().Model(&existingUG).
 		Where("user_id = ? AND game_id = ?", item.UserID, gd.IGDBID).
@@ -185,7 +185,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 	}
 	alreadyExists := err == nil
 
-	// ── 6. Build and insert UserGame (skip if already exists) ────────────
+	// Build and insert UserGame (skip if already exists)
 	now := time.Now().UTC()
 	var ug *models.UserGame
 	if alreadyExists {
@@ -229,7 +229,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 
-	// ── 7. Platforms ──────────────────────────────────────────────────────
+	// Platforms
 	// Build a set of existing (platform, storefront) pairs to avoid duplicates
 	// when merging into an existing UserGame.
 	type platformKey struct{ platform, storefront string }
@@ -321,7 +321,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 
-	// ── 8. Tags ───────────────────────────────────────────────────────────
+	// Tags
 	// Build existing tag set to avoid duplicates when merging.
 	existingTagIDs := map[string]bool{}
 	if alreadyExists {
@@ -358,7 +358,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 
-	// ── 9. Mark item completed ───────────────────────────────────────────
+	// Mark item completed
 	// Record a per-item change row mirroring the sync worker's `changes` writes.
 	changeType := "added"
 	if alreadyExists {

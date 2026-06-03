@@ -44,13 +44,11 @@ type MetadataRefreshDispatchWorker struct {
 }
 
 func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job[MetadataRefreshDispatchArgs]) error {
-	// Step 1 — IGDB guard.
 	if !w.IGDBClient.Configured() {
 		slog.Warn("metadata_refresh_dispatch: IGDB not configured, skipping")
 		return nil
 	}
 
-	// Step 2 — Find admin user.
 	var adminID string
 	err := w.DB.NewRaw(`SELECT id FROM users WHERE is_admin = true LIMIT 1`).Scan(ctx, &adminID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -62,7 +60,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		return nil
 	}
 
-	// Step 3 — Duplicate-run guard.
+	// Skip if a refresh job is already active.
 	var existingJobID string
 	err = w.DB.NewRaw(
 		`SELECT id FROM jobs WHERE job_type = ? AND status IN ('pending', 'processing') LIMIT 1`,
@@ -77,7 +75,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		return nil
 	}
 
-	// Step 4 — Select games ordered by last_updated ASC.
+	// Oldest-refreshed games first.
 	var games []struct {
 		ID    int32  `bun:"id"`
 		Title string `bun:"title"`
@@ -91,14 +89,12 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		return nil
 	}
 
-	// Step 5 — Create job and items in a transaction, then enqueue River jobs after commit.
 	// River jobs must be inserted AFTER the transaction commits: riverClient.Insert uses a
 	// separate connection and commits immediately, so workers can dequeue and attempt to load
 	// job_items before the bun transaction is visible — causing "no rows" errors.
 	jobID := uuid.NewString()
 	itemIDs := make([]string, 0, len(games))
 	if err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// 5a — Insert job.
 		_, err := tx.NewRaw(
 			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
 			 VALUES (?, ?, ?, ?, 'processing', 'low', ?, now())`,
@@ -108,7 +104,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 			return fmt.Errorf("insert job: %w", err)
 		}
 
-		// 5b — Insert job_items only; River jobs are enqueued after commit.
+		// Insert job_items only; River jobs are enqueued after commit.
 		for _, g := range games {
 			itemID := uuid.NewString()
 			itemIDs = append(itemIDs, itemID)
@@ -136,7 +132,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		return nil
 	}
 
-	// Step 6 — Enqueue River jobs now that job_items are committed and visible.
+	// Enqueue River jobs now that job_items are committed and visible.
 	for _, itemID := range itemIDs {
 		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, MetadataRefreshItemArgs{JobItemID: itemID}); err != nil {
 			slog.Error("metadata_refresh_dispatch: enqueue item failed", "err", err, "job_id", jobID, "item_id", itemID)
@@ -180,14 +176,12 @@ type metadataRefreshSourceMeta struct {
 func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[MetadataRefreshItemArgs]) error {
 	jobItemID := job.Args.JobItemID
 
-	// Step 1 — Load job_item.
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", jobItemID).Scan(ctx); err != nil {
 		slog.Error("metadata_refresh_item: load job_item", "id", jobItemID, "err", err)
 		return nil
 	}
 
-	// Step 2 — Parse source_metadata.
 	var sourceMeta metadataRefreshSourceMeta
 	if err := json.Unmarshal(item.SourceMetadata, &sourceMeta); err != nil {
 		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err), "metadata_refresh: markItemFailed")
@@ -195,24 +189,20 @@ func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[Met
 		return nil
 	}
 
-	// Step 3 — IGDB guard (defensive; preserves the per-item failure message).
+	// Defensive IGDB guard; preserves the per-item failure message.
 	if !w.IGDBClient.Configured() {
 		markItemFailed(ctx, w.DB, &item, "igdb_not_configured", "metadata_refresh: markItemFailed")
 		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
-	// Step 4 — Fetch IGDB metadata and update the games row (shared helper).
 	if err := fetchAndStoreMetadata(ctx, w.DB, w.IGDBClient, w.StoragePath, sourceMeta.GameID); err != nil {
 		markItemFailed(ctx, w.DB, &item, err.Error(), "metadata_refresh: markItemFailed")
 		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
-	// Step 5 — Mark item completed.
 	markItemCompleted(ctx, w.DB, &item, "metadata_refresh: markItemCompleted")
-
-	// Step 6 — Check job completion.
 	metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
 
 	return nil

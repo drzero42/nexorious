@@ -69,18 +69,15 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "file exceeds 50 MB limit")
 	}
 
-	// Parse JSON.
 	var export nexoriousExport
 	if err := json.Unmarshal(body, &export); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid JSON")
 	}
 
-	// Validate export_version.
 	if export.ExportVersion != "1.2" {
 		return echo.NewHTTPError(http.StatusBadRequest, "Unsupported export version. Only version 1.2 is supported.")
 	}
 
-	// Validate games array.
 	if len(export.Games) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "games array is missing or empty")
 	}
@@ -101,11 +98,9 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to check active import")
 	}
 	if err == nil {
-		// An active job was found.
 		return echo.NewHTTPError(http.StatusConflict, "an active nexorious import is already in progress")
 	}
 
-	// Create the Job record.
 	now := time.Now().UTC()
 	job := &models.Job{
 		ID:               uuid.NewString(),
@@ -125,7 +120,6 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	// Create one JobItem per game and enqueue a task.
 	var skipCount int
 	for i, raw := range export.Games {
-		// Extract igdb_id and title from raw game JSON.
 		var gameFields struct {
 			IgdbID *int    `json:"igdb_id"`
 			Title  *string `json:"title"`
@@ -136,19 +130,16 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			continue
 		}
 
-		// Build item_key.
 		itemKey := fmt.Sprintf("game_%d", i)
 		if gameFields.IgdbID != nil {
 			itemKey = fmt.Sprintf("igdb_%d", *gameFields.IgdbID)
 		}
 
-		// Build source_title.
 		sourceTitle := fmt.Sprintf("Game %d", i)
 		if gameFields.Title != nil && *gameFields.Title != "" {
 			sourceTitle = *gameFields.Title
 		}
 
-		// Build source_metadata.
 		metadata, err := json.Marshal(map[string]any{
 			"item_type": "game",
 			"data":      raw,
@@ -172,7 +163,6 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
 
-		// Enqueue the task.
 		if h.riverClient != nil {
 			if _, err := h.riverClient.Insert(ctx, tasks.ImportItemArgs{JobItemID: item.ID}, nil); err != nil {
 				slog.Error("import: submit task", "item_id", item.ID, "err", err)
