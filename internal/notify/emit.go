@@ -19,7 +19,7 @@ type EmitParams struct {
 	Type        string
 	Scope       string
 	ActorUserID string
-	Payload     map[string]any
+	Payload     any
 	DedupKey    string
 }
 
