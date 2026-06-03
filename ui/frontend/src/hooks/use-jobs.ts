@@ -15,9 +15,7 @@ import type {
 } from '@/types';
 import { isJobInProgress } from '@/types';
 
-// ============================================================================
 // Query Keys
-// ============================================================================
 
 export const jobsKeys = {
   all: ['jobs'] as const,
@@ -33,12 +31,9 @@ export const jobsKeys = {
   recent: (filters: RecentJobsFilters) => [...jobsKeys.recents(), filters] as const,
 };
 
-// ============================================================================
 // Query Hooks
-// ============================================================================
 
 /**
- * Hook to fetch paginated list of jobs with optional filters.
  * Automatically polls when jobs are in progress.
  */
 export function useJobs(
@@ -61,7 +56,6 @@ export function useJobs(
 }
 
 /**
- * Hook to fetch a specific job by ID.
  * Automatically polls when job is in progress.
  */
 export function useJob(jobId: string | undefined, options?: { enabled?: boolean }) {
@@ -81,7 +75,6 @@ export function useJob(jobId: string | undefined, options?: { enabled?: boolean 
 }
 
 /**
- * Hook to fetch job summary counts for sidebar badge.
  * Returns counts of running and failed jobs.
  */
 export function useJobsSummary() {
@@ -93,7 +86,6 @@ export function useJobsSummary() {
 }
 
 /**
- * Hook to fetch paginated list of items for a specific job.
  * Useful for viewing details of what a job processed.
  * Supports polling via refetchInterval option.
  */
@@ -113,9 +105,8 @@ export function useJobItems(
 }
 
 /**
- * Hook to fetch lightweight status for a job type. Polls every 30 s at baseline
- * and every 3 s while a job is active — the baseline poll catches background
- * jobs and reliably detects completion.
+ * Polls every 30 s at baseline and every 3 s while a job is active — the
+ * baseline poll catches background jobs and reliably detects completion.
  */
 export function useJobTypeStatus(jobType: JobType, options?: { enabled?: boolean }) {
   return useQuery({
@@ -130,7 +121,6 @@ export function useJobTypeStatus(jobType: JobType, options?: { enabled?: boolean
 }
 
 /**
- * Hook to fetch total count of items needing review.
  * Polls every 30 seconds for badge updates.
  */
 export function usePendingReviewCount() {
@@ -152,13 +142,8 @@ export function useRecentJobs(filters: RecentJobsFilters = {}, options?: { enabl
   });
 }
 
-// ============================================================================
 // Mutation Hooks
-// ============================================================================
 
-/**
- * Hook to cancel a job.
- */
 export function useCancelJob() {
   const queryClient = useQueryClient();
 
@@ -175,9 +160,6 @@ export function useCancelJob() {
   });
 }
 
-/**
- * Hook to delete a job.
- */
 export function useDeleteJob() {
   const queryClient = useQueryClient();
 
@@ -194,9 +176,6 @@ export function useDeleteJob() {
   });
 }
 
-/**
- * Hook to retry all failed items in a job.
- */
 export function useRetryFailedItems() {
   const queryClient = useQueryClient();
 
@@ -213,9 +192,6 @@ export function useRetryFailedItems() {
   });
 }
 
-/**
- * Hook to retry a single failed job item.
- */
 export function useRetryJobItem() {
   const queryClient = useQueryClient();
 

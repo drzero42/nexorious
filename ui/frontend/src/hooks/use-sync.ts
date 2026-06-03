@@ -17,9 +17,7 @@ import type {
   PSNStatusResponse,
 } from '@/types';
 
-// ============================================================================
 // Query Keys
-// ============================================================================
 
 export const syncKeys = {
   all: ['sync'] as const,
@@ -35,13 +33,8 @@ export const syncKeys = {
     [...syncKeys.all, 'external-games', platform] as const,
 };
 
-// ============================================================================
 // Query Hooks
-// ============================================================================
 
-/**
- * Hook to fetch all sync configurations for the current user.
- */
 export function useSyncConfigs() {
   return useQuery({
     queryKey: syncKeys.configs(),
@@ -49,9 +42,6 @@ export function useSyncConfigs() {
   });
 }
 
-/**
- * Hook to fetch sync configuration for a specific platform.
- */
 export function useSyncConfig(platform: SyncStorefront) {
   return useQuery({
     queryKey: syncKeys.config(platform),
@@ -59,9 +49,6 @@ export function useSyncConfig(platform: SyncStorefront) {
   });
 }
 
-/**
- * Hook to fetch sync status for a specific platform.
- */
 export function useSyncStatus(platform: SyncStorefront) {
   return useQuery({
     queryKey: syncKeys.status(platform),
@@ -76,7 +63,6 @@ export function useSyncStatus(platform: SyncStorefront) {
 }
 
 /**
- * Hook to fetch all sync statuses for supported platforms.
  * Returns a map of platform -> status for easy lookup.
  */
 export function useSyncStatuses() {
@@ -89,13 +75,8 @@ export function useSyncStatuses() {
   };
 }
 
-// ============================================================================
 // Mutation Hooks
-// ============================================================================
 
-/**
- * Hook to update sync configuration for a platform.
- */
 export function useUpdateSyncConfig() {
   const queryClient = useQueryClient();
 
@@ -112,9 +93,6 @@ export function useUpdateSyncConfig() {
   );
 }
 
-/**
- * Hook to trigger a manual sync for a platform.
- */
 export function useTriggerSync() {
   const queryClient = useQueryClient();
 
@@ -137,18 +115,12 @@ export function useTriggerSync() {
   });
 }
 
-/**
- * Hook to verify Steam credentials before saving.
- */
 export function useVerifySteamCredentials() {
   return useMutation<SteamVerifyResponse, Error, { steamId: string; webApiKey: string }>({
     mutationFn: ({ steamId, webApiKey }) => syncApi.verifySteamCredentials(steamId, webApiKey),
   });
 }
 
-/**
- * Hook to disconnect Steam integration.
- */
 export function useDisconnectSteam() {
   const queryClient = useQueryClient();
 
@@ -162,7 +134,6 @@ export function useDisconnectSteam() {
 }
 
 /**
- * Hook to fetch Steam connection status.
  * Returns connected state, credentialsError flag, steamId, and username.
  */
 export function useSteamConnection(options?: { enabled?: boolean }) {
@@ -189,12 +160,9 @@ export function useResetSyncData() {
   });
 }
 
-// ============================================================================
 // Epic Auth Hooks
-// ============================================================================
 
 /**
- * Hook to fetch the current Epic Games Store connection status.
  * Tells the UI whether Epic sync is disabled (LEGENDARY_WORK_DIR unset on
  * the backend), connected, or simply not configured.
  */
@@ -209,7 +177,6 @@ export function useEpicConnection(options?: { enabled?: boolean }) {
 }
 
 /**
- * Hook to connect Epic Games Store by exchanging the legendary auth code.
  * On success, refreshes connection status and the user's sync configs.
  */
 export function useConnectEpic() {
@@ -226,7 +193,6 @@ export function useConnectEpic() {
 }
 
 /**
- * Hook to disconnect Epic Games Store.
  * Invalidates all Epic-related queries on success.
  */
 export function useDisconnectEpic() {
@@ -245,9 +211,7 @@ export function useDisconnectEpic() {
   });
 }
 
-// ============================================================================
 // GOG Auth Hooks
-// ============================================================================
 
 export function useGOGConnection(options?: { enabled?: boolean }) {
   return useQuery<GOGConnectionResponse, Error>({
@@ -288,12 +252,9 @@ export function useDisconnectGOG() {
   });
 }
 
-// ============================================================================
 // PSN Auth Hooks
-// ============================================================================
 
 /**
- * Hook to configure PSN with NPSSO token.
  * Invalidates sync configs and PSN status on success.
  */
 export function useConfigurePSN() {
@@ -314,7 +275,6 @@ export function useConfigurePSN() {
 }
 
 /**
- * Hook to check current PSN connection status.
  * Cached for 5 minutes.
  */
 export function usePSNStatus(options?: { enabled?: boolean }) {
@@ -328,7 +288,6 @@ export function usePSNStatus(options?: { enabled?: boolean }) {
 }
 
 /**
- * Hook to disconnect PSN integration.
  * Invalidates all PSN-related queries on success.
  */
 export function useDisconnectPSN() {
@@ -348,13 +307,8 @@ export function useDisconnectPSN() {
   });
 }
 
-// ============================================================================
 // External Games Hooks
-// ============================================================================
 
-/**
- * Hook to fetch external games for a specific platform.
- */
 export function useExternalGames(platform: SyncStorefront, options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: syncKeys.externalGames(platform),
@@ -364,7 +318,6 @@ export function useExternalGames(platform: SyncStorefront, options?: { refetchIn
 }
 
 /**
- * Hook to skip an external game.
  * Invalidates all sync queries on success.
  */
 export function useSkipExternalGame() {
@@ -381,7 +334,6 @@ export function useSkipExternalGame() {
 }
 
 /**
- * Hook to unskip an external game.
  * Invalidates all sync queries on success.
  */
 export function useUnskipExternalGame() {
@@ -398,7 +350,6 @@ export function useUnskipExternalGame() {
 }
 
 /**
- * Hook to retry all failed external games for a storefront.
  * Invalidates external games query on success.
  */
 export function useRetryFailedExternalGames() {
@@ -415,7 +366,6 @@ export function useRetryFailedExternalGames() {
 }
 
 /**
- * Hook to rematch an external game to a different IGDB entry.
  * Invalidates all sync queries on success.
  */
 export function useRematchExternalGame() {

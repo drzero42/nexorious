@@ -8,9 +8,7 @@ import type {
 } from '@/api/platforms';
 import type { Platform, Storefront } from '@/types/platform';
 
-// ============================================================================
 // Query Keys
-// ============================================================================
 
 export const platformKeys = {
   all: ['platforms'] as const,
@@ -31,12 +29,9 @@ export const storefrontKeys = {
   names: () => [...storefrontKeys.all, 'names'] as const,
 };
 
-// ============================================================================
 // Platform Query Hooks
-// ============================================================================
 
 /**
- * Hook to fetch paginated list of platforms.
  * Uses Infinity staleTime since platforms rarely change.
  */
 export function usePlatforms(params?: GetPlatformsParams) {
@@ -48,7 +43,6 @@ export function usePlatforms(params?: GetPlatformsParams) {
 }
 
 /**
- * Hook to fetch all platforms (convenience wrapper).
  * Uses Infinity staleTime since platforms rarely change.
  */
 export function useAllPlatforms(params?: Omit<GetPlatformsParams, 'page' | 'perPage'>) {
@@ -59,9 +53,6 @@ export function useAllPlatforms(params?: Omit<GetPlatformsParams, 'page' | 'perP
   });
 }
 
-/**
- * Hook to fetch a single platform by ID.
- */
 export function usePlatform(id: string | undefined) {
   return useQuery<Platform, Error>({
     queryKey: platformKeys.detail(id ?? ''),
@@ -71,9 +62,6 @@ export function usePlatform(id: string | undefined) {
   });
 }
 
-/**
- * Hook to fetch storefronts for a specific platform.
- */
 export function usePlatformStorefronts(platformId: string | undefined, activeOnly?: boolean) {
   return useQuery<Storefront[], Error>({
     queryKey: platformKeys.storefronts(platformId ?? ''),
@@ -84,7 +72,6 @@ export function usePlatformStorefronts(platformId: string | undefined, activeOnl
 }
 
 /**
- * Hook to fetch simple list of platform names.
  * Uses Infinity staleTime since platforms rarely change.
  */
 export function usePlatformNames(activeOnly?: boolean) {
@@ -95,12 +82,9 @@ export function usePlatformNames(activeOnly?: boolean) {
   });
 }
 
-// ============================================================================
 // Storefront Query Hooks
-// ============================================================================
 
 /**
- * Hook to fetch paginated list of storefronts.
  * Uses Infinity staleTime since storefronts rarely change.
  */
 export function useStorefronts(params?: GetStorefrontsParams) {
@@ -112,7 +96,6 @@ export function useStorefronts(params?: GetStorefrontsParams) {
 }
 
 /**
- * Hook to fetch all storefronts (convenience wrapper).
  * Uses Infinity staleTime since storefronts rarely change.
  */
 export function useAllStorefronts(params?: Omit<GetStorefrontsParams, 'page' | 'perPage'>) {
@@ -123,9 +106,6 @@ export function useAllStorefronts(params?: Omit<GetStorefrontsParams, 'page' | '
   });
 }
 
-/**
- * Hook to fetch a single storefront by ID.
- */
 export function useStorefront(id: string | undefined) {
   return useQuery<Storefront, Error>({
     queryKey: storefrontKeys.detail(id ?? ''),
@@ -136,7 +116,6 @@ export function useStorefront(id: string | undefined) {
 }
 
 /**
- * Hook to fetch simple list of storefront names.
  * Uses Infinity staleTime since storefronts rarely change.
  */
 export function useStorefrontNames(activeOnly?: boolean) {
