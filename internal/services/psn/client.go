@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -203,20 +202,13 @@ func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[
 				continue
 			}
 
-			ownership := "owned"
-			isSub := false
-			if strings.HasPrefix(t.Service, "ps_plus") {
-				ownership = "subscription"
-				isSub = true
-			}
-
+			// Play history contributes playtime only; ownership / subscription
+			// classification comes entirely from the owned endpoint (issue #753).
 			result[t.TitleID] = ExternalGameEntry{
-				ExternalID:      t.TitleID,
-				Title:           t.Name,
-				Platforms:       []string{rawPlatform},
-				PlaytimeHours:   parseDurationFractionalHours(t.PlayDuration),
-				OwnershipStatus: ownership,
-				IsSubscription:  isSub,
+				ExternalID:    t.TitleID,
+				Title:         t.Name,
+				Platforms:     []string{rawPlatform},
+				PlaytimeHours: parseDurationFractionalHours(t.PlayDuration),
 			}
 		}
 
@@ -340,29 +332,28 @@ type ExternalGameEntry struct {
 	IsSubscription  bool
 }
 
-func mergePlayedPurchased(played, purchased map[string]ExternalGameEntry) []ExternalGameEntry {
-	merged := make(map[string]ExternalGameEntry, len(played)+len(purchased))
-	maps.Copy(merged, played)
-	for id, e := range purchased {
-		if existing, ok := merged[id]; ok {
-			if e.IsSubscription {
-				existing.IsSubscription = true
-				existing.OwnershipStatus = "subscription"
-			}
-			merged[id] = existing
-		} else {
-			merged[id] = e
+// applyPlaytimeToOwned returns the user's library using the owned (purchased)
+// endpoint as the single source of truth. Library membership and ownership /
+// subscription classification come entirely from owned. Play history is
+// consulted only to enrich playtime for titles already in the owned set; any
+// play-history entry whose title is not owned is ignored entirely (no playtime,
+// no classification, not added). Owned titles that were never played keep zero
+// playtime.
+func applyPlaytimeToOwned(owned, played map[string]ExternalGameEntry) []ExternalGameEntry {
+	all := make([]ExternalGameEntry, 0, len(owned))
+	for id, e := range owned {
+		if p, ok := played[id]; ok {
+			e.PlaytimeHours = p.PlaytimeHours
 		}
-	}
-	all := make([]ExternalGameEntry, 0, len(merged))
-	for _, e := range merged {
 		all = append(all, e)
 	}
 	return all
 }
 
-// GetLibrary fetches the user's PSN game library by merging play history
-// (gamelist/v2) and purchased games (GraphQL) into a unified set.
+// GetLibrary fetches the user's PSN game library. The owned/purchased endpoint
+// (GraphQL) is the single source of truth for library membership and ownership /
+// subscription classification; play history (gamelist/v2) is used only to enrich
+// playtime for titles already owned. Played-but-not-owned titles are dropped.
 // onBatch is called for each page of batchSize entries and may return an error to abort.
 func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize int, onBatch func([]ExternalGameEntry) error) error {
 	// ── Auth ─────────────────────────────────────────────────────────────
@@ -407,8 +398,8 @@ func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize in
 	}
 	slog.Info("psn: purchased games fetched", "count", len(purchased))
 
-	// ── Merge ─────────────────────────────────────────────────────────────
-	all := mergePlayedPurchased(played, purchased)
+	// ── Owned set is authoritative; play history only enriches playtime ───
+	all := applyPlaytimeToOwned(purchased, played)
 	slog.Info("psn: library fetch complete", "total_titles", len(all))
 
 	// ── Dispatch in batches ───────────────────────────────────────────────

@@ -75,11 +75,10 @@ func TestFetchPlayHistory_HappyPath(t *testing.T) {
 	if math.Abs(ps5.PlaytimeHours-wantPS5) > 1e-9 {
 		t.Errorf("expected PlaytimeHours=%v, got %v", wantPS5, ps5.PlaytimeHours)
 	}
-	if ps5.OwnershipStatus != "owned" {
-		t.Errorf("expected OwnershipStatus=owned, got %q", ps5.OwnershipStatus)
-	}
-	if ps5.IsSubscription {
-		t.Error("expected IsSubscription=false for PS5 entry")
+	// Play history no longer classifies ownership — the owned endpoint is the
+	// single source of truth (issue #753). It contributes playtime only.
+	if ps5.OwnershipStatus != "" || ps5.IsSubscription {
+		t.Errorf("play history must not classify ownership, got %q / %v", ps5.OwnershipStatus, ps5.IsSubscription)
 	}
 
 	ps4, ok := result["CUSA12345_00"]
@@ -89,11 +88,9 @@ func TestFetchPlayHistory_HappyPath(t *testing.T) {
 	if len(ps4.Platforms) == 0 || ps4.Platforms[0] != "playstation-4" {
 		t.Errorf("expected Platforms[0]=playstation-4, got %v", ps4.Platforms)
 	}
-	if ps4.OwnershipStatus != "subscription" {
-		t.Errorf("expected OwnershipStatus=subscription, got %q", ps4.OwnershipStatus)
-	}
-	if !ps4.IsSubscription {
-		t.Error("expected IsSubscription=true for PS4 PS Plus entry")
+	// Even a ps_plus service entry must not be classified by play history.
+	if ps4.OwnershipStatus != "" || ps4.IsSubscription {
+		t.Errorf("play history must not classify ownership, got %q / %v", ps4.OwnershipStatus, ps4.IsSubscription)
 	}
 
 	// pspc_game entry must be excluded
@@ -317,65 +314,86 @@ func TestFetchPurchasedGames_HTTPError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// mergePlayedPurchased
+// applyPlaytimeToOwned — owned endpoint is authoritative; play history only
+// contributes playtime for games already in the owned set.
 // ---------------------------------------------------------------------------
 
-func TestMergePlayedPurchased_UnionBothSources(t *testing.T) {
-	played := map[string]ExternalGameEntry{
-		"DISC1": {ExternalID: "DISC1", Title: "Disc Game", Platforms: []string{"playstation-4"}, PlaytimeHours: 5, OwnershipStatus: "owned"},
-	}
-	purchased := map[string]ExternalGameEntry{
+func TestApplyPlaytimeToOwned_OwnedIsAuthoritative(t *testing.T) {
+	owned := map[string]ExternalGameEntry{
 		"DL1": {ExternalID: "DL1", Title: "Digital", Platforms: []string{"playstation-5"}, PlaytimeHours: 0, OwnershipStatus: "owned"},
 	}
-	result := mergePlayedPurchased(played, purchased)
-	if len(result) != 2 {
-		t.Fatalf("expected 2 merged entries, got %d", len(result))
+	played := map[string]ExternalGameEntry{
+		"DISC1": {ExternalID: "DISC1", Title: "Disc Game", Platforms: []string{"playstation-4"}, PlaytimeHours: 5, OwnershipStatus: "owned"},
+		"DL1":   {ExternalID: "DL1", Title: "Digital", Platforms: []string{"playstation-5"}, PlaytimeHours: 7, OwnershipStatus: "owned"},
+	}
+	result := applyPlaytimeToOwned(owned, played)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 entry (owned only), got %d", len(result))
+	}
+	if result[0].ExternalID != "DL1" {
+		t.Errorf("expected only the owned title DL1, got %q", result[0].ExternalID)
 	}
 }
 
-func TestMergePlayedPurchased_PurchasedUpgradesSubscription(t *testing.T) {
+func TestApplyPlaytimeToOwned_PlayHistoryOnlyTitleDropped(t *testing.T) {
+	owned := map[string]ExternalGameEntry{}
 	played := map[string]ExternalGameEntry{
-		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 10, OwnershipStatus: "owned", IsSubscription: false},
+		"DISC1": {ExternalID: "DISC1", Title: "Disc Game", Platforms: []string{"playstation-4"}, PlaytimeHours: 3, OwnershipStatus: "owned"},
 	}
-	purchased := map[string]ExternalGameEntry{
-		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 0, OwnershipStatus: "subscription", IsSubscription: true},
+	result := applyPlaytimeToOwned(owned, played)
+	if len(result) != 0 {
+		t.Errorf("expected play-history-only title to be dropped, got %v", result)
 	}
-	result := mergePlayedPurchased(played, purchased)
+}
+
+func TestApplyPlaytimeToOwned_PlaytimeEnrichedFromHistory(t *testing.T) {
+	owned := map[string]ExternalGameEntry{
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 0, OwnershipStatus: "owned"},
+	}
+	played := map[string]ExternalGameEntry{
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 10, OwnershipStatus: "owned"},
+	}
+	result := applyPlaytimeToOwned(owned, played)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(result))
 	}
-	e := result[0]
-	if !e.IsSubscription || e.OwnershipStatus != "subscription" {
-		t.Errorf("expected subscription after merge, got IsSubscription=%v OwnershipStatus=%q", e.IsSubscription, e.OwnershipStatus)
-	}
-	if e.PlaytimeHours != 10 {
-		t.Errorf("expected playtime preserved from play history (10), got %v", e.PlaytimeHours)
+	if result[0].PlaytimeHours != 10 {
+		t.Errorf("expected playtime enriched from play history (10), got %v", result[0].PlaytimeHours)
 	}
 }
 
-func TestMergePlayedPurchased_PurchasedDoesNotDowngradeOwnership(t *testing.T) {
-	played := map[string]ExternalGameEntry{
-		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 5, OwnershipStatus: "owned", IsSubscription: false},
+func TestApplyPlaytimeToOwned_OwnedNeverPlayedHasZeroPlaytime(t *testing.T) {
+	owned := map[string]ExternalGameEntry{
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 0, OwnershipStatus: "owned"},
 	}
-	purchased := map[string]ExternalGameEntry{
+	result := applyPlaytimeToOwned(owned, map[string]ExternalGameEntry{})
+	if len(result) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(result))
+	}
+	if result[0].PlaytimeHours != 0 {
+		t.Errorf("expected zero playtime for never-played owned game, got %v", result[0].PlaytimeHours)
+	}
+}
+
+func TestApplyPlaytimeToOwned_ClassificationComesFromOwnedNotHistory(t *testing.T) {
+	// Play history would classify GAME1 as subscription (ps_plus service); the
+	// owned endpoint says it is owned outright. Classification must follow the
+	// owned endpoint and ignore play history entirely.
+	owned := map[string]ExternalGameEntry{
 		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 0, OwnershipStatus: "owned", IsSubscription: false},
 	}
-	result := mergePlayedPurchased(played, purchased)
+	played := map[string]ExternalGameEntry{
+		"GAME1": {ExternalID: "GAME1", Platforms: []string{"playstation-4"}, PlaytimeHours: 4, OwnershipStatus: "subscription", IsSubscription: true},
+	}
+	result := applyPlaytimeToOwned(owned, played)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(result))
 	}
-	if result[0].OwnershipStatus != "owned" || result[0].IsSubscription {
-		t.Errorf("ownership should remain owned, got %q / %v", result[0].OwnershipStatus, result[0].IsSubscription)
+	if result[0].IsSubscription || result[0].OwnershipStatus != "owned" {
+		t.Errorf("classification must come from owned endpoint (owned), got %q / %v", result[0].OwnershipStatus, result[0].IsSubscription)
 	}
-}
-
-func TestMergePlayedPurchased_DiscGameNotInPurchased(t *testing.T) {
-	played := map[string]ExternalGameEntry{
-		"DISC1": {ExternalID: "DISC1", Platforms: []string{"playstation-4"}, PlaytimeHours: 3, OwnershipStatus: "owned"},
-	}
-	result := mergePlayedPurchased(played, map[string]ExternalGameEntry{})
-	if len(result) != 1 || result[0].ExternalID != "DISC1" {
-		t.Errorf("expected disc game in result, got %v", result)
+	if result[0].PlaytimeHours != 4 {
+		t.Errorf("playtime should still be enriched from history (4), got %v", result[0].PlaytimeHours)
 	}
 }
 
@@ -383,15 +401,18 @@ func TestMergePlayedPurchased_DiscGameNotInPurchased(t *testing.T) {
 // GetLibrary end-to-end (authFn injected)
 // ---------------------------------------------------------------------------
 
-func TestGetLibrary_MergesResults(t *testing.T) {
+func TestGetLibrary_OwnedOnly_DropsPlayHistoryOnlyTitles(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/api/gamelist"):
+			// DISC1 is played but not owned → must be dropped.
+			// DL1 is both played and owned → kept, playtime enriched to 5h.
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"titles": []map[string]any{
-					{"titleId": "DISC1", "name": "Disc Game", "category": "ps4_game", "service": "none(purchased)", "playDuration": "PT5H"},
+					{"titleId": "DISC1", "name": "Disc Game", "category": "ps4_game", "service": "none(purchased)", "playDuration": "PT3H"},
+					{"titleId": "DL1", "name": "Digital Game", "category": "ps5_native_game", "service": "none(purchased)", "playDuration": "PT5H"},
 				},
-				"totalItemCount": 1,
+				"totalItemCount": 2,
 			})
 		case strings.HasPrefix(r.URL.Path, "/api/graphql"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -416,16 +437,22 @@ func TestGetLibrary_MergesResults(t *testing.T) {
 	c.SetAuthFn(func(_ context.Context, _ string) (string, error) { return "test-token", nil })
 	c.SetLimiter(rate.NewLimiter(rate.Inf, 1))
 
-	var total int
+	var entries []ExternalGameEntry
 	err := c.GetLibrary(context.Background(), "fake-npsso", 10, func(batch []ExternalGameEntry) error {
-		total += len(batch)
+		entries = append(entries, batch...)
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if total != 2 {
-		t.Errorf("expected 2 merged entries (disc + digital), got %d", total)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry (owned only), got %d: %v", len(entries), entries)
+	}
+	if entries[0].ExternalID != "DL1" {
+		t.Errorf("expected only owned title DL1, got %q", entries[0].ExternalID)
+	}
+	if entries[0].PlaytimeHours != 5 {
+		t.Errorf("expected owned title playtime enriched from history (5), got %v", entries[0].PlaytimeHours)
 	}
 }
 
