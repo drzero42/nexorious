@@ -6,12 +6,6 @@ import (
 	"strings"
 )
 
-// DiffGame is one entry in a sync.diff payload.
-type DiffGame struct {
-	Title     string   `json:"title"`
-	Platforms []string `json:"platforms"`
-}
-
 // Format renders a (title, body) pair for an event type + payload. Unknown
 // types and malformed payloads fall back to a generic, never-empty message.
 func Format(eventType string, payload json.RawMessage) (title, body string) {
