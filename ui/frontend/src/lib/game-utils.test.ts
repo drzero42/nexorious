@@ -1,5 +1,51 @@
 import { describe, it, expect } from 'vitest';
-import { formatTtb, formatIgdbRating, formatHoursPlayed, formatPlatformLabel } from './game-utils';
+import {
+  formatTtb,
+  formatIgdbRating,
+  formatHoursPlayed,
+  formatPlatformLabel,
+  resolveImageUrl,
+  getCoverUrl,
+} from './game-utils';
+import type { UserGame } from '@/types';
+
+// config.staticUrl is '' in the test env (VITE_STATIC_URL unset), so the
+// origin prefix is empty and relative paths reduce to a leading-slash path.
+
+describe('resolveImageUrl', () => {
+  it('returns "" for null/undefined/empty', () => {
+    expect(resolveImageUrl(null)).toBe('');
+    expect(resolveImageUrl(undefined)).toBe('');
+    expect(resolveImageUrl('')).toBe('');
+  });
+
+  it('passes absolute http(s) URLs through untouched', () => {
+    expect(resolveImageUrl('http://example.com/a.jpg')).toBe('http://example.com/a.jpg');
+    expect(resolveImageUrl('https://cdn.example.com/b.png')).toBe('https://cdn.example.com/b.png');
+  });
+
+  it('keeps a leading slash on already-rooted relative paths', () => {
+    expect(resolveImageUrl('/covers/c.jpg')).toBe('/covers/c.jpg');
+  });
+
+  it('adds a leading slash to bare relative paths', () => {
+    expect(resolveImageUrl('covers/d.jpg')).toBe('/covers/d.jpg');
+  });
+});
+
+describe('getCoverUrl', () => {
+  it('returns null when the game has no cover art', () => {
+    expect(getCoverUrl({ game: {} } as UserGame)).toBeNull();
+    expect(getCoverUrl({} as UserGame)).toBeNull();
+  });
+
+  it('resolves a present cover_art_url via resolveImageUrl', () => {
+    expect(getCoverUrl({ game: { cover_art_url: '/x.jpg' } } as UserGame)).toBe('/x.jpg');
+    expect(getCoverUrl({ game: { cover_art_url: 'https://e.com/x.jpg' } } as UserGame)).toBe(
+      'https://e.com/x.jpg',
+    );
+  });
+});
 
 describe('formatHoursPlayed', () => {
   it.each([

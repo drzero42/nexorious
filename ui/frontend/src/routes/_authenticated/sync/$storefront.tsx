@@ -62,6 +62,7 @@ import {
 import { RefreshCw, Loader2, AlertCircle, Clock, ChevronDown } from 'lucide-react';
 import { config as envConfig } from '@/lib/env';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
+import { formatRelativeTime } from '@/types/jobs';
 
 export const Route = createFileRoute('/_authenticated/sync/$storefront')({
   head: ({ params }) => {
@@ -76,22 +77,6 @@ export const Route = createFileRoute('/_authenticated/sync/$storefront')({
   },
   component: SyncDetailPage,
 });
-
-function formatLastSync(dateStr: string | null): string {
-  if (!dateStr) return 'Never';
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
-}
 
 function SyncDetailPageSkeleton() {
   return (
@@ -420,7 +405,7 @@ function SyncDetailPage() {
               </CardTitle>
               <CardDescription className="flex items-center gap-2 mt-1">
                 <Clock className="h-4 w-4" />
-                Last synced: {formatLastSync(config.lastSyncedAt)}
+                Last synced: {formatRelativeTime(config.lastSyncedAt, 'Never')}
               </CardDescription>
             </div>
             <div className="ml-auto flex flex-col items-end gap-2">

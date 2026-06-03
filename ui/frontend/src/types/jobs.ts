@@ -280,10 +280,12 @@ export function formatDuration(seconds: number | null): string {
 }
 
 /**
- * Format a date string to a relative time (e.g., "5m ago").
+ * Format a date string to a relative time (e.g., "5m ago"). `nullLabel` is the
+ * placeholder returned for a missing date (e.g. '-' for activity, 'Never' for
+ * last-sync timestamps).
  */
-export function formatRelativeTime(dateStr: string | null): string {
-  if (!dateStr) return '-';
+export function formatRelativeTime(dateStr: string | null, nullLabel = '-'): string {
+  if (!dateStr) return nullLabel;
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();

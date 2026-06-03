@@ -2,12 +2,8 @@ import * as React from 'react';
 import * as ProgressPrimitive from '@radix-ui/react-progress';
 import { cn } from '@/lib/utils';
 import { PlayStatus } from '@/types';
-import {
-  statusColors,
-  statusLabels,
-  statusIcons,
-  statusDescriptions,
-} from './status-progress-data';
+import { statusColors, statusLabels } from '@/lib/play-status';
+import { statusIcons, statusDescriptions } from './status-progress-data';
 
 interface StatusProgressProps {
   status: PlayStatus;

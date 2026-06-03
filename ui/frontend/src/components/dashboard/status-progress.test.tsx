@@ -2,12 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@/test/test-utils';
 import { PlayStatus } from '@/types';
 import { StatusProgress } from './status-progress';
-import {
-  statusColors,
-  statusLabels,
-  statusIcons,
-  statusDescriptions,
-} from './status-progress-data';
+import { statusColors, statusLabels } from '@/lib/play-status';
+import { statusIcons, statusDescriptions } from './status-progress-data';
 
 describe('StatusProgress', () => {
   it('renders the status label and count', () => {
