@@ -24,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Activity, ChevronDown, ChevronRight } from 'lucide-react';
+import { dayRangeToUTC } from '@/lib/date-range';
 import type { AdminEventFilters } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/admin/activity/')({
@@ -73,17 +74,17 @@ function AdminActivityPage() {
     return category === ALL ? all : all.filter((m) => m.category === category);
   }, [eventTypes, category]);
 
-  const filters: AdminEventFilters = useMemo(
-    () => ({
+  const filters: AdminEventFilters = useMemo(() => {
+    const range = dayRangeToUTC(since, until);
+    return {
       type: typeFilter === ALL ? undefined : typeFilter,
       category: typeFilter === ALL && category !== ALL ? category : undefined,
       scope: scope === ALL ? undefined : (scope as 'user' | 'admin'),
       user: user.trim() || undefined,
-      since: since ? `${since}T00:00:00Z` : undefined,
-      until: until ? `${until}T23:59:59Z` : undefined,
-    }),
-    [typeFilter, category, scope, user, since, until],
-  );
+      since: range.since,
+      until: range.until,
+    };
+  }, [typeFilter, category, scope, user, since, until]);
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useAdminEvents(filters);
