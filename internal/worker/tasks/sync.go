@@ -149,7 +149,7 @@ func insertJobItem(ctx context.Context, db *bun.DB, egID string, e ExternalGameE
 func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSyncArgs]) error {
 	p := job.Args
 
-	// 1. Mark job as processing.
+	// Mark job as processing.
 	now := time.Now().UTC()
 	if _, err := w.DB.NewRaw(
 		`UPDATE jobs SET status = 'processing', started_at = ?, dispatch_complete = false WHERE id = ?`,
@@ -158,7 +158,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		slog.Error("dispatch_sync: mark processing failed", "err", err, "job_id", p.JobID)
 	}
 
-	// 2. Load sync config.
+	// Load sync config.
 	var cfg models.UserSyncConfig
 	if err := w.DB.NewSelect().Model(&cfg).
 		Where("user_id = ? AND storefront = ?", p.UserID, p.Storefront).
@@ -167,7 +167,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		return nil
 	}
 
-	// 3. Build adapter (credential loading, decryption, and token refresh happen inside).
+	// Build adapter (credential loading, decryption, and token refresh happen inside).
 	adapter, err := w.Adapter(ctx, p.Storefront, cfg)
 	if errors.Is(err, ErrCredentials) {
 		failSyncJob(ctx, w.DB, p.JobID, "credentials error")
@@ -187,7 +187,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	fetchedIDs := make(map[string]struct{})
 	seenPlatforms := make(map[string][]string)
 
-	// 4. Fetch library; upsert external_games + platforms; insert job_items;
+	// Fetch library; upsert external_games + platforms; insert job_items;
 	//    enqueue Stage 2 (IGDBMatch) per batch as each batch completes.
 	slog.Info("dispatch_sync: starting library fetch", "job_id", p.JobID, "user_id", p.UserID, "storefront", p.Storefront)
 	totalProcessed := 0
@@ -255,7 +255,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		return nil
 	}
 
-	// 6. Stale platform sweep: remove platform rows no longer present upstream.
+	// Stale platform sweep: remove platform rows no longer present upstream.
 	for egID, platforms := range seenPlatforms {
 		if _, err := w.DB.NewRaw(`
 			DELETE FROM external_game_platforms
@@ -266,7 +266,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 	}
 
-	// 7. Mark removed games as unavailable and write changes('removed').
+	// Mark removed games as unavailable and write changes('removed').
 	var available []models.ExternalGame
 	if err := w.DB.NewSelect().Model(&available).
 		Where("user_id = ? AND storefront = ? AND is_available = true", p.UserID, p.Storefront).
@@ -291,7 +291,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 	}
 
-	// 8. Update last_synced_at and clear any prior credentials_error flag.
+	// Update last_synced_at and clear any prior credentials_error flag.
 	syncedNow := time.Now().UTC()
 	if _, err := w.DB.NewRaw(
 		`UPDATE user_sync_configs SET last_synced_at = ?, credentials_error = false, updated_at = now() WHERE user_id = ? AND storefront = ?`,
@@ -300,7 +300,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		slog.Error("dispatch_sync: update last_synced_at failed", "err", err, "job_id", p.JobID)
 	}
 
-	// 9. Dispatch is fully complete — every batch has been streamed and enqueued.
+	// Dispatch is fully complete — every batch has been streamed and enqueued.
 	//    Open the completion gate and run the authoritative check: this finalizes
 	//    the job when all items already drained during dispatch (including an
 	//    empty library), and lets per-item checks finalize it from here on.

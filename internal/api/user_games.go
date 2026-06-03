@@ -1407,7 +1407,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		GenreStats:    map[string]int{},
 	}
 
-	// 1. total_games
+	// total_games
 	total, err := h.db.NewSelect().
 		TableExpr("user_games").
 		Where("user_id = ?", userID).
@@ -1417,7 +1417,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 	}
 	resp.TotalGames = total
 
-	// 2. completion_stats
+	// completion_stats
 	type statusCount struct {
 		PlayStatus string `bun:"play_status"`
 		Count      int    `bun:"count"`
@@ -1436,7 +1436,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.CompletionStats[sc.PlayStatus] = sc.Count
 	}
 
-	// 3. ownership_stats
+	// ownership_stats
 	type ownershipCount struct {
 		OwnershipStatus string `bun:"ownership_status"`
 		Count           int    `bun:"count"`
@@ -1456,7 +1456,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.OwnershipStats[oc.OwnershipStatus] = oc.Count
 	}
 
-	// 4. platform_stats
+	// platform_stats
 	type platformCount struct {
 		DisplayName string `bun:"display_name"`
 		Count       int    `bun:"count"`
@@ -1477,7 +1477,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.PlatformStats[pc.DisplayName] = pc.Count
 	}
 
-	// 5. genre_stats
+	// genre_stats
 	var rawGenres []string
 	err = h.db.NewSelect().
 		TableExpr("games AS g").
@@ -1493,16 +1493,16 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		splitAndCount(raw, resp.GenreStats)
 	}
 
-	// 6. pile_of_shame
+	// pile_of_shame
 	resp.PileOfShame = resp.CompletionStats["not_started"]
 
-	// 7. completion_rate
+	// completion_rate
 	if total > 0 {
 		completed := resp.CompletionStats["completed"] + resp.CompletionStats["mastered"] + resp.CompletionStats["dominated"]
 		resp.CompletionRate = math.Round(float64(completed)/float64(total)*10000) / 100
 	}
 
-	// 8. average_rating
+	// average_rating
 	var avgRating sql.NullFloat64
 	err = h.db.NewSelect().
 		TableExpr("user_games").
@@ -1518,7 +1518,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.AverageRating = &v
 	}
 
-	// 9. total_hours_played — sum platform hours across all user_game_platforms
+	// total_hours_played — sum platform hours across all user_game_platforms
 	var totalHours float64
 	err = h.db.NewSelect().
 		TableExpr("user_games AS ug").
