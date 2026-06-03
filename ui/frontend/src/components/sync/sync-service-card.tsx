@@ -6,6 +6,7 @@ import { Link } from '@tanstack/react-router';
 import { config as envConfig } from '@/lib/env';
 import type { SyncConfig, SyncStatus } from '@/types';
 import { getStorefrontDisplayInfo } from '@/types';
+import { formatRelativeTime } from '@/types/jobs';
 
 interface SyncServiceCardProps {
   config: SyncConfig;
@@ -15,22 +16,6 @@ interface SyncServiceCardProps {
   onTriggerSync: () => Promise<void>;
   isSyncing?: boolean;
   externalGameCount?: number;
-}
-
-function formatLastSync(dateStr: string | null): string {
-  if (!dateStr) return 'Never';
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
 }
 
 export function SyncServiceCard({
@@ -73,7 +58,7 @@ export function SyncServiceCard({
                 </Link>
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Last synced: {formatLastSync(config.lastSyncedAt)}
+                Last synced: {formatRelativeTime(config.lastSyncedAt, 'Never')}
               </p>
               {externalGameCount !== undefined && externalGameCount > 0 && (
                 <p className="text-sm text-muted-foreground">{externalGameCount} games</p>

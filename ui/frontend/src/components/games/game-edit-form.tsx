@@ -31,8 +31,7 @@ import {
   useSyncConfig,
 } from '@/hooks';
 import { SyncStorefront, SyncFrequency } from '@/types/sync';
-import { config } from '@/lib/env';
-import { formatHoursPlayed, formatPlatformLabel } from '@/lib/game-utils';
+import { formatHoursPlayed, formatPlatformLabel, resolveImageUrl } from '@/lib/game-utils';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame } from '@/types';
 import { ArrowLeft, Save, Loader2, Heart } from 'lucide-react';
@@ -56,15 +55,6 @@ const OWNERSHIP_STATUS_OPTIONS: { value: OwnershipStatus; label: string }[] = [
   { value: OwnershipStatus.SUBSCRIPTION, label: 'Subscription' },
   { value: OwnershipStatus.NO_LONGER_OWNED, label: 'No Longer Owned' },
 ];
-
-// Helper to resolve image URLs
-function resolveImageUrl(url: string | undefined): string {
-  if (!url) return '';
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
-  }
-  return `${config.staticUrl}${url.startsWith('/') ? url : `/${url}`}`;
-}
 
 export interface GameEditFormProps {
   game: UserGame;

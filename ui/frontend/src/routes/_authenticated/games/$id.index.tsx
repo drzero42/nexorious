@@ -17,13 +17,14 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink, Gamepad2 } from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
-import { config } from '@/lib/env';
 import {
   formatIgdbRating,
   formatHoursPlayed,
   formatTtb,
   formatPlatformLabel,
+  resolveImageUrl,
 } from '@/lib/game-utils';
+import { statusLabels } from '@/lib/play-status';
 import {
   OwnershipStatus,
   type PlayStatus,
@@ -47,30 +48,6 @@ function navigateToReturnUrl(navigate: ReturnType<typeof useNavigate>): void {
   } catch {
     navigate({ to: '/games' });
   }
-}
-
-// Helper to resolve image URLs
-function resolveImageUrl(url: string | undefined): string {
-  if (!url) return '';
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
-  }
-  return `${config.staticUrl}${url.startsWith('/') ? url : `/${url}`}`;
-}
-
-// Format play status for display
-function formatPlayStatus(status: PlayStatus): string {
-  const labels: Record<PlayStatus, string> = {
-    not_started: 'Not Started',
-    in_progress: 'In Progress',
-    completed: 'Completed',
-    mastered: 'Mastered',
-    dominated: 'Dominated',
-    shelved: 'Shelved',
-    dropped: 'Dropped',
-    replay: 'Replay',
-  };
-  return labels[status] || status;
 }
 
 // Get status color classes
@@ -216,7 +193,7 @@ export function GameDetailPage() {
               {/* Quick Stats */}
               <div className="flex flex-wrap items-center gap-3">
                 <Badge className={getStatusColor(game.play_status)}>
-                  {formatPlayStatus(game.play_status)}
+                  {statusLabels[game.play_status]}
                 </Badge>
                 <StarRating value={game.personal_rating} readonly size="md" showLabel />
                 {game.game.rating_average != null && (
@@ -384,7 +361,7 @@ export function GameDetailPage() {
               <dt className="text-sm text-muted-foreground">Status</dt>
               <dd className="mt-1">
                 <Badge className={getStatusColor(game.play_status)}>
-                  {formatPlayStatus(game.play_status)}
+                  {statusLabels[game.play_status]}
                 </Badge>
               </dd>
             </div>

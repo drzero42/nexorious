@@ -2,7 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatHoursPlayed } from '@/lib/game-utils';
 import { PlayStatus } from '@/types';
 import { StatusProgress } from './status-progress';
-import { statusIcons, statusLabels } from './status-progress-data';
+import { statusLabels } from '@/lib/play-status';
+import { statusIcons } from './status-progress-data';
 
 interface CollectionStats {
   totalGames: number;

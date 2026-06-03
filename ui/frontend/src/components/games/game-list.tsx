@@ -10,11 +10,11 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PlatformIconList } from '@/components/ui/platform-icon';
-import { config } from '@/lib/env';
-import type { UserGame, PlayStatus } from '@/types';
+import type { UserGame } from '@/types';
 import { cn } from '@/lib/utils';
 import { Timer } from 'lucide-react';
-import { formatTtb, formatIgdbRating, formatHoursPlayed } from '@/lib/game-utils';
+import { formatTtb, formatIgdbRating, formatHoursPlayed, getCoverUrl } from '@/lib/game-utils';
+import { statusColors, statusLabels } from '@/lib/play-status';
 
 export interface GameListProps {
   games: UserGame[];
@@ -22,38 +22,6 @@ export interface GameListProps {
   selectedIds?: Set<string>;
   onSelectGame?: (id: string) => void;
   onClickGame?: (game: UserGame) => void;
-}
-
-const statusColors: Record<PlayStatus, string> = {
-  not_started: 'bg-gray-500',
-  in_progress: 'bg-blue-500',
-  completed: 'bg-green-500',
-  mastered: 'bg-purple-500',
-  dominated: 'bg-yellow-500',
-  shelved: 'bg-orange-500',
-  dropped: 'bg-red-500',
-  replay: 'bg-cyan-500',
-};
-
-const statusLabels: Record<PlayStatus, string> = {
-  not_started: 'Not Started',
-  in_progress: 'In Progress',
-  completed: 'Completed',
-  mastered: 'Mastered',
-  dominated: 'Dominated',
-  shelved: 'Shelved',
-  dropped: 'Dropped',
-  replay: 'Replay',
-};
-
-function getCoverUrl(game: UserGame): string | null {
-  if (game.game?.cover_art_url) {
-    if (game.game.cover_art_url.startsWith('/')) {
-      return `${config.staticUrl}${game.game.cover_art_url}`;
-    }
-    return game.game.cover_art_url;
-  }
-  return null;
 }
 
 function GameListSkeleton() {
