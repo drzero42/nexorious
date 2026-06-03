@@ -48,8 +48,12 @@ are not no-ops:
   These would bind `Type`↔payload at compile time but add ~13 functions. The
   registry-driven test (Layer 3) covers the Type↔payload pairing for far less
   surface area. Possible future step; out of scope here.
-- **No DB or migration changes.** The payload JSON on the wire is byte-identical
-  before and after, so existing stored `events` rows continue to render.
+- **No DB or migration changes.** Payload JSON is byte-identical before and
+  after for every event type **except maintenance events**: because
+  `MaintPayload`'s numeric fields are `omitempty`, a maintenance payload no
+  longer serializes zero-valued counts (e.g. a prune that affected 0 rows drops
+  `"count":0`). This has no rendering impact (`Format` reads only `action` and
+  `error`) and existing stored rows still decode and render correctly.
 
 ## Design
 
@@ -178,11 +182,16 @@ type BackupCompletedPayload struct {
 type BackupFailedPayload struct {
     Error string `json:"error"`
 }
-// Shared by admin.maintenance.completed and admin.maintenance.failed.
+// Shared by admin.maintenance.completed and admin.maintenance.failed. The
+// numeric fields are a union over what the various maintenance jobs report
+// (prune/metadata → count; orphaned-items → rescued+failed; stale-jobs →
+// count). All optional; Format renders only Action and Error.
 type MaintPayload struct {
-    Action string `json:"action"`
-    Error  string `json:"error,omitempty"`
-    Count  int    `json:"count,omitempty"`
+    Action  string `json:"action"`
+    Error   string `json:"error,omitempty"`
+    Count   int    `json:"count,omitempty"`
+    Rescued int    `json:"rescued,omitempty"`
+    Failed  int    `json:"failed,omitempty"`
 }
 ```
 
@@ -217,10 +226,10 @@ Changes that follow:
   type now moves emit and format together — drift cannot compile.
 
 - `scheduler.emitMaint(ctx, db, failed bool, action string, extra map[string]any)`
-  is narrowed. The only `extra` ever passed is a count, so the signature becomes
-  `emitMaint(ctx, db, failed bool, p MaintPayload)` (or
-  `emitMaint(ctx, db, failed bool, action string, count int)`), removing the
-  open-ended map. Implementation picks whichever reads cleaner at the call sites.
+  is narrowed to `emitMaint(ctx, db, failed bool, p notify.MaintPayload)`,
+  removing the open-ended map and the `maps.Copy` call (drop the now-unused
+  `maps` import). Its five callers (`orphaned_items.go`, `stale_jobs.go`) build
+  a typed `MaintPayload` with the relevant fields set.
 
 ### Layer 3 — registry-driven round-trip test
 
@@ -275,7 +284,9 @@ decoding type (e.g. `{"failed":"not-a-number"}` for
 - `internal/notify/prune.go` — typed `MaintPayload`.
 - `internal/notify/formatters_test.go` — registry round-trip + malformed-payload tests.
 - `internal/api/events.go` — log `decodeErr`.
-- `internal/scheduler/scheduler.go` — narrow `emitMaint`; typed payload.
+- `internal/scheduler/scheduler.go` — narrow `emitMaint`; drop `maps` import.
+- `internal/scheduler/orphaned_items.go` — typed `MaintPayload` at 2 call sites.
+- `internal/scheduler/stale_jobs.go` — typed `MaintPayload` at 3 call sites.
 - `internal/scheduler/backup_poll.go` — typed payloads.
 - `internal/worker/tasks/sync.go` — typed payloads (5 sites).
 - `internal/worker/tasks/export.go` — typed payloads (2 sites).
