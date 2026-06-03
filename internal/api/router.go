@@ -32,6 +32,16 @@ import (
 	"github.com/drzero42/nexorious/ui"
 )
 
+// appStateJSON responds to an /api/* request that is blocked by an app-state
+// gate (DB unavailable, migrations pending, or setup required) with a
+// machine-readable 503 instead of a 302 to an HTML page. A running SPA follows
+// redirects transparently and would otherwise try to JSON.parse the HTML target
+// (see issue #771); the JSON body lets the client detect the state and perform a
+// hard navigation to the appropriate page.
+func appStateJSON(c *echo.Context, appState string) error {
+	return c.JSON(http.StatusServiceUnavailable, map[string]string{"app_state": appState})
+}
+
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
 func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
@@ -68,6 +78,9 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 				if path == "/db-error" || path == "/health" || path == "/static/app.css" {
 					return next(c)
 				}
+				if strings.HasPrefix(path, "/api/") {
+					return appStateJSON(c, state.String())
+				}
 				return c.Redirect(http.StatusFound,
 					"/db-error?from="+url.QueryEscape(c.Request().RequestURI))
 			}
@@ -87,6 +100,9 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 					path == "/favicon.ico" || path == "/apple-touch-icon.png" {
 					return next(c)
 				}
+				if strings.HasPrefix(path, "/api/") {
+					return appStateJSON(c, state.String())
+				}
 				return c.Redirect(http.StatusFound, "/migrate")
 			}
 			return next(c)
@@ -104,6 +120,9 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 					path == "/logo.svg" || path == "/favicon.svg" ||
 					path == "/favicon.ico" || path == "/apple-touch-icon.png" {
 					return next(c)
+				}
+				if strings.HasPrefix(path, "/api/") {
+					return appStateJSON(c, "needs_setup")
 				}
 				return c.Redirect(http.StatusFound, "/setup")
 			}
