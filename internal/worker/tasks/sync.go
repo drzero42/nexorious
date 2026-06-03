@@ -339,7 +339,7 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: userID,
-		Payload:  map[string]any{"storefront": storefront, "error": msg, "job_id": jobID},
+		Payload:  notify.SyncFailedPayload{Storefront: storefront, Error: msg, JobID: jobID},
 		DedupKey: jobID + ":" + notify.TypeSyncFailed,
 	})
 }
@@ -911,7 +911,7 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 		userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
 		notify.Emit(ctx, db, notify.EmitParams{
 			Type: notify.TypeSyncNeedsReview, Scope: notify.ScopeUser, ActorUserID: userID,
-			Payload:  map[string]any{"storefront": storefront, "count": pendingReviewCount, "job_id": jobID},
+			Payload:  notify.SyncNeedsReviewPayload{Storefront: storefront, Count: pendingReviewCount, JobID: jobID},
 			DedupKey: jobID + ":" + notify.TypeSyncNeedsReview,
 		})
 		return
@@ -932,13 +932,13 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 	if failedCount > 0 {
 		notify.Emit(ctx, db, notify.EmitParams{
 			Type: notify.TypeSyncCompletedWithErrors, Scope: notify.ScopeUser, ActorUserID: userID,
-			Payload:  map[string]any{"storefront": storefront, "failed": failedCount, "job_id": jobID},
+			Payload:  notify.SyncCompletedWithErrorsPayload{Storefront: storefront, Failed: failedCount, JobID: jobID},
 			DedupKey: jobID + ":" + notify.TypeSyncCompletedWithErrors,
 		})
 	} else {
 		notify.Emit(ctx, db, notify.EmitParams{
 			Type: notify.TypeSyncCompleted, Scope: notify.ScopeUser, ActorUserID: userID,
-			Payload:  map[string]any{"storefront": storefront, "job_id": jobID},
+			Payload:  notify.SyncCompletedPayload{Storefront: storefront, JobID: jobID},
 			DedupKey: jobID + ":" + notify.TypeSyncCompleted,
 		})
 	}
@@ -983,14 +983,14 @@ func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID string) {
 	if len(rows) == 0 {
 		return
 	}
-	added := []map[string]any{}
-	removed := []map[string]any{}
+	added := []notify.DiffGame{}
+	removed := []notify.DiffGame{}
 	for _, r := range rows {
 		platforms := []string{}
 		if r.Platforms != "" {
 			platforms = strings.Split(r.Platforms, ",")
 		}
-		entry := map[string]any{"title": r.Title, "platforms": platforms}
+		entry := notify.DiffGame{Title: r.Title, Platforms: platforms}
 		if r.ChangeType == "added" {
 			added = append(added, entry)
 		} else {
@@ -999,7 +999,7 @@ func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID string) {
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeSyncDiff, Scope: notify.ScopeUser, ActorUserID: userID,
-		Payload:  map[string]any{"added": added, "removed": removed, "job_id": jobID},
+		Payload:  notify.SyncDiffPayload{Added: added, Removed: removed, JobID: jobID},
 		DedupKey: jobID + ":" + notify.TypeSyncDiff,
 	})
 }

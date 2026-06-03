@@ -9,6 +9,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -46,7 +47,7 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		int64(age.Seconds()),
 	).Scan(ctx, &orphans); err != nil {
 		slog.Error("rescue_orphaned_items: query failed", "err", err)
-		emitMaint(ctx, db, true, "rescue_orphaned_items", map[string]any{"error": err.Error()})
+		emitMaint(ctx, db, true, notify.MaintPayload{Action: "rescue_orphaned_items", Error: err.Error()})
 		return
 	}
 
@@ -73,6 +74,6 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		}
 	}
 	if successCount+failureCount > 0 {
-		emitMaint(ctx, db, false, "rescue_orphaned_items", map[string]any{"rescued": successCount, "failed": failureCount})
+		emitMaint(ctx, db, false, notify.MaintPayload{Action: "rescue_orphaned_items", Rescued: successCount, Failed: failureCount})
 	}
 }

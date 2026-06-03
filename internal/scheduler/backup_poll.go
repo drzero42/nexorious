@@ -47,7 +47,7 @@ func (w *CheckScheduledBackupWorker) Work(ctx context.Context, _ *river.Job[Chec
 		notify.Emit(ctx, w.DB, notify.EmitParams{
 			Type:    notify.TypeAdminBackupFailed,
 			Scope:   notify.ScopeAdmin,
-			Payload: map[string]any{"error": err.Error()},
+			Payload: notify.BackupFailedPayload{Error: err.Error()},
 		})
 		return nil
 	}
@@ -55,7 +55,7 @@ func (w *CheckScheduledBackupWorker) Work(ctx context.Context, _ *river.Job[Chec
 	notify.Emit(ctx, w.DB, notify.EmitParams{
 		Type:    notify.TypeAdminBackupCompleted,
 		Scope:   notify.ScopeAdmin,
-		Payload: map[string]any{"backup_id": id},
+		Payload: notify.BackupCompletedPayload{BackupID: id},
 	})
 	if err := w.BackupSvc.ApplyRetention(cfg.RetentionMode, cfg.RetentionValue); err != nil {
 		slog.Warn("scheduled backup retention cleanup failed", "err", err)

@@ -480,18 +480,14 @@ func checkJobCompletion(db *bun.DB, jobID string) {
 	if failedCount > 0 {
 		notify.Emit(ctx, db, notify.EmitParams{
 			Type: notify.TypeImportFailed, Scope: notify.ScopeUser, ActorUserID: uid,
-			Payload: map[string]any{
-				"job_id": jobID,
-				"failed": failedCount,
-				"error":  fmt.Sprintf("%d item(s) failed to import", failedCount),
-			},
+			Payload:  notify.ImportFailedPayload{JobID: jobID, Failed: failedCount, Error: fmt.Sprintf("%d item(s) failed to import", failedCount)},
 			DedupKey: jobID + ":" + notify.TypeImportFailed,
 		})
 		return
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeImportCompleted, Scope: notify.ScopeUser, ActorUserID: uid,
-		Payload:  map[string]any{"job_id": jobID},
+		Payload:  notify.ImportCompletedPayload{JobID: jobID},
 		DedupKey: jobID + ":" + notify.TypeImportCompleted,
 	})
 }
