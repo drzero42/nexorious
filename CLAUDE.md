@@ -170,6 +170,9 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 4. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)) — format/lint on every edit, build + typecheck when a turn ends, and the full suites at `git push`. You don't need to re-run the whole suites by hand; do run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.
 5. **Plan files**: `docs/superpowers/plans/` is tracked — always commit the plan file on the feature branch
 
+### Out-of-Scope Findings
+When working with code, if you identify a problem, bug, or inconsistency that you judge to be out-of-scope for the current task, do **not** silently fix it or ignore it — surface it and **offer to file a follow-up GitHub issue** (`gh issue create`) to track the fix. Only create the issue once the user agrees.
+
 ### Branch Workflow (MANDATORY)
 - ✅ Always create a branch before starting task work
 - ✅ Use `--squash --delete-branch` when merging PRs
