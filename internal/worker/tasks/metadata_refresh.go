@@ -190,27 +190,27 @@ func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[Met
 	// Step 2 — Parse source_metadata.
 	var sourceMeta metadataRefreshSourceMeta
 	if err := json.Unmarshal(item.SourceMetadata, &sourceMeta); err != nil {
-		metaRefreshMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err))
+		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err), "metadata_refresh: markItemFailed")
 		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	// Step 3 — IGDB guard (defensive; preserves the per-item failure message).
 	if !w.IGDBClient.Configured() {
-		metaRefreshMarkItemFailed(ctx, w.DB, &item, "igdb_not_configured")
+		markItemFailed(ctx, w.DB, &item, "igdb_not_configured", "metadata_refresh: markItemFailed")
 		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	// Step 4 — Fetch IGDB metadata and update the games row (shared helper).
 	if err := fetchAndStoreMetadata(ctx, w.DB, w.IGDBClient, w.StoragePath, sourceMeta.GameID); err != nil {
-		metaRefreshMarkItemFailed(ctx, w.DB, &item, err.Error())
+		markItemFailed(ctx, w.DB, &item, err.Error(), "metadata_refresh: markItemFailed")
 		metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	// Step 5 — Mark item completed.
-	metaRefreshMarkItemCompleted(ctx, w.DB, &item)
+	markItemCompleted(ctx, w.DB, &item, "metadata_refresh: markItemCompleted")
 
 	// Step 6 — Check job completion.
 	metaRefreshCheckJobCompletion(ctx, w.DB, item.JobID)
@@ -333,51 +333,10 @@ func fetchAndStoreMetadata(ctx context.Context, db *bun.DB, igdbClient *igdbsvc.
 	return nil
 }
 
-func metaRefreshMarkItemFailed(ctx context.Context, db *bun.DB, item *models.JobItem, msg string) {
-	now := time.Now().UTC()
-	item.Status = models.JobItemStatusFailed
-	item.ErrorMessage = &msg
-	item.ProcessedAt = &now
-	_, err := db.NewUpdate().Model(item).
-		Column("status", "error_message", "processed_at").
-		Where("id = ?", item.ID).
-		Exec(ctx)
-	if err != nil {
-		slog.Error("metadata_refresh: markItemFailed", "id", item.ID, "err", err)
-	}
-}
-
-func metaRefreshMarkItemCompleted(ctx context.Context, db *bun.DB, item *models.JobItem) {
-	now := time.Now().UTC()
-	item.Status = models.JobItemStatusCompleted
-	item.ProcessedAt = &now
-	_, err := db.NewUpdate().Model(item).
-		Column("status", "processed_at").
-		Where("id = ?", item.ID).
-		Exec(ctx)
-	if err != nil {
-		slog.Error("metadata_refresh: markItemCompleted", "id", item.ID, "err", err)
-	}
-}
-
 func metaRefreshCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
-	var pendingCount int
-	if err := db.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status NOT IN ('completed', 'failed', 'skipped')`,
-		jobID,
-	).Scan(ctx, &pendingCount); err != nil {
-		slog.Error("metadata_refresh: check job completion", "job_id", jobID, "err", err)
+	remaining, ok := countJobItems(ctx, db, jobID, "status NOT IN ('completed', 'failed', 'skipped')", "metadata_refresh: check job completion")
+	if !ok || remaining > 0 {
 		return
 	}
-	if pendingCount > 0 {
-		return
-	}
-	now := time.Now().UTC()
-	_, err := db.NewRaw(
-		`UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ?`,
-		now, jobID,
-	).Exec(ctx)
-	if err != nil {
-		slog.Error("metadata_refresh: update job completed", "job_id", jobID, "err", err)
-	}
+	finalizeJobCompleted(ctx, db, jobID, "metadata_refresh: update job completed", false)
 }

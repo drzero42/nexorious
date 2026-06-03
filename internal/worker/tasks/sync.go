@@ -390,14 +390,14 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 	}
 
 	if item.ExternalGameID == nil {
-		syncMarkItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item")
+		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	var eg models.ExternalGame
 	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
-		syncMarkItemFailed(ctx, w.DB, &item, "external game not found")
+		markItemFailed(ctx, w.DB, &item, "external game not found", "process_sync_item: markItemFailed")
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
@@ -578,14 +578,14 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	}
 
 	if item.ExternalGameID == nil {
-		syncMarkItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item")
+		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	var eg models.ExternalGame
 	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
-		syncMarkItemFailed(ctx, w.DB, &item, "external game not found")
+		markItemFailed(ctx, w.DB, &item, "external game not found", "process_sync_item: markItemFailed")
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
@@ -604,7 +604,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		).Exec(ctx); err != nil {
 			slog.Error("user_game_write: insert sync_change (skipped)", "err", err)
 		}
-		syncMarkItemSkipped(ctx, w.DB, &item)
+		markItemSkipped(ctx, w.DB, &item, "process_sync_item: markItemSkipped")
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
@@ -628,7 +628,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	}
 
 	if eg.ResolvedIGDBID == nil {
-		syncMarkItemFailed(ctx, w.DB, &item, "no resolved_igdb_id on external_game")
+		markItemFailed(ctx, w.DB, &item, "no resolved_igdb_id on external_game", "process_sync_item: markItemFailed")
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
@@ -657,7 +657,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		 RETURNING id, (xmax = 0) AS is_new`,
 		ugID, item.UserID, *eg.ResolvedIGDBID, now, now,
 	).Scan(ctx, &isNewRow); err != nil {
-		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("upsert user_game: %v", err))
+		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("upsert user_game: %v", err), "process_sync_item: markItemFailed")
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
@@ -668,19 +668,19 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	if err := w.DB.NewSelect().Model(&egPlatforms).
 		Where("external_game_id = ?", eg.ID).
 		Scan(ctx); err != nil {
-		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("load platforms: %v", err))
+		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("load platforms: %v", err), "process_sync_item: markItemFailed")
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 	if len(egPlatforms) == 0 {
-		syncMarkItemFailed(ctx, w.DB, &item, "external game has no platform rows")
+		markItemFailed(ctx, w.DB, &item, "external game has no platform rows", "process_sync_item: markItemFailed")
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
 
 	storefrontSlug, ok := platformresolution.StorefrontToCollectionSlug(eg.Storefront)
 	if !ok {
-		syncMarkItemFailed(ctx, w.DB, &item, fmt.Sprintf("unresolved storefront=%s", eg.Storefront))
+		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("unresolved storefront=%s", eg.Storefront), "process_sync_item: markItemFailed")
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
 	}
@@ -803,7 +803,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	// next scheduled bulk refresh. Non-fatal — the bulk refresh is the safety net.
 	w.maybeEnqueueImmediateMetadataFetch(ctx, *eg.ResolvedIGDBID)
 
-	syncMarkItemCompleted(ctx, w.DB, &item)
+	markItemCompleted(ctx, w.DB, &item, "process_sync_item: markItemCompleted")
 
 	// Sibling trigger: re-enqueue Stage 2 for children waiting on this parent.
 	if w.RiverClient != nil {
@@ -867,49 +867,6 @@ func (w *UserGameWorker) maybeEnqueueImmediateMetadataFetch(ctx context.Context,
 	}
 }
 
-// syncMarkItemFailed sets a job_item to failed with an error message.
-func syncMarkItemFailed(ctx context.Context, db *bun.DB, item *models.JobItem, msg string) {
-	now := time.Now().UTC()
-	item.Status = models.JobItemStatusFailed
-	item.ErrorMessage = &msg
-	item.ProcessedAt = &now
-	_, err := db.NewUpdate().Model(item).
-		Column("status", "error_message", "processed_at").
-		Where("id = ?", item.ID).
-		Exec(ctx)
-	if err != nil {
-		slog.Error("process_sync_item: syncMarkItemFailed", "id", item.ID, "err", err)
-	}
-}
-
-// syncMarkItemCompleted sets a job_item to completed.
-func syncMarkItemCompleted(ctx context.Context, db *bun.DB, item *models.JobItem) {
-	now := time.Now().UTC()
-	item.Status = models.JobItemStatusCompleted
-	item.ProcessedAt = &now
-	_, err := db.NewUpdate().Model(item).
-		Column("status", "processed_at").
-		Where("id = ?", item.ID).
-		Exec(ctx)
-	if err != nil {
-		slog.Error("process_sync_item: syncMarkItemCompleted", "id", item.ID, "err", err)
-	}
-}
-
-// syncMarkItemSkipped sets a job_item to skipped.
-func syncMarkItemSkipped(ctx context.Context, db *bun.DB, item *models.JobItem) {
-	now := time.Now().UTC()
-	item.Status = models.JobItemStatusSkipped
-	item.ProcessedAt = &now
-	_, err := db.NewUpdate().Model(item).
-		Column("status", "processed_at").
-		Where("id = ?", item.ID).
-		Exec(ctx)
-	if err != nil {
-		slog.Error("process_sync_item: syncMarkItemSkipped", "id", item.ID, "err", err)
-	}
-}
-
 // syncMarkItemPendingReview sets a job_item to pending_review and persists any IGDB candidates.
 func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.JobItem) {
 	item.Status = models.JobItemStatusPendingReview
@@ -940,25 +897,14 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 // completion check below treats dispatch_complete=false as "more work may
 // still arrive" and refuses to finalize.
 func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
-	var activeRemaining int
-	if err := db.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status IN ('pending', 'processing')`,
-		jobID,
-	).Scan(ctx, &activeRemaining); err != nil {
-		slog.Error("sync: SyncCheckJobCompletion count", "job_id", jobID, "err", err)
-		return
-	}
-	if activeRemaining > 0 {
+	activeRemaining, ok := countJobItems(ctx, db, jobID, "status IN ('pending', 'processing')", "sync: SyncCheckJobCompletion count")
+	if !ok || activeRemaining > 0 {
 		return
 	}
 
 	// If pending_review items still exist the job stays processing — user must resolve them.
-	var pendingReviewCount int
-	if err := db.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'pending_review'`,
-		jobID,
-	).Scan(ctx, &pendingReviewCount); err != nil {
-		slog.Error("sync: SyncCheckJobCompletion pending_review count", "job_id", jobID, "err", err)
+	pendingReviewCount, ok := countJobItems(ctx, db, jobID, "status = 'pending_review'", "sync: SyncCheckJobCompletion pending_review count")
+	if !ok {
 		return
 	}
 	if pendingReviewCount > 0 {
@@ -971,26 +917,16 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 		return
 	}
 
-	now := time.Now().UTC()
-	finalStatus := "completed"
-	res, err := db.NewRaw(
-		`UPDATE jobs SET status = ?, completed_at = ? WHERE id = ? AND status IN ('pending', 'processing') AND dispatch_complete = true`,
-		finalStatus, now, jobID,
-	).Exec(ctx)
-	if err != nil {
-		slog.Error("sync: SyncCheckJobCompletion finalize job failed", "err", err, "job_id", jobID, "final_status", finalStatus)
-		return
-	}
-	// Only emit completion notifications when this call actually finalized the
-	// job (dispatch still streaming or already-terminal jobs match 0 rows).
-	if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // advisory RowsAffected
+	// Finalize only when dispatch has finished streaming batches. finalized=false
+	// means dispatch is still in flight or the job is already terminal — in either
+	// case we must not emit completion notifications.
+	if !finalizeJobCompleted(ctx, db, jobID, "sync: SyncCheckJobCompletion finalize job failed", true) {
 		return
 	}
 
 	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
-	var failedCount int
-	if err := db.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'failed'`, jobID).Scan(ctx, &failedCount); err != nil {
-		slog.Error("sync: count failed items for notify", "job_id", jobID, "err", err)
+	failedCount, ok := countJobItems(ctx, db, jobID, "status = 'failed'", "sync: count failed items for notify")
+	if !ok {
 		return
 	}
 	if failedCount > 0 {
