@@ -450,9 +450,6 @@ func (h *GamesHandler) metadataToGame(md *igdb.GameMetadata) *models.Game {
 
 func extractImageID(coverURL string) string {
 	parts := strings.Split(coverURL, "/")
-	if len(parts) == 0 {
-		return ""
-	}
 	last := parts[len(parts)-1]
 	return strings.TrimSuffix(last, ".jpg")
 }

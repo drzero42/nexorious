@@ -27,9 +27,7 @@ func Format(eventType string, payload json.RawMessage) (title, body string) {
 			Storefront string `json:"storefront"`
 			Error      string `json:"error"`
 		}
-		if err := json.Unmarshal(payload, &p); err != nil { //nolint:errcheck // best-effort decode; falls back to defaults on error
-			_ = err
-		}
+		_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
 		title = "Sync failed"
 		body = fmt.Sprintf("Your %s sync failed: %s", fallback(p.Storefront, "library"), fallback(p.Error, "unknown error"))
 
@@ -37,9 +35,7 @@ func Format(eventType string, payload json.RawMessage) (title, body string) {
 		var p struct {
 			Storefront string `json:"storefront"`
 		}
-		if err := json.Unmarshal(payload, &p); err != nil { //nolint:errcheck // best-effort decode; falls back to defaults on error
-			_ = err
-		}
+		_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
 		title = "Sync completed"
 		body = fmt.Sprintf("Your %s sync completed successfully.", fallback(p.Storefront, "library"))
 
@@ -48,9 +44,7 @@ func Format(eventType string, payload json.RawMessage) (title, body string) {
 			Storefront string `json:"storefront"`
 			Failed     int    `json:"failed"`
 		}
-		if err := json.Unmarshal(payload, &p); err != nil { //nolint:errcheck // best-effort decode; falls back to defaults on error
-			_ = err
-		}
+		_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
 		title = "Sync completed with errors"
 		body = fmt.Sprintf("Your %s sync finished with %d failed item(s).", fallback(p.Storefront, "library"), p.Failed)
 
@@ -59,9 +53,7 @@ func Format(eventType string, payload json.RawMessage) (title, body string) {
 			Storefront string `json:"storefront"`
 			Count      int    `json:"count"`
 		}
-		if err := json.Unmarshal(payload, &p); err != nil { //nolint:errcheck // best-effort decode; falls back to defaults on error
-			_ = err
-		}
+		_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
 		title = "Sync needs review"
 		body = fmt.Sprintf("Your %s sync has %d item(s) needing review.", fallback(p.Storefront, "library"), p.Count)
 
@@ -70,9 +62,7 @@ func Format(eventType string, payload json.RawMessage) (title, body string) {
 			Added   []DiffGame `json:"added"`
 			Removed []DiffGame `json:"removed"`
 		}
-		if err := json.Unmarshal(payload, &p); err != nil { //nolint:errcheck // best-effort decode; falls back to defaults on error
-			_ = err
-		}
+		_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
 		title = "Game library changes"
 		body = formatDiff(p.Added, p.Removed)
 
@@ -140,9 +130,7 @@ func failBody(payload json.RawMessage, prefix string) string {
 	var p struct {
 		Error string `json:"error"`
 	}
-	if err := json.Unmarshal(payload, &p); err != nil { //nolint:errcheck // best-effort decode; falls back to defaults on error
-		_ = err
-	}
+	_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
 	if p.Error == "" {
 		return prefix + "."
 	}
@@ -154,9 +142,7 @@ func maintBody(payload json.RawMessage, prefix string) string {
 		Action string `json:"action"`
 		Error  string `json:"error"`
 	}
-	if err := json.Unmarshal(payload, &p); err != nil { //nolint:errcheck // best-effort decode; falls back to defaults on error
-		_ = err
-	}
+	_ = json.Unmarshal(payload, &p) //nolint:errcheck // best-effort decode; falls back to defaults on error
 	parts := []string{prefix}
 	if p.Action != "" {
 		parts = append(parts, "("+p.Action+")")

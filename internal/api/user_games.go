@@ -379,12 +379,10 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 
 	// Validate game exists.
 	ctx := context.Background()
-	var gameExists bool
-	err := h.db.NewSelect().Model((*models.Game)(nil)).
-		ColumnExpr("1").
+	gameExists, err := h.db.NewSelect().Model((*models.Game)(nil)).
 		Where("id = ?", req.GameID).
-		Scan(ctx, &gameExists)
-	if err != nil {
+		Exists(ctx)
+	if err != nil || !gameExists {
 		return echo.NewHTTPError(http.StatusBadRequest, "game not found")
 	}
 
@@ -883,13 +881,17 @@ func (h *UserGamesHandler) HandleBulkRemovePlatforms(c *echo.Context) error {
 // verifyUserGameOwnership checks that userGameID belongs to userID.
 // Returns sql.ErrNoRows if not found or not owned.
 func (h *UserGamesHandler) verifyUserGameOwnership(ctx context.Context, userGameID, userID string) error {
-	var exists bool
-	err := h.db.NewSelect().Model((*models.UserGame)(nil)).
-		ColumnExpr("1").
+	exists, err := h.db.NewSelect().Model((*models.UserGame)(nil)).
 		Where("id = ?", userGameID).
 		Where("user_id = ?", userID).
-		Scan(ctx, &exists)
-	return err
+		Exists(ctx)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // platformRequest is the bind target for platform create/update.
@@ -954,24 +956,20 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 
 	// Validate platform exists
 	if req.Platform != nil && *req.Platform != "" {
-		var exists bool
-		err := h.db.NewSelect().Model((*models.Platform)(nil)).
-			ColumnExpr("1").
+		exists, err := h.db.NewSelect().Model((*models.Platform)(nil)).
 			Where("name = ?", *req.Platform).
-			Scan(ctx, &exists)
-		if err != nil {
+			Exists(ctx)
+		if err != nil || !exists {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found: " + *req.Platform})
 		}
 	}
 
 	// Validate storefront exists
 	if req.Storefront != nil && *req.Storefront != "" {
-		var exists bool
-		err := h.db.NewSelect().Model((*models.Storefront)(nil)).
-			ColumnExpr("1").
+		exists, err := h.db.NewSelect().Model((*models.Storefront)(nil)).
 			Where("name = ?", *req.Storefront).
-			Scan(ctx, &exists)
-		if err != nil {
+			Exists(ctx)
+		if err != nil || !exists {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "storefront not found: " + *req.Storefront})
 		}
 	}
@@ -1048,24 +1046,20 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 
 	// Validate platform if provided
 	if req.Platform != nil && *req.Platform != "" {
-		var exists bool
-		checkErr := h.db.NewSelect().Model((*models.Platform)(nil)).
-			ColumnExpr("1").
+		exists, checkErr := h.db.NewSelect().Model((*models.Platform)(nil)).
 			Where("name = ?", *req.Platform).
-			Scan(ctx, &exists)
-		if checkErr != nil {
+			Exists(ctx)
+		if checkErr != nil || !exists {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found: " + *req.Platform})
 		}
 	}
 
 	// Validate storefront if provided
 	if req.Storefront != nil && *req.Storefront != "" {
-		var exists bool
-		checkErr := h.db.NewSelect().Model((*models.Storefront)(nil)).
-			ColumnExpr("1").
+		exists, checkErr := h.db.NewSelect().Model((*models.Storefront)(nil)).
 			Where("name = ?", *req.Storefront).
-			Scan(ctx, &exists)
-		if checkErr != nil {
+			Exists(ctx)
+		if checkErr != nil || !exists {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "storefront not found: " + *req.Storefront})
 		}
 	}
