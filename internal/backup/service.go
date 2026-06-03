@@ -28,6 +28,10 @@ var ErrOperationInProgress = errors.New("a backup or restore operation is alread
 // ErrNotFound is returned when a requested backup archive does not exist.
 var ErrNotFound = errors.New("backup not found")
 
+// ErrInvalidBackupID is returned when a backup ID is empty or could escape the
+// backup directory via path traversal.
+var ErrInvalidBackupID = errors.New("invalid backup id")
+
 // Service handles backup create/list/delete/validate/restore operations.
 type Service struct {
 	db          *bun.DB
@@ -76,7 +80,7 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	backupDir := filepath.Join(tmpDir, id)
-	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+	if err := os.MkdirAll(backupDir, 0o750); err != nil {
 		return "", fmt.Errorf("create backup dir: %w", err)
 	}
 
@@ -124,11 +128,11 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("marshal manifest: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(backupDir, "manifest.json"), manifestBytes, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(backupDir, "manifest.json"), manifestBytes, 0o600); err != nil {
 		return "", fmt.Errorf("write manifest: %w", err)
 	}
 
-	if err := os.MkdirAll(s.backupPath, 0o755); err != nil {
+	if err := os.MkdirAll(s.backupPath, 0o750); err != nil {
 		return "", fmt.Errorf("create backup path: %w", err)
 	}
 	archivePath := filepath.Join(s.backupPath, id+".tar.gz")
@@ -178,14 +182,36 @@ func (s *Service) ListBackups() ([]BackupInfo, error) {
 	return backups, nil
 }
 
-// GetBackupPath returns the full filesystem path for a backup archive.
-func (s *Service) GetBackupPath(backupID string) string {
-	return filepath.Join(s.backupPath, backupID+".tar.gz")
+// validateBackupID rejects backup IDs that could escape the backup directory
+// via path traversal. A valid ID is a single path component with no separators,
+// "..", NUL bytes, or surrounding whitespace.
+func validateBackupID(backupID string) error {
+	if backupID == "" {
+		return fmt.Errorf("%w: empty", ErrInvalidBackupID)
+	}
+	if strings.ContainsAny(backupID, `/\`) || strings.Contains(backupID, "..") ||
+		strings.ContainsRune(backupID, 0) || strings.TrimSpace(backupID) != backupID ||
+		filepath.Base(backupID) != backupID {
+		return fmt.Errorf("%w: %q", ErrInvalidBackupID, backupID)
+	}
+	return nil
+}
+
+// GetBackupPath returns the full filesystem path for a backup archive after
+// validating backupID against path traversal.
+func (s *Service) GetBackupPath(backupID string) (string, error) {
+	if err := validateBackupID(backupID); err != nil {
+		return "", err
+	}
+	return filepath.Join(s.backupPath, backupID+".tar.gz"), nil
 }
 
 // DeleteBackup removes a backup archive file.
 func (s *Service) DeleteBackup(backupID string) error {
-	path := s.GetBackupPath(backupID)
+	path, err := s.GetBackupPath(backupID)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("delete backup %s: %w", backupID, ErrNotFound)
@@ -337,7 +363,7 @@ func (s *Service) ListAvailableArchives(ctx context.Context, maxMigrationVersion
 // archiveContainsFile returns true if the .tar.gz archive contains an entry
 // whose base name matches filename.
 func archiveContainsFile(archivePath, filename string) (bool, error) {
-	f, err := os.Open(archivePath)
+	f, err := os.Open(archivePath) //nolint:gosec // archivePath is an internally-derived backup path, not user input
 	if err != nil {
 		return false, err
 	}
@@ -415,7 +441,7 @@ func (s *Service) ApplyRetention(retentionMode string, retentionValue int) error
 // --- Helper functions ---
 
 func checksumFile(path string) (string, int64) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // path is an internally-derived backup file path, not user input
 	if err != nil {
 		return "", 0
 	}
@@ -431,7 +457,7 @@ func checksumDir(dir string) string {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		f, err := os.Open(path)
+		f, err := os.Open(path) //nolint:gosec // path comes from WalkDir over an internal backup dir, not user input
 		if err != nil {
 			return err
 		}
@@ -443,7 +469,7 @@ func checksumDir(dir string) string {
 }
 
 func copyDir(src, dst string) (fileCount int, totalSize int64, err error) {
-	if err := os.MkdirAll(dst, 0o755); err != nil {
+	if err := os.MkdirAll(dst, 0o750); err != nil {
 		return 0, 0, err
 	}
 	if _, err := os.Stat(src); os.IsNotExist(err) {
@@ -456,21 +482,21 @@ func copyDir(src, dst string) (fileCount int, totalSize int64, err error) {
 		relPath, _ := filepath.Rel(src, path) //nolint:errcheck // path is always under src; cannot fail here
 		dstPath := filepath.Join(dst, relPath)
 		if d.IsDir() {
-			return os.MkdirAll(dstPath, 0o755)
+			return os.MkdirAll(dstPath, 0o750)
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) //nolint:gosec // path comes from WalkDir over an internal source dir, not user input
 		if err != nil {
 			return err
 		}
 		fileCount++
 		totalSize += int64(len(data))
-		return os.WriteFile(dstPath, data, 0o644)
+		return os.WriteFile(dstPath, data, 0o600) //nolint:gosec // dstPath is filepath.Join(dst, relPath) from WalkDir over an internal dir, not user input
 	})
 	return fileCount, totalSize, err
 }
 
 func createTarGz(archivePath, baseDir, dirName string) error {
-	f, err := os.Create(archivePath)
+	f, err := os.Create(archivePath) //nolint:gosec // archivePath is an internally-derived backup destination under s.backupPath, not user input
 	if err != nil {
 		return err
 	}
@@ -500,7 +526,7 @@ func createTarGz(archivePath, baseDir, dirName string) error {
 		if d.IsDir() {
 			return nil
 		}
-		file, err := os.Open(path)
+		file, err := os.Open(path) //nolint:gosec // path comes from WalkDir over an internal source dir, not user input
 		if err != nil {
 			return err
 		}
@@ -518,7 +544,7 @@ func createTarGz(archivePath, baseDir, dirName string) error {
 }
 
 func readManifestFromArchive(archivePath string) (*Manifest, error) {
-	f, err := os.Open(archivePath)
+	f, err := os.Open(archivePath) //nolint:gosec // archivePath is from an internal backup-dir listing or validated by GetBackupPath, not user input
 	if err != nil {
 		return nil, err
 	}
@@ -578,9 +604,16 @@ func verifyArchiveChecksums(archivePath string, manifest *Manifest) error {
 	return nil
 }
 
-// ExtractTarGz extracts a .tar.gz archive to destDir.
+// maxDecompressedBytes caps the total uncompressed size ExtractTarGz will write,
+// guarding against decompression-bomb archives whose small compressed form
+// expands to exhaust disk. It is a var so tests can lower it.
+var maxDecompressedBytes int64 = 20 << 30 // 20 GiB
+
+// ExtractTarGz extracts a .tar.gz archive to destDir. It rejects entries whose
+// path would escape destDir and aborts if the total decompressed size exceeds
+// maxDecompressedBytes.
 func ExtractTarGz(archivePath, destDir string) error {
-	f, err := os.Open(archivePath)
+	f, err := os.Open(archivePath) //nolint:gosec // archivePath is validated against traversal by GetBackupPath / the setup handler, or is an internal temp file
 	if err != nil {
 		return err
 	}
@@ -591,6 +624,7 @@ func ExtractTarGz(archivePath, destDir string) error {
 	}
 	defer func() { _ = gr.Close() }()
 	tr := tar.NewReader(gr)
+	var totalWritten int64
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -599,30 +633,37 @@ func ExtractTarGz(archivePath, destDir string) error {
 		if err != nil {
 			return err
 		}
-		target := filepath.Join(destDir, hdr.Name)
+		target := filepath.Join(destDir, hdr.Name) //nolint:gosec // guarded immediately below: rejected unless the cleaned target stays within destDir
 		cleanDest := filepath.Clean(destDir) + string(os.PathSeparator)
 		if !strings.HasPrefix(filepath.Clean(target)+string(os.PathSeparator), cleanDest) {
 			return fmt.Errorf("invalid tar path: %s", hdr.Name)
 		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
+			if err := os.MkdirAll(target, 0o750); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 				return err
 			}
-			outFile, err := os.Create(target)
+			outFile, err := os.Create(target) //nolint:gosec // target validated against destDir above
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(outFile, tr); err != nil {
+			// Bound the copy to the remaining budget (+1 to detect overflow),
+			// so a decompression bomb cannot write past maxDecompressedBytes.
+			n, err := io.Copy(outFile, io.LimitReader(tr, maxDecompressedBytes-totalWritten+1))
+			totalWritten += n
+			if err != nil {
 				_ = outFile.Close()
 				return err
 			}
 			if err := outFile.Close(); err != nil {
 				return err
+			}
+			if totalWritten > maxDecompressedBytes {
+				return fmt.Errorf("archive exceeds maximum decompressed size of %d bytes", maxDecompressedBytes)
 			}
 		}
 	}
@@ -649,7 +690,10 @@ func (s *Service) RestoreBackup(backupID string, opts RestoreOpts) error {
 	}
 	defer s.mu.Unlock()
 
-	archivePath := s.GetBackupPath(backupID)
+	archivePath, err := s.GetBackupPath(backupID)
+	if err != nil {
+		return err
+	}
 	return s.doRestore(archivePath, backupID, opts)
 }
 
@@ -668,7 +712,7 @@ func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (stri
 
 	id := fmt.Sprintf("nexorious-backup-%s", time.Now().UTC().Format("20060102-150405"))
 	destPath := filepath.Join(s.backupPath, id+".tar.gz")
-	if err := os.MkdirAll(s.backupPath, 0o755); err != nil {
+	if err := os.MkdirAll(s.backupPath, 0o750); err != nil {
 		return "", fmt.Errorf("create backup dir: %w", err)
 	}
 	if err := os.Rename(uploadedPath, destPath); err != nil {
@@ -810,7 +854,12 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 
 	slog.Warn("attempting rollback to pre-restore backup", "pre_restore_id", preRestoreID)
 
-	archivePath := s.GetBackupPath(preRestoreID)
+	archivePath, err := s.GetBackupPath(preRestoreID)
+	if err != nil {
+		slog.Error("rollback failed: invalid pre-restore backup id", "err", err, "original_err", originalErr)
+		opts.SetAppState("db_unavailable")
+		return fmt.Errorf("restore failed AND rollback failed (invalid pre-restore id). Original: %w. Rollback: %v", originalErr, err)
+	}
 	tmpDir, err := os.MkdirTemp("", "nexorious-rollback-*")
 	if err != nil {
 		slog.Error("rollback failed: create temp dir", "err", err, "original_err", originalErr)
@@ -880,12 +929,12 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 }
 
 func copyFile(src, dst string) error {
-	in, err := os.Open(src)
+	in, err := os.Open(src) //nolint:gosec // src/dst are internally-derived cover-art paths, not user input
 	if err != nil {
 		return err
 	}
 	defer func() { _ = in.Close() }()
-	out, err := os.Create(dst)
+	out, err := os.Create(dst) //nolint:gosec // src/dst are internally-derived cover-art paths, not user input
 	if err != nil {
 		return err
 	}

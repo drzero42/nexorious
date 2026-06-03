@@ -420,7 +420,7 @@ func findOrCreateTag(ctx context.Context, db *bun.DB, userID, name string, color
 func igdbMetadataToGame(md *igdb.GameMetadata) *models.Game {
 	now := time.Now().UTC()
 	game := &models.Game{
-		ID:                         int32(md.IgdbID),
+		ID:                         int32(md.IgdbID), //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 		Title:                      md.Title,
 		Description:                md.Description,
 		Genre:                      md.Genre,

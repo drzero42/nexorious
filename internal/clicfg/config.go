@@ -52,7 +52,7 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(p)
+	data, err := os.ReadFile(p) //nolint:gosec // p is the CLI's own config file path from Path(), not user input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &Config{Profiles: map[string]Profile{}}, nil

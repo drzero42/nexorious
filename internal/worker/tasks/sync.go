@@ -481,7 +481,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			if score > bestScore {
 				secondBestScore = bestScore
 				bestScore = score
-				bestID = int32(c.IgdbID)
+				bestID = int32(c.IgdbID) //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 			} else if score > secondBestScore {
 				secondBestScore = score
 			}
@@ -611,7 +611,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 
 	// Manual resolution propagation: job_item has resolved_igdb_id but external_game doesn't.
 	if eg.ResolvedIGDBID == nil && item.ResolvedIGDBID != nil {
-		igdbID := int32(*item.ResolvedIGDBID)
+		igdbID := int32(*item.ResolvedIGDBID) //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 		eg.ResolvedIGDBID = &igdbID
 		if _, err := w.DB.NewRaw(
 			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
