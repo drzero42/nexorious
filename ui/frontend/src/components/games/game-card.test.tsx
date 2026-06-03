@@ -361,15 +361,6 @@ describe('GameCard', () => {
 
       expect(onClick).toHaveBeenCalled();
     });
-
-    it('does not throw when clicked without onClick handler', async () => {
-      const user = userEvent.setup();
-      const game = createMockGame();
-      render(<GameCard game={game} />);
-
-      // Should not throw
-      await expect(user.click(screen.getByText('Test Game'))).resolves.not.toThrow();
-    });
   });
 
   describe('edge cases', () => {

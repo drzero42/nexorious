@@ -87,10 +87,9 @@ describe('StarRating', () => {
     );
   });
 
-  it('applies correct size classes', () => {
-    const { container } = render(<StarRating size="lg" />);
+  it('applies the lg size classes to its stars', () => {
+    render(<StarRating size="lg" />);
 
-    // Check that the component has rendered (basic sanity check)
-    expect(container.querySelector('button')).toBeInTheDocument();
+    expect(screen.getAllByRole('button')[0]).toHaveClass('w-6', 'h-6');
   });
 });

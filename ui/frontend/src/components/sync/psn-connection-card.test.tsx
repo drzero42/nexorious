@@ -75,7 +75,7 @@ describe('PSNConnectionCard', () => {
   });
 
   describe('not configured state', () => {
-    it('shows connection form with NPSSO token input', () => {
+    it('shows the connection form, configure button, help accordion, and description', () => {
       render(
         <PSNConnectionCard
           isConfigured={false}
@@ -85,41 +85,8 @@ describe('PSNConnectionCard', () => {
       );
 
       expect(screen.getByLabelText('NPSSO Token')).toBeInTheDocument();
-    });
-
-    it('shows "Configure PSN" button', () => {
-      render(
-        <PSNConnectionCard
-          isConfigured={false}
-          credentialsError={false}
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
       expect(screen.getByRole('button', { name: 'Configure PSN' })).toBeInTheDocument();
-    });
-
-    it('shows help accordion', () => {
-      render(
-        <PSNConnectionCard
-          isConfigured={false}
-          credentialsError={false}
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
       expect(screen.getByText('How do I get my NPSSO token?')).toBeInTheDocument();
-    });
-
-    it('shows description for not configured state', () => {
-      render(
-        <PSNConnectionCard
-          isConfigured={false}
-          credentialsError={false}
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
       expect(
         screen.getByText('Connect your PlayStation Network account to sync your game library'),
       ).toBeInTheDocument();
@@ -127,7 +94,7 @@ describe('PSNConnectionCard', () => {
   });
 
   describe('configured state', () => {
-    it('shows "Connected as {onlineId}" message', () => {
+    it('shows account details, disconnect button, and hides the connection form', () => {
       render(
         <PSNConnectionCard
           isConfigured={true}
@@ -139,61 +106,9 @@ describe('PSNConnectionCard', () => {
       );
 
       expect(screen.getByText('Connected as TestPSNUser')).toBeInTheDocument();
-    });
-
-    it('shows account ID when configured', () => {
-      render(
-        <PSNConnectionCard
-          isConfigured={true}
-          credentialsError={false}
-          accountId="test-account-id"
-          onlineId="TestPSNUser"
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
       expect(screen.getByText('test-account-id')).toBeInTheDocument();
-    });
-
-    it('shows disconnect button', () => {
-      render(
-        <PSNConnectionCard
-          isConfigured={true}
-          credentialsError={false}
-          accountId="test-account-id"
-          onlineId="TestPSNUser"
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
       expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
-    });
-
-    it('shows description for configured state', () => {
-      render(
-        <PSNConnectionCard
-          isConfigured={true}
-          credentialsError={false}
-          accountId="test-account-id"
-          onlineId="TestPSNUser"
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
       expect(screen.getByText('Your PlayStation Network account is connected')).toBeInTheDocument();
-    });
-
-    it('does not show connection form when configured', () => {
-      render(
-        <PSNConnectionCard
-          isConfigured={true}
-          credentialsError={false}
-          accountId="test-account-id"
-          onlineId="TestPSNUser"
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
       expect(screen.queryByLabelText('NPSSO Token')).not.toBeInTheDocument();
     });
   });
