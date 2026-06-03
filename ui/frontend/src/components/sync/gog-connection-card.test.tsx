@@ -68,7 +68,6 @@ describe('GOGConnectionCard', () => {
     });
 
     expect(screen.getByText('GOG Connection')).toBeInTheDocument();
-    expect(screen.getByText('Not Configured')).toBeInTheDocument();
     expect(screen.getByLabelText('GOG URL or Authorization Code')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Connect GOG' })).toBeInTheDocument();
   });
@@ -90,7 +89,6 @@ describe('GOGConnectionCard', () => {
       wrapper: createWrapper(),
     });
 
-    expect(screen.getByText('Connected')).toBeInTheDocument();
     expect(screen.getByText(/Connected as goguser/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
   });

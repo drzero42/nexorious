@@ -11,7 +11,6 @@ import {
   CodeHelpAccordion,
   ConnectSubmitButton,
   ConnectedSummary,
-  ConnectionBadge,
   CredentialsErrorBanner,
   DisconnectDialog,
 } from './connection';
@@ -89,16 +88,13 @@ export function PSNConnectionCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>PlayStation Network Connection</CardTitle>
-            <CardDescription>
-              {isConfigured
-                ? 'Your PlayStation Network account is connected'
-                : 'Connect your PlayStation Network account to sync your game library'}
-            </CardDescription>
-          </div>
-          <ConnectionBadge isConfigured={isConfigured} credentialsError={credentialsError} />
+        <div>
+          <CardTitle>PlayStation Network Connection</CardTitle>
+          <CardDescription>
+            {isConfigured
+              ? 'Your PlayStation Network account is connected'
+              : 'Connect your PlayStation Network account to sync your game library'}
+          </CardDescription>
         </div>
       </CardHeader>
       <CardContent>

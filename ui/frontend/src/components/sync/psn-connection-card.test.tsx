@@ -32,48 +32,6 @@ describe('PSNConnectionCard', () => {
     vi.clearAllMocks();
   });
 
-  describe('badge states', () => {
-    it('renders "Not Configured" badge when not configured', () => {
-      render(
-        <PSNConnectionCard
-          isConfigured={false}
-          credentialsError={false}
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
-      expect(screen.getByText('Not Configured')).toBeInTheDocument();
-    });
-
-    it('renders "Connected" badge when configured', () => {
-      render(
-        <PSNConnectionCard
-          isConfigured={true}
-          credentialsError={false}
-          accountId="test-account-id"
-          onlineId="TestPSNUser"
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
-      expect(screen.getByText('Connected')).toBeInTheDocument();
-    });
-
-    it('renders "Credentials Error" badge when credentials error', () => {
-      render(
-        <PSNConnectionCard
-          isConfigured={true}
-          credentialsError={true}
-          accountId="test-account-id"
-          onlineId="TestPSNUser"
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
-      expect(screen.getByText('Credentials Error')).toBeInTheDocument();
-    });
-  });
-
   describe('not configured state', () => {
     it('shows the connection form, configure button, help accordion, and description', () => {
       render(

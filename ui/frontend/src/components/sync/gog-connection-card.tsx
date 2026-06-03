@@ -13,7 +13,6 @@ import {
   CodeHelpAccordion,
   ConnectSubmitButton,
   ConnectedSummary,
-  ConnectionBadge,
   CredentialsErrorBanner,
   DisconnectDialog,
 } from './connection';
@@ -90,19 +89,13 @@ export function GOGConnectionCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>GOG Connection</CardTitle>
-            <CardDescription>
-              {isConfigured
-                ? 'Your GOG account is connected'
-                : 'Connect your GOG account to sync your game library'}
-            </CardDescription>
-          </div>
-          <ConnectionBadge
-            isConfigured={isConfigured}
-            credentialsError={resolvedCredentialsError}
-          />
+        <div>
+          <CardTitle>GOG Connection</CardTitle>
+          <CardDescription>
+            {isConfigured
+              ? 'Your GOG account is connected'
+              : 'Connect your GOG account to sync your game library'}
+          </CardDescription>
         </div>
       </CardHeader>
       <CardContent>

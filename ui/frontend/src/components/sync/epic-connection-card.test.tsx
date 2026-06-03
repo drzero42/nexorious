@@ -69,7 +69,6 @@ describe('EpicConnectionCard', () => {
     );
 
     expect(screen.getByText('Epic Games Store Connection')).toBeInTheDocument();
-    expect(screen.getByText('Not Configured')).toBeInTheDocument();
     expect(screen.getByLabelText('Authorization Code')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Connect Epic Games Store' })).toBeInTheDocument();
   });
@@ -82,7 +81,6 @@ describe('EpicConnectionCard', () => {
       { wrapper: createWrapper() },
     );
 
-    expect(screen.getByText('Disabled')).toBeInTheDocument();
     expect(screen.getByText(/LEGENDARY_WORK_DIR/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Authorization Code')).not.toBeInTheDocument();
   });
@@ -101,7 +99,6 @@ describe('EpicConnectionCard', () => {
 
     expect(screen.getByText(/Connected as EpicUser123/)).toBeInTheDocument();
     expect(screen.getByText('epic-account-id')).toBeInTheDocument();
-    expect(screen.getByText('Connected')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
   });
 

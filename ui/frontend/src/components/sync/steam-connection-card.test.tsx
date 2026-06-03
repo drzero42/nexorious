@@ -40,29 +40,6 @@ describe('SteamConnectionCard', () => {
     vi.clearAllMocks();
   });
 
-  describe('badge states', () => {
-    it('renders "Not Configured" badge when not configured', () => {
-      render(
-        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
-      );
-
-      expect(screen.getByText('Not Configured')).toBeInTheDocument();
-    });
-
-    it('renders "Connected" badge when configured', () => {
-      render(
-        <SteamConnectionCard
-          isConfigured={true}
-          steamId="76561198012345678"
-          steamUsername="TestUser"
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
-      expect(screen.getByText('Connected')).toBeInTheDocument();
-    });
-  });
-
   describe('not configured state', () => {
     it('shows connection form with Steam ID and API Key inputs', () => {
       render(

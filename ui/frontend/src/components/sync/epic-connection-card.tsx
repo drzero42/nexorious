@@ -13,7 +13,6 @@ import {
   CodeHelpAccordion,
   ConnectSubmitButton,
   ConnectedSummary,
-  ConnectionBadge,
   CredentialsErrorBanner,
   DisconnectDialog,
 } from './connection';
@@ -91,20 +90,13 @@ export function EpicConnectionCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>Epic Games Store Connection</CardTitle>
-            <CardDescription>
-              {isConfigured
-                ? 'Your Epic Games Store account is connected'
-                : 'Connect your Epic Games Store account to sync your game library'}
-            </CardDescription>
-          </div>
-          <ConnectionBadge
-            isConfigured={isConfigured}
-            credentialsError={resolvedCredentialsError}
-            disabled={isDisabled}
-          />
+        <div>
+          <CardTitle>Epic Games Store Connection</CardTitle>
+          <CardDescription>
+            {isConfigured
+              ? 'Your Epic Games Store account is connected'
+              : 'Connect your Epic Games Store account to sync your game library'}
+          </CardDescription>
         </div>
       </CardHeader>
       <CardContent>
