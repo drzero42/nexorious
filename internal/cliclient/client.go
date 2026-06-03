@@ -106,7 +106,7 @@ func (c *Client) CreateAPIKey(sessionID, name string) (string, string, error) {
 		return "", "", fmt.Errorf("build create key request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionID})
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionID}) //nolint:gosec // outbound request cookie from a CLI client; Secure/HttpOnly are response-cookie attributes that don't apply here
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
@@ -222,7 +222,7 @@ func (c *Client) revoke(keyID string, auth func(*http.Request)) error {
 // login rotation, before the new key exists).
 func (c *Client) RevokeAPIKeyWithCookie(sessionID, keyID string) error {
 	return c.revoke(keyID, func(r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionID})
+		r.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionID}) //nolint:gosec // outbound request cookie from a CLI client; Secure/HttpOnly are response-cookie attributes that don't apply here
 	})
 }
 
@@ -314,7 +314,7 @@ func (c *Client) Logout(sessionID string) error {
 	if err != nil {
 		return fmt.Errorf("build logout request: %w", err)
 	}
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionID})
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionID}) //nolint:gosec // outbound request cookie from a CLI client; Secure/HttpOnly are response-cookie attributes that don't apply here
 
 	resp, err := c.hc.Do(req)
 	if err != nil {

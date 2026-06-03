@@ -405,7 +405,7 @@ func metadataToCandidate(md igdb.GameMetadata) IGDBGameCandidate {
 func (h *GamesHandler) metadataToGame(md *igdb.GameMetadata) *models.Game {
 	now := time.Now()
 	game := &models.Game{
-		ID:                         int32(md.IgdbID),
+		ID:                         int32(md.IgdbID), //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 		Title:                      md.Title,
 		Description:                md.Description,
 		Genre:                      md.Genre,

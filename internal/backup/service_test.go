@@ -170,7 +170,10 @@ func TestCreateBackup(t *testing.T) {
 		t.Fatal("expected non-empty backup ID")
 	}
 
-	archivePath := svc.GetBackupPath(id)
+	archivePath, err := svc.GetBackupPath(id)
+	if err != nil {
+		t.Fatalf("GetBackupPath(%q): %v", id, err)
+	}
 	if _, err := os.Stat(archivePath); err != nil {
 		t.Fatalf("archive not found at %s: %v", archivePath, err)
 	}
@@ -236,7 +239,11 @@ func TestDeleteBackup(t *testing.T) {
 		t.Fatalf("DeleteBackup: %v", err)
 	}
 
-	if _, err := os.Stat(svc.GetBackupPath(id)); !errors.Is(err, fs.ErrNotExist) {
+	delPath, err := svc.GetBackupPath(id)
+	if err != nil {
+		t.Fatalf("GetBackupPath(%q): %v", id, err)
+	}
+	if _, err := os.Stat(delPath); !errors.Is(err, fs.ErrNotExist) {
 		t.Error("archive should have been deleted")
 	}
 }
@@ -580,7 +587,11 @@ func TestApplyRetention_CountZero(t *testing.T) {
 	}
 
 	// Verify the backup file was deleted.
-	_, statErr := os.Stat(svc.GetBackupPath(id))
+	retPath, err := svc.GetBackupPath(id)
+	if err != nil {
+		t.Fatalf("GetBackupPath(%q): %v", id, err)
+	}
+	_, statErr := os.Stat(retPath)
 	if !errors.Is(statErr, fs.ErrNotExist) {
 		t.Errorf("expected backup file to be deleted, stat error: %v", statErr)
 	}
@@ -852,7 +863,10 @@ func TestValidateArchive_WithRealArchive(t *testing.T) {
 		t.Fatalf("CreateBackup: %v", err)
 	}
 
-	archivePath := svc.GetBackupPath(id)
+	archivePath, err := svc.GetBackupPath(id)
+	if err != nil {
+		t.Fatalf("GetBackupPath(%q): %v", id, err)
+	}
 
 	// ValidateArchive with checksum verification.
 	manifest, err := svc.ValidateArchive(archivePath, true, "")

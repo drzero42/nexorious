@@ -484,7 +484,7 @@ func buildAdapterFactory(
 			onNewTokens := func(accessToken, refreshToken string) error {
 				creds.AccessToken = accessToken
 				creds.RefreshToken = refreshToken
-				newCredsJSON, merr := json.Marshal(creds)
+				newCredsJSON, merr := json.Marshal(creds) //nolint:gosec // marshaled only to encrypt immediately below before storage; never logged or returned
 				if merr != nil {
 					return merr
 				}

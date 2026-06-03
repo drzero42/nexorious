@@ -12,11 +12,11 @@ import (
 
 const (
 	clientID     = "46899977096215655"
-	clientSecret = "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9"
+	clientSecret = "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9" //nolint:gosec // GOG Galaxy's public OAuth client secret, shipped in the official client; not a private secret
 	redirectURI  = "https://embed.gog.com/on_login_success?origin=client"
 
 	defaultAuthBase  = "https://login.gog.com"
-	defaultTokenBase = "https://auth.gog.com"
+	defaultTokenBase = "https://auth.gog.com" //nolint:gosec // public GOG endpoint URL, not a credential
 	defaultEmbedBase = "https://embed.gog.com"
 )
 

@@ -1,6 +1,8 @@
 version: "2"
 
 linters:
+  enable:
+    - gosec
   settings:
     errcheck:
       # Flag `_ =` / `_, _ =` discards — the exact pattern issue #534 set out to
@@ -18,9 +20,13 @@ linters:
       - std-error-handling
     rules:
       # Test files are out of scope for the #534 audit — `_ =` in tests is fine.
+      # gosec is likewise excluded from tests: fixtures legitimately contain
+      # fake credentials, password-in-URL cases, and marshaled test tokens
+      # (G101/G104/G117/G306) that are not real security issues.
       - path: _test\.go
         linters:
           - errcheck
+          - gosec
     paths:
       # ui/frontend/node_modules is npm's dependency tree. A handful of npm
       # packages (notably `flatted`) ship .go files for cross-language tests.

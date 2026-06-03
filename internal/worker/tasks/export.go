@@ -174,7 +174,7 @@ func markJobCompleted(ctx context.Context, db *bun.DB, job *models.Job, filePath
 // exportsDir returns (and creates) the exports subdirectory under storagePath.
 func exportsDir(storagePath string) (string, error) {
 	dir := filepath.Join(storagePath, "exports")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", fmt.Errorf("create exports dir: %w", err)
 	}
 	return dir, nil
@@ -246,7 +246,7 @@ func writeJSONExport(storagePath, userID string, ugs []models.UserGame) (string,
 
 	doc := buildJSONDoc(userID, ugs)
 
-	f, err := os.Create(outPath)
+	f, err := os.Create(outPath) //nolint:gosec // outPath is an internally-derived export path under storagePath, not user input
 	if err != nil {
 		return "", fmt.Errorf("create export file: %w", err)
 	}
@@ -395,7 +395,7 @@ func writeCSVExport(storagePath, userID string, ugs []models.UserGame) (string, 
 	filename := fmt.Sprintf("%s_%s.csv", userID, ts)
 	outPath := filepath.Join(dir, filename)
 
-	f, err := os.Create(outPath)
+	f, err := os.Create(outPath) //nolint:gosec // outPath is an internally-derived export path under storagePath, not user input
 	if err != nil {
 		return "", fmt.Errorf("create CSV file: %w", err)
 	}

@@ -182,7 +182,7 @@ func (c *Client) CaptureSnapshot(userID string) (map[string]string, error) {
 		if err != nil {
 			return err
 		}
-		content, err := os.ReadFile(path)
+		content, err := os.ReadFile(path) //nolint:gosec // path comes from WalkDir over the per-user legendary config dir, not user input
 		if err != nil {
 			return fmt.Errorf("epic: capture snapshot read %s: %w", relPath, err)
 		}
@@ -213,7 +213,7 @@ func isAuthError(err error) bool {
 // to the per-user directory. Returns stdout on success, or an error wrapping
 // stderr on non-zero exit.
 func (c *Client) runLegendary(ctx context.Context, userID string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "legendary", args...)
+	cmd := exec.CommandContext(ctx, "legendary", args...) //nolint:gosec // fixed binary; args are internally-constructed legendary subcommands, not user input
 	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+c.userDir(userID))
 	out, err := cmd.Output()
 	if err != nil {
@@ -233,7 +233,7 @@ type userJSON struct {
 
 func (c *Client) readUserJSON(userID string) (*EpicAccountInfo, error) {
 	path := filepath.Join(c.legendaryDir(userID), "user.json")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is an internally-derived legendary config path, not user input
 	if err != nil {
 		return nil, fmt.Errorf("epic: read user.json: %w", err)
 	}
