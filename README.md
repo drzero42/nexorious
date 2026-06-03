@@ -14,7 +14,7 @@ Nexorious was inspired by [Darkadia](https://darkadia.com) (RIP), a beloved game
 
 - **IGDB-Only Game Database**: All games sourced from the Internet Game Database (IGDB) with comprehensive metadata, cover art, ratings, and completion time estimates
 - **Multi-Platform Game Tracking**: Support for Steam, Epic Games Store, PlayStation, Xbox, Nintendo, GOG, and physical media
-- **Sync Integrations**: Automatic library sync from Steam, Epic Games Store (via legendary-gl), and PlayStation Network (PSN)
+- **Sync Integrations**: Automatic library sync from Steam, PlayStation Network (PSN), GOG, and Epic Games Store (via legendary-gl)
 - **Rich Game Discovery**: Search and import games from IGDB's extensive database with automatic metadata population
 - **Progress Tracking**: Track play status, personal ratings, time played, and detailed notes
 - **Bulk Operations**: Import from CSV exports (Darkadia format) with intelligent conflict resolution
@@ -25,7 +25,7 @@ Nexorious was inspired by [Darkadia](https://darkadia.com) (RIP), a beloved game
 
 ### Prerequisites
 
-- **Go 1.25+**
+- **Go 1.26+**
 - **Node.js 24+** with npm
 - **PostgreSQL 16+**
 - **Nix + devenv** (optional, recommended for reproducible development environment)
@@ -222,14 +222,14 @@ nexorious/
 
 ### Tech Stack
 
-- **Backend**: Go 1.25, Echo v5, Bun ORM, River job queue, pgx/v5
-- **Frontend**: React 19, Vite 6, TypeScript, TanStack Router + Query, Tailwind CSS v4, shadcn/ui
+- **Backend**: Go 1.26, Echo v5, Bun ORM, River job queue, pgx/v5
+- **Frontend**: React 19, Vite 8, TypeScript, TanStack Router + Query, Tailwind CSS v4, shadcn/ui
 - **Database**: PostgreSQL 16+
 - **Testing**: stdlib `testing` + testcontainers-go (Go); Vitest + @testing-library/react (frontend)
 
 ### Database Migrations
 
-Migrations live in `internal/db/migrations/` as timestamped SQL files (`YYYYMMDDHHmmss_name.up.sql` / `.down.sql`). They are discovered and run automatically on startup. To add a new migration:
+Migrations live in `internal/db/migrations/` as SQL files named `YYYYMMDD<nnnnnn>_name.up.sql` / `.down.sql`, where `<nnnnnn>` is a zero-padded running number (e.g. `20260503000001_initial.up.sql`). They are discovered and run automatically on startup. To add a new migration:
 
 ```bash
 # Create migration files (replace timestamp and name)
@@ -277,6 +277,10 @@ Configure via the admin settings page: enter your Steam Web API key and Steam ID
 ### PlayStation Network (PSN)
 
 Configure via the admin settings page with your PSN NPSSO token.
+
+### GOG
+
+Configure via the admin settings page using the GOG OAuth flow: open the GOG login URL, sign in, and paste the resulting redirect URL (or authorization code) back into Nexorious. The stored refresh token is used to sync your library automatically thereafter.
 
 ### Epic Games Store
 
