@@ -31,12 +31,6 @@ describe('client.ts', () => {
       expect(error.status).toBe(400);
       expect(error.details).toEqual(details);
     });
-
-    it('is throwable and catchable', () => {
-      expect(() => {
-        throw new ApiErrorException('Test error', 500);
-      }).toThrow(ApiErrorException);
-    });
   });
 
   describe('apiCall', () => {

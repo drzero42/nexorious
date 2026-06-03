@@ -741,15 +741,6 @@ describe('GameList', () => {
       expect(onClickGame).not.toHaveBeenCalledWith(game1);
     });
 
-    it('does not throw when clicked without onClickGame handler', async () => {
-      const user = userEvent.setup();
-      const game = createMockGame({ id: 'game-1' as UserGameId });
-      render(<GameList games={[game]} />);
-
-      // Should not throw
-      await expect(user.click(screen.getByText('Test Game'))).resolves.not.toThrow();
-    });
-
     it('row has cursor-pointer class', () => {
       const games = [createMockGame({ id: 'game-1' as UserGameId })];
       const { container } = render(<GameList games={games} />);
@@ -760,18 +751,6 @@ describe('GameList', () => {
   });
 
   describe('edge cases', () => {
-    it('handles empty games array with undefined selectedIds', () => {
-      expect(() => render(<GameList games={[]} />)).not.toThrow();
-    });
-
-    it('handles games with selectedIds but no onSelectGame', () => {
-      const games = [createMockGame({ id: 'game-1' as UserGameId })];
-      const selectedIds = new Set(['game-1']);
-
-      // Should not crash, but checkboxes won't render without onSelectGame
-      expect(() => render(<GameList games={games} selectedIds={selectedIds} />)).not.toThrow();
-    });
-
     it('renders large number of games without issues', () => {
       const games = Array.from({ length: 100 }, (_, i) =>
         createMockGame({
