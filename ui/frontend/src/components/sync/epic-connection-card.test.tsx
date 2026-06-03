@@ -73,7 +73,7 @@ describe('EpicConnectionCard', () => {
     expect(screen.getByRole('button', { name: 'Connect Epic Games Store' })).toBeInTheDocument();
   });
 
-  it('renders disabled state when backend reports LEGENDARY_WORK_DIR unset', () => {
+  it('renders disabled state keyed off the reason code, without naming the backend env var', () => {
     stubEpicConnection({ connected: false, disabled: true, reason: 'legendary_not_configured' });
 
     render(
@@ -81,8 +81,23 @@ describe('EpicConnectionCard', () => {
       { wrapper: createWrapper() },
     );
 
-    expect(screen.getByText(/LEGENDARY_WORK_DIR/)).toBeInTheDocument();
+    expect(screen.getByText(/sync is disabled on this server/i)).toBeInTheDocument();
+    expect(screen.getByText(/contact your administrator/i)).toBeInTheDocument();
+    // The SPA must not bake in the backend's internal env var name (see #789).
+    expect(screen.queryByText(/LEGENDARY_WORK_DIR/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Authorization Code')).not.toBeInTheDocument();
+  });
+
+  it('renders a generic disabled message when the reason code is absent or unknown', () => {
+    stubEpicConnection({ connected: false, disabled: true });
+
+    render(
+      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    expect(screen.getByText(/sync is disabled on this server/i)).toBeInTheDocument();
+    expect(screen.queryByText(/LEGENDARY_WORK_DIR/)).not.toBeInTheDocument();
   });
 
   it('renders connected state with display name and account id from connection hook', () => {
