@@ -145,7 +145,7 @@ export interface EpicConnectionResponse {
   credentialsError?: boolean;
   displayName?: string;
   accountId?: string;
-  /** "legendary_not_configured" when disabled=true (LEGENDARY_WORK_DIR unset). */
+  /** Machine-readable cause when disabled=true, e.g. "legendary_not_configured". */
   reason?: string;
 }
 

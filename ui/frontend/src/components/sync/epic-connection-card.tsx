@@ -25,8 +25,8 @@ type EpicAuthCodeForm = z.infer<typeof epicAuthCodeSchema>;
 
 /**
  * Maps the machine-readable `reason` from the connection payload to user-facing
- * copy. Deliberately avoids naming the backend's internal env var
- * (`LEGENDARY_WORK_DIR`) — that deployment detail belongs server-side. See #789.
+ * copy. Deliberately avoids naming the backend's internal configuration — that
+ * deployment detail belongs server-side. See #789.
  */
 function disabledMessage(reason?: string): string {
   switch (reason) {

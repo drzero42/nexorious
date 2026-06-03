@@ -163,8 +163,8 @@ export function useResetSyncData() {
 // Epic Auth Hooks
 
 /**
- * Tells the UI whether Epic sync is disabled (LEGENDARY_WORK_DIR unset on
- * the backend), connected, or simply not configured.
+ * Tells the UI whether Epic sync is disabled server-side, connected, or
+ * simply not configured.
  */
 export function useEpicConnection(options?: { enabled?: boolean }) {
   return useQuery<EpicConnectionResponse, Error>({
