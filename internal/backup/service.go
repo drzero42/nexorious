@@ -750,6 +750,62 @@ func (s *Service) RestoreFromArchive(archivePath string, opts RestoreOpts) (stri
 	return id, s.doRestore(archivePath, id, opts)
 }
 
+// applyRestoreFromDir applies an already-extracted backup directory to the live
+// database: it terminates existing connections, recreates the public schema,
+// loads the SQL dump, restores cover art, then reconnects the pool and rebuilds
+// dependent services. On success s.db points at the new pool.
+//
+// Cover-art copy failures are best-effort (logged, not returned): the database
+// is the source of truth and is fully restored before cover art, which is
+// re-derivable, so a missing image must not undo an otherwise-good restore.
+//
+// Errors from the DB-critical steps are returned with the failing step named in
+// the wrap; each caller decides how to react — the forward restore path rolls
+// back via handleRestoreFailure, while the rollback path escalates to
+// db_unavailable.
+func (s *Service) applyRestoreFromDir(extractedDir string, conn DBConnParams, opts RestoreOpts) error {
+	terminateCmd := "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();"
+	if err := RunPsqlCommand(conn, terminateCmd); err != nil {
+		return fmt.Errorf("terminate connections: %w", err)
+	}
+
+	if err := RunPsqlCommand(conn, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
+		return fmt.Errorf("drop/recreate schema: %w", err)
+	}
+
+	sqlFile := filepath.Join(extractedDir, "database.sql")
+	if err := RunPsqlFile(conn, sqlFile); err != nil {
+		return fmt.Errorf("psql restore: %w", err)
+	}
+
+	coverArtSrc := filepath.Join(extractedDir, "cover_art")
+	coverArtDst := filepath.Join(s.storagePath, "cover_art")
+	if err := os.RemoveAll(coverArtDst); err != nil {
+		slog.Warn("restore: failed to remove old cover_art", "err", err)
+	}
+	if _, err := os.Stat(coverArtSrc); err == nil {
+		if _, _, err := copyDir(coverArtSrc, coverArtDst); err != nil {
+			slog.Warn("restore: failed to restore cover art (best-effort)", "err", err)
+		}
+	}
+
+	newDB, err := opts.ReconnectDB()
+	if err != nil {
+		return fmt.Errorf("reconnect DB: %w", err)
+	}
+	s.db = newDB
+
+	if err := opts.RebuildServices(newDB); err != nil {
+		slog.Error("restore: rebuild services", "err", err)
+	}
+
+	if err := opts.ReinitMigrator(newDB); err != nil {
+		slog.Error("restore: reinit migrator", "err", err)
+	}
+
+	return nil
+}
+
 func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) error {
 	conn, err := ParseDatabaseURL(s.databaseURL)
 	if err != nil {
@@ -797,43 +853,8 @@ func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) erro
 	}
 	extractedDir := filepath.Join(tmpDir, entries[0].Name())
 
-	terminateCmd := "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();"
-	if err := RunPsqlCommand(conn, terminateCmd); err != nil {
-		return s.handleRestoreFailure(fmt.Errorf("terminate connections: %w", err), preRestoreID, conn, opts)
-	}
-
-	if err := RunPsqlCommand(conn, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
-		return s.handleRestoreFailure(fmt.Errorf("drop/recreate schema: %w", err), preRestoreID, conn, opts)
-	}
-
-	sqlFile := filepath.Join(extractedDir, "database.sql")
-	if err := RunPsqlFile(conn, sqlFile); err != nil {
-		return s.handleRestoreFailure(fmt.Errorf("psql restore: %w", err), preRestoreID, conn, opts)
-	}
-
-	coverArtSrc := filepath.Join(extractedDir, "cover_art")
-	coverArtDst := filepath.Join(s.storagePath, "cover_art")
-	if err := os.RemoveAll(coverArtDst); err != nil {
-		slog.Warn("restore: failed to remove old cover_art", "err", err)
-	}
-	if _, err := os.Stat(coverArtSrc); err == nil {
-		if _, _, err := copyDir(coverArtSrc, coverArtDst); err != nil {
-			return s.handleRestoreFailure(fmt.Errorf("restore cover art: %w", err), preRestoreID, conn, opts)
-		}
-	}
-
-	newDB, err := opts.ReconnectDB()
-	if err != nil {
-		return s.handleRestoreFailure(fmt.Errorf("reconnect DB: %w", err), preRestoreID, conn, opts)
-	}
-	s.db = newDB
-
-	if err := opts.RebuildServices(newDB); err != nil {
-		slog.Error("restore: rebuild services", "err", err)
-	}
-
-	if err := opts.ReinitMigrator(newDB); err != nil {
-		slog.Error("restore: reinit migrator", "err", err)
+	if err := s.applyRestoreFromDir(extractedDir, conn, opts); err != nil {
+		return s.handleRestoreFailure(err, preRestoreID, conn, opts)
 	}
 
 	opts.SetMaintenance(false)
@@ -881,46 +902,12 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 	}
 	extractedDir := filepath.Join(tmpDir, entries[0].Name())
 
-	terminateCmd := "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();"
-	if err := RunPsqlCommand(conn, terminateCmd); err != nil {
-		slog.Error("rollback failed: terminate connections", "err", err, "original_err", originalErr)
-		opts.SetAppState("db_unavailable")
-		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
-	}
-	if err := RunPsqlCommand(conn, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
-		slog.Error("rollback failed: drop/recreate schema", "err", err, "original_err", originalErr)
-		opts.SetAppState("db_unavailable")
-		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
-	}
-
-	sqlFile := filepath.Join(extractedDir, "database.sql")
-	if err := RunPsqlFile(conn, sqlFile); err != nil {
-		slog.Error("FATAL: rollback restore also failed", "err", err, "original_err", originalErr,
+	if err := s.applyRestoreFromDir(extractedDir, conn, opts); err != nil {
+		slog.Error("FATAL: rollback restore also failed", "rollback_err", err, "original_err", originalErr,
 			"pre_restore_path", archivePath)
 		opts.SetAppState("db_unavailable")
 		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v. Pre-restore backup at: %s",
 			originalErr, err, archivePath)
-	}
-
-	coverArtSrc := filepath.Join(extractedDir, "cover_art")
-	coverArtDst := filepath.Join(s.storagePath, "cover_art")
-	_ = os.RemoveAll(coverArtDst)
-	if _, err := os.Stat(coverArtSrc); err == nil {
-		_, _, _ = copyDir(coverArtSrc, coverArtDst) //nolint:errcheck // best-effort cover-art restore; DB already restored
-	}
-
-	newDB, err := opts.ReconnectDB()
-	if err != nil {
-		slog.Error("rollback: reconnect DB failed", "err", err)
-		opts.SetAppState("db_unavailable")
-		return fmt.Errorf("restore failed, rollback DB restored but reconnect failed. Original: %w", originalErr)
-	}
-	s.db = newDB
-	if err := opts.RebuildServices(newDB); err != nil {
-		slog.Error("rollback: failed to rebuild services", "err", err)
-	}
-	if err := opts.ReinitMigrator(newDB); err != nil {
-		slog.Error("rollback: failed to reinit migrator", "err", err)
 	}
 
 	opts.SetMaintenance(false)
