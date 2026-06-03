@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0](https://github.com/drzero42/nexorious/compare/v0.6.0...v0.7.0) (2026-06-03)
+
+
+### Features
+
+* **notify:** typed payload contract with handled decode errors ([#791](https://github.com/drzero42/nexorious/issues/791)) ([33269f4](https://github.com/drzero42/nexorious/commit/33269f4018d38c752217da45a98eff13283e051f))
+* unify Recent Activity into one component over a generic changes table ([#754](https://github.com/drzero42/nexorious/issues/754)) ([74fe7be](https://github.com/drzero42/nexorious/commit/74fe7bec79db1bd561f9610688370e3c6a0ac442))
+
+
+### Bug Fixes
+
+* enable gosec and close restore path-traversal / decompression-bomb gaps ([#784](https://github.com/drzero42/nexorious/issues/784)) ([32a7ebe](https://github.com/drzero42/nexorious/commit/32a7ebee2f163befdc4da0a71c31212f6e465e9c)), closes [#781](https://github.com/drzero42/nexorious/issues/781)
+* PSN sync imports only owned games, play history sets playtime only ([#776](https://github.com/drzero42/nexorious/issues/776)) ([aa9c597](https://github.com/drzero42/nexorious/commit/aa9c5979fe7b1e8901a323324ffddb5769c27d27))
+* redirect running SPA on backend app-state change ([#771](https://github.com/drzero42/nexorious/issues/771)) ([#773](https://github.com/drzero42/nexorious/issues/773)) ([ef8dfb9](https://github.com/drzero42/nexorious/commit/ef8dfb9f9fdb9593b2058ad132eeee56f89a30ec))
+* stop dropping Steam Mac platform during sync ([#770](https://github.com/drzero42/nexorious/issues/770)) ([858e837](https://github.com/drzero42/nexorious/commit/858e8374a48365363e1e039eb2eeee5f5fc39695))
+
 ## [0.6.0](https://github.com/drzero42/nexorious/compare/v0.5.0...v0.6.0) (2026-06-02)
 
 
