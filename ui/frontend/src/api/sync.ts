@@ -333,7 +333,6 @@ interface PSNStatusApiResponse {
   is_configured: boolean;
   credentials_error?: boolean;
   online_id: string | null;
-  region: string | null;
 }
 
 // ============================================================================

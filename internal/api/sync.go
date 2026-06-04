@@ -192,7 +192,6 @@ type psnStatusResponse struct {
 	IsConfigured     bool   `json:"is_configured"`
 	CredentialsError bool   `json:"credentials_error,omitempty"`
 	OnlineID         string `json:"online_id,omitempty"`
-	Region           string `json:"region,omitempty"`
 }
 
 type steamConnectionResponse struct {
@@ -719,9 +718,7 @@ func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
 		return c.JSON(http.StatusOK, psnStatusResponse{IsConfigured: true, CredentialsError: true})
 	}
 	var creds struct {
-		OnlineID   string `json:"online_id"`
-		Region     string `json:"region"`
-		IsVerified bool   `json:"is_verified"`
+		OnlineID string `json:"online_id"`
 	}
 	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
 		slog.Error("psn: stored credentials are corrupted", "err", err)
@@ -732,7 +729,6 @@ func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
 		IsConfigured:     true,
 		CredentialsError: status.CredentialsError,
 		OnlineID:         creds.OnlineID,
-		Region:           creds.Region,
 	})
 }
 

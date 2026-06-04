@@ -89,7 +89,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: true,
         online_id: 'TestPSNUser',
-        region: 'US',
         credentials_error: false,
       };
 
@@ -109,7 +108,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: false,
         online_id: null,
-        region: null,
         credentials_error: false,
       };
 
@@ -128,7 +126,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: true,
         online_id: 'TestPSNUser',
-        region: 'US',
         credentials_error: true,
       };
 
@@ -144,7 +141,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: true,
         online_id: 'TestUser',
-        region: 'EU',
         credentials_error: false,
       };
 
