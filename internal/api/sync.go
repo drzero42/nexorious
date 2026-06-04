@@ -338,6 +338,38 @@ func (h *SyncHandler) loadConnectionStatus(ctx context.Context, userID, sf strin
 	return connectionStatus{Connected: true, CredentialsError: row.CredentialsError, Plaintext: plain}, nil
 }
 
+// serveConnectionStatus is the shared handler body for the GET
+// /sync/<sf>/connection endpoints: authenticate, load the stored-credential
+// state, and respond with the storefront-specific shape. notConnected and
+// credentialsError are the fixed responses for the no-credentials and
+// undecodable-credentials states; respond builds the connected response from
+// the decrypted plaintext (a returned error is treated as corrupted
+// credentials → 500). Storefronts with extra preconditions (e.g. Epic's
+// legendary-configured check) run them before delegating here.
+func (h *SyncHandler) serveConnectionStatus(c *echo.Context, sf string, notConnected, credentialsError any, respond func(plaintext []byte, credentialsError bool) (any, error)) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	status, err := h.loadConnectionStatus(context.Background(), userID, sf)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get "+sf+" config")
+	}
+	if !status.Connected {
+		return c.JSON(http.StatusOK, notConnected)
+	}
+	if status.Plaintext == nil {
+		return c.JSON(http.StatusOK, credentialsError)
+	}
+	resp, err := respond(status.Plaintext, status.CredentialsError)
+	if err != nil {
+		slog.Error(sf+": stored credentials are corrupted", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
 func (h *SyncHandler) HandleListConfig(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -624,34 +656,22 @@ func (h *SyncHandler) HandleSteamDisconnect(c *echo.Context) error {
 }
 
 func (h *SyncHandler) HandleGetSteamConnection(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
-	status, err := h.loadConnectionStatus(context.Background(), userID, "steam")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get steam config")
-	}
-	if !status.Connected {
-		return c.JSON(http.StatusOK, steamConnectionResponse{Connected: false})
-	}
-	if status.Plaintext == nil {
-		return c.JSON(http.StatusOK, steamConnectionResponse{Connected: true, CredentialsError: true})
-	}
-	var creds struct {
-		DisplayName string `json:"display_name"`
-	}
-	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
-		slog.Error("steam: stored credentials are corrupted", "err", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
-	}
-
-	return c.JSON(http.StatusOK, steamConnectionResponse{
-		Connected:        true,
-		Username:         creds.DisplayName,
-		CredentialsError: status.CredentialsError,
-	})
+	return h.serveConnectionStatus(c, "steam",
+		steamConnectionResponse{Connected: false},
+		steamConnectionResponse{Connected: true, CredentialsError: true},
+		func(plaintext []byte, credentialsError bool) (any, error) {
+			var creds struct {
+				DisplayName string `json:"display_name"`
+			}
+			if err := json.Unmarshal(plaintext, &creds); err != nil {
+				return nil, err
+			}
+			return steamConnectionResponse{
+				Connected:        true,
+				Username:         creds.DisplayName,
+				CredentialsError: credentialsError,
+			}, nil
+		})
 }
 
 func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
@@ -696,34 +716,22 @@ func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
 }
 
 func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
-	status, err := h.loadConnectionStatus(context.Background(), userID, "psn")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get psn config")
-	}
-	if !status.Connected {
-		return c.JSON(http.StatusOK, psnStatusResponse{})
-	}
-	if status.Plaintext == nil {
-		return c.JSON(http.StatusOK, psnStatusResponse{IsConfigured: true, CredentialsError: true})
-	}
-	var creds struct {
-		OnlineID string `json:"online_id"`
-	}
-	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
-		slog.Error("psn: stored credentials are corrupted", "err", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
-	}
-
-	return c.JSON(http.StatusOK, psnStatusResponse{
-		IsConfigured:     true,
-		CredentialsError: status.CredentialsError,
-		OnlineID:         creds.OnlineID,
-	})
+	return h.serveConnectionStatus(c, "psn",
+		psnStatusResponse{},
+		psnStatusResponse{IsConfigured: true, CredentialsError: true},
+		func(plaintext []byte, credentialsError bool) (any, error) {
+			var creds struct {
+				OnlineID string `json:"online_id"`
+			}
+			if err := json.Unmarshal(plaintext, &creds); err != nil {
+				return nil, err
+			}
+			return psnStatusResponse{
+				IsConfigured:     true,
+				CredentialsError: credentialsError,
+				OnlineID:         creds.OnlineID,
+			}, nil
+		})
 }
 
 func (h *SyncHandler) HandlePSNDisconnect(c *echo.Context) error {
@@ -803,40 +811,32 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 		})
 	}
 
-	status, err := h.loadConnectionStatus(context.Background(), userID, "epic")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get epic config")
-	}
-	if !status.Connected {
-		return c.JSON(http.StatusOK, map[string]any{"connected": false, "disabled": false})
-	}
-	if status.Plaintext == nil {
-		return c.JSON(http.StatusOK, map[string]any{"connected": true, "credentials_error": true, "disabled": false})
-	}
-	// Epic persists the raw legendary snapshot: a map[relPath]content where the
-	// account details live inside user.json (field displayName), not as
-	// top-level keys. Decode the snapshot, then parse user.json.
-	var snapshot map[string]string
-	if err := json.Unmarshal(status.Plaintext, &snapshot); err != nil {
-		slog.Error("epic: stored credentials are corrupted", "err", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
-	}
-	var creds struct {
-		DisplayName string `json:"displayName"`
-	}
-	if userJSON, ok := snapshot["user.json"]; ok {
-		if err := json.Unmarshal([]byte(userJSON), &creds); err != nil {
-			slog.Error("epic: stored user.json is corrupted", "err", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
-		}
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"connected":         true,
-		"disabled":          false,
-		"credentials_error": status.CredentialsError,
-		"display_name":      creds.DisplayName,
-	})
+	return h.serveConnectionStatus(c, "epic",
+		map[string]any{"connected": false, "disabled": false},
+		map[string]any{"connected": true, "credentials_error": true, "disabled": false},
+		func(plaintext []byte, credentialsError bool) (any, error) {
+			// Epic persists the raw legendary snapshot: a map[relPath]content where the
+			// account details live inside user.json (field displayName), not as
+			// top-level keys. Decode the snapshot, then parse user.json.
+			var snapshot map[string]string
+			if err := json.Unmarshal(plaintext, &snapshot); err != nil {
+				return nil, err
+			}
+			var creds struct {
+				DisplayName string `json:"displayName"`
+			}
+			if userJSON, ok := snapshot["user.json"]; ok {
+				if err := json.Unmarshal([]byte(userJSON), &creds); err != nil {
+					return nil, fmt.Errorf("user.json: %w", err)
+				}
+			}
+			return map[string]any{
+				"connected":         true,
+				"disabled":          false,
+				"credentials_error": credentialsError,
+				"display_name":      creds.DisplayName,
+			}, nil
+		})
 }
 
 func (h *SyncHandler) HandleListIgnored(c *echo.Context) error {
@@ -1457,38 +1457,26 @@ func (h *SyncHandler) HandleGOGDisconnect(c *echo.Context) error {
 }
 
 func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
 	authURL := ""
 	if h.gogClient != nil {
 		authURL = h.gogClient.BuildAuthURL()
 	}
 
-	status, err := h.loadConnectionStatus(context.Background(), userID, "gog")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get gog config")
-	}
-	if !status.Connected {
-		return c.JSON(http.StatusOK, map[string]any{"connected": false, "auth_url": authURL})
-	}
-	if status.Plaintext == nil {
-		return c.JSON(http.StatusOK, map[string]any{"connected": true, "credentials_error": true, "auth_url": authURL})
-	}
-	var creds struct {
-		Username string `json:"username"`
-	}
-	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
-		slog.Error("gog: stored credentials are corrupted", "err", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"connected":         true,
-		"credentials_error": status.CredentialsError,
-		"username":          creds.Username,
-		"auth_url":          authURL,
-	})
+	return h.serveConnectionStatus(c, "gog",
+		map[string]any{"connected": false, "auth_url": authURL},
+		map[string]any{"connected": true, "credentials_error": true, "auth_url": authURL},
+		func(plaintext []byte, credentialsError bool) (any, error) {
+			var creds struct {
+				Username string `json:"username"`
+			}
+			if err := json.Unmarshal(plaintext, &creds); err != nil {
+				return nil, err
+			}
+			return map[string]any{
+				"connected":         true,
+				"credentials_error": credentialsError,
+				"username":          creds.Username,
+				"auth_url":          authURL,
+			}, nil
+		})
 }
