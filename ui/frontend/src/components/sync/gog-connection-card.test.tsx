@@ -83,7 +83,7 @@ describe('GOGConnectionCard', () => {
   });
 
   it('renders connected state with username', () => {
-    stubGOGConnection({ connected: true, username: 'goguser', userId: 'u1' });
+    stubGOGConnection({ connected: true, username: 'goguser' });
 
     render(<GOGConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
       wrapper: createWrapper(),

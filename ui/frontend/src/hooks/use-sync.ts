@@ -134,7 +134,7 @@ export function useDisconnectSteam() {
 }
 
 /**
- * Returns connected state, credentialsError flag, steamId, and username.
+ * Returns connected state, credentialsError flag, and username.
  */
 export function useSteamConnection(options?: { enabled?: boolean }) {
   return useQuery<SteamConnectionData, Error>({

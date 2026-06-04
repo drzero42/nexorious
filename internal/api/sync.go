@@ -192,14 +192,12 @@ type psnStatusResponse struct {
 	IsConfigured     bool   `json:"is_configured"`
 	CredentialsError bool   `json:"credentials_error,omitempty"`
 	OnlineID         string `json:"online_id,omitempty"`
-	AccountID        string `json:"account_id,omitempty"`
 	Region           string `json:"region,omitempty"`
 }
 
 type steamConnectionResponse struct {
 	Connected        bool   `json:"connected"`
 	CredentialsError bool   `json:"credentials_error,omitempty"`
-	SteamID          string `json:"steam_id,omitempty"`
 	Username         string `json:"username,omitempty"`
 }
 
@@ -647,7 +645,6 @@ func (h *SyncHandler) HandleGetSteamConnection(c *echo.Context) error {
 		return c.JSON(http.StatusOK, steamConnectionResponse{Connected: true, CredentialsError: true})
 	}
 	var creds struct {
-		SteamID     string `json:"steam_id"`
 		DisplayName string `json:"display_name"`
 	}
 	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
@@ -657,7 +654,6 @@ func (h *SyncHandler) HandleGetSteamConnection(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, steamConnectionResponse{
 		Connected:        true,
-		SteamID:          creds.SteamID,
 		Username:         creds.DisplayName,
 		CredentialsError: status.CredentialsError,
 	})
@@ -724,7 +720,6 @@ func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
 	}
 	var creds struct {
 		OnlineID   string `json:"online_id"`
-		AccountID  string `json:"account_id"`
 		Region     string `json:"region"`
 		IsVerified bool   `json:"is_verified"`
 	}
@@ -737,7 +732,6 @@ func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
 		IsConfigured:     true,
 		CredentialsError: status.CredentialsError,
 		OnlineID:         creds.OnlineID,
-		AccountID:        creds.AccountID,
 		Region:           creds.Region,
 	})
 }
@@ -830,8 +824,8 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{"connected": true, "credentials_error": true, "disabled": false})
 	}
 	// Epic persists the raw legendary snapshot: a map[relPath]content where the
-	// account details live inside user.json (fields displayName/account_id), not
-	// as top-level keys. Decode the snapshot, then parse user.json.
+	// account details live inside user.json (field displayName), not as
+	// top-level keys. Decode the snapshot, then parse user.json.
 	var snapshot map[string]string
 	if err := json.Unmarshal(status.Plaintext, &snapshot); err != nil {
 		slog.Error("epic: stored credentials are corrupted", "err", err)
@@ -839,7 +833,6 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 	}
 	var creds struct {
 		DisplayName string `json:"displayName"`
-		AccountID   string `json:"account_id"`
 	}
 	if userJSON, ok := snapshot["user.json"]; ok {
 		if err := json.Unmarshal([]byte(userJSON), &creds); err != nil {
@@ -853,7 +846,6 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 		"disabled":          false,
 		"credentials_error": status.CredentialsError,
 		"display_name":      creds.DisplayName,
-		"account_id":        creds.AccountID,
 	})
 }
 
@@ -1500,7 +1492,6 @@ func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
 	}
 	var creds struct {
 		Username string `json:"username"`
-		UserID   string `json:"user_id"`
 	}
 	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
 		slog.Error("gog: stored credentials are corrupted", "err", err)
@@ -1511,7 +1502,6 @@ func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
 		"connected":         true,
 		"credentials_error": status.CredentialsError,
 		"username":          creds.Username,
-		"user_id":           creds.UserID,
 		"auth_url":          authURL,
 	})
 }

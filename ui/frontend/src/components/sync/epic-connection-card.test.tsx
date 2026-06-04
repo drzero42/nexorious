@@ -105,7 +105,6 @@ describe('EpicConnectionCard', () => {
       connected: true,
       disabled: false,
       displayName: 'EpicUser123',
-      accountId: 'epic-account-id',
     });
 
     render(<EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
@@ -153,7 +152,7 @@ describe('EpicConnectionCard', () => {
 
   it('opens a confirmation dialog before disconnecting', async () => {
     const user = userEvent.setup();
-    stubEpicConnection({ connected: true, disabled: false, displayName: 'X', accountId: 'y' });
+    stubEpicConnection({ connected: true, disabled: false, displayName: 'X' });
 
     render(<EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
       wrapper: createWrapper(),
@@ -169,7 +168,7 @@ describe('EpicConnectionCard', () => {
   it('calls disconnectEpic when the confirmation is accepted', async () => {
     const user = userEvent.setup();
     const disconnect = stubDisconnectEpic();
-    stubEpicConnection({ connected: true, disabled: false, displayName: 'X', accountId: 'y' });
+    stubEpicConnection({ connected: true, disabled: false, displayName: 'X' });
 
     render(<EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
       wrapper: createWrapper(),
@@ -199,7 +198,7 @@ describe('EpicConnectionCard', () => {
       screen.getByText(/Epic Games Store does not provide playtime data/i),
     ).toBeInTheDocument();
 
-    stubEpicConnection({ connected: true, disabled: false, displayName: 'X', accountId: 'y' });
+    stubEpicConnection({ connected: true, disabled: false, displayName: 'X' });
     rerender(
       <EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />,
     );
