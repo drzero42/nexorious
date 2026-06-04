@@ -202,13 +202,13 @@ interface EpicConnectionApiResponse {
 // ============================================================================
 
 /**
- * Verify Steam credentials before saving.
+ * Establish the Steam connection by submitting and verifying Steam credentials.
  */
 export async function verifySteamCredentials(
   steamId: string,
   webApiKey: string,
 ): Promise<SteamVerifyResponse> {
-  const response = await api.post<SteamVerifyApiResponse>('/sync/steam/verify', {
+  const response = await api.put<SteamVerifyApiResponse>('/sync/steam/connection', {
     steam_id: steamId,
     web_api_key: webApiKey,
   } as SteamVerifyApiRequest);
@@ -237,7 +237,7 @@ export async function disconnectSteam(): Promise<void> {
  * persists the resulting state snapshot.
  */
 export async function connectEpic(authCode: string): Promise<EpicConnectResponse> {
-  const response = await api.post<EpicConnectApiResponse>('/sync/epic/connect', {
+  const response = await api.put<EpicConnectApiResponse>('/sync/epic/connection', {
     auth_code: authCode,
   } as EpicConnectApiRequest);
   return {
@@ -291,7 +291,7 @@ interface GOGConnectionApiResponse {
 // ============================================================================
 
 export async function connectGOG(authCode: string): Promise<GOGConnectResponse> {
-  const response = await api.post<GOGConnectApiResponse>('/sync/gog/connect', {
+  const response = await api.put<GOGConnectApiResponse>('/sync/gog/connection', {
     auth_code: authCode,
   } as GOGConnectApiRequest);
   return {
@@ -342,7 +342,7 @@ interface PSNStatusApiResponse {
  * Configure PSN with NPSSO token.
  */
 export async function configurePSN(npssoToken: string): Promise<PSNConfigureResponse> {
-  const response = await api.post<PSNConfigureApiResponse>('/sync/psn/configure', {
+  const response = await api.put<PSNConfigureApiResponse>('/sync/psn/connection', {
     npsso_token: npssoToken,
   } as PSNConfigureApiRequest);
 

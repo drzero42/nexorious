@@ -5,6 +5,7 @@ import { api } from './client';
 vi.mock('./client', () => ({
   api: {
     get: vi.fn(),
+    put: vi.fn(),
     post: vi.fn(),
     delete: vi.fn(),
   },
@@ -24,11 +25,11 @@ describe('PSN API', () => {
         message: 'PSN configured successfully',
       };
 
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+      vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
       const result = await configurePSN('valid-npsso-token');
 
-      expect(api.post).toHaveBeenCalledWith('/sync/psn/configure', {
+      expect(api.put).toHaveBeenCalledWith('/sync/psn/connection', {
         npsso_token: 'valid-npsso-token',
       });
       expect(result).toEqual({
@@ -47,7 +48,7 @@ describe('PSN API', () => {
         message: 'Invalid NPSSO token',
       };
 
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+      vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
       const result = await configurePSN('invalid-token');
 
@@ -67,7 +68,7 @@ describe('PSN API', () => {
         message: 'Success',
       };
 
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+      vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
       const result = await configurePSN('test-token');
 
