@@ -235,6 +235,11 @@ func TestAdminEvents_Filters(t *testing.T) {
 	if r := get("?user=" + adminID); len(r.Events) != 1 || r.Events[0].ID != "evt-sync" {
 		t.Errorf("user-by-id filter wrong: %+v", r.Events)
 	}
+	// A literal wildcard must not widen the match: no username contains '%',
+	// so the filter returns nothing rather than every event (see #750).
+	if r := get("?user=%25"); len(r.Events) != 0 {
+		t.Errorf("wildcard user filter should match nothing, got: %+v", r.Events)
+	}
 	since := base.Add(30 * time.Second).Format(time.RFC3339)
 	until := base.Add(90 * time.Second).Format(time.RFC3339)
 	if r := get("?since=" + since + "&until=" + until); len(r.Events) != 1 || r.Events[0].ID != "evt-imp" {

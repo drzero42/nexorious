@@ -14,6 +14,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/dbutil"
 	"github.com/drzero42/nexorious/internal/notify"
 )
 
@@ -126,7 +127,7 @@ func (h *EventsHandler) HandleList(c *echo.Context) error {
 		q = q.Where("e.scope = ?", scope)
 	}
 	if user := c.QueryParam("user"); user != "" {
-		q = q.Where("(e.actor_user_id = ? OR u.username ILIKE ?)", user, "%"+user+"%")
+		q = q.Where("(e.actor_user_id = ? OR u.username ILIKE ?)", user, dbutil.LikeContains(user))
 	}
 	if since := c.QueryParam("since"); since != "" {
 		ts, err := time.Parse(time.RFC3339, since)

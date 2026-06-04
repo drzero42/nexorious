@@ -2,6 +2,8 @@ package filter
 
 import (
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/dbutil"
 )
 
 const (
@@ -142,7 +144,7 @@ func ApplyGenre(fb *FilterBuilder, genres []string) {
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
 		return q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
 			for _, g := range genres {
-				q = q.WhereOr("g.genre ILIKE ?", "%"+g+"%")
+				q = q.WhereOr("g.genre ILIKE ?", dbutil.LikeContains(g))
 			}
 			return q
 		})
@@ -158,7 +160,7 @@ func ApplyGameMode(fb *FilterBuilder, modes []string) {
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
 		return q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
 			for _, m := range modes {
-				q = q.WhereOr("g.game_modes ILIKE ?", "%"+m+"%")
+				q = q.WhereOr("g.game_modes ILIKE ?", dbutil.LikeContains(m))
 			}
 			return q
 		})
@@ -174,7 +176,7 @@ func ApplyTheme(fb *FilterBuilder, themes []string) {
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
 		return q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
 			for _, t := range themes {
-				q = q.WhereOr("g.themes ILIKE ?", "%"+t+"%")
+				q = q.WhereOr("g.themes ILIKE ?", dbutil.LikeContains(t))
 			}
 			return q
 		})
@@ -190,7 +192,7 @@ func ApplyPlayerPerspective(fb *FilterBuilder, perspectives []string) {
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
 		return q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
 			for _, p := range perspectives {
-				q = q.WhereOr("g.player_perspectives ILIKE ?", "%"+p+"%")
+				q = q.WhereOr("g.player_perspectives ILIKE ?", dbutil.LikeContains(p))
 			}
 			return q
 		})
@@ -213,7 +215,7 @@ func ApplySearch(fb *FilterBuilder, query string) {
 		return
 	}
 	fb.AddJoin("g", joinGames)
-	pattern := "%" + query + "%"
+	pattern := dbutil.LikeContains(query)
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
 		return q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
 			q = q.WhereOr("g.title ILIKE ?", pattern)
