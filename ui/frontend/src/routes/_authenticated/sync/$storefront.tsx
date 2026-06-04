@@ -15,6 +15,7 @@ import {
   useSteamConnection,
   useEpicConnection,
   useGOGConnection,
+  useHumbleStatus,
   jobsKeys,
   useJobCompletionEffect,
 } from '@/hooks';
@@ -23,6 +24,7 @@ import {
   EpicConnectionCard,
   GOGConnectionCard,
   PSNConnectionCard,
+  HumbleConnectionCard,
   ExternalGamesSection,
 } from '@/components/sync';
 import { RecentActivity } from '@/components/jobs';
@@ -147,6 +149,9 @@ function SyncDetailPage() {
   const { data: epicConnection } = useEpicConnection();
   const { data: gogConnection } = useGOGConnection();
 
+  // Fetch Humble Bundle status
+  const { data: humbleStatus } = useHumbleStatus();
+
   // Fetch job details if there's an active job
   const { data: activeJob } = useJob(status?.activeJobId ?? undefined, {
     enabled: !!status?.activeJobId,
@@ -186,7 +191,8 @@ function SyncDetailPage() {
     (storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.PSN && (psnStatus?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
-    (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false));
+    (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
 
   const [connectionSectionOpen, setConnectionSectionOpen] = useState(false);
   const connectionOpenInitialized = useRef(false);
@@ -499,6 +505,18 @@ function SyncDetailPage() {
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
                 queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
+              }}
+            />
+          )}
+
+          {/* Humble Bundle Connection Card - only show for Humble storefront */}
+          {storefront === SyncStorefront.HUMBLE && (
+            <HumbleConnectionCard
+              isConfigured={config.isConfigured}
+              credentialsError={humbleStatus?.credentialsError ?? false}
+              onConnectionChange={() => {
+                queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
+                queryClient.invalidateQueries({ queryKey: syncKeys.humbleStatus() });
               }}
             />
           )}
