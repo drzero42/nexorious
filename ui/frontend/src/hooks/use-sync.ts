@@ -15,6 +15,8 @@ import type {
   GOGConnectionResponse,
   PSNConfigureResponse,
   PSNStatusResponse,
+  HumbleConnectResponse,
+  HumbleStatusResponse,
 } from '@/types';
 
 // Query Keys
@@ -29,6 +31,7 @@ export const syncKeys = {
   epicConnection: () => [...syncKeys.all, 'epicConnection'] as const,
   gogConnection: () => [...syncKeys.all, 'gogConnection'] as const,
   psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
+  humbleStatus: () => [...syncKeys.all, 'humbleStatus'] as const,
   externalGames: (platform: SyncStorefront) =>
     [...syncKeys.all, 'external-games', platform] as const,
 };
@@ -303,6 +306,59 @@ export function useDisconnectPSN() {
     },
     onError: (error) => {
       console.error('Failed to disconnect PSN:', error);
+    },
+  });
+}
+
+// Humble Bundle Auth Hooks
+
+/**
+ * Connect Humble Bundle. Invalidates sync configs and Humble status on success.
+ */
+export function useConnectHumble() {
+  const queryClient = useQueryClient();
+
+  return useMutation<HumbleConnectResponse, Error, string>({
+    mutationFn: (sessionCookie: string) => syncApi.connectHumble(sessionCookie),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.HUMBLE) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.humbleStatus() });
+    },
+    onError: (error) => {
+      console.error('Failed to connect Humble Bundle:', error);
+    },
+  });
+}
+
+/**
+ * Humble Bundle connection status. Cached for 5 minutes.
+ */
+export function useHumbleStatus(options?: { enabled?: boolean }) {
+  return useQuery<HumbleStatusResponse, Error>({
+    queryKey: syncKeys.humbleStatus(),
+    queryFn: syncApi.getHumbleStatus,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    enabled: options?.enabled,
+  });
+}
+
+/**
+ * Disconnect Humble Bundle. Invalidates all Humble-related queries on success.
+ */
+export function useDisconnectHumble() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error>({
+    mutationFn: syncApi.disconnectHumble,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.HUMBLE) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.humbleStatus() });
+    },
+    onError: (error) => {
+      console.error('Failed to disconnect Humble Bundle:', error);
     },
   });
 }

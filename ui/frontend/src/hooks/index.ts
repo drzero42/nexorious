@@ -69,6 +69,9 @@ export {
   useConfigurePSN,
   usePSNStatus,
   useDisconnectPSN,
+  useConnectHumble,
+  useHumbleStatus,
+  useDisconnectHumble,
   useResetSyncData,
 } from './use-sync';
 
