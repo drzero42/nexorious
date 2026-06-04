@@ -292,8 +292,8 @@ func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
 	if err := testDB.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM platform_storefronts").Scan(&assocCount); err != nil {
 		t.Fatalf("count platform_storefronts: %v", err)
 	}
-	if assocCount != 43 {
-		t.Errorf("expected 43 platform-storefront associations from migration, got %d", assocCount)
+	if assocCount != 46 {
+		t.Errorf("expected 46 platform-storefront associations from migration, got %d", assocCount)
 	}
 
 	// Spot-check: pc-windows default_storefront
