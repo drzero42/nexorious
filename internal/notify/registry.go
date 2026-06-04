@@ -12,6 +12,7 @@ const (
 	TypeSyncCompleted           = "sync.completed"
 	TypeSyncCompletedWithErrors = "sync.completed_with_errors"
 	TypeSyncFailed              = "sync.failed"
+	TypeSyncAuthExpired         = "sync.auth_expired"
 	TypeSyncNeedsReview         = "sync.needs_review"
 	TypeSyncDiff                = "sync.diff"
 	TypeImportCompleted         = "import.completed"
@@ -38,6 +39,7 @@ var registry = []EventTypeMeta{
 	{TypeSyncCompleted, ScopeUser, "Sync", "Sync completed", false},
 	{TypeSyncCompletedWithErrors, ScopeUser, "Sync", "Sync completed with errors", true},
 	{TypeSyncFailed, ScopeUser, "Sync", "Sync failed", true},
+	{TypeSyncAuthExpired, ScopeUser, "Sync", "Storefront needs reconnect", true},
 	{TypeSyncNeedsReview, ScopeUser, "Sync", "Sync has items needing review", false},
 	{TypeSyncDiff, ScopeUser, "Sync", "Game changes digest per sync", false},
 	{TypeImportCompleted, ScopeUser, "Import / Export", "Import completed", false},
