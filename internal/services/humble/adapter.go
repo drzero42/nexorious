@@ -67,7 +67,9 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		if err := onBatch(batch); err != nil {
 			return err
 		}
-		batch = batch[:0]
+		// Fresh slice per batch (matching sibling adapters) so the worker can
+		// safely retain the slice it was handed.
+		batch = make([]storefrontadapter.ExternalGameEntry, 0, batchSize)
 		return nil
 	}
 

@@ -221,3 +221,44 @@ func TestGetLibrary_OrderErrCredentialsWrapped(t *testing.T) {
 		t.Errorf("expected storefrontadapter.ErrCredentials on per-order auth failure, got %v", err)
 	}
 }
+
+func TestGetLibrary_BatchBoundaryPreservesAllEntries(t *testing.T) {
+	order := &Order{Gamekey: "GK1", Subproducts: []Subproduct{
+		{MachineName: "a", HumanName: "A", Downloads: []Download{gameDownload("windows")}},
+		{MachineName: "b", HumanName: "B", Downloads: []Download{gameDownload("mac")}},
+		{MachineName: "c", HumanName: "C", Downloads: []Download{gameDownload("linux")}},
+	}}
+	fc := &fakeClient{gamekeys: []string{"GK1"}, orders: map[string]*Order{"GK1": order}}
+	a := NewAdapter(fc, "cookie")
+
+	var batches [][]storefrontadapter.ExternalGameEntry
+	var got []storefrontadapter.ExternalGameEntry
+	// batchSize 1 forces a flush after every entry; retain each batch slice to
+	// prove later batches don't corrupt earlier ones.
+	err := a.GetLibrary(context.Background(), 1, func(batch []storefrontadapter.ExternalGameEntry) error {
+		batches = append(batches, batch)
+		got = append(got, batch...)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("GetLibrary error: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 entries, got %d: %+v", len(got), got)
+	}
+	wantIDs := []string{"a", "b", "c"}
+	for i, id := range wantIDs {
+		if got[i].ExternalID != id {
+			t.Errorf("entry %d ExternalID = %q, want %q", i, got[i].ExternalID, id)
+		}
+	}
+	// Each retained batch slice must still hold its original entry (no aliasing corruption).
+	if len(batches) != 3 {
+		t.Fatalf("expected 3 batches at batchSize 1, got %d", len(batches))
+	}
+	for i, id := range wantIDs {
+		if len(batches[i]) != 1 || batches[i][0].ExternalID != id {
+			t.Errorf("retained batch %d = %+v, want single entry %q", i, batches[i], id)
+		}
+	}
+}
