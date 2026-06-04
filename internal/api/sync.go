@@ -46,7 +46,6 @@ type PSNClient interface {
 type PSNAccountInfo struct {
 	OnlineID  string
 	AccountID string
-	Region    string
 }
 
 // EpicClient abstracts legendary CLI calls used during Epic account connection.
@@ -678,13 +677,12 @@ func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid_npsso_token")
 	}
 
+	// Store only what is read back: the token (sync adapter factory) and the
+	// online ID (status handler). Legacy rows may carry extra fields
+	// (account_id, region, is_verified, token_expired_at); decoders ignore them.
 	creds := map[string]any{
-		"npsso_token":      req.NpssoToken,
-		"online_id":        info.OnlineID,
-		"account_id":       info.AccountID,
-		"region":           info.Region,
-		"is_verified":      true,
-		"token_expired_at": nil,
+		"npsso_token": req.NpssoToken,
+		"online_id":   info.OnlineID,
 	}
 	if err := h.persistStorefrontCredentials(context.Background(), userID, "psn", creds); err != nil {
 		slog.Error("psn: persist storefront credentials failed", "user_id", userID, "err", err)
