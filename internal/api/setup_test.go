@@ -260,14 +260,12 @@ func TestSetupAdmin_GetMeAfterSetup(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", meRec.Code, meRec.Body)
 	}
 
-	var meBody struct {
-		Preferences json.RawMessage `json:"preferences"`
-	}
+	var meBody map[string]json.RawMessage
 	if err := json.NewDecoder(meRec.Body).Decode(&meBody); err != nil {
 		t.Fatalf("decode me response: %v", err)
 	}
-	if string(meBody.Preferences) == "null" || string(meBody.Preferences) == "" {
-		t.Errorf("expected preferences={}, got %q", string(meBody.Preferences))
+	if _, ok := meBody["preferences"]; ok {
+		t.Error("me response leaked dropped preferences field")
 	}
 }
 

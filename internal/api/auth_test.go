@@ -350,15 +350,15 @@ func TestGetMe_Success(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body)
 	}
 
+	raw := rec.Body.Bytes()
 	var body struct {
-		ID          string          `json:"id"`
-		Username    string          `json:"username"`
-		IsAdmin     bool            `json:"is_admin"`
-		IsActive    bool            `json:"is_active"`
-		Preferences json.RawMessage `json:"preferences"`
-		CreatedAt   string          `json:"created_at"`
+		ID        string `json:"id"`
+		Username  string `json:"username"`
+		IsAdmin   bool   `json:"is_admin"`
+		IsActive  bool   `json:"is_active"`
+		CreatedAt string `json:"created_at"`
 	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if body.ID != userID {
@@ -367,8 +367,12 @@ func TestGetMe_Success(t *testing.T) {
 	if body.Username != "admin" {
 		t.Errorf("username mismatch: got %q want %q", body.Username, "admin")
 	}
-	if string(body.Preferences) == "" || string(body.Preferences) == "null" {
-		t.Errorf("preferences must not be null, got %q", string(body.Preferences))
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("decode map: %v", err)
+	}
+	if _, ok := fields["preferences"]; ok {
+		t.Error("response leaked dropped preferences field")
 	}
 }
 

@@ -20,7 +20,7 @@ import (
 )
 
 // adminUserResponse is the serialised user shape returned by every admin endpoint.
-// It deliberately omits password_hash and preferences.
+// It deliberately omits password_hash.
 type adminUserResponse struct {
 	ID        string    `json:"id"`
 	Username  string    `json:"username"`
@@ -159,7 +159,6 @@ func (h *AdminUsersHandler) HandleCreate(c *echo.Context) error {
 		PasswordHash: string(hash),
 		IsActive:     true,
 		IsAdmin:      req.IsAdmin,
-		Preferences:  "{}",
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
