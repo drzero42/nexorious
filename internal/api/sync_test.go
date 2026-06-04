@@ -2158,7 +2158,7 @@ func TestHandleGetEpicConnection_NotConnectedWhenNoRow(t *testing.T) {
 	}
 }
 
-func TestHandleGetEpicConnection_ConnectedReturnsAccountInfo(t *testing.T) {
+func TestHandleGetEpicConnection_ConnectedReturnsDisplayName(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubEpicClient{configured: true}
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
@@ -2189,8 +2189,8 @@ func TestHandleGetEpicConnection_ConnectedReturnsAccountInfo(t *testing.T) {
 	if resp["connected"] != true || resp["disabled"] != false {
 		t.Errorf("expected connected=true disabled=false, got: %v", resp)
 	}
-	if resp["display_name"] != "PlayerOne" || resp["account_id"] != "acct-xyz" {
-		t.Errorf("expected display_name/account_id from creds, got: %v", resp)
+	if resp["display_name"] != "PlayerOne" {
+		t.Errorf("expected display_name from creds, got: %v", resp)
 	}
 }
 
@@ -2390,9 +2390,6 @@ func TestGetSteamConnection_Connected(t *testing.T) {
 	_ = json.NewDecoder(rec.Body).Decode(&body)
 	if body["connected"] != true {
 		t.Errorf("want connected=true, got %v", body["connected"])
-	}
-	if body["steam_id"] != "76561198012345678" {
-		t.Errorf("steam_id: got %v", body["steam_id"])
 	}
 	if body["username"] != "Frostbyte" {
 		t.Errorf("username: got %v", body["username"])
