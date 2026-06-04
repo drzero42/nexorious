@@ -170,13 +170,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	// Build adapter (credential loading, decryption, and token refresh happen inside).
 	adapter, err := w.Adapter(ctx, p.Storefront, cfg)
 	if errors.Is(err, ErrCredentials) {
-		failSyncJob(ctx, w.DB, p.JobID, "credentials error")
-		if _, err := w.DB.NewRaw(
-			`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
-			p.UserID, p.Storefront,
-		).Exec(ctx); err != nil {
-			slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
-		}
+		handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
 		return nil
 	}
 	if err != nil {
@@ -241,13 +235,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		return nil
 	}); err != nil {
 		if errors.Is(err, ErrCredentials) {
-			failSyncJob(ctx, w.DB, p.JobID, "credentials error")
-			if _, err := w.DB.NewRaw(
-				`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
-				p.UserID, p.Storefront,
-			).Exec(ctx); err != nil {
-				slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
-			}
+			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
 			return nil
 		}
 		slog.Error("dispatch_sync: library fetch failed", "job_id", p.JobID, "err", err)
@@ -319,9 +307,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	return nil
 }
 
-// failSyncJob marks a job as failed with the given error message and cancels
-// any pending job_items for that job so they are not left orphaned.
-func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
+// markSyncJobFailed marks a job as failed with the given error message and
+// cancels any pending job_items for that job so they are not left orphaned. It
+// performs no notification — callers decide which event (if any) to emit.
+func markSyncJobFailed(ctx context.Context, db *bun.DB, jobID, msg string) {
 	now := time.Now().UTC()
 	if _, err := db.NewRaw(
 		`UPDATE jobs SET status = 'failed', error_message = ?, completed_at = ? WHERE id = ?`,
@@ -335,13 +324,68 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 	).Exec(ctx); err != nil {
 		slog.Error("dispatch_sync: cancel pending items failed", "err", err, "job_id", jobID)
 	}
+}
 
+// failSyncJob marks a job as failed (see markSyncJobFailed) and emits the
+// generic sync.failed notification. Used for all non-credential failures;
+// credential failures go through handleCredentialError instead.
+func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
+	markSyncJobFailed(ctx, db, jobID, msg)
 	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: userID,
 		Payload:  notify.SyncFailedPayload{Storefront: storefront, Error: msg, JobID: jobID},
 		DedupKey: jobID + ":" + notify.TypeSyncFailed,
 	})
+}
+
+// handleCredentialError handles a credentials failure during sync: it fails the
+// job, flags credentials_error, and — only on the healthy→expired transition
+// (priorErr == false) — notifies the user. Subscribers to sync.auth_expired get
+// that actionable event; everyone else falls back to sync.failed so they are
+// not left silent. While the storefront stays broken (priorErr == true) no
+// notification is sent, so repeated scheduled syncs do not nag.
+func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, priorErr bool) {
+	markSyncJobFailed(ctx, db, p.JobID, "credentials error")
+	if _, err := db.NewRaw(
+		`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
+		p.UserID, p.Storefront,
+	).Exec(ctx); err != nil {
+		slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
+	}
+
+	if priorErr {
+		return // already in error state; notify only on transition
+	}
+
+	if userSubscribed(ctx, db, p.UserID, notify.TypeSyncAuthExpired) {
+		notify.Emit(ctx, db, notify.EmitParams{
+			Type: notify.TypeSyncAuthExpired, Scope: notify.ScopeUser, ActorUserID: p.UserID,
+			Payload:  notify.SyncAuthExpiredPayload{Storefront: p.Storefront},
+			DedupKey: p.JobID + ":" + notify.TypeSyncAuthExpired,
+		})
+		return
+	}
+	notify.Emit(ctx, db, notify.EmitParams{
+		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: p.UserID,
+		Payload:  notify.SyncFailedPayload{Storefront: p.Storefront, Error: "credentials error", JobID: p.JobID},
+		DedupKey: p.JobID + ":" + notify.TypeSyncFailed,
+	})
+}
+
+// userSubscribed reports whether the user is subscribed to eventType. On query
+// error it returns false, so a credential failure still falls back to the
+// default-on sync.failed event rather than going silent.
+func userSubscribed(ctx context.Context, db *bun.DB, userID, eventType string) bool {
+	var subscribed bool
+	if err := db.NewRaw(
+		`SELECT EXISTS(SELECT 1 FROM notification_subscriptions WHERE user_id = ? AND event_type = ?)`,
+		userID, eventType,
+	).Scan(ctx, &subscribed); err != nil {
+		slog.Error("dispatch_sync: subscription check failed", "err", err, "user_id", userID, "event_type", eventType)
+		return false
+	}
+	return subscribed
 }
 
 // ownershipRank returns a numeric rank for an ownership status string.
