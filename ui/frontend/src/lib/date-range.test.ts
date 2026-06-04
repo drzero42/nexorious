@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dayRangeToUTC } from './date-range';
+import { dayRangeToUTC, isRangeInverted } from './date-range';
 
 describe('dayRangeToUTC', () => {
   it('returns undefined bounds for empty inputs', () => {
@@ -53,5 +53,31 @@ describe('dayRangeToUTC', () => {
     const { since, until } = dayRangeToUTC('2026-06-03', '2026-06-03');
     expect(since).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     expect(until).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+});
+
+describe('isRangeInverted', () => {
+  it('flags a range whose `until` precedes `since`', () => {
+    expect(isRangeInverted('2026-06-10', '2026-06-03')).toBe(true);
+  });
+
+  it('treats equal dates as a valid single-day range', () => {
+    expect(isRangeInverted('2026-06-03', '2026-06-03')).toBe(false);
+  });
+
+  it('treats a forward range as valid', () => {
+    expect(isRangeInverted('2026-06-03', '2026-06-10')).toBe(false);
+  });
+
+  it('is not inverted when `since` is empty', () => {
+    expect(isRangeInverted('', '2026-06-03')).toBe(false);
+  });
+
+  it('is not inverted when `until` is empty', () => {
+    expect(isRangeInverted('2026-06-03', '')).toBe(false);
+  });
+
+  it('is not inverted when both bounds are empty', () => {
+    expect(isRangeInverted('', '')).toBe(false);
   });
 });

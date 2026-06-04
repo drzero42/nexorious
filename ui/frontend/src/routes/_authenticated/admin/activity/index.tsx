@@ -24,7 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Activity, ChevronDown, ChevronRight } from 'lucide-react';
-import { dayRangeToUTC } from '@/lib/date-range';
+import { dayRangeToUTC, isRangeInverted } from '@/lib/date-range';
 import type { AdminEventFilters } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/admin/activity/')({
@@ -86,8 +86,10 @@ function AdminActivityPage() {
     };
   }, [typeFilter, category, scope, user, since, until]);
 
+  const rangeInverted = isRangeInverted(since, until);
+
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useAdminEvents(filters);
+    useAdminEvents(filters, !rangeInverted);
 
   const events = useMemo(() => (data?.pages ?? []).flatMap((p) => p.events), [data]);
 
@@ -177,6 +179,7 @@ function AdminActivityPage() {
               aria-label="From date"
               className="w-40"
               value={since}
+              max={until || undefined}
               onChange={(e) => {
                 setSince(e.target.value);
                 setExpanded(null);
@@ -187,6 +190,7 @@ function AdminActivityPage() {
               aria-label="To date"
               className="w-40"
               value={until}
+              min={since || undefined}
               onChange={(e) => {
                 setUntil(e.target.value);
                 setExpanded(null);
@@ -194,7 +198,9 @@ function AdminActivityPage() {
             />
           </div>
 
-          {isError ? (
+          {rangeInverted ? (
+            <p className="text-sm text-destructive">The “To” date is before the “From” date.</p>
+          ) : isError ? (
             <p className="text-sm text-destructive">Failed to load events.</p>
           ) : isLoading ? (
             <div className="space-y-2">

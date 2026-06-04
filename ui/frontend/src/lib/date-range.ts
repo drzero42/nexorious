@@ -19,6 +19,17 @@ export function dayRangeToUTC(since: string, until: string): { since?: string; u
 }
 
 /**
+ * Report whether a `YYYY-MM-DD` date-range is inverted, i.e. both bounds are set
+ * and `until` falls strictly before `since`. Lexical comparison of the zero-padded
+ * `YYYY-MM-DD` strings matches chronological order, so no `Date` parsing is needed.
+ * Equal bounds form a valid single-day range, and a half-open range (either bound
+ * empty) can never be inverted.
+ */
+export function isRangeInverted(since: string, until: string): boolean {
+  return Boolean(since) && Boolean(until) && since > until;
+}
+
+/**
  * Build a local-timezone midnight `Date` for the given `YYYY-MM-DD`, offset by
  * `dayOffset` days. Using the numeric `Date` constructor (rather than parsing an
  * ISO string) guarantees local-timezone interpretation, and day arithmetic on
