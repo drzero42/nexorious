@@ -19,14 +19,15 @@ const (
 
 // Job source constants.
 const (
-	JobSourceSteam     = "steam"
-	JobSourceEpic      = "epic"
-	JobSourcePSN       = "psn"
-	JobSourceGOG       = "gog"
-	JobSourceManual    = "manual"
-	JobSourceNexorious = "nexorious"
-	JobSourceCSV       = "csv"
-	JobSourceSystem    = "system"
+	JobSourceSteam        = "steam"
+	JobSourceEpic         = "epic"
+	JobSourcePSN          = "psn"
+	JobSourceGOG          = "gog"
+	JobSourceHumbleBundle = "humble-bundle"
+	JobSourceManual       = "manual"
+	JobSourceNexorious    = "nexorious"
+	JobSourceCSV          = "csv"
+	JobSourceSystem       = "system"
 )
 
 // Job status constants.

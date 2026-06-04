@@ -12,6 +12,8 @@ func StorefrontToCollectionSlug(storefront string) (string, bool) {
 		return "epic-games-store", true
 	case "gog":
 		return "gog", true
+	case "humble-bundle":
+		return "humble-bundle", true
 	default:
 		return "", false
 	}

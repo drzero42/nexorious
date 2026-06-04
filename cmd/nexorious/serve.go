@@ -27,6 +27,7 @@ import (
 	"github.com/drzero42/nexorious/internal/scheduler"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
+	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
@@ -523,6 +524,23 @@ func buildAdapterFactory(
 				return dbErr
 			}
 			return epicsvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot), nil
+
+		case "humble-bundle":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
+			if err != nil {
+				slog.Warn("adapter factory: humble-bundle decrypt failed", "user_id", cfg.UserID, "err", err)
+				return nil, tasks.ErrCredentials
+			}
+			var creds struct {
+				SessionCookie string `json:"session_cookie"`
+			}
+			if err := json.Unmarshal(plain, &creds); err != nil {
+				return nil, tasks.ErrCredentials
+			}
+			return humblesvc.NewAdapter(humblesvc.NewClient(), creds.SessionCookie), nil
 
 		default:
 			return nil, fmt.Errorf("unknown storefront: %s", storefront)
