@@ -325,7 +325,6 @@ interface PSNConfigureApiResponse {
   success: boolean;
   online_id: string | null;
   account_id: string | null;
-  region: string | null;
   message: string;
 }
 
@@ -333,7 +332,6 @@ interface PSNStatusApiResponse {
   is_configured: boolean;
   credentials_error?: boolean;
   online_id: string | null;
-  region: string | null;
 }
 
 // ============================================================================

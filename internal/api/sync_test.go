@@ -338,7 +338,7 @@ func TestPSNConfigure_ShortToken(t *testing.T) {
 func TestPSNConfigure_StubSuccess(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubPSNClient{
-		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456", Region: "GB"},
+		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-ok")
@@ -763,7 +763,7 @@ func TestSyncGetConfig_InvalidStorefront(t *testing.T) {
 func TestPSNStatus_WithCredentials(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubPSNClient{
-		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456", Region: "GB"},
+		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-stat-cred")
@@ -2532,7 +2532,7 @@ func TestSteamVerify_ClearsCredentialsErrorFlag(t *testing.T) {
 func TestPSNConfigure_ClearsCredentialsErrorFlag(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubPSNClient{
-		info: &api.PSNAccountInfo{OnlineID: "MyPSN", AccountID: "123", Region: "GB"},
+		info: &api.PSNAccountInfo{OnlineID: "MyPSN", AccountID: "123"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-clear-cred")

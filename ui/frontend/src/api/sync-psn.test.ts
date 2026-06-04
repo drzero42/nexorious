@@ -21,7 +21,6 @@ describe('PSN API', () => {
         success: true,
         online_id: 'TestPSNUser',
         account_id: 'psn-account-123',
-        region: 'US',
         message: 'PSN configured successfully',
       };
 
@@ -45,7 +44,6 @@ describe('PSN API', () => {
         success: false,
         online_id: null,
         account_id: null,
-        region: null,
         message: 'Invalid NPSSO token',
       };
 
@@ -66,7 +64,6 @@ describe('PSN API', () => {
         success: true,
         online_id: 'TestUser',
         account_id: '12345',
-        region: 'EU',
         message: 'Success',
       };
 
@@ -89,7 +86,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: true,
         online_id: 'TestPSNUser',
-        region: 'US',
         credentials_error: false,
       };
 
@@ -109,7 +105,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: false,
         online_id: null,
-        region: null,
         credentials_error: false,
       };
 
@@ -128,7 +123,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: true,
         online_id: 'TestPSNUser',
-        region: 'US',
         credentials_error: true,
       };
 
@@ -144,7 +138,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: true,
         online_id: 'TestUser',
-        region: 'EU',
         credentials_error: false,
       };
 

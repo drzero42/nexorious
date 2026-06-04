@@ -416,7 +416,6 @@ func (a *psnClientAdapter) GetAccountInfo(ctx context.Context, npssoToken string
 	return &PSNAccountInfo{
 		OnlineID:  info.OnlineID,
 		AccountID: info.AccountID,
-		Region:    info.Region,
 	}, nil
 }
 
