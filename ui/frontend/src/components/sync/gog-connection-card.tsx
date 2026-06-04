@@ -51,7 +51,6 @@ export function GOGConnectionCard({
   const isConnecting = connectMutation.isPending;
   const isDisconnecting = disconnectMutation.isPending;
   const username = connection?.username;
-  const userId = connection?.userId;
   const resolvedCredentialsError = connection?.credentialsError ?? credentialsError;
 
   const onSubmit = async (data: GOGAuthCodeForm) => {
@@ -101,7 +100,7 @@ export function GOGConnectionCard({
       <CardContent>
         {isConfigured && !resolvedCredentialsError ? (
           <div className="space-y-4">
-            <ConnectedSummary name={username} secondary={userId} secondaryMono />
+            <ConnectedSummary name={username} />
             {playtimeNote}
             <DisconnectDialog
               serviceLabel="GOG"

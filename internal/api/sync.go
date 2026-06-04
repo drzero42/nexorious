@@ -829,13 +829,23 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 	if status.Plaintext == nil {
 		return c.JSON(http.StatusOK, map[string]any{"connected": true, "credentials_error": true, "disabled": false})
 	}
-	var creds struct {
-		DisplayName string `json:"display_name"`
-		AccountID   string `json:"account_id"`
-	}
-	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
+	// Epic persists the raw legendary snapshot: a map[relPath]content where the
+	// account details live inside user.json (fields displayName/account_id), not
+	// as top-level keys. Decode the snapshot, then parse user.json.
+	var snapshot map[string]string
+	if err := json.Unmarshal(status.Plaintext, &snapshot); err != nil {
 		slog.Error("epic: stored credentials are corrupted", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
+	}
+	var creds struct {
+		DisplayName string `json:"displayName"`
+		AccountID   string `json:"account_id"`
+	}
+	if userJSON, ok := snapshot["user.json"]; ok {
+		if err := json.Unmarshal([]byte(userJSON), &creds); err != nil {
+			slog.Error("epic: stored user.json is corrupted", "err", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
+		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{

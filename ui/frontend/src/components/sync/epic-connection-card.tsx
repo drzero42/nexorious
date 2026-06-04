@@ -60,7 +60,6 @@ export function EpicConnectionCard({
   const isDisconnecting = disconnectMutation.isPending;
   const isDisabled = connection?.disabled === true;
   const displayName = connection?.displayName;
-  const accountId = connection?.accountId;
   const resolvedCredentialsError = connection?.credentialsError ?? credentialsError;
 
   const onSubmit = async (data: EpicAuthCodeForm) => {
@@ -115,7 +114,7 @@ export function EpicConnectionCard({
           </Alert>
         ) : isConfigured && !resolvedCredentialsError ? (
           <div className="space-y-4">
-            <ConnectedSummary name={displayName} secondary={accountId} secondaryMono />
+            <ConnectedSummary name={displayName} />
             {playtimeNote}
             <DisconnectDialog
               serviceLabel="Epic Games Store"

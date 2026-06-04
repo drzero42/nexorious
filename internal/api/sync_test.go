@@ -2164,7 +2164,9 @@ func TestHandleGetEpicConnection_ConnectedReturnsAccountInfo(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-status-conn")
 
-	rawCreds := `{"display_name":"PlayerOne","account_id":"acct-xyz"}`
+	// Seed the realistic legendary snapshot shape the connect flow actually
+	// persists: a map[relPath]content where user.json holds displayName/account_id.
+	rawCreds := `{"user.json":"{\"displayName\":\"PlayerOne\",\"account_id\":\"acct-xyz\"}","installed.json":"{}"}`
 	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
 	if err != nil {
 		t.Fatalf("encrypt epic creds: %v", err)

@@ -461,7 +461,6 @@ function SyncDetailPage() {
             <SteamConnectionCard
               isConfigured={config.isConfigured}
               credentialsError={steamConnection?.credentialsError ?? false}
-              steamId={steamConnection?.steamId}
               steamUsername={steamConnection?.username}
               onConnectionChange={() => {
                 // Invalidate queries to refresh data
@@ -497,7 +496,6 @@ function SyncDetailPage() {
               isConfigured={config.isConfigured}
               credentialsError={psnStatus?.credentialsError ?? false}
               onlineId={psnStatus?.onlineId ?? undefined}
-              accountId={psnStatus?.accountId ?? undefined}
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
                 queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });

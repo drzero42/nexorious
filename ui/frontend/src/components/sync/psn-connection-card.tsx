@@ -27,7 +27,6 @@ type PSNCredentialsForm = z.infer<typeof psnCredentialsSchema>;
 interface PSNConnectionCardProps {
   isConfigured: boolean;
   credentialsError: boolean;
-  accountId?: string;
   onlineId?: string;
   onConnectionChange: () => void;
 }
@@ -35,7 +34,6 @@ interface PSNConnectionCardProps {
 export function PSNConnectionCard({
   isConfigured,
   credentialsError,
-  accountId,
   onlineId,
   onConnectionChange,
 }: PSNConnectionCardProps) {
@@ -168,7 +166,7 @@ export function PSNConnectionCard({
           </div>
         ) : (
           <div className="space-y-4">
-            <ConnectedSummary name={onlineId} secondary={accountId} />
+            <ConnectedSummary name={onlineId} />
             <DisconnectDialog
               serviceLabel="PlayStation Network"
               isDisconnecting={isDisconnecting}
