@@ -57,11 +57,6 @@ export async function checkUsernameAvailability(
   );
 }
 
-export async function updatePreferences(preferences: Record<string, unknown>): Promise<User> {
-  const response = await api.put<UserApiResponse>('/auth/me', { preferences });
-  return transformUser(response);
-}
-
 export interface ApiKey {
   id: string;
   name: string;

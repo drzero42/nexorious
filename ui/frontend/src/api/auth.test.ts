@@ -8,7 +8,6 @@ import {
   changeUsername,
   changePassword,
   checkUsernameAvailability,
-  updatePreferences,
 } from './auth';
 
 const API_URL = '/api';
@@ -215,53 +214,6 @@ describe('auth.ts', () => {
       const result = await checkUsernameAvailability('user@name');
 
       expect(result.available).toBe(true);
-    });
-  });
-
-  describe('updatePreferences', () => {
-    it('updates preferences and returns transformed user', async () => {
-      const newPreferences = { theme: 'dark', language: 'en' };
-
-      server.use(
-        http.put(`${API_URL}/auth/me`, async ({ request }) => {
-          const body = (await request.json()) as { preferences: Record<string, unknown> };
-          expect(body.preferences).toEqual(newPreferences);
-          return HttpResponse.json({
-            id: 'user-123',
-            username: 'testuser',
-            is_admin: false,
-            preferences: newPreferences,
-          });
-        }),
-      );
-
-      const result = await updatePreferences(newPreferences);
-
-      expect(result).toEqual({
-        id: 'user-123',
-        username: 'testuser',
-        isAdmin: false,
-        preferences: newPreferences,
-      });
-    });
-
-    it('handles empty preferences', async () => {
-      server.use(
-        http.put(`${API_URL}/auth/me`, async ({ request }) => {
-          const body = (await request.json()) as { preferences: Record<string, unknown> };
-          expect(body.preferences).toEqual({});
-          return HttpResponse.json({
-            id: 'user-123',
-            username: 'testuser',
-            is_admin: false,
-            preferences: {},
-          });
-        }),
-      );
-
-      const result = await updatePreferences({});
-
-      expect(result.preferences).toEqual({});
     });
   });
 });
