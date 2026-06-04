@@ -19,6 +19,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 ## Reasons to use Nexorious
 
 - **Your library is scattered across storefronts.** If you buy games on Steam *and* Epic *and* GOG *and* PlayStation *and* pick up the odd physical copy, Nexorious gives you one consolidated, searchable view of everything you own. This is its core value.
+- **Stop buying games you already own.** Before grabbing that bundle or sale, check Nexorious to see whether — and on which storefront — you already own the game.
 - **Search, don't type.** Add a game by searching for it — Nexorious pulls everything from IGDB automatically: cover art, descriptions, release dates, genres, ratings, and time-to-beat estimates. Your collection looks complete without manual data entry.
 - **Own your data.** Self-hosted, single binary, no third-party cloud, MIT-licensed.
 - **Automatic library sync** from Steam, PlayStation Network, GOG, and Epic Games Store today, with more sources on the way.
