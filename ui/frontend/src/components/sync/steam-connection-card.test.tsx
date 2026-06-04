@@ -75,7 +75,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
         />,
@@ -84,24 +83,10 @@ describe('SteamConnectionCard', () => {
       expect(screen.getByText('Connected as TestUser')).toBeInTheDocument();
     });
 
-    it('shows Steam ID when configured', () => {
-      render(
-        <SteamConnectionCard
-          isConfigured={true}
-          steamId="76561198012345678"
-          steamUsername="TestUser"
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
-      expect(screen.getByText('76561198012345678')).toBeInTheDocument();
-    });
-
     it('shows disconnect button', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
         />,
@@ -114,7 +99,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
         />,
@@ -127,7 +111,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
         />,
@@ -368,7 +351,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
         />,
@@ -392,7 +374,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
         />,
@@ -423,7 +404,6 @@ describe('SteamConnectionCard', () => {
       render(
         <SteamConnectionCard
           isConfigured={true}
-          steamId="76561198012345678"
           steamUsername="TestUser"
           onConnectionChange={mockOnConnectionChange}
         />,

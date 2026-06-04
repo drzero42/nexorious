@@ -100,7 +100,7 @@ describe('EpicConnectionCard', () => {
     expect(screen.queryByText(/LEGENDARY_WORK_DIR/)).not.toBeInTheDocument();
   });
 
-  it('renders connected state with display name and account id from connection hook', () => {
+  it('renders connected state with display name from connection hook', () => {
     stubEpicConnection({
       connected: true,
       disabled: false,
@@ -113,7 +113,6 @@ describe('EpicConnectionCard', () => {
     });
 
     expect(screen.getByText(/Connected as EpicUser123/)).toBeInTheDocument();
-    expect(screen.getByText('epic-account-id')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
   });
 

@@ -34,7 +34,6 @@ type SteamCredentialsForm = z.infer<typeof steamCredentialsSchema>;
 interface SteamConnectionCardProps {
   isConfigured: boolean;
   credentialsError?: boolean;
-  steamId?: string;
   steamUsername?: string;
   onConnectionChange: () => void;
 }
@@ -42,7 +41,6 @@ interface SteamConnectionCardProps {
 export function SteamConnectionCard({
   isConfigured,
   credentialsError = false,
-  steamId,
   steamUsername,
   onConnectionChange,
 }: SteamConnectionCardProps) {
@@ -122,10 +120,7 @@ export function SteamConnectionCard({
       <CardContent>
         {isConfigured && !credentialsError ? (
           <div className="space-y-4">
-            <ConnectedSummary
-              name={steamUsername || verifiedUsername || undefined}
-              secondary={steamId}
-            />
+            <ConnectedSummary name={steamUsername || verifiedUsername || undefined} />
             <DisconnectDialog
               serviceLabel="Steam"
               isDisconnecting={isDisconnecting}
