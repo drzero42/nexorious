@@ -6,7 +6,7 @@ This document is the source of truth for how Nexorious syncs a user's game libra
 
 ## Overview
 
-Syncing imports a user's game library from an external storefront (Steam, PSN, GOG, or Epic Games Store) into Nexorious. The process fetches the library, matches each game to an entry in the IGDB game database, and creates or updates the user's Nexorious library accordingly.
+Syncing imports a user's game library from an external storefront (Steam, PSN, GOG, Epic Games Store, or Humble Bundle) into Nexorious. The process fetches the library, matches each game to an entry in the IGDB game database, and creates or updates the user's Nexorious library accordingly.
 
 The sync pipeline is designed to be:
 
@@ -20,7 +20,7 @@ The sync pipeline is designed to be:
 
 | Term | Meaning |
 |---|---|
-| **Storefront** | An external game store: Steam, PSN, GOG, or Epic Games Store |
+| **Storefront** | An external game store: Steam, PSN, GOG, Epic Games Store, or Humble Bundle |
 | **ExternalGame** | A game record fetched from a storefront; persisted across sync runs |
 | **ExternalGamePlatform** | A platform slug (e.g. `pc-windows`, `playstation-5`) that an ExternalGame is available on |
 | **Job** | A sync run for one user and one storefront; tracks overall progress and status |
@@ -85,7 +85,7 @@ Old entries are pruned by a periodic maintenance job (see Maintenance).
 
 ## Architecture
 
-The sync pipeline has three stages. Each stage is implemented as a River worker job in the `tasks` package. The `DispatchSyncWorker` defines a standard adapter interface; each storefront implements that interface in its own `services/` package (`services/steam`, `services/psn`, `services/gog`, `services/epic`). Storefront-specific knowledge — auth, API communication, credential lifecycle — never crosses into the workers.
+The sync pipeline has three stages. Each stage is implemented as a River worker job in the `tasks` package. The `DispatchSyncWorker` defines a standard adapter interface; each storefront implements that interface in its own `services/` package (`services/steam`, `services/psn`, `services/gog`, `services/epic`, `services/humble`). Storefront-specific knowledge — auth, API communication, credential lifecycle — never crosses into the workers.
 
 ```mermaid
 flowchart TD
@@ -315,6 +315,7 @@ All storefronts expose credential problems through a unified `credentials_error`
 | **PSN** | Authentication failure when exchanging the NPSSO token for an access token (token expires approximately every 2 months) |
 | **GOG** | OAuth2 refresh token failure (refresh token expired or revoked) |
 | **Epic** | Decryption failure of `storefront_credentials`, or Legendary CLI reports an authentication failure |
+| **Humble Bundle** | Decryption failure of `storefront_credentials`, or the order API rejects the `_simpleauth_sess` session cookie (401/403); the cookie expires periodically and must be re-pasted |
 
 When a credential error occurs mid-sync, the job is marked `failed` and all pending job_items are cancelled. The user must reconfigure their credentials before triggering a new sync.
 
@@ -324,7 +325,7 @@ Credentials are stored encrypted at rest in `user_sync_configs.storefront_creden
 
 ## Scheduled Sync
 
-A periodic worker checks `user_sync_configs` for all users where the sync frequency is not `manual` and the last sync was more than the configured interval ago (hourly / daily / weekly). For each, it creates a Job and enqueues a Stage 1 run — provided no active job already exists for that user and storefront. All four storefronts support scheduled sync.
+A periodic worker checks `user_sync_configs` for all users where the sync frequency is not `manual` and the last sync was more than the configured interval ago (hourly / daily / weekly). For each, it creates a Job and enqueues a Stage 1 run — provided no active job already exists for that user and storefront. All five storefronts support scheduled sync.
 
 ---
 
@@ -370,6 +371,15 @@ All adapters implement the same interface. The differences below are the only pl
 - **Rate limiting:** Handled internally by the Legendary CLI
 - **Platforms:** Epic does not expose per-game platform data; all entries are `pc-windows`
 - **Playtime:** Not provided; always 0
+
+### Humble Bundle
+
+- **Auth:** A `_simpleauth_sess` session cookie, pasted by the user (programmatic login is gated by reCAPTCHA + 2FA, so server-side login is not viable). The cookie is verified on save against the order API and stored encrypted; expiry is surfaced as a credential error and prompts a re-paste
+- **Library fetch:** Lists order gamekeys (`GET /api/v1/user/order`), then fetches each order's detail (`GET /api/v1/order/{gamekey}?all_tpkds=true`). A single failing order is logged and skipped so one bad order doesn't sink the sync. Qualifying subproducts are yielded in batches of ≤10
+- **DRM-free only:** Only games the user can download directly from Humble are imported. A subproduct is a game iff it has a download whose platform is in the whitelist `{windows, mac, linux, android}` with a non-empty `download_struct[0].url.web`, and its `machine_name` is not in the launcher blocklist (`uplayclient`). Ebooks, audio, video, `asmjs`, and promo/info stubs are excluded by absence of a game-platform download. **Third-party keys (`tpkd_dict`) are never read**, so Steam-key-only titles are not imported
+- **Rate limiting:** Conservative request delay (5 req/sec) between API calls
+- **Platforms:** Mapped in-adapter — `windows`→`pc-windows`, `mac`→`mac`, `linux`→`pc-linux`, `android`→`android` (union across a subproduct's qualifying downloads). PC and Android editions are separate subproducts (distinct `machine_name`, shared title); the adapter emits both and the pipeline collapses them into one library entry with the union of platforms
+- **Playtime:** Not provided by Humble; always 0
 
 ---
 
