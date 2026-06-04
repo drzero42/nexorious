@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ExternalLink } from 'lucide-react';
 import { useVerifySteamCredentials, useDisconnectSteam } from '@/hooks';
-import { useUpdateProfile } from '@/hooks/use-auth';
 import { STEAM_VERIFY_ERROR_MESSAGES } from '@/types';
 import {
   CodeHelpAccordion,
@@ -60,9 +59,8 @@ export function SteamConnectionCard({
 
   const verifyMutation = useVerifySteamCredentials();
   const disconnectMutation = useDisconnectSteam();
-  const updateProfileMutation = useUpdateProfile();
 
-  const isVerifying = verifyMutation.isPending || updateProfileMutation.isPending;
+  const isVerifying = verifyMutation.isPending;
   const isDisconnecting = disconnectMutation.isPending;
 
   const onSubmit = async (data: SteamCredentialsForm) => {
@@ -90,18 +88,8 @@ export function SteamConnectionCard({
 
       setVerifiedUsername(result.steamUsername);
 
-      // Save credentials to user preferences
-      await updateProfileMutation.mutateAsync({
-        preferences: {
-          steam: {
-            steam_id: data.steamId,
-            web_api_key: data.webApiKey,
-            is_verified: true,
-            username: result.steamUsername,
-          },
-        },
-      });
-
+      // Credentials are persisted server-side by the verify step (into the
+      // encrypted user_sync_configs blob); no client-side profile write needed.
       toast.success('Steam connected successfully');
       onConnectionChange();
     } catch (err) {

@@ -18,7 +18,6 @@ import {
   jobsKeys,
   useJobCompletionEffect,
 } from '@/hooks';
-import { useCurrentUser, authKeys } from '@/hooks/use-auth';
 import {
   SteamConnectionCard,
   EpicConnectionCard,
@@ -133,18 +132,6 @@ function SyncDetailPage() {
   const [localFrequency, setLocalFrequency] = useState<SyncFrequency | null>(null);
 
   const isValidPlatform = SUPPORTED_SYNC_STOREFRONTS.includes(storefront);
-
-  // Get current user for PSN/GOG preferences (must be called before any conditional return)
-  const { data: currentUser } = useCurrentUser();
-
-  // Extract PSN credentials from user preferences
-  const psnPrefs = currentUser?.preferences?.psn as
-    | {
-        online_id?: string;
-        account_id?: string;
-        region?: string;
-      }
-    | undefined;
 
   // Fetch sync config and status
   const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(storefront);
@@ -480,7 +467,6 @@ function SyncDetailPage() {
                 // Invalidate queries to refresh data
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
                 queryClient.invalidateQueries({ queryKey: syncKeys.steamConnection() });
-                queryClient.invalidateQueries({ queryKey: authKeys.me() });
               }}
             />
           )}
@@ -491,7 +477,6 @@ function SyncDetailPage() {
               isConfigured={config.isConfigured}
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
-                queryClient.invalidateQueries({ queryKey: authKeys.me() });
               }}
             />
           )}
@@ -511,12 +496,11 @@ function SyncDetailPage() {
             <PSNConnectionCard
               isConfigured={config.isConfigured}
               credentialsError={psnStatus?.credentialsError ?? false}
-              onlineId={psnPrefs?.online_id}
-              accountId={psnPrefs?.account_id}
+              onlineId={psnStatus?.onlineId ?? undefined}
+              accountId={psnStatus?.accountId ?? undefined}
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
                 queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
-                queryClient.invalidateQueries({ queryKey: authKeys.me() });
               }}
             />
           )}

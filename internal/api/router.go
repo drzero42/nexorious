@@ -232,7 +232,6 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		authGroup := e.Group("/api/auth", auth.AuthMiddleware(db))
 		authGroup.POST("/logout", ah.HandleLogout)
 		authGroup.GET("/me", ah.HandleGetMe)
-		authGroup.PUT("/me", ah.HandleUpdateMe)
 		authGroup.PUT("/change-password", ah.HandleChangePassword)
 		authGroup.GET("/username/check/:username", ah.HandleCheckUsername)
 		authGroup.PUT("/username", ah.HandleChangeUsername)

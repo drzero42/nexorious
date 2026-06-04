@@ -6,7 +6,6 @@ import { SteamConnectionCard } from './steam-connection-card';
 // Mock hooks
 const mockVerifyMutateAsync = vi.fn();
 const mockDisconnectMutateAsync = vi.fn();
-const mockUpdateProfileMutateAsync = vi.fn();
 
 vi.mock('@/hooks', () => ({
   useVerifySteamCredentials: vi.fn(() => ({
@@ -15,13 +14,6 @@ vi.mock('@/hooks', () => ({
   })),
   useDisconnectSteam: vi.fn(() => ({
     mutateAsync: mockDisconnectMutateAsync,
-    isPending: false,
-  })),
-}));
-
-vi.mock('@/hooks/use-auth', () => ({
-  useUpdateProfile: vi.fn(() => ({
-    mutateAsync: mockUpdateProfileMutateAsync,
     isPending: false,
   })),
 }));
@@ -236,7 +228,6 @@ describe('SteamConnectionCard', () => {
         valid: true,
         steamUsername: 'TestUser',
       });
-      mockUpdateProfileMutateAsync.mockResolvedValue({});
 
       render(
         <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
@@ -265,7 +256,6 @@ describe('SteamConnectionCard', () => {
         valid: true,
         steamUsername: 'TestUser',
       });
-      mockUpdateProfileMutateAsync.mockResolvedValue({});
 
       render(
         <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
@@ -291,13 +281,12 @@ describe('SteamConnectionCard', () => {
   });
 
   describe('form submission', () => {
-    it('calls verify and updateProfile on successful form submission', async () => {
+    it('verifies credentials and signals connection change on success', async () => {
       const user = userEvent.setup({ delay: null });
       mockVerifyMutateAsync.mockResolvedValue({
         valid: true,
         steamUsername: 'TestUser',
       });
-      mockUpdateProfileMutateAsync.mockResolvedValue({});
 
       render(
         <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
@@ -313,16 +302,9 @@ describe('SteamConnectionCard', () => {
       await user.click(submitButton);
 
       await waitFor(() => {
-        expect(mockVerifyMutateAsync).toHaveBeenCalled();
-        expect(mockUpdateProfileMutateAsync).toHaveBeenCalledWith({
-          preferences: {
-            steam: {
-              steam_id: '76561198012345678',
-              web_api_key: 'ABCD1234ABCD1234ABCD1234ABCD1234',
-              is_verified: true,
-              username: 'TestUser',
-            },
-          },
+        expect(mockVerifyMutateAsync).toHaveBeenCalledWith({
+          steamId: '76561198012345678',
+          webApiKey: 'ABCD1234ABCD1234ABCD1234ABCD1234',
         });
         expect(mockOnConnectionChange).toHaveBeenCalled();
       });
@@ -349,7 +331,6 @@ describe('SteamConnectionCard', () => {
       await user.click(submitButton);
 
       await waitFor(() => {
-        expect(mockUpdateProfileMutateAsync).not.toHaveBeenCalled();
         expect(mockOnConnectionChange).not.toHaveBeenCalled();
       });
     });
@@ -375,7 +356,6 @@ describe('SteamConnectionCard', () => {
       await user.click(submitButton);
 
       await waitFor(() => {
-        expect(mockUpdateProfileMutateAsync).not.toHaveBeenCalled();
         expect(mockOnConnectionChange).not.toHaveBeenCalled();
       });
     });

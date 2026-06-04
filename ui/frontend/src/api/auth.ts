@@ -4,7 +4,6 @@ interface UserApiResponse {
   id: string;
   username: string;
   is_admin: boolean;
-  preferences?: Record<string, unknown>;
 }
 
 interface UsernameAvailabilityResponse {
@@ -17,7 +16,6 @@ function transformUser(apiUser: UserApiResponse): User {
     id: apiUser.id,
     username: apiUser.username,
     isAdmin: apiUser.is_admin,
-    preferences: apiUser.preferences,
   };
 }
 
@@ -55,11 +53,6 @@ export async function checkUsernameAvailability(
   return api.get<UsernameAvailabilityResponse>(
     `/auth/username/check/${encodeURIComponent(username)}`,
   );
-}
-
-export async function updatePreferences(preferences: Record<string, unknown>): Promise<User> {
-  const response = await api.put<UserApiResponse>('/auth/me', { preferences });
-  return transformUser(response);
 }
 
 export interface ApiKey {
