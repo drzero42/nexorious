@@ -275,7 +275,6 @@ interface GOGConnectApiRequest {
 
 interface GOGConnectApiResponse {
   username: string;
-  user_id: string;
 }
 
 interface GOGConnectionApiResponse {
@@ -295,7 +294,6 @@ export async function connectGOG(authCode: string): Promise<GOGConnectResponse> 
   } as GOGConnectApiRequest);
   return {
     username: response.username,
-    userId: response.user_id,
   };
 }
 

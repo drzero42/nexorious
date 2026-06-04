@@ -71,9 +71,7 @@ type GOGClient interface {
 
 // GOGTokenResponse holds the tokens and identity returned by GOG auth.
 type GOGTokenResponse struct {
-	AccessToken  string
 	RefreshToken string
-	UserID       string
 	Username     string
 }
 
@@ -1441,9 +1439,7 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 	}
 
 	creds := map[string]string{
-		"access_token":  tok.AccessToken,
 		"refresh_token": tok.RefreshToken,
-		"user_id":       tok.UserID,
 		"username":      tok.Username,
 	}
 	if err := h.persistStorefrontCredentials(context.Background(), userID, "gog", creds); err != nil {
@@ -1453,7 +1449,6 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]string{
 		"username": tok.Username,
-		"user_id":  tok.UserID,
 	})
 }
 

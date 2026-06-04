@@ -453,9 +453,7 @@ func (a *gogClientAdapter) ExchangeCode(ctx context.Context, code string) (*GOGT
 		return nil, err
 	}
 	return &GOGTokenResponse{
-		AccessToken:  tok.AccessToken,
 		RefreshToken: tok.RefreshToken,
-		UserID:       tok.UserID,
 		Username:     tok.Username,
 	}, nil
 }
