@@ -2224,9 +2224,7 @@ func TestGOGConnect_Success(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{
 		token: &api.GOGTokenResponse{
-			AccessToken:  "acc",
 			RefreshToken: "ref",
-			UserID:       "u1",
 			Username:     "goguser",
 		},
 	}
@@ -2248,9 +2246,7 @@ func TestGOGConnect_FullURL(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{
 		token: &api.GOGTokenResponse{
-			AccessToken:  "acc",
 			RefreshToken: "ref",
-			UserID:       "u1",
 			Username:     "goguser",
 		},
 	}
@@ -2306,7 +2302,7 @@ func TestGOGConnection_NotConnected(t *testing.T) {
 func TestGOGConnection_Connected(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{
-		token: &api.GOGTokenResponse{Username: "goguser", UserID: "u1", AccessToken: "a", RefreshToken: "r"},
+		token: &api.GOGTokenResponse{Username: "goguser", RefreshToken: "r"},
 	}
 	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, app, "gog-status-conn")

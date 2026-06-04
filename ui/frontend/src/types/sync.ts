@@ -151,7 +151,6 @@ export interface EpicConnectionResponse {
 // GOG Auth Types
 export interface GOGConnectResponse {
   username: string;
-  userId: string;
 }
 
 export interface GOGConnectionResponse {

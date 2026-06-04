@@ -473,16 +473,13 @@ func buildAdapterFactory(
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
-				AccessToken  string `json:"access_token"`
 				RefreshToken string `json:"refresh_token"`
-				UserID       string `json:"user_id"`
 				Username     string `json:"username"`
 			}
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
-			onNewTokens := func(accessToken, refreshToken string) error {
-				creds.AccessToken = accessToken
+			onNewTokens := func(refreshToken string) error {
 				creds.RefreshToken = refreshToken
 				newCredsJSON, merr := json.Marshal(creds) //nolint:gosec // marshaled only to encrypt immediately below before storage; never logged or returned
 				if merr != nil {
