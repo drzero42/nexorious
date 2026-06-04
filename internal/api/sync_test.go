@@ -46,7 +46,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSN
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -67,12 +67,12 @@ func TestSyncConfig_ListDefaults(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["total"].(float64) != 4 {
-		t.Fatalf("expected total=4, got %v", resp["total"])
+	if resp["total"].(float64) != 5 {
+		t.Fatalf("expected total=5, got %v", resp["total"])
 	}
 	configs := resp["configs"].([]any)
-	if len(configs) != 4 {
-		t.Fatalf("expected 4 configs, got %d", len(configs))
+	if len(configs) != 5 {
+		t.Fatalf("expected 5 configs, got %d", len(configs))
 	}
 	for _, c := range configs {
 		cfg := c.(map[string]any)
@@ -678,8 +678,8 @@ func TestSyncListConfig_AfterPut(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["total"].(float64) != 4 {
-		t.Fatalf("expected total=4, got %v", resp["total"])
+	if resp["total"].(float64) != 5 {
+		t.Fatalf("expected total=5, got %v", resp["total"])
 	}
 	configs := resp["configs"].([]any)
 	// Find steam config and verify it has frequency=daily.
@@ -1912,7 +1912,7 @@ func newSyncTestAppWithEpic(t *testing.T, db *bun.DB, steam api.SteamClient, psn
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, epic, (api.GOGClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, epic, (api.GOGClient)(nil), (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1945,7 +1945,7 @@ func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClie
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1974,7 +1974,7 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), gog)
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), gog, (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e

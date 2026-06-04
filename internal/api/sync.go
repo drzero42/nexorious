@@ -75,16 +75,22 @@ type GOGTokenResponse struct {
 	Username     string
 }
 
+// HumbleClient abstracts the Humble Bundle credential-verification call.
+type HumbleClient interface {
+	Verify(ctx context.Context, sessionCookie string) error
+}
+
 var (
-	ErrInvalidNPSSOToken = errors.New("invalid npsso token")
-	ErrSteamRateLimited  = errors.New("steam rate limited")
-	ErrSteamNetwork      = errors.New("steam network error")
+	ErrInvalidNPSSOToken   = errors.New("invalid npsso token")
+	ErrSteamRateLimited    = errors.New("steam rate limited")
+	ErrSteamNetwork        = errors.New("steam network error")
+	ErrInvalidHumbleCookie = errors.New("invalid humble session cookie")
 )
 
 // supportedStorefronts is the ordered list of storefront slugs the sync API
 // accepts. validStorefronts is its set form, derived from the same source so the
 // two can never drift apart.
-var supportedStorefronts = []string{"steam", "psn", "epic", "gog"}
+var supportedStorefronts = []string{"steam", "psn", "epic", "gog", "humble-bundle"}
 
 var validStorefronts = func() map[string]bool {
 	m := make(map[string]bool, len(supportedStorefronts))
@@ -106,6 +112,8 @@ func storefrontDisplayName(sf string) string {
 		return "Epic"
 	case "gog":
 		return "GOG"
+	case "humble-bundle":
+		return "Humble Bundle"
 	default:
 		return sf
 	}
@@ -190,6 +198,16 @@ type psnStatusResponse struct {
 	OnlineID         string `json:"online_id,omitempty"`
 }
 
+type humbleConnectResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type humbleStatusResponse struct {
+	IsConfigured     bool `json:"is_configured"`
+	CredentialsError bool `json:"credentials_error,omitempty"`
+}
+
 type steamConnectionResponse struct {
 	Connected        bool   `json:"connected"`
 	CredentialsError bool   `json:"credentials_error,omitempty"`
@@ -198,18 +216,19 @@ type steamConnectionResponse struct {
 
 // SyncHandler handles sync configuration, trigger, and status endpoints.
 type SyncHandler struct {
-	db          *bun.DB
-	encrypter   *crypto.Encrypter
-	riverClient *river.Client[pgx.Tx]
-	steamClient SteamClient
-	psnClient   PSNClient
-	epicClient  EpicClient
-	gogClient   GOGClient
+	db           *bun.DB
+	encrypter    *crypto.Encrypter
+	riverClient  *river.Client[pgx.Tx]
+	steamClient  SteamClient
+	psnClient    PSNClient
+	epicClient   EpicClient
+	gogClient    GOGClient
+	humbleClient HumbleClient
 }
 
 // NewSyncHandler constructs a SyncHandler.
-func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient, epic EpicClient, gog GOGClient) *SyncHandler {
-	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, psnClient: psn, epicClient: epic, gogClient: gog}
+func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient, epic EpicClient, gog GOGClient, humble HumbleClient) *SyncHandler {
+	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, psnClient: psn, epicClient: epic, gogClient: gog, humbleClient: humble}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
@@ -227,6 +246,9 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/gog/connect", h.HandleGOGConnect)
 	g.GET("/gog/connection", h.HandleGetGOGConnection)
 	g.DELETE("/gog/connection", h.HandleGOGDisconnect)
+	g.PUT("/humble-bundle/connection", h.HandleHumbleConnect)
+	g.GET("/humble-bundle/connection", h.HandleGetHumbleConnection)
+	g.DELETE("/humble-bundle/connection", h.HandleHumbleDisconnect)
 	g.GET("/ignored", h.HandleListIgnored)
 	g.POST("/ignored/:id", h.HandleSkipGame)
 	g.DELETE("/ignored/:id", h.HandleUnskipGame)
@@ -736,6 +758,57 @@ func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
 
 func (h *SyncHandler) HandlePSNDisconnect(c *echo.Context) error {
 	return h.disconnectStorefront(c, "psn")
+}
+
+// HandleHumbleConnect is PUT /sync/humble-bundle/connection: it verifies the
+// pasted session cookie against the Humble order API and, on success, stores it
+// (create-or-replace). A rejected cookie returns 400 before anything is stored.
+func (h *SyncHandler) HandleHumbleConnect(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	var req struct {
+		SessionCookie string `json:"session_cookie"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid body")
+	}
+	req.SessionCookie = strings.TrimSpace(req.SessionCookie)
+	if req.SessionCookie == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "session_cookie is required")
+	}
+
+	if err := h.humbleClient.Verify(c.Request().Context(), req.SessionCookie); err != nil {
+		if errors.Is(err, ErrInvalidHumbleCookie) {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid_session_cookie")
+		}
+		slog.Error("humble: verify failed", "user_id", userID, "err", err)
+		return echo.NewHTTPError(http.StatusBadGateway, "could not reach Humble Bundle")
+	}
+
+	creds := map[string]any{"session_cookie": req.SessionCookie}
+	if err := h.persistStorefrontCredentials(context.Background(), userID, "humble-bundle", creds); err != nil {
+		slog.Error("humble: persist storefront credentials failed", "user_id", userID, "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Humble Bundle connection")
+	}
+
+	return c.JSON(http.StatusOK, humbleConnectResponse{Success: true, Message: "Humble Bundle connected successfully"})
+}
+
+// HandleGetHumbleConnection is GET /sync/humble-bundle/connection.
+func (h *SyncHandler) HandleGetHumbleConnection(c *echo.Context) error {
+	return h.serveConnectionStatus(c, "humble-bundle",
+		humbleStatusResponse{},
+		humbleStatusResponse{IsConfigured: true, CredentialsError: true},
+		func(_ []byte, credentialsError bool) (any, error) {
+			return humbleStatusResponse{IsConfigured: true, CredentialsError: credentialsError}, nil
+		})
+}
+
+// HandleHumbleDisconnect is DELETE /sync/humble-bundle/connection.
+func (h *SyncHandler) HandleHumbleDisconnect(c *echo.Context) error {
+	return h.disconnectStorefront(c, "humble-bundle")
 }
 
 // HandleEpicConnect exchanges an Epic auth code via legendary and stores the
