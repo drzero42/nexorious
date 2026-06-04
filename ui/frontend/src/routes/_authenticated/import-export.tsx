@@ -10,6 +10,7 @@ import {
   useJobCompletionEffect,
   useCancelJob,
   useDownloadExport,
+  useRetryFailedItems,
   jobsKeys,
 } from '@/hooks';
 import {
@@ -23,7 +24,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/jobs';
+import { JobProgressCard, RecentActivity } from '@/components/jobs';
 import {
   AlertCircle,
   Upload,
@@ -211,6 +212,7 @@ function ImportExportPage() {
   const { mutateAsync: exportCollection } = useExportCollection();
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
   const { mutate: downloadExport, isPending: isDownloading } = useDownloadExport();
+  const { mutateAsync: retryFailedItems, isPending: isRetrying } = useRetryFailedItems();
 
   const queryClient = useQueryClient();
 
@@ -342,6 +344,17 @@ function ImportExportPage() {
     }
   };
 
+  const handleRetryFailed = async () => {
+    if (!activeJob) return;
+
+    try {
+      const result = await retryFailedItems(activeJob.id);
+      toast.success(result.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to retry items');
+    }
+  };
+
   return (
     <div>
       {/* Header */}
@@ -364,17 +377,26 @@ function ImportExportPage() {
         <section className="mb-8 space-y-4">
           <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
 
-          {activeJob.progress && (
-            <JobItemsDetails
-              jobId={activeJob.id}
-              progress={activeJob.progress}
-              isTerminal={activeJob.isTerminal}
-            />
-          )}
-
           {/* Actions for completed jobs */}
           {activeJob.isTerminal && (
             <div className="flex gap-3">
+              {/* Retry Failed — only when the finished job has failed items */}
+              {(activeJob.progress?.failed ?? 0) > 0 && (
+                <Button onClick={handleRetryFailed} disabled={isRetrying}>
+                  {isRetrying ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Retrying...
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Retry Failed
+                    </>
+                  )}
+                </Button>
+              )}
+
               {/* Download button for completed exports */}
               {isActiveJobCompletedExport && (
                 <Button
