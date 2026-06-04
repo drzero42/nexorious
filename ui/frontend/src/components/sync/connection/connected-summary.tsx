@@ -10,7 +10,7 @@ export function ConnectedSummary({ name }: ConnectedSummaryProps) {
     <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-4">
       <Check className="h-5 w-5 text-green-600" />
       <div>
-        <p className="font-medium">Connected as {name}</p>
+        <p className="font-medium">{name ? `Connected as ${name}` : 'Connected'}</p>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import {
   usePSNStatus,
   useEpicConnection,
   useGOGConnection,
+  useHumbleStatus,
 } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardHeader } from '@/components/ui/card';
@@ -68,6 +69,9 @@ function SyncServiceCardWithStatus({
   const { data: gogConnection } = useGOGConnection({
     enabled: config.storefront === SyncStorefront.GOG,
   });
+  const { data: humbleStatus } = useHumbleStatus({
+    enabled: config.storefront === SyncStorefront.HUMBLE,
+  });
 
   const pendingReviewCount = reviewData?.countsBySource?.[config.storefront] ?? 0;
 
@@ -75,7 +79,8 @@ function SyncServiceCardWithStatus({
     (config.storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.PSN && (psnStatus?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
-    (config.storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false));
+    (config.storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
+    (config.storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
 
   const handleTriggerSync = async () => {
     await onTriggerSync(config.storefront);

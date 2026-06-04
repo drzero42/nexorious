@@ -14,6 +14,8 @@ import type {
   GOGConnectionResponse,
   PSNConfigureResponse,
   PSNStatusResponse,
+  HumbleConnectResponse,
+  HumbleStatusResponse,
   ExternalGame,
 } from '@/types';
 
@@ -363,6 +365,61 @@ export async function getPSNStatus(): Promise<PSNStatusResponse> {
     onlineId: response.online_id,
     credentialsError: response.credentials_error ?? false,
   };
+}
+
+// ============================================================================
+// Humble Bundle API Types
+// ============================================================================
+
+interface HumbleConnectApiRequest {
+  session_cookie: string;
+}
+
+interface HumbleConnectApiResponse {
+  success: boolean;
+  message: string;
+}
+
+interface HumbleStatusApiResponse {
+  is_configured: boolean;
+  credentials_error?: boolean;
+}
+
+// ============================================================================
+// Humble Bundle Functions
+// ============================================================================
+
+/**
+ * Connect Humble Bundle by submitting and verifying a session cookie.
+ */
+export async function connectHumble(sessionCookie: string): Promise<HumbleConnectResponse> {
+  const response = await api.put<HumbleConnectApiResponse>('/sync/humble-bundle/connection', {
+    session_cookie: sessionCookie,
+  } as HumbleConnectApiRequest);
+
+  return {
+    valid: response.success,
+    error: response.success ? null : response.message,
+  };
+}
+
+/**
+ * Get Humble Bundle connection status.
+ */
+export async function getHumbleStatus(): Promise<HumbleStatusResponse> {
+  const response = await api.get<HumbleStatusApiResponse>('/sync/humble-bundle/connection');
+
+  return {
+    configured: response.is_configured,
+    credentialsError: response.credentials_error ?? false,
+  };
+}
+
+/**
+ * Disconnect Humble Bundle integration.
+ */
+export async function disconnectHumble(): Promise<void> {
+  await api.delete('/sync/humble-bundle/connection');
 }
 
 /**
