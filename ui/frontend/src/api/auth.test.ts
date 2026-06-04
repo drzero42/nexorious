@@ -28,7 +28,6 @@ describe('auth.ts', () => {
             id: 'user-123',
             username: 'testuser',
             is_admin: false,
-            preferences: null,
           });
         }),
       );
@@ -39,7 +38,6 @@ describe('auth.ts', () => {
         id: 'user-123',
         username: 'testuser',
         isAdmin: false,
-        preferences: null,
       });
     });
 
@@ -77,7 +75,6 @@ describe('auth.ts', () => {
             id: 'user-123',
             username: 'testuser',
             is_admin: true,
-            preferences: { theme: 'dark' },
           });
         }),
       );
@@ -88,7 +85,6 @@ describe('auth.ts', () => {
         id: 'user-123',
         username: 'testuser',
         isAdmin: true,
-        preferences: { theme: 'dark' },
       });
     });
 
@@ -129,7 +125,6 @@ describe('auth.ts', () => {
         id: 'user-123',
         username: 'newusername',
         isAdmin: false,
-        preferences: undefined,
       });
     });
 

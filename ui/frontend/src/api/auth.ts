@@ -4,7 +4,6 @@ interface UserApiResponse {
   id: string;
   username: string;
   is_admin: boolean;
-  preferences?: Record<string, unknown>;
 }
 
 interface UsernameAvailabilityResponse {
@@ -17,7 +16,6 @@ function transformUser(apiUser: UserApiResponse): User {
     id: apiUser.id,
     username: apiUser.username,
     isAdmin: apiUser.is_admin,
-    preferences: apiUser.preferences,
   };
 }
 

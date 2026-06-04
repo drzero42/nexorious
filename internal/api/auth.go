@@ -240,42 +240,6 @@ func (h *AuthHandler) HandleGetMe(c *echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-type updateMeRequest struct {
-	Preferences json.RawMessage `json:"preferences"`
-}
-
-// HandleUpdateMe handles PUT /api/auth/me.
-func (h *AuthHandler) HandleUpdateMe(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-	var req updateMeRequest
-	if err := c.Bind(&req); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
-	}
-	if req.Preferences == nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "preferences must be a JSON object")
-	}
-	var obj map[string]any
-	if err := json.Unmarshal(req.Preferences, &obj); err != nil || obj == nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "preferences must be a JSON object")
-	}
-	if _, err := h.db.ExecContext(context.Background(),
-		"UPDATE users SET preferences = ?, updated_at = NOW() WHERE id = ?",
-		string(req.Preferences), userID,
-	); err != nil {
-		slog.Error("update me: update preferences", "err", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
-	}
-	resp, err := loadMeResponse(context.Background(), h.db, userID)
-	if err != nil {
-		slog.Error("update me: re-query user", "err", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
-	}
-	return c.JSON(http.StatusOK, resp)
-}
-
 type usernameAvailabilityResponse struct {
 	Available bool   `json:"available"`
 	Username  string `json:"username"`
