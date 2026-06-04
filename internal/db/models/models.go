@@ -41,7 +41,6 @@ type User struct {
 	PasswordHash string    `bun:"password_hash,notnull" json:"password_hash"`
 	IsActive     bool      `bun:"is_active,notnull"     json:"is_active"`
 	IsAdmin      bool      `bun:"is_admin,notnull"      json:"is_admin"`
-	Preferences  string    `bun:"preferences,notnull"   json:"preferences"`
 	CreatedAt    time.Time `bun:"created_at,notnull"    json:"created_at"`
 	UpdatedAt    time.Time `bun:"updated_at,notnull"    json:"updated_at"`
 }

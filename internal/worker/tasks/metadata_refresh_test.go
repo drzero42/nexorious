@@ -31,8 +31,8 @@ func insertMetaRefreshAdminUser(t *testing.T) string {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("password"), 4)
 	id := uuid.NewString()
 	_, err := testDB.NewRaw(
-		`INSERT INTO users (id, username, password_hash, is_active, is_admin, preferences, created_at, updated_at)
-		 VALUES (?, 'admin', ?, true, true, '{}', now(), now())`, id, string(hash),
+		`INSERT INTO users (id, username, password_hash, is_active, is_admin, created_at, updated_at)
+		 VALUES (?, 'admin', ?, true, true, now(), now())`, id, string(hash),
 	).Exec(ctx)
 	if err != nil {
 		t.Fatalf("insert admin user: %v", err)
