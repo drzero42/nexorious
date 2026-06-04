@@ -184,7 +184,6 @@ type psnConfigureResponse struct {
 	Success   bool   `json:"success"`
 	OnlineID  string `json:"online_id"`
 	AccountID string `json:"account_id"`
-	Region    string `json:"region"`
 	Message   string `json:"message"`
 }
 
@@ -696,7 +695,6 @@ func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
 		Success:   true,
 		OnlineID:  info.OnlineID,
 		AccountID: info.AccountID,
-		Region:    info.Region,
 		Message:   "PSN configured successfully",
 	})
 }

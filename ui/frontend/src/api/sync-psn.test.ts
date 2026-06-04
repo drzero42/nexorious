@@ -21,7 +21,6 @@ describe('PSN API', () => {
         success: true,
         online_id: 'TestPSNUser',
         account_id: 'psn-account-123',
-        region: 'US',
         message: 'PSN configured successfully',
       };
 
@@ -45,7 +44,6 @@ describe('PSN API', () => {
         success: false,
         online_id: null,
         account_id: null,
-        region: null,
         message: 'Invalid NPSSO token',
       };
 
@@ -66,7 +64,6 @@ describe('PSN API', () => {
         success: true,
         online_id: 'TestUser',
         account_id: '12345',
-        region: 'EU',
         message: 'Success',
       };
 

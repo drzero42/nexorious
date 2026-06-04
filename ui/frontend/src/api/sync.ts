@@ -325,7 +325,6 @@ interface PSNConfigureApiResponse {
   success: boolean;
   online_id: string | null;
   account_id: string | null;
-  region: string | null;
   message: string;
 }
 
