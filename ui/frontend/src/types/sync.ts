@@ -144,7 +144,6 @@ export interface EpicConnectionResponse {
   disabled: boolean;
   credentialsError?: boolean;
   displayName?: string;
-  accountId?: string;
   /** Machine-readable cause when disabled=true, e.g. "legendary_not_configured". */
   reason?: string;
 }
@@ -159,7 +158,6 @@ export interface GOGConnectionResponse {
   connected: boolean;
   credentialsError?: boolean;
   username?: string;
-  userId?: string;
   authUrl?: string;
 }
 
@@ -173,7 +171,6 @@ export interface PSNConfigureResponse {
 
 export interface PSNStatusResponse {
   configured: boolean;
-  accountId: string | null;
   onlineId: string | null;
   credentialsError: boolean;
 }
@@ -182,7 +179,6 @@ export interface PSNStatusResponse {
 export interface SteamConnectionData {
   connected: boolean;
   credentialsError: boolean;
-  steamId: string;
   username: string;
 }
 

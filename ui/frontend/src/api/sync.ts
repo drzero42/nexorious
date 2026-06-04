@@ -171,7 +171,6 @@ interface SteamVerifyApiResponse {
 interface SteamConnectionApiResponse {
   connected: boolean;
   credentials_error?: boolean;
-  steam_id?: string;
   username?: string;
 }
 
@@ -193,7 +192,6 @@ interface EpicConnectionApiResponse {
   disabled: boolean;
   credentials_error?: boolean;
   display_name?: string;
-  account_id?: string;
   reason?: string;
 }
 
@@ -256,7 +254,6 @@ export async function getEpicConnection(): Promise<EpicConnectionResponse> {
     disabled: response.disabled,
     credentialsError: response.credentials_error ?? false,
     displayName: response.display_name,
-    accountId: response.account_id,
     reason: response.reason,
   };
 }
@@ -285,7 +282,6 @@ interface GOGConnectionApiResponse {
   connected: boolean;
   credentials_error?: boolean;
   username?: string;
-  user_id?: string;
   auth_url?: string;
 }
 
@@ -309,7 +305,6 @@ export async function getGOGConnection(): Promise<GOGConnectionResponse> {
     connected: response.connected,
     credentialsError: response.credentials_error ?? false,
     username: response.username,
-    userId: response.user_id,
     authUrl: response.auth_url,
   };
 }
@@ -338,7 +333,6 @@ interface PSNStatusApiResponse {
   is_configured: boolean;
   credentials_error?: boolean;
   online_id: string | null;
-  account_id: string | null;
   region: string | null;
 }
 
@@ -370,7 +364,6 @@ export async function getPSNStatus(): Promise<PSNStatusResponse> {
 
   return {
     configured: response.is_configured,
-    accountId: response.account_id,
     onlineId: response.online_id,
     credentialsError: response.credentials_error ?? false,
   };
@@ -384,7 +377,6 @@ export async function getSteamConnection(): Promise<SteamConnectionData> {
   return {
     connected: response.connected,
     credentialsError: response.credentials_error ?? false,
-    steamId: response.steam_id ?? '',
     username: response.username ?? '',
   };
 }

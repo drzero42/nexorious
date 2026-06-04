@@ -350,7 +350,6 @@ describe('use-sync hooks', () => {
         connected: true,
         disabled: false,
         displayName: 'EpicUser',
-        accountId: 'acct-abc',
       });
 
       const { result } = renderHook(() => useEpicConnection(), {
@@ -365,7 +364,6 @@ describe('use-sync hooks', () => {
         connected: true,
         disabled: false,
         displayName: 'EpicUser',
-        accountId: 'acct-abc',
       });
 
       mockGetEpicConnection.mockRestore();
