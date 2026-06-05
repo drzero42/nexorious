@@ -383,3 +383,29 @@ func TestGame_JSONRoundTrip(t *testing.T) {
 		t.Errorf("round-trip platform = %q", back.Platforms[0].Platform)
 	}
 }
+
+func TestParseDuration(t *testing.T) {
+	cases := []struct {
+		in   string
+		want *float64
+	}{
+		{"148:00", ptrF(148)},
+		{"10:30", ptrF(10.5)},
+		{" 5 : 30 ", ptrF(5.5)},
+		{"", nil},
+		{"abc", nil},
+		{"1:2:3", nil},
+		{"0:00", nil},
+	}
+	for _, c := range cases {
+		got := parseDuration(c.in)
+		switch {
+		case c.want == nil && got != nil:
+			t.Errorf("parseDuration(%q) = %v, want nil", c.in, *got)
+		case c.want != nil && (got == nil || *got != *c.want):
+			t.Errorf("parseDuration(%q) = %v, want %v", c.in, got, *c.want)
+		}
+	}
+}
+
+func ptrF(f float64) *float64 { return &f }
