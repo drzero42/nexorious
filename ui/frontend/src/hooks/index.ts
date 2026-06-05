@@ -69,6 +69,9 @@ export {
   useConfigurePSN,
   usePSNStatus,
   useDisconnectPSN,
+  useConnectHumble,
+  useHumbleStatus,
+  useDisconnectHumble,
   useResetSyncData,
 } from './use-sync';
 
@@ -76,6 +79,7 @@ export {
 export {
   importExportKeys,
   useImportNexorious,
+  useImportDarkadia,
   useExportCollection,
   useDownloadExport,
 } from './use-import-export';
@@ -98,6 +102,8 @@ export {
   useRecentJobs,
   useRetryFailedItems,
   useRetryJobItem,
+  useResolveJobItem,
+  useSkipJobItem,
 } from './use-jobs';
 
 // Job completion effect hook

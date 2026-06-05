@@ -104,3 +104,97 @@ func TestRetryItem_NotFailed(t *testing.T) {
 		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+// ─── Resolve / Skip (import-scoped) ───────────────────────────────────────────
+
+func TestResolveItem_ImportScopedRejectsSyncJob(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "ji-resolve-sync")
+
+	insertJob(t, testDB, "job-rs", userID, "sync", "steam", "processing")
+	insertJobItem(t, testDB, "rs-1", "job-rs", userID, "k", "Sync Game", "pending_review")
+
+	rec := postJSONAuth(t, e, "/api/job-items/rs-1/resolve", map[string]any{"igdb_id": 1}, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 (sync rejected), got %d: %s", rec.Code, rec.Body.String())
+	}
+	var status string
+	if err := testDB.QueryRowContext(context.Background(),
+		"SELECT status FROM job_items WHERE id = 'rs-1'").Scan(&status); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if status != "pending_review" {
+		t.Fatalf("sync item should be unchanged, got status=%s", status)
+	}
+}
+
+func TestResolveItem_SetsResolvedAndMovesOutOfReview(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "ji-resolve-dk")
+
+	insertJob(t, testDB, "job-rd", userID, "import", "darkadia", "processing")
+	insertJobItem(t, testDB, "rd-1", "job-rd", userID, "k", "Darkadia Game", "pending_review")
+
+	rec := postJSONAuth(t, e, "/api/job-items/rd-1/resolve", map[string]any{"igdb_id": 42}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resolved int
+	var status string
+	if err := testDB.QueryRowContext(context.Background(),
+		"SELECT resolved_igdb_id, status FROM job_items WHERE id = 'rd-1'").Scan(&resolved, &status); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if resolved != 42 {
+		t.Fatalf("expected resolved_igdb_id=42, got %d", resolved)
+	}
+	if status == "pending_review" {
+		t.Fatalf("expected item moved out of pending_review, got %s", status)
+	}
+}
+
+func TestSkipItem_ImportScoped(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "ji-skip-dk")
+
+	insertJob(t, testDB, "job-sd", userID, "import", "darkadia", "processing")
+	insertJobItem(t, testDB, "sd-1", "job-sd", userID, "k", "Skip Game", "pending_review")
+
+	rec := postJSONAuth(t, e, "/api/job-items/sd-1/skip", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var status string
+	if err := testDB.QueryRowContext(context.Background(),
+		"SELECT status FROM job_items WHERE id = 'sd-1'").Scan(&status); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if status != "skipped" {
+		t.Fatalf("expected status=skipped, got %s", status)
+	}
+}
+
+func TestSkipItem_RejectsSyncJob(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "ji-skip-sync")
+
+	insertJob(t, testDB, "job-ss", userID, "sync", "psn", "processing")
+	insertJobItem(t, testDB, "ss-1", "job-ss", userID, "k", "Sync Game", "pending_review")
+
+	rec := postJSONAuth(t, e, "/api/job-items/ss-1/skip", nil, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 (sync rejected), got %d: %s", rec.Code, rec.Body.String())
+	}
+	var status string
+	if err := testDB.QueryRowContext(context.Background(),
+		"SELECT status FROM job_items WHERE id = 'ss-1'").Scan(&status); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if status != "pending_review" {
+		t.Fatalf("sync item should be unchanged, got status=%s", status)
+	}
+}

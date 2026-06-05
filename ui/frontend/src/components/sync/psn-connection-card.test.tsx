@@ -57,14 +57,12 @@ describe('PSNConnectionCard', () => {
         <PSNConnectionCard
           isConfigured={true}
           credentialsError={false}
-          accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
         />,
       );
 
       expect(screen.getByText('Connected as TestPSNUser')).toBeInTheDocument();
-      expect(screen.getByText('test-account-id')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
       expect(screen.getByText('Your PlayStation Network account is connected')).toBeInTheDocument();
       expect(screen.queryByLabelText('NPSSO Token')).not.toBeInTheDocument();
@@ -77,7 +75,6 @@ describe('PSNConnectionCard', () => {
         <PSNConnectionCard
           isConfigured={true}
           credentialsError={true}
-          accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
         />,
@@ -91,7 +88,6 @@ describe('PSNConnectionCard', () => {
         <PSNConnectionCard
           isConfigured={true}
           credentialsError={true}
-          accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
         />,
@@ -273,7 +269,6 @@ describe('PSNConnectionCard', () => {
         <PSNConnectionCard
           isConfigured={true}
           credentialsError={false}
-          accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
         />,
@@ -298,7 +293,6 @@ describe('PSNConnectionCard', () => {
         <PSNConnectionCard
           isConfigured={true}
           credentialsError={false}
-          accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
         />,
@@ -329,7 +323,6 @@ describe('PSNConnectionCard', () => {
         <PSNConnectionCard
           isConfigured={true}
           credentialsError={false}
-          accountId="test-account-id"
           onlineId="TestPSNUser"
           onConnectionChange={mockOnConnectionChange}
         />,

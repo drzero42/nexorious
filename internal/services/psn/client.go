@@ -20,7 +20,6 @@ import (
 type PSNAccountInfo struct {
 	OnlineID  string
 	AccountID string
-	Region    string
 }
 
 // ErrInvalidNPSSOToken is returned when authentication with the NPSSO token fails.
@@ -87,17 +86,14 @@ func (c *Client) GetAccountInfo(ctx context.Context, npssoToken string) (*PSNAcc
 	}
 	profile, err := fetchMyProfile(ctx, accessToken)
 	if err != nil {
-		// If we can't fetch the profile, still return what we have from auth.
-		// This can happen if the profile API changes; return a partial result.
-		return &PSNAccountInfo{
-			Region: psnClient.Region(),
-		}, nil
+		// If we can't fetch the profile, auth itself still succeeded.
+		// This can happen if the profile API changes; return an empty result.
+		return &PSNAccountInfo{}, nil
 	}
 
 	return &PSNAccountInfo{
 		OnlineID:  profile.OnlineID,
 		AccountID: profile.NpID,
-		Region:    psnClient.Region(),
 	}, nil
 }
 

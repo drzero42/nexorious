@@ -3,4 +3,5 @@ export { SteamConnectionCard } from './steam-connection-card';
 export { EpicConnectionCard } from './epic-connection-card';
 export { GOGConnectionCard } from './gog-connection-card';
 export { PSNConnectionCard } from './psn-connection-card';
+export { HumbleConnectionCard } from './humble-connection-card';
 export { ExternalGamesSection } from './external-games-section';

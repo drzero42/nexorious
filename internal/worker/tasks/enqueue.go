@@ -51,10 +51,16 @@ func EnqueueOrFail(
 	return nil
 }
 
-// ArgsForJobType returns the appropriate River JobArgs for the given job_type
-// and job_item_id. Used by callers (the HTTP retry handlers, the orphan
-// rescuer) that switch on job_type at runtime.
-func ArgsForJobType(jobType, jobItemID string) (river.JobArgs, error) {
+// ArgsForJobType returns the appropriate River JobArgs for the given job_type,
+// source, and job_item_id. Used by callers (the HTTP retry handlers, the orphan
+// rescuer) that switch on job_type at runtime. The source disambiguates imports
+// that share the "import" job_type but need a different task chain (Darkadia).
+func ArgsForJobType(jobType, source, jobItemID string) (river.JobArgs, error) {
+	// Darkadia imports run a bespoke match→finalize chain; a retried item
+	// re-enters at the match stage regardless of the (shared) "import" job_type.
+	if source == models.JobSourceDarkadia {
+		return DarkadiaMatchArgs{JobItemID: jobItemID}, nil
+	}
 	switch jobType {
 	case models.JobTypeSync:
 		return IGDBMatchArgs{JobItemID: jobItemID}, nil
@@ -64,6 +70,20 @@ func ArgsForJobType(jobType, jobItemID string) (river.JobArgs, error) {
 		return MetadataRefreshItemArgs{JobItemID: jobItemID}, nil
 	default:
 		return nil, fmt.Errorf("unknown job_type %q", jobType)
+	}
+}
+
+// FinalizeArgsForSource returns the finalize-stage River args for an import
+// source whose job_items are resolved interactively (the manual-match flow).
+// Only sources with a match→finalize chain are supported — currently Darkadia.
+// Used by the generic job-item resolve endpoint so the finalize task is routed
+// by source rather than hard-coded.
+func FinalizeArgsForSource(source, jobItemID string) (river.JobArgs, error) {
+	switch source {
+	case models.JobSourceDarkadia:
+		return DarkadiaFinalizeArgs{JobItemID: jobItemID}, nil
+	default:
+		return nil, fmt.Errorf("source %q has no interactive finalize stage", source)
 	}
 }
 

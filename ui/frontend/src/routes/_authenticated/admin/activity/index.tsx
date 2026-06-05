@@ -6,6 +6,7 @@ import { useEventTypes } from '@/hooks/use-notifications';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -24,6 +25,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Activity, ChevronDown, ChevronRight } from 'lucide-react';
+import { dayRangeToUTC, isRangeInverted } from '@/lib/date-range';
 import type { AdminEventFilters } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/admin/activity/')({
@@ -73,20 +75,22 @@ function AdminActivityPage() {
     return category === ALL ? all : all.filter((m) => m.category === category);
   }, [eventTypes, category]);
 
-  const filters: AdminEventFilters = useMemo(
-    () => ({
+  const filters: AdminEventFilters = useMemo(() => {
+    const range = dayRangeToUTC(since, until);
+    return {
       type: typeFilter === ALL ? undefined : typeFilter,
       category: typeFilter === ALL && category !== ALL ? category : undefined,
       scope: scope === ALL ? undefined : (scope as 'user' | 'admin'),
       user: user.trim() || undefined,
-      since: since ? `${since}T00:00:00Z` : undefined,
-      until: until ? `${until}T23:59:59Z` : undefined,
-    }),
-    [typeFilter, category, scope, user, since, until],
-  );
+      since: range.since,
+      until: range.until,
+    };
+  }, [typeFilter, category, scope, user, since, until]);
+
+  const rangeInverted = isRangeInverted(since, until);
 
   const { data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useAdminEvents(filters);
+    useAdminEvents(filters, !rangeInverted);
 
   const events = useMemo(() => (data?.pages ?? []).flatMap((p) => p.events), [data]);
 
@@ -171,29 +175,56 @@ function AdminActivityPage() {
                 setExpanded(null);
               }}
             />
-            <Input
-              type="date"
-              aria-label="From date"
-              className="w-40"
-              value={since}
-              onChange={(e) => {
-                setSince(e.target.value);
-                setExpanded(null);
-              }}
-            />
-            <Input
-              type="date"
-              aria-label="To date"
-              className="w-40"
-              value={until}
-              onChange={(e) => {
-                setUntil(e.target.value);
-                setExpanded(null);
-              }}
-            />
+            <div
+              role="group"
+              aria-labelledby="activity-date-range-label"
+              className="flex items-center gap-2 rounded-md border px-3"
+            >
+              <span
+                id="activity-date-range-label"
+                className="text-sm text-muted-foreground whitespace-nowrap"
+              >
+                Date range
+              </span>
+              <Label htmlFor="activity-since" className="text-sm">
+                From
+              </Label>
+              <Input
+                id="activity-since"
+                type="date"
+                aria-label="From date"
+                className="w-36 border-0 shadow-none focus-visible:ring-0"
+                value={since}
+                max={until || undefined}
+                onChange={(e) => {
+                  setSince(e.target.value);
+                  setExpanded(null);
+                }}
+              />
+              <span aria-hidden="true" className="text-muted-foreground">
+                –
+              </span>
+              <Label htmlFor="activity-until" className="text-sm">
+                To
+              </Label>
+              <Input
+                id="activity-until"
+                type="date"
+                aria-label="To date"
+                className="w-36 border-0 shadow-none focus-visible:ring-0"
+                value={until}
+                min={since || undefined}
+                onChange={(e) => {
+                  setUntil(e.target.value);
+                  setExpanded(null);
+                }}
+              />
+            </div>
           </div>
 
-          {isError ? (
+          {rangeInverted ? (
+            <p className="text-sm text-destructive">The “To” date is before the “From” date.</p>
+          ) : isError ? (
             <p className="text-sm text-destructive">Failed to load events.</p>
           ) : isLoading ? (
             <div className="space-y-2">

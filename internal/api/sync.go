@@ -46,7 +46,6 @@ type PSNClient interface {
 type PSNAccountInfo struct {
 	OnlineID  string
 	AccountID string
-	Region    string
 }
 
 // EpicClient abstracts legendary CLI calls used during Epic account connection.
@@ -72,22 +71,26 @@ type GOGClient interface {
 
 // GOGTokenResponse holds the tokens and identity returned by GOG auth.
 type GOGTokenResponse struct {
-	AccessToken  string
 	RefreshToken string
-	UserID       string
 	Username     string
 }
 
+// HumbleClient abstracts the Humble Bundle credential-verification call.
+type HumbleClient interface {
+	Verify(ctx context.Context, sessionCookie string) error
+}
+
 var (
-	ErrInvalidNPSSOToken = errors.New("invalid npsso token")
-	ErrSteamRateLimited  = errors.New("steam rate limited")
-	ErrSteamNetwork      = errors.New("steam network error")
+	ErrInvalidNPSSOToken   = errors.New("invalid npsso token")
+	ErrSteamRateLimited    = errors.New("steam rate limited")
+	ErrSteamNetwork        = errors.New("steam network error")
+	ErrInvalidHumbleCookie = errors.New("invalid humble session cookie")
 )
 
 // supportedStorefronts is the ordered list of storefront slugs the sync API
 // accepts. validStorefronts is its set form, derived from the same source so the
 // two can never drift apart.
-var supportedStorefronts = []string{"steam", "psn", "epic", "gog"}
+var supportedStorefronts = []string{"steam", "psn", "epic", "gog", "humble-bundle"}
 
 var validStorefronts = func() map[string]bool {
 	m := make(map[string]bool, len(supportedStorefronts))
@@ -109,6 +112,8 @@ func storefrontDisplayName(sf string) string {
 		return "Epic"
 	case "gog":
 		return "GOG"
+	case "humble-bundle":
+		return "Humble Bundle"
 	default:
 		return sf
 	}
@@ -174,66 +179,76 @@ type externalGameResponse struct {
 	Platforms                  []string `bun:"-"                              json:"platforms"`
 }
 
-type steamVerifyResponse struct {
+type steamConnectResponse struct {
 	Valid         bool    `json:"valid"`
 	SteamUsername *string `json:"steam_username"`
 	Error         *string `json:"error"`
 }
 
-type psnConfigureResponse struct {
+type psnConnectResponse struct {
 	Success   bool   `json:"success"`
 	OnlineID  string `json:"online_id"`
 	AccountID string `json:"account_id"`
-	Region    string `json:"region"`
 	Message   string `json:"message"`
 }
 
-type psnStatusResponse struct {
+type psnConnectionResponse struct {
 	IsConfigured     bool   `json:"is_configured"`
 	CredentialsError bool   `json:"credentials_error,omitempty"`
 	OnlineID         string `json:"online_id,omitempty"`
-	AccountID        string `json:"account_id,omitempty"`
-	Region           string `json:"region,omitempty"`
+}
+
+type humbleConnectResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type humbleStatusResponse struct {
+	IsConfigured     bool `json:"is_configured"`
+	CredentialsError bool `json:"credentials_error,omitempty"`
 }
 
 type steamConnectionResponse struct {
 	Connected        bool   `json:"connected"`
 	CredentialsError bool   `json:"credentials_error,omitempty"`
-	SteamID          string `json:"steam_id,omitempty"`
 	Username         string `json:"username,omitempty"`
 }
 
 // SyncHandler handles sync configuration, trigger, and status endpoints.
 type SyncHandler struct {
-	db          *bun.DB
-	encrypter   *crypto.Encrypter
-	riverClient *river.Client[pgx.Tx]
-	steamClient SteamClient
-	psnClient   PSNClient
-	epicClient  EpicClient
-	gogClient   GOGClient
+	db           *bun.DB
+	encrypter    *crypto.Encrypter
+	riverClient  *river.Client[pgx.Tx]
+	steamClient  SteamClient
+	psnClient    PSNClient
+	epicClient   EpicClient
+	gogClient    GOGClient
+	humbleClient HumbleClient
 }
 
 // NewSyncHandler constructs a SyncHandler.
-func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient, epic EpicClient, gog GOGClient) *SyncHandler {
-	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, psnClient: psn, epicClient: epic, gogClient: gog}
+func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient, epic EpicClient, gog GOGClient, humble HumbleClient) *SyncHandler {
+	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, psnClient: psn, epicClient: epic, gogClient: gog, humbleClient: humble}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
 // Static-segment routes are registered before parameterised routes to avoid conflicts.
 func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
-	g.POST("/steam/verify", h.HandleSteamVerify)
+	g.PUT("/steam/connection", h.HandleSteamConnect)
 	g.GET("/steam/connection", h.HandleGetSteamConnection)
 	g.DELETE("/steam/connection", h.HandleSteamDisconnect)
-	g.POST("/psn/configure", h.HandlePSNConfigure)
-	g.GET("/psn/connection", h.HandleGetPSNStatus)
+	g.PUT("/psn/connection", h.HandlePSNConnect)
+	g.GET("/psn/connection", h.HandleGetPSNConnection)
 	g.DELETE("/psn/connection", h.HandlePSNDisconnect)
-	g.POST("/epic/connect", h.HandleEpicConnect)
+	g.PUT("/epic/connection", h.HandleEpicConnect)
 	g.DELETE("/epic/connection", h.HandleEpicDisconnect)
 	g.GET("/epic/connection", h.HandleGetEpicConnection)
-	g.POST("/gog/connect", h.HandleGOGConnect)
+	g.PUT("/gog/connection", h.HandleGOGConnect)
 	g.GET("/gog/connection", h.HandleGetGOGConnection)
 	g.DELETE("/gog/connection", h.HandleGOGDisconnect)
+	g.PUT("/humble-bundle/connection", h.HandleHumbleConnect)
+	g.GET("/humble-bundle/connection", h.HandleGetHumbleConnection)
+	g.DELETE("/humble-bundle/connection", h.HandleHumbleDisconnect)
 	g.GET("/ignored", h.HandleListIgnored)
 	g.POST("/ignored/:id", h.HandleSkipGame)
 	g.DELETE("/ignored/:id", h.HandleUnskipGame)
@@ -258,7 +273,7 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 // persistStorefrontCredentials marshals creds to JSON, encrypts it, and upserts
 // the ciphertext into user_sync_configs for the given storefront, clearing the
 // credentials_error flag. It is the shared persistence path for all storefront
-// connect/verify handlers.
+// connect handlers.
 func (h *SyncHandler) persistStorefrontCredentials(ctx context.Context, userID, sf string, creds any) error {
 	credsJSON, err := json.Marshal(creds)
 	if err != nil {
@@ -343,6 +358,38 @@ func (h *SyncHandler) loadConnectionStatus(ctx context.Context, userID, sf strin
 		return connectionStatus{Connected: true, CredentialsError: true}, nil
 	}
 	return connectionStatus{Connected: true, CredentialsError: row.CredentialsError, Plaintext: plain}, nil
+}
+
+// serveConnectionStatus is the shared handler body for the GET
+// /sync/<sf>/connection endpoints: authenticate, load the stored-credential
+// state, and respond with the storefront-specific shape. notConnected and
+// credentialsError are the fixed responses for the no-credentials and
+// undecodable-credentials states; respond builds the connected response from
+// the decrypted plaintext (a returned error is treated as corrupted
+// credentials → 500). Storefronts with extra preconditions (e.g. Epic's
+// legendary-configured check) run them before delegating here.
+func (h *SyncHandler) serveConnectionStatus(c *echo.Context, sf string, notConnected, credentialsError any, respond func(plaintext []byte, credentialsError bool) (any, error)) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	status, err := h.loadConnectionStatus(context.Background(), userID, sf)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get "+sf+" config")
+	}
+	if !status.Connected {
+		return c.JSON(http.StatusOK, notConnected)
+	}
+	if status.Plaintext == nil {
+		return c.JSON(http.StatusOK, credentialsError)
+	}
+	resp, err := respond(status.Plaintext, status.CredentialsError)
+	if err != nil {
+		slog.Error(sf+": stored credentials are corrupted", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (h *SyncHandler) HandleListConfig(c *echo.Context) error {
@@ -575,7 +622,7 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 	})
 }
 
-func (h *SyncHandler) HandleSteamVerify(c *echo.Context) error {
+func (h *SyncHandler) HandleSteamConnect(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
@@ -592,24 +639,24 @@ func (h *SyncHandler) HandleSteamVerify(c *echo.Context) error {
 	errStr := func(s string) *string { return &s }
 
 	if !steamIDRegex.MatchString(req.SteamID) {
-		return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("invalid_steam_id")})
+		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("invalid_steam_id")})
 	}
 	if !steamKeyRegex.MatchString(req.WebAPIKey) {
-		return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("invalid_api_key")})
+		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("invalid_api_key")})
 	}
 
 	summary, err := h.steamClient.GetPlayerSummaries(c.Request().Context(), req.WebAPIKey, req.SteamID)
 	if err != nil {
 		if errors.Is(err, ErrSteamRateLimited) {
-			return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("rate_limited")})
+			return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("rate_limited")})
 		}
-		return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("network_error")})
+		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("network_error")})
 	}
 	if summary == nil {
-		return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("invalid_steam_id")})
+		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("invalid_steam_id")})
 	}
 	if summary.CommunityVisibilityState != 3 {
-		return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("private_profile")})
+		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("private_profile")})
 	}
 
 	creds := map[string]string{
@@ -623,7 +670,7 @@ func (h *SyncHandler) HandleSteamVerify(c *echo.Context) error {
 	}
 
 	name := summary.PersonaName
-	return c.JSON(http.StatusOK, steamVerifyResponse{Valid: true, SteamUsername: &name})
+	return c.JSON(http.StatusOK, steamConnectResponse{Valid: true, SteamUsername: &name})
 }
 
 func (h *SyncHandler) HandleSteamDisconnect(c *echo.Context) error {
@@ -631,39 +678,25 @@ func (h *SyncHandler) HandleSteamDisconnect(c *echo.Context) error {
 }
 
 func (h *SyncHandler) HandleGetSteamConnection(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
-	status, err := h.loadConnectionStatus(context.Background(), userID, "steam")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get steam config")
-	}
-	if !status.Connected {
-		return c.JSON(http.StatusOK, steamConnectionResponse{Connected: false})
-	}
-	if status.Plaintext == nil {
-		return c.JSON(http.StatusOK, steamConnectionResponse{Connected: true, CredentialsError: true})
-	}
-	var creds struct {
-		SteamID     string `json:"steam_id"`
-		DisplayName string `json:"display_name"`
-	}
-	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
-		slog.Error("steam: stored credentials are corrupted", "err", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
-	}
-
-	return c.JSON(http.StatusOK, steamConnectionResponse{
-		Connected:        true,
-		SteamID:          creds.SteamID,
-		Username:         creds.DisplayName,
-		CredentialsError: status.CredentialsError,
-	})
+	return h.serveConnectionStatus(c, "steam",
+		steamConnectionResponse{Connected: false},
+		steamConnectionResponse{Connected: true, CredentialsError: true},
+		func(plaintext []byte, credentialsError bool) (any, error) {
+			var creds struct {
+				DisplayName string `json:"display_name"`
+			}
+			if err := json.Unmarshal(plaintext, &creds); err != nil {
+				return nil, err
+			}
+			return steamConnectionResponse{
+				Connected:        true,
+				Username:         creds.DisplayName,
+				CredentialsError: credentialsError,
+			}, nil
+		})
 }
 
-func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
+func (h *SyncHandler) HandlePSNConnect(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
@@ -684,66 +717,98 @@ func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid_npsso_token")
 	}
 
+	// Store only what is read back: the token (sync adapter factory) and the
+	// online ID (status handler). Legacy rows may carry extra fields
+	// (account_id, region, is_verified, token_expired_at); decoders ignore them.
 	creds := map[string]any{
-		"npsso_token":      req.NpssoToken,
-		"online_id":        info.OnlineID,
-		"account_id":       info.AccountID,
-		"region":           info.Region,
-		"is_verified":      true,
-		"token_expired_at": nil,
+		"npsso_token": req.NpssoToken,
+		"online_id":   info.OnlineID,
 	}
 	if err := h.persistStorefrontCredentials(context.Background(), userID, "psn", creds); err != nil {
 		slog.Error("psn: persist storefront credentials failed", "user_id", userID, "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist PSN connection")
 	}
 
-	return c.JSON(http.StatusOK, psnConfigureResponse{
+	return c.JSON(http.StatusOK, psnConnectResponse{
 		Success:   true,
 		OnlineID:  info.OnlineID,
 		AccountID: info.AccountID,
-		Region:    info.Region,
-		Message:   "PSN configured successfully",
+		Message:   "PSN connected successfully",
 	})
 }
 
-func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
-	status, err := h.loadConnectionStatus(context.Background(), userID, "psn")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get psn config")
-	}
-	if !status.Connected {
-		return c.JSON(http.StatusOK, psnStatusResponse{})
-	}
-	if status.Plaintext == nil {
-		return c.JSON(http.StatusOK, psnStatusResponse{IsConfigured: true, CredentialsError: true})
-	}
-	var creds struct {
-		OnlineID   string `json:"online_id"`
-		AccountID  string `json:"account_id"`
-		Region     string `json:"region"`
-		IsVerified bool   `json:"is_verified"`
-	}
-	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
-		slog.Error("psn: stored credentials are corrupted", "err", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
-	}
-
-	return c.JSON(http.StatusOK, psnStatusResponse{
-		IsConfigured:     true,
-		CredentialsError: status.CredentialsError,
-		OnlineID:         creds.OnlineID,
-		AccountID:        creds.AccountID,
-		Region:           creds.Region,
-	})
+func (h *SyncHandler) HandleGetPSNConnection(c *echo.Context) error {
+	return h.serveConnectionStatus(c, "psn",
+		psnConnectionResponse{},
+		psnConnectionResponse{IsConfigured: true, CredentialsError: true},
+		func(plaintext []byte, credentialsError bool) (any, error) {
+			var creds struct {
+				OnlineID string `json:"online_id"`
+			}
+			if err := json.Unmarshal(plaintext, &creds); err != nil {
+				return nil, err
+			}
+			return psnConnectionResponse{
+				IsConfigured:     true,
+				CredentialsError: credentialsError,
+				OnlineID:         creds.OnlineID,
+			}, nil
+		})
 }
 
 func (h *SyncHandler) HandlePSNDisconnect(c *echo.Context) error {
 	return h.disconnectStorefront(c, "psn")
+}
+
+// HandleHumbleConnect is PUT /sync/humble-bundle/connection: it verifies the
+// pasted session cookie against the Humble order API and, on success, stores it
+// (create-or-replace). A rejected cookie returns 400 before anything is stored.
+func (h *SyncHandler) HandleHumbleConnect(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	var req struct {
+		SessionCookie string `json:"session_cookie"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid body")
+	}
+	req.SessionCookie = strings.TrimSpace(req.SessionCookie)
+	if req.SessionCookie == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "session_cookie is required")
+	}
+
+	if err := h.humbleClient.Verify(c.Request().Context(), req.SessionCookie); err != nil {
+		if errors.Is(err, ErrInvalidHumbleCookie) {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid_session_cookie")
+		}
+		slog.Error("humble: verify failed", "user_id", userID, "err", err)
+		return echo.NewHTTPError(http.StatusBadGateway, "could not reach Humble Bundle")
+	}
+
+	creds := map[string]any{"session_cookie": req.SessionCookie}
+	if err := h.persistStorefrontCredentials(context.Background(), userID, "humble-bundle", creds); err != nil {
+		slog.Error("humble: persist storefront credentials failed", "user_id", userID, "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Humble Bundle connection")
+	}
+
+	return c.JSON(http.StatusOK, humbleConnectResponse{Success: true, Message: "Humble Bundle connected successfully"})
+}
+
+// HandleGetHumbleConnection is GET /sync/humble-bundle/connection.
+func (h *SyncHandler) HandleGetHumbleConnection(c *echo.Context) error {
+	return h.serveConnectionStatus(c, "humble-bundle",
+		humbleStatusResponse{},
+		humbleStatusResponse{IsConfigured: true, CredentialsError: true},
+		func(_ []byte, credentialsError bool) (any, error) {
+			return humbleStatusResponse{IsConfigured: true, CredentialsError: credentialsError}, nil
+		})
+}
+
+// HandleHumbleDisconnect is DELETE /sync/humble-bundle/connection.
+func (h *SyncHandler) HandleHumbleDisconnect(c *echo.Context) error {
+	return h.disconnectStorefront(c, "humble-bundle")
 }
 
 // HandleEpicConnect exchanges an Epic auth code via legendary and stores the
@@ -819,32 +884,32 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 		})
 	}
 
-	status, err := h.loadConnectionStatus(context.Background(), userID, "epic")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get epic config")
-	}
-	if !status.Connected {
-		return c.JSON(http.StatusOK, map[string]any{"connected": false, "disabled": false})
-	}
-	if status.Plaintext == nil {
-		return c.JSON(http.StatusOK, map[string]any{"connected": true, "credentials_error": true, "disabled": false})
-	}
-	var creds struct {
-		DisplayName string `json:"display_name"`
-		AccountID   string `json:"account_id"`
-	}
-	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
-		slog.Error("epic: stored credentials are corrupted", "err", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"connected":         true,
-		"disabled":          false,
-		"credentials_error": status.CredentialsError,
-		"display_name":      creds.DisplayName,
-		"account_id":        creds.AccountID,
-	})
+	return h.serveConnectionStatus(c, "epic",
+		map[string]any{"connected": false, "disabled": false},
+		map[string]any{"connected": true, "credentials_error": true, "disabled": false},
+		func(plaintext []byte, credentialsError bool) (any, error) {
+			// Epic persists the raw legendary snapshot: a map[relPath]content where the
+			// account details live inside user.json (field displayName), not as
+			// top-level keys. Decode the snapshot, then parse user.json.
+			var snapshot map[string]string
+			if err := json.Unmarshal(plaintext, &snapshot); err != nil {
+				return nil, err
+			}
+			var creds struct {
+				DisplayName string `json:"displayName"`
+			}
+			if userJSON, ok := snapshot["user.json"]; ok {
+				if err := json.Unmarshal([]byte(userJSON), &creds); err != nil {
+					return nil, fmt.Errorf("user.json: %w", err)
+				}
+			}
+			return map[string]any{
+				"connected":         true,
+				"disabled":          false,
+				"credentials_error": credentialsError,
+				"display_name":      creds.DisplayName,
+			}, nil
+		})
 }
 
 func (h *SyncHandler) HandleListIgnored(c *echo.Context) error {
@@ -1447,9 +1512,7 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 	}
 
 	creds := map[string]string{
-		"access_token":  tok.AccessToken,
 		"refresh_token": tok.RefreshToken,
-		"user_id":       tok.UserID,
 		"username":      tok.Username,
 	}
 	if err := h.persistStorefrontCredentials(context.Background(), userID, "gog", creds); err != nil {
@@ -1459,7 +1522,6 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]string{
 		"username": tok.Username,
-		"user_id":  tok.UserID,
 	})
 }
 
@@ -1468,40 +1530,26 @@ func (h *SyncHandler) HandleGOGDisconnect(c *echo.Context) error {
 }
 
 func (h *SyncHandler) HandleGetGOGConnection(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
 	authURL := ""
 	if h.gogClient != nil {
 		authURL = h.gogClient.BuildAuthURL()
 	}
 
-	status, err := h.loadConnectionStatus(context.Background(), userID, "gog")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get gog config")
-	}
-	if !status.Connected {
-		return c.JSON(http.StatusOK, map[string]any{"connected": false, "auth_url": authURL})
-	}
-	if status.Plaintext == nil {
-		return c.JSON(http.StatusOK, map[string]any{"connected": true, "credentials_error": true, "auth_url": authURL})
-	}
-	var creds struct {
-		Username string `json:"username"`
-		UserID   string `json:"user_id"`
-	}
-	if err := json.Unmarshal(status.Plaintext, &creds); err != nil {
-		slog.Error("gog: stored credentials are corrupted", "err", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"connected":         true,
-		"credentials_error": status.CredentialsError,
-		"username":          creds.Username,
-		"user_id":           creds.UserID,
-		"auth_url":          authURL,
-	})
+	return h.serveConnectionStatus(c, "gog",
+		map[string]any{"connected": false, "auth_url": authURL},
+		map[string]any{"connected": true, "credentials_error": true, "auth_url": authURL},
+		func(plaintext []byte, credentialsError bool) (any, error) {
+			var creds struct {
+				Username string `json:"username"`
+			}
+			if err := json.Unmarshal(plaintext, &creds); err != nil {
+				return nil, err
+			}
+			return map[string]any{
+				"connected":         true,
+				"credentials_error": credentialsError,
+				"username":          creds.Username,
+				"auth_url":          authURL,
+			}, nil
+		})
 }

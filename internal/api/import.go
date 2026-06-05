@@ -19,6 +19,8 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/services/darkadia"
+	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -28,11 +30,12 @@ const maxImportBodyBytes = 50 * 1024 * 1024 // 50 MB
 type ImportHandler struct {
 	db          *bun.DB
 	riverClient *river.Client[pgx.Tx]
+	igdbClient  *igdb.Client
 }
 
 // NewImportHandler returns a new ImportHandler.
-func NewImportHandler(db *bun.DB, riverClient *river.Client[pgx.Tx]) *ImportHandler {
-	return &ImportHandler{db: db, riverClient: riverClient}
+func NewImportHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], igdbClient *igdb.Client) *ImportHandler {
+	return &ImportHandler{db: db, riverClient: riverClient, igdbClient: igdbClient}
 }
 
 // nexoriousExport is the expected structure of a nexorious export file.
@@ -188,5 +191,123 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		"message":       fmt.Sprintf("Import job created. Processing %d games.", job.TotalItems),
 		"total_items":   job.TotalItems,
 		"skipped_count": skipCount,
+	})
+}
+
+// HandleImportDarkadia handles POST /api/import/darkadia.
+func (h *ImportHandler) HandleImportDarkadia(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	// Prerequisite: IGDB must be configured, else every game lands unmatched.
+	if h.igdbClient == nil || !h.igdbClient.Configured() {
+		return echo.NewHTTPError(http.StatusBadRequest, "IGDB must be configured to import a Darkadia collection")
+	}
+
+	if err := c.Request().ParseMultipartForm(maxImportBodyBytes); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse multipart form")
+	}
+	file, _, err := c.Request().FormFile("file")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "missing file field")
+	}
+	defer func() { _ = file.Close() }()
+
+	lr := io.LimitReader(file, maxImportBodyBytes+1)
+	body, err := io.ReadAll(lr)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read file")
+	}
+	if len(body) > maxImportBodyBytes {
+		return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "file exceeds 50 MB limit")
+	}
+
+	games, err := darkadia.Parse(body)
+	if err != nil {
+		if errors.Is(err, darkadia.ErrInvalidHeader) {
+			return echo.NewHTTPError(http.StatusBadRequest, "not a Darkadia export")
+		}
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
+	}
+	if len(games) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "no games found in CSV")
+	}
+
+	ctx := context.Background()
+
+	var existing models.Job
+	err = h.db.NewSelect().Model(&existing).
+		Where("user_id = ?", userID).
+		Where("job_type = ?", models.JobTypeImport).
+		Where("source = ?", models.JobSourceDarkadia).
+		Where("status IN (?)", bun.List([]string{models.JobStatusPending, models.JobStatusProcessing})).
+		Limit(1).Scan(ctx)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to check active import")
+	}
+	if err == nil {
+		return echo.NewHTTPError(http.StatusConflict, "an active Darkadia import is already in progress")
+	}
+
+	now := time.Now().UTC()
+	job := &models.Job{
+		ID:               uuid.NewString(),
+		UserID:           userID,
+		JobType:          models.JobTypeImport,
+		Source:           models.JobSourceDarkadia,
+		Status:           models.JobStatusProcessing,
+		Priority:         models.JobPriorityHigh,
+		TotalItems:       len(games),
+		DispatchComplete: false, // flipped true after every item is enqueued (below)
+		CreatedAt:        now,
+	}
+	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
+	}
+
+	for i, g := range games {
+		meta, err := json.Marshal(g)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to marshal game payload")
+		}
+		item := &models.JobItem{
+			ID:             uuid.NewString(),
+			JobID:          job.ID,
+			UserID:         userID,
+			ItemKey:        fmt.Sprintf("game_%d", i),
+			SourceTitle:    g.Title,
+			SourceMetadata: meta,
+			Status:         models.JobItemStatusPending,
+			Result:         json.RawMessage(`{}`),
+			IGDBCandidates: json.RawMessage(`[]`),
+		}
+		if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
+		}
+		if h.riverClient != nil {
+			if _, err := h.riverClient.Insert(ctx, tasks.DarkadiaMatchArgs{JobItemID: item.ID}, nil); err != nil {
+				slog.Error("import: submit darkadia_match", "item_id", item.ID, "err", err)
+			}
+		}
+	}
+
+	// Dispatch is complete only now that every item exists and is enqueued.
+	// Flipping the flag (and re-checking completion) here closes the window where
+	// an early item could finish and finalize the job before later items were
+	// inserted — the completion check refuses to finalize while dispatch is in
+	// flight (dispatch_complete=false), mirroring the sync dispatch worker.
+	if _, err := h.db.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, job.ID).Exec(ctx); err != nil {
+		slog.Error("import: mark dispatch complete", "job_id", job.ID, "err", err)
+	}
+	tasks.DarkadiaCheckJobCompletion(h.db, job.ID)
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"job_id":      job.ID,
+		"source":      job.Source,
+		"status":      job.Status,
+		"message":     fmt.Sprintf("Darkadia import job created. Matching %d games.", len(games)),
+		"total_items": len(games),
 	})
 }

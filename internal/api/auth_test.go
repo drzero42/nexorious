@@ -350,15 +350,15 @@ func TestGetMe_Success(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body)
 	}
 
+	raw := rec.Body.Bytes()
 	var body struct {
-		ID          string          `json:"id"`
-		Username    string          `json:"username"`
-		IsAdmin     bool            `json:"is_admin"`
-		IsActive    bool            `json:"is_active"`
-		Preferences json.RawMessage `json:"preferences"`
-		CreatedAt   string          `json:"created_at"`
+		ID        string `json:"id"`
+		Username  string `json:"username"`
+		IsAdmin   bool   `json:"is_admin"`
+		IsActive  bool   `json:"is_active"`
+		CreatedAt string `json:"created_at"`
 	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if body.ID != userID {
@@ -367,8 +367,12 @@ func TestGetMe_Success(t *testing.T) {
 	if body.Username != "admin" {
 		t.Errorf("username mismatch: got %q want %q", body.Username, "admin")
 	}
-	if string(body.Preferences) == "" || string(body.Preferences) == "null" {
-		t.Errorf("preferences must not be null, got %q", string(body.Preferences))
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("decode map: %v", err)
+	}
+	if _, ok := fields["preferences"]; ok {
+		t.Error("response leaked dropped preferences field")
 	}
 }
 
@@ -485,79 +489,6 @@ func TestHandleChangePassword_InvalidatesOtherSessions(t *testing.T) {
 	).Scan(&count)
 	if count != 1 {
 		t.Errorf("session count = %d, want 1 (current session preserved)", count)
-	}
-}
-
-// ─── UpdateMe tests ────────────────────────────────────────────────────────
-
-func TestHandleUpdateMe_Success(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEcho(t, testDB, testCfg())
-
-	userID := "user-update-me-001"
-	insertAuthTestUser(t, testDB, userID, "testuser", "password123", true, false)
-	sessionID := insertAuthTestSession(t, testDB, userID)
-
-	rec := putJSONAuth(t, e, "/api/auth/me", map[string]any{
-		"preferences": map[string]any{"theme": "dark", "language": "en"},
-	}, sessionID)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body)
-	}
-
-	var body struct {
-		ID          string          `json:"id"`
-		Username    string          `json:"username"`
-		Preferences json.RawMessage `json:"preferences"`
-	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if body.ID != userID {
-		t.Errorf("id mismatch: got %q want %q", body.ID, userID)
-	}
-
-	var prefs map[string]any
-	if err := json.Unmarshal(body.Preferences, &prefs); err != nil {
-		t.Fatalf("unmarshal preferences: %v", err)
-	}
-	if prefs["theme"] != "dark" {
-		t.Errorf("theme: got %q want %q", prefs["theme"], "dark")
-	}
-}
-
-func TestHandleUpdateMe_InvalidPreferences_Array(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEcho(t, testDB, testCfg())
-
-	userID := "user-update-me-002"
-	insertAuthTestUser(t, testDB, userID, "testuser2", "password123", true, false)
-	sessionID := insertAuthTestSession(t, testDB, userID)
-
-	rec := putJSONAuth(t, e, "/api/auth/me", map[string]any{
-		"preferences": []string{"not", "an", "object"},
-	}, sessionID)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
-	}
-}
-
-func TestHandleUpdateMe_InvalidPreferences_Null(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEcho(t, testDB, testCfg())
-
-	userID := "user-update-me-003"
-	insertAuthTestUser(t, testDB, userID, "testuser3", "password123", true, false)
-	sessionID := insertAuthTestSession(t, testDB, userID)
-
-	rec := putJSONAuth(t, e, "/api/auth/me", map[string]any{
-		"preferences": nil,
-	}, sessionID)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d: %s", rec.Code, rec.Body)
 	}
 }
 

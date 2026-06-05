@@ -22,17 +22,19 @@ type clientInterface interface {
 type Adapter struct {
 	client       clientInterface
 	refreshToken string
-	onNewTokens  func(accessToken, refreshToken string) error
+	onNewTokens  func(refreshToken string) error
 }
 
 // NewAdapter returns a storefrontadapter.Adapter for GOG.
 // refreshToken is the OAuth2 refresh token loaded from user_sync_configs.
-// onNewTokens is called with the new access/refresh pair after a successful
+// onNewTokens is called with the new refresh token after a successful
 // token refresh; the factory wires the DB write here. onNewTokens may be nil.
+// The access token is not persisted: it expires within the hour and the
+// adapter always fetches a fresh one at sync time.
 func NewAdapter(
 	client clientInterface,
 	refreshToken string,
-	onNewTokens func(accessToken, refreshToken string) error,
+	onNewTokens func(refreshToken string) error,
 ) storefrontadapter.Adapter {
 	return &Adapter{client: client, refreshToken: refreshToken, onNewTokens: onNewTokens}
 }
@@ -48,7 +50,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	}
 
 	if a.onNewTokens != nil {
-		if err := a.onNewTokens(tok.AccessToken, tok.RefreshToken); err != nil {
+		if err := a.onNewTokens(tok.RefreshToken); err != nil {
 			slog.Error("gog: persist refreshed tokens failed", "err", err)
 		}
 	}

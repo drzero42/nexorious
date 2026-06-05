@@ -177,9 +177,10 @@ func TestBuildJSONDoc_NilTag(t *testing.T) {
 	}
 }
 
-func TestBuildJSONDoc_NilOriginalPlatformName(t *testing.T) {
-	// Platform with nil OriginalPlatformName — falls back to slug pointer.
+func TestBuildJSONDoc_PlatformDisplayNamesFromSlug(t *testing.T) {
+	// platform_name / storefront_name are sourced directly from the canonical slug.
 	platform := "pc-windows"
+	storefront := "steam"
 	ug := models.UserGame{
 		ID:        "ug1",
 		UserID:    "u1",
@@ -189,17 +190,22 @@ func TestBuildJSONDoc_NilOriginalPlatformName(t *testing.T) {
 		Platforms: []models.UserGamePlatform{
 			{
 				ID: "ugp1", UserGameID: "ug1",
-				Platform:               &platform,
-				OriginalPlatformName:   nil, // will fall back to slug
-				Storefront:             &platform,
-				OriginalStorefrontName: nil, // will fall back to slug
-				CreatedAt:              time.Now(), UpdatedAt: time.Now(),
+				Platform:   &platform,
+				Storefront: &storefront,
+				CreatedAt:  time.Now(), UpdatedAt: time.Now(),
 			},
 		},
 	}
 	doc := buildJSONDoc("u1", []models.UserGame{ug})
 	if len(doc.Games[0].Platforms) != 1 {
 		t.Fatalf("expected 1 platform")
+	}
+	pj := doc.Games[0].Platforms[0]
+	if pj.PlatformName == nil || *pj.PlatformName != platform {
+		t.Errorf("expected platform_name=%q, got %v", platform, pj.PlatformName)
+	}
+	if pj.StorefrontName == nil || *pj.StorefrontName != storefront {
+		t.Errorf("expected storefront_name=%q, got %v", storefront, pj.StorefrontName)
 	}
 }
 

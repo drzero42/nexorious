@@ -3352,3 +3352,125 @@ func TestNoSyncDiffWhenNoChanges(t *testing.T) {
 		t.Fatalf("expected no sync.diff event when no changes, got %d", diffCount)
 	}
 }
+
+// ─── sync.auth_expired notification (#751) ──────────────────────────────────
+
+// seedSubscription subscribes a user to one event type.
+func seedSubscription(t *testing.T, userID, eventType string) {
+	t.Helper()
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO notification_subscriptions (user_id, event_type, created_at) VALUES (?, ?, now())`,
+		userID, eventType,
+	); err != nil {
+		t.Fatalf("seedSubscription: %v", err)
+	}
+}
+
+// insertCredErrJobAndConfig sets up a user, a processing sync job, and a steam
+// sync config with the given prior credentials_error state.
+func insertCredErrJobAndConfig(t *testing.T, userID, jobID string, priorErr bool) {
+	t.Helper()
+	ctx := context.Background()
+	insertTestUser(t, testDB, userID)
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 0)`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+	if _, err := testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, credentials_error) VALUES (?, ?, 'steam', 'daily', ?)`,
+		uuid.NewString(), userID, priorErr,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert user_sync_config: %v", err)
+	}
+}
+
+func eventCount(t *testing.T, dedupKey string) int {
+	t.Helper()
+	var count int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, dedupKey).Scan(context.Background(), &count); err != nil {
+		t.Fatalf("count events %q: %v", dedupKey, err)
+	}
+	return count
+}
+
+// On the healthy→expired transition, a user subscribed to sync.auth_expired
+// gets that actionable event and NOT the generic sync.failed.
+func TestDispatchSync_CredentialsError_Transition_Subscribed_EmitsAuthExpired(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	notify.SetRiverClient(nil)
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertCredErrJobAndConfig(t, userID, jobID, false)
+	seedSubscription(t, userID, "sync.auth_expired")
+
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := eventCount(t, jobID+":sync.auth_expired"); got != 1 {
+		t.Errorf("expected 1 sync.auth_expired event, got %d", got)
+	}
+	if got := eventCount(t, jobID+":sync.failed"); got != 0 {
+		t.Errorf("expected 0 sync.failed events (auth event replaces it), got %d", got)
+	}
+}
+
+// On the transition, a user NOT subscribed to sync.auth_expired still hears
+// about it via the fallback sync.failed event.
+func TestDispatchSync_CredentialsError_Transition_Unsubscribed_EmitsSyncFailed(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	notify.SetRiverClient(nil)
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertCredErrJobAndConfig(t, userID, jobID, false)
+
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := eventCount(t, jobID+":sync.failed"); got != 1 {
+		t.Errorf("expected 1 fallback sync.failed event, got %d", got)
+	}
+	if got := eventCount(t, jobID+":sync.auth_expired"); got != 0 {
+		t.Errorf("expected 0 sync.auth_expired events for unsubscribed user, got %d", got)
+	}
+}
+
+// When the storefront is already in the credentials_error state, a repeat
+// failure emits nothing — even for a subscribed user (notify only on transition).
+func TestDispatchSync_CredentialsError_Repeat_EmitsNothing(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	notify.SetRiverClient(nil)
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertCredErrJobAndConfig(t, userID, jobID, true)
+	seedSubscription(t, userID, "sync.auth_expired")
+
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := eventCount(t, jobID+":sync.auth_expired"); got != 0 {
+		t.Errorf("expected 0 sync.auth_expired events on repeat, got %d", got)
+	}
+	if got := eventCount(t, jobID+":sync.failed"); got != 0 {
+		t.Errorf("expected 0 sync.failed events on repeat, got %d", got)
+	}
+}

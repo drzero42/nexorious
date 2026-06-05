@@ -13,10 +13,16 @@ import {
 } from 'lucide-react';
 import type { NavItem, NavSection } from './types';
 import { usePendingReviewCount } from '@/hooks/use-jobs';
+import { JobSource } from '@/types';
 
 export function useNavItems() {
   const { data: reviewData } = usePendingReviewCount();
-  const pendingReviewCount = reviewData?.pendingReviewCount ?? 0;
+  // Split the pending-review backlog by surface: Darkadia imports are reviewed
+  // on the Import/Export page, every other source (the sync storefronts) on the
+  // Sync page. Darkadia is the only import source that produces pending_review,
+  // so "everything that isn't Darkadia" is the sync total.
+  const importReviewCount = reviewData?.countsBySource?.[JobSource.DARKADIA] ?? 0;
+  const syncReviewCount = Math.max(0, (reviewData?.pendingReviewCount ?? 0) - importReviewCount);
 
   const mainItems: NavItem[] = [
     {
@@ -38,7 +44,7 @@ export function useNavItems() {
       href: '/sync',
       label: 'Sync',
       icon: <RefreshCw className="h-4 w-4" />,
-      badge: pendingReviewCount,
+      badge: syncReviewCount,
     },
     {
       href: '/tags',
@@ -49,6 +55,7 @@ export function useNavItems() {
       href: '/import-export',
       label: 'Import / Export',
       icon: <ArrowLeftRight className="h-4 w-4" />,
+      badge: importReviewCount,
     },
   ];
 

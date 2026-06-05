@@ -299,23 +299,14 @@ func buildJSONDoc(userID string, ugs []models.UserGame) exportDocJSON {
 			}
 			pj := exportPlatformJSON{
 				PlatformID:      p.Platform,
+				PlatformName:    p.Platform,
 				StorefrontID:    p.Storefront,
+				StorefrontName:  p.Storefront,
 				StoreGameID:     p.StoreGameID,
 				StoreURL:        p.StoreUrl,
 				IsAvailable:     p.IsAvailable,
 				HoursPlayed:     p.HoursPlayed,
 				OwnershipStatus: p.OwnershipStatus,
-			}
-			// Display names: prefer original names, fall back to slug.
-			if p.OriginalPlatformName != nil {
-				pj.PlatformName = p.OriginalPlatformName
-			} else {
-				pj.PlatformName = p.Platform
-			}
-			if p.OriginalStorefrontName != nil {
-				pj.StorefrontName = p.OriginalStorefrontName
-			} else {
-				pj.StorefrontName = p.Storefront
 			}
 			if p.AcquiredDate != nil {
 				d := p.AcquiredDate.Format("2006-01-02")

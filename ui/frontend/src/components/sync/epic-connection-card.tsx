@@ -23,6 +23,14 @@ const epicAuthCodeSchema = z.object({
 
 type EpicAuthCodeForm = z.infer<typeof epicAuthCodeSchema>;
 
+function disabledMessage(reason?: string): string {
+  switch (reason) {
+    case 'legendary_not_configured':
+    default:
+      return 'Epic Games Store sync is disabled on this server. Contact your administrator to enable it.';
+  }
+}
+
 interface EpicConnectionCardProps {
   isConfigured: boolean;
   credentialsError?: boolean;
@@ -52,7 +60,6 @@ export function EpicConnectionCard({
   const isDisconnecting = disconnectMutation.isPending;
   const isDisabled = connection?.disabled === true;
   const displayName = connection?.displayName;
-  const accountId = connection?.accountId;
   const resolvedCredentialsError = connection?.credentialsError ?? credentialsError;
 
   const onSubmit = async (data: EpicAuthCodeForm) => {
@@ -103,15 +110,11 @@ export function EpicConnectionCard({
         {isDisabled ? (
           <Alert>
             <Info className="h-4 w-4" />
-            <AlertDescription>
-              Epic Games Store sync is disabled on this server. The administrator must set the
-              <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">LEGENDARY_WORK_DIR</code>
-              environment variable to enable it.
-            </AlertDescription>
+            <AlertDescription>{disabledMessage(connection?.reason)}</AlertDescription>
           </Alert>
         ) : isConfigured && !resolvedCredentialsError ? (
           <div className="space-y-4">
-            <ConnectedSummary name={displayName} secondary={accountId} secondaryMono />
+            <ConnectedSummary name={displayName} />
             {playtimeNote}
             <DisconnectDialog
               serviceLabel="Epic Games Store"

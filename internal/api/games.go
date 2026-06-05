@@ -16,6 +16,7 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/dbutil"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -126,17 +127,17 @@ func (h *GamesHandler) HandleListGames(c *echo.Context) error {
 	query := h.db.NewSelect().Model((*models.Game)(nil))
 
 	if q != "" {
-		likeQ := "%" + q + "%"
+		likeQ := dbutil.LikeContains(q)
 		query = query.Where("title ILIKE ? OR description ILIKE ?", likeQ, likeQ)
 	}
 	if genre != "" {
-		query = query.Where("genre ILIKE ?", "%"+genre+"%")
+		query = query.Where("genre ILIKE ?", dbutil.LikeContains(genre))
 	}
 	if developer != "" {
-		query = query.Where("developer ILIKE ?", "%"+developer+"%")
+		query = query.Where("developer ILIKE ?", dbutil.LikeContains(developer))
 	}
 	if publisher != "" {
-		query = query.Where("publisher ILIKE ?", "%"+publisher+"%")
+		query = query.Where("publisher ILIKE ?", dbutil.LikeContains(publisher))
 	}
 	if releaseYearStr != "" {
 		if year, err := strconv.Atoi(releaseYearStr); err == nil {

@@ -170,13 +170,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	// Build adapter (credential loading, decryption, and token refresh happen inside).
 	adapter, err := w.Adapter(ctx, p.Storefront, cfg)
 	if errors.Is(err, ErrCredentials) {
-		failSyncJob(ctx, w.DB, p.JobID, "credentials error")
-		if _, err := w.DB.NewRaw(
-			`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
-			p.UserID, p.Storefront,
-		).Exec(ctx); err != nil {
-			slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
-		}
+		handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
 		return nil
 	}
 	if err != nil {
@@ -241,13 +235,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		return nil
 	}); err != nil {
 		if errors.Is(err, ErrCredentials) {
-			failSyncJob(ctx, w.DB, p.JobID, "credentials error")
-			if _, err := w.DB.NewRaw(
-				`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
-				p.UserID, p.Storefront,
-			).Exec(ctx); err != nil {
-				slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
-			}
+			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
 			return nil
 		}
 		slog.Error("dispatch_sync: library fetch failed", "job_id", p.JobID, "err", err)
@@ -319,9 +307,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	return nil
 }
 
-// failSyncJob marks a job as failed with the given error message and cancels
-// any pending job_items for that job so they are not left orphaned.
-func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
+// markSyncJobFailed marks a job as failed with the given error message and
+// cancels any pending job_items for that job so they are not left orphaned. It
+// performs no notification — callers decide which event (if any) to emit.
+func markSyncJobFailed(ctx context.Context, db *bun.DB, jobID, msg string) {
 	now := time.Now().UTC()
 	if _, err := db.NewRaw(
 		`UPDATE jobs SET status = 'failed', error_message = ?, completed_at = ? WHERE id = ?`,
@@ -335,13 +324,68 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 	).Exec(ctx); err != nil {
 		slog.Error("dispatch_sync: cancel pending items failed", "err", err, "job_id", jobID)
 	}
+}
 
+// failSyncJob marks a job as failed (see markSyncJobFailed) and emits the
+// generic sync.failed notification. Used for all non-credential failures;
+// credential failures go through handleCredentialError instead.
+func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
+	markSyncJobFailed(ctx, db, jobID, msg)
 	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: userID,
 		Payload:  notify.SyncFailedPayload{Storefront: storefront, Error: msg, JobID: jobID},
 		DedupKey: jobID + ":" + notify.TypeSyncFailed,
 	})
+}
+
+// handleCredentialError handles a credentials failure during sync: it fails the
+// job, flags credentials_error, and — only on the healthy→expired transition
+// (priorErr == false) — notifies the user. Subscribers to sync.auth_expired get
+// that actionable event; everyone else falls back to sync.failed so they are
+// not left silent. While the storefront stays broken (priorErr == true) no
+// notification is sent, so repeated scheduled syncs do not nag.
+func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, priorErr bool) {
+	markSyncJobFailed(ctx, db, p.JobID, "credentials error")
+	if _, err := db.NewRaw(
+		`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
+		p.UserID, p.Storefront,
+	).Exec(ctx); err != nil {
+		slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
+	}
+
+	if priorErr {
+		return // already in error state; notify only on transition
+	}
+
+	if userSubscribed(ctx, db, p.UserID, notify.TypeSyncAuthExpired) {
+		notify.Emit(ctx, db, notify.EmitParams{
+			Type: notify.TypeSyncAuthExpired, Scope: notify.ScopeUser, ActorUserID: p.UserID,
+			Payload:  notify.SyncAuthExpiredPayload{Storefront: p.Storefront},
+			DedupKey: p.JobID + ":" + notify.TypeSyncAuthExpired,
+		})
+		return
+	}
+	notify.Emit(ctx, db, notify.EmitParams{
+		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: p.UserID,
+		Payload:  notify.SyncFailedPayload{Storefront: p.Storefront, Error: "credentials error", JobID: p.JobID},
+		DedupKey: p.JobID + ":" + notify.TypeSyncFailed,
+	})
+}
+
+// userSubscribed reports whether the user is subscribed to eventType. On query
+// error it returns false, so a credential failure still falls back to the
+// default-on sync.failed event rather than going silent.
+func userSubscribed(ctx context.Context, db *bun.DB, userID, eventType string) bool {
+	var subscribed bool
+	if err := db.NewRaw(
+		`SELECT EXISTS(SELECT 1 FROM notification_subscriptions WHERE user_id = ? AND event_type = ?)`,
+		userID, eventType,
+	).Scan(ctx, &subscribed); err != nil {
+		slog.Error("dispatch_sync: subscription check failed", "err", err, "user_id", userID, "event_type", eventType)
+		return false
+	}
+	return subscribed
 }
 
 // ownershipRank returns a numeric rank for an ownership status string.
@@ -473,34 +517,25 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			return fmt.Errorf("igdb_match: search failed (will retry): %w", err)
 		}
 
-		normalizedQuery := matching.NormalizeTitle(eg.Title)
-		var bestScore, secondBestScore float64
-		var bestID int32
-		for _, c := range candidates {
-			score := matching.FuzzyConfidence(normalizedQuery, matching.NormalizeTitle(c.Title))
-			if score > bestScore {
-				secondBestScore = bestScore
-				bestScore = score
-				bestID = int32(c.IgdbID) //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
-			} else if score > secondBestScore {
-				secondBestScore = score
-			}
+		cands := make([]matching.Candidate, len(candidates))
+		for i, c := range candidates {
+			cands[i] = matching.Candidate{ID: int32(c.IgdbID), Title: c.Title} //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 		}
+		decision := matching.Decide(eg.Title, cands)
 
 		slog.Debug("igdb_match: search results",
 			"item_id", p.JobItemID,
 			"title", eg.Title,
 			"candidate_count", len(candidates),
-			"best_score", bestScore,
-			"second_best_score", secondBestScore,
-			"best_igdb_id", bestID,
+			"best_score", decision.BestScore,
+			"second_best_score", decision.SecondBest,
+			"best_igdb_id", decision.ResolvedID,
 		)
 
-		const autoResolveThreshold = 0.85
-		const tieEpsilon = 0.01
-		if bestScore >= autoResolveThreshold && (bestScore-secondBestScore) > tieEpsilon {
+		if decision.Confident {
+			bestID := decision.ResolvedID
 			slog.Debug("igdb_match: auto-resolved",
-				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", bestID, "score", bestScore)
+				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", bestID, "score", decision.BestScore)
 			if _, err := w.DB.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 				bestID, eg.Title,
@@ -520,14 +555,15 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		slog.Debug("igdb_match: low confidence, marking pending_review",
 			"item_id", p.JobItemID,
 			"title", eg.Title,
-			"best_score", bestScore,
-			"threshold", autoResolveThreshold,
-			"tie_gap", bestScore-secondBestScore,
+			"best_score", decision.BestScore,
+			"threshold", matching.AutoResolveThreshold,
+			"tie_gap", decision.BestScore-decision.SecondBest,
 			"candidate_count", len(candidates),
 		)
 		candidatesJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling the candidates slice cannot fail
 		item.IGDBCandidates = candidatesJSON
-		item.MatchConfidence = &bestScore
+		bs := decision.BestScore
+		item.MatchConfidence = &bs
 		syncMarkItemPendingReview(ctx, w.DB, &item)
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
@@ -709,11 +745,11 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			if _, err := w.DB.NewRaw(`
 				INSERT INTO user_game_platforms
 				(id, user_game_id, platform, storefront, is_available, hours_played, ownership_status,
-				 original_platform_name, original_storefront_name, external_game_id, sync_from_source, created_at, updated_at)
-				VALUES (?, ?, ?, ?, true, ?, ?, ?, ?, ?, true, now(), now())
+				 external_game_id, sync_from_source, created_at, updated_at)
+				VALUES (?, ?, ?, ?, true, ?, ?, ?, true, now(), now())
 				ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
 				ugpID, ugID, egp.Platform, storefrontSlug, egp.HoursPlayed, ownership,
-				egp.Platform, eg.Storefront, eg.ID,
+				eg.ID,
 			).Exec(ctx); err != nil {
 				slog.Error("user_game_write: insert user_game_platform", "err", err, "item_id", p.JobItemID)
 			}

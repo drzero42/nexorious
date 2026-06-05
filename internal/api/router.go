@@ -26,6 +26,7 @@ import (
 	"github.com/drzero42/nexorious/internal/notify"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
+	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
@@ -232,7 +233,6 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		authGroup := e.Group("/api/auth", auth.AuthMiddleware(db))
 		authGroup.POST("/logout", ah.HandleLogout)
 		authGroup.GET("/me", ah.HandleGetMe)
-		authGroup.PUT("/me", ah.HandleUpdateMe)
 		authGroup.PUT("/change-password", ah.HandleChangePassword)
 		authGroup.GET("/username/check/:username", ah.HandleCheckUsername)
 		authGroup.PUT("/username", ah.HandleChangeUsername)
@@ -315,11 +315,14 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		jobItemsGroup := e.Group("/api/job-items", auth.AuthMiddleware(db))
 		jobItemsGroup.GET("/:id", jih.HandleGetJobItem)
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
+		jobItemsGroup.POST("/:id/resolve", jih.HandleResolveItem)
+		jobItemsGroup.POST("/:id/skip", jih.HandleSkipItem)
 
 		// Import routes (all auth-protected)
-		imh := NewImportHandler(db, riverClient)
+		imh := NewImportHandler(db, riverClient, igdbClient)
 		importGroup := e.Group("/api/import", auth.AuthMiddleware(db))
 		importGroup.POST("/nexorious", imh.HandleImportNexorious)
+		importGroup.POST("/darkadia", imh.HandleImportDarkadia)
 
 		// Export routes (all auth-protected)
 		exh := NewExportHandler(db, riverClient, cfg)
@@ -371,7 +374,8 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		psnSvc := psnsvc.NewClient()
 		epicSvc := epicsvc.NewClient(cfg.LegendaryWorkDir)
 		gogSvc := gogsvc.NewClient()
-		synch := NewSyncHandler(encrypter, db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc})
+		humbleSvc := humblesvc.NewClient()
+		synch := NewSyncHandler(encrypter, db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc}, &humbleClientAdapter{c: humbleSvc})
 		syncGroup := e.Group("/api/sync", auth.AuthMiddleware(db))
 		synch.RegisterRoutes(syncGroup)
 	}
@@ -417,7 +421,6 @@ func (a *psnClientAdapter) GetAccountInfo(ctx context.Context, npssoToken string
 	return &PSNAccountInfo{
 		OnlineID:  info.OnlineID,
 		AccountID: info.AccountID,
-		Region:    info.Region,
 	}, nil
 }
 
@@ -455,11 +458,21 @@ func (a *gogClientAdapter) ExchangeCode(ctx context.Context, code string) (*GOGT
 		return nil, err
 	}
 	return &GOGTokenResponse{
-		AccessToken:  tok.AccessToken,
 		RefreshToken: tok.RefreshToken,
-		UserID:       tok.UserID,
 		Username:     tok.Username,
 	}, nil
+}
+
+// humbleClientAdapter bridges humblesvc.Client to the HumbleClient interface
+// without creating an import cycle between internal/api and internal/services/humble.
+type humbleClientAdapter struct{ c *humblesvc.Client }
+
+func (a *humbleClientAdapter) Verify(ctx context.Context, sessionCookie string) error {
+	err := a.c.Verify(ctx, sessionCookie)
+	if errors.Is(err, humblesvc.ErrCredentials) {
+		return ErrInvalidHumbleCookie
+	}
+	return err
 }
 
 func spaHandler() echo.HandlerFunc {

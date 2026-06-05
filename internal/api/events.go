@@ -14,6 +14,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/dbutil"
 	"github.com/drzero42/nexorious/internal/notify"
 )
 
@@ -126,7 +127,7 @@ func (h *EventsHandler) HandleList(c *echo.Context) error {
 		q = q.Where("e.scope = ?", scope)
 	}
 	if user := c.QueryParam("user"); user != "" {
-		q = q.Where("(e.actor_user_id = ? OR u.username ILIKE ?)", user, "%"+user+"%")
+		q = q.Where("(e.actor_user_id = ? OR u.username ILIKE ?)", user, dbutil.LikeContains(user))
 	}
 	if since := c.QueryParam("since"); since != "" {
 		ts, err := time.Parse(time.RFC3339, since)
@@ -140,7 +141,10 @@ func (h *EventsHandler) HandleList(c *echo.Context) error {
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid until")
 		}
-		q = q.Where("e.occurred_at <= ?", ts)
+		// Exclusive upper bound: callers pass the start of the day *after* the
+		// range they want, so the whole final day is included with no
+		// sub-second truncation. See ui .../admin/activity dayRangeToUTC.
+		q = q.Where("e.occurred_at < ?", ts)
 	}
 
 	if before := c.QueryParam("before"); before != "" {

@@ -15,15 +15,16 @@ import {
   useSteamConnection,
   useEpicConnection,
   useGOGConnection,
+  useHumbleStatus,
   jobsKeys,
   useJobCompletionEffect,
 } from '@/hooks';
-import { useCurrentUser, authKeys } from '@/hooks/use-auth';
 import {
   SteamConnectionCard,
   EpicConnectionCard,
   GOGConnectionCard,
   PSNConnectionCard,
+  HumbleConnectionCard,
   ExternalGamesSection,
 } from '@/components/sync';
 import { RecentActivity } from '@/components/jobs';
@@ -134,18 +135,6 @@ function SyncDetailPage() {
 
   const isValidPlatform = SUPPORTED_SYNC_STOREFRONTS.includes(storefront);
 
-  // Get current user for PSN/GOG preferences (must be called before any conditional return)
-  const { data: currentUser } = useCurrentUser();
-
-  // Extract PSN credentials from user preferences
-  const psnPrefs = currentUser?.preferences?.psn as
-    | {
-        online_id?: string;
-        account_id?: string;
-        region?: string;
-      }
-    | undefined;
-
   // Fetch sync config and status
   const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(storefront);
   const { data: status, isLoading: statusLoading } = useSyncStatus(storefront);
@@ -159,6 +148,9 @@ function SyncDetailPage() {
   // Fetch Epic and GOG connection status
   const { data: epicConnection } = useEpicConnection();
   const { data: gogConnection } = useGOGConnection();
+
+  // Fetch Humble Bundle status
+  const { data: humbleStatus } = useHumbleStatus();
 
   // Fetch job details if there's an active job
   const { data: activeJob } = useJob(status?.activeJobId ?? undefined, {
@@ -199,7 +191,8 @@ function SyncDetailPage() {
     (storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.PSN && (psnStatus?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
-    (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false));
+    (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
 
   const [connectionSectionOpen, setConnectionSectionOpen] = useState(false);
   const connectionOpenInitialized = useRef(false);
@@ -474,13 +467,11 @@ function SyncDetailPage() {
             <SteamConnectionCard
               isConfigured={config.isConfigured}
               credentialsError={steamConnection?.credentialsError ?? false}
-              steamId={steamConnection?.steamId}
               steamUsername={steamConnection?.username}
               onConnectionChange={() => {
                 // Invalidate queries to refresh data
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
                 queryClient.invalidateQueries({ queryKey: syncKeys.steamConnection() });
-                queryClient.invalidateQueries({ queryKey: authKeys.me() });
               }}
             />
           )}
@@ -491,7 +482,6 @@ function SyncDetailPage() {
               isConfigured={config.isConfigured}
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
-                queryClient.invalidateQueries({ queryKey: authKeys.me() });
               }}
             />
           )}
@@ -511,12 +501,22 @@ function SyncDetailPage() {
             <PSNConnectionCard
               isConfigured={config.isConfigured}
               credentialsError={psnStatus?.credentialsError ?? false}
-              onlineId={psnPrefs?.online_id}
-              accountId={psnPrefs?.account_id}
+              onlineId={psnStatus?.onlineId ?? undefined}
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
                 queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
-                queryClient.invalidateQueries({ queryKey: authKeys.me() });
+              }}
+            />
+          )}
+
+          {/* Humble Bundle Connection Card - only show for Humble storefront */}
+          {storefront === SyncStorefront.HUMBLE && (
+            <HumbleConnectionCard
+              isConfigured={config.isConfigured}
+              credentialsError={humbleStatus?.credentialsError ?? false}
+              onConnectionChange={() => {
+                queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
+                queryClient.invalidateQueries({ queryKey: syncKeys.humbleStatus() });
               }}
             />
           )}

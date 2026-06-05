@@ -431,6 +431,21 @@ export async function retryJobItem(itemId: string): Promise<JobItemDetail> {
   return transformJobItemDetail(response);
 }
 
+/**
+ * Resolve a pending-review import item to a chosen IGDB game. Import-scoped:
+ * the backend rejects sync items (those use the external_games rematch flow).
+ */
+export async function resolveJobItem(itemId: string, igdbId: number): Promise<void> {
+  await api.post(`/job-items/${itemId}/resolve`, { igdb_id: igdbId });
+}
+
+/**
+ * Skip a pending-review import item.
+ */
+export async function skipJobItem(itemId: string): Promise<void> {
+  await api.post(`/job-items/${itemId}/skip`);
+}
+
 export interface RecentJobsFilters {
   source?: string;
   jobTypes?: JobType[];

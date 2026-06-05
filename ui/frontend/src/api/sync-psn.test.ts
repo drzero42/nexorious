@@ -5,6 +5,7 @@ import { api } from './client';
 vi.mock('./client', () => ({
   api: {
     get: vi.fn(),
+    put: vi.fn(),
     post: vi.fn(),
     delete: vi.fn(),
   },
@@ -21,15 +22,14 @@ describe('PSN API', () => {
         success: true,
         online_id: 'TestPSNUser',
         account_id: 'psn-account-123',
-        region: 'US',
         message: 'PSN configured successfully',
       };
 
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+      vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
       const result = await configurePSN('valid-npsso-token');
 
-      expect(api.post).toHaveBeenCalledWith('/sync/psn/configure', {
+      expect(api.put).toHaveBeenCalledWith('/sync/psn/connection', {
         npsso_token: 'valid-npsso-token',
       });
       expect(result).toEqual({
@@ -45,11 +45,10 @@ describe('PSN API', () => {
         success: false,
         online_id: null,
         account_id: null,
-        region: null,
         message: 'Invalid NPSSO token',
       };
 
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+      vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
       const result = await configurePSN('invalid-token');
 
@@ -66,11 +65,10 @@ describe('PSN API', () => {
         success: true,
         online_id: 'TestUser',
         account_id: '12345',
-        region: 'EU',
         message: 'Success',
       };
 
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+      vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
       const result = await configurePSN('test-token');
 
@@ -89,8 +87,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: true,
         online_id: 'TestPSNUser',
-        account_id: 'psn-account-123',
-        region: 'US',
         credentials_error: false,
       };
 
@@ -101,7 +97,6 @@ describe('PSN API', () => {
       expect(api.get).toHaveBeenCalledWith('/sync/psn/connection');
       expect(result).toEqual({
         configured: true,
-        accountId: 'psn-account-123',
         onlineId: 'TestPSNUser',
         credentialsError: false,
       });
@@ -111,8 +106,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: false,
         online_id: null,
-        account_id: null,
-        region: null,
         credentials_error: false,
       };
 
@@ -122,7 +115,6 @@ describe('PSN API', () => {
 
       expect(result).toEqual({
         configured: false,
-        accountId: null,
         onlineId: null,
         credentialsError: false,
       });
@@ -132,8 +124,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: true,
         online_id: 'TestPSNUser',
-        account_id: 'psn-account-123',
-        region: 'US',
         credentials_error: true,
       };
 
@@ -149,8 +139,6 @@ describe('PSN API', () => {
       const mockResponse = {
         is_configured: true,
         online_id: 'TestUser',
-        account_id: '12345',
-        region: 'EU',
         credentials_error: false,
       };
 
@@ -161,11 +149,9 @@ describe('PSN API', () => {
       // Verify transformed keys
       expect(result).toHaveProperty('configured');
       expect(result).toHaveProperty('onlineId');
-      expect(result).toHaveProperty('accountId');
       expect(result).toHaveProperty('credentialsError');
       expect(result).not.toHaveProperty('is_configured');
       expect(result).not.toHaveProperty('online_id');
-      expect(result).not.toHaveProperty('account_id');
       expect(result).not.toHaveProperty('credentials_error');
     });
   });

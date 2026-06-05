@@ -25,3 +25,13 @@ func TestStorefrontToCollectionSlug_GOG(t *testing.T) {
 		t.Errorf("got %q", slug)
 	}
 }
+
+func TestStorefrontToCollectionSlug_HumbleBundle(t *testing.T) {
+	slug, ok := platformresolution.StorefrontToCollectionSlug("humble-bundle")
+	if !ok {
+		t.Fatal("expected ok=true for humble-bundle")
+	}
+	if slug != "humble-bundle" {
+		t.Errorf("got %q, want %q", slug, "humble-bundle")
+	}
+}

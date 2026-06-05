@@ -142,11 +142,11 @@ describe('syncApi', () => {
         account_id: 'acct-abc',
       };
 
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+      vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
       const result = await connectEpic('TESTCODE123');
 
-      expect(api.post).toHaveBeenCalledWith('/sync/epic/connect', {
+      expect(api.put).toHaveBeenCalledWith('/sync/epic/connection', {
         auth_code: 'TESTCODE123',
       });
       expect(result).toEqual({
@@ -160,7 +160,6 @@ describe('syncApi', () => {
         connected: true,
         disabled: false,
         display_name: 'EpicUser123',
-        account_id: 'acct-abc',
       };
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
@@ -173,7 +172,6 @@ describe('syncApi', () => {
         disabled: false,
         credentialsError: false,
         displayName: 'EpicUser123',
-        accountId: 'acct-abc',
         reason: undefined,
       });
     });
@@ -194,7 +192,6 @@ describe('syncApi', () => {
         disabled: true,
         credentialsError: false,
         displayName: undefined,
-        accountId: undefined,
         reason: 'legendary_not_configured',
       });
     });
