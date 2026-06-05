@@ -107,15 +107,14 @@ func TestExportJSON_Task(t *testing.T) {
 		t.Fatalf("unmarshal export JSON: %v", err)
 	}
 
-	if payload["export_version"] != "1.2" {
-		t.Errorf("export_version = %v, want 1.2", payload["export_version"])
+	if payload["format"] != "nexorious-library" {
+		t.Errorf("format = %v, want nexorious-library", payload["format"])
 	}
-	if payload["user_id"] != userID {
-		t.Errorf("user_id = %v, want %v", payload["user_id"], userID)
+	if payload["version"] != "2.0" {
+		t.Errorf("version = %v, want 2.0", payload["version"])
 	}
-	totalGames, _ := payload["total_games"].(float64)
-	if int(totalGames) != 1 {
-		t.Errorf("total_games = %v, want 1", payload["total_games"])
+	if payload["exported_at"] == nil || payload["exported_at"] == "" {
+		t.Errorf("exported_at should be set, got %v", payload["exported_at"])
 	}
 	games, _ := payload["games"].([]any)
 	if len(games) != 1 {
@@ -132,9 +131,12 @@ func TestExportJSON_Task(t *testing.T) {
 	if g["is_loved"] != true {
 		t.Errorf("games[0].is_loved = %v, want true", g["is_loved"])
 	}
-	releaseYear, _ := g["release_year"].(float64)
-	if int(releaseYear) != 2020 {
-		t.Errorf("games[0].release_year = %v, want 2020", g["release_year"])
+	igdbID, _ := g["igdb_id"].(float64)
+	if int(igdbID) == 0 {
+		t.Errorf("games[0].igdb_id = %v, want non-zero", g["igdb_id"])
+	}
+	if _, ok := g["release_year"]; ok {
+		t.Errorf("games[0].release_year should not be present in v2.0, got %v", g["release_year"])
 	}
 
 	// File must be inside the exports/ subdir of tmpDir.
@@ -230,7 +232,7 @@ func TestExportCSV_Task(t *testing.T) {
 	// Verify header columns.
 	wantHeaders := []string{
 		"title", "igdb_id", "play_status", "personal_rating", "is_loved",
-		"hours_played", "personal_notes", "platforms", "tags", "release_year",
+		"hours_played", "personal_notes", "platforms", "tags",
 		"created_at", "updated_at",
 	}
 	for i, h := range wantHeaders {
