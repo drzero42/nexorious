@@ -48,7 +48,7 @@ func (w *DarkadiaMatchWorker) Work(ctx context.Context, job *river.Job[DarkadiaM
 
 	if w.IGDBClient == nil || !w.IGDBClient.Configured() {
 		darkadiaMarkPendingReview(ctx, w.DB, &item, nil, nil)
-		darkadiaCheckJobCompletion(w.DB, item.JobID)
+		DarkadiaCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 
@@ -57,7 +57,7 @@ func (w *DarkadiaMatchWorker) Work(ctx context.Context, job *river.Job[DarkadiaM
 		if job.Attempt >= job.MaxAttempts {
 			slog.Warn("darkadia_match: IGDB failed on final attempt, pending_review", "item_id", item.ID, "err", err)
 			darkadiaMarkPendingReview(ctx, w.DB, &item, nil, nil)
-			darkadiaCheckJobCompletion(w.DB, item.JobID)
+			DarkadiaCheckJobCompletion(w.DB, item.JobID)
 			return nil
 		}
 		return fmt.Errorf("darkadia_match: search failed (will retry): %w", err)
@@ -78,7 +78,7 @@ func (w *DarkadiaMatchWorker) Work(ctx context.Context, job *river.Job[DarkadiaM
 		}
 		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, item.ID, DarkadiaFinalizeArgs{JobItemID: item.ID}); err != nil {
 			slog.Error("darkadia_match: enqueue finalize", "err", err, "item_id", item.ID)
-			darkadiaCheckJobCompletion(w.DB, item.JobID)
+			DarkadiaCheckJobCompletion(w.DB, item.JobID)
 		}
 		return nil
 	}
@@ -86,7 +86,7 @@ func (w *DarkadiaMatchWorker) Work(ctx context.Context, job *river.Job[DarkadiaM
 	candJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling candidates cannot fail
 	bs := decision.BestScore
 	darkadiaMarkPendingReview(ctx, w.DB, &item, candJSON, &bs)
-	darkadiaCheckJobCompletion(w.DB, item.JobID)
+	DarkadiaCheckJobCompletion(w.DB, item.JobID)
 	return nil
 }
 
@@ -130,7 +130,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 	}
 	if item.ResolvedIGDBID == nil {
 		markItemFailed(bg, w.DB, &item, "no resolved IGDB id", "darkadia_finalize: markItemFailed")
-		darkadiaCheckJobCompletion(w.DB, item.JobID)
+		DarkadiaCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 	igdbID := int32(*item.ResolvedIGDBID) //nolint:gosec // resolved id fits int32
@@ -138,13 +138,13 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 	var payload darkadia.Game
 	if err := json.Unmarshal(item.SourceMetadata, &payload); err != nil {
 		markItemFailed(bg, w.DB, &item, fmt.Sprintf("parse payload: %v", err), "darkadia_finalize: markItemFailed")
-		darkadiaCheckJobCompletion(w.DB, item.JobID)
+		DarkadiaCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 
 	if err := ensureGameRow(ctx, w.DB, w.IGDBClient, w.StoragePath, igdbID, payload.Title); err != nil {
 		markItemFailed(bg, w.DB, &item, fmt.Sprintf("ensure game: %v", err), "darkadia_finalize: markItemFailed")
-		darkadiaCheckJobCompletion(w.DB, item.JobID)
+		DarkadiaCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 
@@ -153,7 +153,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 	alreadyExists := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		markItemFailed(bg, w.DB, &item, fmt.Sprintf("load user_game: %v", err), "darkadia_finalize: markItemFailed")
-		darkadiaCheckJobCompletion(w.DB, item.JobID)
+		DarkadiaCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 	now := time.Now().UTC()
@@ -172,7 +172,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 		}
 		if _, ierr := w.DB.NewInsert().Model(&ug).Exec(ctx); ierr != nil {
 			markItemFailed(bg, w.DB, &item, fmt.Sprintf("insert user_game: %v", ierr), "darkadia_finalize: markItemFailed")
-			darkadiaCheckJobCompletion(w.DB, item.JobID)
+			DarkadiaCheckJobCompletion(w.DB, item.JobID)
 			return nil
 		}
 	}
@@ -225,7 +225,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 	markItemCompletedWithResult(bg, w.DB, &item, map[string]any{
 		"game_id": igdbID, "user_game_id": ug.ID, "is_new_addition": !alreadyExists,
 	}, "darkadia_finalize: markItemCompleted")
-	darkadiaCheckJobCompletion(w.DB, item.JobID)
+	DarkadiaCheckJobCompletion(w.DB, item.JobID)
 	return nil
 }
 
@@ -274,10 +274,10 @@ func ensureGameRow(ctx context.Context, db *bun.DB, client *igdb.Client, storage
 	return err
 }
 
-// darkadiaCheckJobCompletion finalizes a Darkadia import job once no active or
+// DarkadiaCheckJobCompletion finalizes a Darkadia import job once no active or
 // pending_review items remain. pending_review blocks termination (the job stays
 // processing until the user resolves/skips every such item).
-func darkadiaCheckJobCompletion(db *bun.DB, jobID string) {
+func DarkadiaCheckJobCompletion(db *bun.DB, jobID string) {
 	ctx := context.Background()
 	active, ok := countJobItems(ctx, db, jobID, "status IN ('pending', 'processing')", "darkadia: count active")
 	if !ok || active > 0 {

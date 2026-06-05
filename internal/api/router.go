@@ -315,6 +315,8 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		jobItemsGroup := e.Group("/api/job-items", auth.AuthMiddleware(db))
 		jobItemsGroup.GET("/:id", jih.HandleGetJobItem)
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
+		jobItemsGroup.POST("/:id/resolve", jih.HandleResolveItem)
+		jobItemsGroup.POST("/:id/skip", jih.HandleSkipItem)
 
 		// Import routes (all auth-protected)
 		imh := NewImportHandler(db, riverClient, igdbClient)
