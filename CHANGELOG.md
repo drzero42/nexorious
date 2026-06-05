@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/drzero42/nexorious/compare/v0.8.0...v0.8.1) (2026-06-05)
+
+
+### Bug Fixes
+
+* accept Darkadia CSV exports with extra feature-toggle columns ([#839](https://github.com/drzero42/nexorious/issues/839)) ([d613a5a](https://github.com/drzero42/nexorious/commit/d613a5a9ae4421c28b960e7a9fc35ea18668bda4))
+
 ## [0.8.0](https://github.com/drzero42/nexorious/compare/v0.7.0...v0.8.0) (2026-06-05)
 
 
