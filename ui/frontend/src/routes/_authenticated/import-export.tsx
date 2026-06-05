@@ -19,13 +19,14 @@ import {
   ExportFormat,
   JobType,
   JobStatus,
+  JobSource,
   getImportSourceDisplayInfo,
   getExportFormatDisplayInfo,
 } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { JobProgressCard, RecentActivity } from '@/components/jobs';
+import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/jobs';
 import {
   AlertCircle,
   Upload,
@@ -202,7 +203,7 @@ function ExportCard({ format, onExport, isExporting, disabled }: ExportCardProps
   );
 }
 
-function ImportExportPage() {
+export function ImportExportPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(
     null,
@@ -379,6 +380,20 @@ function ImportExportPage() {
       {showJobProgress && activeJob && (
         <section className="mb-8 space-y-4">
           <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
+
+          {/* In-progress Darkadia imports surface the per-item review actions
+              (Find Match / Skip) here: pending_review keeps the job in
+              'processing', and RecentActivity only covers terminal jobs, so this
+              is the only place the manual-matching box can appear. */}
+          {!activeJob.isTerminal &&
+            activeJob.jobType === JobType.IMPORT &&
+            activeJob.source === JobSource.DARKADIA && (
+              <JobItemsDetails
+                jobId={activeJob.id}
+                progress={activeJob.progress}
+                isTerminal={activeJob.isTerminal}
+              />
+            )}
 
           {/* Actions for completed jobs */}
           {activeJob.isTerminal && (
