@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.8.0](https://github.com/drzero42/nexorious/compare/v0.7.0...v0.8.0) (2026-06-05)
+
+
+### Features
+
+* auto-dismiss import/export progress box on clean completion ([#833](https://github.com/drzero42/nexorious/issues/833)) ([f4157ef](https://github.com/drzero42/nexorious/commit/f4157efbad3cbd4cbe7fa4a2b0aee27087067a99))
+* bring JSON import/export into compliance with v2.0 interchange spec ([#836](https://github.com/drzero42/nexorious/issues/836)) ([11b02d8](https://github.com/drzero42/nexorious/commit/11b02d81fe8d4c4d790884febf072c01965544a3))
+* Darkadia CSV import ([#824](https://github.com/drzero42/nexorious/issues/824)) ([cec4547](https://github.com/drzero42/nexorious/commit/cec4547af85fbfaf22d344e2c899422031ac8b49))
+* expand manual-workflow reference data ([#818](https://github.com/drzero42/nexorious/issues/818)) ([#829](https://github.com/drzero42/nexorious/issues/829)) ([d59107a](https://github.com/drzero42/nexorious/commit/d59107acfa976ee5ec8e9f8fb8a6c4f290efaf7b))
+* **import:** drop Item Details box, add Retry Failed to progress actions ([#755](https://github.com/drzero42/nexorious/issues/755)) ([#811](https://github.com/drzero42/nexorious/issues/811)) ([660374d](https://github.com/drzero42/nexorious/commit/660374d3626568aac85a92f2a43059e53be2ff86))
+* **notify:** notify on storefront credential expiry ([#751](https://github.com/drzero42/nexorious/issues/751)) ([#815](https://github.com/drzero42/nexorious/issues/815)) ([d5684d5](https://github.com/drzero42/nexorious/commit/d5684d54d90d22253a1bc2fdd4c0573bc97089d1))
+* **sync:** add Humble Bundle sync source ([#766](https://github.com/drzero42/nexorious/issues/766)) ([#819](https://github.com/drzero42/nexorious/issues/819)) ([ebde66c](https://github.com/drzero42/nexorious/commit/ebde66ca44dbcc440bd975f3a640d995181e1f6c))
+
+
+### Bug Fixes
+
+* **admin:** give the activity date-range filter a visible label ([#816](https://github.com/drzero42/nexorious/issues/816)) ([1b01477](https://github.com/drzero42/nexorious/commit/1b01477c5bd21e212cbcb0bde7b2f9074ad6bfa4))
+* **admin:** guard inverted date range in activity filter ([#812](https://github.com/drzero42/nexorious/issues/812)) ([8ed9d2f](https://github.com/drzero42/nexorious/commit/8ed9d2f55850782248b973171f273ee6d009930d))
+* **api:** escape ILIKE wildcards in user-supplied filters ([#750](https://github.com/drzero42/nexorious/issues/750)) ([#814](https://github.com/drzero42/nexorious/issues/814)) ([ec0dfd3](https://github.com/drzero42/nexorious/commit/ec0dfd37833bbb36c859eed61548e0b69d4cecfb))
+* interpret admin activity date filter in local timezone ([#795](https://github.com/drzero42/nexorious/issues/795)) ([be04f86](https://github.com/drzero42/nexorious/commit/be04f86f5ade4248576c54d7eb4c6f52f7f3c56b))
+* make platform/tag selector dropdown lists scroll instead of clipping ([#834](https://github.com/drzero42/nexorious/issues/834)) ([2b3bcaa](https://github.com/drzero42/nexorious/commit/2b3bcaab8c83e617a94573fd08ee6fbaaa9b2334))
+* **sync:** drop opaque account-ID line and fix Epic blank "Connected as" ([#802](https://github.com/drzero42/nexorious/issues/802)) ([8a6bde0](https://github.com/drzero42/nexorious/commit/8a6bde0475cf98c9810c3b10cffbccf26380e1a3))
+* **sync:** prune dead account-ID fields from connection/status GET responses ([#803](https://github.com/drzero42/nexorious/issues/803)) ([d623da0](https://github.com/drzero42/nexorious/commit/d623da03b812be03edf15de8f0c87a26ad605ab2))
+* **sync:** prune dead PSN response fields (region, is_verified) ([#806](https://github.com/drzero42/nexorious/issues/806)) ([a28c9f0](https://github.com/drzero42/nexorious/commit/a28c9f0fb3d26c779f3d7e74e5898b6dff939e79))
+* **sync:** stop mirroring Steam credentials into preferences.steam ([#797](https://github.com/drzero42/nexorious/issues/797)) ([c82587a](https://github.com/drzero42/nexorious/commit/c82587acc3e0e255f200e1aed0eb36e4c93ff248))
+* **sync:** stop storing dead access_token / user_id in GOG credentials blob ([#808](https://github.com/drzero42/nexorious/issues/808)) ([3616765](https://github.com/drzero42/nexorious/commit/361676502da7e37d02511c48fcb6bda66075c369))
+* validate play_status against enum in Darkadia import path ([#837](https://github.com/drzero42/nexorious/issues/837)) ([a5aaccf](https://github.com/drzero42/nexorious/commit/a5aaccfe38f044e618cee39d910d857f28a05e81)), closes [#835](https://github.com/drzero42/nexorious/issues/835)
+
 ## [0.7.0](https://github.com/drzero42/nexorious/compare/v0.6.0...v0.7.0) (2026-06-03)
 
 
