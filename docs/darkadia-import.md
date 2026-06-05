@@ -89,6 +89,16 @@ The export has **29 columns, in this exact order**. Game-level fields are only m
 
 > Note the physical column order: `Platforms` and `Notes` are the **last two** columns (27–28), after the copy block — not adjacent to the other game-level fields. A parser must address columns by header name, not by assuming game-level fields come first.
 
+### CSV dialect and parsing
+
+The export is standard RFC 4180 CSV, UTF-8, with a single header row. The facts below were verified against the reference export (`darkadia_export_csv_20251213.csv` — 1,744 lines → 1,740 data rows → 1,474 games):
+
+- **Quoting is partial.** Only some columns are quoted (the `Copy *` block and any header containing a space); a parser must not assume every field is quoted, nor that unquoted fields are safe to split naively.
+- **`Notes` can contain embedded newlines.** A free-text `Notes` value may carry a `CRLF` *inside* its surrounding quotes (one such note in the reference export). The file therefore **cannot be parsed line-by-line** — use a real CSV reader that honours quoted multi-line fields. No embedded double-quotes or commas appear in the reference `Notes`, but a conformant parser handles them per RFC 4180 regardless.
+- **Rows may be ragged.** Trailing empty columns can be omitted: 5 rows in the reference export carry **fewer than 29 fields**. The parser must tolerate a variable field count (e.g. Go's `encoding/csv` with `FieldsPerRecord = -1`) and treat missing trailing columns as empty, rather than rejecting the row.
+- **Dates are ISO-8601.** `Added` and `Copy purchase date` are `YYYY-MM-DD` calendar dates (e.g. `2013-06-05`). Empty means unset.
+- **Header validation.** The importer validates the file by matching the 29-column header row (the exact string formed by the columns in "Column reference"); a mismatch rejects the file as non-Darkadia **before** any rows are processed.
+
 ### Status flags are cumulative
 
 The progress flags are **cumulative tiers**, not independent toggles. A `Dominated` game is also `Mastered`, `Finished`, and `Played`. The meaningful state of a game is therefore the **highest tier reached**, combined with the orthogonal `Shelved`, `Playing`, `Loved` markers. The mapping in Part 2 resolves these to a single Nexorious status by precedence.
@@ -245,9 +255,11 @@ The source string is taken from `Copy source`, except when that is the literal `
 
    Recognition tolerates the spelling variants observed in the reference export: Epic appears as `Epic`, `Epic Games Store`, `Epic Game Store`, and `Epic Gamestore` (and via `Copy source other`); Ubisoft as `Uplay` and `Ubisoft Club`. A recognized source that carries **extra free text** (only `Uplay (coupon w/ GTX 970)` in the reference export) still maps to its slug; the parenthetical annotation is a **deliberate, documented drop** — preserving such one-off annotations is not worth a special case.
 
-2. **Physical media** (`Copy media = Physical`) → storefront `physical`; the specific retailer (`GameStop`, `Bilka`, `Proshop`, …) goes into the provenance note. Media is the deciding signal here, **not** the retailer name: `GameStop` appears in the reference export as both digital *and* physical copies, so the same retailer routes to `NULL`+note (digital) or `physical`+note (physical) depending on `Copy media`.
+2. **Physical media** (`Copy media` is exactly `Physical`) → storefront `physical`; the specific retailer (`GameStop`, `Bilka`, `Proshop`, …) goes into the provenance note. Media is the deciding signal here, **not** the retailer name: `GameStop` appears in the reference export as both digital *and* physical copies (5 digital, 3 physical), so the same retailer routes to `NULL`+note (digital) or `physical`+note (physical) depending on `Copy media`. Only the literal value `Physical` triggers this rule; `Digital`, `N/A`, and empty `Copy media` never do.
 3. **Unrecognized digital store** (`Green Man Gaming`, `Fanatical`, `WinGameStore`, `Telltale.com`, `Kickstarter`, `Indie Gala`, `cdon.com`, …) → storefront `NULL`; the source name goes into the provenance note.
 4. Otherwise, the platform-string inferred storefront (above) may apply; otherwise `NULL`.
+
+An **empty `Copy source`** (no purchase source recorded — 406 copies in the reference export) yields a `NULL` storefront and **no** provenance note: there is nothing to record. A provenance note is appended only for cases 2 and 3 (a physical retailer, or an unrecognized digital store).
 
 **No new storefronts are seeded** to accommodate the long tail of stores. Nexorious's `original_storefront_name` field is not used for this, because it is stored but never displayed — the visible, durable home for "where did I buy this" is the note.
 
