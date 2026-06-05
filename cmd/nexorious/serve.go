@@ -186,6 +186,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
 	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, IGDBClient: igdbClient}
 	userGameWorker := &tasks.UserGameWorker{DB: db, IGDBClient: igdbClient}
+	darkadiaMatchWorker := &tasks.DarkadiaMatchWorker{DB: db, IGDBClient: igdbClient}
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -194,6 +195,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, dispatchSyncWorker)
 	river.AddWorker(workers, igdbMatchWorker)
 	river.AddWorker(workers, userGameWorker)
+	river.AddWorker(workers, darkadiaMatchWorker)
+	river.AddWorker(workers, &tasks.DarkadiaFinalizeWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, metaDispatchWorker)
 	river.AddWorker(workers, &tasks.MetadataRefreshItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.MetadataFetchWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -226,6 +229,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	rescueOrphanedWorker.RiverClient = riverClient
 	igdbMatchWorker.RiverClient = riverClient
 	userGameWorker.RiverClient = riverClient
+	darkadiaMatchWorker.RiverClient = riverClient
 
 	// -------------------------------------------------------------------------
 	// HTTP server
@@ -266,6 +270,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newRescueOrphaned := &scheduler.RescueOrphanedPendingItemsWorker{DB: newDB}
 			newIGDBMatch := &tasks.IGDBMatchWorker{DB: newDB, IGDBClient: igdbClient}
 			newUserGame := &tasks.UserGameWorker{DB: newDB, IGDBClient: igdbClient}
+			newDarkadiaMatch := &tasks.DarkadiaMatchWorker{DB: newDB, IGDBClient: igdbClient}
 
 			newWorkers := river.NewWorkers()
 			river.AddWorker(newWorkers, &tasks.ImportItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -274,6 +279,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			river.AddWorker(newWorkers, newDispatchSync)
 			river.AddWorker(newWorkers, newIGDBMatch)
 			river.AddWorker(newWorkers, newUserGame)
+			river.AddWorker(newWorkers, newDarkadiaMatch)
+			river.AddWorker(newWorkers, &tasks.DarkadiaFinalizeWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, newMetaDispatch)
 			river.AddWorker(newWorkers, &tasks.MetadataRefreshItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &tasks.MetadataFetchWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -304,6 +311,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newRescueOrphaned.RiverClient = newClient
 			newIGDBMatch.RiverClient = newClient
 			newUserGame.RiverClient = newClient
+			newDarkadiaMatch.RiverClient = newClient
 
 			if err := newClient.Start(shutdownCtx); err != nil {
 				return fmt.Errorf("RebuildServices: River start: %w", err)

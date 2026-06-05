@@ -317,9 +317,10 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		jobItemsGroup.POST("/:id/retry", jih.HandleRetryItem)
 
 		// Import routes (all auth-protected)
-		imh := NewImportHandler(db, riverClient)
+		imh := NewImportHandler(db, riverClient, igdbClient)
 		importGroup := e.Group("/api/import", auth.AuthMiddleware(db))
 		importGroup.POST("/nexorious", imh.HandleImportNexorious)
+		importGroup.POST("/darkadia", imh.HandleImportDarkadia)
 
 		// Export routes (all auth-protected)
 		exh := NewExportHandler(db, riverClient, cfg)
