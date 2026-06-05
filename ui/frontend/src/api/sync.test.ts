@@ -142,11 +142,11 @@ describe('syncApi', () => {
         account_id: 'acct-abc',
       };
 
-      vi.mocked(api.post).mockResolvedValueOnce(mockResponse);
+      vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
       const result = await connectEpic('TESTCODE123');
 
-      expect(api.post).toHaveBeenCalledWith('/sync/epic/connect', {
+      expect(api.put).toHaveBeenCalledWith('/sync/epic/connection', {
         auth_code: 'TESTCODE123',
       });
       expect(result).toEqual({

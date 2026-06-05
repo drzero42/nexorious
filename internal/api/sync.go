@@ -179,20 +179,20 @@ type externalGameResponse struct {
 	Platforms                  []string `bun:"-"                              json:"platforms"`
 }
 
-type steamVerifyResponse struct {
+type steamConnectResponse struct {
 	Valid         bool    `json:"valid"`
 	SteamUsername *string `json:"steam_username"`
 	Error         *string `json:"error"`
 }
 
-type psnConfigureResponse struct {
+type psnConnectResponse struct {
 	Success   bool   `json:"success"`
 	OnlineID  string `json:"online_id"`
 	AccountID string `json:"account_id"`
 	Message   string `json:"message"`
 }
 
-type psnStatusResponse struct {
+type psnConnectionResponse struct {
 	IsConfigured     bool   `json:"is_configured"`
 	CredentialsError bool   `json:"credentials_error,omitempty"`
 	OnlineID         string `json:"online_id,omitempty"`
@@ -234,16 +234,16 @@ func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.
 // RegisterRoutes registers all sync routes on the given group.
 // Static-segment routes are registered before parameterised routes to avoid conflicts.
 func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
-	g.POST("/steam/verify", h.HandleSteamVerify)
+	g.PUT("/steam/connection", h.HandleSteamConnect)
 	g.GET("/steam/connection", h.HandleGetSteamConnection)
 	g.DELETE("/steam/connection", h.HandleSteamDisconnect)
-	g.POST("/psn/configure", h.HandlePSNConfigure)
-	g.GET("/psn/connection", h.HandleGetPSNStatus)
+	g.PUT("/psn/connection", h.HandlePSNConnect)
+	g.GET("/psn/connection", h.HandleGetPSNConnection)
 	g.DELETE("/psn/connection", h.HandlePSNDisconnect)
-	g.POST("/epic/connect", h.HandleEpicConnect)
+	g.PUT("/epic/connection", h.HandleEpicConnect)
 	g.DELETE("/epic/connection", h.HandleEpicDisconnect)
 	g.GET("/epic/connection", h.HandleGetEpicConnection)
-	g.POST("/gog/connect", h.HandleGOGConnect)
+	g.PUT("/gog/connection", h.HandleGOGConnect)
 	g.GET("/gog/connection", h.HandleGetGOGConnection)
 	g.DELETE("/gog/connection", h.HandleGOGDisconnect)
 	g.PUT("/humble-bundle/connection", h.HandleHumbleConnect)
@@ -273,7 +273,7 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 // persistStorefrontCredentials marshals creds to JSON, encrypts it, and upserts
 // the ciphertext into user_sync_configs for the given storefront, clearing the
 // credentials_error flag. It is the shared persistence path for all storefront
-// connect/verify handlers.
+// connect handlers.
 func (h *SyncHandler) persistStorefrontCredentials(ctx context.Context, userID, sf string, creds any) error {
 	credsJSON, err := json.Marshal(creds)
 	if err != nil {
@@ -622,7 +622,7 @@ func (h *SyncHandler) HandleGetSyncStatus(c *echo.Context) error {
 	})
 }
 
-func (h *SyncHandler) HandleSteamVerify(c *echo.Context) error {
+func (h *SyncHandler) HandleSteamConnect(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
@@ -639,24 +639,24 @@ func (h *SyncHandler) HandleSteamVerify(c *echo.Context) error {
 	errStr := func(s string) *string { return &s }
 
 	if !steamIDRegex.MatchString(req.SteamID) {
-		return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("invalid_steam_id")})
+		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("invalid_steam_id")})
 	}
 	if !steamKeyRegex.MatchString(req.WebAPIKey) {
-		return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("invalid_api_key")})
+		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("invalid_api_key")})
 	}
 
 	summary, err := h.steamClient.GetPlayerSummaries(c.Request().Context(), req.WebAPIKey, req.SteamID)
 	if err != nil {
 		if errors.Is(err, ErrSteamRateLimited) {
-			return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("rate_limited")})
+			return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("rate_limited")})
 		}
-		return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("network_error")})
+		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("network_error")})
 	}
 	if summary == nil {
-		return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("invalid_steam_id")})
+		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("invalid_steam_id")})
 	}
 	if summary.CommunityVisibilityState != 3 {
-		return c.JSON(http.StatusOK, steamVerifyResponse{Valid: false, Error: errStr("private_profile")})
+		return c.JSON(http.StatusOK, steamConnectResponse{Valid: false, Error: errStr("private_profile")})
 	}
 
 	creds := map[string]string{
@@ -670,7 +670,7 @@ func (h *SyncHandler) HandleSteamVerify(c *echo.Context) error {
 	}
 
 	name := summary.PersonaName
-	return c.JSON(http.StatusOK, steamVerifyResponse{Valid: true, SteamUsername: &name})
+	return c.JSON(http.StatusOK, steamConnectResponse{Valid: true, SteamUsername: &name})
 }
 
 func (h *SyncHandler) HandleSteamDisconnect(c *echo.Context) error {
@@ -696,7 +696,7 @@ func (h *SyncHandler) HandleGetSteamConnection(c *echo.Context) error {
 		})
 }
 
-func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
+func (h *SyncHandler) HandlePSNConnect(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
@@ -729,18 +729,18 @@ func (h *SyncHandler) HandlePSNConfigure(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist PSN connection")
 	}
 
-	return c.JSON(http.StatusOK, psnConfigureResponse{
+	return c.JSON(http.StatusOK, psnConnectResponse{
 		Success:   true,
 		OnlineID:  info.OnlineID,
 		AccountID: info.AccountID,
-		Message:   "PSN configured successfully",
+		Message:   "PSN connected successfully",
 	})
 }
 
-func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
+func (h *SyncHandler) HandleGetPSNConnection(c *echo.Context) error {
 	return h.serveConnectionStatus(c, "psn",
-		psnStatusResponse{},
-		psnStatusResponse{IsConfigured: true, CredentialsError: true},
+		psnConnectionResponse{},
+		psnConnectionResponse{IsConfigured: true, CredentialsError: true},
 		func(plaintext []byte, credentialsError bool) (any, error) {
 			var creds struct {
 				OnlineID string `json:"online_id"`
@@ -748,7 +748,7 @@ func (h *SyncHandler) HandleGetPSNStatus(c *echo.Context) error {
 			if err := json.Unmarshal(plaintext, &creds); err != nil {
 				return nil, err
 			}
-			return psnStatusResponse{
+			return psnConnectionResponse{
 				IsConfigured:     true,
 				CredentialsError: credentialsError,
 				OnlineID:         creds.OnlineID,
