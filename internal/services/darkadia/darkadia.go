@@ -83,7 +83,7 @@ type Platform struct {
 // rawGame is one game grouped from the CSV: the named row plus its copy rows.
 type rawGame struct {
 	named  []string
-	copies [][]string // every row (named + continuations), each padded to 29 fields
+	copies [][]string // every row (named + continuations), each normalized to the canonical layout
 }
 
 // Parse reads a Darkadia CSV and returns one consolidated Game per title.

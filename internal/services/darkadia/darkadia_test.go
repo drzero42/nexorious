@@ -33,6 +33,11 @@ func TestParse_AcceptsExtendedHeader(t *testing.T) {
 	if g.PersonalNotes == nil || !strings.Contains(*g.PersonalNotes, "my note") {
 		t.Errorf("notes = %v", g.PersonalNotes)
 	}
+	// Played=1 (and not finished) lives at a shifted position in the extended
+	// layout; confirm the status flags are remapped by name, not by old index.
+	if g.PlayStatus != "shelved" {
+		t.Errorf("play_status = %q, want shelved", g.PlayStatus)
+	}
 }
 
 func TestParse_RejectsNonDarkadiaHeader(t *testing.T) {
