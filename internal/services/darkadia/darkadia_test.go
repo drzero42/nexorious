@@ -256,6 +256,58 @@ func TestConsolidate_DedupOnPlatformStorefront(t *testing.T) {
 	}
 }
 
+func TestConsolidate_RecognizedSourceWithTrailingFreeText(t *testing.T) {
+	// "Uplay (coupon w/ GTX 970)" must still map to the uplay storefront; the
+	// parenthetical annotation is intentionally dropped.
+	row := mkRow("Uplay", map[int]string{
+		colPlatforms: "PC", colCopyPlatform: "PC", colCopyMedia: "Digital",
+		colCopySource: "Uplay (coupon w/ GTX 970)",
+	})
+	g := consolidate(rawGame{named: row, copies: [][]string{row}})
+	if g.Platforms[0].Storefront == nil || *g.Platforms[0].Storefront != "uplay" {
+		t.Errorf("storefront = %v, want uplay", g.Platforms[0].Storefront)
+	}
+}
+
+func TestConsolidate_NoCopyAggregateUsesInferredStorefront(t *testing.T) {
+	// An aggregate-only platform whose string carries an inferred storefront
+	// (no matching copy row) should get that inferred storefront.
+	row := mkRow("NoCopyPSP", map[int]string{
+		colPlatforms: "PlayStation Network (PSP)", // no Copy platform
+	})
+	g := consolidate(rawGame{named: row, copies: [][]string{row}})
+	if len(g.Platforms) != 1 {
+		t.Fatalf("platforms = %+v, want 1", g.Platforms)
+	}
+	if g.Platforms[0].Platform != "playstation-psp" {
+		t.Errorf("platform = %q, want playstation-psp", g.Platforms[0].Platform)
+	}
+	if g.Platforms[0].Storefront == nil || *g.Platforms[0].Storefront != "playstation-store" {
+		t.Errorf("storefront = %v, want playstation-store (inferred)", g.Platforms[0].Storefront)
+	}
+}
+
+func TestConsolidate_DuplicateProvenanceNoteDeduped(t *testing.T) {
+	// Two physical copies from the same retailer on the same platform must
+	// produce a single deduped provenance line (and a single platform entry).
+	named := mkRow("DupNote", map[int]string{
+		colPlatforms: "PlayStation 4", colCopyPlatform: "PlayStation 4",
+		colCopyMedia: "Physical", colCopySource: "GameStop",
+	})
+	cont := make([]string, len(header))
+	cont[colCopyPlatform] = "PlayStation 4"
+	cont[colCopyMedia] = "Physical"
+	cont[colCopySource] = "GameStop"
+	g := consolidate(rawGame{named: named, copies: [][]string{named, cont}})
+	if g.PersonalNotes == nil {
+		t.Fatalf("expected a provenance note")
+	}
+	if strings.Count(*g.PersonalNotes, "GameStop") != 1 {
+		t.Errorf("GameStop mentioned %d times, want 1 (deduped): %q",
+			strings.Count(*g.PersonalNotes, "GameStop"), *g.PersonalNotes)
+	}
+}
+
 func TestGame_JSONRoundTrip(t *testing.T) {
 	named := mkRow("J", map[int]string{colPlatforms: "PC", colCopyPlatform: "PC", colCopyMedia: "Digital", colCopySource: "Steam"})
 	g := consolidate(rawGame{named: named, copies: [][]string{named}})

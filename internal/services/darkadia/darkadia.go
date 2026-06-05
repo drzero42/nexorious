@@ -203,9 +203,20 @@ func recognizedStorefront(eff string) (string, bool) {
 	if slug, ok := storefrontTable[key]; ok {
 		return slug, true
 	}
-	for name, slug := range storefrontTable {
+	// Longest recognized prefix wins, deterministically (avoids random map iteration).
+	names := make([]string, 0, len(storefrontTable))
+	for name := range storefrontTable {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if len(names[i]) != len(names[j]) {
+			return len(names[i]) > len(names[j]) // longer first
+		}
+		return names[i] < names[j] // lexicographic tie-break
+	})
+	for _, name := range names {
 		if strings.HasPrefix(key, name+" ") {
-			return slug, true
+			return storefrontTable[name], true
 		}
 	}
 	return "", false
