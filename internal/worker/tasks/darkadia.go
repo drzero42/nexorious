@@ -202,7 +202,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 	}
 	owned := "owned"
 	newPlatforms := 0
-	for _, pl := range payload.Platforms {
+	for i, pl := range payload.Platforms {
 		sf := pl.Storefront
 		if existing[[2]string{pl.Platform, deref(sf)}] {
 			continue
@@ -213,6 +213,13 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 			OwnershipStatus: &owned, AcquiredDate: parseDateOnly(pl.AcquiredDate),
 			CreatedAt: now, UpdatedAt: now,
 		}
+		// Game-level total playtime lands on the first consolidated entry only,
+		// and only when that entry is newly inserted (additive merge). If the
+		// first entry already exists (or there are no platforms), the playtime
+		// has no home and is intentionally dropped rather than overwritten.
+		if i == 0 {
+			ugp.HoursPlayed = payload.HoursPlayed
+		}
 		if _, ierr := w.DB.NewInsert().Model(&ugp).Exec(ctx); ierr != nil {
 			slog.Error("darkadia_finalize: insert platform", "err", ierr)
 		} else {
@@ -220,9 +227,39 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 		}
 	}
 
+	existingTagIDs := map[string]bool{}
+	if alreadyExists {
+		var existingUGTs []models.UserGameTag
+		if err := w.DB.NewSelect().Model(&existingUGTs).Where("user_game_id = ?", ug.ID).Scan(ctx); err == nil {
+			for _, ugt := range existingUGTs {
+				existingTagIDs[ugt.TagID] = true
+			}
+		}
+	}
+	newTags := 0
+	for _, name := range payload.Tags {
+		tagID, terr := findOrCreateTag(ctx, w.DB, item.UserID, name, nil)
+		if terr != nil {
+			// Unlike the JSON importer (which fails the item), a tag error here
+			// is logged and skipped: this is a one-off migration where dropping
+			// one tag link is preferable to failing the whole game import.
+			slog.Error("darkadia_finalize: find/create tag", "err", terr, "name", name)
+			continue
+		}
+		if existingTagIDs[tagID] {
+			continue
+		}
+		ugt := &models.UserGameTag{ID: uuid.NewString(), UserGameID: ug.ID, TagID: tagID, CreatedAt: now}
+		if _, ierr := w.DB.NewInsert().Model(ugt).Exec(ctx); ierr != nil {
+			slog.Error("darkadia_finalize: insert user_game_tag", "err", ierr)
+		} else {
+			newTags++
+		}
+	}
+
 	changeType := "added"
 	if alreadyExists {
-		if newPlatforms > 0 {
+		if newPlatforms > 0 || newTags > 0 {
 			changeType = "updated"
 		} else {
 			changeType = "already_in_library"

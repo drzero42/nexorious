@@ -2,6 +2,7 @@ package tasks_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -311,5 +312,60 @@ func TestDarkadiaFinalize_AdditiveMergeDoesNotOverwrite(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("platforms = %d, want 1 (mac merged in)", count)
+	}
+}
+
+func TestDarkadiaFinalize_TagsAndPlaytimeOnFirstPlatform(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := "u-dk-tags"
+	insertTestUser(t, testDB, userID)
+	if _, err := testDB.NewRaw(`INSERT INTO games (id, title, last_updated, created_at) VALUES (77, 'Tagged', now(), now())`).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	payload := map[string]any{
+		"title": "Tagged", "play_status": "completed",
+		"tags":         []string{"Co-op", "VR"},
+		"hours_played": 148.0,
+		"platforms": []map[string]any{
+			{"platform": "pc-windows", "storefront": "steam"},
+			{"platform": "mac"},
+		},
+	}
+	_, itemID := insertDarkadiaItem(t, userID, payload)
+	if _, err := testDB.NewRaw(`UPDATE job_items SET resolved_igdb_id = 77 WHERE id = ?`, itemID).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	w := &tasks.DarkadiaFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, &river.Job[tasks.DarkadiaFinalizeArgs]{Args: tasks.DarkadiaFinalizeArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = 77", userID).Scan(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var tagCount int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_game_tags WHERE user_game_id = ?`, ug.ID).Scan(ctx, &tagCount); err != nil {
+		t.Fatal(err)
+	}
+	if tagCount != 2 {
+		t.Errorf("tags = %d, want 2", tagCount)
+	}
+
+	var pcHours, macHours sql.NullFloat64
+	if err := testDB.NewRaw(`SELECT hours_played FROM user_game_platforms WHERE user_game_id = ? AND platform = 'pc-windows'`, ug.ID).Scan(ctx, &pcHours); err != nil {
+		t.Fatal(err)
+	}
+	if err := testDB.NewRaw(`SELECT hours_played FROM user_game_platforms WHERE user_game_id = ? AND platform = 'mac'`, ug.ID).Scan(ctx, &macHours); err != nil {
+		t.Fatal(err)
+	}
+	if !pcHours.Valid || pcHours.Float64 != 148 {
+		t.Errorf("pc hours = %+v, want 148", pcHours)
+	}
+	if macHours.Valid {
+		t.Errorf("mac hours = %+v, want NULL", macHours)
 	}
 }

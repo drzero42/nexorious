@@ -53,7 +53,7 @@ Game-level fields (status flags, rating, loved, notes, the "Added" date, the agg
 
 ### Column reference
 
-The export has **29 columns, in this exact order**. Game-level fields are only meaningful on the *named* row; copy-level fields are meaningful on every row. The **Fate** column records how each column maps into Nexorious: every column is accounted for, and every drop is a **deliberate** design decision (collected in the accepted-loss ledger under "Out of scope / known limitations"), never a silent omission. The counts below ("0 rows populated") are from the reference export and motivate the drop; the importer's behaviour does not depend on them.
+The export has a **core of 29 columns**, plus optional columns added when Darkadia features (time-tracking, reviews, completion dates, copy notes, tags) are enabled. Columns are addressed **by header name**, never by fixed position, so the optional columns — which appear interleaved among the core columns — do not shift the import. Game-level fields are only meaningful on the *named* row; copy-level fields are meaningful on every row. The **Fate** column records how each column maps into Nexorious: every column is accounted for, and every drop is a **deliberate** design decision (collected in the accepted-loss ledger under "Out of scope / known limitations"), never a silent omission. The counts below ("0 rows populated") are from the reference export and motivate the drop; the importer's behaviour does not depend on them.
 
 | # | Column | Level | Meaning | Fate |
 |---|---|---|---|---|
@@ -97,7 +97,7 @@ The export is standard RFC 4180 CSV, UTF-8, with a single header row. The facts 
 - **`Notes` can contain embedded newlines.** A free-text `Notes` value may carry a `CRLF` *inside* its surrounding quotes (one such note in the reference export). The file therefore **cannot be parsed line-by-line** — use a real CSV reader that honours quoted multi-line fields. No embedded double-quotes or commas appear in the reference `Notes`, but a conformant parser handles them per RFC 4180 regardless.
 - **Rows may be ragged.** Trailing empty columns can be omitted: 5 rows in the reference export carry **fewer than 29 fields**. The parser must tolerate a variable field count (e.g. Go's `encoding/csv` with `FieldsPerRecord = -1`) and treat missing trailing columns as empty, rather than rejecting the row.
 - **Dates are ISO-8601.** `Added` and `Copy purchase date` are `YYYY-MM-DD` calendar dates (e.g. `2013-06-05`). Empty means unset.
-- **Header validation.** The importer validates the file by matching the 29-column header row (the exact string formed by the columns in "Column reference"); a mismatch rejects the file as non-Darkadia **before** any rows are processed.
+- **Header validation.** The importer parses the header into a name→position map and requires the 29 core column names to all be present (a strong Darkadia signature). Extra columns are tolerated; a file missing any required column is rejected as non-Darkadia **before** any rows are processed. Reordered or interleaved columns are handled because every field is read by name.
 
 ### Status flags are cumulative
 
@@ -122,8 +122,7 @@ The import therefore **consolidates** the two sources rather than choosing one (
 
 ### What Darkadia does not provide
 
-- **No playtime.** There is no hours-played data.
-- **No tags.** Darkadia has no tag concept.
+- **Playtime and tags are feature-gated.** Exports made with Darkadia's time-tracking and tags features enabled carry a `Time played` column and a `Tags` column; exports without those features omit them. When present, `Time played` → `hours_played` (on the game's first platform entry) and `Tags` → `user_game_tags`. When absent, nothing is lost.
 - **No game metadata.** Descriptions, cover art, genres, release dates, etc. are not in the export; Nexorious obtains these from IGDB after matching.
 
 ---
@@ -300,3 +299,5 @@ These Darkadia columns are dropped **on purpose** because Nexorious has no repre
 - **Physical-condition block** — `Copy box`, `Copy box condition`, `Copy box notes`, `Copy manual`, `Copy manual condition`, `Copy manual notes`, `Copy complete`, `Copy complete notes`: no physical-media model; in the reference export these are boilerplate/auto-filled and the free-text `*notes` columns are entirely empty.
 - **`Copy media other`** — empty in the reference export; no separate media-type field.
 - **Extra free text on a recognized source** — e.g. the `(coupon w/ GTX 970)` annotation on a `Uplay` source: the storefront is captured, the annotation is dropped.
+- **Completion dates** — `Date completed`, `Date mastered`, `Date dominated`: Nexorious has no per-status completion-date field.
+- **Milestone times** — `Time to complete`, `Time to master`, `Time to dominate`: `games.howlongtobeat_*` is IGDB community data, not per-user; there is no per-user milestone-time field. (The user's actual `Time played` *is* mapped, to `hours_played`.)

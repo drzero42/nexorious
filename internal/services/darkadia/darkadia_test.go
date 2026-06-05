@@ -9,6 +9,37 @@ import (
 // canonicalHeaderLine is the real 29-column header (quoting is incidental).
 const canonicalHeaderLine = `Name,Added,Loved,Owned,Played,Playing,Finished,Mastered,Dominated,Shelved,Rating,"Copy label","Copy Release","Copy platform","Copy media","Copy media other","Copy source","Copy source other","Copy purchase date","Copy box","Copy box condition","Copy box notes","Copy manual","Copy manual condition","Copy manual notes","Copy complete","Copy complete notes",Platforms,Notes`
 
+// extendedHeaderLine is the real 40-column header from an export with
+// time-tracking, reviews, completion dates, copy notes, and tags enabled.
+const extendedHeaderLine = `Name,Added,Loved,Owned,Played,Playing,Finished,"Date completed",Mastered,"Date mastered",Dominated,"Date dominated",Shelved,"Time played","Time to complete","Time to master","Time to dominate",Rating,"Review subject",Review,"Copy label","Copy Release","Copy platform","Copy media","Copy media other","Copy source","Copy source other","Copy purchase date","Copy box","Copy box condition","Copy box notes","Copy manual","Copy manual condition","Copy manual notes","Copy complete","Copy complete notes","Copy notes",Platforms,Tags,Notes`
+
+func TestParse_AcceptsExtendedHeader(t *testing.T) {
+	// One 40-field game row: PC copy bought on Steam, played 148h, tagged, with a copy note.
+	row := `"Game X",2013-06-05,0,1,1,0,0,,0,,0,,0,148:00,,,,,,,,,PC,Digital,,Steam,,2013-06-05,,,,,,,,,PS Plus,PC,"Co-op, VR",my note`
+	games, err := Parse([]byte(extendedHeaderLine + "\n" + row + "\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("games = %d, want 1", len(games))
+	}
+	g := games[0]
+	if g.Title != "Game X" {
+		t.Errorf("title = %q", g.Title)
+	}
+	if len(g.Platforms) == 0 || g.Platforms[0].Platform != "pc-windows" {
+		t.Errorf("platforms = %+v", g.Platforms)
+	}
+	if g.PersonalNotes == nil || !strings.Contains(*g.PersonalNotes, "my note") {
+		t.Errorf("notes = %v", g.PersonalNotes)
+	}
+	// Played=1 (and not finished) lives at a shifted position in the extended
+	// layout; confirm the status flags are remapped by name, not by old index.
+	if g.PlayStatus != "shelved" {
+		t.Errorf("play_status = %q, want shelved", g.PlayStatus)
+	}
+}
+
 func TestParse_RejectsNonDarkadiaHeader(t *testing.T) {
 	_, err := Parse([]byte("foo,bar,baz\n1,2,3\n"))
 	if err == nil || !strings.Contains(err.Error(), "Darkadia") {
@@ -308,6 +339,35 @@ func TestConsolidate_DuplicateProvenanceNoteDeduped(t *testing.T) {
 	}
 }
 
+func TestConsolidate_TagsPlaytimeReviewCopyNotes(t *testing.T) {
+	named := mkRow("G", map[int]string{
+		colOwned:         "1",
+		colTags:          "Co-op, VR",
+		colTimePlayed:    "10:30",
+		colReviewSubject: "Loved it",
+		colReview:        "Best game ever",
+		colNotes:         "my note",
+		colCopyPlatform:  "PC",
+		colCopyNotes:     "PS Plus",
+	})
+	g := consolidate(rawGame{named: named, copies: [][]string{named}})
+
+	if len(g.Tags) != 2 || g.Tags[0] != "Co-op" || g.Tags[1] != "VR" {
+		t.Fatalf("tags = %v, want [Co-op VR]", g.Tags)
+	}
+	if g.HoursPlayed == nil || *g.HoursPlayed != 10.5 {
+		t.Errorf("hours = %v, want 10.5", g.HoursPlayed)
+	}
+	if g.PersonalNotes == nil {
+		t.Fatal("notes nil")
+	}
+	for _, want := range []string{"my note", "Loved it", "Best game ever", "PS Plus"} {
+		if !strings.Contains(*g.PersonalNotes, want) {
+			t.Errorf("notes missing %q in: %s", want, *g.PersonalNotes)
+		}
+	}
+}
+
 func TestGame_JSONRoundTrip(t *testing.T) {
 	named := mkRow("J", map[int]string{colPlatforms: "PC", colCopyPlatform: "PC", colCopyMedia: "Digital", colCopySource: "Steam"})
 	g := consolidate(rawGame{named: named, copies: [][]string{named}})
@@ -323,3 +383,29 @@ func TestGame_JSONRoundTrip(t *testing.T) {
 		t.Errorf("round-trip platform = %q", back.Platforms[0].Platform)
 	}
 }
+
+func TestParseDuration(t *testing.T) {
+	cases := []struct {
+		in   string
+		want *float64
+	}{
+		{"148:00", ptrF(148)},
+		{"10:30", ptrF(10.5)},
+		{" 5 : 30 ", ptrF(5.5)},
+		{"", nil},
+		{"abc", nil},
+		{"1:2:3", nil},
+		{"0:00", nil},
+	}
+	for _, c := range cases {
+		got := parseDuration(c.in)
+		switch {
+		case c.want == nil && got != nil:
+			t.Errorf("parseDuration(%q) = %v, want nil", c.in, *got)
+		case c.want != nil && (got == nil || *got != *c.want):
+			t.Errorf("parseDuration(%q) = %v, want %v", c.in, got, *c.want)
+		}
+	}
+}
+
+func ptrF(f float64) *float64 { return &f }
