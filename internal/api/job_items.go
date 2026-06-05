@@ -87,7 +87,7 @@ func (h *JobItemsHandler) HandleRetryItem(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get parent job")
 	}
 
-	retryInsert(context.Background(), h.db, h.riverClient, job.JobType, itemID)
+	retryInsert(context.Background(), h.db, h.riverClient, job.JobType, job.Source, itemID)
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }

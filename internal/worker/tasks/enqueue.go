@@ -51,10 +51,16 @@ func EnqueueOrFail(
 	return nil
 }
 
-// ArgsForJobType returns the appropriate River JobArgs for the given job_type
-// and job_item_id. Used by callers (the HTTP retry handlers, the orphan
-// rescuer) that switch on job_type at runtime.
-func ArgsForJobType(jobType, jobItemID string) (river.JobArgs, error) {
+// ArgsForJobType returns the appropriate River JobArgs for the given job_type,
+// source, and job_item_id. Used by callers (the HTTP retry handlers, the orphan
+// rescuer) that switch on job_type at runtime. The source disambiguates imports
+// that share the "import" job_type but need a different task chain (Darkadia).
+func ArgsForJobType(jobType, source, jobItemID string) (river.JobArgs, error) {
+	// Darkadia imports run a bespoke match→finalize chain; a retried item
+	// re-enters at the match stage regardless of the (shared) "import" job_type.
+	if source == models.JobSourceDarkadia {
+		return DarkadiaMatchArgs{JobItemID: jobItemID}, nil
+	}
 	switch jobType {
 	case models.JobTypeSync:
 		return IGDBMatchArgs{JobItemID: jobItemID}, nil

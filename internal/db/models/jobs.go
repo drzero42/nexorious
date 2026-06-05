@@ -26,6 +26,7 @@ const (
 	JobSourceHumbleBundle = "humble-bundle"
 	JobSourceManual       = "manual"
 	JobSourceNexorious    = "nexorious"
+	JobSourceDarkadia     = "darkadia"
 	JobSourceCSV          = "csv"
 	JobSourceSystem       = "system"
 )
