@@ -9,6 +9,32 @@ import (
 // canonicalHeaderLine is the real 29-column header (quoting is incidental).
 const canonicalHeaderLine = `Name,Added,Loved,Owned,Played,Playing,Finished,Mastered,Dominated,Shelved,Rating,"Copy label","Copy Release","Copy platform","Copy media","Copy media other","Copy source","Copy source other","Copy purchase date","Copy box","Copy box condition","Copy box notes","Copy manual","Copy manual condition","Copy manual notes","Copy complete","Copy complete notes",Platforms,Notes`
 
+// extendedHeaderLine is the real 40-column header from an export with
+// time-tracking, reviews, completion dates, copy notes, and tags enabled.
+const extendedHeaderLine = `Name,Added,Loved,Owned,Played,Playing,Finished,"Date completed",Mastered,"Date mastered",Dominated,"Date dominated",Shelved,"Time played","Time to complete","Time to master","Time to dominate",Rating,"Review subject",Review,"Copy label","Copy Release","Copy platform","Copy media","Copy media other","Copy source","Copy source other","Copy purchase date","Copy box","Copy box condition","Copy box notes","Copy manual","Copy manual condition","Copy manual notes","Copy complete","Copy complete notes","Copy notes",Platforms,Tags,Notes`
+
+func TestParse_AcceptsExtendedHeader(t *testing.T) {
+	// One 40-field game row: PC copy bought on Steam, played 148h, tagged, with a copy note.
+	row := `"Game X",2013-06-05,0,1,1,0,0,,0,,0,,0,148:00,,,,,,,,,PC,Digital,,Steam,,2013-06-05,,,,,,,,,PS Plus,PC,"Co-op, VR",my note`
+	games, err := Parse([]byte(extendedHeaderLine + "\n" + row + "\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("games = %d, want 1", len(games))
+	}
+	g := games[0]
+	if g.Title != "Game X" {
+		t.Errorf("title = %q", g.Title)
+	}
+	if len(g.Platforms) == 0 || g.Platforms[0].Platform != "pc-windows" {
+		t.Errorf("platforms = %+v", g.Platforms)
+	}
+	if g.PersonalNotes == nil || !strings.Contains(*g.PersonalNotes, "my note") {
+		t.Errorf("notes = %v", g.PersonalNotes)
+	}
+}
+
 func TestParse_RejectsNonDarkadiaHeader(t *testing.T) {
 	_, err := Parse([]byte("foo,bar,baz\n1,2,3\n"))
 	if err == nil || !strings.Contains(err.Error(), "Darkadia") {

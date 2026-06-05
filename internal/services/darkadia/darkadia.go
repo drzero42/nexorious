@@ -15,8 +15,10 @@ import (
 // turns this into a 400 "not a Darkadia export".
 var ErrInvalidHeader = errors.New("not a Darkadia export (header mismatch)")
 
-// header is the canonical 29-column Darkadia header, by value (quoting is
-// incidental in the real export — only space-containing names are quoted).
+// header is the canonical internal column layout: the 29-column required
+// signature (0–28) followed by 5 optional feature-toggle columns (29–33) that
+// some exports add. Rows are normalized into this layout by header name, so the
+// real file's column order and any extra columns it carries do not matter.
 var header = []string{
 	"Name", "Added", "Loved", "Owned", "Played", "Playing", "Finished",
 	"Mastered", "Dominated", "Shelved", "Rating", "Copy label", "Copy Release",
@@ -24,7 +26,13 @@ var header = []string{
 	"Copy source other", "Copy purchase date", "Copy box", "Copy box condition",
 	"Copy box notes", "Copy manual", "Copy manual condition", "Copy manual notes",
 	"Copy complete", "Copy complete notes", "Platforms", "Notes",
+	// Optional (feature-toggle) columns — read only when present.
+	"Tags", "Time played", "Review subject", "Review", "Copy notes",
 }
+
+// requiredColumnCount is the number of leading canonical columns that must be
+// present (by name) for a file to be accepted as a Darkadia export.
+const requiredColumnCount = 29
 
 // Column indices (only the ones the importer reads).
 const (
@@ -46,6 +54,11 @@ const (
 	colCopyPurchase    = 18
 	colPlatforms       = 27
 	colNotes           = 28
+	colTags            = 29
+	colTimePlayed      = 30
+	colReviewSubject   = 31
+	colReview          = 32
+	colCopyNotes       = 33
 )
 
 // Game is the consolidated, Nexorious-shaped payload for one Darkadia game. It
@@ -82,7 +95,8 @@ func Parse(raw []byte) ([]Game, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read header: %w", err)
 	}
-	if !headerMatches(first) {
+	cols := buildColumnIndex(first)
+	if !hasRequiredColumns(cols) {
 		return nil, ErrInvalidHeader
 	}
 
@@ -95,7 +109,7 @@ func Parse(raw []byte) ([]Game, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read row: %w", err)
 		}
-		row := pad(rec, len(header))
+		row := normalize(rec, cols)
 		if row[colName] != "" {
 			raws = append(raws, rawGame{named: row, copies: [][]string{row}})
 			continue
@@ -115,25 +129,36 @@ func Parse(raw []byte) ([]Game, error) {
 	return games, nil
 }
 
-func headerMatches(got []string) bool {
-	if len(got) != len(header) {
-		return false
+// buildColumnIndex maps each header name to its position. First occurrence wins.
+func buildColumnIndex(hdr []string) map[string]int {
+	m := make(map[string]int, len(hdr))
+	for i, name := range hdr {
+		if _, ok := m[name]; !ok {
+			m[name] = i
+		}
 	}
-	for i := range header {
-		if got[i] != header[i] {
+	return m
+}
+
+// hasRequiredColumns reports whether every required signature column is present.
+func hasRequiredColumns(cols map[string]int) bool {
+	for _, name := range header[:requiredColumnCount] {
+		if _, ok := cols[name]; !ok {
 			return false
 		}
 	}
 	return true
 }
 
-// pad returns row extended to n fields with empty strings (ragged-row tolerance).
-func pad(row []string, n int) []string {
-	if len(row) >= n {
-		return row
+// normalize maps a raw record into the canonical layout by header name. Absent
+// columns and ragged short rows yield empty strings (ragged-row tolerance).
+func normalize(rec []string, cols map[string]int) []string {
+	out := make([]string, len(header))
+	for canon, name := range header {
+		if src, ok := cols[name]; ok && src < len(rec) {
+			out[canon] = rec[src]
+		}
 	}
-	out := make([]string, n)
-	copy(out, row)
 	return out
 }
 
