@@ -71,6 +71,8 @@ type Game struct {
 	PersonalNotes  *string    `json:"personal_notes,omitempty"`
 	CreatedAt      string     `json:"created_at,omitempty"` // "2006-01-02" or ""
 	Platforms      []Platform `json:"platforms"`
+	Tags           []string   `json:"tags,omitempty"`
+	HoursPlayed    *float64   `json:"hours_played,omitempty"`
 }
 
 // Platform is one consolidated (platform, storefront, acquired_date) ownership entry.
@@ -289,6 +291,39 @@ func splitAggregate(s string) []string {
 	return out
 }
 
+// parseDuration parses Darkadia "H:MM" playtime into hours. "148:00" → 148.0,
+// "10:30" → 10.5. Empty, malformed, or non-positive → nil (no playtime).
+func parseDuration(s string) *float64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return nil
+	}
+	h, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	m, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil {
+		return nil
+	}
+	v := float64(h) + float64(m)/60.0
+	if v <= 0 {
+		return nil
+	}
+	return &v
+}
+
+// appendUnique appends s to xs unless already present (order-preserving).
+func appendUnique(xs []string, s string) []string {
+	for _, x := range xs {
+		if x == s {
+			return xs
+		}
+	}
+	return append(xs, s)
+}
+
 func consolidate(rg rawGame) Game {
 	n := rg.named
 	g := Game{
@@ -299,6 +334,12 @@ func consolidate(rg rawGame) Game {
 	}
 	if r := parseRating(n[colRating]); r != nil {
 		g.PersonalRating = r
+	}
+	for _, t := range splitAggregate(n[colTags]) {
+		g.Tags = appendUnique(g.Tags, t)
+	}
+	if h := parseDuration(n[colTimePlayed]); h != nil {
+		g.HoursPlayed = h
 	}
 
 	var noteLines []string
@@ -312,6 +353,14 @@ func consolidate(rg rawGame) Game {
 			}
 		}
 		noteLines = append(noteLines, line)
+	}
+
+	if rev := strings.TrimSpace(n[colReview]); rev != "" {
+		if subj := strings.TrimSpace(n[colReviewSubject]); subj != "" {
+			addNote("Review — " + subj + "\n" + rev)
+		} else {
+			addNote("Review: " + rev)
+		}
 	}
 
 	owned := map[string]bool{}
@@ -371,6 +420,12 @@ func consolidate(rg rawGame) Game {
 		sf, note := resolveStorefront(m.inferred, effectiveSource(row), strings.TrimSpace(row[colCopyMedia]))
 		addNote(note)
 		add(m.slug, sf, strings.TrimSpace(row[colCopyPurchase]))
+	}
+
+	for _, row := range rg.copies {
+		if cn := strings.TrimSpace(row[colCopyNotes]); cn != "" {
+			addNote("Copy note: " + cn)
+		}
 	}
 
 	slugs := make([]string, 0, len(owned))

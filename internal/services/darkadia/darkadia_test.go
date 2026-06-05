@@ -339,6 +339,35 @@ func TestConsolidate_DuplicateProvenanceNoteDeduped(t *testing.T) {
 	}
 }
 
+func TestConsolidate_TagsPlaytimeReviewCopyNotes(t *testing.T) {
+	named := mkRow("G", map[int]string{
+		colOwned:         "1",
+		colTags:          "Co-op, VR",
+		colTimePlayed:    "10:30",
+		colReviewSubject: "Loved it",
+		colReview:        "Best game ever",
+		colNotes:         "my note",
+		colCopyPlatform:  "PC",
+		colCopyNotes:     "PS Plus",
+	})
+	g := consolidate(rawGame{named: named, copies: [][]string{named}})
+
+	if len(g.Tags) != 2 || g.Tags[0] != "Co-op" || g.Tags[1] != "VR" {
+		t.Fatalf("tags = %v, want [Co-op VR]", g.Tags)
+	}
+	if g.HoursPlayed == nil || *g.HoursPlayed != 10.5 {
+		t.Errorf("hours = %v, want 10.5", g.HoursPlayed)
+	}
+	if g.PersonalNotes == nil {
+		t.Fatal("notes nil")
+	}
+	for _, want := range []string{"my note", "Loved it", "Best game ever", "PS Plus"} {
+		if !strings.Contains(*g.PersonalNotes, want) {
+			t.Errorf("notes missing %q in: %s", want, *g.PersonalNotes)
+		}
+	}
+}
+
 func TestGame_JSONRoundTrip(t *testing.T) {
 	named := mkRow("J", map[int]string{colPlatforms: "PC", colCopyPlatform: "PC", colCopyMedia: "Digital", colCopySource: "Steam"})
 	g := consolidate(rawGame{named: named, copies: [][]string{named}})
