@@ -64,6 +64,33 @@ function makeJob(source: JobSource) {
   };
 }
 
+function makeTerminalJob(opts: { jobType?: JobType; status: JobStatus; failed?: number }) {
+  return {
+    id: 'job1',
+    userId: 'u',
+    jobType: opts.jobType ?? JobType.IMPORT,
+    source: JobSource.NEXORIOUS,
+    status: opts.status,
+    priority: 'high',
+    progress: {
+      pending: 0,
+      processing: 0,
+      completed: 10,
+      pendingReview: 0,
+      skipped: 0,
+      failed: opts.failed ?? 0,
+    },
+    totalItems: 10,
+    errorMessage: null,
+    filePath: null,
+    createdAt: '2026-06-05T00:00:00Z',
+    startedAt: '2026-06-05T00:00:00Z',
+    completedAt: '2026-06-05T00:01:00Z',
+    isTerminal: true,
+    durationSeconds: 60,
+  };
+}
+
 describe('ImportExportPage review surface', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -79,5 +106,44 @@ describe('ImportExportPage review surface', () => {
     h.job = makeJob(JobSource.NEXORIOUS);
     render(<ImportExportPage />);
     expect(screen.queryByTestId('import-review')).not.toBeInTheDocument();
+  });
+});
+
+describe('ImportExportPage auto-dismiss on clean completion', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('hides the progress box when an import completes cleanly', () => {
+    h.job = makeTerminalJob({ status: JobStatus.COMPLETED, failed: 0 });
+    render(<ImportExportPage />);
+    expect(screen.queryByTestId('job-progress-card')).not.toBeInTheDocument();
+  });
+
+  it('hides the progress box (and its Download button) when an export completes cleanly', () => {
+    h.job = makeTerminalJob({ jobType: JobType.EXPORT, status: JobStatus.COMPLETED, failed: 0 });
+    render(<ImportExportPage />);
+    expect(screen.queryByTestId('job-progress-card')).not.toBeInTheDocument();
+    expect(screen.queryByText('Download Export')).not.toBeInTheDocument();
+  });
+
+  it('keeps the progress box and Retry Failed when a completed job has failed items', () => {
+    h.job = makeTerminalJob({ status: JobStatus.COMPLETED, failed: 2 });
+    render(<ImportExportPage />);
+    expect(screen.getByTestId('job-progress-card')).toBeInTheDocument();
+    expect(screen.getByText('Retry Failed')).toBeInTheDocument();
+  });
+
+  it('keeps the progress box when a job is cancelled', () => {
+    h.job = makeTerminalJob({ status: JobStatus.CANCELLED, failed: 0 });
+    render(<ImportExportPage />);
+    expect(screen.getByTestId('job-progress-card')).toBeInTheDocument();
+    expect(screen.getByText('Start New')).toBeInTheDocument();
+  });
+
+  it('keeps the progress box for a terminal failed job', () => {
+    h.job = makeTerminalJob({ status: JobStatus.FAILED, failed: 0 });
+    render(<ImportExportPage />);
+    expect(screen.getByTestId('job-progress-card')).toBeInTheDocument();
   });
 });
