@@ -517,34 +517,25 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			return fmt.Errorf("igdb_match: search failed (will retry): %w", err)
 		}
 
-		normalizedQuery := matching.NormalizeTitle(eg.Title)
-		var bestScore, secondBestScore float64
-		var bestID int32
-		for _, c := range candidates {
-			score := matching.FuzzyConfidence(normalizedQuery, matching.NormalizeTitle(c.Title))
-			if score > bestScore {
-				secondBestScore = bestScore
-				bestScore = score
-				bestID = int32(c.IgdbID) //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
-			} else if score > secondBestScore {
-				secondBestScore = score
-			}
+		cands := make([]matching.Candidate, len(candidates))
+		for i, c := range candidates {
+			cands[i] = matching.Candidate{ID: int32(c.IgdbID), Title: c.Title} //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 		}
+		decision := matching.Decide(eg.Title, cands)
 
 		slog.Debug("igdb_match: search results",
 			"item_id", p.JobItemID,
 			"title", eg.Title,
 			"candidate_count", len(candidates),
-			"best_score", bestScore,
-			"second_best_score", secondBestScore,
-			"best_igdb_id", bestID,
+			"best_score", decision.BestScore,
+			"second_best_score", decision.SecondBest,
+			"best_igdb_id", decision.ResolvedID,
 		)
 
-		const autoResolveThreshold = 0.85
-		const tieEpsilon = 0.01
-		if bestScore >= autoResolveThreshold && (bestScore-secondBestScore) > tieEpsilon {
+		if decision.Confident {
+			bestID := decision.ResolvedID
 			slog.Debug("igdb_match: auto-resolved",
-				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", bestID, "score", bestScore)
+				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", bestID, "score", decision.BestScore)
 			if _, err := w.DB.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 				bestID, eg.Title,
@@ -564,14 +555,15 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		slog.Debug("igdb_match: low confidence, marking pending_review",
 			"item_id", p.JobItemID,
 			"title", eg.Title,
-			"best_score", bestScore,
-			"threshold", autoResolveThreshold,
-			"tie_gap", bestScore-secondBestScore,
+			"best_score", decision.BestScore,
+			"threshold", matching.AutoResolveThreshold,
+			"tie_gap", decision.BestScore-decision.SecondBest,
 			"candidate_count", len(candidates),
 		)
 		candidatesJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling the candidates slice cannot fail
 		item.IGDBCandidates = candidatesJSON
-		item.MatchConfidence = &bestScore
+		bs := decision.BestScore
+		item.MatchConfidence = &bs
 		syncMarkItemPendingReview(ctx, w.DB, &item)
 		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
 		return nil
