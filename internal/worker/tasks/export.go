@@ -185,29 +185,22 @@ func exportsDir(storagePath string) (string, error) {
 type exportGameJSON struct {
 	IGDBID         int32                `json:"igdb_id"`
 	Title          string               `json:"title"`
-	ReleaseYear    *int                 `json:"release_year"`
 	PlayStatus     *string              `json:"play_status"`
 	PersonalRating *int32               `json:"personal_rating"`
 	IsLoved        bool                 `json:"is_loved"`
-	HoursPlayed    *float64             `json:"hours_played"`
 	PersonalNotes  *string              `json:"personal_notes"`
-	Platforms      []exportPlatformJSON `json:"platforms"`
-	Tags           []exportTagJSON      `json:"tags"`
 	CreatedAt      string               `json:"created_at"`
 	UpdatedAt      string               `json:"updated_at"`
+	Platforms      []exportPlatformJSON `json:"platforms"`
+	Tags           []exportTagJSON      `json:"tags"`
 }
 
 type exportPlatformJSON struct {
-	PlatformID      *string  `json:"platform_id"`
-	PlatformName    *string  `json:"platform_name"`
-	StorefrontID    *string  `json:"storefront_id"`
-	StorefrontName  *string  `json:"storefront_name"`
-	StoreGameID     *string  `json:"store_game_id"`
-	StoreURL        *string  `json:"store_url"`
-	IsAvailable     bool     `json:"is_available"`
-	HoursPlayed     *float64 `json:"hours_played"`
+	Platform        *string  `json:"platform"`
+	Storefront      *string  `json:"storefront"`
 	OwnershipStatus *string  `json:"ownership_status"`
 	AcquiredDate    *string  `json:"acquired_date"`
+	HoursPlayed     *float64 `json:"hours_played"`
 }
 
 type exportTagJSON struct {
@@ -215,23 +208,11 @@ type exportTagJSON struct {
 	Color *string `json:"color"`
 }
 
-type exportStatsJSON struct {
-	ByStatus   map[string]int `json:"by_status"`
-	ByPlatform map[string]int `json:"by_platform"`
-	TotalHours float64        `json:"total_hours"`
-	RatedCount int            `json:"rated_count"`
-	LovedCount int            `json:"loved_count"`
-}
-
 type exportDocJSON struct {
-	ExportVersion string           `json:"export_version"`
-	ExportDate    string           `json:"export_date"`
-	UserID        string           `json:"user_id"`
-	TotalGames    int              `json:"total_games"`
-	TotalWishlist int              `json:"total_wishlist"`
-	ExportStats   exportStatsJSON  `json:"export_stats"`
-	Games         []exportGameJSON `json:"games"`
-	Wishlist      []any            `json:"wishlist"`
+	Format     string           `json:"format"`
+	Version    string           `json:"version"`
+	ExportedAt string           `json:"exported_at"`
+	Games      []exportGameJSON `json:"games"`
 }
 
 func writeJSONExport(storagePath, userID string, ugs []models.UserGame) (string, error) {
@@ -244,7 +225,7 @@ func writeJSONExport(storagePath, userID string, ugs []models.UserGame) (string,
 	filename := fmt.Sprintf("%s_%s.json", userID, ts)
 	outPath := filepath.Join(dir, filename)
 
-	doc := buildJSONDoc(userID, ugs)
+	doc := buildJSONDoc(ugs)
 
 	f, err := os.Create(outPath) //nolint:gosec // outPath is an internally-derived export path under storagePath, not user input
 	if err != nil {
@@ -264,75 +245,30 @@ func writeJSONExport(storagePath, userID string, ugs []models.UserGame) (string,
 	return outPath, nil
 }
 
-func buildJSONDoc(userID string, ugs []models.UserGame) exportDocJSON {
-	stats := exportStatsJSON{
-		ByStatus:   make(map[string]int),
-		ByPlatform: make(map[string]int),
-	}
-
+func buildJSONDoc(ugs []models.UserGame) exportDocJSON {
 	games := make([]exportGameJSON, 0, len(ugs))
 	for _, ug := range ugs {
-		// Stats.
-		if ug.PlayStatus != nil {
-			stats.ByStatus[*ug.PlayStatus]++
-		}
-		if ug.PersonalRating != nil {
-			stats.RatedCount++
-		}
-		if ug.IsLoved {
-			stats.LovedCount++
-		}
-
-		// Release year.
-		var releaseYear *int
-		if ug.Game != nil && ug.Game.ReleaseDate != nil {
-			y := ug.Game.ReleaseDate.Year()
-			releaseYear = &y
-		}
-
-		// Platforms — accumulate per-game total hours from platform rows.
-		var ugTotalHours float64
 		platforms := make([]exportPlatformJSON, 0, len(ug.Platforms))
 		for _, p := range ug.Platforms {
-			if p.HoursPlayed != nil {
-				ugTotalHours += *p.HoursPlayed
-			}
 			pj := exportPlatformJSON{
-				PlatformID:      p.Platform,
-				PlatformName:    p.Platform,
-				StorefrontID:    p.Storefront,
-				StorefrontName:  p.Storefront,
-				StoreGameID:     p.StoreGameID,
-				StoreURL:        p.StoreUrl,
-				IsAvailable:     p.IsAvailable,
-				HoursPlayed:     p.HoursPlayed,
+				Platform:        p.Platform,
+				Storefront:      p.Storefront,
 				OwnershipStatus: p.OwnershipStatus,
+				HoursPlayed:     p.HoursPlayed,
 			}
 			if p.AcquiredDate != nil {
 				d := p.AcquiredDate.Format("2006-01-02")
 				pj.AcquiredDate = &d
 			}
-			if p.Platform != nil {
-				stats.ByPlatform[*p.Platform]++
-			}
 			platforms = append(platforms, pj)
 		}
-		stats.TotalHours += ugTotalHours
-		var ugHoursPtr *float64
-		if ugTotalHours > 0 {
-			ugHoursPtr = &ugTotalHours
-		}
 
-		// Tags.
 		tags := make([]exportTagJSON, 0, len(ug.Tags))
 		for _, ugt := range ug.Tags {
 			if ugt.Tag == nil {
 				continue
 			}
-			tags = append(tags, exportTagJSON{
-				Name:  ugt.Tag.Name,
-				Color: ugt.Tag.Color,
-			})
+			tags = append(tags, exportTagJSON{Name: ugt.Tag.Name, Color: ugt.Tag.Color})
 		}
 
 		var title string
@@ -343,28 +279,22 @@ func buildJSONDoc(userID string, ugs []models.UserGame) exportDocJSON {
 		games = append(games, exportGameJSON{
 			IGDBID:         ug.GameID,
 			Title:          title,
-			ReleaseYear:    releaseYear,
 			PlayStatus:     ug.PlayStatus,
 			PersonalRating: ug.PersonalRating,
 			IsLoved:        ug.IsLoved,
-			HoursPlayed:    ugHoursPtr,
 			PersonalNotes:  ug.PersonalNotes,
-			Platforms:      platforms,
-			Tags:           tags,
 			CreatedAt:      ug.CreatedAt.UTC().Format(time.RFC3339),
 			UpdatedAt:      ug.UpdatedAt.UTC().Format(time.RFC3339),
+			Platforms:      platforms,
+			Tags:           tags,
 		})
 	}
 
 	return exportDocJSON{
-		ExportVersion: "1.2",
-		ExportDate:    time.Now().UTC().Format(time.RFC3339),
-		UserID:        userID,
-		TotalGames:    len(games),
-		TotalWishlist: 0,
-		ExportStats:   stats,
-		Games:         games,
-		Wishlist:      []any{},
+		Format:     "nexorious-library",
+		Version:    "2.0",
+		ExportedAt: time.Now().UTC().Format(time.RFC3339),
+		Games:      games,
 	}
 }
 

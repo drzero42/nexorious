@@ -147,118 +147,89 @@ func TestBuildCSVRow_NilTagEntry(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildJSONDoc_EmptyGames(t *testing.T) {
-	doc := buildJSONDoc("u1", nil)
-	if doc.TotalGames != 0 {
-		t.Errorf("expected 0 games, got %d", doc.TotalGames)
+	doc := buildJSONDoc(nil)
+	if doc.Format != "nexorious-library" {
+		t.Errorf("format = %q, want nexorious-library", doc.Format)
 	}
-	if doc.ExportVersion != "1.2" {
-		t.Errorf("expected version 1.2, got %q", doc.ExportVersion)
+	if doc.Version != "2.0" {
+		t.Errorf("version = %q, want 2.0", doc.Version)
+	}
+	if doc.ExportedAt == "" {
+		t.Errorf("exported_at should be set")
+	}
+	if len(doc.Games) != 0 {
+		t.Errorf("expected 0 games, got %d", len(doc.Games))
 	}
 }
 
 func TestBuildJSONDoc_NilTag(t *testing.T) {
-	// Tag with nil pointer should be skipped.
 	ug := models.UserGame{
-		ID:        "ug1",
-		UserID:    "u1",
-		GameID:    42,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID: "ug1", UserID: "u1", GameID: 42,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		Tags: []models.UserGameTag{
 			{ID: "t1", UserGameID: "ug1", TagID: "tag1", Tag: nil},
 		},
 	}
-	doc := buildJSONDoc("u1", []models.UserGame{ug})
+	doc := buildJSONDoc([]models.UserGame{ug})
 	if len(doc.Games) != 1 {
 		t.Fatalf("expected 1 game entry")
 	}
 	if len(doc.Games[0].Tags) != 0 {
 		t.Errorf("expected 0 tags (nil tag skipped), got %d", len(doc.Games[0].Tags))
 	}
+	if doc.Games[0].Title != "" {
+		t.Errorf("title = %q, want empty when Game is nil", doc.Games[0].Title)
+	}
 }
 
-func TestBuildJSONDoc_PlatformDisplayNamesFromSlug(t *testing.T) {
-	// platform_name / storefront_name are sourced directly from the canonical slug.
+func TestBuildJSONDoc_PlatformCanonicalKeys(t *testing.T) {
 	platform := "pc-windows"
 	storefront := "steam"
 	ug := models.UserGame{
-		ID:        "ug1",
-		UserID:    "u1",
-		GameID:    42,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID: "ug1", UserID: "u1", GameID: 42,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		Platforms: []models.UserGamePlatform{
-			{
-				ID: "ugp1", UserGameID: "ug1",
-				Platform:   &platform,
-				Storefront: &storefront,
-				CreatedAt:  time.Now(), UpdatedAt: time.Now(),
-			},
+			{ID: "ugp1", UserGameID: "ug1", Platform: &platform, Storefront: &storefront, CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		},
 	}
-	doc := buildJSONDoc("u1", []models.UserGame{ug})
+	doc := buildJSONDoc([]models.UserGame{ug})
 	if len(doc.Games[0].Platforms) != 1 {
 		t.Fatalf("expected 1 platform")
 	}
 	pj := doc.Games[0].Platforms[0]
-	if pj.PlatformName == nil || *pj.PlatformName != platform {
-		t.Errorf("expected platform_name=%q, got %v", platform, pj.PlatformName)
+	if pj.Platform == nil || *pj.Platform != platform {
+		t.Errorf("platform = %v, want %q", pj.Platform, platform)
 	}
-	if pj.StorefrontName == nil || *pj.StorefrontName != storefront {
-		t.Errorf("expected storefront_name=%q, got %v", storefront, pj.StorefrontName)
-	}
-}
-
-func TestBuildJSONDoc_WithLovedAndRated(t *testing.T) {
-	rating := int32(8)
-	hours := 10.0
-	status := "playing"
-	platform := "pc-windows"
-	ug := models.UserGame{
-		ID:             "ug1",
-		UserID:         "u1",
-		GameID:         42,
-		IsLoved:        true,
-		PersonalRating: &rating,
-		PlayStatus:     &status,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-		Platforms: []models.UserGamePlatform{
-			{ID: "ugp1", UserGameID: "ug1", Platform: &platform, HoursPlayed: &hours, CreatedAt: time.Now(), UpdatedAt: time.Now()},
-		},
-	}
-	doc := buildJSONDoc("u1", []models.UserGame{ug})
-	if doc.ExportStats.LovedCount != 1 {
-		t.Errorf("expected LovedCount=1, got %d", doc.ExportStats.LovedCount)
-	}
-	if doc.ExportStats.RatedCount != 1 {
-		t.Errorf("expected RatedCount=1, got %d", doc.ExportStats.RatedCount)
-	}
-	if doc.ExportStats.TotalHours != 10.0 {
-		t.Errorf("expected TotalHours=10.0, got %v", doc.ExportStats.TotalHours)
+	if pj.Storefront == nil || *pj.Storefront != storefront {
+		t.Errorf("storefront = %v, want %q", pj.Storefront, storefront)
 	}
 }
 
-func TestBuildJSONDoc_HoursFromPlatforms(t *testing.T) {
-	h1 := 10.5
-	h2 := 4.5
+func TestBuildJSONDoc_UserFieldsAndPerPlatformHours(t *testing.T) {
+	rating := int32(4)
+	h := 10.5
+	status := "completed"
 	platform := "pc-windows"
 	ug := models.UserGame{
-		ID:        "ug1",
-		UserID:    "u1",
-		GameID:    42,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID: "ug1", UserID: "u1", GameID: 42,
+		IsLoved: true, PersonalRating: &rating, PlayStatus: &status,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 		Platforms: []models.UserGamePlatform{
-			{ID: "ugp1", UserGameID: "ug1", Platform: &platform, HoursPlayed: &h1, CreatedAt: time.Now(), UpdatedAt: time.Now()},
-			{ID: "ugp2", UserGameID: "ug1", Platform: &platform, HoursPlayed: &h2, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+			{ID: "ugp1", UserGameID: "ug1", Platform: &platform, HoursPlayed: &h, CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		},
 	}
-	doc := buildJSONDoc("u1", []models.UserGame{ug})
-	if doc.ExportStats.TotalHours != 15.0 {
-		t.Errorf("TotalHours: want 15.0, got %v", doc.ExportStats.TotalHours)
+	doc := buildJSONDoc([]models.UserGame{ug})
+	g := doc.Games[0]
+	if g.PersonalRating == nil || *g.PersonalRating != 4 {
+		t.Errorf("personal_rating = %v, want 4", g.PersonalRating)
 	}
-	if doc.Games[0].HoursPlayed == nil || *doc.Games[0].HoursPlayed != 15.0 {
-		t.Errorf("games[0].HoursPlayed: want 15.0, got %v", doc.Games[0].HoursPlayed)
+	if !g.IsLoved {
+		t.Errorf("is_loved = false, want true")
+	}
+	if g.PlayStatus == nil || *g.PlayStatus != "completed" {
+		t.Errorf("play_status = %v, want completed", g.PlayStatus)
+	}
+	if g.Platforms[0].HoursPlayed == nil || *g.Platforms[0].HoursPlayed != 10.5 {
+		t.Errorf("platform hours = %v, want 10.5", g.Platforms[0].HoursPlayed)
 	}
 }
