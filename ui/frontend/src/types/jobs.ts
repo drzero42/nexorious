@@ -17,9 +17,13 @@ export enum JobType {
 export enum JobSource {
   STEAM = 'steam',
   EPIC = 'epic',
+  PSN = 'psn',
   GOG = 'gog',
+  HUMBLE_BUNDLE = 'humble-bundle',
+  MANUAL = 'manual',
   DARKADIA = 'darkadia',
   NEXORIOUS = 'nexorious',
+  CSV = 'csv',
   SYSTEM = 'system',
 }
 
@@ -218,9 +222,13 @@ export function getJobSourceLabel(source: JobSource): string {
   const labels: Record<JobSource, string> = {
     [JobSource.STEAM]: 'Steam',
     [JobSource.EPIC]: 'Epic Games',
+    [JobSource.PSN]: 'PlayStation Network',
     [JobSource.GOG]: 'GOG',
+    [JobSource.HUMBLE_BUNDLE]: 'Humble Bundle',
+    [JobSource.MANUAL]: 'Manual',
     [JobSource.DARKADIA]: 'Darkadia',
     [JobSource.NEXORIOUS]: 'Nexorious',
+    [JobSource.CSV]: 'CSV',
     [JobSource.SYSTEM]: 'System',
   };
   return labels[source] || source;
