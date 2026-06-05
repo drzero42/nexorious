@@ -235,9 +235,25 @@ func TestAdminEvents_Filters(t *testing.T) {
 	if r := get("?user=" + adminID); len(r.Events) != 1 || r.Events[0].ID != "evt-sync" {
 		t.Errorf("user-by-id filter wrong: %+v", r.Events)
 	}
+	// A literal wildcard must not widen the match: no username contains '%',
+	// so the filter returns nothing rather than every event (see #750).
+	if r := get("?user=%25"); len(r.Events) != 0 {
+		t.Errorf("wildcard user filter should match nothing, got: %+v", r.Events)
+	}
 	since := base.Add(30 * time.Second).Format(time.RFC3339)
 	until := base.Add(90 * time.Second).Format(time.RFC3339)
 	if r := get("?since=" + since + "&until=" + until); len(r.Events) != 1 || r.Events[0].ID != "evt-imp" {
 		t.Errorf("since/until filter wrong: %+v", r.Events)
+	}
+	// `until` is an exclusive upper bound: an event exactly at the boundary is
+	// excluded. evt-bkp sits at base+2m, so until=base+2m drops it.
+	exclUntil := base.Add(2 * time.Minute).Format(time.RFC3339)
+	if r := get("?until=" + exclUntil); len(r.Events) != 2 {
+		t.Errorf("exclusive until should drop the boundary event, got: %+v", r.Events)
+	}
+	for _, ev := range get("?until=" + exclUntil).Events {
+		if ev.ID == "evt-bkp" {
+			t.Errorf("exclusive until included boundary event evt-bkp: %+v", ev)
+		}
 	}
 }

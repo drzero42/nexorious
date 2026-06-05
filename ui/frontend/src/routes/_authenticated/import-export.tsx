@@ -4,12 +4,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   useImportNexorious,
+  useImportDarkadia,
   useExportCollection,
   useJob,
   useJobTypeStatus,
   useJobCompletionEffect,
   useCancelJob,
   useDownloadExport,
+  useRetryFailedItems,
   jobsKeys,
 } from '@/hooks';
 import {
@@ -17,6 +19,7 @@ import {
   ExportFormat,
   JobType,
   JobStatus,
+  JobSource,
   getImportSourceDisplayInfo,
   getExportFormatDisplayInfo,
 } from '@/types';
@@ -200,17 +203,19 @@ function ExportCard({ format, onExport, isExporting, disabled }: ExportCardProps
   );
 }
 
-function ImportExportPage() {
-  const [isUploading, setIsUploading] = useState(false);
+export function ImportExportPage() {
+  const [uploadingSource, setUploadingSource] = useState<ImportSource | null>(null);
   const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(
     null,
   );
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
   const { mutateAsync: importNexorious } = useImportNexorious();
+  const { mutateAsync: importDarkadia } = useImportDarkadia();
   const { mutateAsync: exportCollection } = useExportCollection();
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
   const { mutate: downloadExport, isPending: isDownloading } = useDownloadExport();
+  const { mutateAsync: retryFailedItems, isPending: isRetrying } = useRetryFailedItems();
 
   const queryClient = useQueryClient();
 
@@ -236,18 +241,38 @@ function ImportExportPage() {
   useJobCompletionEffect(importStatus?.activeJobId, handleJobComplete);
   useJobCompletionEffect(exportStatus?.activeJobId, handleJobComplete);
 
+  // A cleanly-completed job (terminal, completed, no failed items) auto-dismisses:
+  // the progress box disappears so the upload/export cards return and the run
+  // shows up in Recent Activity. The box is kept for failed/cancelled jobs and
+  // jobs with failed items, whose Retry Failed action is the only one-click retry
+  // path. pending_review keeps the job in 'processing' (non-terminal), so it is
+  // already excluded here. (issue #823)
+  const isCleanlyCompleted = (job: typeof activeImportJob) =>
+    !!job &&
+    job.isTerminal &&
+    job.status === JobStatus.COMPLETED &&
+    (job.progress?.failed ?? 0) === 0;
+
   // Determine which job to display
   // Priority: 1) In-progress jobs, 2) Most recently completed job
   const getActiveJob = () => {
-    const importNotDismissed = activeImportJob && activeImportJob.id !== dismissedJobId;
-    const exportNotDismissed = activeExportJob && activeExportJob.id !== dismissedJobId;
+    // A job is displayable unless it was manually dismissed or auto-dismissed
+    // because it completed cleanly.
+    const importDisplayable =
+      activeImportJob &&
+      activeImportJob.id !== dismissedJobId &&
+      !isCleanlyCompleted(activeImportJob);
+    const exportDisplayable =
+      activeExportJob &&
+      activeExportJob.id !== dismissedJobId &&
+      !isCleanlyCompleted(activeExportJob);
 
     // First, check for any in-progress job
-    if (importNotDismissed && !activeImportJob.isTerminal) return activeImportJob;
-    if (exportNotDismissed && !activeExportJob.isTerminal) return activeExportJob;
+    if (importDisplayable && !activeImportJob.isTerminal) return activeImportJob;
+    if (exportDisplayable && !activeExportJob.isTerminal) return activeExportJob;
 
     // Then, show the most recently completed job
-    if (importNotDismissed && exportNotDismissed) {
+    if (importDisplayable && exportDisplayable) {
       // Compare completion times, show the most recent
       const importTime = activeImportJob.completedAt
         ? new Date(activeImportJob.completedAt).getTime()
@@ -258,8 +283,8 @@ function ImportExportPage() {
       return exportTime > importTime ? activeExportJob : activeImportJob;
     }
 
-    if (importNotDismissed) return activeImportJob;
-    if (exportNotDismissed) return activeExportJob;
+    if (importDisplayable) return activeImportJob;
+    if (exportDisplayable) return activeExportJob;
 
     return null;
   };
@@ -276,11 +301,12 @@ function ImportExportPage() {
     activeJob?.status === JobStatus.COMPLETED &&
     activeJob?.jobType === JobType.EXPORT;
 
-  const handleImportFile = async (file: File) => {
-    setIsUploading(true);
+  const handleImportFile = async (file: File, source: ImportSource) => {
+    setUploadingSource(source);
 
     try {
-      const result = await importNexorious(file);
+      const result =
+        source === ImportSource.DARKADIA ? await importDarkadia(file) : await importNexorious(file);
       toast.success(`Import started: ${result.message}`);
       // Reset dismissed job; the mutation optimistically marks the job active.
       setDismissedJobId(null);
@@ -288,7 +314,7 @@ function ImportExportPage() {
       const message = error instanceof Error ? error.message : 'Import failed';
       toast.error(message);
     } finally {
-      setIsUploading(false);
+      setUploadingSource(null);
     }
   };
 
@@ -342,6 +368,17 @@ function ImportExportPage() {
     }
   };
 
+  const handleRetryFailed = async () => {
+    if (!activeJob) return;
+
+    try {
+      const result = await retryFailedItems(activeJob.id);
+      toast.success(result.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to retry items');
+    }
+  };
+
   return (
     <div>
       {/* Header */}
@@ -364,17 +401,40 @@ function ImportExportPage() {
         <section className="mb-8 space-y-4">
           <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
 
-          {activeJob.progress && (
-            <JobItemsDetails
-              jobId={activeJob.id}
-              progress={activeJob.progress}
-              isTerminal={activeJob.isTerminal}
-            />
-          )}
+          {/* In-progress Darkadia imports surface the per-item review actions
+              (Find Match / Skip) here: pending_review keeps the job in
+              'processing', and RecentActivity only covers terminal jobs, so this
+              is the only place the manual-matching box can appear. */}
+          {!activeJob.isTerminal &&
+            activeJob.jobType === JobType.IMPORT &&
+            activeJob.source === JobSource.DARKADIA && (
+              <JobItemsDetails
+                jobId={activeJob.id}
+                progress={activeJob.progress}
+                isTerminal={activeJob.isTerminal}
+              />
+            )}
 
           {/* Actions for completed jobs */}
           {activeJob.isTerminal && (
             <div className="flex gap-3">
+              {/* Retry Failed — only when the finished job has failed items */}
+              {(activeJob.progress?.failed ?? 0) > 0 && (
+                <Button onClick={handleRetryFailed} disabled={isRetrying}>
+                  {isRetrying ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Retrying...
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Retry Failed
+                    </>
+                  )}
+                </Button>
+              )}
+
               {/* Download button for completed exports */}
               {isActiveJobCompletedExport && (
                 <Button
@@ -413,8 +473,14 @@ function ImportExportPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <ImportCard
               source={ImportSource.NEXORIOUS}
-              onFileSelect={handleImportFile}
-              isUploading={isUploading}
+              onFileSelect={(file) => handleImportFile(file, ImportSource.NEXORIOUS)}
+              isUploading={uploadingSource === ImportSource.NEXORIOUS}
+              disabled={hasActiveJob}
+            />
+            <ImportCard
+              source={ImportSource.DARKADIA}
+              onFileSelect={(file) => handleImportFile(file, ImportSource.DARKADIA)}
+              isUploading={uploadingSource === ImportSource.DARKADIA}
               disabled={hasActiveJob}
             />
           </div>

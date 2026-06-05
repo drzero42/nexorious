@@ -27,7 +27,7 @@ const (
 
 	StatusOK                 = "ok"
 	StatusNotConfigured      = "not_configured"
-	StatusInvalidCredentials = "invalid_credentials"
+	StatusInvalidCredentials = "invalid_credentials" //nolint:gosec // status enum value, not a credential
 )
 
 // Client provides access to the IGDB API with rate limiting and authentication.
@@ -335,7 +335,7 @@ func (c *Client) DownloadCoverArt(ctx context.Context, imageID string, storagePa
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o750); err != nil {
 		return "", fmt.Errorf("create cover_art dir: %w", err)
 	}
 
@@ -355,7 +355,7 @@ func (c *Client) DownloadCoverArt(ctx context.Context, imageID string, storagePa
 		return "", fmt.Errorf("cover art download returned status %d", resp.StatusCode)
 	}
 
-	f, err := os.Create(localPath)
+	f, err := os.Create(localPath) //nolint:gosec // localPath is an internally-derived cover-art cache path, not user input
 	if err != nil {
 		return "", err
 	}

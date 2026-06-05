@@ -15,11 +15,11 @@ import type {
   GOGConnectionResponse,
   PSNConfigureResponse,
   PSNStatusResponse,
+  HumbleConnectResponse,
+  HumbleStatusResponse,
 } from '@/types';
 
-// ============================================================================
 // Query Keys
-// ============================================================================
 
 export const syncKeys = {
   all: ['sync'] as const,
@@ -31,17 +31,13 @@ export const syncKeys = {
   epicConnection: () => [...syncKeys.all, 'epicConnection'] as const,
   gogConnection: () => [...syncKeys.all, 'gogConnection'] as const,
   psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
+  humbleStatus: () => [...syncKeys.all, 'humbleStatus'] as const,
   externalGames: (platform: SyncStorefront) =>
     [...syncKeys.all, 'external-games', platform] as const,
 };
 
-// ============================================================================
 // Query Hooks
-// ============================================================================
 
-/**
- * Hook to fetch all sync configurations for the current user.
- */
 export function useSyncConfigs() {
   return useQuery({
     queryKey: syncKeys.configs(),
@@ -49,9 +45,6 @@ export function useSyncConfigs() {
   });
 }
 
-/**
- * Hook to fetch sync configuration for a specific platform.
- */
 export function useSyncConfig(platform: SyncStorefront) {
   return useQuery({
     queryKey: syncKeys.config(platform),
@@ -59,9 +52,6 @@ export function useSyncConfig(platform: SyncStorefront) {
   });
 }
 
-/**
- * Hook to fetch sync status for a specific platform.
- */
 export function useSyncStatus(platform: SyncStorefront) {
   return useQuery({
     queryKey: syncKeys.status(platform),
@@ -76,7 +66,6 @@ export function useSyncStatus(platform: SyncStorefront) {
 }
 
 /**
- * Hook to fetch all sync statuses for supported platforms.
  * Returns a map of platform -> status for easy lookup.
  */
 export function useSyncStatuses() {
@@ -89,13 +78,8 @@ export function useSyncStatuses() {
   };
 }
 
-// ============================================================================
 // Mutation Hooks
-// ============================================================================
 
-/**
- * Hook to update sync configuration for a platform.
- */
 export function useUpdateSyncConfig() {
   const queryClient = useQueryClient();
 
@@ -112,9 +96,6 @@ export function useUpdateSyncConfig() {
   );
 }
 
-/**
- * Hook to trigger a manual sync for a platform.
- */
 export function useTriggerSync() {
   const queryClient = useQueryClient();
 
@@ -137,18 +118,12 @@ export function useTriggerSync() {
   });
 }
 
-/**
- * Hook to verify Steam credentials before saving.
- */
 export function useVerifySteamCredentials() {
   return useMutation<SteamVerifyResponse, Error, { steamId: string; webApiKey: string }>({
     mutationFn: ({ steamId, webApiKey }) => syncApi.verifySteamCredentials(steamId, webApiKey),
   });
 }
 
-/**
- * Hook to disconnect Steam integration.
- */
 export function useDisconnectSteam() {
   const queryClient = useQueryClient();
 
@@ -162,15 +137,15 @@ export function useDisconnectSteam() {
 }
 
 /**
- * Hook to fetch Steam connection status.
- * Returns connected state, credentialsError flag, steamId, and username.
+ * Returns connected state, credentialsError flag, and username.
  */
-export function useSteamConnection() {
+export function useSteamConnection(options?: { enabled?: boolean }) {
   return useQuery<SteamConnectionData, Error>({
     queryKey: syncKeys.steamConnection(),
     queryFn: syncApi.getSteamConnection,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    enabled: options?.enabled,
   });
 }
 
@@ -188,26 +163,23 @@ export function useResetSyncData() {
   });
 }
 
-// ============================================================================
 // Epic Auth Hooks
-// ============================================================================
 
 /**
- * Hook to fetch the current Epic Games Store connection status.
- * Tells the UI whether Epic sync is disabled (LEGENDARY_WORK_DIR unset on
- * the backend), connected, or simply not configured.
+ * Tells the UI whether Epic sync is disabled server-side, connected, or
+ * simply not configured.
  */
-export function useEpicConnection() {
+export function useEpicConnection(options?: { enabled?: boolean }) {
   return useQuery<EpicConnectionResponse, Error>({
     queryKey: syncKeys.epicConnection(),
     queryFn: syncApi.getEpicConnection,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    enabled: options?.enabled,
   });
 }
 
 /**
- * Hook to connect Epic Games Store by exchanging the legendary auth code.
  * On success, refreshes connection status and the user's sync configs.
  */
 export function useConnectEpic() {
@@ -224,7 +196,6 @@ export function useConnectEpic() {
 }
 
 /**
- * Hook to disconnect Epic Games Store.
  * Invalidates all Epic-related queries on success.
  */
 export function useDisconnectEpic() {
@@ -243,16 +214,15 @@ export function useDisconnectEpic() {
   });
 }
 
-// ============================================================================
 // GOG Auth Hooks
-// ============================================================================
 
-export function useGOGConnection() {
+export function useGOGConnection(options?: { enabled?: boolean }) {
   return useQuery<GOGConnectionResponse, Error>({
     queryKey: syncKeys.gogConnection(),
     queryFn: syncApi.getGOGConnection,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
+    enabled: options?.enabled,
   });
 }
 
@@ -285,12 +255,9 @@ export function useDisconnectGOG() {
   });
 }
 
-// ============================================================================
 // PSN Auth Hooks
-// ============================================================================
 
 /**
- * Hook to configure PSN with NPSSO token.
  * Invalidates sync configs and PSN status on success.
  */
 export function useConfigurePSN() {
@@ -311,20 +278,19 @@ export function useConfigurePSN() {
 }
 
 /**
- * Hook to check current PSN connection status.
  * Cached for 5 minutes.
  */
-export function usePSNStatus() {
+export function usePSNStatus(options?: { enabled?: boolean }) {
   return useQuery<PSNStatusResponse, Error>({
     queryKey: syncKeys.psnStatus(),
     queryFn: syncApi.getPSNStatus,
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: true,
+    enabled: options?.enabled,
   });
 }
 
 /**
- * Hook to disconnect PSN integration.
  * Invalidates all PSN-related queries on success.
  */
 export function useDisconnectPSN() {
@@ -344,13 +310,61 @@ export function useDisconnectPSN() {
   });
 }
 
-// ============================================================================
-// External Games Hooks
-// ============================================================================
+// Humble Bundle Auth Hooks
 
 /**
- * Hook to fetch external games for a specific platform.
+ * Connect Humble Bundle. Invalidates sync configs and Humble status on success.
  */
+export function useConnectHumble() {
+  const queryClient = useQueryClient();
+
+  return useMutation<HumbleConnectResponse, Error, string>({
+    mutationFn: (sessionCookie: string) => syncApi.connectHumble(sessionCookie),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.HUMBLE) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.humbleStatus() });
+    },
+    onError: (error) => {
+      console.error('Failed to connect Humble Bundle:', error);
+    },
+  });
+}
+
+/**
+ * Humble Bundle connection status. Cached for 5 minutes.
+ */
+export function useHumbleStatus(options?: { enabled?: boolean }) {
+  return useQuery<HumbleStatusResponse, Error>({
+    queryKey: syncKeys.humbleStatus(),
+    queryFn: syncApi.getHumbleStatus,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    enabled: options?.enabled,
+  });
+}
+
+/**
+ * Disconnect Humble Bundle. Invalidates all Humble-related queries on success.
+ */
+export function useDisconnectHumble() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error>({
+    mutationFn: syncApi.disconnectHumble,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.HUMBLE) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.humbleStatus() });
+    },
+    onError: (error) => {
+      console.error('Failed to disconnect Humble Bundle:', error);
+    },
+  });
+}
+
+// External Games Hooks
+
 export function useExternalGames(platform: SyncStorefront, options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: syncKeys.externalGames(platform),
@@ -360,7 +374,6 @@ export function useExternalGames(platform: SyncStorefront, options?: { refetchIn
 }
 
 /**
- * Hook to skip an external game.
  * Invalidates all sync queries on success.
  */
 export function useSkipExternalGame() {
@@ -377,7 +390,6 @@ export function useSkipExternalGame() {
 }
 
 /**
- * Hook to unskip an external game.
  * Invalidates all sync queries on success.
  */
 export function useUnskipExternalGame() {
@@ -394,7 +406,6 @@ export function useUnskipExternalGame() {
 }
 
 /**
- * Hook to retry all failed external games for a storefront.
  * Invalidates external games query on success.
  */
 export function useRetryFailedExternalGames() {
@@ -411,7 +422,6 @@ export function useRetryFailedExternalGames() {
 }
 
 /**
- * Hook to rematch an external game to a different IGDB entry.
  * Invalidates all sync queries on success.
  */
 export function useRematchExternalGame() {

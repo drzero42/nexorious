@@ -69,12 +69,11 @@ describe('EpicConnectionCard', () => {
     );
 
     expect(screen.getByText('Epic Games Store Connection')).toBeInTheDocument();
-    expect(screen.getByText('Not Configured')).toBeInTheDocument();
     expect(screen.getByLabelText('Authorization Code')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Connect Epic Games Store' })).toBeInTheDocument();
   });
 
-  it('renders disabled state when backend reports LEGENDARY_WORK_DIR unset', () => {
+  it('renders disabled state keyed off the reason code, without naming the backend env var', () => {
     stubEpicConnection({ connected: false, disabled: true, reason: 'legendary_not_configured' });
 
     render(
@@ -82,17 +81,30 @@ describe('EpicConnectionCard', () => {
       { wrapper: createWrapper() },
     );
 
-    expect(screen.getByText('Disabled')).toBeInTheDocument();
-    expect(screen.getByText(/LEGENDARY_WORK_DIR/)).toBeInTheDocument();
+    expect(screen.getByText(/sync is disabled on this server/i)).toBeInTheDocument();
+    expect(screen.getByText(/contact your administrator/i)).toBeInTheDocument();
+    // The SPA must not bake in the backend's internal env var name (see #789).
+    expect(screen.queryByText(/LEGENDARY_WORK_DIR/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Authorization Code')).not.toBeInTheDocument();
   });
 
-  it('renders connected state with display name and account id from connection hook', () => {
+  it('renders a generic disabled message when the reason code is absent or unknown', () => {
+    stubEpicConnection({ connected: false, disabled: true });
+
+    render(
+      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      { wrapper: createWrapper() },
+    );
+
+    expect(screen.getByText(/sync is disabled on this server/i)).toBeInTheDocument();
+    expect(screen.queryByText(/LEGENDARY_WORK_DIR/)).not.toBeInTheDocument();
+  });
+
+  it('renders connected state with display name from connection hook', () => {
     stubEpicConnection({
       connected: true,
       disabled: false,
       displayName: 'EpicUser123',
-      accountId: 'epic-account-id',
     });
 
     render(<EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
@@ -100,8 +112,6 @@ describe('EpicConnectionCard', () => {
     });
 
     expect(screen.getByText(/Connected as EpicUser123/)).toBeInTheDocument();
-    expect(screen.getByText('epic-account-id')).toBeInTheDocument();
-    expect(screen.getByText('Connected')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
   });
 
@@ -142,7 +152,7 @@ describe('EpicConnectionCard', () => {
 
   it('opens a confirmation dialog before disconnecting', async () => {
     const user = userEvent.setup();
-    stubEpicConnection({ connected: true, disabled: false, displayName: 'X', accountId: 'y' });
+    stubEpicConnection({ connected: true, disabled: false, displayName: 'X' });
 
     render(<EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
       wrapper: createWrapper(),
@@ -158,7 +168,7 @@ describe('EpicConnectionCard', () => {
   it('calls disconnectEpic when the confirmation is accepted', async () => {
     const user = userEvent.setup();
     const disconnect = stubDisconnectEpic();
-    stubEpicConnection({ connected: true, disabled: false, displayName: 'X', accountId: 'y' });
+    stubEpicConnection({ connected: true, disabled: false, displayName: 'X' });
 
     render(<EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
       wrapper: createWrapper(),
@@ -188,7 +198,7 @@ describe('EpicConnectionCard', () => {
       screen.getByText(/Epic Games Store does not provide playtime data/i),
     ).toBeInTheDocument();
 
-    stubEpicConnection({ connected: true, disabled: false, displayName: 'X', accountId: 'y' });
+    stubEpicConnection({ connected: true, disabled: false, displayName: 'X' });
     rerender(
       <EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />,
     );

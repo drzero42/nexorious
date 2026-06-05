@@ -4,10 +4,7 @@ import type { GetTagsParams, TagsListResponse, TagCreateData, TagUpdateData } fr
 import type { Tag } from '@/types';
 import { gameKeys } from './use-games';
 
-// ============================================================================
 // Query Keys
-// ============================================================================
-
 export const tagKeys = {
   all: ['tags'] as const,
   lists: () => [...tagKeys.all, 'list'] as const,
@@ -16,13 +13,7 @@ export const tagKeys = {
   detail: (id: string) => [...tagKeys.details(), id] as const,
 };
 
-// ============================================================================
 // Query Hooks
-// ============================================================================
-
-/**
- * Hook to fetch user's tags with pagination.
- */
 export function useTags(params?: GetTagsParams) {
   return useQuery<TagsListResponse, Error>({
     queryKey: tagKeys.list(params),
@@ -30,9 +21,6 @@ export function useTags(params?: GetTagsParams) {
   });
 }
 
-/**
- * Hook to fetch all tags.
- */
 export function useAllTags() {
   return useQuery<Tag[], Error>({
     queryKey: tagKeys.list({ page: 1, perPage: 100, includeGameCount: true }),
@@ -40,9 +28,6 @@ export function useAllTags() {
   });
 }
 
-/**
- * Hook to fetch a single tag.
- */
 export function useTag(id: string | undefined) {
   return useQuery<Tag, Error>({
     queryKey: tagKeys.detail(id ?? ''),
@@ -51,13 +36,7 @@ export function useTag(id: string | undefined) {
   });
 }
 
-// ============================================================================
 // Mutation Hooks
-// ============================================================================
-
-/**
- * Hook to create a new tag.
- */
 export function useCreateTag() {
   const queryClient = useQueryClient();
 
@@ -69,9 +48,6 @@ export function useCreateTag() {
   });
 }
 
-/**
- * Hook to create or get existing tag by name.
- */
 export function useCreateOrGetTag() {
   const queryClient = useQueryClient();
 
@@ -85,9 +61,6 @@ export function useCreateOrGetTag() {
   });
 }
 
-/**
- * Hook to update an existing tag.
- */
 export function useUpdateTag() {
   const queryClient = useQueryClient();
 
@@ -100,9 +73,6 @@ export function useUpdateTag() {
   });
 }
 
-/**
- * Hook to delete a tag.
- */
 export function useDeleteTag() {
   const queryClient = useQueryClient();
 
@@ -114,9 +84,6 @@ export function useDeleteTag() {
   });
 }
 
-/**
- * Hook to assign tags to a user game.
- */
 export function useAssignTagsToGame() {
   const queryClient = useQueryClient();
 
@@ -133,9 +100,6 @@ export function useAssignTagsToGame() {
   });
 }
 
-/**
- * Hook to remove tags from a user game.
- */
 export function useRemoveTagsFromGame() {
   const queryClient = useQueryClient();
 

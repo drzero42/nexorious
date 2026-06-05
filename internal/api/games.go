@@ -16,6 +16,7 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/dbutil"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -126,17 +127,17 @@ func (h *GamesHandler) HandleListGames(c *echo.Context) error {
 	query := h.db.NewSelect().Model((*models.Game)(nil))
 
 	if q != "" {
-		likeQ := "%" + q + "%"
+		likeQ := dbutil.LikeContains(q)
 		query = query.Where("title ILIKE ? OR description ILIKE ?", likeQ, likeQ)
 	}
 	if genre != "" {
-		query = query.Where("genre ILIKE ?", "%"+genre+"%")
+		query = query.Where("genre ILIKE ?", dbutil.LikeContains(genre))
 	}
 	if developer != "" {
-		query = query.Where("developer ILIKE ?", "%"+developer+"%")
+		query = query.Where("developer ILIKE ?", dbutil.LikeContains(developer))
 	}
 	if publisher != "" {
-		query = query.Where("publisher ILIKE ?", "%"+publisher+"%")
+		query = query.Where("publisher ILIKE ?", dbutil.LikeContains(publisher))
 	}
 	if releaseYearStr != "" {
 		if year, err := strconv.Atoi(releaseYearStr); err == nil {
@@ -405,7 +406,7 @@ func metadataToCandidate(md igdb.GameMetadata) IGDBGameCandidate {
 func (h *GamesHandler) metadataToGame(md *igdb.GameMetadata) *models.Game {
 	now := time.Now()
 	game := &models.Game{
-		ID:                         int32(md.IgdbID),
+		ID:                         int32(md.IgdbID), //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 		Title:                      md.Title,
 		Description:                md.Description,
 		Genre:                      md.Genre,
@@ -450,9 +451,6 @@ func (h *GamesHandler) metadataToGame(md *igdb.GameMetadata) *models.Game {
 
 func extractImageID(coverURL string) string {
 	parts := strings.Split(coverURL, "/")
-	if len(parts) == 0 {
-		return ""
-	}
 	last := parts[len(parts)-1]
 	return strings.TrimSuffix(last, ".jpg")
 }

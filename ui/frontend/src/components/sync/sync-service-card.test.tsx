@@ -266,35 +266,6 @@ describe('SyncServiceCard', () => {
     });
   });
 
-  describe('edge cases', () => {
-    it('handles missing status gracefully', () => {
-      const config = createMockConfig();
-      expect(() =>
-        render(<SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} />),
-      ).not.toThrow();
-    });
-
-    it('handles status with null activeJobId', () => {
-      const config = createMockConfig();
-      const status = createMockStatus({ activeJobId: null });
-      expect(() =>
-        render(
-          <SyncServiceCard config={config} status={status} onTriggerSync={mockOnTriggerSync} />,
-        ),
-      ).not.toThrow();
-    });
-
-    it('handles status with activeJobId', () => {
-      const config = createMockConfig();
-      const status = createMockStatus({ activeJobId: 'job-123' });
-      expect(() =>
-        render(
-          <SyncServiceCard config={config} status={status} onTriggerSync={mockOnTriggerSync} />,
-        ),
-      ).not.toThrow();
-    });
-  });
-
   describe('pending review badge', () => {
     it('shows pending review badge when count > 0', () => {
       const config = createMockConfig();

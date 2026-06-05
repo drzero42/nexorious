@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/notify"
 )
 
 // CleanupStaleJobs marks jobs that are stuck in pending or processing with no
@@ -43,7 +45,7 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 	).Exec(ctx)
 	if err != nil {
 		slog.Error("cleanup_stale_jobs: failed", "err", err)
-		emitMaint(ctx, db, true, "stale_jobs_cleanup", map[string]any{"error": err.Error()})
+		emitMaint(ctx, db, true, notify.MaintPayload{Action: "stale_jobs_cleanup", Error: err.Error()})
 		return
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
@@ -69,7 +71,7 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 	).Exec(ctx)
 	if err != nil {
 		slog.Error("cleanup_stale_jobs: sync cleanup failed", "err", err)
-		emitMaint(ctx, db, true, "stale_jobs_cleanup", map[string]any{"error": err.Error()})
+		emitMaint(ctx, db, true, notify.MaintPayload{Action: "stale_jobs_cleanup", Error: err.Error()})
 		return
 	}
 	syncRows, _ := syncResult.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
@@ -78,6 +80,6 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 	}
 
 	if rows+syncRows > 0 {
-		emitMaint(ctx, db, false, "stale_jobs_cleanup", map[string]any{"count": rows + syncRows})
+		emitMaint(ctx, db, false, notify.MaintPayload{Action: "stale_jobs_cleanup", Count: int(rows + syncRows)})
 	}
 }

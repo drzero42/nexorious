@@ -1,19 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { Badge } from '@/components/ui/badge';
-import { config } from '@/lib/env';
 import { useActiveGames } from '@/hooks/use-games';
 import type { UserGame } from '@/types';
-
-function getCoverUrl(game: UserGame): string | null {
-  if (game.game?.cover_art_url) {
-    // If it's a relative path, prepend static URL
-    if (game.game.cover_art_url.startsWith('/')) {
-      return `${config.staticUrl}${game.game.cover_art_url}`;
-    }
-    return game.game.cover_art_url;
-  }
-  return null;
-}
+import { getCoverUrl } from '@/lib/game-utils';
 
 function getPlatformDisplay(game: UserGame): {
   firstPlatform: string;

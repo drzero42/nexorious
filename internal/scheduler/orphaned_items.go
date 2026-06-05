@@ -9,6 +9,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -29,10 +30,11 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 	var orphans []struct {
 		ID      string `bun:"id"`
 		JobType string `bun:"job_type"`
+		Source  string `bun:"source"`
 	}
 
 	if err := db.NewRaw(`
-		SELECT ji.id, j.job_type
+		SELECT ji.id, j.job_type, j.source
 		FROM job_items ji
 		JOIN jobs j ON j.id = ji.job_id
 		WHERE ji.status = 'pending'
@@ -46,22 +48,18 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		int64(age.Seconds()),
 	).Scan(ctx, &orphans); err != nil {
 		slog.Error("rescue_orphaned_items: query failed", "err", err)
-		emitMaint(ctx, db, true, "rescue_orphaned_items", map[string]any{"error": err.Error()})
+		emitMaint(ctx, db, true, notify.MaintPayload{Action: "rescue_orphaned_items", Error: err.Error()})
 		return
 	}
 
 	var successCount, failureCount int
 	for _, o := range orphans {
-		var args river.JobArgs
-		switch o.JobType {
-		case "sync":
-			args = tasks.IGDBMatchArgs{JobItemID: o.ID}
-		case "import":
-			args = tasks.ImportItemArgs{JobItemID: o.ID}
-		case "metadata_refresh":
-			args = tasks.MetadataRefreshItemArgs{JobItemID: o.ID}
-		default:
-			slog.Warn("rescue_orphaned_items: unknown job_type, skipping", "item_id", o.ID, "job_type", o.JobType)
+		// Route by job_type AND source so a Darkadia import (which shares the
+		// "import" job_type but needs its own match→finalize chain) re-enters at
+		// the right worker rather than the JSON importer.
+		args, err := tasks.ArgsForJobType(o.JobType, o.Source, o.ID)
+		if err != nil {
+			slog.Warn("rescue_orphaned_items: unknown job_type, skipping", "item_id", o.ID, "job_type", o.JobType, "source", o.Source)
 			continue
 		}
 		if _, err := rc.Insert(ctx, args, nil); err != nil {
@@ -73,6 +71,6 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		}
 	}
 	if successCount+failureCount > 0 {
-		emitMaint(ctx, db, false, "rescue_orphaned_items", map[string]any{"rescued": successCount, "failed": failureCount})
+		emitMaint(ctx, db, false, notify.MaintPayload{Action: "rescue_orphaned_items", Rescued: successCount, Failed: failureCount})
 	}
 }

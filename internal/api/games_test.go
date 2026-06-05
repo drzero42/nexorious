@@ -170,6 +170,19 @@ func postAuth(t *testing.T, handler interface {
 	return rec
 }
 
+// putAuth issues an authenticated PUT with a JSON body and a session cookie.
+func putAuth(t *testing.T, handler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, path string, sessionID string, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body))
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
 // newTestEchoWithIGDB returns an Echo instance wired with an unconfigured IGDB
 // client (credentials absent → configured=false). Use this for tests that
 // exercise the IGDB-not-configured → 503 path.

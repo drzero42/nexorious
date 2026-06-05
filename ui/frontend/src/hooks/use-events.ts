@@ -10,11 +10,12 @@ const eventKeys = {
 
 const PAGE_SIZE = 50;
 
-export function useAdminEvents(filters: AdminEventFilters) {
+export function useAdminEvents(filters: AdminEventFilters, enabled = true) {
   return useInfiniteQuery({
     queryKey: eventKeys.list(filters),
     queryFn: ({ pageParam }) => eventsApi.list(filters, pageParam as string | undefined, PAGE_SIZE),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled,
   });
 }

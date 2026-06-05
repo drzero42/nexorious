@@ -27,6 +27,7 @@ import (
 	"github.com/drzero42/nexorious/internal/scheduler"
 	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
+	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
@@ -185,6 +186,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
 	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, IGDBClient: igdbClient}
 	userGameWorker := &tasks.UserGameWorker{DB: db, IGDBClient: igdbClient}
+	darkadiaMatchWorker := &tasks.DarkadiaMatchWorker{DB: db, IGDBClient: igdbClient}
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -193,6 +195,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, dispatchSyncWorker)
 	river.AddWorker(workers, igdbMatchWorker)
 	river.AddWorker(workers, userGameWorker)
+	river.AddWorker(workers, darkadiaMatchWorker)
+	river.AddWorker(workers, &tasks.DarkadiaFinalizeWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, metaDispatchWorker)
 	river.AddWorker(workers, &tasks.MetadataRefreshItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.MetadataFetchWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -225,6 +229,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	rescueOrphanedWorker.RiverClient = riverClient
 	igdbMatchWorker.RiverClient = riverClient
 	userGameWorker.RiverClient = riverClient
+	darkadiaMatchWorker.RiverClient = riverClient
 
 	// -------------------------------------------------------------------------
 	// HTTP server
@@ -265,6 +270,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newRescueOrphaned := &scheduler.RescueOrphanedPendingItemsWorker{DB: newDB}
 			newIGDBMatch := &tasks.IGDBMatchWorker{DB: newDB, IGDBClient: igdbClient}
 			newUserGame := &tasks.UserGameWorker{DB: newDB, IGDBClient: igdbClient}
+			newDarkadiaMatch := &tasks.DarkadiaMatchWorker{DB: newDB, IGDBClient: igdbClient}
 
 			newWorkers := river.NewWorkers()
 			river.AddWorker(newWorkers, &tasks.ImportItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -273,6 +279,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			river.AddWorker(newWorkers, newDispatchSync)
 			river.AddWorker(newWorkers, newIGDBMatch)
 			river.AddWorker(newWorkers, newUserGame)
+			river.AddWorker(newWorkers, newDarkadiaMatch)
+			river.AddWorker(newWorkers, &tasks.DarkadiaFinalizeWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, newMetaDispatch)
 			river.AddWorker(newWorkers, &tasks.MetadataRefreshItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &tasks.MetadataFetchWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -303,6 +311,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newRescueOrphaned.RiverClient = newClient
 			newIGDBMatch.RiverClient = newClient
 			newUserGame.RiverClient = newClient
+			newDarkadiaMatch.RiverClient = newClient
 
 			if err := newClient.Start(shutdownCtx); err != nil {
 				return fmt.Errorf("RebuildServices: River start: %w", err)
@@ -473,18 +482,15 @@ func buildAdapterFactory(
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
-				AccessToken  string `json:"access_token"`
 				RefreshToken string `json:"refresh_token"`
-				UserID       string `json:"user_id"`
 				Username     string `json:"username"`
 			}
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
-			onNewTokens := func(accessToken, refreshToken string) error {
-				creds.AccessToken = accessToken
+			onNewTokens := func(refreshToken string) error {
 				creds.RefreshToken = refreshToken
-				newCredsJSON, merr := json.Marshal(creds)
+				newCredsJSON, merr := json.Marshal(creds) //nolint:gosec // marshaled only to encrypt immediately below before storage; never logged or returned
 				if merr != nil {
 					return merr
 				}
@@ -526,6 +532,23 @@ func buildAdapterFactory(
 				return dbErr
 			}
 			return epicsvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot), nil
+
+		case "humble-bundle":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
+			if err != nil {
+				slog.Warn("adapter factory: humble-bundle decrypt failed", "user_id", cfg.UserID, "err", err)
+				return nil, tasks.ErrCredentials
+			}
+			var creds struct {
+				SessionCookie string `json:"session_cookie"`
+			}
+			if err := json.Unmarshal(plain, &creds); err != nil {
+				return nil, tasks.ErrCredentials
+			}
+			return humblesvc.NewAdapter(humblesvc.NewClient(), creds.SessionCookie), nil
 
 		default:
 			return nil, fmt.Errorf("unknown storefront: %s", storefront)

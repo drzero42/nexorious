@@ -100,7 +100,6 @@ describe('PSN Hooks', () => {
       const mockGetPSNStatus = vi.spyOn(syncApi, 'getPSNStatus');
       mockGetPSNStatus.mockResolvedValue({
         configured: true,
-        accountId: 'test-account-id',
         onlineId: 'TestUser',
         credentialsError: false,
       });
@@ -115,7 +114,6 @@ describe('PSN Hooks', () => {
 
       expect(result.current.data).toEqual({
         configured: true,
-        accountId: 'test-account-id',
         onlineId: 'TestUser',
         credentialsError: false,
       });
@@ -127,7 +125,6 @@ describe('PSN Hooks', () => {
       const mockGetPSNStatus = vi.spyOn(syncApi, 'getPSNStatus');
       mockGetPSNStatus.mockResolvedValue({
         configured: true,
-        accountId: 'test-account-id',
         onlineId: 'TestUser',
         credentialsError: true,
       });

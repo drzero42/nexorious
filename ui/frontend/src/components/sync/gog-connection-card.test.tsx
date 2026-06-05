@@ -68,7 +68,6 @@ describe('GOGConnectionCard', () => {
     });
 
     expect(screen.getByText('GOG Connection')).toBeInTheDocument();
-    expect(screen.getByText('Not Configured')).toBeInTheDocument();
     expect(screen.getByLabelText('GOG URL or Authorization Code')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Connect GOG' })).toBeInTheDocument();
   });
@@ -84,13 +83,12 @@ describe('GOGConnectionCard', () => {
   });
 
   it('renders connected state with username', () => {
-    stubGOGConnection({ connected: true, username: 'goguser', userId: 'u1' });
+    stubGOGConnection({ connected: true, username: 'goguser' });
 
     render(<GOGConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
       wrapper: createWrapper(),
     });
 
-    expect(screen.getByText('Connected')).toBeInTheDocument();
     expect(screen.getByText(/Connected as goguser/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
   });

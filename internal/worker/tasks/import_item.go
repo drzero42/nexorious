@@ -92,32 +92,34 @@ type importTagData struct {
 // Work processes a single import job item. It never returns an error —
 // failures are recorded on the JobItem itself.
 func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemArgs]) error {
-	// ── 1. Load JobItem ───────────────────────────────────────────────────
+	// Load JobItem
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
 		slog.Error("import_item: load job_item", "id", job.Args.JobItemID, "err", err)
 		return nil
 	}
 
-	// ── 2. Parse game data from source_metadata ───────────────────────────
+	// Parse game data from source_metadata
 	var wrapper struct {
 		Data importGameData `json:"data"`
 	}
 	if err := json.Unmarshal(item.SourceMetadata, &wrapper); err != nil {
-		markItemFailed(w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err))
+		// Item writes use context.Background() so they succeed even if the River
+		// job context was cancelled during graceful shutdown.
+		markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err), "import_item: markItemFailed")
 		checkJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 	gd := wrapper.Data
 
-	// ── 3. Validate igdb_id ───────────────────────────────────────────────
+	// Validate igdb_id
 	if gd.IGDBID == 0 {
-		markItemFailed(w.DB, &item, "missing igdb_id")
+		markItemFailed(context.Background(), w.DB, &item, "missing igdb_id", "import_item: markItemFailed")
 		checkJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 
-	// ── 4. Upsert Game — fetch from IGDB if not already in DB ────────────
+	// Upsert Game — fetch from IGDB if not already in DB
 	var existingGame models.Game
 	gameExists := w.DB.NewSelect().Model(&existingGame).Where("id = ?", gd.IGDBID).Scan(ctx) == nil
 
@@ -165,25 +167,25 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 	if !gameExists {
 		_, err = w.DB.NewInsert().Model(game).Exec(ctx)
 		if err != nil {
-			markItemFailed(w.DB, &item, fmt.Sprintf("insert game: %v", err))
+			markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("insert game: %v", err), "import_item: markItemFailed")
 			checkJobCompletion(w.DB, item.JobID)
 			return nil
 		}
 	}
 
-	// ── 5. Check for existing UserGame ────────────────────────────────────
+	// Check for existing UserGame
 	var existingUG models.UserGame
 	err = w.DB.NewSelect().Model(&existingUG).
 		Where("user_id = ? AND game_id = ?", item.UserID, gd.IGDBID).
 		Scan(ctx)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		markItemFailed(w.DB, &item, fmt.Sprintf("check existing user_game: %v", err))
+		markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("check existing user_game: %v", err), "import_item: markItemFailed")
 		checkJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 	alreadyExists := err == nil
 
-	// ── 6. Build and insert UserGame (skip if already exists) ────────────
+	// Build and insert UserGame (skip if already exists)
 	now := time.Now().UTC()
 	var ug *models.UserGame
 	if alreadyExists {
@@ -221,13 +223,13 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 		_, err = w.DB.NewInsert().Model(ug).Exec(ctx)
 		if err != nil {
-			markItemFailed(w.DB, &item, fmt.Sprintf("insert user_game: %v", err))
+			markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("insert user_game: %v", err), "import_item: markItemFailed")
 			checkJobCompletion(w.DB, item.JobID)
 			return nil
 		}
 	}
 
-	// ── 7. Platforms ──────────────────────────────────────────────────────
+	// Platforms
 	// Build a set of existing (platform, storefront) pairs to avoid duplicates
 	// when merging into an existing UserGame.
 	type platformKey struct{ platform, storefront string }
@@ -319,7 +321,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 
-	// ── 8. Tags ───────────────────────────────────────────────────────────
+	// Tags
 	// Build existing tag set to avoid duplicates when merging.
 	existingTagIDs := map[string]bool{}
 	if alreadyExists {
@@ -335,7 +337,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 	for _, td := range gd.Tags {
 		tagID, err := findOrCreateTag(ctx, w.DB, item.UserID, td.Name, td.Color)
 		if err != nil {
-			markItemFailed(w.DB, &item, fmt.Sprintf("find/create tag %q: %v", td.Name, err))
+			markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("find/create tag %q: %v", td.Name, err), "import_item: markItemFailed")
 			checkJobCompletion(w.DB, item.JobID)
 			return nil
 		}
@@ -356,7 +358,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 
-	// ── 9. Mark item completed ───────────────────────────────────────────
+	// Mark item completed
 	// Record a per-item change row mirroring the sync worker's `changes` writes.
 	changeType := "added"
 	if alreadyExists {
@@ -380,7 +382,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		"is_new_addition": !alreadyExists,
 		"already_exists":  alreadyExists,
 	}
-	markItemCompleted(w.DB, &item, result)
+	markItemCompletedWithResult(context.Background(), w.DB, &item, result, "import_item: markItemCompleted")
 	checkJobCompletion(w.DB, item.JobID)
 	return nil
 }
@@ -414,46 +416,11 @@ func findOrCreateTag(ctx context.Context, db *bun.DB, userID, name string, color
 	return tag.ID, nil
 }
 
-// markItemFailed updates the JobItem to failed status with an error message.
-// Uses context.Background() so the write succeeds even if the River job context
-// was cancelled during graceful shutdown.
-func markItemFailed(db *bun.DB, item *models.JobItem, errMsg string) {
-	now := time.Now().UTC()
-	item.Status = models.JobItemStatusFailed
-	item.ErrorMessage = &errMsg
-	item.ProcessedAt = &now
-	_, err := db.NewUpdate().Model(item).
-		Column("status", "error_message", "processed_at").
-		Where("id = ?", item.ID).
-		Exec(context.Background())
-	if err != nil {
-		slog.Error("import_item: markItemFailed", "id", item.ID, "err", err)
-	}
-}
-
-// markItemCompleted updates the JobItem to completed status with a result.
-// Uses context.Background() so the write succeeds even if the River job context
-// was cancelled during graceful shutdown.
-func markItemCompleted(db *bun.DB, item *models.JobItem, result any) {
-	now := time.Now().UTC()
-	resultJSON, _ := json.Marshal(result) //nolint:errcheck // marshaling the job result struct cannot fail
-	item.Status = models.JobItemStatusCompleted
-	item.Result = resultJSON
-	item.ProcessedAt = &now
-	_, err := db.NewUpdate().Model(item).
-		Column("status", "result", "processed_at").
-		Where("id = ?", item.ID).
-		Exec(context.Background())
-	if err != nil {
-		slog.Error("import_item: markItemCompleted", "id", item.ID, "err", err)
-	}
-}
-
 // igdbMetadataToGame maps an IGDB GameMetadata response to a models.Game ready for insert.
 func igdbMetadataToGame(md *igdb.GameMetadata) *models.Game {
 	now := time.Now().UTC()
 	game := &models.Game{
-		ID:                         int32(md.IgdbID),
+		ID:                         int32(md.IgdbID), //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
 		Title:                      md.Title,
 		Description:                md.Description,
 		Genre:                      md.Genre,
@@ -496,55 +463,31 @@ func igdbMetadataToGame(md *igdb.GameMetadata) *models.Game {
 func checkJobCompletion(db *bun.DB, jobID string) {
 	ctx := context.Background()
 
-	var pendingCount int
-	if err := db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = ?",
-		jobID, models.JobItemStatusPending,
-	).Scan(&pendingCount); err != nil {
-		slog.Error("import_item: count pending items", "job_id", jobID, "err", err)
-		return
-	}
-
-	if pendingCount > 0 {
+	pendingCount, ok := countJobItems(ctx, db, jobID, "status = 'pending'", "import_item: count pending items")
+	if !ok || pendingCount > 0 {
 		return
 	}
 
 	// No more pending — determine final job status.
-	var failedCount int
-	if err := db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = ?",
-		jobID, models.JobItemStatusFailed,
-	).Scan(&failedCount); err != nil {
-		slog.Error("import_item: count failed items", "job_id", jobID, "err", err)
+	failedCount, ok := countJobItems(ctx, db, jobID, "status = 'failed'", "import_item: count failed items")
+	if !ok {
 		return
 	}
 
-	finalStatus := models.JobStatusCompleted
+	finalizeJobCompleted(ctx, db, jobID, "import_item: update job status", false)
 
-	now := time.Now().UTC()
-	_, err := db.NewRaw(
-		"UPDATE jobs SET status = ?, completed_at = ? WHERE id = ?",
-		finalStatus, now, jobID,
-	).Exec(ctx)
-	if err != nil {
-		slog.Error("import_item: update job status", "job_id", jobID, "err", err)
-	}
 	uid, _ := syncJobUserAndStorefront(ctx, db, jobID)
 	if failedCount > 0 {
 		notify.Emit(ctx, db, notify.EmitParams{
 			Type: notify.TypeImportFailed, Scope: notify.ScopeUser, ActorUserID: uid,
-			Payload: map[string]any{
-				"job_id": jobID,
-				"failed": failedCount,
-				"error":  fmt.Sprintf("%d item(s) failed to import", failedCount),
-			},
+			Payload:  notify.ImportFailedPayload{JobID: jobID, Failed: failedCount, Error: fmt.Sprintf("%d item(s) failed to import", failedCount)},
 			DedupKey: jobID + ":" + notify.TypeImportFailed,
 		})
 		return
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeImportCompleted, Scope: notify.ScopeUser, ActorUserID: uid,
-		Payload:  map[string]any{"job_id": jobID},
+		Payload:  notify.ImportCompletedPayload{JobID: jobID},
 		DedupKey: jobID + ":" + notify.TypeImportCompleted,
 	})
 }

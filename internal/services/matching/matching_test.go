@@ -82,3 +82,50 @@ func TestFuzzyConfidence(t *testing.T) {
 		})
 	}
 }
+
+// safeMetric must contain a panic from a third-party scoring metric and report
+// a zero score, so a single misbehaving metric cannot crash the caller. This
+// guards against go-fuzzywuzzy's PartialRatio, which panics with
+// "slice bounds out of range" on certain real input pairs (observed crashing
+// the igdb_match worker on PSN titles).
+func TestSafeMetric_ContainsPanic(t *testing.T) {
+	score := safeMetric("query", "title", func(string, string) int {
+		panic("runtime error: slice bounds out of range [34:32]")
+	})
+	if score != 0 {
+		t.Fatalf("expected 0 when metric panics, got %d", score)
+	}
+}
+
+func TestSafeMetric_PassesThroughScoreWhenNoPanic(t *testing.T) {
+	score := safeMetric("query", "title", func(string, string) int { return 77 })
+	if score != 77 {
+		t.Errorf("expected pass-through score 77, got %d", score)
+	}
+}
+
+// FuzzyConfidence must remain panic-safe even if an underlying metric blows up:
+// a panicking metric contributes 0 while the others still score normally.
+func TestFuzzyConfidence_SurvivesPanickingMetric(t *testing.T) {
+	orig := partialRatio
+	t.Cleanup(func() { partialRatio = orig })
+	partialRatio = func(string, string) int {
+		panic("runtime error: slice bounds out of range [66:0]")
+	}
+
+	var score float64
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("FuzzyConfidence panicked instead of containing it: %v", r)
+			}
+		}()
+		// Identical strings score 1.0 via the fast path; use distinct strings so
+		// the metric functions (including the panicking partialRatio) are invoked.
+		score = FuzzyConfidence("batman arkham city", "batman arkham city edition")
+	}()
+	// ratio/tokenSort/tokenSet still score these near-identical strings highly.
+	if score < 0.5 {
+		t.Errorf("expected surviving metrics to still score highly, got %f", score)
+	}
+}

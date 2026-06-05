@@ -17,9 +17,13 @@ export enum JobType {
 export enum JobSource {
   STEAM = 'steam',
   EPIC = 'epic',
+  PSN = 'psn',
   GOG = 'gog',
+  HUMBLE_BUNDLE = 'humble-bundle',
+  MANUAL = 'manual',
   DARKADIA = 'darkadia',
   NEXORIOUS = 'nexorious',
+  CSV = 'csv',
   SYSTEM = 'system',
 }
 
@@ -218,9 +222,13 @@ export function getJobSourceLabel(source: JobSource): string {
   const labels: Record<JobSource, string> = {
     [JobSource.STEAM]: 'Steam',
     [JobSource.EPIC]: 'Epic Games',
+    [JobSource.PSN]: 'PlayStation Network',
     [JobSource.GOG]: 'GOG',
+    [JobSource.HUMBLE_BUNDLE]: 'Humble Bundle',
+    [JobSource.MANUAL]: 'Manual',
     [JobSource.DARKADIA]: 'Darkadia',
     [JobSource.NEXORIOUS]: 'Nexorious',
+    [JobSource.CSV]: 'CSV',
     [JobSource.SYSTEM]: 'System',
   };
   return labels[source] || source;
@@ -280,10 +288,12 @@ export function formatDuration(seconds: number | null): string {
 }
 
 /**
- * Format a date string to a relative time (e.g., "5m ago").
+ * Format a date string to a relative time (e.g., "5m ago"). `nullLabel` is the
+ * placeholder returned for a missing date (e.g. '-' for activity, 'Never' for
+ * last-sync timestamps).
  */
-export function formatRelativeTime(dateStr: string | null): string {
-  if (!dateStr) return '-';
+export function formatRelativeTime(dateStr: string | null, nullLabel = '-'): string {
+  if (!dateStr) return nullLabel;
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();

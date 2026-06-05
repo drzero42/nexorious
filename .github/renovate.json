@@ -3,6 +3,9 @@
   "extends": [
     "config:recommended"
   ],
+  "labels": [
+    "dependencies"
+  ],
   "gitIgnoredAuthors": [
     "github-actions[bot]@users.noreply.github.com"
   ]

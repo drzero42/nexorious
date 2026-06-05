@@ -7,6 +7,7 @@ export enum SyncStorefront {
   EPIC = 'epic',
   GOG = 'gog',
   PSN = 'psn',
+  HUMBLE = 'humble-bundle',
 }
 
 export const SUPPORTED_SYNC_STOREFRONTS: SyncStorefront[] = [
@@ -14,6 +15,7 @@ export const SUPPORTED_SYNC_STOREFRONTS: SyncStorefront[] = [
   SyncStorefront.EPIC,
   SyncStorefront.GOG,
   SyncStorefront.PSN,
+  SyncStorefront.HUMBLE,
 ];
 
 export enum SyncFrequency {
@@ -101,6 +103,12 @@ export function getStorefrontDisplayInfo(storefront: SyncStorefront): {
       bgColor: 'bg-[#003087]/10 dark:bg-[#003087]/30',
       iconUrl: '/logos/storefronts/playstation-store/playstation-store-icon-light.svg',
     },
+    [SyncStorefront.HUMBLE]: {
+      name: 'Humble Bundle',
+      color: 'text-[#cc2929]',
+      bgColor: 'bg-[#cc2929]/10 dark:bg-[#cc2929]/30',
+      iconUrl: '/logos/storefronts/humble-bundle/humble-bundle-icon-light.svg',
+    },
   };
   return info[storefront];
 }
@@ -144,22 +152,19 @@ export interface EpicConnectionResponse {
   disabled: boolean;
   credentialsError?: boolean;
   displayName?: string;
-  accountId?: string;
-  /** "legendary_not_configured" when disabled=true (LEGENDARY_WORK_DIR unset). */
+  /** Machine-readable cause when disabled=true, e.g. "legendary_not_configured". */
   reason?: string;
 }
 
 // GOG Auth Types
 export interface GOGConnectResponse {
   username: string;
-  userId: string;
 }
 
 export interface GOGConnectionResponse {
   connected: boolean;
   credentialsError?: boolean;
   username?: string;
-  userId?: string;
   authUrl?: string;
 }
 
@@ -173,8 +178,18 @@ export interface PSNConfigureResponse {
 
 export interface PSNStatusResponse {
   configured: boolean;
-  accountId: string | null;
   onlineId: string | null;
+  credentialsError: boolean;
+}
+
+// Humble Bundle Auth Types
+export interface HumbleConnectResponse {
+  valid: boolean;
+  error: string | null;
+}
+
+export interface HumbleStatusResponse {
+  configured: boolean;
   credentialsError: boolean;
 }
 
@@ -182,7 +197,6 @@ export interface PSNStatusResponse {
 export interface SteamConnectionData {
   connected: boolean;
   credentialsError: boolean;
-  steamId: string;
   username: string;
 }
 

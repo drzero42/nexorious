@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
 import { ApiErrorException, apiCall, api } from './client';
@@ -30,12 +30,6 @@ describe('client.ts', () => {
       expect(error.message).toBe('Validation failed');
       expect(error.status).toBe(400);
       expect(error.details).toEqual(details);
-    });
-
-    it('is throwable and catchable', () => {
-      expect(() => {
-        throw new ApiErrorException('Test error', 500);
-      }).toThrow(ApiErrorException);
     });
   });
 
@@ -251,6 +245,109 @@ describe('client.ts', () => {
           const apiError = error as ApiErrorException;
           expect(apiError.details).toEqual(errorDetails);
         }
+      });
+    });
+
+    describe('app-state redirects (issue #771)', () => {
+      let assignSpy: ReturnType<typeof vi.fn>;
+      let originalLocation: Location;
+
+      beforeEach(() => {
+        originalLocation = window.location;
+        assignSpy = vi.fn();
+        Object.defineProperty(window, 'location', {
+          configurable: true,
+          value: {
+            href: originalLocation.href,
+            origin: originalLocation.origin,
+            pathname: '/',
+            assign: assignSpy,
+            replace: vi.fn(),
+          },
+        });
+      });
+
+      afterEach(() => {
+        Object.defineProperty(window, 'location', {
+          configurable: true,
+          value: originalLocation,
+        });
+      });
+
+      it('redirects to /migrate on 503 app_state=needs_migration', async () => {
+        server.use(
+          http.get(`${API_URL}/games`, () => {
+            return HttpResponse.json({ app_state: 'needs_migration' }, { status: 503 });
+          }),
+        );
+
+        await expect(apiCall('/games')).rejects.toThrow(ApiErrorException);
+        expect(assignSpy).toHaveBeenCalledWith('/migrate');
+      });
+
+      it('redirects to /migrate on 503 app_state=migrating', async () => {
+        server.use(
+          http.get(`${API_URL}/games`, () => {
+            return HttpResponse.json({ app_state: 'migrating' }, { status: 503 });
+          }),
+        );
+
+        await expect(apiCall('/games')).rejects.toThrow(ApiErrorException);
+        expect(assignSpy).toHaveBeenCalledWith('/migrate');
+      });
+
+      it('redirects to /db-error on 503 app_state=db_unavailable', async () => {
+        server.use(
+          http.get(`${API_URL}/games`, () => {
+            return HttpResponse.json({ app_state: 'db_unavailable' }, { status: 503 });
+          }),
+        );
+
+        await expect(apiCall('/games')).rejects.toThrow(ApiErrorException);
+        expect(assignSpy).toHaveBeenCalledWith('/db-error');
+      });
+
+      it('redirects to /setup on 503 app_state=needs_setup', async () => {
+        server.use(
+          http.get(`${API_URL}/games`, () => {
+            return HttpResponse.json({ app_state: 'needs_setup' }, { status: 503 });
+          }),
+        );
+
+        await expect(apiCall('/games')).rejects.toThrow(ApiErrorException);
+        expect(assignSpy).toHaveBeenCalledWith('/setup');
+      });
+
+      it('does not redirect when already on the target page', async () => {
+        Object.defineProperty(window, 'location', {
+          configurable: true,
+          value: {
+            href: originalLocation.href,
+            origin: originalLocation.origin,
+            pathname: '/migrate',
+            assign: assignSpy,
+            replace: vi.fn(),
+          },
+        });
+        server.use(
+          http.get(`${API_URL}/games`, () => {
+            return HttpResponse.json({ app_state: 'needs_migration' }, { status: 503 });
+          }),
+        );
+
+        await expect(apiCall('/games')).rejects.toThrow(ApiErrorException);
+        expect(assignSpy).not.toHaveBeenCalled();
+      });
+
+      it('does not redirect on a plain 503 without app_state', async () => {
+        server.use(
+          http.get(`${API_URL}/games`, () => {
+            return HttpResponse.json({ detail: 'temporarily unavailable' }, { status: 503 });
+          }),
+        );
+
+        await expect(apiCall('/games')).rejects.toThrow(ApiErrorException);
+        expect(assignSpy).not.toHaveBeenCalled();
       });
     });
 

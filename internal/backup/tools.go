@@ -57,7 +57,7 @@ func ParseDatabaseURL(databaseURL string) (DBConnParams, error) {
 func RunPgDump(conn DBConnParams, outputPath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "pg_dump",
+	cmd := exec.CommandContext(ctx, "pg_dump", //nolint:gosec // fixed binary; only validated DB-connection flag values are interpolated, not the command
 		"--format=plain", "--no-owner", "--no-acl",
 		"--host="+conn.Host, "--port="+conn.Port,
 		"--username="+conn.User, "--dbname="+conn.DBName,
@@ -74,7 +74,7 @@ func RunPgDump(conn DBConnParams, outputPath string) error {
 func RunPsqlFile(conn DBConnParams, sqlFilePath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "psql",
+	cmd := exec.CommandContext(ctx, "psql", //nolint:gosec // fixed binary; only validated DB-connection flag values are interpolated, not the command
 		"--host="+conn.Host, "--port="+conn.Port,
 		"--username="+conn.User, "--dbname="+conn.DBName,
 		"--file="+sqlFilePath,
@@ -90,7 +90,7 @@ func RunPsqlFile(conn DBConnParams, sqlFilePath string) error {
 var RunPsqlCommand = func(conn DBConnParams, command string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "psql",
+	cmd := exec.CommandContext(ctx, "psql", //nolint:gosec // fixed binary; only validated DB-connection flag values are interpolated, not the command
 		"--host="+conn.Host, "--port="+conn.Port,
 		"--username="+conn.User, "--dbname="+conn.DBName,
 		"--command="+command,

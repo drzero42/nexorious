@@ -49,44 +49,40 @@ type createUserGameRequest struct {
 
 // userGamePlatformResponse is the API DTO for a user game platform entry with nested detail objects.
 type userGamePlatformResponse struct {
-	ID                     string              `json:"id"`
-	UserGameID             string              `json:"user_game_id"`
-	Platform               *string             `json:"platform"`
-	Storefront             *string             `json:"storefront"`
-	StoreGameID            *string             `json:"store_game_id"`
-	StoreUrl               *string             `json:"store_url"`
-	IsAvailable            bool                `json:"is_available"`
-	HoursPlayed            *float64            `json:"hours_played"`
-	OwnershipStatus        *string             `json:"ownership_status"`
-	AcquiredDate           *time.Time          `json:"acquired_date"`
-	OriginalPlatformName   *string             `json:"original_platform_name"`
-	OriginalStorefrontName *string             `json:"original_storefront_name"`
-	ExternalGameID         *string             `json:"external_game_id"`
-	SyncFromSource         bool                `json:"sync_from_source"`
-	CreatedAt              time.Time           `json:"created_at"`
-	UpdatedAt              time.Time           `json:"updated_at"`
-	PlatformDetails        *platformResponse   `json:"platform_details,omitempty"`
-	StorefrontDetails      *storefrontResponse `json:"storefront_details,omitempty"`
+	ID                string              `json:"id"`
+	UserGameID        string              `json:"user_game_id"`
+	Platform          *string             `json:"platform"`
+	Storefront        *string             `json:"storefront"`
+	StoreGameID       *string             `json:"store_game_id"`
+	StoreUrl          *string             `json:"store_url"`
+	IsAvailable       bool                `json:"is_available"`
+	HoursPlayed       *float64            `json:"hours_played"`
+	OwnershipStatus   *string             `json:"ownership_status"`
+	AcquiredDate      *time.Time          `json:"acquired_date"`
+	ExternalGameID    *string             `json:"external_game_id"`
+	SyncFromSource    bool                `json:"sync_from_source"`
+	CreatedAt         time.Time           `json:"created_at"`
+	UpdatedAt         time.Time           `json:"updated_at"`
+	PlatformDetails   *platformResponse   `json:"platform_details,omitempty"`
+	StorefrontDetails *storefrontResponse `json:"storefront_details,omitempty"`
 }
 
 func toUserGamePlatformResponse(ugp models.UserGamePlatform) userGamePlatformResponse {
 	resp := userGamePlatformResponse{
-		ID:                     ugp.ID,
-		UserGameID:             ugp.UserGameID,
-		Platform:               ugp.Platform,
-		Storefront:             ugp.Storefront,
-		StoreGameID:            ugp.StoreGameID,
-		StoreUrl:               ugp.StoreUrl,
-		IsAvailable:            ugp.IsAvailable,
-		HoursPlayed:            ugp.HoursPlayed,
-		OwnershipStatus:        ugp.OwnershipStatus,
-		AcquiredDate:           ugp.AcquiredDate,
-		OriginalPlatformName:   ugp.OriginalPlatformName,
-		OriginalStorefrontName: ugp.OriginalStorefrontName,
-		ExternalGameID:         ugp.ExternalGameID,
-		SyncFromSource:         ugp.SyncFromSource,
-		CreatedAt:              ugp.CreatedAt,
-		UpdatedAt:              ugp.UpdatedAt,
+		ID:              ugp.ID,
+		UserGameID:      ugp.UserGameID,
+		Platform:        ugp.Platform,
+		Storefront:      ugp.Storefront,
+		StoreGameID:     ugp.StoreGameID,
+		StoreUrl:        ugp.StoreUrl,
+		IsAvailable:     ugp.IsAvailable,
+		HoursPlayed:     ugp.HoursPlayed,
+		OwnershipStatus: ugp.OwnershipStatus,
+		AcquiredDate:    ugp.AcquiredDate,
+		ExternalGameID:  ugp.ExternalGameID,
+		SyncFromSource:  ugp.SyncFromSource,
+		CreatedAt:       ugp.CreatedAt,
+		UpdatedAt:       ugp.UpdatedAt,
 	}
 	if ugp.PlatformRecord != nil {
 		pr := toPlatformResponse(*ugp.PlatformRecord)
@@ -379,12 +375,10 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 
 	// Validate game exists.
 	ctx := context.Background()
-	var gameExists bool
-	err := h.db.NewSelect().Model((*models.Game)(nil)).
-		ColumnExpr("1").
+	gameExists, err := h.db.NewSelect().Model((*models.Game)(nil)).
 		Where("id = ?", req.GameID).
-		Scan(ctx, &gameExists)
-	if err != nil {
+		Exists(ctx)
+	if err != nil || !gameExists {
 		return echo.NewHTTPError(http.StatusBadRequest, "game not found")
 	}
 
@@ -883,13 +877,17 @@ func (h *UserGamesHandler) HandleBulkRemovePlatforms(c *echo.Context) error {
 // verifyUserGameOwnership checks that userGameID belongs to userID.
 // Returns sql.ErrNoRows if not found or not owned.
 func (h *UserGamesHandler) verifyUserGameOwnership(ctx context.Context, userGameID, userID string) error {
-	var exists bool
-	err := h.db.NewSelect().Model((*models.UserGame)(nil)).
-		ColumnExpr("1").
+	exists, err := h.db.NewSelect().Model((*models.UserGame)(nil)).
 		Where("id = ?", userGameID).
 		Where("user_id = ?", userID).
-		Scan(ctx, &exists)
-	return err
+		Exists(ctx)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // platformRequest is the bind target for platform create/update.
@@ -954,24 +952,20 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 
 	// Validate platform exists
 	if req.Platform != nil && *req.Platform != "" {
-		var exists bool
-		err := h.db.NewSelect().Model((*models.Platform)(nil)).
-			ColumnExpr("1").
+		exists, err := h.db.NewSelect().Model((*models.Platform)(nil)).
 			Where("name = ?", *req.Platform).
-			Scan(ctx, &exists)
-		if err != nil {
+			Exists(ctx)
+		if err != nil || !exists {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found: " + *req.Platform})
 		}
 	}
 
 	// Validate storefront exists
 	if req.Storefront != nil && *req.Storefront != "" {
-		var exists bool
-		err := h.db.NewSelect().Model((*models.Storefront)(nil)).
-			ColumnExpr("1").
+		exists, err := h.db.NewSelect().Model((*models.Storefront)(nil)).
 			Where("name = ?", *req.Storefront).
-			Scan(ctx, &exists)
-		if err != nil {
+			Exists(ctx)
+		if err != nil || !exists {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "storefront not found: " + *req.Storefront})
 		}
 	}
@@ -1048,24 +1042,20 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 
 	// Validate platform if provided
 	if req.Platform != nil && *req.Platform != "" {
-		var exists bool
-		checkErr := h.db.NewSelect().Model((*models.Platform)(nil)).
-			ColumnExpr("1").
+		exists, checkErr := h.db.NewSelect().Model((*models.Platform)(nil)).
 			Where("name = ?", *req.Platform).
-			Scan(ctx, &exists)
-		if checkErr != nil {
+			Exists(ctx)
+		if checkErr != nil || !exists {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found: " + *req.Platform})
 		}
 	}
 
 	// Validate storefront if provided
 	if req.Storefront != nil && *req.Storefront != "" {
-		var exists bool
-		checkErr := h.db.NewSelect().Model((*models.Storefront)(nil)).
-			ColumnExpr("1").
+		exists, checkErr := h.db.NewSelect().Model((*models.Storefront)(nil)).
 			Where("name = ?", *req.Storefront).
-			Scan(ctx, &exists)
-		if checkErr != nil {
+			Exists(ctx)
+		if checkErr != nil || !exists {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "storefront not found: " + *req.Storefront})
 		}
 	}
@@ -1413,7 +1403,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		GenreStats:    map[string]int{},
 	}
 
-	// 1. total_games
+	// total_games
 	total, err := h.db.NewSelect().
 		TableExpr("user_games").
 		Where("user_id = ?", userID).
@@ -1423,7 +1413,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 	}
 	resp.TotalGames = total
 
-	// 2. completion_stats
+	// completion_stats
 	type statusCount struct {
 		PlayStatus string `bun:"play_status"`
 		Count      int    `bun:"count"`
@@ -1442,7 +1432,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.CompletionStats[sc.PlayStatus] = sc.Count
 	}
 
-	// 3. ownership_stats
+	// ownership_stats
 	type ownershipCount struct {
 		OwnershipStatus string `bun:"ownership_status"`
 		Count           int    `bun:"count"`
@@ -1462,7 +1452,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.OwnershipStats[oc.OwnershipStatus] = oc.Count
 	}
 
-	// 4. platform_stats
+	// platform_stats
 	type platformCount struct {
 		DisplayName string `bun:"display_name"`
 		Count       int    `bun:"count"`
@@ -1483,7 +1473,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.PlatformStats[pc.DisplayName] = pc.Count
 	}
 
-	// 5. genre_stats
+	// genre_stats
 	var rawGenres []string
 	err = h.db.NewSelect().
 		TableExpr("games AS g").
@@ -1499,16 +1489,16 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		splitAndCount(raw, resp.GenreStats)
 	}
 
-	// 6. pile_of_shame
+	// pile_of_shame
 	resp.PileOfShame = resp.CompletionStats["not_started"]
 
-	// 7. completion_rate
+	// completion_rate
 	if total > 0 {
 		completed := resp.CompletionStats["completed"] + resp.CompletionStats["mastered"] + resp.CompletionStats["dominated"]
 		resp.CompletionRate = math.Round(float64(completed)/float64(total)*10000) / 100
 	}
 
-	// 8. average_rating
+	// average_rating
 	var avgRating sql.NullFloat64
 	err = h.db.NewSelect().
 		TableExpr("user_games").
@@ -1524,7 +1514,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		resp.AverageRating = &v
 	}
 
-	// 9. total_hours_played — sum platform hours across all user_game_platforms
+	// total_hours_played — sum platform hours across all user_game_platforms
 	var totalHours float64
 	err = h.db.NewSelect().
 		TableExpr("user_games AS ug").

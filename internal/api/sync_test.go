@@ -46,7 +46,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSN
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -67,12 +67,12 @@ func TestSyncConfig_ListDefaults(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["total"].(float64) != 4 {
-		t.Fatalf("expected total=4, got %v", resp["total"])
+	if resp["total"].(float64) != 5 {
+		t.Fatalf("expected total=5, got %v", resp["total"])
 	}
 	configs := resp["configs"].([]any)
-	if len(configs) != 4 {
-		t.Fatalf("expected 4 configs, got %d", len(configs))
+	if len(configs) != 5 {
+		t.Fatalf("expected 5 configs, got %d", len(configs))
 	}
 	for _, c := range configs {
 		cfg := c.(map[string]any)
@@ -220,12 +220,12 @@ func TestSyncStatus_ReflectsActiveJob(t *testing.T) {
 	}
 }
 
-func TestSteamVerify_BadSteamID(t *testing.T) {
+func TestSteamConnect_BadSteamID(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "sv-bad-id")
 
-	rec := postJSONAuth(t, e, "/api/sync/steam/verify", map[string]any{
+	rec := putJSONAuth(t, e, "/api/sync/steam/connection", map[string]any{
 		"steam_id":    "12345",
 		"web_api_key": "AABBCCDD00112233445566778899AABB",
 	}, token)
@@ -244,12 +244,12 @@ func TestSteamVerify_BadSteamID(t *testing.T) {
 	}
 }
 
-func TestSteamVerify_BadAPIKey(t *testing.T) {
+func TestSteamConnect_BadAPIKey(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "sv-bad-key")
 
-	rec := postJSONAuth(t, e, "/api/sync/steam/verify", map[string]any{
+	rec := putJSONAuth(t, e, "/api/sync/steam/connection", map[string]any{
 		"steam_id":    "76561198012345678",
 		"web_api_key": "tooshort",
 	}, token)
@@ -265,7 +265,7 @@ func TestSteamVerify_BadAPIKey(t *testing.T) {
 	}
 }
 
-func TestSteamVerify_StubSuccess(t *testing.T) {
+func TestSteamConnect_StubSuccess(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubSteamClient{
 		summary: &api.SteamPlayerSummary{PersonaName: "Frostbyte", CommunityVisibilityState: 3},
@@ -273,7 +273,7 @@ func TestSteamVerify_StubSuccess(t *testing.T) {
 	e := newSyncTestApp(t, testDB, stub, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "sv-ok")
 
-	rec := postJSONAuth(t, e, "/api/sync/steam/verify", map[string]any{
+	rec := putJSONAuth(t, e, "/api/sync/steam/connection", map[string]any{
 		"steam_id":    "76561198012345678",
 		"web_api_key": "AABBCCDD00112233445566778899AABB",
 	}, token)
@@ -322,12 +322,12 @@ func TestSteamDisconnect_Idempotent(t *testing.T) {
 
 // --- PSN tests ---------------------------------------------------------------
 
-func TestPSNConfigure_ShortToken(t *testing.T) {
+func TestPSNConnect_ShortToken(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-short")
 
-	rec := postJSONAuth(t, e, "/api/sync/psn/configure", map[string]any{
+	rec := putJSONAuth(t, e, "/api/sync/psn/connection", map[string]any{
 		"npsso_token": "tooshort",
 	}, token)
 	if rec.Code != http.StatusBadRequest {
@@ -335,16 +335,16 @@ func TestPSNConfigure_ShortToken(t *testing.T) {
 	}
 }
 
-func TestPSNConfigure_StubSuccess(t *testing.T) {
+func TestPSNConnect_StubSuccess(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubPSNClient{
-		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456", Region: "GB"},
+		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-ok")
 
 	token64 := strings.Repeat("a", 64)
-	rec := postJSONAuth(t, e, "/api/sync/psn/configure", map[string]any{
+	rec := putJSONAuth(t, e, "/api/sync/psn/connection", map[string]any{
 		"npsso_token": token64,
 	}, token)
 	if rec.Code != http.StatusOK {
@@ -678,8 +678,8 @@ func TestSyncListConfig_AfterPut(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["total"].(float64) != 4 {
-		t.Fatalf("expected total=4, got %v", resp["total"])
+	if resp["total"].(float64) != 5 {
+		t.Fatalf("expected total=5, got %v", resp["total"])
 	}
 	configs := resp["configs"].([]any)
 	// Find steam config and verify it has frequency=daily.
@@ -758,12 +758,12 @@ func TestSyncGetConfig_InvalidStorefront(t *testing.T) {
 	}
 }
 
-// ─── TestHandleGetPSNStatus with credentials ──────────────────────────────────
+// ─── TestHandleGetPSNConnection with credentials ──────────────────────────────────
 
 func TestPSNStatus_WithCredentials(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubPSNClient{
-		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456", Region: "GB"},
+		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-stat-cred")
@@ -792,7 +792,7 @@ func TestPSNStatus_WithCredentials(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if !resp["is_configured"].(bool) {
-		t.Error("expected is_configured=true after PSN configure")
+		t.Error("expected is_configured=true after PSN connect")
 	}
 }
 
@@ -1912,7 +1912,7 @@ func newSyncTestAppWithEpic(t *testing.T, db *bun.DB, steam api.SteamClient, psn
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, epic, (api.GOGClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, epic, (api.GOGClient)(nil), (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1945,7 +1945,7 @@ func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClie
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1974,7 +1974,7 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), gog)
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), gog, (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1986,7 +1986,7 @@ func TestHandleEpicConnect_503WhenNotConfigured(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-503")
 
-	rec := postJSONAuth(t, e, "/api/sync/epic/connect", map[string]any{"auth_code": "abc"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic/connection", map[string]any{"auth_code": "abc"}, token)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2001,7 +2001,7 @@ func TestHandleEpicConnect_400OnMissingAuthCode(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-400")
 
-	rec := postJSONAuth(t, e, "/api/sync/epic/connect", map[string]any{}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic/connection", map[string]any{}, token)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
@@ -2016,7 +2016,7 @@ func TestHandleEpicConnect_400OnAuthError(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-auth-fail")
 
-	rec := postJSONAuth(t, e, "/api/sync/epic/connect", map[string]any{"auth_code": "bad"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic/connection", map[string]any{"auth_code": "bad"}, token)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2028,7 +2028,7 @@ func TestHandleEpicConnect_500OnNilInfo(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-nil")
 
-	rec := postJSONAuth(t, e, "/api/sync/epic/connect", map[string]any{"auth_code": "ok"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic/connection", map[string]any{"auth_code": "ok"}, token)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", rec.Code)
 	}
@@ -2044,7 +2044,7 @@ func TestHandleEpicConnect_HappyPathPersistsConfig(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-conn-ok")
 
-	rec := postJSONAuth(t, e, "/api/sync/epic/connect", map[string]any{"auth_code": "ok"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic/connection", map[string]any{"auth_code": "ok"}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2158,13 +2158,15 @@ func TestHandleGetEpicConnection_NotConnectedWhenNoRow(t *testing.T) {
 	}
 }
 
-func TestHandleGetEpicConnection_ConnectedReturnsAccountInfo(t *testing.T) {
+func TestHandleGetEpicConnection_ConnectedReturnsDisplayName(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubEpicClient{configured: true}
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-status-conn")
 
-	rawCreds := `{"display_name":"PlayerOne","account_id":"acct-xyz"}`
+	// Seed the realistic legendary snapshot shape the connect flow actually
+	// persists: a map[relPath]content where user.json holds displayName/account_id.
+	rawCreds := `{"user.json":"{\"displayName\":\"PlayerOne\",\"account_id\":\"acct-xyz\"}","installed.json":"{}"}`
 	credsCiphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
 	if err != nil {
 		t.Fatalf("encrypt epic creds: %v", err)
@@ -2187,8 +2189,8 @@ func TestHandleGetEpicConnection_ConnectedReturnsAccountInfo(t *testing.T) {
 	if resp["connected"] != true || resp["disabled"] != false {
 		t.Errorf("expected connected=true disabled=false, got: %v", resp)
 	}
-	if resp["display_name"] != "PlayerOne" || resp["account_id"] != "acct-xyz" {
-		t.Errorf("expected display_name/account_id from creds, got: %v", resp)
+	if resp["display_name"] != "PlayerOne" {
+		t.Errorf("expected display_name from creds, got: %v", resp)
 	}
 }
 
@@ -2200,7 +2202,7 @@ func TestGOGConnect_MissingAuthCode(t *testing.T) {
 	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-missing")
 
-	rec := postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{}, token)
+	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{}, token)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("want 400, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2212,7 +2214,7 @@ func TestGOGConnect_ExchangeFailure(t *testing.T) {
 	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-fail")
 
-	rec := postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{"auth_code": "bad"}, token)
+	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{"auth_code": "bad"}, token)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("want 400, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2222,16 +2224,14 @@ func TestGOGConnect_Success(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{
 		token: &api.GOGTokenResponse{
-			AccessToken:  "acc",
 			RefreshToken: "ref",
-			UserID:       "u1",
 			Username:     "goguser",
 		},
 	}
 	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-ok")
 
-	rec := postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{"auth_code": "good"}, token)
+	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{"auth_code": "good"}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2246,16 +2246,14 @@ func TestGOGConnect_FullURL(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{
 		token: &api.GOGTokenResponse{
-			AccessToken:  "acc",
 			RefreshToken: "ref",
-			UserID:       "u1",
 			Username:     "goguser",
 		},
 	}
 	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-url")
 
-	rec := postJSONAuth(t, app, "/api/sync/gog/connect", map[string]any{
+	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{
 		"auth_code": "https://embed.gog.com/on_login_success?origin=client&code=XXX",
 	}, token)
 	if rec.Code != http.StatusOK {
@@ -2304,7 +2302,7 @@ func TestGOGConnection_NotConnected(t *testing.T) {
 func TestGOGConnection_Connected(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{
-		token: &api.GOGTokenResponse{Username: "goguser", UserID: "u1", AccessToken: "a", RefreshToken: "r"},
+		token: &api.GOGTokenResponse{Username: "goguser", RefreshToken: "r"},
 	}
 	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, app, "gog-status-conn")
@@ -2388,9 +2386,6 @@ func TestGetSteamConnection_Connected(t *testing.T) {
 	_ = json.NewDecoder(rec.Body).Decode(&body)
 	if body["connected"] != true {
 		t.Errorf("want connected=true, got %v", body["connected"])
-	}
-	if body["steam_id"] != "76561198012345678" {
-		t.Errorf("steam_id: got %v", body["steam_id"])
 	}
 	if body["username"] != "Frostbyte" {
 		t.Errorf("username: got %v", body["username"])
@@ -2499,7 +2494,7 @@ func TestGetEpicConnection_DBCredentialsErrorFlag(t *testing.T) {
 	}
 }
 
-func TestSteamVerify_ClearsCredentialsErrorFlag(t *testing.T) {
+func TestSteamConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubSteamClient{
 		summary: &api.SteamPlayerSummary{PersonaName: "TestUser", CommunityVisibilityState: 3},
@@ -2515,7 +2510,7 @@ func TestSteamVerify_ClearsCredentialsErrorFlag(t *testing.T) {
 	)
 
 	body := `{"steam_id":"76561198000000001","web_api_key":"AABBCCDD00112233445566778899AABB"}`
-	rec := postAuth(t, e, "/api/sync/steam/verify", token, body)
+	rec := putAuth(t, e, "/api/sync/steam/connection", token, body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2526,14 +2521,14 @@ func TestSteamVerify_ClearsCredentialsErrorFlag(t *testing.T) {
 		userID,
 	).Scan(context.Background(), &credsErr)
 	if credsErr {
-		t.Error("expected credentials_error=false after successful Steam verify, got true")
+		t.Error("expected credentials_error=false after successful Steam connect, got true")
 	}
 }
 
-func TestPSNConfigure_ClearsCredentialsErrorFlag(t *testing.T) {
+func TestPSNConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubPSNClient{
-		info: &api.PSNAccountInfo{OnlineID: "MyPSN", AccountID: "123", Region: "GB"},
+		info: &api.PSNAccountInfo{OnlineID: "MyPSN", AccountID: "123"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-clear-cred")
@@ -2545,7 +2540,7 @@ func TestPSNConfigure_ClearsCredentialsErrorFlag(t *testing.T) {
 	)
 
 	body := `{"npsso_token":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}`
-	rec := postAuth(t, e, "/api/sync/psn/configure", token, body)
+	rec := putAuth(t, e, "/api/sync/psn/connection", token, body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2556,7 +2551,7 @@ func TestPSNConfigure_ClearsCredentialsErrorFlag(t *testing.T) {
 		userID,
 	).Scan(context.Background(), &credsErr)
 	if credsErr {
-		t.Error("expected credentials_error=false after PSN configure, got true")
+		t.Error("expected credentials_error=false after PSN connect, got true")
 	}
 }
 

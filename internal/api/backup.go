@@ -220,6 +220,9 @@ func (h *BackupHandler) HandleDeleteBackup(c *echo.Context) error {
 	id := c.Param("id")
 	err := h.svc.DeleteBackup(id)
 	if err != nil {
+		if errors.Is(err, backup.ErrInvalidBackupID) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid backup id"})
+		}
 		if errors.Is(err, backup.ErrNotFound) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "backup not found"})
 		}
@@ -231,7 +234,10 @@ func (h *BackupHandler) HandleDeleteBackup(c *echo.Context) error {
 // HandleDownloadBackup downloads a backup archive (GET /api/admin/backups/:id/download).
 func (h *BackupHandler) HandleDownloadBackup(c *echo.Context) error {
 	id := c.Param("id")
-	path := h.svc.GetBackupPath(id)
+	path, err := h.svc.GetBackupPath(id)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid backup id"})
+	}
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "backup file not found"})
 	}
@@ -256,6 +262,9 @@ func (h *BackupHandler) HandleRestore(c *echo.Context) error {
 	id := c.Param("id")
 	opts := h.makeRestoreOpts(false)
 	if err := h.svc.RestoreBackup(id, opts); err != nil {
+		if errors.Is(err, backup.ErrInvalidBackupID) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid backup id"})
+		}
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}

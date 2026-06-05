@@ -44,7 +44,6 @@ func (h *ExportHandler) handleExport(c *echo.Context, source string, taskType st
 
 	ctx := context.Background()
 
-	// Count the user's games.
 	count, err := h.db.NewSelect().
 		TableExpr("user_games").
 		Where("user_id = ?", userID).
@@ -56,7 +55,6 @@ func (h *ExportHandler) handleExport(c *echo.Context, source string, taskType st
 		return echo.NewHTTPError(http.StatusBadRequest, "no games to export")
 	}
 
-	// Create the Job record.
 	job := &models.Job{
 		ID:               uuid.NewString(),
 		UserID:           userID,
@@ -72,7 +70,6 @@ func (h *ExportHandler) handleExport(c *echo.Context, source string, taskType st
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create export job")
 	}
 
-	// Submit the task via River.
 	if h.riverClient != nil {
 		var err error
 		if taskType == "export_json" {
@@ -126,22 +123,18 @@ func (h *ExportHandler) HandleDownload(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load job")
 	}
 
-	// Must be an export job.
 	if job.JobType != models.JobTypeExport {
 		return echo.NewHTTPError(http.StatusBadRequest, "not an export job")
 	}
 
-	// Must be completed.
 	if job.Status != models.JobStatusCompleted {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("export job is not completed (status: %s)", job.Status))
 	}
 
-	// File path must be set.
 	if job.FilePath == nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "export file path not set")
 	}
 
-	// File must exist on disk.
 	if _, err := os.Stat(*job.FilePath); err != nil {
 		return echo.NewHTTPError(http.StatusGone, "export file no longer available")
 	}
@@ -152,7 +145,6 @@ func (h *ExportHandler) HandleDownload(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusGone, "export file has expired")
 	}
 
-	// Determine content type and filename from file extension.
 	ext := strings.ToLower(filepath.Ext(*job.FilePath))
 	var contentType, filename string
 	switch ext {

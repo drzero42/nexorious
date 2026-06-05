@@ -147,7 +147,6 @@ export const handlers = [
         store_game_id: null,
         store_url: null,
         is_available: true,
-        original_platform_name: null,
         created_at: new Date().toISOString(),
       },
       { status: 201 },
@@ -174,7 +173,6 @@ export const handlers = [
         store_game_id: null,
         store_url: null,
         is_available: true,
-        original_platform_name: null,
         created_at: new Date().toISOString(),
       });
     },

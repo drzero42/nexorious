@@ -25,14 +25,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Environment Validation
 ```bash
-go version   # expect go 1.25+
+go version   # expect go 1.26+
 make --version
 ```
 
 ## Setup & Development
 
 ### Development Environment
-Uses devenv for a reproducible shell (Go 1.25, golangci-lint, make, Node 24, TypeScript).
+Uses devenv for a reproducible shell (Go 1.26, golangci-lint, make, Node 24, TypeScript).
 
 > **Run commands directly** — `go`, `make`, `npm`, etc. are all on PATH in the devenv-activated shell. Only use `devenv shell -- <command>` when a tool is genuinely not available in the current environment. Never use `devenv shell --command`; the correct separator is `--`.
 
@@ -170,6 +170,9 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 4. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)) — format/lint on every edit, build + typecheck when a turn ends, and the full suites at `git push`. You don't need to re-run the whole suites by hand; do run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.
 5. **Plan files**: `docs/superpowers/plans/` is tracked — always commit the plan file on the feature branch
 
+### Out-of-Scope Findings
+When working with code, if you identify a problem, bug, or inconsistency that you judge to be out-of-scope for the current task, do **not** silently fix it or ignore it — surface it and **offer to file a follow-up GitHub issue** (`gh issue create`) to track the fix. Only create the issue once the user agrees.
+
 ### Branch Workflow (MANDATORY)
 - ✅ Always create a branch before starting task work
 - ✅ Use `--squash --delete-branch` when merging PRs
@@ -286,6 +289,7 @@ A `feat!:` commit (or `BREAKING CHANGE:` footer) will naturally produce a `1.0.0
 - **`os.Exit` skips deferred calls** — call `pool.Close()` explicitly before any `os.Exit` in main; deferred `pool.Close()` will not run
 - **Background goroutines** — use `context.Background()`, not `c.Request().Context()`, for work that outlives an HTTP handler
 - **`errcheck` runs with `check-blank`** (`.golangci.yml`) — every `_ =` / `_, _ =` error discard fails CI. Default fix is to **handle** it (API handler → `slog.Error` + `echo.NewHTTPError(500, …)`; worker/scheduler → log-only `slog.Error(...)`). Suppress only a genuinely-acceptable discard, via one of: the `std-error-handling` preset (covers the `Close`/`Fprint` family — so `defer func() { _ = resp.Body.Close() }()` needs no annotation), the `(bun.Tx).Rollback` allowlist, or a per-site `//nolint:errcheck // <one-line reason>` (e.g. clamped param parse, advisory `RowsAffected`, marshal of a fixed struct). `_ =` in `_test.go` is exempt.
+- **`gosec` is enabled** (`.golangci.yml`) — security findings (G1xx/G2xx/G3xx/G7xx) fail CI. `_test.go` is excluded wholesale (fixtures legitimately carry fake credentials, password-in-URL cases, marshaled test tokens). For non-test findings: fix genuine issues (e.g. tighten file/dir perms to `0600`/`0750`; validate user-derived paths against traversal); suppress only confirmed false positives with a per-site `//nolint:gosec // <reason>` stating *why* it's safe (e.g. fixed-binary subprocess, internally-derived path, value encrypted before storage, guarded against traversal above). Don't blanket-suppress a rule in config — keep each suppression at the site, auditable.
 - **`jobs` table columns** — `id`, `user_id`, `job_type`, `source`, `status`, `priority`, `file_path`, `total_items`, `error_message`, `auto_retry_done`, `dispatch_complete`, `created_at`, `started_at`, `completed_at`. There is **no `updated_at`** column.
 - **`job_items` table columns** — `id`, `job_id`, `user_id`, `external_game_id`, `item_key`, `source_title`, `source_metadata` (jsonb), `status`, `result` (jsonb), `error_message`, `igdb_candidates` (jsonb), `resolved_igdb_id`, `match_confidence`, `created_at`, `processed_at`, `resolved_at`. There is **no `error`** column (it's `error_message`).
 - **Priority type mismatch** — `jobs.priority` is TEXT (`'high'`/`'low'`); `pending_tasks.priority` is INTEGER; don't conflate the two columns

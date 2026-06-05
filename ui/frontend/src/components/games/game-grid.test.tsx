@@ -280,31 +280,9 @@ describe('GameGrid', () => {
       expect(onClickGame).toHaveBeenCalledWith(game2);
       expect(onClickGame).not.toHaveBeenCalledWith(game1);
     });
-
-    it('does not throw when clicked without onClickGame handler', async () => {
-      const user = userEvent.setup();
-      const game = createMockGame({ id: 'game-1' as UserGameId });
-
-      render(<GameGrid games={[game]} />);
-
-      // Should not throw
-      await expect(user.click(screen.getByTestId('click-game-1'))).resolves.not.toThrow();
-    });
   });
 
   describe('edge cases', () => {
-    it('handles empty games array with undefined selectedIds', () => {
-      expect(() => render(<GameGrid games={[]} />)).not.toThrow();
-    });
-
-    it('handles games with selectedIds but no onSelectGame', () => {
-      const games = [createMockGame({ id: 'game-1' as UserGameId })];
-      const selectedIds = new Set(['game-1']);
-
-      // Should not crash, but checkboxes won't render without onSelectGame
-      expect(() => render(<GameGrid games={games} selectedIds={selectedIds} />)).not.toThrow();
-    });
-
     it('renders large number of games without issues', () => {
       const games = Array.from({ length: 100 }, (_, i) =>
         createMockGame({

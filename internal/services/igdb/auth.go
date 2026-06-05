@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultTwitchTokenURL = "https://id.twitch.tv/oauth2/token"
+	defaultTwitchTokenURL = "https://id.twitch.tv/oauth2/token" //nolint:gosec // public Twitch OAuth endpoint URL, not a credential
 	tokenExpiryBuffer     = 5 * time.Minute
 )
 

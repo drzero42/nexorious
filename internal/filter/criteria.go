@@ -2,6 +2,8 @@ package filter
 
 import (
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/dbutil"
 )
 
 const (
@@ -10,7 +12,7 @@ const (
 )
 
 // ApplyPlayStatus filters by user_games.play_status.
-func ApplyPlayStatus(fb *filterBuilder, status string) {
+func ApplyPlayStatus(fb *FilterBuilder, status string) {
 	if status == "" {
 		return
 	}
@@ -20,7 +22,7 @@ func ApplyPlayStatus(fb *filterBuilder, status string) {
 }
 
 // ApplyOwnershipStatus filters by user_game_platforms.ownership_status.
-func ApplyOwnershipStatus(fb *filterBuilder, status string) {
+func ApplyOwnershipStatus(fb *FilterBuilder, status string) {
 	if status == "" {
 		return
 	}
@@ -31,7 +33,7 @@ func ApplyOwnershipStatus(fb *filterBuilder, status string) {
 }
 
 // ApplyIsLoved filters by user_games.is_loved.
-func ApplyIsLoved(fb *filterBuilder, v *bool) {
+func ApplyIsLoved(fb *FilterBuilder, v *bool) {
 	if v == nil {
 		return
 	}
@@ -41,7 +43,7 @@ func ApplyIsLoved(fb *filterBuilder, v *bool) {
 }
 
 // ApplyRatingMin filters by user_games.personal_rating >= min.
-func ApplyRatingMin(fb *filterBuilder, min *float64) {
+func ApplyRatingMin(fb *FilterBuilder, min *float64) {
 	if min == nil {
 		return
 	}
@@ -51,7 +53,7 @@ func ApplyRatingMin(fb *filterBuilder, min *float64) {
 }
 
 // ApplyRatingMax filters by user_games.personal_rating <= max.
-func ApplyRatingMax(fb *filterBuilder, max *float64) {
+func ApplyRatingMax(fb *FilterBuilder, max *float64) {
 	if max == nil {
 		return
 	}
@@ -61,7 +63,7 @@ func ApplyRatingMax(fb *filterBuilder, max *float64) {
 }
 
 // ApplyHasNotes filters by whether personal_notes is present.
-func ApplyHasNotes(fb *filterBuilder, v *bool) {
+func ApplyHasNotes(fb *FilterBuilder, v *bool) {
 	if v == nil {
 		return
 	}
@@ -74,7 +76,7 @@ func ApplyHasNotes(fb *filterBuilder, v *bool) {
 }
 
 // ApplyPlatform filters by platform name(s). "unknown" maps to NULL.
-func ApplyPlatform(fb *filterBuilder, platforms []string) {
+func ApplyPlatform(fb *FilterBuilder, platforms []string) {
 	if len(platforms) == 0 {
 		return
 	}
@@ -104,7 +106,7 @@ func ApplyPlatform(fb *filterBuilder, platforms []string) {
 }
 
 // ApplyStorefront filters by storefront name(s). "unknown" maps to NULL.
-func ApplyStorefront(fb *filterBuilder, storefronts []string) {
+func ApplyStorefront(fb *FilterBuilder, storefronts []string) {
 	if len(storefronts) == 0 {
 		return
 	}
@@ -134,7 +136,7 @@ func ApplyStorefront(fb *filterBuilder, storefronts []string) {
 }
 
 // ApplyGenre filters by game genre (ILIKE match).
-func ApplyGenre(fb *filterBuilder, genres []string) {
+func ApplyGenre(fb *FilterBuilder, genres []string) {
 	if len(genres) == 0 {
 		return
 	}
@@ -142,7 +144,7 @@ func ApplyGenre(fb *filterBuilder, genres []string) {
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
 		return q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
 			for _, g := range genres {
-				q = q.WhereOr("g.genre ILIKE ?", "%"+g+"%")
+				q = q.WhereOr("g.genre ILIKE ?", dbutil.LikeContains(g))
 			}
 			return q
 		})
@@ -150,7 +152,7 @@ func ApplyGenre(fb *filterBuilder, genres []string) {
 }
 
 // ApplyGameMode filters by game mode (ILIKE match).
-func ApplyGameMode(fb *filterBuilder, modes []string) {
+func ApplyGameMode(fb *FilterBuilder, modes []string) {
 	if len(modes) == 0 {
 		return
 	}
@@ -158,7 +160,7 @@ func ApplyGameMode(fb *filterBuilder, modes []string) {
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
 		return q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
 			for _, m := range modes {
-				q = q.WhereOr("g.game_modes ILIKE ?", "%"+m+"%")
+				q = q.WhereOr("g.game_modes ILIKE ?", dbutil.LikeContains(m))
 			}
 			return q
 		})
@@ -166,7 +168,7 @@ func ApplyGameMode(fb *filterBuilder, modes []string) {
 }
 
 // ApplyTheme filters by theme (ILIKE match).
-func ApplyTheme(fb *filterBuilder, themes []string) {
+func ApplyTheme(fb *FilterBuilder, themes []string) {
 	if len(themes) == 0 {
 		return
 	}
@@ -174,7 +176,7 @@ func ApplyTheme(fb *filterBuilder, themes []string) {
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
 		return q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
 			for _, t := range themes {
-				q = q.WhereOr("g.themes ILIKE ?", "%"+t+"%")
+				q = q.WhereOr("g.themes ILIKE ?", dbutil.LikeContains(t))
 			}
 			return q
 		})
@@ -182,7 +184,7 @@ func ApplyTheme(fb *filterBuilder, themes []string) {
 }
 
 // ApplyPlayerPerspective filters by player perspective (ILIKE match).
-func ApplyPlayerPerspective(fb *filterBuilder, perspectives []string) {
+func ApplyPlayerPerspective(fb *FilterBuilder, perspectives []string) {
 	if len(perspectives) == 0 {
 		return
 	}
@@ -190,7 +192,7 @@ func ApplyPlayerPerspective(fb *filterBuilder, perspectives []string) {
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
 		return q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
 			for _, p := range perspectives {
-				q = q.WhereOr("g.player_perspectives ILIKE ?", "%"+p+"%")
+				q = q.WhereOr("g.player_perspectives ILIKE ?", dbutil.LikeContains(p))
 			}
 			return q
 		})
@@ -198,7 +200,7 @@ func ApplyPlayerPerspective(fb *filterBuilder, perspectives []string) {
 }
 
 // ApplyTag filters by tag IDs via subquery.
-func ApplyTag(fb *filterBuilder, tagIDs []string) {
+func ApplyTag(fb *FilterBuilder, tagIDs []string) {
 	if len(tagIDs) == 0 {
 		return
 	}
@@ -208,12 +210,12 @@ func ApplyTag(fb *filterBuilder, tagIDs []string) {
 }
 
 // ApplySearch filters by title or personal notes (ILIKE match).
-func ApplySearch(fb *filterBuilder, query string) {
+func ApplySearch(fb *FilterBuilder, query string) {
 	if query == "" {
 		return
 	}
 	fb.AddJoin("g", joinGames)
-	pattern := "%" + query + "%"
+	pattern := dbutil.LikeContains(query)
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
 		return q.WhereGroup(" AND ", func(q *bun.SelectQuery) *bun.SelectQuery {
 			q = q.WhereOr("g.title ILIKE ?", pattern)

@@ -34,7 +34,10 @@ func (w *NotifyWorker) Work(ctx context.Context, job *river.Job[NotifyArgs]) err
 		return nil
 	}
 
-	title, body := Format(ev.Type, ev.Payload)
+	title, body, derr := Format(ev.Type, ev.Payload)
+	if derr != nil {
+		slog.Warn("notify: payload decode failed", "event_id", ev.ID, "type", ev.Type, "err", derr)
+	}
 
 	for _, userID := range recipients {
 		channels, err := w.loadChannels(ctx, userID)
@@ -43,9 +46,9 @@ func (w *NotifyWorker) Work(ctx context.Context, job *river.Job[NotifyArgs]) err
 			continue
 		}
 		for _, ch := range channels {
-			plain, derr := w.Encrypter.Decrypt(ch.EncryptedURL)
-			if derr != nil {
-				slog.Warn("notify: decrypt channel url", "channel_id", ch.ID, "err", derr)
+			plain, cerr := w.Encrypter.Decrypt(ch.EncryptedURL)
+			if cerr != nil {
+				slog.Warn("notify: decrypt channel url", "channel_id", ch.ID, "err", cerr)
 				continue
 			}
 			if serr := w.Sender.Send(ctx, string(plain), title, body); serr != nil {

@@ -8,6 +8,7 @@ import {
   usePSNStatus,
   useEpicConnection,
   useGOGConnection,
+  useHumbleStatus,
 } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardHeader } from '@/components/ui/card';
@@ -54,11 +55,23 @@ function SyncServiceCardWithStatus({
   const { data: reviewData } = usePendingReviewCount();
   const { isPending: isSyncing } = useTriggerSync();
 
-  // Fetch storefront-specific connection data for credentials error state
-  const { data: steamConnection } = useSteamConnection();
-  const { data: psnStatus } = usePSNStatus();
-  const { data: epicConnection } = useEpicConnection();
-  const { data: gogConnection } = useGOGConnection();
+  // Fetch only this card's storefront connection for its credentials-error state,
+  // so each card fires a single connection request instead of all four.
+  const { data: steamConnection } = useSteamConnection({
+    enabled: config.storefront === SyncStorefront.STEAM,
+  });
+  const { data: psnStatus } = usePSNStatus({
+    enabled: config.storefront === SyncStorefront.PSN,
+  });
+  const { data: epicConnection } = useEpicConnection({
+    enabled: config.storefront === SyncStorefront.EPIC,
+  });
+  const { data: gogConnection } = useGOGConnection({
+    enabled: config.storefront === SyncStorefront.GOG,
+  });
+  const { data: humbleStatus } = useHumbleStatus({
+    enabled: config.storefront === SyncStorefront.HUMBLE,
+  });
 
   const pendingReviewCount = reviewData?.countsBySource?.[config.storefront] ?? 0;
 
@@ -66,7 +79,8 @@ function SyncServiceCardWithStatus({
     (config.storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.PSN && (psnStatus?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
-    (config.storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false));
+    (config.storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
+    (config.storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
 
   const handleTriggerSync = async () => {
     await onTriggerSync(config.storefront);

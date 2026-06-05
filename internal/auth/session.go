@@ -39,7 +39,7 @@ func GenerateAPIKey() (string, error) {
 // SetSessionCookie writes an HttpOnly SameSite=Strict session cookie.
 // secure should be true in production (HTTPS) and false for plain-HTTP deployments.
 func SetSessionCookie(c *echo.Context, sessionID string, expireDays int, secure bool) {
-	cookie := new(http.Cookie)
+	cookie := new(http.Cookie) //nolint:gosec // HttpOnly and SameSite=Strict are set below; Secure is intentionally configurable for plain-HTTP deployments
 	cookie.Name = sessionCookieName
 	cookie.Value = sessionID
 	cookie.HttpOnly = true
@@ -53,7 +53,7 @@ func SetSessionCookie(c *echo.Context, sessionID string, expireDays int, secure 
 // ClearSessionCookie expires the session cookie.
 // secure must match the flag used when the cookie was set, or browsers may not clear it.
 func ClearSessionCookie(c *echo.Context, secure bool) {
-	cookie := new(http.Cookie)
+	cookie := new(http.Cookie) //nolint:gosec // HttpOnly and SameSite=Strict are set below; Secure is intentionally configurable for plain-HTTP deployments
 	cookie.Name = sessionCookieName
 	cookie.Value = ""
 	cookie.HttpOnly = true

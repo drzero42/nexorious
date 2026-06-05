@@ -147,7 +147,7 @@ func markJobFailed(ctx context.Context, db *bun.DB, job *models.Job, errMsg stri
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeExportFailed, Scope: notify.ScopeUser, ActorUserID: job.UserID,
-		Payload:  map[string]any{"job_id": job.ID, "error": errMsg},
+		Payload:  notify.ExportFailedPayload{JobID: job.ID, Error: errMsg},
 		DedupKey: job.ID + ":" + notify.TypeExportFailed,
 	})
 }
@@ -166,7 +166,7 @@ func markJobCompleted(ctx context.Context, db *bun.DB, job *models.Job, filePath
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeExportCompleted, Scope: notify.ScopeUser, ActorUserID: job.UserID,
-		Payload:  map[string]any{"job_id": job.ID, "file_path": filePath},
+		Payload:  notify.ExportCompletedPayload{JobID: job.ID, FilePath: filePath},
 		DedupKey: job.ID + ":" + notify.TypeExportCompleted,
 	})
 }
@@ -174,7 +174,7 @@ func markJobCompleted(ctx context.Context, db *bun.DB, job *models.Job, filePath
 // exportsDir returns (and creates) the exports subdirectory under storagePath.
 func exportsDir(storagePath string) (string, error) {
 	dir := filepath.Join(storagePath, "exports")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", fmt.Errorf("create exports dir: %w", err)
 	}
 	return dir, nil
@@ -246,7 +246,7 @@ func writeJSONExport(storagePath, userID string, ugs []models.UserGame) (string,
 
 	doc := buildJSONDoc(userID, ugs)
 
-	f, err := os.Create(outPath)
+	f, err := os.Create(outPath) //nolint:gosec // outPath is an internally-derived export path under storagePath, not user input
 	if err != nil {
 		return "", fmt.Errorf("create export file: %w", err)
 	}
@@ -299,23 +299,14 @@ func buildJSONDoc(userID string, ugs []models.UserGame) exportDocJSON {
 			}
 			pj := exportPlatformJSON{
 				PlatformID:      p.Platform,
+				PlatformName:    p.Platform,
 				StorefrontID:    p.Storefront,
+				StorefrontName:  p.Storefront,
 				StoreGameID:     p.StoreGameID,
 				StoreURL:        p.StoreUrl,
 				IsAvailable:     p.IsAvailable,
 				HoursPlayed:     p.HoursPlayed,
 				OwnershipStatus: p.OwnershipStatus,
-			}
-			// Display names: prefer original names, fall back to slug.
-			if p.OriginalPlatformName != nil {
-				pj.PlatformName = p.OriginalPlatformName
-			} else {
-				pj.PlatformName = p.Platform
-			}
-			if p.OriginalStorefrontName != nil {
-				pj.StorefrontName = p.OriginalStorefrontName
-			} else {
-				pj.StorefrontName = p.Storefront
 			}
 			if p.AcquiredDate != nil {
 				d := p.AcquiredDate.Format("2006-01-02")
@@ -395,7 +386,7 @@ func writeCSVExport(storagePath, userID string, ugs []models.UserGame) (string, 
 	filename := fmt.Sprintf("%s_%s.csv", userID, ts)
 	outPath := filepath.Join(dir, filename)
 
-	f, err := os.Create(outPath)
+	f, err := os.Create(outPath) //nolint:gosec // outPath is an internally-derived export path under storagePath, not user input
 	if err != nil {
 		return "", fmt.Errorf("create CSV file: %w", err)
 	}

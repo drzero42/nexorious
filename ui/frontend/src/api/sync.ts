@@ -14,6 +14,8 @@ import type {
   GOGConnectionResponse,
   PSNConfigureResponse,
   PSNStatusResponse,
+  HumbleConnectResponse,
+  HumbleStatusResponse,
   ExternalGame,
 } from '@/types';
 
@@ -171,7 +173,6 @@ interface SteamVerifyApiResponse {
 interface SteamConnectionApiResponse {
   connected: boolean;
   credentials_error?: boolean;
-  steam_id?: string;
   username?: string;
 }
 
@@ -193,7 +194,6 @@ interface EpicConnectionApiResponse {
   disabled: boolean;
   credentials_error?: boolean;
   display_name?: string;
-  account_id?: string;
   reason?: string;
 }
 
@@ -202,13 +202,13 @@ interface EpicConnectionApiResponse {
 // ============================================================================
 
 /**
- * Verify Steam credentials before saving.
+ * Establish the Steam connection by submitting and verifying Steam credentials.
  */
 export async function verifySteamCredentials(
   steamId: string,
   webApiKey: string,
 ): Promise<SteamVerifyResponse> {
-  const response = await api.post<SteamVerifyApiResponse>('/sync/steam/verify', {
+  const response = await api.put<SteamVerifyApiResponse>('/sync/steam/connection', {
     steam_id: steamId,
     web_api_key: webApiKey,
   } as SteamVerifyApiRequest);
@@ -237,7 +237,7 @@ export async function disconnectSteam(): Promise<void> {
  * persists the resulting state snapshot.
  */
 export async function connectEpic(authCode: string): Promise<EpicConnectResponse> {
-  const response = await api.post<EpicConnectApiResponse>('/sync/epic/connect', {
+  const response = await api.put<EpicConnectApiResponse>('/sync/epic/connection', {
     auth_code: authCode,
   } as EpicConnectApiRequest);
   return {
@@ -256,7 +256,6 @@ export async function getEpicConnection(): Promise<EpicConnectionResponse> {
     disabled: response.disabled,
     credentialsError: response.credentials_error ?? false,
     displayName: response.display_name,
-    accountId: response.account_id,
     reason: response.reason,
   };
 }
@@ -278,14 +277,12 @@ interface GOGConnectApiRequest {
 
 interface GOGConnectApiResponse {
   username: string;
-  user_id: string;
 }
 
 interface GOGConnectionApiResponse {
   connected: boolean;
   credentials_error?: boolean;
   username?: string;
-  user_id?: string;
   auth_url?: string;
 }
 
@@ -294,12 +291,11 @@ interface GOGConnectionApiResponse {
 // ============================================================================
 
 export async function connectGOG(authCode: string): Promise<GOGConnectResponse> {
-  const response = await api.post<GOGConnectApiResponse>('/sync/gog/connect', {
+  const response = await api.put<GOGConnectApiResponse>('/sync/gog/connection', {
     auth_code: authCode,
   } as GOGConnectApiRequest);
   return {
     username: response.username,
-    userId: response.user_id,
   };
 }
 
@@ -309,7 +305,6 @@ export async function getGOGConnection(): Promise<GOGConnectionResponse> {
     connected: response.connected,
     credentialsError: response.credentials_error ?? false,
     username: response.username,
-    userId: response.user_id,
     authUrl: response.auth_url,
   };
 }
@@ -330,7 +325,6 @@ interface PSNConfigureApiResponse {
   success: boolean;
   online_id: string | null;
   account_id: string | null;
-  region: string | null;
   message: string;
 }
 
@@ -338,8 +332,6 @@ interface PSNStatusApiResponse {
   is_configured: boolean;
   credentials_error?: boolean;
   online_id: string | null;
-  account_id: string | null;
-  region: string | null;
 }
 
 // ============================================================================
@@ -350,7 +342,7 @@ interface PSNStatusApiResponse {
  * Configure PSN with NPSSO token.
  */
 export async function configurePSN(npssoToken: string): Promise<PSNConfigureResponse> {
-  const response = await api.post<PSNConfigureApiResponse>('/sync/psn/configure', {
+  const response = await api.put<PSNConfigureApiResponse>('/sync/psn/connection', {
     npsso_token: npssoToken,
   } as PSNConfigureApiRequest);
 
@@ -370,10 +362,64 @@ export async function getPSNStatus(): Promise<PSNStatusResponse> {
 
   return {
     configured: response.is_configured,
-    accountId: response.account_id,
     onlineId: response.online_id,
     credentialsError: response.credentials_error ?? false,
   };
+}
+
+// ============================================================================
+// Humble Bundle API Types
+// ============================================================================
+
+interface HumbleConnectApiRequest {
+  session_cookie: string;
+}
+
+interface HumbleConnectApiResponse {
+  success: boolean;
+  message: string;
+}
+
+interface HumbleStatusApiResponse {
+  is_configured: boolean;
+  credentials_error?: boolean;
+}
+
+// ============================================================================
+// Humble Bundle Functions
+// ============================================================================
+
+/**
+ * Connect Humble Bundle by submitting and verifying a session cookie.
+ */
+export async function connectHumble(sessionCookie: string): Promise<HumbleConnectResponse> {
+  const response = await api.put<HumbleConnectApiResponse>('/sync/humble-bundle/connection', {
+    session_cookie: sessionCookie,
+  } as HumbleConnectApiRequest);
+
+  return {
+    valid: response.success,
+    error: response.success ? null : response.message,
+  };
+}
+
+/**
+ * Get Humble Bundle connection status.
+ */
+export async function getHumbleStatus(): Promise<HumbleStatusResponse> {
+  const response = await api.get<HumbleStatusApiResponse>('/sync/humble-bundle/connection');
+
+  return {
+    configured: response.is_configured,
+    credentialsError: response.credentials_error ?? false,
+  };
+}
+
+/**
+ * Disconnect Humble Bundle integration.
+ */
+export async function disconnectHumble(): Promise<void> {
+  await api.delete('/sync/humble-bundle/connection');
 }
 
 /**
@@ -384,7 +430,6 @@ export async function getSteamConnection(): Promise<SteamConnectionData> {
   return {
     connected: response.connected,
     credentialsError: response.credentials_error ?? false,
-    steamId: response.steam_id ?? '',
     username: response.username ?? '',
   };
 }

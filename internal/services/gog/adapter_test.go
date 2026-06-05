@@ -63,9 +63,8 @@ func TestGOGAdapter_CallsOnNewTokensAfterRefresh(t *testing.T) {
 	fake := &fakeGOGClient{
 		refreshResult: &TokenResponse{AccessToken: "new-access", RefreshToken: "new-refresh"},
 	}
-	var gotAccess, gotRefresh string
-	onNewTokens := func(access, refresh string) error {
-		gotAccess = access
+	var gotRefresh string
+	onNewTokens := func(refresh string) error {
 		gotRefresh = refresh
 		return nil
 	}
@@ -74,8 +73,8 @@ func TestGOGAdapter_CallsOnNewTokensAfterRefresh(t *testing.T) {
 	if err := a.GetLibrary(context.Background(), 10, func([]storefrontadapter.ExternalGameEntry) error { return nil }); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gotAccess != "new-access" || gotRefresh != "new-refresh" {
-		t.Errorf("onNewTokens got (%q, %q), want ('new-access', 'new-refresh')", gotAccess, gotRefresh)
+	if gotRefresh != "new-refresh" {
+		t.Errorf("onNewTokens got %q, want 'new-refresh'", gotRefresh)
 	}
 }
 
@@ -113,7 +112,7 @@ func TestGOGAdapter_OnNewTokensFailureDoesNotAbortFetch(t *testing.T) {
 	fake := &fakeGOGClient{
 		refreshResult: &TokenResponse{AccessToken: "new-access", RefreshToken: "new-refresh"},
 	}
-	onNewTokens := func(_, _ string) error {
+	onNewTokens := func(_ string) error {
 		return errors.New("db write failed")
 	}
 	a := NewAdapter(fake, "old-refresh", onNewTokens)

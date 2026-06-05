@@ -28,26 +28,21 @@ var (
 // NormalizeTitle applies transformations for comparison purposes only.
 // The result is never stored or displayed.
 func NormalizeTitle(s string) string {
-	// 1. Expand GOTY
 	s = reGOTY.ReplaceAllString(s, "Game of the Year")
-	// 2. Replace trademark symbols with a space so "Velocity®2X" → "Velocity 2X"
+	// Trademark symbols become a space so "Velocity®2X" → "Velocity 2X".
 	s = ReTrademark.ReplaceAllString(s, " ")
-	// 3. Remove apostrophes
 	s = reApostrophes.ReplaceAllString(s, "")
-	// 4. Remove colons
 	s = reColons.ReplaceAllString(s, " ")
-	// 5. Remove standalone dashes (preserve in-word hyphens)
+	// Standalone dashes only; in-word hyphens are preserved.
 	s = reStandaloneDash.ReplaceAllString(s, " ")
-	// 6. Remove year in parentheses; also strip "(Classic)" and "(Classic, YYYY)"
+	// Strip "(YYYY)", "(Classic)", and "(Classic, YYYY)" suffixes.
 	s = reYearInParens.ReplaceAllString(s, "")
 	s = reClassic.ReplaceAllString(s, "")
-	// 7. Collapse whitespace
 	s = reMultiWhitespace.ReplaceAllString(s, " ")
-	// 8. Lowercase and trim
 	s = strings.ToLower(strings.TrimSpace(s))
-	// 9. Strip leading "the " so "The X" and "X" compare equally
+	// Strip leading "the " so "The X" and "X" compare equally.
 	s = strings.TrimPrefix(s, "the ")
-	// 10. Fold diacritics to ASCII so "ABZÛ"→"abzu" and "Ōkami"→"okami" match
+	// Fold diacritics to ASCII so "ABZÛ"→"abzu" and "Ōkami"→"okami" match.
 	if folded, _, err := transform.String(diacriticFolder, s); err == nil {
 		s = folded
 	}

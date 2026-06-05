@@ -15,15 +15,16 @@ import {
   useSteamConnection,
   useEpicConnection,
   useGOGConnection,
+  useHumbleStatus,
   jobsKeys,
   useJobCompletionEffect,
 } from '@/hooks';
-import { useCurrentUser, authKeys } from '@/hooks/use-auth';
 import {
   SteamConnectionCard,
   EpicConnectionCard,
   GOGConnectionCard,
   PSNConnectionCard,
+  HumbleConnectionCard,
   ExternalGamesSection,
 } from '@/components/sync';
 import { RecentActivity } from '@/components/jobs';
@@ -62,6 +63,7 @@ import {
 import { RefreshCw, Loader2, AlertCircle, Clock, ChevronDown } from 'lucide-react';
 import { config as envConfig } from '@/lib/env';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
+import { formatRelativeTime } from '@/types/jobs';
 
 export const Route = createFileRoute('/_authenticated/sync/$storefront')({
   head: ({ params }) => {
@@ -76,22 +78,6 @@ export const Route = createFileRoute('/_authenticated/sync/$storefront')({
   },
   component: SyncDetailPage,
 });
-
-function formatLastSync(dateStr: string | null): string {
-  if (!dateStr) return 'Never';
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
-}
 
 function SyncDetailPageSkeleton() {
   return (
@@ -149,18 +135,6 @@ function SyncDetailPage() {
 
   const isValidPlatform = SUPPORTED_SYNC_STOREFRONTS.includes(storefront);
 
-  // Get current user for PSN/GOG preferences (must be called before any conditional return)
-  const { data: currentUser } = useCurrentUser();
-
-  // Extract PSN credentials from user preferences
-  const psnPrefs = currentUser?.preferences?.psn as
-    | {
-        online_id?: string;
-        account_id?: string;
-        region?: string;
-      }
-    | undefined;
-
   // Fetch sync config and status
   const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(storefront);
   const { data: status, isLoading: statusLoading } = useSyncStatus(storefront);
@@ -174,6 +148,9 @@ function SyncDetailPage() {
   // Fetch Epic and GOG connection status
   const { data: epicConnection } = useEpicConnection();
   const { data: gogConnection } = useGOGConnection();
+
+  // Fetch Humble Bundle status
+  const { data: humbleStatus } = useHumbleStatus();
 
   // Fetch job details if there's an active job
   const { data: activeJob } = useJob(status?.activeJobId ?? undefined, {
@@ -214,7 +191,8 @@ function SyncDetailPage() {
     (storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.PSN && (psnStatus?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
-    (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false));
+    (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
 
   const [connectionSectionOpen, setConnectionSectionOpen] = useState(false);
   const connectionOpenInitialized = useRef(false);
@@ -420,7 +398,7 @@ function SyncDetailPage() {
               </CardTitle>
               <CardDescription className="flex items-center gap-2 mt-1">
                 <Clock className="h-4 w-4" />
-                Last synced: {formatLastSync(config.lastSyncedAt)}
+                Last synced: {formatRelativeTime(config.lastSyncedAt, 'Never')}
               </CardDescription>
             </div>
             <div className="ml-auto flex flex-col items-end gap-2">
@@ -489,13 +467,11 @@ function SyncDetailPage() {
             <SteamConnectionCard
               isConfigured={config.isConfigured}
               credentialsError={steamConnection?.credentialsError ?? false}
-              steamId={steamConnection?.steamId}
               steamUsername={steamConnection?.username}
               onConnectionChange={() => {
                 // Invalidate queries to refresh data
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
                 queryClient.invalidateQueries({ queryKey: syncKeys.steamConnection() });
-                queryClient.invalidateQueries({ queryKey: authKeys.me() });
               }}
             />
           )}
@@ -506,7 +482,6 @@ function SyncDetailPage() {
               isConfigured={config.isConfigured}
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
-                queryClient.invalidateQueries({ queryKey: authKeys.me() });
               }}
             />
           )}
@@ -526,12 +501,22 @@ function SyncDetailPage() {
             <PSNConnectionCard
               isConfigured={config.isConfigured}
               credentialsError={psnStatus?.credentialsError ?? false}
-              onlineId={psnPrefs?.online_id}
-              accountId={psnPrefs?.account_id}
+              onlineId={psnStatus?.onlineId ?? undefined}
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
                 queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
-                queryClient.invalidateQueries({ queryKey: authKeys.me() });
+              }}
+            />
+          )}
+
+          {/* Humble Bundle Connection Card - only show for Humble storefront */}
+          {storefront === SyncStorefront.HUMBLE && (
+            <HumbleConnectionCard
+              isConfigured={config.isConfigured}
+              credentialsError={humbleStatus?.credentialsError ?? false}
+              onConnectionChange={() => {
+                queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
+                queryClient.invalidateQueries({ queryKey: syncKeys.humbleStatus() });
               }}
             />
           )}
