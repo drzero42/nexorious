@@ -3,6 +3,8 @@ package tasks_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -106,6 +108,62 @@ func TestDarkadiaFinalize_WritesUserGameAndPlatforms(t *testing.T) {
 	}
 	if jobStatus != "completed" {
 		t.Errorf("job status = %q, want completed", jobStatus)
+	}
+}
+
+// Two items in one import that resolve to the SAME game (duplicate titles) must
+// not fail on the user_games (user_id, game_id) unique index; the loser of the
+// race re-selects the existing row and merges its platforms in.
+func TestDarkadiaFinalize_ConcurrentDuplicateGameNoFailure(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := "u-dk-dup"
+	insertTestUser(t, testDB, userID)
+	if _, err := testDB.NewRaw(`INSERT INTO games (id, title, last_updated, created_at) VALUES (42, 'Dup Game', now(), now())`).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	jobID := uuid.NewString()
+	if _, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, dispatch_complete, created_at)
+		 VALUES (?, ?, 'import', 'darkadia', 'processing', 'high', 2, true, now())`, jobID, userID).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	payload := map[string]any{"title": "Dup Game", "play_status": "not_started", "platforms": []map[string]any{{"platform": "pc-windows"}}}
+	meta, _ := json.Marshal(payload)
+	itemIDs := []string{uuid.NewString(), uuid.NewString()}
+	for i, id := range itemIDs {
+		if _, err := testDB.NewRaw(
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, resolved_igdb_id, created_at)
+			 VALUES (?, ?, ?, ?, 'Dup Game', ?, 'processing', '{}', '[]', 42, now())`,
+			id, jobID, userID, fmt.Sprintf("game_%d", i), json.RawMessage(meta)).Exec(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := &tasks.DarkadiaFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	var wg sync.WaitGroup
+	for _, id := range itemIDs {
+		wg.Add(1)
+		go func(itemID string) {
+			defer wg.Done()
+			_ = w.Work(ctx, &river.Job[tasks.DarkadiaFinalizeArgs]{Args: tasks.DarkadiaFinalizeArgs{JobItemID: itemID}})
+		}(id)
+	}
+	wg.Wait()
+
+	var failed int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND status = 'failed'`, jobID).Scan(ctx, &failed); err != nil {
+		t.Fatal(err)
+	}
+	if failed != 0 {
+		t.Errorf("failed items = %d, want 0 (duplicate game must not fail)", failed)
+	}
+	var ugCount int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_games WHERE user_id = ? AND game_id = 42`, userID).Scan(ctx, &ugCount); err != nil {
+		t.Fatal(err)
+	}
+	if ugCount != 1 {
+		t.Errorf("user_games = %d, want 1", ugCount)
 	}
 }
 

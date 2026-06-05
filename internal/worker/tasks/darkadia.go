@@ -170,10 +170,24 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 			PlayStatus: &ps, PersonalRating: payload.PersonalRating, IsLoved: payload.IsLoved,
 			PersonalNotes: payload.PersonalNotes, CreatedAt: created, UpdatedAt: now,
 		}
-		if _, ierr := w.DB.NewInsert().Model(&ug).Exec(ctx); ierr != nil {
+		// ON CONFLICT DO NOTHING guards against a concurrent finalize of another
+		// item that resolved to the same game (duplicate titles in one import):
+		// the loser re-selects the winner's row and proceeds as the merge path,
+		// rather than failing on the user_games (user_id, game_id) unique index.
+		res, ierr := w.DB.NewInsert().Model(&ug).On("CONFLICT (user_id, game_id) DO NOTHING").Exec(ctx)
+		if ierr != nil {
 			markItemFailed(bg, w.DB, &item, fmt.Sprintf("insert user_game: %v", ierr), "darkadia_finalize: markItemFailed")
 			DarkadiaCheckJobCompletion(w.DB, item.JobID)
 			return nil
+		}
+		if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // advisory RowsAffected
+			if serr := w.DB.NewSelect().Model(&ug).
+				Where("user_id = ? AND game_id = ?", item.UserID, igdbID).Scan(ctx); serr != nil {
+				markItemFailed(bg, w.DB, &item, fmt.Sprintf("load conflicting user_game: %v", serr), "darkadia_finalize: markItemFailed")
+				DarkadiaCheckJobCompletion(w.DB, item.JobID)
+				return nil
+			}
+			alreadyExists = true
 		}
 	}
 
