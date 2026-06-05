@@ -144,8 +144,6 @@ export const handlers = [
         storefront: body.storefront ?? null,
         platform_details: platform ?? null,
         storefront_details: null,
-        store_game_id: null,
-        store_url: null,
         is_available: true,
         created_at: new Date().toISOString(),
       },
@@ -170,8 +168,6 @@ export const handlers = [
         storefront: body.storefront ?? null,
         platform_details: platform ?? null,
         storefront_details: null,
-        store_game_id: null,
-        store_url: null,
         is_available: true,
         created_at: new Date().toISOString(),
       });

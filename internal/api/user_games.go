@@ -53,8 +53,6 @@ type userGamePlatformResponse struct {
 	UserGameID        string              `json:"user_game_id"`
 	Platform          *string             `json:"platform"`
 	Storefront        *string             `json:"storefront"`
-	StoreGameID       *string             `json:"store_game_id"`
-	StoreUrl          *string             `json:"store_url"`
 	IsAvailable       bool                `json:"is_available"`
 	HoursPlayed       *float64            `json:"hours_played"`
 	OwnershipStatus   *string             `json:"ownership_status"`
@@ -73,8 +71,6 @@ func toUserGamePlatformResponse(ugp models.UserGamePlatform) userGamePlatformRes
 		UserGameID:      ugp.UserGameID,
 		Platform:        ugp.Platform,
 		Storefront:      ugp.Storefront,
-		StoreGameID:     ugp.StoreGameID,
-		StoreUrl:        ugp.StoreUrl,
 		IsAvailable:     ugp.IsAvailable,
 		HoursPlayed:     ugp.HoursPlayed,
 		OwnershipStatus: ugp.OwnershipStatus,
@@ -418,8 +414,6 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 				UserGameID:      ug.ID,
 				Platform:        p.Platform,
 				Storefront:      p.Storefront,
-				StoreGameID:     p.StoreGameID,
-				StoreUrl:        p.StoreUrl,
 				HoursPlayed:     p.HoursPlayed,
 				OwnershipStatus: p.OwnershipStatus,
 				CreatedAt:       now,
@@ -894,8 +888,6 @@ func (h *UserGamesHandler) verifyUserGameOwnership(ctx context.Context, userGame
 type platformRequest struct {
 	Platform        *string  `json:"platform"`
 	Storefront      *string  `json:"storefront"`
-	StoreGameID     *string  `json:"store_game_id"`
-	StoreUrl        *string  `json:"store_url"`
 	IsAvailable     *bool    `json:"is_available"`
 	HoursPlayed     *float64 `json:"hours_played"`
 	OwnershipStatus *string  `json:"ownership_status"`
@@ -976,8 +968,6 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 		UserGameID:      userGameID,
 		Platform:        req.Platform,
 		Storefront:      req.Storefront,
-		StoreGameID:     req.StoreGameID,
-		StoreUrl:        req.StoreUrl,
 		HoursPlayed:     req.HoursPlayed,
 		OwnershipStatus: req.OwnershipStatus,
 		CreatedAt:       now,
@@ -1066,12 +1056,6 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 	}
 	if req.Storefront != nil {
 		plat.Storefront = req.Storefront
-	}
-	if req.StoreGameID != nil {
-		plat.StoreGameID = req.StoreGameID
-	}
-	if req.StoreUrl != nil {
-		plat.StoreUrl = req.StoreUrl
 	}
 	if req.IsAvailable != nil {
 		plat.IsAvailable = *req.IsAvailable

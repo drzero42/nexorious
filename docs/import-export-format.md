@@ -155,8 +155,8 @@ Removed from the previous (`1.2`) platform entry and **not** present in `2.0`:
 - `store_game_id`, `store_url` — denormalized store-linkage fields that were only
   ever written by the manual import path and never by sync. Store linkage
   authoritatively lives in the `external_games` table (the sync domain), not on
-  the ownership record. These columns are slated for removal from the schema
-  (see issue #827).
+  the ownership record. These columns have been dropped from the schema
+  (issue #827).
 - `is_available` — sync-managed availability *state*; re-derived on the next
   sync run. Imported rows default to available.
 - `external_game_id` — a foreign key into the *per-instance* `external_games`
@@ -283,5 +283,5 @@ format for moving a library between instances.
 
 ## Related issues
 
-- **#827** — drop the denormalized `store_game_id` and `store_url` columns from
+- **#827** — dropped the denormalized `store_game_id` and `store_url` columns from
   `user_game_platforms` (schema change implied by this format).

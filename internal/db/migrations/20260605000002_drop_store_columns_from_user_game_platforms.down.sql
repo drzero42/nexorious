@@ -1,0 +1,6 @@
+-- Irreversible: the original store_game_id / store_url values are not recoverable
+-- once dropped. Storefront linkage for synced games lives authoritatively in
+-- external_games (referenced via user_game_platforms.external_game_id), and the
+-- v2.0 JSON interchange format omits both fields. Re-adding empty columns here
+-- would falsely advertise reversibility, so this down migration is intentionally
+-- a no-op. See issue #827.

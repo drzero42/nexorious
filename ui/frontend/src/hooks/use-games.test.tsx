@@ -78,8 +78,6 @@ const mockUserGamePlatformApi = {
   storefront: 'steam',
   platform_details: mockPlatformApi,
   storefront_details: mockStorefrontApi,
-  store_game_id: '123456',
-  store_url: 'https://store.steampowered.com/app/123456',
   is_available: true,
   hours_played: 50,
   ownership_status: OwnershipStatus.OWNED,
