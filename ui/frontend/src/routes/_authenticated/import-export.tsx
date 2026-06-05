@@ -241,18 +241,38 @@ export function ImportExportPage() {
   useJobCompletionEffect(importStatus?.activeJobId, handleJobComplete);
   useJobCompletionEffect(exportStatus?.activeJobId, handleJobComplete);
 
+  // A cleanly-completed job (terminal, completed, no failed items) auto-dismisses:
+  // the progress box disappears so the upload/export cards return and the run
+  // shows up in Recent Activity. The box is kept for failed/cancelled jobs and
+  // jobs with failed items, whose Retry Failed action is the only one-click retry
+  // path. pending_review keeps the job in 'processing' (non-terminal), so it is
+  // already excluded here. (issue #823)
+  const isCleanlyCompleted = (job: typeof activeImportJob) =>
+    !!job &&
+    job.isTerminal &&
+    job.status === JobStatus.COMPLETED &&
+    (job.progress?.failed ?? 0) === 0;
+
   // Determine which job to display
   // Priority: 1) In-progress jobs, 2) Most recently completed job
   const getActiveJob = () => {
-    const importNotDismissed = activeImportJob && activeImportJob.id !== dismissedJobId;
-    const exportNotDismissed = activeExportJob && activeExportJob.id !== dismissedJobId;
+    // A job is displayable unless it was manually dismissed or auto-dismissed
+    // because it completed cleanly.
+    const importDisplayable =
+      activeImportJob &&
+      activeImportJob.id !== dismissedJobId &&
+      !isCleanlyCompleted(activeImportJob);
+    const exportDisplayable =
+      activeExportJob &&
+      activeExportJob.id !== dismissedJobId &&
+      !isCleanlyCompleted(activeExportJob);
 
     // First, check for any in-progress job
-    if (importNotDismissed && !activeImportJob.isTerminal) return activeImportJob;
-    if (exportNotDismissed && !activeExportJob.isTerminal) return activeExportJob;
+    if (importDisplayable && !activeImportJob.isTerminal) return activeImportJob;
+    if (exportDisplayable && !activeExportJob.isTerminal) return activeExportJob;
 
     // Then, show the most recently completed job
-    if (importNotDismissed && exportNotDismissed) {
+    if (importDisplayable && exportDisplayable) {
       // Compare completion times, show the most recent
       const importTime = activeImportJob.completedAt
         ? new Date(activeImportJob.completedAt).getTime()
@@ -263,8 +283,8 @@ export function ImportExportPage() {
       return exportTime > importTime ? activeExportJob : activeImportJob;
     }
 
-    if (importNotDismissed) return activeImportJob;
-    if (exportNotDismissed) return activeExportJob;
+    if (importDisplayable) return activeImportJob;
+    if (exportDisplayable) return activeExportJob;
 
     return null;
   };
