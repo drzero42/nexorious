@@ -1,6 +1,7 @@
 package darkadia
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -112,5 +113,161 @@ func TestConsolidate_EmptyRatingIsUnrated(t *testing.T) {
 	g = consolidate(rawGame{named: row, copies: [][]string{row}})
 	if g.PersonalRating != nil {
 		t.Errorf("rating 0 → %v, want nil", g.PersonalRating)
+	}
+}
+
+func mkRow(name string, fields map[int]string) []string {
+	row := make([]string, len(header))
+	row[colName] = name
+	row[colOwned] = "1"
+	for i, v := range fields {
+		row[i] = v
+	}
+	return row
+}
+
+func TestConsolidate_Anodyne_PCWithGOGCopy_MacNoCopy(t *testing.T) {
+	named := mkRow("Anodyne", map[int]string{
+		colPlatforms:    "PC, Mac",
+		colCopyPlatform: "PC", colCopyMedia: "Digital", colCopySource: "GOG",
+		colCopyPurchase: "2014-03-01",
+	})
+	g := consolidate(rawGame{named: named, copies: [][]string{named}})
+	got := map[string]*string{}
+	dates := map[string]string{}
+	for _, p := range g.Platforms {
+		got[p.Platform] = p.Storefront
+		dates[p.Platform] = p.AcquiredDate
+	}
+	if len(g.Platforms) != 2 {
+		t.Fatalf("platforms = %+v, want pc-windows+mac", g.Platforms)
+	}
+	if got["pc-windows"] == nil || *got["pc-windows"] != "gog" || dates["pc-windows"] != "2014-03-01" {
+		t.Errorf("pc-windows = %v (%q), want gog/2014-03-01", got["pc-windows"], dates["pc-windows"])
+	}
+	if sf, ok := got["mac"]; !ok || sf != nil {
+		t.Errorf("mac = %v, want present with nil storefront", sf)
+	}
+}
+
+func TestConsolidate_Aaru_PS3andPS4_viaPSN(t *testing.T) {
+	named := mkRow("Aaru's Awakening", map[int]string{
+		colPlatforms:    "PlayStation Network (PS3), PlayStation 4",
+		colCopyPlatform: "PlayStation Network (PS3)", colCopyMedia: "Digital",
+		colCopySource: "Sony Entertainment Network", colCopyPurchase: "2015-02-02",
+	})
+	cont := make([]string, len(header))
+	cont[colCopyPlatform] = "PlayStation 4"
+	cont[colCopyMedia] = "Digital"
+	cont[colCopySource] = "Sony Entertainment Network"
+	g := consolidate(rawGame{named: named, copies: [][]string{named, cont}})
+	got := map[string]*string{}
+	for _, p := range g.Platforms {
+		got[p.Platform] = p.Storefront
+	}
+	if got["playstation-3"] == nil || *got["playstation-3"] != "playstation-store" {
+		t.Errorf("ps3 = %v, want playstation-store", got["playstation-3"])
+	}
+	if got["playstation-4"] == nil || *got["playstation-4"] != "playstation-store" {
+		t.Errorf("ps4 = %v, want playstation-store", got["playstation-4"])
+	}
+}
+
+func TestConsolidate_StorefrontRules(t *testing.T) {
+	phys := mkRow("Phys", map[int]string{
+		colPlatforms: "PlayStation 4", colCopyPlatform: "PlayStation 4",
+		colCopyMedia: "Physical", colCopySource: "GameStop",
+	})
+	g := consolidate(rawGame{named: phys, copies: [][]string{phys}})
+	if g.Platforms[0].Storefront == nil || *g.Platforms[0].Storefront != "physical" {
+		t.Errorf("physical storefront = %v", g.Platforms[0].Storefront)
+	}
+	if g.PersonalNotes == nil || !strings.Contains(*g.PersonalNotes, "GameStop") {
+		t.Errorf("physical retailer not in notes: %v", g.PersonalNotes)
+	}
+
+	unrec := mkRow("Unrec", map[int]string{
+		colPlatforms: "PC", colCopyPlatform: "PC", colCopyMedia: "Digital",
+		colCopySource: "Fanatical",
+	})
+	g = consolidate(rawGame{named: unrec, copies: [][]string{unrec}})
+	if g.Platforms[0].Storefront != nil {
+		t.Errorf("unrecognized digital storefront = %v, want nil", g.Platforms[0].Storefront)
+	}
+	if g.PersonalNotes == nil || !strings.Contains(*g.PersonalNotes, "Fanatical") {
+		t.Errorf("unrecognized source not in notes: %v", g.PersonalNotes)
+	}
+
+	empty := mkRow("Empty", map[int]string{
+		colPlatforms: "PC", colCopyPlatform: "PC", colCopyMedia: "Digital",
+	})
+	g = consolidate(rawGame{named: empty, copies: [][]string{empty}})
+	if g.Platforms[0].Storefront != nil || g.PersonalNotes != nil {
+		t.Errorf("empty source: storefront=%v notes=%v, want nil/nil", g.Platforms[0].Storefront, g.PersonalNotes)
+	}
+
+	epic := mkRow("Epic", map[int]string{
+		colPlatforms: "PC", colCopyPlatform: "PC", colCopyMedia: "Digital",
+		colCopySource: "Other", colCopySourceOther: "Epic Game Store",
+	})
+	g = consolidate(rawGame{named: epic, copies: [][]string{epic}})
+	if g.Platforms[0].Storefront == nil || *g.Platforms[0].Storefront != "epic-games-store" {
+		t.Errorf("epic variant storefront = %v, want epic-games-store", g.Platforms[0].Storefront)
+	}
+}
+
+func TestConsolidate_UnmappedPlatform_GoesToNotesNotFailure(t *testing.T) {
+	named := mkRow("Weird", map[int]string{
+		colPlatforms: "Sega Saturn",
+	})
+	g := consolidate(rawGame{named: named, copies: [][]string{named}})
+	if len(g.Platforms) != 0 {
+		t.Errorf("platforms = %+v, want none (unmapped → note)", g.Platforms)
+	}
+	if g.PersonalNotes == nil || !strings.Contains(*g.PersonalNotes, "Sega Saturn") {
+		t.Errorf("unmapped platform not preserved in notes: %v", g.PersonalNotes)
+	}
+}
+
+func TestConsolidate_NoPlatformGame(t *testing.T) {
+	named := mkRow("Bare", nil)
+	g := consolidate(rawGame{named: named, copies: [][]string{named}})
+	if len(g.Platforms) != 0 {
+		t.Errorf("platforms = %+v, want none", g.Platforms)
+	}
+}
+
+func TestConsolidate_DedupOnPlatformStorefront(t *testing.T) {
+	named := mkRow("Dup", map[int]string{
+		colPlatforms: "PC", colCopyPlatform: "PC", colCopyMedia: "Digital", colCopySource: "Steam",
+		colCopyPurchase: "2013-01-01",
+	})
+	cont := make([]string, len(header))
+	cont[colCopyPlatform] = "PC"
+	cont[colCopyMedia] = "Digital"
+	cont[colCopySource] = "Steam"
+	cont[colCopyPurchase] = "2014-01-01"
+	g := consolidate(rawGame{named: named, copies: [][]string{named, cont}})
+	if len(g.Platforms) != 1 {
+		t.Fatalf("platforms = %+v, want 1 deduped", g.Platforms)
+	}
+	if g.Platforms[0].AcquiredDate != "2013-01-01" {
+		t.Errorf("kept date = %q, want earliest 2013-01-01", g.Platforms[0].AcquiredDate)
+	}
+}
+
+func TestGame_JSONRoundTrip(t *testing.T) {
+	named := mkRow("J", map[int]string{colPlatforms: "PC", colCopyPlatform: "PC", colCopyMedia: "Digital", colCopySource: "Steam"})
+	g := consolidate(rawGame{named: named, copies: [][]string{named}})
+	b, err := json.Marshal(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Game
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Platforms[0].Platform != "pc-windows" {
+		t.Errorf("round-trip platform = %q", back.Platforms[0].Platform)
 	}
 }

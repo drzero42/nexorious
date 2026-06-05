@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
+	"strings"
 )
 
 // ErrInvalidHeader signals the file is not a Darkadia export. The upload handler
@@ -135,6 +137,122 @@ func pad(row []string, n int) []string {
 	return out
 }
 
+// platformMapping is a Nexorious platform slug plus an optional inferred
+// storefront (used only as a fallback when no copy supplies one).
+type platformMapping struct {
+	slug     string
+	inferred *string
+}
+
+// platformTable maps every Darkadia platform string in the reference export to
+// a Nexorious slug. A string absent from this table is preserved in the note,
+// never dropped and never a failure.
+var platformTable = map[string]platformMapping{
+	"PC":                         {slug: "pc-windows"},
+	"Linux":                      {slug: "pc-linux"},
+	"Mac":                        {slug: "mac"},
+	"PlayStation 4":              {slug: "playstation-4"},
+	"PlayStation 5":              {slug: "playstation-5"},
+	"PlayStation 3":              {slug: "playstation-3"},
+	"PlayStation Network (PS3)":  {slug: "playstation-3", inferred: ptrStr("playstation-store")},
+	"PlayStation Network (Vita)": {slug: "playstation-vita", inferred: ptrStr("playstation-store")},
+	"Nintendo Switch":            {slug: "nintendo-switch"},
+	"Wii":                        {slug: "nintendo-wii"},
+	"Xbox 360":                   {slug: "xbox-360"},
+	"Xbox 360 Games Store":       {slug: "xbox-360", inferred: ptrStr("microsoft-store")},
+	"Android":                    {slug: "android"},
+	"PlayStation 2":              {slug: "playstation-2"},
+	"PlayStation Network (PSP)":  {slug: "playstation-psp", inferred: ptrStr("playstation-store")},
+}
+
+func ptrStr(s string) *string { return &s }
+
+// storefrontTable maps a recognized digital source (lowercased) to a Nexorious
+// storefront slug. Spelling variants from the reference export are included.
+var storefrontTable = map[string]string{
+	"sony entertainment network": "playstation-store",
+	"epic games store":           "epic-games-store",
+	"epic game store":            "epic-games-store",
+	"epic gamestore":             "epic-games-store",
+	"epic":                       "epic-games-store",
+	"gog":                        "gog",
+	"humble bundle":              "humble-bundle",
+	"steam":                      "steam",
+	"nintendo eshop":             "nintendo-eshop",
+	"origin":                     "origin-ea-app",
+	"gamersgate":                 "gamersgate",
+	"google play":                "google-play-store",
+	"uplay":                      "uplay",
+	"ubisoft club":               "uplay",
+}
+
+// effectiveSource returns the source string for a copy row: Copy source, unless
+// it is the literal "Other", in which case Copy source other.
+func effectiveSource(row []string) string {
+	src := strings.TrimSpace(row[colCopySource])
+	if strings.EqualFold(src, "Other") {
+		return strings.TrimSpace(row[colCopySourceOther])
+	}
+	return src
+}
+
+// recognizedStorefront returns the slug for a recognized digital source. It
+// tolerates extra free text after a recognized name (e.g. "Uplay (coupon …)").
+func recognizedStorefront(eff string) (string, bool) {
+	key := strings.ToLower(strings.TrimSpace(eff))
+	if slug, ok := storefrontTable[key]; ok {
+		return slug, true
+	}
+	for name, slug := range storefrontTable {
+		if strings.HasPrefix(key, name+" ") {
+			return slug, true
+		}
+	}
+	return "", false
+}
+
+// resolveStorefront applies the per-copy storefront precedence. It returns the
+// storefront slug (or nil) and an optional provenance note line ("" = none).
+func resolveStorefront(inferred *string, eff, media string) (*string, string) {
+	if eff != "" {
+		if slug, ok := recognizedStorefront(eff); ok {
+			s := slug
+			return &s, ""
+		}
+	}
+	if media == "Physical" {
+		s := "physical"
+		note := ""
+		if eff != "" {
+			note = "Purchased physically from " + eff + "."
+		}
+		return &s, note
+	}
+	if eff != "" {
+		return nil, "Purchased from " + eff + "."
+	}
+	if inferred != nil {
+		s := *inferred
+		return &s, ""
+	}
+	return nil, ""
+}
+
+// splitAggregate splits the comma-separated aggregate Platforms list.
+func splitAggregate(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 func consolidate(rg rawGame) Game {
 	n := rg.named
 	g := Game{
@@ -147,10 +265,104 @@ func consolidate(rg rawGame) Game {
 		g.PersonalRating = r
 	}
 
-	// Notes: verbatim Darkadia Notes; provenance lines appended in Task 3.
-	notes := n[colNotes]
-	if notes != "" {
-		g.PersonalNotes = &notes
+	var noteLines []string
+	addNote := func(line string) {
+		if line == "" {
+			return
+		}
+		for _, existing := range noteLines {
+			if existing == line {
+				return
+			}
+		}
+		noteLines = append(noteLines, line)
+	}
+
+	owned := map[string]bool{}
+	ownedInferred := map[string]*string{}
+	markOwned := func(s string) {
+		m, ok := platformTable[s]
+		if !ok {
+			addNote("Owned on " + s + " (no Nexorious platform mapping).")
+			return
+		}
+		owned[m.slug] = true
+		if m.inferred != nil && ownedInferred[m.slug] == nil {
+			ownedInferred[m.slug] = m.inferred
+		}
+	}
+	for _, s := range splitAggregate(n[colPlatforms]) {
+		markOwned(s)
+	}
+	for _, row := range rg.copies {
+		if p := strings.TrimSpace(row[colCopyPlatform]); p != "" {
+			markOwned(p)
+		}
+	}
+
+	type key struct {
+		platform   string
+		storefront string
+	}
+	seen := map[key]int{}
+	add := func(slug string, sf *string, date string) {
+		sfKey := ""
+		if sf != nil {
+			sfKey = *sf
+		}
+		k := key{slug, sfKey}
+		if idx, ok := seen[k]; ok {
+			if date != "" && (g.Platforms[idx].AcquiredDate == "" || date < g.Platforms[idx].AcquiredDate) {
+				g.Platforms[idx].AcquiredDate = date
+			}
+			return
+		}
+		seen[k] = len(g.Platforms)
+		g.Platforms = append(g.Platforms, Platform{Platform: slug, Storefront: sf, AcquiredDate: date})
+	}
+
+	slugHasCopy := map[string]bool{}
+	for _, row := range rg.copies {
+		ps := strings.TrimSpace(row[colCopyPlatform])
+		if ps == "" {
+			continue
+		}
+		m, ok := platformTable[ps]
+		if !ok {
+			continue // already noted via markOwned
+		}
+		slugHasCopy[m.slug] = true
+		sf, note := resolveStorefront(m.inferred, effectiveSource(row), strings.TrimSpace(row[colCopyMedia]))
+		addNote(note)
+		add(m.slug, sf, strings.TrimSpace(row[colCopyPurchase]))
+	}
+
+	slugs := make([]string, 0, len(owned))
+	for s := range owned {
+		slugs = append(slugs, s)
+	}
+	sort.Strings(slugs)
+	for _, slug := range slugs {
+		if slugHasCopy[slug] {
+			continue
+		}
+		add(slug, ownedInferred[slug], "")
+	}
+
+	verbatim := n[colNotes]
+	var b strings.Builder
+	if verbatim != "" {
+		b.WriteString(verbatim)
+	}
+	if len(noteLines) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(strings.Join(noteLines, "\n"))
+	}
+	if b.Len() > 0 {
+		s := b.String()
+		g.PersonalNotes = &s
 	}
 	return g
 }
