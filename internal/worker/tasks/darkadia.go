@@ -301,7 +301,7 @@ func DarkadiaCheckJobCompletion(db *bun.DB, jobID string) {
 	if !ok || review > 0 {
 		return
 	}
-	if !finalizeJobCompleted(ctx, db, jobID, "darkadia: finalize job", false) {
+	if !finalizeJobCompleted(ctx, db, jobID, "darkadia: finalize job", true) {
 		return
 	}
 	uid, _ := syncJobUserAndStorefront(ctx, db, jobID)

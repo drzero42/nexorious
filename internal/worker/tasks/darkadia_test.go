@@ -167,6 +167,74 @@ func TestDarkadiaFinalize_ConcurrentDuplicateGameNoFailure(t *testing.T) {
 	}
 }
 
+// A finalized item must NOT complete the job while dispatch is still in flight
+// (dispatch_complete=false) — this is the guard against the upload handler
+// finalizing the job before it has inserted every item.
+func TestDarkadiaCheckJobCompletion_BlockedUntilDispatchComplete(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := "u-dk-dispatch"
+	insertTestUser(t, testDB, userID)
+	if _, err := testDB.NewRaw(`INSERT INTO games (id, title, last_updated, created_at) VALUES (42, 'G', now(), now())`).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	jobID := uuid.NewString()
+	if _, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, dispatch_complete, created_at)
+		 VALUES (?, ?, 'import', 'darkadia', 'processing', 'high', 1, false, now())`, jobID, userID).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	payload := map[string]any{"title": "G", "play_status": "not_started", "platforms": []map[string]any{}}
+	meta, _ := json.Marshal(payload)
+	itemID := uuid.NewString()
+	if _, err := testDB.NewRaw(
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, resolved_igdb_id, created_at)
+		 VALUES (?, ?, ?, 'game_0', 'G', ?, 'processing', '{}', '[]', 42, now())`,
+		itemID, jobID, userID, json.RawMessage(meta)).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	w := &tasks.DarkadiaFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, &river.Job[tasks.DarkadiaFinalizeArgs]{Args: tasks.DarkadiaFinalizeArgs{JobItemID: itemID}}); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "processing" {
+		t.Fatalf("job finalized while dispatch in flight: status=%s", status)
+	}
+
+	// Dispatch finishes → the completion check now finalizes the job.
+	if _, err := testDB.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, jobID).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tasks.DarkadiaCheckJobCompletion(testDB, jobID)
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "completed" {
+		t.Fatalf("job not completed after dispatch complete: status=%s", status)
+	}
+}
+
+func TestFinalizeArgsForSource(t *testing.T) {
+	args, err := tasks.FinalizeArgsForSource(models.JobSourceDarkadia, "item-1")
+	if err != nil {
+		t.Fatalf("darkadia: unexpected error %v", err)
+	}
+	if _, ok := args.(tasks.DarkadiaFinalizeArgs); !ok {
+		t.Fatalf("darkadia: got %T, want DarkadiaFinalizeArgs", args)
+	}
+	if _, err := tasks.FinalizeArgsForSource(models.JobSourceNexorious, "item-1"); err == nil {
+		t.Error("nexorious: expected error (no interactive finalize stage)")
+	}
+	if _, err := tasks.FinalizeArgsForSource("steam", "item-1"); err == nil {
+		t.Error("steam: expected error")
+	}
+}
+
 func TestDarkadiaFinalize_AdditiveMergeDoesNotOverwrite(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()

@@ -260,7 +260,7 @@ func (h *ImportHandler) HandleImportDarkadia(c *echo.Context) error {
 		Status:           models.JobStatusProcessing,
 		Priority:         models.JobPriorityHigh,
 		TotalItems:       len(games),
-		DispatchComplete: true,
+		DispatchComplete: false, // flipped true after every item is enqueued (below)
 		CreatedAt:        now,
 	}
 	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
@@ -292,6 +292,16 @@ func (h *ImportHandler) HandleImportDarkadia(c *echo.Context) error {
 			}
 		}
 	}
+
+	// Dispatch is complete only now that every item exists and is enqueued.
+	// Flipping the flag (and re-checking completion) here closes the window where
+	// an early item could finish and finalize the job before later items were
+	// inserted — the completion check refuses to finalize while dispatch is in
+	// flight (dispatch_complete=false), mirroring the sync dispatch worker.
+	if _, err := h.db.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, job.ID).Exec(ctx); err != nil {
+		slog.Error("import: mark dispatch complete", "job_id", job.ID, "err", err)
+	}
+	tasks.DarkadiaCheckJobCompletion(h.db, job.ID)
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"job_id":      job.ID,

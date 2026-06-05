@@ -130,6 +130,13 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 	if item.Status != models.JobItemStatusPendingReview {
 		return echo.NewHTTPError(http.StatusConflict, "item is not pending review")
 	}
+	// Route the finalize task by source (rather than hard-coding it), and refuse
+	// import sources that have no interactive finalize stage. Resolved before
+	// mutating so a bad request never leaves the item half-resolved.
+	finalizeArgs, err := tasks.FinalizeArgsForSource(job.Source, itemID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "manual resolution is not supported for this import source")
+	}
 
 	if _, err := h.db.NewRaw(
 		`UPDATE job_items SET resolved_igdb_id = ?, status = ?, resolved_at = now() WHERE id = ?`,
@@ -138,8 +145,7 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve item")
 	}
 
-	if err := tasks.EnqueueOrFail(context.Background(), h.db, h.riverClient, itemID,
-		tasks.DarkadiaFinalizeArgs{JobItemID: itemID}); err != nil {
+	if err := tasks.EnqueueOrFail(context.Background(), h.db, h.riverClient, itemID, finalizeArgs); err != nil {
 		slog.Error("resolve_item: enqueue finalize", "item_id", itemID, "err", err)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})

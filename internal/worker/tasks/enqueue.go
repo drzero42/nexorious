@@ -73,6 +73,20 @@ func ArgsForJobType(jobType, source, jobItemID string) (river.JobArgs, error) {
 	}
 }
 
+// FinalizeArgsForSource returns the finalize-stage River args for an import
+// source whose job_items are resolved interactively (the manual-match flow).
+// Only sources with a match→finalize chain are supported — currently Darkadia.
+// Used by the generic job-item resolve endpoint so the finalize task is routed
+// by source rather than hard-coded.
+func FinalizeArgsForSource(source, jobItemID string) (river.JobArgs, error) {
+	switch source {
+	case models.JobSourceDarkadia:
+		return DarkadiaFinalizeArgs{JobItemID: jobItemID}, nil
+	default:
+		return nil, fmt.Errorf("source %q has no interactive finalize stage", source)
+	}
+}
+
 func markEnqueueFailed(ctx context.Context, db *bun.DB, jobItemID, msg string) {
 	now := time.Now().UTC()
 	if _, err := db.NewRaw(
