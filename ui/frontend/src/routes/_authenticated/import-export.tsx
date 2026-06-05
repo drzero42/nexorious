@@ -204,7 +204,7 @@ function ExportCard({ format, onExport, isExporting, disabled }: ExportCardProps
 }
 
 export function ImportExportPage() {
-  const [isUploading, setIsUploading] = useState(false);
+  const [uploadingSource, setUploadingSource] = useState<ImportSource | null>(null);
   const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(
     null,
   );
@@ -282,7 +282,7 @@ export function ImportExportPage() {
     activeJob?.jobType === JobType.EXPORT;
 
   const handleImportFile = async (file: File, source: ImportSource) => {
-    setIsUploading(true);
+    setUploadingSource(source);
 
     try {
       const result =
@@ -294,7 +294,7 @@ export function ImportExportPage() {
       const message = error instanceof Error ? error.message : 'Import failed';
       toast.error(message);
     } finally {
-      setIsUploading(false);
+      setUploadingSource(null);
     }
   };
 
@@ -454,13 +454,13 @@ export function ImportExportPage() {
             <ImportCard
               source={ImportSource.NEXORIOUS}
               onFileSelect={(file) => handleImportFile(file, ImportSource.NEXORIOUS)}
-              isUploading={isUploading}
+              isUploading={uploadingSource === ImportSource.NEXORIOUS}
               disabled={hasActiveJob}
             />
             <ImportCard
               source={ImportSource.DARKADIA}
               onFileSelect={(file) => handleImportFile(file, ImportSource.DARKADIA)}
-              isUploading={isUploading}
+              isUploading={uploadingSource === ImportSource.DARKADIA}
               disabled={hasActiveJob}
             />
           </div>
