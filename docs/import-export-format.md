@@ -1,8 +1,7 @@
 # Nexorious Library Interchange Format
 
-**Status:** specification (source of truth). The current code does **not** yet
-implement this format — see the tracking issue referenced at the bottom. This
-document defines what export must produce and import must accept.
+**Status:** specification (source of truth), implemented as of #828. This
+document defines what export produces and import accepts.
 
 This document is the authoritative reference for the **Nexorious JSON
 import/export format** (`version` `2.0`). It serves two audiences:
@@ -247,6 +246,18 @@ So an imported library that records only `(platform, storefront, ownership,
 acquired_date, hours)` is fully re-linked to the destination instance's
 storefront records on the next sync, without carrying any instance-local
 identifiers in the file. See [`sync.md`](./sync.md) § "Manually added games".
+
+## CSV export (separate convenience format)
+
+Alongside the JSON interchange format, Nexorious can export a **CSV** file. CSV
+is a **human-oriented, export-only convenience format**: it is *not* governed by
+this specification, has **no import counterpart**, and is therefore **not
+round-trippable**. Its columns (`title`, `igdb_id`, `play_status`,
+`personal_rating`, `is_loved`, `hours_played`, `personal_notes`, `platforms`,
+`tags`, `created_at`, `updated_at`) flatten per-platform data into
+semicolon-joined cells and a game-level `hours_played` total for readability. The
+`release_year` column was removed (release info is IGDB-sourced). Use the JSON
+format for moving a library between instances.
 
 ## Versioning
 

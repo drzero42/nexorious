@@ -32,8 +32,7 @@ func TestImportItem_BasicGame(t *testing.T) {
 		"igdb_id":         int32(12345),
 		"title":           "Test Game",
 		"play_status":     "completed",
-		"personal_rating": 9.5,
-		"hours_played":    42.5,
+		"personal_rating": 5,
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
@@ -62,9 +61,8 @@ func TestImportItem_BasicGame(t *testing.T) {
 	if ug.PlayStatus == nil || *ug.PlayStatus != "completed" {
 		t.Errorf("play_status = %v, want 'completed'", ug.PlayStatus)
 	}
-	// 9.5 truncated to 9
-	if ug.PersonalRating == nil || *ug.PersonalRating != 9 {
-		t.Errorf("personal_rating = %v, want 9", ug.PersonalRating)
+	if ug.PersonalRating == nil || *ug.PersonalRating != 5 {
+		t.Errorf("personal_rating = %v, want 5", ug.PersonalRating)
 	}
 
 	// Verify JobItem is completed.
@@ -83,6 +81,93 @@ func TestImportItem_BasicGame(t *testing.T) {
 	}
 	if result["is_new_addition"] != true {
 		t.Errorf("is_new_addition = %v, want true", result["is_new_addition"])
+	}
+}
+
+func TestImportItem_InvalidPlayStatusCoercedToNull(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	gameData := map[string]any{
+		"igdb_id":         int32(22001),
+		"title":           "Bad Status",
+		"play_status":     "not_a_real_status",
+		"personal_rating": 9, // out of range -> null
+	}
+	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(22001)).Scan(ctx); err != nil {
+		t.Fatalf("user_game not found: %v", err)
+	}
+	// The worker sets PlayStatus to nil for an invalid value; user_games.play_status
+	// is NOT NULL DEFAULT 'not_started' (migration 20260531000001), so the DB applies
+	// the default. The invalid value is never stored verbatim.
+	if ug.PlayStatus == nil || *ug.PlayStatus != "not_started" {
+		t.Errorf("play_status = %v, want 'not_started' (invalid coerced via NOT NULL default)", ug.PlayStatus)
+	}
+	if ug.PersonalRating != nil {
+		t.Errorf("personal_rating = %v, want nil (out-of-range coerced to unrated)", ug.PersonalRating)
+	}
+
+	var item models.JobItem
+	if err := testDB.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx); err != nil {
+		t.Fatalf("job_item not found: %v", err)
+	}
+	if item.Status != models.JobItemStatusCompleted {
+		t.Errorf("status = %q, want completed (lenient coercion never fails the item)", item.Status)
+	}
+}
+
+func TestImportItem_InvalidOwnershipCoercedToOwned(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	// Seed a platform so the platform row is accepted.
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT (name) DO NOTHING`,
+	); err != nil {
+		t.Fatalf("seed platform: %v", err)
+	}
+
+	gameData := map[string]any{
+		"igdb_id": int32(22002),
+		"title":   "Bad Ownership",
+		"platforms": []map[string]any{
+			{"platform": "pc-windows", "ownership_status": "bogus"},
+		},
+	}
+	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var ugp models.UserGamePlatform
+	if err := testDB.NewSelect().Model(&ugp).
+		Join("JOIN user_games ug ON ug.id = user_game_platform.user_game_id").
+		Where("ug.user_id = ? AND ug.game_id = ?", userID, int32(22002)).Scan(ctx); err != nil {
+		t.Fatalf("user_game_platform not found: %v", err)
+	}
+	if ugp.OwnershipStatus == nil || *ugp.OwnershipStatus != "owned" {
+		t.Errorf("ownership_status = %v, want 'owned'", ugp.OwnershipStatus)
+	}
+	if !ugp.IsAvailable {
+		t.Errorf("is_available = false, want true (imported rows default available)")
 	}
 }
 
@@ -207,8 +292,8 @@ func TestImportItem_WithPlatformsAndTags(t *testing.T) {
 		"title":   "Platform Game",
 		"platforms": []any{
 			map[string]any{
-				"platform_name":    "pc",
-				"storefront_name":  "steam",
+				"platform":         "pc",
+				"storefront":       "steam",
 				"hours_played":     10.0,
 				"ownership_status": "owned",
 				"is_available":     true,
@@ -289,8 +374,8 @@ func TestImportItem_PlatformsSkippedWithoutSeed(t *testing.T) {
 		"title":   "Unseeded Platform Game",
 		"platforms": []any{
 			map[string]any{
-				"platform_name":    "unseeded-platform",
-				"storefront_name":  "steam",
+				"platform":         "unseeded-platform",
+				"storefront":       "steam",
 				"ownership_status": "owned",
 				"is_available":     true,
 			},
@@ -335,8 +420,8 @@ func TestImportItem_ReimportMergesPlatforms(t *testing.T) {
 		"title":   "Merge Game",
 		"platforms": []any{
 			map[string]any{
-				"platform_name":    "pc",
-				"storefront_name":  "steam",
+				"platform":         "pc",
+				"storefront":       "steam",
 				"ownership_status": "owned",
 				"is_available":     true,
 			},
@@ -600,49 +685,6 @@ func TestImportItem_FailedItemsYieldsCompleted(t *testing.T) {
 	}
 }
 
-// TestImportItem_WithReleaseDate exercises the release_date parsing fallback path.
-func TestImportItem_WithReleaseDate(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	insertTestJob(t, testDB, jobID, userID, 1)
-
-	releaseDate := time.Date(2020, 3, 15, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
-	gameData := map[string]any{
-		"igdb_id":      int32(35001),
-		"title":        "Release Date Game",
-		"release_date": releaseDate,
-	}
-	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
-
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
-		t.Fatalf("handler error: %v", err)
-	}
-
-	var item models.JobItem
-	if err := testDB.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx); err != nil {
-		t.Fatalf("item not found: %v", err)
-	}
-	if item.Status != models.JobItemStatusCompleted {
-		t.Errorf("status = %q, want completed", item.Status)
-	}
-
-	// Verify the game was created with release_date set.
-	var releaseNull bool
-	if err := testDB.QueryRowContext(ctx,
-		"SELECT release_date IS NULL FROM games WHERE id = ?", int32(35001),
-	).Scan(&releaseNull); err != nil {
-		t.Fatalf("query release_date: %v", err)
-	}
-	if releaseNull {
-		t.Error("expected release_date to be set, but it was NULL")
-	}
-}
-
 // TestImportItem_TagError exercises the findOrCreateTag error path via a tag name that causes
 // the existing-tag lookup to succeed on re-import (exercising the existingTagIDs skip branch).
 func TestImportItem_ReimportTagDedup(t *testing.T) {
@@ -713,8 +755,8 @@ func TestImportItem_StorefrontNotFound(t *testing.T) {
 		"title":   "Storefront Missing Game",
 		"platforms": []any{
 			map[string]any{
-				"platform_name":    "pc-windows",
-				"storefront_name":  "unknown-store", // not seeded
+				"platform":         "pc-windows",
+				"storefront":       "unknown-store", // not seeded
 				"ownership_status": "owned",
 				"is_available":     true,
 			},

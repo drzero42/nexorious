@@ -40,7 +40,8 @@ func NewImportHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], igdbClient 
 
 // nexoriousExport is the expected structure of a nexorious export file.
 type nexoriousExport struct {
-	ExportVersion string            `json:"export_version"`
+	Version       string            `json:"version"`
+	ExportVersion string            `json:"export_version"` // legacy 1.x key, used only for error messages
 	Games         []json.RawMessage `json:"games"`
 }
 
@@ -49,6 +50,12 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	// Prerequisite: IGDB must be configured. Each game is re-hydrated from its
+	// igdb_id; with no client an import cannot construct usable games.
+	if h.igdbClient == nil || !h.igdbClient.Configured() {
+		return echo.NewHTTPError(http.StatusBadRequest, "IGDB must be configured to import a Nexorious library")
 	}
 
 	// Parse multipart form (limit to maxImportBodyBytes + some overhead for form fields).
@@ -77,8 +84,12 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid JSON")
 	}
 
-	if export.ExportVersion != "1.2" {
-		return echo.NewHTTPError(http.StatusBadRequest, "Unsupported export version. Only version 1.2 is supported.")
+	if export.Version != "2.0" {
+		msg := "Unsupported import file. Only Nexorious library format version 2.0 is supported."
+		if export.ExportVersion != "" {
+			msg = fmt.Sprintf("Unsupported legacy export (version %s). Only Nexorious library format version 2.0 is supported.", export.ExportVersion)
+		}
+		return echo.NewHTTPError(http.StatusBadRequest, msg)
 	}
 
 	if len(export.Games) == 0 {

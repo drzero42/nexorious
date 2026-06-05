@@ -14,6 +14,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 )
@@ -37,21 +38,13 @@ type ImportItemWorker struct {
 	StoragePath string
 }
 
-// importGameData is the parsed shape inside JobItem.SourceMetadata.data.
+// importGameData is the parsed shape inside JobItem.SourceMetadata.data (v2.0).
 type importGameData struct {
 	IGDBID         int32                `json:"igdb_id"`
 	Title          string               `json:"title"`
-	Description    *string              `json:"description"`
-	Genre          *string              `json:"genre"`
-	Developer      *string              `json:"developer"`
-	Publisher      *string              `json:"publisher"`
-	ReleaseDate    *string              `json:"release_date"` // RFC3339
-	CoverArtUrl    *string              `json:"cover_art_url"`
-	RatingAverage  *float64             `json:"rating_average"`
 	PlayStatus     *string              `json:"play_status"`
-	PersonalRating *float64             `json:"personal_rating"` // float in export
+	PersonalRating *int                 `json:"personal_rating"`
 	IsLoved        bool                 `json:"is_loved"`
-	HoursPlayed    *float64             `json:"hours_played"`
 	PersonalNotes  *string              `json:"personal_notes"`
 	CreatedAt      *string              `json:"created_at"` // RFC3339
 	UpdatedAt      *string              `json:"updated_at"` // RFC3339
@@ -60,14 +53,11 @@ type importGameData struct {
 }
 
 type importPlatformData struct {
-	PlatformID      string   `json:"platform_name"`
-	StorefrontID    string   `json:"storefront_name"`
-	StoreGameID     *string  `json:"store_game_id"`
-	StoreUrl        *string  `json:"store_url"`
-	IsAvailable     bool     `json:"is_available"`
-	HoursPlayed     *float64 `json:"hours_played"`
+	Platform        string   `json:"platform"`
+	Storefront      string   `json:"storefront"`
 	OwnershipStatus *string  `json:"ownership_status"`
 	AcquiredDate    *string  `json:"acquired_date"` // date-only or RFC3339
+	HoursPlayed     *float64 `json:"hours_played"`
 }
 
 // parseFlexibleDate accepts either a date-only string ("2006-01-02") or a full
@@ -119,63 +109,18 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		return nil
 	}
 
-	// Upsert Game — fetch from IGDB if not already in DB
-	var existingGame models.Game
-	gameExists := w.DB.NewSelect().Model(&existingGame).Where("id = ?", gd.IGDBID).Scan(ctx) == nil
-
-	var game *models.Game
-	if !gameExists && w.IGDBClient.Configured() {
-		md, igdbErr := w.IGDBClient.FetchFullMetadata(ctx, int(gd.IGDBID))
-		if igdbErr != nil {
-			slog.Warn("import_item: IGDB fetch failed, falling back to JSON data", "igdb_id", gd.IGDBID, "err", igdbErr)
-		} else {
-			game = igdbMetadataToGame(md)
-			if md.CoverImageID != "" {
-				localURL, dlErr := w.IGDBClient.DownloadCoverArt(ctx, md.CoverImageID, w.StoragePath)
-				if dlErr != nil {
-					slog.Warn("import_item: cover art download failed", "igdb_id", gd.IGDBID, "err", dlErr)
-				} else {
-					game.CoverArtUrl = &localURL
-				}
-			}
-		}
-	}
-
-	if game == nil {
-		// Fall back to JSON export data (IGDB unconfigured or fetch failed)
-		now := time.Now().UTC()
-		game = &models.Game{
-			ID:            gd.IGDBID,
-			Title:         gd.Title,
-			Description:   gd.Description,
-			Genre:         gd.Genre,
-			Developer:     gd.Developer,
-			Publisher:     gd.Publisher,
-			CoverArtUrl:   gd.CoverArtUrl,
-			RatingAverage: gd.RatingAverage,
-			LastUpdated:   now,
-			CreatedAt:     now,
-		}
-		if gd.ReleaseDate != nil {
-			if t, err := time.Parse(time.RFC3339, *gd.ReleaseDate); err == nil {
-				game.ReleaseDate = &t
-			}
-		}
-	}
-
-	var err error
-	if !gameExists {
-		_, err = w.DB.NewInsert().Model(game).Exec(ctx)
-		if err != nil {
-			markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("insert game: %v", err), "import_item: markItemFailed")
-			checkJobCompletion(w.DB, item.JobID)
-			return nil
-		}
+	// Re-hydrate the game from IGDB by id (cover art, metadata). On any per-item
+	// IGDB failure, ensureGameRow inserts a minimal id+title row so user data is
+	// preserved; a later metadata refresh fills in the rest.
+	if err := ensureGameRow(ctx, w.DB, w.IGDBClient, w.StoragePath, gd.IGDBID, gd.Title); err != nil {
+		markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("ensure game row: %v", err), "import_item: markItemFailed")
+		checkJobCompletion(w.DB, item.JobID)
+		return nil
 	}
 
 	// Check for existing UserGame
 	var existingUG models.UserGame
-	err = w.DB.NewSelect().Model(&existingUG).
+	err := w.DB.NewSelect().Model(&existingUG).
 		Where("user_id = ? AND game_id = ?", item.UserID, gd.IGDBID).
 		Scan(ctx)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -205,16 +150,24 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 
 		var personalRating *int32
-		if gd.PersonalRating != nil {
-			r := int32(*gd.PersonalRating)
+		if gd.PersonalRating != nil && *gd.PersonalRating >= 1 && *gd.PersonalRating <= 5 {
+			r := int32(*gd.PersonalRating) //nolint:gosec // bounded to 1..5 above
 			personalRating = &r
+		} else if gd.PersonalRating != nil {
+			slog.Warn("import_item: personal_rating out of range, treating as unrated", "value", *gd.PersonalRating)
+		}
+
+		playStatus := gd.PlayStatus
+		if playStatus != nil && !enum.PlayStatus(*playStatus).Valid() {
+			slog.Warn("import_item: invalid play_status, treating as unset", "value", *playStatus)
+			playStatus = nil
 		}
 
 		ug = &models.UserGame{
 			ID:             uuid.NewString(),
 			UserID:         item.UserID,
 			GameID:         gd.IGDBID,
-			PlayStatus:     gd.PlayStatus,
+			PlayStatus:     playStatus,
 			PersonalRating: personalRating,
 			IsLoved:        gd.IsLoved,
 			PersonalNotes:  gd.PersonalNotes,
@@ -254,31 +207,30 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 
 	newPlatformCount := 0
 	newTagCount := 0
-	gameHoursApplied := false
 	for _, pd := range gd.Platforms {
-		if pd.PlatformID == "" {
+		if pd.Platform == "" {
 			continue
 		}
 
 		// Verify platform exists (must be seeded via seed data or migration).
 		var platformName string
 		if err := w.DB.QueryRowContext(ctx,
-			"SELECT name FROM platforms WHERE name = ?", pd.PlatformID,
+			"SELECT name FROM platforms WHERE name = ?", pd.Platform,
 		).Scan(&platformName); err != nil {
-			slog.Warn("import_item: platform not found, skipping (load seed data first)", "platform", pd.PlatformID)
+			slog.Warn("import_item: platform not found, skipping (load seed data first)", "platform", pd.Platform)
 			continue
 		}
 
 		// Verify storefront exists (nullable — store NULL if blank or not yet seeded).
 		var storefrontPtr *string
-		if pd.StorefrontID != "" {
+		if pd.Storefront != "" {
 			var storefrontName string
 			if err := w.DB.QueryRowContext(ctx,
-				"SELECT name FROM storefronts WHERE name = ?", pd.StorefrontID,
+				"SELECT name FROM storefronts WHERE name = ?", pd.Storefront,
 			).Scan(&storefrontName); err == nil {
 				storefrontPtr = &storefrontName
 			} else {
-				slog.Warn("import_item: storefront not found, recording platform without storefront (load seed data first)", "storefront", pd.StorefrontID)
+				slog.Warn("import_item: storefront not found, recording platform without storefront (load seed data first)", "storefront", pd.Storefront)
 			}
 		}
 
@@ -291,13 +243,13 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			continue
 		}
 
-		// Backward-compat: old exports stored hours at game level only.
-		// If this platform has no per-platform hours but the game record has a
-		// total, apply it to the first platform row as a best-effort migration.
-		hoursPlayed := pd.HoursPlayed
-		if hoursPlayed == nil && gd.HoursPlayed != nil && !gameHoursApplied {
-			hoursPlayed = gd.HoursPlayed
-			gameHoursApplied = true
+		ownership := pd.OwnershipStatus
+		if ownership == nil || !enum.OwnershipStatus(*ownership).Valid() {
+			if ownership != nil {
+				slog.Warn("import_item: invalid ownership_status, defaulting to owned", "value", *ownership)
+			}
+			owned := string(enum.OwnershipOwned)
+			ownership = &owned
 		}
 
 		ugp := &models.UserGamePlatform{
@@ -305,11 +257,9 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			UserGameID:      ug.ID,
 			Platform:        &platformName,
 			Storefront:      storefrontPtr,
-			StoreGameID:     pd.StoreGameID,
-			StoreUrl:        pd.StoreUrl,
-			IsAvailable:     pd.IsAvailable,
-			HoursPlayed:     hoursPlayed,
-			OwnershipStatus: pd.OwnershipStatus,
+			IsAvailable:     true, // imported rows default available; sync re-derives
+			HoursPlayed:     pd.HoursPlayed,
+			OwnershipStatus: ownership,
 			AcquiredDate:    parseFlexibleDate(pd.AcquiredDate),
 			CreatedAt:       now,
 			UpdatedAt:       now,

@@ -120,11 +120,11 @@ describe('ImportExportPage auto-dismiss on clean completion', () => {
     expect(screen.queryByTestId('job-progress-card')).not.toBeInTheDocument();
   });
 
-  it('hides the progress box (and its Download button) when an export completes cleanly', () => {
+  it('keeps the progress box and its Download button when an export completes cleanly', () => {
     h.job = makeTerminalJob({ jobType: JobType.EXPORT, status: JobStatus.COMPLETED, failed: 0 });
     render(<ImportExportPage />);
-    expect(screen.queryByTestId('job-progress-card')).not.toBeInTheDocument();
-    expect(screen.queryByText('Download Export')).not.toBeInTheDocument();
+    expect(screen.getByTestId('job-progress-card')).toBeInTheDocument();
+    expect(screen.getByText('Download Export')).toBeInTheDocument();
   });
 
   it('keeps the progress box and Retry Failed when a completed job has failed items', () => {

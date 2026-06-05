@@ -67,15 +67,13 @@ func validExportJSON(t *testing.T, n int) []byte {
 	games := make([]gameEntry, n)
 	for i := range games {
 		id := i + 1
-		games[i] = gameEntry{
-			IgdbID: &id,
-			Title:  fmt.Sprintf("Game %d", i+1),
-		}
+		games[i] = gameEntry{IgdbID: &id, Title: fmt.Sprintf("Game %d", i+1)}
 	}
 
 	export := map[string]any{
-		"export_version": "1.2",
-		"games":          games,
+		"format":  "nexorious-library",
+		"version": "2.0",
+		"games":   games,
 	}
 
 	data, err := json.Marshal(export)
@@ -85,11 +83,10 @@ func validExportJSON(t *testing.T, n int) []byte {
 	return data
 }
 
-// darkadiaTestIGDB builds an *igdb.Client for Darkadia handler tests.
-// When configured=true it has non-empty credentials (Configured()==true);
-// when false the credentials are empty (Configured()==false).
-// No network call is made at upload time.
-func darkadiaTestIGDB(configured bool) *igdb.Client {
+// testIGDBClient builds an *igdb.Client for import handler tests.
+// configured=true gives non-empty credentials so Configured()==true, with no network call at upload time.
+// configured=false leaves credentials empty (Configured()==false).
+func testIGDBClient(configured bool) *igdb.Client {
 	cfg := &config.Config{}
 	if configured {
 		cfg.IGDBClientID = "test-id"
@@ -128,7 +125,7 @@ func canonicalDarkadiaCSV(titles ...string) []byte {
 func TestImportNexorious_NoFile(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
 
 	_, token := setupTagUser(t, testDB, e, "imp-nofile")
 
@@ -150,7 +147,7 @@ func TestImportNexorious_NoFile(t *testing.T) {
 func TestImportNexorious_InvalidJSON(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
 
 	_, token := setupTagUser(t, testDB, e, "imp-badjson")
 
@@ -164,42 +161,41 @@ func TestImportNexorious_InvalidJSON(t *testing.T) {
 func TestImportNexorious_WrongVersion(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
 
 	_, token := setupTagUser(t, testDB, e, "imp-wrongver")
 
-	wrongVersion := map[string]any{
-		"export_version": "1.0",
+	legacy := map[string]any{
+		"export_version": "1.2",
 		"games":          []map[string]any{{"title": "Game 1"}},
 	}
-	data, _ := json.Marshal(wrongVersion)
+	data, _ := json.Marshal(legacy)
 
 	rec := postMultipartFile(t, e, "/api/import/nexorious", "export.json", data, token)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
 	}
-
 	var resp map[string]string
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	wantMsg := "Unsupported export version. Only version 1.2 is supported."
-	if resp["message"] != wantMsg {
-		t.Fatalf("error message = %q, want %q", resp["message"], wantMsg)
+	if !strings.Contains(resp["message"], "2.0") {
+		t.Fatalf("error message = %q, want it to mention version 2.0", resp["message"])
 	}
 }
 
 func TestImportNexorious_EmptyGames(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
 
 	_, token := setupTagUser(t, testDB, e, "imp-empty")
 
 	emptyGames := map[string]any{
-		"export_version": "1.2",
-		"games":          []map[string]any{},
+		"format":  "nexorious-library",
+		"version": "2.0",
+		"games":   []map[string]any{},
 	}
 	data, _ := json.Marshal(emptyGames)
 
@@ -213,7 +209,7 @@ func TestImportNexorious_EmptyGames(t *testing.T) {
 func TestImportNexorious_Success(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
 
 	_, token := setupTagUser(t, testDB, e, "imp-success")
 
@@ -247,7 +243,7 @@ func TestImportNexorious_Success(t *testing.T) {
 func TestImportNexorious_Conflict(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
 
 	_, token := setupTagUser(t, testDB, e, "imp-conflict")
 
@@ -269,7 +265,7 @@ func TestImportNexorious_Conflict(t *testing.T) {
 func TestImportNexorious_MalformedRecord(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
 
 	_, token := setupTagUser(t, testDB, e, "imp-malformed")
 
@@ -277,7 +273,7 @@ func TestImportNexorious_MalformedRecord(t *testing.T) {
 	// The outer json.Unmarshal into []json.RawMessage succeeds (each element is a
 	// valid JSON token), but json.Unmarshal into the game-fields struct fails for a
 	// string value, which is the malformed-record path we want to exercise.
-	data := []byte(`{"export_version":"1.2","games":[{"igdb_id":1,"title":"Good Game"},"not-an-object",{"igdb_id":3,"title":"Another Good Game"}]}`)
+	data := []byte(`{"format":"nexorious-library","version":"2.0","games":[{"igdb_id":1,"title":"Good Game"},"not-an-object",{"igdb_id":3,"title":"Another Good Game"}]}`)
 
 	rec := postMultipartFile(t, e, "/api/import/nexorious", "export.json", data, token)
 
@@ -315,6 +311,30 @@ func TestImportNexorious_MalformedRecord(t *testing.T) {
 	}
 }
 
+func TestImportNexorious_RefusesWhenIGDBNotConfigured(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	// newTestEchoPool wires a nil IGDB client, so the handler's guard fires.
+	e := newTestEchoPool(t, testDB, cfg)
+
+	_, token := setupTagUser(t, testDB, e, "imp-noigdb")
+
+	data := validExportJSON(t, 1)
+	rec := postMultipartFile(t, e, "/api/import/nexorious", "export.json", data, token)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if !strings.Contains(resp["message"], "IGDB") {
+		t.Fatalf("error message = %q, want it to mention IGDB", resp["message"])
+	}
+}
+
 // ─── Darkadia import tests ────────────────────────────────────────────────────
 
 func TestImportDarkadia_RefusesWhenIGDBNotConfigured(t *testing.T) {
@@ -344,7 +364,7 @@ func TestImportDarkadia_RefusesWhenIGDBNotConfigured(t *testing.T) {
 func TestImportDarkadia_RejectsNonDarkadiaHeader(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEchoConfiguredIGDB(t, testDB, cfg, darkadiaTestIGDB(true))
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
 
 	_, token := setupTagUser(t, testDB, e, "dark-badheader")
 
@@ -366,7 +386,7 @@ func TestImportDarkadia_RejectsNonDarkadiaHeader(t *testing.T) {
 func TestImportDarkadia_CreatesJobAndItems(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
-	e := newTestEchoConfiguredIGDB(t, testDB, cfg, darkadiaTestIGDB(true))
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
 
 	_, token := setupTagUser(t, testDB, e, "dark-success")
 
