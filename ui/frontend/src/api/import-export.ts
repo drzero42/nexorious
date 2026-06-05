@@ -56,6 +56,15 @@ export async function importNexoriousJson(file: File): Promise<ImportJobCreatedR
   return transformImportJobResponse(response);
 }
 
+/**
+ * Import a Darkadia CSV export. Parsing/consolidation happens server-side; the
+ * returned job drives IGDB matching and the interactive pending-review flow.
+ */
+export async function importDarkadiaCsv(file: File): Promise<ImportJobCreatedResponse> {
+  const response = await apiUploadFile<ImportJobApiResponse>('/import/darkadia', file);
+  return transformImportJobResponse(response);
+}
+
 // ============================================================================
 // Export API Functions
 // ============================================================================

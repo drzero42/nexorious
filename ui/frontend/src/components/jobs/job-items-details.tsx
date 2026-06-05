@@ -12,9 +12,18 @@ import {
   Clock,
   Loader2,
   RotateCcw,
+  Search,
+  Ban,
 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
-import { useJobItems, useRetryFailedItems, useRetryJobItem } from '@/hooks';
+import {
+  useJobItems,
+  useRetryFailedItems,
+  useRetryJobItem,
+  useResolveJobItem,
+  useSkipJobItem,
+} from '@/hooks';
+import { IGDBMatchDialog } from '@/components/sync/igdb-match-dialog';
 import { JobItemStatus, getJobItemStatusLabel, getJobItemStatusVariant } from '@/types';
 
 interface JobItemsDetailsProps {
@@ -65,10 +74,37 @@ function StatusSection({
   const retryAllMutation = useRetryFailedItems();
   const retryItemMutation = useRetryJobItem();
 
+  // Review actions (pending_review import items)
+  const resolveMutation = useResolveJobItem();
+  const skipMutation = useSkipJobItem();
+  const [matchItem, setMatchItem] = useState<{ id: string; title: string } | null>(null);
+
   // Determine section behavior
   const isFailedSection = status === JobItemStatus.FAILED;
+  const isReviewSection = status === JobItemStatus.PENDING_REVIEW;
   const canRetryAll = isFailedSection && isTerminal;
   const canRetryItem = canRetryAll;
+
+  const handleSkip = async (itemId: string) => {
+    try {
+      await skipMutation.mutateAsync(itemId);
+      toast.success('Item skipped');
+      refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to skip item');
+    }
+  };
+
+  const handleSelectMatch = async (itemId: string, igdbId: number) => {
+    try {
+      await resolveMutation.mutateAsync({ itemId, igdbId });
+      toast.success('Match applied');
+      setMatchItem(null);
+      refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to apply match');
+    }
+  };
 
   const handleRetryAll = async () => {
     try {
@@ -186,6 +222,29 @@ function StatusSection({
                       )}
                     </Button>
                   )}
+                  {isReviewSection && (
+                    <div className="ml-2 flex gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => setMatchItem({ id: item.id, title: item.sourceTitle })}
+                      >
+                        <Search className="h-3 w-3 mr-1" />
+                        Find Match
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => handleSkip(item.id)}
+                        disabled={skipMutation.isPending}
+                        title="Skip"
+                      >
+                        <Ban className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ))}
               {data && data.pages > 1 && (
@@ -215,6 +274,15 @@ function StatusSection({
           )}
         </div>
       </CollapsibleContent>
+      {matchItem && (
+        <IGDBMatchDialog
+          open
+          title="Find IGDB Match"
+          initialQuery={matchItem.title}
+          onClose={() => setMatchItem(null)}
+          onSelect={(candidate) => handleSelectMatch(matchItem.id, candidate.igdb_id)}
+        />
+      )}
     </Collapsible>
   );
 }

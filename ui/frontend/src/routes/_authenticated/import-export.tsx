@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   useImportNexorious,
+  useImportDarkadia,
   useExportCollection,
   useJob,
   useJobTypeStatus,
@@ -209,6 +210,7 @@ function ImportExportPage() {
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
   const { mutateAsync: importNexorious } = useImportNexorious();
+  const { mutateAsync: importDarkadia } = useImportDarkadia();
   const { mutateAsync: exportCollection } = useExportCollection();
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
   const { mutate: downloadExport, isPending: isDownloading } = useDownloadExport();
@@ -278,11 +280,12 @@ function ImportExportPage() {
     activeJob?.status === JobStatus.COMPLETED &&
     activeJob?.jobType === JobType.EXPORT;
 
-  const handleImportFile = async (file: File) => {
+  const handleImportFile = async (file: File, source: ImportSource) => {
     setIsUploading(true);
 
     try {
-      const result = await importNexorious(file);
+      const result =
+        source === ImportSource.DARKADIA ? await importDarkadia(file) : await importNexorious(file);
       toast.success(`Import started: ${result.message}`);
       // Reset dismissed job; the mutation optimistically marks the job active.
       setDismissedJobId(null);
@@ -435,7 +438,13 @@ function ImportExportPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <ImportCard
               source={ImportSource.NEXORIOUS}
-              onFileSelect={handleImportFile}
+              onFileSelect={(file) => handleImportFile(file, ImportSource.NEXORIOUS)}
+              isUploading={isUploading}
+              disabled={hasActiveJob}
+            />
+            <ImportCard
+              source={ImportSource.DARKADIA}
+              onFileSelect={(file) => handleImportFile(file, ImportSource.DARKADIA)}
               isUploading={isUploading}
               disabled={hasActiveJob}
             />
