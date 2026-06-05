@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -321,50 +320,46 @@ export function PlatformSelector({
                   )}
                 </CommandEmpty>
               ) : (
-                <ScrollArea className="max-h-[250px]">
-                  <CommandGroup heading="Platforms">
-                    {filteredPlatforms.map((platform) => {
-                      const isSelected = selectedPlatforms.some(
-                        (s) => s.platform === platform.name,
-                      );
-                      const isDisabledItem = !isSelected && isMaxReached;
+                <CommandGroup heading="Platforms">
+                  {filteredPlatforms.map((platform) => {
+                    const isSelected = selectedPlatforms.some((s) => s.platform === platform.name);
+                    const isDisabledItem = !isSelected && isMaxReached;
 
-                      return (
-                        <CommandItem
-                          key={platform.name}
-                          value={platform.name}
-                          onSelect={() => handlePlatformToggle(platform.name)}
-                          disabled={isDisabledItem}
-                          className={cn(
-                            'cursor-pointer',
-                            isDisabledItem && 'opacity-50 cursor-not-allowed',
-                          )}
-                        >
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <div
-                              className={cn(
-                                'flex h-4 w-4 items-center justify-center rounded border',
-                                isSelected
-                                  ? 'bg-primary border-primary text-primary-foreground'
-                                  : 'border-muted-foreground/25',
-                              )}
-                            >
-                              {isSelected && <Check className="h-3 w-3" />}
-                            </div>
-                            <Monitor className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                            <span className="truncate flex-1">{platform.display_name}</span>
-                            {platform.storefronts && platform.storefronts.length > 0 && (
-                              <span className="text-xs text-muted-foreground flex-shrink-0">
-                                {platform.storefronts.length} store
-                                {platform.storefronts.length !== 1 ? 's' : ''}
-                              </span>
+                    return (
+                      <CommandItem
+                        key={platform.name}
+                        value={platform.name}
+                        onSelect={() => handlePlatformToggle(platform.name)}
+                        disabled={isDisabledItem}
+                        className={cn(
+                          'cursor-pointer',
+                          isDisabledItem && 'opacity-50 cursor-not-allowed',
+                        )}
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <div
+                            className={cn(
+                              'flex h-4 w-4 items-center justify-center rounded border',
+                              isSelected
+                                ? 'bg-primary border-primary text-primary-foreground'
+                                : 'border-muted-foreground/25',
                             )}
+                          >
+                            {isSelected && <Check className="h-3 w-3" />}
                           </div>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                </ScrollArea>
+                          <Monitor className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="truncate flex-1">{platform.display_name}</span>
+                          {platform.storefronts && platform.storefronts.length > 0 && (
+                            <span className="text-xs text-muted-foreground flex-shrink-0">
+                              {platform.storefronts.length} store
+                              {platform.storefronts.length !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
               )}
             </CommandList>
           </Command>

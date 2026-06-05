@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Tag } from '@/types';
 
 // ============================================================================
@@ -303,52 +302,48 @@ export function TagSelector({
                   )}
                 </CommandEmpty>
               ) : (
-                <ScrollArea className="max-h-[200px]">
-                  <CommandGroup heading="Tags">
-                    {filteredTags.map((tag) => {
-                      const isSelected = selectedTagIds.includes(tag.id);
-                      const isDisabledItem = !isSelected && isMaxReached;
+                <CommandGroup heading="Tags">
+                  {filteredTags.map((tag) => {
+                    const isSelected = selectedTagIds.includes(tag.id);
+                    const isDisabledItem = !isSelected && isMaxReached;
 
-                      return (
-                        <CommandItem
-                          key={tag.id}
-                          value={tag.id}
-                          onSelect={() => handleTagToggle(tag.id)}
-                          disabled={isDisabledItem}
-                          className={cn(
-                            'cursor-pointer',
-                            isDisabledItem && 'opacity-50 cursor-not-allowed',
-                          )}
-                        >
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <div
-                              className={cn(
-                                'flex h-4 w-4 items-center justify-center rounded border',
-                                isSelected
-                                  ? 'bg-primary border-primary text-primary-foreground'
-                                  : 'border-muted-foreground/25',
-                              )}
-                            >
-                              {isSelected && <Check className="h-3 w-3" />}
-                            </div>
-                            <div
-                              className="h-3 w-3 rounded-full border border-muted-foreground/25 flex-shrink-0"
-                              style={{ backgroundColor: tag.color }}
-                            />
-                            <span className="truncate flex-1">{tag.name}</span>
-                            {showGameCounts &&
-                              tag.game_count !== undefined &&
-                              tag.game_count > 0 && (
-                                <span className="text-xs text-muted-foreground flex-shrink-0">
-                                  {tag.game_count}
-                                </span>
-                              )}
+                    return (
+                      <CommandItem
+                        key={tag.id}
+                        value={tag.id}
+                        onSelect={() => handleTagToggle(tag.id)}
+                        disabled={isDisabledItem}
+                        className={cn(
+                          'cursor-pointer',
+                          isDisabledItem && 'opacity-50 cursor-not-allowed',
+                        )}
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <div
+                            className={cn(
+                              'flex h-4 w-4 items-center justify-center rounded border',
+                              isSelected
+                                ? 'bg-primary border-primary text-primary-foreground'
+                                : 'border-muted-foreground/25',
+                            )}
+                          >
+                            {isSelected && <Check className="h-3 w-3" />}
                           </div>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                </ScrollArea>
+                          <div
+                            className="h-3 w-3 rounded-full border border-muted-foreground/25 flex-shrink-0"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          <span className="truncate flex-1">{tag.name}</span>
+                          {showGameCounts && tag.game_count !== undefined && tag.game_count > 0 && (
+                            <span className="text-xs text-muted-foreground flex-shrink-0">
+                              {tag.game_count}
+                            </span>
+                          )}
+                        </div>
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
               )}
             </CommandList>
           </Command>
@@ -501,51 +496,49 @@ export function TagSelectorCompact({
           <p className="text-sm">No tags matching &quot;{searchQuery}&quot;</p>
         </div>
       ) : (
-        <ScrollArea className="max-h-96">
-          <div className="space-y-4">
-            {/* Selected tags */}
-            {selectedTags.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <Check className="w-4 h-4 text-green-600" />
-                  Selected ({selectedTags.length})
-                </h4>
-                <div className="space-y-2">
-                  {selectedTags.map((tag) => (
-                    <TagListItem
-                      key={tag.id}
-                      tag={tag}
-                      isSelected
-                      disabled={disabled}
-                      onToggle={() => handleToggle(tag.id)}
-                    />
-                  ))}
-                </div>
+        <div className="max-h-96 overflow-y-auto pr-1 space-y-4">
+          {/* Selected tags */}
+          {selectedTags.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                <Check className="w-4 h-4 text-green-600" />
+                Selected ({selectedTags.length})
+              </h4>
+              <div className="space-y-2">
+                {selectedTags.map((tag) => (
+                  <TagListItem
+                    key={tag.id}
+                    tag={tag}
+                    isSelected
+                    disabled={disabled}
+                    onToggle={() => handleToggle(tag.id)}
+                  />
+                ))}
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Available tags */}
-            {unselectedTags.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <TagIcon className="w-4 h-4 text-muted-foreground" />
-                  Available ({unselectedTags.length})
-                </h4>
-                <div className="space-y-2">
-                  {unselectedTags.map((tag) => (
-                    <TagListItem
-                      key={tag.id}
-                      tag={tag}
-                      isSelected={false}
-                      disabled={disabled}
-                      onToggle={() => handleToggle(tag.id)}
-                    />
-                  ))}
-                </div>
+          {/* Available tags */}
+          {unselectedTags.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                <TagIcon className="w-4 h-4 text-muted-foreground" />
+                Available ({unselectedTags.length})
+              </h4>
+              <div className="space-y-2">
+                {unselectedTags.map((tag) => (
+                  <TagListItem
+                    key={tag.id}
+                    tag={tag}
+                    isSelected={false}
+                    disabled={disabled}
+                    onToggle={() => handleToggle(tag.id)}
+                  />
+                ))}
               </div>
-            )}
-          </div>
-        </ScrollArea>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
