@@ -76,8 +76,6 @@ interface UserGamePlatformApiResponse {
   storefront?: string;
   platform_details?: PlatformApiResponse;
   storefront_details?: StorefrontApiResponse;
-  store_game_id?: string;
-  store_url?: string;
   is_available: boolean;
   hours_played: number;
   ownership_status: OwnershipStatus;
@@ -174,8 +172,6 @@ export interface UserGameCreateData {
   platforms?: Array<{
     platform: string;
     storefront?: string;
-    storeGameId?: string;
-    storeUrl?: string;
     isAvailable?: boolean;
     ownershipStatus?: OwnershipStatus;
     acquiredDate?: string;
@@ -193,8 +189,6 @@ export interface UserGameUpdateData {
 export interface UserGamePlatformData {
   platform: string;
   storefront?: string;
-  storeGameId?: string;
-  storeUrl?: string;
   isAvailable?: boolean;
   hoursPlayed?: number;
   ownershipStatus?: OwnershipStatus;
@@ -262,8 +256,6 @@ function transformUserGamePlatform(apiPlatform: UserGamePlatformApiResponse): Us
     storefront_details: apiPlatform.storefront_details
       ? transformStorefront(apiPlatform.storefront_details)
       : undefined,
-    store_game_id: apiPlatform.store_game_id,
-    store_url: apiPlatform.store_url,
     is_available: apiPlatform.is_available,
     hours_played: apiPlatform.hours_played,
     ownership_status: apiPlatform.ownership_status,
@@ -443,8 +435,6 @@ export async function createUserGame(data: UserGameCreateData): Promise<UserGame
     platforms: data.platforms?.map((p) => ({
       platform: p.platform,
       storefront: p.storefront,
-      store_game_id: p.storeGameId,
-      store_url: p.storeUrl,
       is_available: p.isAvailable ?? true,
       ownership_status: p.ownershipStatus,
       acquired_date: p.acquiredDate,
@@ -656,8 +646,6 @@ export async function addPlatformToUserGame(
   const requestBody = {
     platform: data.platform,
     storefront: data.storefront,
-    store_game_id: data.storeGameId,
-    store_url: data.storeUrl,
     is_available: data.isAvailable ?? true,
     hours_played: data.hoursPlayed ?? 0,
   };
@@ -680,8 +668,6 @@ export async function updatePlatformAssociation(
   const requestBody = {
     platform: data.platform,
     storefront: data.storefront,
-    store_game_id: data.storeGameId,
-    store_url: data.storeUrl,
     is_available: data.isAvailable ?? true,
     hours_played: data.hoursPlayed ?? 0,
     ownership_status: data.ownershipStatus,

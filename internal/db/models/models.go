@@ -97,8 +97,6 @@ type UserGamePlatform struct {
 	UserGameID      string     `bun:"user_game_id,notnull"         json:"user_game_id"`
 	Platform        *string    `bun:"platform"                     json:"platform"`
 	Storefront      *string    `bun:"storefront"                   json:"storefront"`
-	StoreGameID     *string    `bun:"store_game_id"                json:"store_game_id"`
-	StoreUrl        *string    `bun:"store_url"                    json:"store_url"`
 	IsAvailable     bool       `bun:"is_available,notnull"         json:"is_available"`
 	HoursPlayed     *float64   `bun:"hours_played"                 json:"hours_played"`
 	OwnershipStatus *string    `bun:"ownership_status"             json:"ownership_status"`
