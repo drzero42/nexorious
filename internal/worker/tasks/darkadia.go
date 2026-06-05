@@ -214,7 +214,9 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 			CreatedAt: now, UpdatedAt: now,
 		}
 		// Game-level total playtime lands on the first consolidated entry only,
-		// and only when that entry is newly inserted (additive merge).
+		// and only when that entry is newly inserted (additive merge). If the
+		// first entry already exists (or there are no platforms), the playtime
+		// has no home and is intentionally dropped rather than overwritten.
 		if i == 0 {
 			ugp.HoursPlayed = payload.HoursPlayed
 		}
@@ -238,6 +240,9 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 	for _, name := range payload.Tags {
 		tagID, terr := findOrCreateTag(ctx, w.DB, item.UserID, name, nil)
 		if terr != nil {
+			// Unlike the JSON importer (which fails the item), a tag error here
+			// is logged and skipped: this is a one-off migration where dropping
+			// one tag link is preferable to failing the whole game import.
 			slog.Error("darkadia_finalize: find/create tag", "err", terr, "name", name)
 			continue
 		}
