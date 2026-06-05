@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useRecentJobs } from '@/hooks';
+import { useRecentJobs, useDownloadExport } from '@/hooks';
 import { JobItemsDetails } from './job-items-details';
 import type { RecentJobDetail, SyncChangeItem, JobType as JobTypeEnum } from '@/types';
 import {
   JobStatus,
+  JobType,
   getJobTypeLabel,
   getJobSourceLabel,
   getJobStatusLabel,
@@ -26,6 +28,8 @@ import {
   SkipForward,
   BookMarked,
   RefreshCw,
+  Download,
+  Loader2,
 } from 'lucide-react';
 
 interface RecentActivityProps {
@@ -132,6 +136,42 @@ function ChangeBreakdown({ job }: { job: RecentJobDetail }) {
   );
 }
 
+function isCompletedExport(job: RecentJobDetail): boolean {
+  return job.jobType === JobType.EXPORT && (job.status as JobStatus) === JobStatus.COMPLETED;
+}
+
+// ExportDownloadButton re-downloads a completed export's file. The export file
+// is retained for 24h after completion; once expired/removed the download
+// endpoint returns an error, surfaced here as a toast.
+function ExportDownloadButton({ jobId }: { jobId: string }) {
+  const { mutate: downloadExport, isPending } = useDownloadExport();
+  return (
+    <Button
+      onClick={() =>
+        downloadExport(jobId, {
+          onSuccess: () => toast.success('Download started'),
+          onError: (error) => toast.error(error.message || 'Failed to download export'),
+        })
+      }
+      disabled={isPending}
+      size="sm"
+      className="bg-green-600 hover:bg-green-700"
+    >
+      {isPending ? (
+        <>
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Downloading...
+        </>
+      ) : (
+        <>
+          <Download className="mr-2 h-4 w-4" />
+          Download Export
+        </>
+      )}
+    </Button>
+  );
+}
+
 function JobActivityItem({
   job,
   isExpanded,
@@ -160,9 +200,17 @@ function JobActivityItem({
             </div>
             <div className="flex items-center gap-4 text-sm text-muted-foreground shrink-0 ml-4">
               <div className="hidden sm:flex items-center gap-2">
-                <span className="text-green-600">{job.completedCount} completed</span>
-                {job.failedCount > 0 && (
-                  <span className="text-red-600">{job.failedCount} failed</span>
+                {job.jobType === JobType.EXPORT ? (
+                  // Export jobs create no job_items, so a "completed" count is
+                  // always 0; show the number of games exported instead.
+                  <span className="text-green-600">{job.totalItems} games</span>
+                ) : (
+                  <>
+                    <span className="text-green-600">{job.completedCount} completed</span>
+                    {job.failedCount > 0 && (
+                      <span className="text-red-600">{job.failedCount} failed</span>
+                    )}
+                  </>
                 )}
               </div>
               <span className="text-xs">
@@ -183,7 +231,14 @@ function JobActivityItem({
                 {job.errorMessage}
               </div>
             )}
-            {showBreakdown ? (
+            {isCompletedExport(job) ? (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-muted-foreground">
+                  Export file ready ({job.totalItems} games). Available for 24 hours.
+                </span>
+                <ExportDownloadButton jobId={job.id} />
+              </div>
+            ) : showBreakdown ? (
               <ChangeBreakdown job={job} />
             ) : (
               <JobItemsDetails jobId={job.id} progress={job.progress} isTerminal />

@@ -247,11 +247,17 @@ export function ImportExportPage() {
   // jobs with failed items, whose Retry Failed action is the only one-click retry
   // path. pending_review keeps the job in 'processing' (non-terminal), so it is
   // already excluded here. (issue #823)
+  //
+  // Exports are deliberately excluded: their result card holds the Download
+  // button (the only path to the file), so auto-dismissing a clean export would
+  // strand the user with no way to download — exactly the regression #828 fixes.
+  // An export's card persists until the user downloads and clicks "Start New".
   const isCleanlyCompleted = (job: typeof activeImportJob) =>
     !!job &&
     job.isTerminal &&
     job.status === JobStatus.COMPLETED &&
-    (job.progress?.failed ?? 0) === 0;
+    (job.progress?.failed ?? 0) === 0 &&
+    job.jobType !== JobType.EXPORT;
 
   // Determine which job to display
   // Priority: 1) In-progress jobs, 2) Most recently completed job
