@@ -53,29 +53,41 @@ Game-level fields (status flags, rating, loved, notes, the "Added" date, the agg
 
 ### Column reference
 
-| Column | Level | Meaning |
-|---|---|---|
-| `Name` | game | Game title. Empty on continuation rows. |
-| `Added` | game | Date the game was added to the Darkadia collection. The genuine "date added", worth preserving. |
-| `Loved` | game | `1` if marked a favorite. |
-| `Owned` | game | `1` if owned. In practice all exported games are owned (Darkadia had no separate wishlist in this data). |
-| `Played` | game | `1` if the user has played it. |
-| `Playing` | game | `1` if currently playing. |
-| `Finished` | game | `1` if the main game was completed. |
-| `Mastered` | game | `1` for full/100% completion. |
-| `Dominated` | game | `1` for Darkadia's top completion tier (beyond Mastered). |
-| `Shelved` | game | `1` if the user set it aside / gave up on it. |
-| `Rating` | game | Personal rating on a **0–5 scale with half-steps** (e.g. `4.5`). Empty/`0` means unrated. |
-| `Platforms` | game | **Aggregate ownership** — the platforms the user marked owning the game on. Comma-separated. See "Two ways to record platforms". |
-| `Notes` | game | Free-text personal note. |
-| `Copy label` | copy | Short user label for the copy (e.g. `PS4`, `HB / Steam`). |
-| `Copy Release` | copy | The specific release/edition title for this copy. |
-| `Copy platform` | copy | The platform of this specific copy (e.g. `PlayStation 4`, `PC`, `PlayStation Network (PS3)`). |
-| `Copy media` | copy | `Digital`, `Physical`, or `N/A`. |
-| `Copy source` | copy | Where the copy was obtained, from a fixed Darkadia list (e.g. `Steam`, `GOG`, `Sony Entertainment Network`, `Humble Bundle`, `GameStop`). `Other` defers to `Copy source other`. |
-| `Copy source other` | copy | Free-text source when `Copy source` is `Other` (e.g. `Epic`, `Fanatical`, `Green Man Gaming`, `Bilka`). |
-| `Copy purchase date` | copy | Date the copy was acquired. |
-| `Copy box*`, `Copy manual*`, `Copy complete*` | copy | Physical-media condition fields (box/manual/completeness and notes). Not imported. |
+The export has **29 columns, in this exact order**. Game-level fields are only meaningful on the *named* row; copy-level fields are meaningful on every row. The **Fate** column records how each column maps into Nexorious: every column is accounted for, and every drop is a **deliberate** design decision (collected in the accepted-loss ledger under "Out of scope / known limitations"), never a silent omission. The counts below ("0 rows populated") are from the reference export and motivate the drop; the importer's behaviour does not depend on them.
+
+| # | Column | Level | Meaning | Fate |
+|---|---|---|---|---|
+| 0 | `Name` | game | Game title. Empty on continuation rows. | Title used for IGDB matching. |
+| 1 | `Added` | game | Date the game was added to the Darkadia collection. | → `user_games.created_at`. |
+| 2 | `Loved` | game | `1` if marked a favorite. | → `is_loved`. |
+| 3 | `Owned` | game | `1` if owned (all exported games are owned; no wishlist in this data). | Feeds `play_status` precedence. |
+| 4 | `Played` | game | `1` if the user has played it. | Feeds `play_status`. |
+| 5 | `Playing` | game | `1` if currently playing. | Feeds `play_status`. |
+| 6 | `Finished` | game | `1` if the main game was completed. | Feeds `play_status`. |
+| 7 | `Mastered` | game | `1` for full/100% completion. | Feeds `play_status`. |
+| 8 | `Dominated` | game | `1` for Darkadia's top completion tier (beyond Mastered). | Feeds `play_status`. |
+| 9 | `Shelved` | game | `1` if the user set it aside / gave up on it. | Feeds `play_status` (→ `dropped`). |
+| 10 | `Rating` | game | Personal rating on a **0–5 scale with half-steps** (e.g. `4.5`). Empty means unrated. | → `personal_rating`, **truncated** to a whole star. |
+| 11 | `Copy label` | copy | Short user label for the copy (e.g. `PS4`, `HB / Steam`). | **Deliberate drop** — a Darkadia data-model artifact, reconstructable from the platform + storefront captured structurally. |
+| 12 | `Copy Release` | copy | The specific release/edition title for this copy. | **Deliberate drop** — edition is expressed by *which IGDB id the game matches*, not carried from Darkadia. |
+| 13 | `Copy platform` | copy | The platform of this specific copy (e.g. `PlayStation 4`, `PC`, `PlayStation Network (PS3)`). | → consolidated platform list. |
+| 14 | `Copy media` | copy | `Digital`, `Physical`, or `N/A`. | Routes storefront resolution (physical-first); not stored as a standalone field. |
+| 15 | `Copy media other` | copy | Free-text media type when `Copy media` is "other". | **Deliberate drop** — unused (0 rows populated in the reference export). |
+| 16 | `Copy source` | copy | Where the copy was obtained, from a fixed Darkadia list (e.g. `Steam`, `GOG`, `Sony Entertainment Network`, `Humble Bundle`, `GameStop`). `Other` defers to `Copy source other`. | → storefront slug, or provenance note. |
+| 17 | `Copy source other` | copy | Free-text source when `Copy source` is `Other` (e.g. `Epic`, `Fanatical`, `WinGameStore`, `Bilka`). | → storefront slug, or provenance note. |
+| 18 | `Copy purchase date` | copy | Date the copy was acquired. | → `user_game_platforms.acquired_date`. |
+| 19 | `Copy box` | copy | Physical-media flag (auto-filled, set even on digital copies). | **Deliberate drop** — boilerplate; no Nexorious model for physical media. |
+| 20 | `Copy box condition` | copy | Physical box condition (almost entirely `N/A`). | **Deliberate drop** — physical condition not modeled. |
+| 21 | `Copy box notes` | copy | Free-text box notes. | **Deliberate drop** — unused (0 rows populated). |
+| 22 | `Copy manual` | copy | Physical-media flag (auto-filled, set even on digital copies). | **Deliberate drop** — boilerplate. |
+| 23 | `Copy manual condition` | copy | Physical manual condition (almost entirely `N/A`). | **Deliberate drop** — physical condition not modeled. |
+| 24 | `Copy manual notes` | copy | Free-text manual notes. | **Deliberate drop** — unused (0 rows populated). |
+| 25 | `Copy complete` | copy | Physical-completeness flag (auto-filled, set even on digital copies). | **Deliberate drop** — boilerplate. |
+| 26 | `Copy complete notes` | copy | Free-text completeness notes. | **Deliberate drop** — unused (0 rows populated). |
+| 27 | `Platforms` | game | **Aggregate ownership** — the platforms the user marked owning the game on. Comma-separated. See "Two ways to record platforms". | → consolidated platform list (union with copy platforms). |
+| 28 | `Notes` | game | Free-text personal note. | → `personal_notes`, **verbatim**, plus appended provenance lines. |
+
+> Note the physical column order: `Platforms` and `Notes` are the **last two** columns (27–28), after the copy block — not adjacent to the other game-level fields. A parser must address columns by header name, not by assuming game-level fields come first.
 
 ### Status flags are cumulative
 
@@ -110,15 +122,15 @@ The import therefore **consolidates** the two sources rather than choosing one (
 
 ### Pipeline shape
 
-The import is modeled as a file-based, sync-like operation that reuses Nexorious's existing IGDB matching and manual-review experience, because identifying games by title is exactly what sync already does. At a high level:
+The import runs on Nexorious's existing **`jobs` / `job_items` import framework** — the same machinery the Nexorious-JSON importer already uses — **not** the storefront-sync pipeline. It reuses the IGDB matching *primitives* (title search, fuzzy-confidence scoring, the auto-resolve thresholds) and the generic, source-agnostic `job_items` review surface, but it does **not** create `external_games` staging rows, does not masquerade as a storefront, and does not touch the sync connection/config machinery. Each game becomes one `job_item`; the full consolidated per-game payload rides in that item's `source_metadata`. At a high level:
 
-1. **Upload & validate.** The user uploads the Darkadia CSV as a dedicated import source. The file is validated as a Darkadia export by its header row; non-Darkadia files are rejected with a clear error.
-2. **Parse & consolidate.** Rows are grouped into games and copies, and each game's owned platforms are consolidated (below). The full per-game payload (status, rating, loved, notes, added-date, and the consolidated platform/storefront/date list) is carried as staging data through matching.
-3. **Match to IGDB.** Each game's title is matched against IGDB. A confident, unambiguous match auto-resolves; anything low-confidence or tied is routed to **pending_review** — the same review surface used by sync.
-4. **Finalize.** Once a game is resolved (automatically or by the user), it is written into the library: a `user_game` plus its `user_game_platforms`, with the Darkadia-derived fields applied.
-5. **Clean up.** The transient staging records created only to drive matching/review are pruned once the import has no work left. Nothing about the import lingers as connectable "sync state".
+1. **Upload & validate.** The user uploads the Darkadia CSV via a dedicated `darkadia` import source on the Import/Export page. The file is validated as a Darkadia export by its header row; non-Darkadia files are rejected with a clear error. The import is **refused up front** if IGDB is not configured (see below).
+2. **Parse & consolidate.** Rows are grouped into games and copies, and each game's owned platforms are consolidated (below). The full per-game payload (status, rating, loved, notes, added-date, and the consolidated platform/storefront/date list, with provenance lines already assembled) is written as one `job_item` per game, carried in `source_metadata`.
+3. **Match to IGDB.** Each game's title is matched against IGDB using the shared matching primitives. A confident, unambiguous match auto-resolves; anything low-confidence or tied is stored as candidates on the `job_item` and set to **`pending_review`** — surfaced through the generic `JobItemsDetails` review UI (reusing `IGDBMatchDialog`).
+4. **Finalize.** Once a game is resolved (automatically or by the user), it is written into the library: a `user_game` plus its `user_game_platforms`, with the Darkadia-derived fields applied under the additive merge rules below.
+5. **Clean up.** Minimal — there is no sync-style staging to prune. The `jobs` / `job_items` rows remain as import history; only the transient `source_metadata` payload may optionally be cleared once an item finalizes.
 
-Because matching and review can take time (the user may resolve ambiguous matches over multiple sessions), staging data must survive until the import is fully resolved, then be removed.
+Because matching and review can take time (the user may resolve ambiguous matches over multiple sessions), the `job_items` persist until the import is fully resolved.
 
 ### Prerequisite: IGDB is required
 
@@ -126,7 +138,7 @@ The entire import depends on title→IGDB matching. If IGDB is not configured, *
 
 ### Game identity and matching
 
-The Darkadia `Name` is the title used for matching. Matching, confidence thresholds, auto-resolution, candidate storage, and the pending_review experience are **the same** as the sync system's IGDB matching stage — this importer does not invent a parallel matching mechanism. Game metadata (cover, description, release date, genre, …) comes from IGDB on resolution; none of it is sourced from Darkadia.
+The Darkadia `Name` is the title used for matching. The importer reuses the **same matching primitives** as sync — the IGDB title search, the fuzzy-confidence scoring, and the auto-resolve thresholds — rather than inventing a parallel matcher; it simply runs them over its own `job_items` and stores candidates / confidence / resolved id on the item (not on `external_games`). Game metadata (cover, description, release date, genre, …) comes from IGDB on resolution; none of it is sourced from Darkadia.
 
 ### Game-level field mapping
 
@@ -203,12 +215,18 @@ Darkadia platform strings (used in both the aggregate list and `Copy platform`) 
 | `Xbox 360` | `xbox-360` | — |
 | `Xbox 360 Games Store` | `xbox-360` | `microsoft-store` |
 | `Android` | `android` | — |
+| `PlayStation 2` | `playstation-2` | — |
+| `PlayStation Network (PSP)` | `playstation-psp` | `playstation-store` |
 
-`PC` defaults to `pc-windows` because Darkadia records `Linux` and `Mac` separately. A platform string not covered by the table is **flagged, not silently dropped** — unmapped platforms should surface in the import outcome so the data is not quietly lost.
+This table covers **every** platform string present in the reference export (both the aggregate `Platforms` list and `Copy platform`); each target slug exists in the platform seed. `PC` defaults to `pc-windows` because Darkadia records `Linux` and `Mac` separately.
+
+`playstation-2`'s seed `default_storefront` is `physical`, but per the rule above we deliberately do **not** consult `default_storefront`, so a `PlayStation 2` ownership mark with no matching copy yields `(playstation-2, NULL)`, not a fabricated `physical` storefront.
+
+A platform string outside this table is **not silently dropped**: it is treated as an unmapped-platform error on that item (surfaced in the import outcome), so the data cannot quietly vanish. Because the table is complete for the known export and the Darkadia format is frozen, this is a should-never-happen guard, not an expected path.
 
 ### Storefront mapping
 
-Per-copy storefront is resolved in this order:
+The source string is taken from `Copy source`, except when that is the literal `Other`, in which case the free-text `Copy source other` is used. Recognition matches **case-insensitively** against this string. Per-copy storefront is then resolved in this order:
 
 1. **Recognized digital source** → the canonical Nexorious storefront slug (icon and filtering work):
 
@@ -225,8 +243,10 @@ Per-copy storefront is resolved in this order:
    | `Google Play` | `google-play-store` |
    | `Uplay` / `Ubisoft Club` | `uplay` |
 
-2. **Physical media** (`Copy media = Physical`) → storefront `physical`; the specific retailer (`GameStop`, `Bilka`, …) goes into the provenance note.
-3. **Unrecognized digital store** (`Green Man Gaming`, `Fanatical`, `WinGameStore`, `Telltale.com`, `Kickstarter`, …) → storefront `NULL`; the source name goes into the provenance note.
+   Recognition tolerates the spelling variants observed in the reference export: Epic appears as `Epic`, `Epic Games Store`, `Epic Game Store`, and `Epic Gamestore` (and via `Copy source other`); Ubisoft as `Uplay` and `Ubisoft Club`. A recognized source that carries **extra free text** (only `Uplay (coupon w/ GTX 970)` in the reference export) still maps to its slug; the parenthetical annotation is a **deliberate, documented drop** — preserving such one-off annotations is not worth a special case.
+
+2. **Physical media** (`Copy media = Physical`) → storefront `physical`; the specific retailer (`GameStop`, `Bilka`, `Proshop`, …) goes into the provenance note. Media is the deciding signal here, **not** the retailer name: `GameStop` appears in the reference export as both digital *and* physical copies, so the same retailer routes to `NULL`+note (digital) or `physical`+note (physical) depending on `Copy media`.
+3. **Unrecognized digital store** (`Green Man Gaming`, `Fanatical`, `WinGameStore`, `Telltale.com`, `Kickstarter`, `Indie Gala`, `cdon.com`, …) → storefront `NULL`; the source name goes into the provenance note.
 4. Otherwise, the platform-string inferred storefront (above) may apply; otherwise `NULL`.
 
 **No new storefronts are seeded** to accommodate the long tail of stores. Nexorious's `original_storefront_name` field is not used for this, because it is stored but never displayed — the visible, durable home for "where did I buy this" is the note.
@@ -242,7 +262,9 @@ A fresh import into an empty library is simply the degenerate case of this rule.
 
 ### Review, resolution, and cleanup
 
-Ambiguous matches use the **existing pending_review experience** — the user picks an IGDB candidate or skips the game, exactly as with sync. Resolution (automatic or manual) triggers finalization into the library. Once the import has no remaining pending or in-review work, the transient staging records that existed only to drive matching/review are pruned. Pruning is safe by construction: the real library (`user_games`, `user_game_platforms`) does not depend on the staging records, and an imported game ends up indistinguishable from a manually added one.
+Ambiguous matches use the **existing `pending_review` experience**, but on the `job_items` framework — the user picks an IGDB candidate or skips the game through the generic, source-agnostic `JobItemsDetails` review surface (reusing the existing `IGDBMatchDialog`), not the sync page. Resolve/skip act on the `job_item` and are scoped to import sources so the sync `external_games` flow is untouched. As with sync, a `pending_review` item keeps the job in `processing` until it is resolved or skipped; resolution (automatic or manual) triggers finalization into the library.
+
+Cleanup is minimal because nothing sync-like is created: there are **no `external_games` staging rows** to prune. The `jobs` / `job_items` rows are the import's history and remain (they drive Recent Activity); the only transient payload is each item's `source_metadata`, which may optionally be cleared after the item finalizes. An imported game ends up indistinguishable from a manually added one.
 
 ---
 
@@ -255,3 +277,14 @@ Ambiguous matches use the **existing pending_review experience** — the user pi
 - **No-copy multi-platform games** are imported as owned on every aggregate platform; because the aggregate is ownership, this is intentional and not flagged for review.
 - **Wishlist is not handled** — the observed exports contain only owned games.
 - **Darkadia's own lossiness** (dropped platform associations) cannot be recovered beyond the union heuristic.
+
+### Deliberate field drops (accepted-loss ledger)
+
+These Darkadia columns are dropped **on purpose** because Nexorious has no representation for them. Each is a cleared design decision, not a silent omission (see the per-column **Fate** in the column reference):
+
+- **`Copy label`** — a Darkadia data-model artifact (e.g. `HB / Steam`); reconstructable from the platform + storefront captured structurally.
+- **`Copy Release` (edition title)** — edition is expressed by which IGDB id the game matches, not carried from Darkadia.
+- **Half-star precision in `Rating`** — truncated to a whole star (`4.5` → `4`).
+- **Physical-condition block** — `Copy box`, `Copy box condition`, `Copy box notes`, `Copy manual`, `Copy manual condition`, `Copy manual notes`, `Copy complete`, `Copy complete notes`: no physical-media model; in the reference export these are boilerplate/auto-filled and the free-text `*notes` columns are entirely empty.
+- **`Copy media other`** — empty in the reference export; no separate media-type field.
+- **Extra free text on a recognized source** — e.g. the `(coupon w/ GTX 970)` annotation on a `Uplay` source: the storefront is captured, the annotation is dropped.
