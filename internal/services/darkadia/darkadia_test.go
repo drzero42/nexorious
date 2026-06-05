@@ -47,3 +47,70 @@ func TestParse_ToleratesRaggedRowsAndEmbeddedNewline(t *testing.T) {
 		t.Fatalf("embedded newline not preserved: %+v", games[1].PersonalNotes)
 	}
 }
+
+func TestConsolidate_PlayStatusPrecedence(t *testing.T) {
+	cases := []struct {
+		flags map[int]string // column index → "1"
+		want  string
+	}{
+		{map[int]string{colOwned: "1"}, "not_started"},
+		{map[int]string{colOwned: "1", colPlayed: "1"}, "shelved"},
+		{map[int]string{colOwned: "1", colPlayed: "1", colPlaying: "1"}, "in_progress"},
+		{map[int]string{colOwned: "1", colShelved: "1"}, "dropped"},
+		{map[int]string{colOwned: "1", colFinished: "1"}, "completed"},
+		{map[int]string{colMastered: "1", colFinished: "1"}, "mastered"},
+		{map[int]string{colDominated: "1", colMastered: "1"}, "dominated"},
+		{map[int]string{colShelved: "1", colPlaying: "1"}, "dropped"},
+		{map[int]string{colFinished: "1", colShelved: "1"}, "completed"},
+	}
+	for i, c := range cases {
+		row := make([]string, len(header))
+		row[colName] = "G"
+		for idx, v := range c.flags {
+			row[idx] = v
+		}
+		got := consolidate(rawGame{named: row, copies: [][]string{row}})
+		if got.PlayStatus != c.want {
+			t.Errorf("case %d: play_status = %q, want %q", i, got.PlayStatus, c.want)
+		}
+	}
+}
+
+func TestConsolidate_RatingTruncatedAndLovedAndCreatedAt(t *testing.T) {
+	row := make([]string, len(header))
+	row[colName] = "G"
+	row[colOwned] = "1"
+	row[colLoved] = "1"
+	row[colRating] = "4.5"
+	row[colAdded] = "2013-06-05"
+	row[colNotes] = "my note"
+	g := consolidate(rawGame{named: row, copies: [][]string{row}})
+	if g.PersonalRating == nil || *g.PersonalRating != 4 {
+		t.Errorf("rating = %v, want 4", g.PersonalRating)
+	}
+	if !g.IsLoved {
+		t.Errorf("is_loved = false, want true")
+	}
+	if g.CreatedAt != "2013-06-05" {
+		t.Errorf("created_at = %q, want 2013-06-05", g.CreatedAt)
+	}
+	if g.PersonalNotes == nil || *g.PersonalNotes != "my note" {
+		t.Errorf("notes = %v, want verbatim", g.PersonalNotes)
+	}
+}
+
+func TestConsolidate_EmptyRatingIsUnrated(t *testing.T) {
+	row := make([]string, len(header))
+	row[colName] = "G"
+	row[colOwned] = "1"
+	row[colRating] = ""
+	g := consolidate(rawGame{named: row, copies: [][]string{row}})
+	if g.PersonalRating != nil {
+		t.Errorf("rating = %v, want nil", g.PersonalRating)
+	}
+	row[colRating] = "0"
+	g = consolidate(rawGame{named: row, copies: [][]string{row}})
+	if g.PersonalRating != nil {
+		t.Errorf("rating 0 → %v, want nil", g.PersonalRating)
+	}
+}

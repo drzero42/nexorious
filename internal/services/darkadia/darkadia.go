@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 )
 
 // ErrInvalidHeader signals the file is not a Darkadia export. The upload handler
@@ -134,12 +135,60 @@ func pad(row []string, n int) []string {
 	return out
 }
 
-// consolidate is filled in across later tasks. For now it carries the title and
-// the verbatim Notes so grouping + dialect handling can be verified.
 func consolidate(rg rawGame) Game {
-	g := Game{Title: rg.named[colName]}
-	if notes := rg.named[colNotes]; notes != "" {
+	n := rg.named
+	g := Game{
+		Title:      n[colName],
+		PlayStatus: resolvePlayStatus(n),
+		IsLoved:    n[colLoved] == "1",
+		CreatedAt:  n[colAdded],
+	}
+	if r := parseRating(n[colRating]); r != nil {
+		g.PersonalRating = r
+	}
+
+	// Notes: verbatim Darkadia Notes; provenance lines appended in Task 3.
+	notes := n[colNotes]
+	if notes != "" {
 		g.PersonalNotes = &notes
 	}
 	return g
+}
+
+// resolvePlayStatus maps Darkadia's cumulative flags to a single Nexorious
+// play_status by highest precedence (see docs/darkadia-import.md Part 2).
+func resolvePlayStatus(row []string) string {
+	switch {
+	case row[colDominated] == "1":
+		return "dominated"
+	case row[colMastered] == "1":
+		return "mastered"
+	case row[colFinished] == "1":
+		return "completed"
+	case row[colShelved] == "1":
+		return "dropped"
+	case row[colPlaying] == "1":
+		return "in_progress"
+	case row[colPlayed] == "1":
+		return "shelved"
+	default: // Owned only (or nothing)
+		return "not_started"
+	}
+}
+
+// parseRating truncates a 0–5 half-step rating to a whole 1–5 star. Empty or 0
+// means unrated (nil).
+func parseRating(s string) *int32 {
+	if s == "" {
+		return nil
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return nil
+	}
+	v := int32(f) // truncation: 4.5 → 4
+	if v <= 0 {
+		return nil
+	}
+	return &v
 }
