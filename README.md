@@ -23,6 +23,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 - **Search, don't type.** Add a game by searching for it — Nexorious pulls everything from IGDB automatically: cover art, descriptions, release dates, genres, ratings, and time-to-beat estimates. Your collection looks complete without manual data entry.
 - **Own your data.** Self-hosted, single binary, no third-party cloud, MIT-licensed.
 - **Automatic library sync** from Steam, PlayStation Network, GOG, and Epic Games Store today, with more sources on the way.
+- **Migrating from Darkadia?** Darkadia (RIP) is gone, but your collection doesn't have to be. Export your Darkadia library to CSV and import it straight into Nexorious — games, platforms, ratings, notes, and the date you added each game all come across.
 
 ## Reasons not to use Nexorious
 
@@ -43,7 +44,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 - **Sync Integrations**: Automatic library sync from Steam, PlayStation Network (PSN), GOG, and Epic Games Store (via legendary-gl)
 - **Rich Game Discovery**: Search and import games from IGDB's extensive database with automatic metadata population
 - **Progress Tracking**: Track play status, personal ratings, time played, and detailed notes
-- **Import & Export**: Export your collection to JSON or CSV; import from Nexorious's own JSON format
+- **Import & Export**: Export your collection to JSON or CSV; import from Nexorious's own JSON format or a Darkadia CSV export
 - **Single Binary**: Go backend with embedded React SPA — one process serves everything
 - **Modern Tech Stack**: Go backend with React + Vite frontend
 

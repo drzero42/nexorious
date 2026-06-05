@@ -203,3 +203,27 @@ export function useRetryJobItem() {
     },
   });
 }
+
+/** Resolve a pending-review import item to a chosen IGDB game. */
+export function useResolveJobItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { itemId: string; igdbId: number }>({
+    mutationFn: ({ itemId, igdbId }) => jobsApi.resolveJobItem(itemId, igdbId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: jobsKeys.all });
+    },
+  });
+}
+
+/** Skip a pending-review import item. */
+export function useSkipJobItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, string>({
+    mutationFn: (itemId) => jobsApi.skipJobItem(itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: jobsKeys.all });
+    },
+  });
+}

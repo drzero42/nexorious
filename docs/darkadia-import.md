@@ -232,7 +232,7 @@ This table covers **every** platform string present in the reference export (bot
 
 `playstation-2`'s seed `default_storefront` is `physical`, but per the rule above we deliberately do **not** consult `default_storefront`, so a `PlayStation 2` ownership mark with no matching copy yields `(playstation-2, NULL)`, not a fabricated `physical` storefront.
 
-A platform string outside this table is **not silently dropped**: it is treated as an unmapped-platform error on that item (surfaced in the import outcome), so the data cannot quietly vanish. Because the table is complete for the known export and the Darkadia format is frozen, this is a should-never-happen guard, not an expected path.
+A platform string outside this table is **not silently dropped**: the original string is preserved as a provenance line in the game's `personal_notes` (the same fallback used for unrecognized storefronts), and the game still imports with whatever other platforms *did* map. No `user_game_platform` row is fabricated for it, and the item does **not** fail. Because the table is complete for the known export and the Darkadia format is frozen, this is a should-never-happen guard, not an expected path.
 
 ### Storefront mapping
 

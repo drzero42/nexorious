@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   useImportNexorious,
+  useImportDarkadia,
   useExportCollection,
   useJob,
   useJobTypeStatus,
@@ -18,13 +19,14 @@ import {
   ExportFormat,
   JobType,
   JobStatus,
+  JobSource,
   getImportSourceDisplayInfo,
   getExportFormatDisplayInfo,
 } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { JobProgressCard, RecentActivity } from '@/components/jobs';
+import { JobProgressCard, JobItemsDetails, RecentActivity } from '@/components/jobs';
 import {
   AlertCircle,
   Upload,
@@ -201,14 +203,15 @@ function ExportCard({ format, onExport, isExporting, disabled }: ExportCardProps
   );
 }
 
-function ImportExportPage() {
-  const [isUploading, setIsUploading] = useState(false);
+export function ImportExportPage() {
+  const [uploadingSource, setUploadingSource] = useState<ImportSource | null>(null);
   const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(
     null,
   );
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
   const { mutateAsync: importNexorious } = useImportNexorious();
+  const { mutateAsync: importDarkadia } = useImportDarkadia();
   const { mutateAsync: exportCollection } = useExportCollection();
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
   const { mutate: downloadExport, isPending: isDownloading } = useDownloadExport();
@@ -278,11 +281,12 @@ function ImportExportPage() {
     activeJob?.status === JobStatus.COMPLETED &&
     activeJob?.jobType === JobType.EXPORT;
 
-  const handleImportFile = async (file: File) => {
-    setIsUploading(true);
+  const handleImportFile = async (file: File, source: ImportSource) => {
+    setUploadingSource(source);
 
     try {
-      const result = await importNexorious(file);
+      const result =
+        source === ImportSource.DARKADIA ? await importDarkadia(file) : await importNexorious(file);
       toast.success(`Import started: ${result.message}`);
       // Reset dismissed job; the mutation optimistically marks the job active.
       setDismissedJobId(null);
@@ -290,7 +294,7 @@ function ImportExportPage() {
       const message = error instanceof Error ? error.message : 'Import failed';
       toast.error(message);
     } finally {
-      setIsUploading(false);
+      setUploadingSource(null);
     }
   };
 
@@ -377,6 +381,20 @@ function ImportExportPage() {
         <section className="mb-8 space-y-4">
           <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
 
+          {/* In-progress Darkadia imports surface the per-item review actions
+              (Find Match / Skip) here: pending_review keeps the job in
+              'processing', and RecentActivity only covers terminal jobs, so this
+              is the only place the manual-matching box can appear. */}
+          {!activeJob.isTerminal &&
+            activeJob.jobType === JobType.IMPORT &&
+            activeJob.source === JobSource.DARKADIA && (
+              <JobItemsDetails
+                jobId={activeJob.id}
+                progress={activeJob.progress}
+                isTerminal={activeJob.isTerminal}
+              />
+            )}
+
           {/* Actions for completed jobs */}
           {activeJob.isTerminal && (
             <div className="flex gap-3">
@@ -435,8 +453,14 @@ function ImportExportPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <ImportCard
               source={ImportSource.NEXORIOUS}
-              onFileSelect={handleImportFile}
-              isUploading={isUploading}
+              onFileSelect={(file) => handleImportFile(file, ImportSource.NEXORIOUS)}
+              isUploading={uploadingSource === ImportSource.NEXORIOUS}
+              disabled={hasActiveJob}
+            />
+            <ImportCard
+              source={ImportSource.DARKADIA}
+              onFileSelect={(file) => handleImportFile(file, ImportSource.DARKADIA)}
+              isUploading={uploadingSource === ImportSource.DARKADIA}
               disabled={hasActiveJob}
             />
           </div>

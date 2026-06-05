@@ -4,6 +4,7 @@
 
 export enum ImportSource {
   NEXORIOUS = 'nexorious',
+  DARKADIA = 'darkadia',
 }
 
 export enum ExportFormat {
@@ -55,6 +56,18 @@ export function getImportSourceDisplayInfo(source: ImportSource): {
         'Non-interactive import',
       ],
       color: 'indigo',
+    },
+    [ImportSource.DARKADIA]: {
+      title: 'Darkadia CSV',
+      description:
+        'Migrate a Darkadia collection export. Games are matched to IGDB; ambiguous matches go to review. Requires IGDB to be configured.',
+      icon: '🗄️',
+      features: [
+        'Preserves ratings, notes & added date',
+        'Matches games to IGDB',
+        'Interactive review',
+      ],
+      color: 'purple',
     },
   };
   return info[source];

@@ -47,6 +47,20 @@ export function useImportNexorious() {
   });
 }
 
+/**
+ * One-off Darkadia CSV migration. Matches each game to IGDB; ambiguous matches
+ * land in the pending-review flow.
+ */
+export function useImportDarkadia() {
+  const queryClient = useQueryClient();
+  return useMutation<ImportJobCreatedResponse, Error, File>({
+    mutationFn: (file) => importExportApi.importDarkadiaCsv(file),
+    onSuccess: (result) => {
+      markJobTypeActive(queryClient, JobType.IMPORT, result.job_id);
+    },
+  });
+}
+
 // Export Mutation Hooks
 
 /**
