@@ -97,9 +97,6 @@ func TestBuildCSVRow_AllFieldsSet(t *testing.T) {
 	if row[3] != "9" {
 		t.Errorf("rating: expected '9', got %q", row[3])
 	}
-	if row[9] != "2020" {
-		t.Errorf("release_year: expected '2020', got %q", row[9])
-	}
 }
 
 func TestBuildCSVRow_NilPlatformSlug(t *testing.T) {

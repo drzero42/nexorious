@@ -302,7 +302,7 @@ func buildJSONDoc(ugs []models.UserGame) exportDocJSON {
 
 var csvHeaders = []string{
 	"title", "igdb_id", "play_status", "personal_rating", "is_loved",
-	"hours_played", "personal_notes", "platforms", "tags", "release_year",
+	"hours_played", "personal_notes", "platforms", "tags",
 	"created_at", "updated_at",
 }
 
@@ -392,11 +392,6 @@ func buildCSVRow(ug models.UserGame) []string {
 		}
 	}
 
-	releaseYear := ""
-	if ug.Game != nil && ug.Game.ReleaseDate != nil {
-		releaseYear = strconv.Itoa(ug.Game.ReleaseDate.Year())
-	}
-
 	return []string{
 		title,
 		strconv.Itoa(int(ug.GameID)),
@@ -407,7 +402,6 @@ func buildCSVRow(ug models.UserGame) []string {
 		notes,
 		strings.Join(platformSlugs, ";"),
 		strings.Join(tagNames, ";"),
-		releaseYear,
 		ug.CreatedAt.UTC().Format(time.RFC3339),
 		ug.UpdatedAt.UTC().Format(time.RFC3339),
 	}
