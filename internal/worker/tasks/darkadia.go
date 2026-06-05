@@ -164,10 +164,10 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 				created = t.UTC()
 			}
 		}
-		ps := payload.PlayStatus
+		ps := coercePlayStatus(&payload.PlayStatus)
 		ug = models.UserGame{
 			ID: uuid.NewString(), UserID: item.UserID, GameID: igdbID,
-			PlayStatus: &ps, PersonalRating: payload.PersonalRating, IsLoved: payload.IsLoved,
+			PlayStatus: ps, PersonalRating: payload.PersonalRating, IsLoved: payload.IsLoved,
 			PersonalNotes: payload.PersonalNotes, CreatedAt: created, UpdatedAt: now,
 		}
 		// ON CONFLICT DO NOTHING guards against a concurrent finalize of another
