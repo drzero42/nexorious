@@ -93,22 +93,20 @@ type UserGame struct {
 type UserGamePlatform struct {
 	bun.BaseModel `bun:"table:user_game_platforms"`
 
-	ID                     string     `bun:"id,pk"                        json:"id"`
-	UserGameID             string     `bun:"user_game_id,notnull"         json:"user_game_id"`
-	Platform               *string    `bun:"platform"                     json:"platform"`
-	Storefront             *string    `bun:"storefront"                   json:"storefront"`
-	StoreGameID            *string    `bun:"store_game_id"                json:"store_game_id"`
-	StoreUrl               *string    `bun:"store_url"                    json:"store_url"`
-	IsAvailable            bool       `bun:"is_available,notnull"         json:"is_available"`
-	HoursPlayed            *float64   `bun:"hours_played"                 json:"hours_played"`
-	OwnershipStatus        *string    `bun:"ownership_status"             json:"ownership_status"`
-	AcquiredDate           *time.Time `bun:"acquired_date"                json:"acquired_date"`
-	OriginalPlatformName   *string    `bun:"original_platform_name"       json:"original_platform_name"`
-	OriginalStorefrontName *string    `bun:"original_storefront_name"     json:"original_storefront_name"`
-	ExternalGameID         *string    `bun:"external_game_id"             json:"external_game_id"`
-	SyncFromSource         bool       `bun:"sync_from_source,notnull"     json:"sync_from_source"`
-	CreatedAt              time.Time  `bun:"created_at,notnull"           json:"created_at"`
-	UpdatedAt              time.Time  `bun:"updated_at,notnull"           json:"updated_at"`
+	ID              string     `bun:"id,pk"                        json:"id"`
+	UserGameID      string     `bun:"user_game_id,notnull"         json:"user_game_id"`
+	Platform        *string    `bun:"platform"                     json:"platform"`
+	Storefront      *string    `bun:"storefront"                   json:"storefront"`
+	StoreGameID     *string    `bun:"store_game_id"                json:"store_game_id"`
+	StoreUrl        *string    `bun:"store_url"                    json:"store_url"`
+	IsAvailable     bool       `bun:"is_available,notnull"         json:"is_available"`
+	HoursPlayed     *float64   `bun:"hours_played"                 json:"hours_played"`
+	OwnershipStatus *string    `bun:"ownership_status"             json:"ownership_status"`
+	AcquiredDate    *time.Time `bun:"acquired_date"                json:"acquired_date"`
+	ExternalGameID  *string    `bun:"external_game_id"             json:"external_game_id"`
+	SyncFromSource  bool       `bun:"sync_from_source,notnull"     json:"sync_from_source"`
+	CreatedAt       time.Time  `bun:"created_at,notnull"           json:"created_at"`
+	UpdatedAt       time.Time  `bun:"updated_at,notnull"           json:"updated_at"`
 
 	PlatformRecord   *Platform   `bun:"rel:belongs-to,join:platform=name"   json:"-"`
 	StorefrontRecord *Storefront `bun:"rel:belongs-to,join:storefront=name" json:"-"`

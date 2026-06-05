@@ -68,7 +68,6 @@ const mockUserGamePlatformApi = {
   is_available: true,
   hours_played: 50,
   ownership_status: OwnershipStatus.OWNED,
-  original_platform_name: null,
   created_at: '2024-01-01T00:00:00Z',
 };
 

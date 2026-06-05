@@ -82,7 +82,6 @@ interface UserGamePlatformApiResponse {
   hours_played: number;
   ownership_status: OwnershipStatus;
   acquired_date?: string;
-  original_platform_name?: string;
   created_at: string;
 }
 
@@ -269,7 +268,6 @@ function transformUserGamePlatform(apiPlatform: UserGamePlatformApiResponse): Us
     hours_played: apiPlatform.hours_played,
     ownership_status: apiPlatform.ownership_status,
     acquired_date: apiPlatform.acquired_date,
-    original_platform_name: apiPlatform.original_platform_name,
     created_at: apiPlatform.created_at,
   };
 }

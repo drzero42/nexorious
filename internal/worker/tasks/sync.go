@@ -745,11 +745,11 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			if _, err := w.DB.NewRaw(`
 				INSERT INTO user_game_platforms
 				(id, user_game_id, platform, storefront, is_available, hours_played, ownership_status,
-				 original_platform_name, original_storefront_name, external_game_id, sync_from_source, created_at, updated_at)
-				VALUES (?, ?, ?, ?, true, ?, ?, ?, ?, ?, true, now(), now())
+				 external_game_id, sync_from_source, created_at, updated_at)
+				VALUES (?, ?, ?, ?, true, ?, ?, ?, true, now(), now())
 				ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
 				ugpID, ugID, egp.Platform, storefrontSlug, egp.HoursPlayed, ownership,
-				egp.Platform, eg.Storefront, eg.ID,
+				eg.ID,
 			).Exec(ctx); err != nil {
 				slog.Error("user_game_write: insert user_game_platform", "err", err, "item_id", p.JobItemID)
 			}

@@ -261,7 +261,7 @@ The source string is taken from `Copy source`, except when that is the literal `
 
 An **empty `Copy source`** (no purchase source recorded — 406 copies in the reference export) yields a `NULL` storefront and **no** provenance note: there is nothing to record. A provenance note is appended only for cases 2 and 3 (a physical retailer, or an unrecognized digital store).
 
-**No new storefronts are seeded** to accommodate the long tail of stores. Nexorious's `original_storefront_name` field is not used for this, because it is stored but never displayed — the visible, durable home for "where did I buy this" is the note.
+**No new storefronts are seeded** to accommodate the long tail of stores. The visible, durable home for "where did I buy this" is the provenance note.
 
 ### Merge semantics
 
