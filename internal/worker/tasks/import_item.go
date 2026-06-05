@@ -79,6 +79,18 @@ type importTagData struct {
 	Color *string `json:"color"`
 }
 
+// coercePlayStatus validates a play_status against enum.PlayStatus and returns
+// nil for an invalid (or already-nil) value, so callers leave the column unset
+// and let the user_games.play_status NOT NULL DEFAULT 'not_started' apply. All
+// import paths use this to validate play_status uniformly.
+func coercePlayStatus(s *string) *string {
+	if s != nil && !enum.PlayStatus(*s).Valid() {
+		slog.Warn("import: invalid play_status, treating as unset", "value", *s)
+		return nil
+	}
+	return s
+}
+
 // Work processes a single import job item. It never returns an error —
 // failures are recorded on the JobItem itself.
 func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemArgs]) error {
@@ -157,11 +169,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			slog.Warn("import_item: personal_rating out of range, treating as unrated", "value", *gd.PersonalRating)
 		}
 
-		playStatus := gd.PlayStatus
-		if playStatus != nil && !enum.PlayStatus(*playStatus).Valid() {
-			slog.Warn("import_item: invalid play_status, treating as unset", "value", *playStatus)
-			playStatus = nil
-		}
+		playStatus := coercePlayStatus(gd.PlayStatus)
 
 		ug = &models.UserGame{
 			ID:             uuid.NewString(),

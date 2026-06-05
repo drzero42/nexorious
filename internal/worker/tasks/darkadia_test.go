@@ -111,6 +111,41 @@ func TestDarkadiaFinalize_WritesUserGameAndPlatforms(t *testing.T) {
 	}
 }
 
+// An invalid play_status in the Darkadia payload must be coerced to unset
+// (nil), mirroring the nexorious import worker. user_games.play_status is NOT
+// NULL DEFAULT 'not_started', so the DB applies the default; the invalid value
+// is never stored verbatim.
+func TestDarkadiaFinalize_InvalidPlayStatusCoercedToNull(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := "u-dk-badstatus"
+	insertTestUser(t, testDB, userID)
+	if _, err := testDB.NewRaw(`INSERT INTO games (id, title, last_updated, created_at) VALUES (42, 'Bad Status', now(), now())`).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	payload := map[string]any{
+		"title": "Bad Status", "play_status": "not_a_real_status",
+		"platforms": []map[string]any{},
+	}
+	_, itemID := insertDarkadiaItem(t, userID, payload)
+	if _, err := testDB.NewRaw(`UPDATE job_items SET resolved_igdb_id = 42 WHERE id = ?`, itemID).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	w := &tasks.DarkadiaFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, &river.Job[tasks.DarkadiaFinalizeArgs]{Args: tasks.DarkadiaFinalizeArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = 42", userID).Scan(ctx); err != nil {
+		t.Fatalf("user_game not written: %v", err)
+	}
+	if ug.PlayStatus == nil || *ug.PlayStatus != "not_started" {
+		t.Errorf("play_status = %v, want 'not_started' (invalid coerced via NOT NULL default)", ug.PlayStatus)
+	}
+}
+
 // Two items in one import that resolve to the SAME game (duplicate titles) must
 // not fail on the user_games (user_id, game_id) unique index; the loser of the
 // race re-selects the existing row and merges its platforms in.
