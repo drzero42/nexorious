@@ -85,7 +85,6 @@ export interface UserGamePlatform {
   hours_played: number;
   ownership_status: OwnershipStatus;
   acquired_date?: string;
-  original_platform_name?: string;
   created_at: string;
 }
 
