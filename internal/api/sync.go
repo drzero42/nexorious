@@ -90,7 +90,7 @@ var (
 // supportedStorefronts is the ordered list of storefront slugs the sync API
 // accepts. validStorefronts is its set form, derived from the same source so the
 // two can never drift apart.
-var supportedStorefronts = []string{"steam", "psn", "epic", "gog", "humble-bundle"}
+var supportedStorefronts = []string{"steam", "playstation-store", "epic-games-store", "gog", "humble-bundle"}
 
 var validStorefronts = func() map[string]bool {
 	m := make(map[string]bool, len(supportedStorefronts))
@@ -99,25 +99,6 @@ var validStorefronts = func() map[string]bool {
 	}
 	return m
 }()
-
-// storefrontDisplayName returns the human-readable name for a storefront slug,
-// used in user-facing error messages. Falls back to the slug if unknown.
-func storefrontDisplayName(sf string) string {
-	switch sf {
-	case "steam":
-		return "Steam"
-	case "psn":
-		return "PSN"
-	case "epic":
-		return "Epic"
-	case "gog":
-		return "GOG"
-	case "humble-bundle":
-		return "Humble Bundle"
-	default:
-		return sf
-	}
-}
 
 var (
 	steamIDRegex  = regexp.MustCompile(`^7656119[0-9]{10}$`)
@@ -237,12 +218,12 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.PUT("/steam/connection", h.HandleSteamConnect)
 	g.GET("/steam/connection", h.HandleGetSteamConnection)
 	g.DELETE("/steam/connection", h.HandleSteamDisconnect)
-	g.PUT("/psn/connection", h.HandlePSNConnect)
-	g.GET("/psn/connection", h.HandleGetPSNConnection)
-	g.DELETE("/psn/connection", h.HandlePSNDisconnect)
-	g.PUT("/epic/connection", h.HandleEpicConnect)
-	g.DELETE("/epic/connection", h.HandleEpicDisconnect)
-	g.GET("/epic/connection", h.HandleGetEpicConnection)
+	g.PUT("/playstation-store/connection", h.HandlePSNConnect)
+	g.GET("/playstation-store/connection", h.HandleGetPSNConnection)
+	g.DELETE("/playstation-store/connection", h.HandlePSNDisconnect)
+	g.PUT("/epic-games-store/connection", h.HandleEpicConnect)
+	g.DELETE("/epic-games-store/connection", h.HandleEpicDisconnect)
+	g.GET("/epic-games-store/connection", h.HandleGetEpicConnection)
 	g.PUT("/gog/connection", h.HandleGOGConnect)
 	g.GET("/gog/connection", h.HandleGetGOGConnection)
 	g.DELETE("/gog/connection", h.HandleGOGDisconnect)
@@ -321,7 +302,7 @@ func (h *SyncHandler) disconnectStorefront(c *echo.Context, sf string) error {
 	}
 	if err := h.clearStorefrontCredentials(context.Background(), userID, sf); err != nil {
 		slog.Error("sync: disconnect failed", "err", err, "storefront", sf, "user_id", userID)
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect "+storefrontDisplayName(sf))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect "+sf)
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -724,7 +705,7 @@ func (h *SyncHandler) HandlePSNConnect(c *echo.Context) error {
 		"npsso_token": req.NpssoToken,
 		"online_id":   info.OnlineID,
 	}
-	if err := h.persistStorefrontCredentials(context.Background(), userID, "psn", creds); err != nil {
+	if err := h.persistStorefrontCredentials(context.Background(), userID, "playstation-store", creds); err != nil {
 		slog.Error("psn: persist storefront credentials failed", "user_id", userID, "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist PSN connection")
 	}
@@ -738,7 +719,7 @@ func (h *SyncHandler) HandlePSNConnect(c *echo.Context) error {
 }
 
 func (h *SyncHandler) HandleGetPSNConnection(c *echo.Context) error {
-	return h.serveConnectionStatus(c, "psn",
+	return h.serveConnectionStatus(c, "playstation-store",
 		psnConnectionResponse{},
 		psnConnectionResponse{IsConfigured: true, CredentialsError: true},
 		func(plaintext []byte, credentialsError bool) (any, error) {
@@ -757,7 +738,7 @@ func (h *SyncHandler) HandleGetPSNConnection(c *echo.Context) error {
 }
 
 func (h *SyncHandler) HandlePSNDisconnect(c *echo.Context) error {
-	return h.disconnectStorefront(c, "psn")
+	return h.disconnectStorefront(c, "playstation-store")
 }
 
 // HandleHumbleConnect is PUT /sync/humble-bundle/connection: it verifies the
@@ -837,7 +818,7 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "epic: user.json missing after auth")
 	}
 
-	if err := h.persistStorefrontCredentials(context.Background(), userID, "epic", snapshot); err != nil {
+	if err := h.persistStorefrontCredentials(context.Background(), userID, "epic-games-store", snapshot); err != nil {
 		slog.Error("epic: persist storefront credentials failed", "user_id", userID, "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Epic connection")
 	}
@@ -856,7 +837,7 @@ func (h *SyncHandler) HandleEpicDisconnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	ctx := context.Background()
-	if err := h.clearStorefrontCredentials(ctx, userID, "epic"); err != nil {
+	if err := h.clearStorefrontCredentials(ctx, userID, "epic-games-store"); err != nil {
 		slog.Error("sync: epic disconnect failed", "err", err, "user_id", userID)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect Epic")
 	}
@@ -884,7 +865,7 @@ func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
 		})
 	}
 
-	return h.serveConnectionStatus(c, "epic",
+	return h.serveConnectionStatus(c, "epic-games-store",
 		map[string]any{"connected": false, "disabled": false},
 		map[string]any{"connected": true, "credentials_error": true, "disabled": false},
 		func(plaintext []byte, credentialsError bool) (any, error) {
