@@ -73,28 +73,34 @@ reworking it now would be throwaway work.
 
 ### Identity model
 
-Extend `PlatformSelection` with identity fields. Both are **optional** so the
-add-game flow and `PlatformSelectorCompact` keep compiling unchanged (they
-construct `{ platform, storefront }` literals and never read the new fields —
-`PlatformSelectorCompact` renders its list keyed by `platform.name` over
-`availablePlatforms`, not over the selections):
+A platform selection carries two distinct, principled notions of identity, and
+we apply them **uniformly across every consumer of the shape** (both the edit
+flow and the add-game flow). This removes the prior smell where the same shape
+meant different things to different callers.
 
 ```ts
 export interface PlatformSelection {
-  key?: string;       // stable client id; populated by the full editor (e.g. crypto.randomUUID())
-  id?: string;        // server UUID; present only for persisted rows
+  key: string;        // stable client-side identity — REQUIRED, present the moment the row exists
+  id?: string;        // server UUID — OPTIONAL, present only once persisted
   platform: string;
   storefront?: string;
 }
 ```
 
-- The full `PlatformSelector` and `game-edit-form` always populate `key` (seeded
-  from the row id on load, generated on add), so within the edit page `key` is
-  effectively always present. Render with a defensive fallback
-  `key={selection.key ?? selection.platform}` to stay safe for any caller that
-  omits it.
-- Render / remove / storefront-edit in the per-row list key off `key`.
-- Save reconciliation keys off `id` (presence of `id` = persisted).
+- **`key` — required.** "Which row is this, within the current editing session."
+  A row always knows who it is the moment it appears on screen, regardless of
+  flow. Every point that creates a selection stamps a fresh `key` (e.g.
+  `crypto.randomUUID()`); when seeding from saved data, the `key` is set from the
+  row id. Because it is always present, the per-row list keys off it directly —
+  no defensive fallback needed.
+- **`id` — optional.** "Does this row correspond to something already saved in
+  the database." A freshly-added row genuinely has none, so optionality here is
+  accurate modelling, not debt. Save reconciliation uses presence of `id` to
+  distinguish persisted rows from new ones.
+
+Making `key` required brings the add-game flow into scope (see below) for a
+small, mechanical change: it must stamp a `key` wherever it creates a selection.
+This is type-driven and carries **no behaviour or UX change** in that flow.
 
 ### `PlatformSelector` changes (per-row list only)
 
@@ -105,6 +111,18 @@ export interface PlatformSelection {
 - `handlePlatformToggle` (the dropdown) is unchanged **except** that the add
   branch assigns a fresh `key` to each new row. No UX/behavior change; its
   uncheck still removes all rows of a name (revisited under #848).
+
+### Add-game flow changes (`add.confirm.tsx`, `PlatformSelectorCompact`)
+
+Mechanical only, to honour the now-required `key`:
+
+- Wherever a selection is created (e.g. when a platform checkbox is toggled on),
+  stamp a fresh `key`.
+- Internal lookups that currently match a selection by `platform` name can stay
+  as they are — `PlatformSelectorCompact` renders one row per *available*
+  platform and cannot produce duplicates, so name matching remains unambiguous
+  there. The `key` is carried for shape consistency, not yet used to disambiguate.
+- No UX or behaviour change. Duplicate-platform adds in this flow remain #848.
 
 ### `game-edit-form.tsx` changes
 
@@ -152,11 +170,19 @@ existing toast.
     storefront (#847).
   - Removing one of two same-name rows issues a `DELETE` for the correct `id`
     and leaves the sibling (#846).
+- Add-game flow: existing `add.confirm` behaviour is unchanged. Confirm the
+  current tests still pass (selecting/deselecting a platform, picking a
+  storefront, and submitting); no new behaviour to assert beyond that the
+  `key`-stamping does not regress selection.
 
 ## Scope guardrails
 
 - Frontend only. No backend or migration changes — the API and schema already
   support everything described.
+- In scope, deliberately: a uniform identity model across **both** the edit flow
+  and the add-game flow. The add flow's inclusion is limited to mechanical
+  `key`-stamping with no behaviour change — done to keep the shared shape
+  consistent and avoid leaving debt, not to add features.
 - Out of scope: dropdown add/toggle semantics, consolidating the two UI sections,
-  and manual duplicate-platform adds (all → #848); acquired-date persistence
-  (→ #849).
+  and manual duplicate-platform adds in either flow (all → #848); acquired-date
+  persistence (→ #849).
