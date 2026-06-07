@@ -191,6 +191,8 @@ export function PlatformSelector({
   // Check if we've reached max selection
   const isMaxReached = maxSelection !== undefined && selectedPlatforms.length >= maxSelection;
 
+  // Toggles a platform's presence by name (one row per dropdown click; per-row removal is
+  // handled by handleRemovePlatform which targets the specific row by key).
   const handlePlatformToggle = (platformName: string) => {
     if (disabled) return;
 
@@ -382,6 +384,13 @@ export function PlatformSelector({
           {selectedPlatformObjects.map(({ selection, platform }) => {
             if (!platform) return null;
             const storefronts = platform.storefronts ?? [];
+            const storefrontLabel = selection.storefront
+              ? (storefronts.find((s) => s.name === selection.storefront)?.display_name ??
+                selection.storefront)
+              : undefined;
+            const removeLabel = storefrontLabel
+              ? `Remove ${platform.display_name} / ${storefrontLabel}`
+              : `Remove ${platform.display_name}`;
 
             return (
               <div
@@ -412,7 +421,7 @@ export function PlatformSelector({
                   className="flex-shrink-0 h-8 w-8 p-0"
                 >
                   <X className="h-4 w-4" />
-                  <span className="sr-only">Remove {platform.display_name}</span>
+                  <span className="sr-only">{removeLabel}</span>
                 </Button>
               </div>
             );
@@ -468,6 +477,8 @@ export function PlatformSelectorCompact({
     }
   };
 
+  // The compact variant renders one row per available platform, so name-based matching is
+  // unambiguous here (unlike PlatformSelector where rows are keyed to allow duplicates).
   const handleStorefrontChange = (platformName: string, storefront: string | undefined) => {
     if (disabled) return;
 

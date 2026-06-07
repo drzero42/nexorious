@@ -426,9 +426,9 @@ describe('PlatformSelector', () => {
       />,
     );
 
-    const removeButtons = screen.getAllByRole('button', { name: /remove pc/i });
-    expect(removeButtons).toHaveLength(2);
-    await user.click(removeButtons[1]); // remove the second PC row (no storefront)
+    // Two rows share the platform; their remove buttons are disambiguated by storefront.
+    expect(screen.getByRole('button', { name: 'Remove PC / Steam' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Remove PC' })); // the no-storefront row
 
     expect(handleChange).toHaveBeenCalledWith([
       { key: 'k-1', platform: 'pc', storefront: 'steam' },
