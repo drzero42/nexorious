@@ -214,17 +214,15 @@ export function PlatformSelector({
     }
   };
 
-  const handleStorefrontChange = (platformName: string, storefront: string | undefined) => {
+  const handleStorefrontChange = (key: string, storefront: string | undefined) => {
     if (disabled) return;
 
-    onChange(
-      selectedPlatforms.map((s) => (s.platform === platformName ? { ...s, storefront } : s)),
-    );
+    onChange(selectedPlatforms.map((s) => (s.key === key ? { ...s, storefront } : s)));
   };
 
-  const handleRemovePlatform = (platformName: string) => {
+  const handleRemovePlatform = (key: string) => {
     if (disabled) return;
-    onChange(selectedPlatforms.filter((s) => s.platform !== platformName));
+    onChange(selectedPlatforms.filter((s) => s.key !== key));
   };
 
   const handleClearAll = () => {
@@ -400,7 +398,7 @@ export function PlatformSelector({
                       storefronts={storefronts}
                       selectedStorefront={selection.storefront}
                       onStorefrontChange={(storefront) =>
-                        handleStorefrontChange(selection.platform, storefront)
+                        handleStorefrontChange(selection.key, storefront)
                       }
                       disabled={disabled}
                     />
@@ -409,7 +407,7 @@ export function PlatformSelector({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleRemovePlatform(selection.platform)}
+                  onClick={() => handleRemovePlatform(selection.key)}
                   disabled={disabled}
                   className="flex-shrink-0 h-8 w-8 p-0"
                 >

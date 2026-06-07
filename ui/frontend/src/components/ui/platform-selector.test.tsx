@@ -9,6 +9,7 @@ import {
 import type { Platform, Storefront } from '@/types';
 
 // Helper: build a PlatformSelection with the now-required `key`.
+// NOTE: pass an explicit `key` when the same platform appears twice (the default collides).
 const sel = (platform: string, storefront?: string, key = `k-${platform}`): PlatformSelection => ({
   key,
   platform,
@@ -407,6 +408,31 @@ describe('PlatformSelector', () => {
     await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
 
     expect(screen.getByText('No platforms available')).toBeInTheDocument();
+  });
+
+  it('removes only the targeted row when two rows share a platform (#846)', async () => {
+    const user = userEvent.setup();
+    const handleChange = vi.fn();
+    const selected: PlatformSelection[] = [
+      { key: 'k-1', platform: 'pc', storefront: 'steam' },
+      { key: 'k-2', platform: 'pc', storefront: undefined },
+    ];
+
+    render(
+      <PlatformSelector
+        selectedPlatforms={selected}
+        availablePlatforms={mockPlatforms}
+        onChange={handleChange}
+      />,
+    );
+
+    const removeButtons = screen.getAllByRole('button', { name: /remove pc/i });
+    expect(removeButtons).toHaveLength(2);
+    await user.click(removeButtons[1]); // remove the second PC row (no storefront)
+
+    expect(handleChange).toHaveBeenCalledWith([
+      { key: 'k-1', platform: 'pc', storefront: 'steam' },
+    ]);
   });
 });
 
