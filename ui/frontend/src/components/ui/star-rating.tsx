@@ -43,8 +43,11 @@ export function StarRating({
   const handleClick = (starValue: number) => {
     if (!isInteractive || !onChange) return;
 
-    // If clearable and clicking on the same star, clear the rating
+    // If clearable and clicking on the same star, clear the rating. Drop the
+    // pointer hover too, so the empty state shows immediately instead of the
+    // just-clicked star lingering filled until the pointer leaves (see #845).
     if (clearable && value === starValue) {
+      setHoveredStar(null);
       onChange(null);
       return;
     }
@@ -104,7 +107,13 @@ export function StarRating({
     setIsFocused(true);
     if (focusedIndex === null) {
       setFocusedIndex(value ? value - 1 : 0);
-      setHoveredStar(value ?? 1);
+      // Only seed the preview fill for keyboard focus. When focus arrives via a
+      // mouse click, `hoveredStar` is already set by the star's `mouseEnter` and
+      // must win — otherwise the stale `value` would clobber the just-clicked
+      // star until the pointer leaves (see #845).
+      if (hoveredStar === null) {
+        setHoveredStar(value ?? 1);
+      }
     }
   };
 
