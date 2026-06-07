@@ -6,6 +6,7 @@ import {
   formatPlatformLabel,
   resolveImageUrl,
   getCoverUrl,
+  toDateInputValue,
 } from './game-utils';
 import type { UserGame } from '@/types';
 
@@ -162,5 +163,25 @@ describe('formatPlatformLabel', () => {
         storefront_details: null,
       }),
     ).toBe('Unknown');
+  });
+});
+
+describe('toDateInputValue', () => {
+  it('extracts the date from an RFC3339 timestamp (the API format)', () => {
+    expect(toDateInputValue('2024-06-01T00:00:00Z')).toBe('2024-06-01');
+  });
+
+  it('passes a bare YYYY-MM-DD through unchanged', () => {
+    expect(toDateInputValue('2024-06-01')).toBe('2024-06-01');
+  });
+
+  it('returns "" for null/undefined/empty', () => {
+    expect(toDateInputValue(null)).toBe('');
+    expect(toDateInputValue(undefined)).toBe('');
+    expect(toDateInputValue('')).toBe('');
+  });
+
+  it('returns "" for an unparseable value', () => {
+    expect(toDateInputValue('not-a-date')).toBe('');
   });
 });

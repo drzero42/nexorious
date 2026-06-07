@@ -91,7 +91,10 @@ export function planPlatformChanges(
         storefront: s.storefront,
         hoursPlayed: d.hoursPlayed,
         ownershipStatus: d.ownershipStatus,
-        acquiredDate: d.acquiredDate || undefined,
+        // Carry the value as-is: '' is the explicit "clear to NULL" signal the
+        // backend needs; collapsing it to undefined would drop the field and
+        // leave a previously-set date in place (#849).
+        acquiredDate: d.acquiredDate,
       });
     }
   }

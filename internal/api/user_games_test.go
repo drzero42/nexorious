@@ -750,6 +750,112 @@ func TestPlatformCRUD(t *testing.T) {
 	})
 }
 
+// ── TestPlatformAcquiredDate ────────────────────────────────────────────
+
+// TestPlatformAcquiredDate verifies the acquired date is persisted on create
+// and update, can be cleared with an empty string, is left untouched when the
+// field is omitted, and rejects a malformed value. Regression test for #849.
+func TestPlatformAcquiredDate(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "plat-acq")
+	gameID := insertTestGame(t, testDB, "Acquired Date Game")
+	insertTestUserGame(t, testDB, "ug-acq-1", userID, int(gameID))
+
+	acquiredDate := func(rec *httptest.ResponseRecorder) any {
+		t.Helper()
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v (body %s)", err, rec.Body.String())
+		}
+		return resp["acquired_date"]
+	}
+	reloadAcquiredDate := func(platformID string) any {
+		t.Helper()
+		rec := getAuth(t, e, "/api/user-games/ug-acq-1/platforms", token)
+		var platforms []map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &platforms); err != nil {
+			t.Fatalf("unmarshal list: %v", err)
+		}
+		for _, p := range platforms {
+			if p["id"] == platformID {
+				return p["acquired_date"]
+			}
+		}
+		t.Fatalf("platform %s not found in list", platformID)
+		return nil
+	}
+
+	var platformID string
+
+	t.Run("create with acquired_date persists it", func(t *testing.T) {
+		rec := postJSONAuth(t, e, "/api/user-games/ug-acq-1/platforms", map[string]any{
+			"platform":      "pc-windows",
+			"storefront":    "steam",
+			"acquired_date": "2024-06-01",
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		platformID = resp["id"].(string)
+
+		got, _ := acquiredDate(rec).(string)
+		if got == "" || got[:10] != "2024-06-01" {
+			t.Fatalf("response acquired_date = %v, want 2024-06-01", resp["acquired_date"])
+		}
+		if reloaded, _ := reloadAcquiredDate(platformID).(string); reloaded == "" || reloaded[:10] != "2024-06-01" {
+			t.Fatalf("reloaded acquired_date = %v, want 2024-06-01", reloaded)
+		}
+	})
+
+	t.Run("update changes acquired_date", func(t *testing.T) {
+		rec := putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-acq-1/platforms/%s", platformID),
+			map[string]any{"acquired_date": "2025-01-15"}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if reloaded, _ := reloadAcquiredDate(platformID).(string); reloaded == "" || reloaded[:10] != "2025-01-15" {
+			t.Fatalf("reloaded acquired_date = %v, want 2025-01-15", reloaded)
+		}
+	})
+
+	t.Run("update with omitted field leaves acquired_date unchanged", func(t *testing.T) {
+		rec := putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-acq-1/platforms/%s", platformID),
+			map[string]any{"hours_played": 5}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if reloaded, _ := reloadAcquiredDate(platformID).(string); reloaded == "" || reloaded[:10] != "2025-01-15" {
+			t.Fatalf("reloaded acquired_date = %v, want unchanged 2025-01-15", reloaded)
+		}
+	})
+
+	t.Run("update with empty string clears acquired_date", func(t *testing.T) {
+		rec := putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-acq-1/platforms/%s", platformID),
+			map[string]any{"acquired_date": ""}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if reloaded := reloadAcquiredDate(platformID); reloaded != nil {
+			t.Fatalf("reloaded acquired_date = %v, want nil after clear", reloaded)
+		}
+	})
+
+	t.Run("create with malformed acquired_date is rejected", func(t *testing.T) {
+		rec := postJSONAuth(t, e, "/api/user-games/ug-acq-1/platforms", map[string]any{
+			"platform":      "pc-windows",
+			"storefront":    "gog",
+			"acquired_date": "not-a-date",
+		}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
 // ── TestUpdatePlatform ──────────────────────────────────────────────────
 
 func TestUpdatePlatform_InvalidOwnershipStatus(t *testing.T) {

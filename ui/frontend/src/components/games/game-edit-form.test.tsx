@@ -101,7 +101,9 @@ const mockGame: UserGame = {
       is_available: true,
       hours_played: 10,
       ownership_status: OwnershipStatus.OWNED,
-      acquired_date: '2024-01-15',
+      // RFC3339 — the actual format the API returns for a DATE column. The edit
+      // form must normalize this to YYYY-MM-DD for the date input (#849).
+      acquired_date: '2024-01-15T00:00:00Z',
       created_at: '2024-01-01T00:00:00Z',
     },
   ],

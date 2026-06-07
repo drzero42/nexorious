@@ -31,7 +31,7 @@ import {
   useSyncConfig,
 } from '@/hooks';
 import { SyncStorefront, SyncFrequency } from '@/types/sync';
-import { formatHoursPlayed, resolveImageUrl } from '@/lib/game-utils';
+import { formatHoursPlayed, resolveImageUrl, toDateInputValue } from '@/lib/game-utils';
 import { planPlatformChanges, type PlatformDetailState } from './platform-reconcile';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame } from '@/types';
@@ -85,7 +85,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
         p.id,
         {
           ownershipStatus: p.ownership_status,
-          acquiredDate: p.acquired_date ?? '',
+          acquiredDate: toDateInputValue(p.acquired_date),
         },
       ]),
     ),
@@ -145,7 +145,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
       hoursPlayed: platformPlaytimes[s.key] ?? persisted?.hours_played ?? 0,
       ownershipStatus:
         ownership?.ownershipStatus ?? persisted?.ownership_status ?? OwnershipStatus.OWNED,
-      acquiredDate: ownership?.acquiredDate ?? persisted?.acquired_date ?? '',
+      acquiredDate: ownership?.acquiredDate ?? toDateInputValue(persisted?.acquired_date),
     };
   };
 
