@@ -61,14 +61,39 @@ describe('planPlatformChanges', () => {
     expect(cs.updates).toEqual([]);
   });
 
-  it('treats a selection without an id as an add', () => {
+  it('treats a selection without an id as an add carrying its detail state (keyed by key)', () => {
+    const selections = [{ key: 'new-1', platform: 'ps5', storefront: 'psn' }];
+    const details = { 'new-1': detail(8, OwnershipStatus.BORROWED, '2024-03-01') };
+
+    const cs = planPlatformChanges([], selections, details);
+
+    expect(cs.adds).toEqual([
+      {
+        platform: 'ps5',
+        storefront: 'psn',
+        hoursPlayed: 8,
+        ownershipStatus: OwnershipStatus.BORROWED,
+        acquiredDate: '2024-03-01',
+      },
+    ]);
+    expect(cs.removes).toEqual([]);
+    expect(cs.updates).toEqual([]);
+  });
+
+  it('defaults an add’s detail fields when no detail state is present', () => {
     const selections = [{ key: 'new-1', platform: 'ps5', storefront: 'psn' }];
 
     const cs = planPlatformChanges([], selections, {});
 
-    expect(cs.adds).toEqual([{ platform: 'ps5', storefront: 'psn' }]);
-    expect(cs.removes).toEqual([]);
-    expect(cs.updates).toEqual([]);
+    expect(cs.adds).toEqual([
+      {
+        platform: 'ps5',
+        storefront: 'psn',
+        hoursPlayed: 0,
+        ownershipStatus: OwnershipStatus.OWNED,
+        acquiredDate: undefined,
+      },
+    ]);
   });
 
   it('emits nothing when there are no changes', () => {

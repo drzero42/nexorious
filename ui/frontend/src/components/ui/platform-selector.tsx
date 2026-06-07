@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, ChevronsUpDown, Monitor, ShoppingBag, X } from 'lucide-react';
+import { Check, ChevronsUpDown, Monitor, Plus, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +11,6 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -20,6 +19,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import {
+  availableStorefronts,
+  firstFreeStorefront,
+  isPlatformExhausted,
+  usedStorefronts,
+} from '@/components/ui/platform-options';
 import type { Platform, Storefront } from '@/types';
 
 // ============================================================================
@@ -42,61 +47,30 @@ function newSelectionKey(): string {
     : `sel-${Math.random().toString(36).slice(2)}`;
 }
 
-// ============================================================================
-// Sub-Components
-// ============================================================================
-
-interface PlatformBadgeProps {
-  platform: Platform;
-  storefront?: Storefront;
-  onRemove?: () => void;
-  className?: string;
+/** Human label for a row's storefront, falling back to the raw name. */
+function storefrontLabel(platform: Platform | undefined, storefront?: string): string | undefined {
+  if (!storefront) return undefined;
+  return platform?.storefronts?.find((s) => s.name === storefront)?.display_name ?? storefront;
 }
 
-function PlatformBadge({ platform, storefront, onRemove, className }: PlatformBadgeProps) {
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-sm font-medium text-secondary-foreground',
-        className,
-      )}
-    >
-      <Monitor className="h-3 w-3" />
-      <span className="truncate max-w-[100px]">{platform.display_name}</span>
-      {storefront && (
-        <>
-          <span className="text-muted-foreground">/</span>
-          <ShoppingBag className="h-3 w-3 text-muted-foreground" />
-          <span className="truncate max-w-[80px] text-muted-foreground">
-            {storefront.display_name}
-          </span>
-        </>
-      )}
-      {onRemove && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-muted focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
-          aria-label={`Remove ${platform.display_name}`}
-        >
-          <X className="h-2.5 w-2.5" />
-        </button>
-      )}
-    </span>
-  );
+/** Accessible label for a row's remove control. */
+function removeLabel(platform: Platform | undefined, storefront?: string): string {
+  const name = platform?.display_name ?? 'platform';
+  const sf = storefrontLabel(platform, storefront);
+  return sf ? `Remove ${name} / ${sf}` : `Remove ${name}`;
 }
 
 // ============================================================================
-// Storefront Selector (used within PlatformSelector)
+// Storefront Selector (shared)
 // ============================================================================
 
 interface StorefrontSelectorProps {
+  /** Storefronts selectable in this row (already constrained to free slots). */
   storefronts: Storefront[];
   selectedStorefront?: string;
   onStorefrontChange: (storefront: string | undefined) => void;
+  /** Whether the "No storefront" option is offered. */
+  allowNone?: boolean;
   disabled?: boolean;
 }
 
@@ -104,11 +78,11 @@ function StorefrontSelector({
   storefronts,
   selectedStorefront,
   onStorefrontChange,
+  allowNone = true,
   disabled = false,
 }: StorefrontSelectorProps) {
-  if (storefronts.length === 0) {
-    return null;
-  }
+  // Keep the current value showable even when its slot would otherwise be hidden.
+  const showNone = allowNone || selectedStorefront == null;
 
   return (
     <Select
@@ -120,7 +94,7 @@ function StorefrontSelector({
         <SelectValue placeholder="Select storefront" />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="none">No storefront</SelectItem>
+        {showNone && <SelectItem value="none">No storefront</SelectItem>}
         {storefronts.map((storefront) => (
           <SelectItem key={storefront.name} value={storefront.name}>
             {storefront.display_name}
@@ -132,7 +106,7 @@ function StorefrontSelector({
 }
 
 // ============================================================================
-// Main Component
+// PlatformSelector (row-based editor) — edit page
 // ============================================================================
 
 export interface PlatformSelectorProps {
@@ -144,152 +118,74 @@ export interface PlatformSelectorProps {
   onChange: (selections: PlatformSelection[]) => void;
   /** Whether the selector is disabled */
   disabled?: boolean;
-  /** Placeholder text when no platforms are selected */
+  /** Placeholder text for an empty platform picker */
   placeholder?: string;
-  /** Maximum number of platforms that can be selected */
-  maxSelection?: number;
   /** Additional class name */
   className?: string;
   /** ID for accessibility */
   id?: string;
 }
 
-export function PlatformSelector({
-  selectedPlatforms,
+interface PlatformRowEditorProps {
+  selection: PlatformSelection;
+  allRows: PlatformSelection[];
+  availablePlatforms: Platform[];
+  placeholder: string;
+  disabled: boolean;
+  onPlatformChange: (key: string, platformName: string) => void;
+  onStorefrontChange: (key: string, storefront: string | undefined) => void;
+  onRemove: (key: string) => void;
+}
+
+function PlatformRowEditor({
+  selection,
+  allRows,
   availablePlatforms,
-  onChange,
-  disabled = false,
-  placeholder = 'Select platforms...',
-  maxSelection,
-  className,
-  id,
-}: PlatformSelectorProps) {
+  placeholder,
+  disabled,
+  onPlatformChange,
+  onStorefrontChange,
+  onRemove,
+}: PlatformRowEditorProps) {
   const [open, setOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
 
-  // Get selected platform objects with their storefronts
-  const selectedPlatformObjects = React.useMemo(() => {
-    return selectedPlatforms.map((selection) => {
-      const platform = availablePlatforms.find((p) => p.name === selection.platform);
-      const storefront = platform?.storefronts?.find((s) => s.name === selection.storefront);
-      return { selection, platform, storefront };
-    });
-  }, [availablePlatforms, selectedPlatforms]);
+  const platform = availablePlatforms.find((p) => p.name === selection.platform);
+  const otherRows = React.useMemo(
+    () => allRows.filter((r) => r.key !== selection.key),
+    [allRows, selection.key],
+  );
 
-  // Filter available platforms based on search
   const filteredPlatforms = React.useMemo(() => {
     if (!searchQuery.trim()) return availablePlatforms;
-
     const query = searchQuery.toLowerCase();
     return availablePlatforms.filter(
-      (platform) =>
-        platform.display_name.toLowerCase().includes(query) ||
-        platform.name.toLowerCase().includes(query),
+      (p) => p.display_name.toLowerCase().includes(query) || p.name.toLowerCase().includes(query),
     );
   }, [availablePlatforms, searchQuery]);
 
-  // Check if we've reached max selection
-  const isMaxReached = maxSelection !== undefined && selectedPlatforms.length >= maxSelection;
-
-  // Toggles a platform's presence by name (one row per dropdown click; per-row removal is
-  // handled by handleRemovePlatform which targets the specific row by key).
-  const handlePlatformToggle = (platformName: string) => {
-    if (disabled) return;
-
-    const existingIndex = selectedPlatforms.findIndex((s) => s.platform === platformName);
-
-    if (existingIndex !== -1) {
-      // Remove platform
-      onChange(selectedPlatforms.filter((s) => s.platform !== platformName));
-    } else if (!isMaxReached) {
-      // Add platform with default storefront if available
-      const platform = availablePlatforms.find((p) => p.name === platformName);
-      const defaultStorefront = platform?.default_storefront;
-      onChange([
-        ...selectedPlatforms,
-        {
-          key: newSelectionKey(),
-          platform: platformName,
-          storefront: defaultStorefront,
-        },
-      ]);
-    }
-  };
-
-  const handleStorefrontChange = (key: string, storefront: string | undefined) => {
-    if (disabled) return;
-
-    onChange(selectedPlatforms.map((s) => (s.key === key ? { ...s, storefront } : s)));
-  };
-
-  const handleRemovePlatform = (key: string) => {
-    if (disabled) return;
-    onChange(selectedPlatforms.filter((s) => s.key !== key));
-  };
-
-  const handleClearAll = () => {
-    if (disabled) return;
-    onChange([]);
-  };
+  const hasStorefronts = (platform?.storefronts?.length ?? 0) > 0;
 
   return (
-    <div className={cn('space-y-3', className)} id={id}>
+    <div className="flex items-center gap-3 p-3 rounded-lg border bg-card">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            aria-label="Select platforms"
+            aria-label={platform ? `Change platform: ${platform.display_name}` : placeholder}
             disabled={disabled}
-            className={cn(
-              'w-full justify-between min-h-[40px] h-auto py-2',
-              !selectedPlatforms.length && 'text-muted-foreground',
-            )}
+            className={cn('flex-1 justify-between min-w-0', !platform && 'text-muted-foreground')}
           >
-            <div className="flex flex-wrap gap-1 items-center">
-              {selectedPlatformObjects.length > 0 ? (
-                selectedPlatformObjects.length <= 2 ? (
-                  selectedPlatformObjects.map(
-                    ({ selection, platform, storefront }) =>
-                      platform && (
-                        <PlatformBadge
-                          key={selection.key}
-                          platform={platform}
-                          storefront={storefront}
-                        />
-                      ),
-                  )
-                ) : (
-                  <>
-                    {selectedPlatformObjects
-                      .slice(0, 1)
-                      .map(
-                        ({ selection, platform, storefront }) =>
-                          platform && (
-                            <PlatformBadge
-                              key={selection.key}
-                              platform={platform}
-                              storefront={storefront}
-                            />
-                          ),
-                      )}
-                    <Badge variant="secondary" className="text-xs">
-                      +{selectedPlatformObjects.length - 1} more
-                    </Badge>
-                  </>
-                )
-              ) : (
-                <span className="flex items-center gap-2">
-                  <Monitor className="h-4 w-4" />
-                  {placeholder}
-                </span>
-              )}
-            </div>
+            <span className="flex items-center gap-2 min-w-0">
+              <Monitor className="h-4 w-4 shrink-0" />
+              <span className="truncate">{platform?.display_name ?? placeholder}</span>
+            </span>
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[320px] p-0" align="start">
+        <PopoverContent className="w-[280px] p-0" align="start">
           <Command shouldFilter={false}>
             <CommandInput
               placeholder="Search platforms..."
@@ -297,77 +193,29 @@ export function PlatformSelector({
               onValueChange={setSearchQuery}
             />
             <CommandList>
-              {/* Quick Actions */}
-              <CommandGroup>
-                <div className="flex items-center justify-between px-2 py-1.5 text-xs text-muted-foreground">
-                  <span>
-                    {selectedPlatforms.length} of {filteredPlatforms.length} selected
-                    {maxSelection && ` (max ${maxSelection})`}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleClearAll}
-                    disabled={disabled || selectedPlatforms.length === 0}
-                    className="text-primary hover:text-primary/80 disabled:text-muted-foreground disabled:cursor-not-allowed"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </CommandGroup>
-
-              {/* Platform list */}
               {filteredPlatforms.length === 0 ? (
-                <CommandEmpty>
-                  {availablePlatforms.length === 0 ? (
-                    <div className="flex flex-col items-center gap-2 py-4">
-                      <Monitor className="h-8 w-8 text-muted-foreground/50" />
-                      <p className="text-sm text-muted-foreground">No platforms available</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 py-4">
-                      <p className="text-sm text-muted-foreground">
-                        No platforms matching &quot;{searchQuery}&quot;
-                      </p>
-                    </div>
-                  )}
-                </CommandEmpty>
+                <CommandEmpty>No platforms found</CommandEmpty>
               ) : (
                 <CommandGroup heading="Platforms">
-                  {filteredPlatforms.map((platform) => {
-                    const isSelected = selectedPlatforms.some((s) => s.platform === platform.name);
-                    const isDisabledItem = !isSelected && isMaxReached;
-
+                  {filteredPlatforms.map((p) => {
+                    const isCurrent = p.name === selection.platform;
+                    const itemDisabled = !isCurrent && isPlatformExhausted(p, otherRows);
                     return (
                       <CommandItem
-                        key={platform.name}
-                        value={platform.name}
-                        onSelect={() => handlePlatformToggle(platform.name)}
-                        disabled={isDisabledItem}
-                        className={cn(
-                          'cursor-pointer',
-                          isDisabledItem && 'opacity-50 cursor-not-allowed',
-                        )}
+                        key={p.name}
+                        value={p.name}
+                        disabled={itemDisabled}
+                        onSelect={() => {
+                          onPlatformChange(selection.key, p.name);
+                          setOpen(false);
+                        }}
+                        className={cn('cursor-pointer', itemDisabled && 'cursor-not-allowed')}
                       >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <div
-                            className={cn(
-                              'flex h-4 w-4 items-center justify-center rounded border',
-                              isSelected
-                                ? 'bg-primary border-primary text-primary-foreground'
-                                : 'border-muted-foreground/25',
-                            )}
-                          >
-                            {isSelected && <Check className="h-3 w-3" />}
-                          </div>
-                          <Monitor className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <span className="truncate flex-1">{platform.display_name}</span>
-                          {platform.storefronts && platform.storefronts.length > 0 && (
-                            <span className="text-xs text-muted-foreground flex-shrink-0">
-                              {platform.storefronts.length} store
-                              {platform.storefronts.length !== 1 ? 's' : ''}
-                            </span>
-                          )}
-                        </div>
+                        <Check
+                          className={cn('mr-2 h-4 w-4', isCurrent ? 'opacity-100' : 'opacity-0')}
+                        />
+                        <Monitor className="mr-2 h-4 w-4 text-muted-foreground" />
+                        <span className="truncate">{p.display_name}</span>
                       </CommandItem>
                     );
                   })}
@@ -378,62 +226,111 @@ export function PlatformSelector({
         </PopoverContent>
       </Popover>
 
-      {/* Selected platforms with storefront selection */}
-      {selectedPlatformObjects.length > 0 && (
-        <div className="space-y-2">
-          {selectedPlatformObjects.map(({ selection, platform }) => {
-            if (!platform) return null;
-            const storefronts = platform.storefronts ?? [];
-            const storefrontLabel = selection.storefront
-              ? (storefronts.find((s) => s.name === selection.storefront)?.display_name ??
-                selection.storefront)
-              : undefined;
-            const removeLabel = storefrontLabel
-              ? `Remove ${platform.display_name} / ${storefrontLabel}`
-              : `Remove ${platform.display_name}`;
-
-            return (
-              <div
-                key={selection.key}
-                className="flex items-center gap-3 p-3 rounded-lg border bg-card"
-              >
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <Monitor className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="font-medium truncate">{platform.display_name}</span>
-                </div>
-                {storefronts.length > 0 && (
-                  <div className="flex-shrink-0 w-36">
-                    <StorefrontSelector
-                      storefronts={storefronts}
-                      selectedStorefront={selection.storefront}
-                      onStorefrontChange={(storefront) =>
-                        handleStorefrontChange(selection.key, storefront)
-                      }
-                      disabled={disabled}
-                    />
-                  </div>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRemovePlatform(selection.key)}
-                  disabled={disabled}
-                  className="flex-shrink-0 h-8 w-8 p-0"
-                >
-                  <X className="h-4 w-4" />
-                  <span className="sr-only">{removeLabel}</span>
-                </Button>
-              </div>
-            );
-          })}
+      {hasStorefronts && platform && (
+        <div className="w-40 shrink-0">
+          <StorefrontSelector
+            storefronts={availableStorefronts(platform, allRows, selection.key)}
+            allowNone={!usedStorefronts(allRows, platform.name, selection.key).has(undefined)}
+            selectedStorefront={selection.storefront}
+            onStorefrontChange={(sf) => onStorefrontChange(selection.key, sf)}
+            disabled={disabled}
+          />
         </div>
       )}
+
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onRemove(selection.key)}
+        disabled={disabled}
+        className="shrink-0 h-8 w-8 p-0"
+      >
+        <X className="h-4 w-4" />
+        <span className="sr-only">{removeLabel(platform, selection.storefront)}</span>
+      </Button>
+    </div>
+  );
+}
+
+export function PlatformSelector({
+  selectedPlatforms,
+  availablePlatforms,
+  onChange,
+  disabled = false,
+  placeholder = 'Select platform...',
+  className,
+  id,
+}: PlatformSelectorProps) {
+  const handleAddRow = () => {
+    if (disabled) return;
+    onChange([
+      ...selectedPlatforms,
+      { key: newSelectionKey(), platform: '', storefront: undefined },
+    ]);
+  };
+
+  const handlePlatformChange = (key: string, platformName: string) => {
+    if (disabled) return;
+    const others = selectedPlatforms.filter((s) => s.key !== key);
+    const platform = availablePlatforms.find((p) => p.name === platformName);
+    const storefront = platform ? firstFreeStorefront(platform, others) : undefined;
+    onChange(
+      selectedPlatforms.map((s) =>
+        s.key === key ? { ...s, platform: platformName, storefront } : s,
+      ),
+    );
+  };
+
+  const handleStorefrontChange = (key: string, storefront: string | undefined) => {
+    if (disabled) return;
+    onChange(selectedPlatforms.map((s) => (s.key === key ? { ...s, storefront } : s)));
+  };
+
+  const handleRemove = (key: string) => {
+    if (disabled) return;
+    onChange(selectedPlatforms.filter((s) => s.key !== key));
+  };
+
+  const allExhausted =
+    availablePlatforms.length > 0 &&
+    availablePlatforms.every((p) => isPlatformExhausted(p, selectedPlatforms));
+
+  return (
+    <div className={cn('space-y-3', className)} id={id}>
+      {selectedPlatforms.length > 0 && (
+        <div className="space-y-2">
+          {selectedPlatforms.map((selection) => (
+            <PlatformRowEditor
+              key={selection.key}
+              selection={selection}
+              allRows={selectedPlatforms}
+              availablePlatforms={availablePlatforms}
+              placeholder={placeholder}
+              disabled={disabled}
+              onPlatformChange={handlePlatformChange}
+              onStorefrontChange={handleStorefrontChange}
+              onRemove={handleRemove}
+            />
+          ))}
+        </div>
+      )}
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleAddRow}
+        disabled={disabled || availablePlatforms.length === 0 || allExhausted}
+      >
+        <Plus className="mr-2 h-4 w-4" />
+        Add platform
+      </Button>
     </div>
   );
 }
 
 // ============================================================================
-// Compact Variant (for forms with limited space)
+// PlatformSelectorCompact (add wizard)
 // ============================================================================
 
 export interface PlatformSelectorCompactProps {
@@ -456,35 +353,44 @@ export function PlatformSelectorCompact({
   disabled = false,
   className,
 }: PlatformSelectorCompactProps) {
-  const handleToggle = (platformName: string) => {
+  const handleToggle = (platform: Platform) => {
     if (disabled) return;
-
-    const existingIndex = selectedPlatforms.findIndex((s) => s.platform === platformName);
-
-    if (existingIndex !== -1) {
-      onChange(selectedPlatforms.filter((s) => s.platform !== platformName));
+    const rows = selectedPlatforms.filter((s) => s.platform === platform.name);
+    if (rows.length > 0) {
+      // Uncheck: drop every copy of this platform.
+      onChange(selectedPlatforms.filter((s) => s.platform !== platform.name));
     } else {
-      const platform = availablePlatforms.find((p) => p.name === platformName);
-      const defaultStorefront = platform?.default_storefront;
       onChange([
         ...selectedPlatforms,
         {
           key: newSelectionKey(),
-          platform: platformName,
-          storefront: defaultStorefront,
+          platform: platform.name,
+          storefront: firstFreeStorefront(platform, selectedPlatforms),
         },
       ]);
     }
   };
 
-  // The compact variant renders one row per available platform, so name-based matching is
-  // unambiguous here (unlike PlatformSelector where rows are keyed to allow duplicates).
-  const handleStorefrontChange = (platformName: string, storefront: string | undefined) => {
+  const handleAddStorefront = (platform: Platform) => {
     if (disabled) return;
+    onChange([
+      ...selectedPlatforms,
+      {
+        key: newSelectionKey(),
+        platform: platform.name,
+        storefront: firstFreeStorefront(platform, selectedPlatforms),
+      },
+    ]);
+  };
 
-    onChange(
-      selectedPlatforms.map((s) => (s.platform === platformName ? { ...s, storefront } : s)),
-    );
+  const handleStorefrontChange = (key: string, storefront: string | undefined) => {
+    if (disabled) return;
+    onChange(selectedPlatforms.map((s) => (s.key === key ? { ...s, storefront } : s)));
+  };
+
+  const handleRemoveRow = (key: string) => {
+    if (disabled) return;
+    onChange(selectedPlatforms.filter((s) => s.key !== key));
   };
 
   if (availablePlatforms.length === 0) {
@@ -499,9 +405,10 @@ export function PlatformSelectorCompact({
   return (
     <div className={cn('space-y-2', className)}>
       {availablePlatforms.map((platform) => {
-        const selection = selectedPlatforms.find((s) => s.platform === platform.name);
-        const isSelected = !!selection;
+        const rows = selectedPlatforms.filter((s) => s.platform === platform.name);
+        const isSelected = rows.length > 0;
         const storefronts = platform.storefronts ?? [];
+        const exhausted = isPlatformExhausted(platform, selectedPlatforms);
 
         return (
           <div
@@ -519,23 +426,55 @@ export function PlatformSelectorCompact({
                 type="checkbox"
                 className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
                 checked={isSelected}
-                onChange={() => handleToggle(platform.name)}
+                onChange={() => handleToggle(platform)}
                 disabled={disabled}
               />
               <Monitor className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               <span className="font-medium flex-1">{platform.display_name}</span>
             </label>
+
             {isSelected && storefronts.length > 0 && (
-              <div className="mt-2 ml-7 flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground">Storefront:</Label>
-                <StorefrontSelector
-                  storefronts={storefronts}
-                  selectedStorefront={selection?.storefront}
-                  onStorefrontChange={(storefront) =>
-                    handleStorefrontChange(platform.name, storefront)
-                  }
-                  disabled={disabled}
-                />
+              <div className="mt-2 ml-7 space-y-2">
+                {rows.map((row) => (
+                  <div key={row.key} className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground">Storefront:</Label>
+                    <StorefrontSelector
+                      storefronts={availableStorefronts(platform, selectedPlatforms, row.key)}
+                      allowNone={
+                        !usedStorefronts(selectedPlatforms, platform.name, row.key).has(undefined)
+                      }
+                      selectedStorefront={row.storefront}
+                      onStorefrontChange={(sf) => handleStorefrontChange(row.key, sf)}
+                      disabled={disabled}
+                    />
+                    {rows.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveRow(row.key)}
+                        disabled={disabled}
+                        className="h-7 w-7 p-0"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        <span className="sr-only">{removeLabel(platform, row.storefront)}</span>
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {!exhausted && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleAddStorefront(platform)}
+                    disabled={disabled}
+                    className="h-7 text-xs text-primary"
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" />
+                    Add another storefront
+                  </Button>
+                )}
               </div>
             )}
           </div>

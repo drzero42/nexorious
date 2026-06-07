@@ -832,6 +832,31 @@ describe('games.ts', () => {
       expect(result.id).toBe('ugp-1');
       expect(result.platform).toBe('pc');
     });
+
+    it('sends ownership_status and acquired_date when provided', async () => {
+      server.use(
+        http.post(`${API_URL}/user-games/user-game-123/platforms`, async ({ request }) => {
+          const body = (await request.json()) as {
+            hours_played: number;
+            ownership_status?: string;
+            acquired_date?: string;
+          };
+          expect(body.hours_played).toBe(5);
+          expect(body.ownership_status).toBe(OwnershipStatus.BORROWED);
+          expect(body.acquired_date).toBe('2024-06-01');
+
+          return HttpResponse.json(mockUserGamePlatformApi);
+        }),
+      );
+
+      await addPlatformToUserGame('user-game-123', {
+        platform: 'pc',
+        storefront: 'epic',
+        hoursPlayed: 5,
+        ownershipStatus: OwnershipStatus.BORROWED,
+        acquiredDate: '2024-06-01',
+      });
+    });
   });
 
   describe('updatePlatformAssociation', () => {

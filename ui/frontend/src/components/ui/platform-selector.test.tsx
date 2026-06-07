@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@/test/test-utils';
+import { render, screen, within } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
 import {
   PlatformSelector,
@@ -96,12 +96,15 @@ const mockPlatforms: Platform[] = [
   },
 ];
 
+// A blank row, as produced by the "Add platform" button before a platform is chosen.
+const blank = (key: string): PlatformSelection => ({ key, platform: '', storefront: undefined });
+
 // ============================================================================
-// PlatformSelector Tests
+// PlatformSelector (row-based editor)
 // ============================================================================
 
 describe('PlatformSelector', () => {
-  it('renders with placeholder when no platforms are selected', () => {
+  it('renders an "Add platform" button', () => {
     render(
       <PlatformSelector
         selectedPlatforms={[]}
@@ -110,73 +113,10 @@ describe('PlatformSelector', () => {
       />,
     );
 
-    expect(screen.getByRole('combobox')).toHaveTextContent('Select platforms...');
+    expect(screen.getByRole('button', { name: /add platform/i })).toBeInTheDocument();
   });
 
-  it('renders custom placeholder', () => {
-    render(
-      <PlatformSelector
-        selectedPlatforms={[]}
-        availablePlatforms={mockPlatforms}
-        onChange={vi.fn()}
-        placeholder="Choose your platforms"
-      />,
-    );
-
-    expect(screen.getByRole('combobox')).toHaveTextContent('Choose your platforms');
-  });
-
-  it('shows selected platform badge', () => {
-    const selected: PlatformSelection[] = [sel('pc', 'steam')];
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={selected}
-        availablePlatforms={mockPlatforms}
-        onChange={vi.fn()}
-      />,
-    );
-
-    // Badge shows in trigger (without remove button to avoid nested buttons)
-    const trigger = screen.getByRole('combobox', { name: 'Select platforms' });
-    expect(trigger).toHaveTextContent('PC');
-    expect(trigger).toHaveTextContent('Steam');
-  });
-
-  it('shows "+N more" badge when many platforms are selected', () => {
-    const selected: PlatformSelection[] = [sel('pc'), sel('ps5'), sel('xbox')];
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={selected}
-        availablePlatforms={mockPlatforms}
-        onChange={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText('+2 more')).toBeInTheDocument();
-  });
-
-  it('opens popover on click', async () => {
-    const user = userEvent.setup();
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={[]}
-        availablePlatforms={mockPlatforms}
-        onChange={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
-
-    // Should see platform options
-    expect(screen.getByText('Platforms')).toBeInTheDocument();
-    expect(screen.getByText('PC')).toBeInTheDocument();
-    expect(screen.getByText('PlayStation 5')).toBeInTheDocument();
-  });
-
-  it('calls onChange when platform is selected', async () => {
+  it('appends a blank row when "Add platform" is clicked', async () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
 
@@ -188,226 +128,95 @@ describe('PlatformSelector', () => {
       />,
     );
 
-    await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
-    await user.click(screen.getByText('PC'));
+    await user.click(screen.getByRole('button', { name: /add platform/i }));
+
+    expect(handleChange).toHaveBeenCalledTimes(1);
+    const next = handleChange.mock.calls[0][0] as PlatformSelection[];
+    expect(next).toHaveLength(1);
+    expect(next[0].platform).toBe('');
+    expect(next[0].key).toBeTruthy();
+  });
+
+  it('renders one row per selection showing the platform name', () => {
+    render(
+      <PlatformSelector
+        selectedPlatforms={[sel('pc', 'steam'), sel('ps5', 'psn')]}
+        availablePlatforms={mockPlatforms}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Remove PC / Steam' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Remove PlayStation 5 / PlayStation Store' }),
+    ).toBeInTheDocument();
+  });
+
+  it('sets the platform and a default storefront when a platform is picked', async () => {
+    const user = userEvent.setup();
+    const handleChange = vi.fn();
+
+    render(
+      <PlatformSelector
+        selectedPlatforms={[blank('new-1')]}
+        availablePlatforms={mockPlatforms}
+        onChange={handleChange}
+      />,
+    );
+
+    await user.click(screen.getByRole('combobox', { name: /select platform/i }));
+    await user.click(screen.getByRole('option', { name: /^PC$/ }));
 
     expect(handleChange).toHaveBeenCalledWith([
-      expect.objectContaining({ platform: 'pc', storefront: 'steam' }),
+      { key: 'new-1', platform: 'pc', storefront: 'steam' },
     ]);
   });
 
-  it('calls onChange when platform is deselected', async () => {
-    const user = userEvent.setup();
-    const handleChange = vi.fn();
-    const selected: PlatformSelection[] = [sel('pc', 'steam')];
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={selected}
-        availablePlatforms={mockPlatforms}
-        onChange={handleChange}
-      />,
-    );
-
-    await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
-    // In the popover, click on the PC item to toggle it off
-    const pcItem = screen.getByRole('option', { name: /PC/ });
-    await user.click(pcItem);
-
-    expect(handleChange).toHaveBeenCalledWith([]);
-  });
-
-  it('shows storefront count for platforms with storefronts', async () => {
-    const user = userEvent.setup();
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={[]}
-        availablePlatforms={mockPlatforms}
-        onChange={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
-
-    expect(screen.getByText('3 stores')).toBeInTheDocument(); // PC has 3 storefronts
-    expect(screen.getByText('1 store')).toBeInTheDocument(); // PS5 has 1 storefront
-  });
-
-  it('filters platforms based on search', async () => {
-    const user = userEvent.setup();
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={[]}
-        availablePlatforms={mockPlatforms}
-        onChange={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
-    await user.type(screen.getByPlaceholderText('Search platforms...'), 'play');
-
-    expect(screen.getByText('PlayStation 5')).toBeInTheDocument();
-    expect(screen.queryByText('Xbox Series X|S')).not.toBeInTheDocument();
-    expect(screen.queryByText('Nintendo Switch')).not.toBeInTheDocument();
-  });
-
-  it('displays storefront selector for selected platforms', () => {
-    const selected: PlatformSelection[] = [sel('pc', 'steam')];
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={selected}
-        availablePlatforms={mockPlatforms}
-        onChange={vi.fn()}
-      />,
-    );
-
-    // Should show the platform card below the trigger with storefront selector
-    // The card has a remove button for that platform
-    expect(screen.getByRole('button', { name: /remove pc/i })).toBeInTheDocument();
-  });
-
-  it('shows storefront selector for platforms with storefronts', () => {
-    const selected: PlatformSelection[] = [sel('pc', 'steam')];
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={selected}
-        availablePlatforms={mockPlatforms}
-        onChange={vi.fn()}
-      />,
-    );
-
-    // The storefront selector should be present (second combobox after main trigger)
-    const comboboxes = screen.getAllByRole('combobox');
-    expect(comboboxes).toHaveLength(2); // Main trigger + storefront selector
-  });
-
-  it('clears all selections when clear button is clicked', async () => {
-    const user = userEvent.setup();
-    const handleChange = vi.fn();
-    const selected: PlatformSelection[] = [sel('pc', 'steam'), sel('ps5')];
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={selected}
-        availablePlatforms={mockPlatforms}
-        onChange={handleChange}
-      />,
-    );
-
-    await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
-    await user.click(screen.getByText('Clear'));
-
-    expect(handleChange).toHaveBeenCalledWith([]);
-  });
-
-  it('respects maxSelection limit', async () => {
-    const user = userEvent.setup();
-    const handleChange = vi.fn();
-    const selected: PlatformSelection[] = [sel('pc'), sel('ps5')];
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={selected}
-        availablePlatforms={mockPlatforms}
-        onChange={handleChange}
-        maxSelection={2}
-      />,
-    );
-
-    await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
-
-    // Xbox should be disabled since we're at max
-    const xboxItem = screen.getByText('Xbox Series X|S').closest('[role="option"]');
-    expect(xboxItem).toHaveClass('opacity-50');
-  });
-
-  it('shows max selection info', async () => {
-    const user = userEvent.setup();
-    const selected: PlatformSelection[] = [sel('pc')];
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={selected}
-        availablePlatforms={mockPlatforms}
-        onChange={vi.fn()}
-        maxSelection={3}
-      />,
-    );
-
-    await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
-
-    expect(screen.getByText(/max 3/)).toBeInTheDocument();
-  });
-
-  it('is disabled when disabled prop is true', async () => {
+  it('defaults a second copy of a platform to a free storefront, never duplicating (#848)', async () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
 
     render(
       <PlatformSelector
-        selectedPlatforms={[]}
-        availablePlatforms={mockPlatforms}
-        onChange={handleChange}
-        disabled
-      />,
-    );
-
-    const combobox = screen.getByRole('combobox');
-    expect(combobox).toBeDisabled();
-
-    await user.click(combobox);
-    expect(handleChange).not.toHaveBeenCalled();
-  });
-
-  it('removes platform when X button is clicked in platform card', async () => {
-    const user = userEvent.setup();
-    const handleChange = vi.fn();
-    const selected: PlatformSelection[] = [sel('pc', 'steam')];
-
-    render(
-      <PlatformSelector
-        selectedPlatforms={selected}
+        selectedPlatforms={[sel('pc', 'steam', 'k-1'), blank('k-2')]}
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
       />,
     );
 
-    // The remove button is in the platform card below the trigger, not in the trigger badge
-    const removeButton = screen.getByRole('button', { name: /remove pc/i });
-    await user.click(removeButton);
+    await user.click(screen.getByRole('combobox', { name: /select platform/i }));
+    await user.click(screen.getByRole('option', { name: /^PC$/ }));
 
-    expect(handleChange).toHaveBeenCalledWith([]);
+    expect(handleChange).toHaveBeenCalledWith([
+      { key: 'k-1', platform: 'pc', storefront: 'steam' },
+      { key: 'k-2', platform: 'pc', storefront: 'epic' }, // not steam — that slot is taken
+    ]);
   });
 
-  it('shows empty state when no platforms match search', async () => {
+  it('disables a platform whose every storefront slot is already taken', async () => {
     const user = userEvent.setup();
+    const exhausted: PlatformSelection[] = [
+      sel('pc', 'steam', 'k-1'),
+      sel('pc', 'epic', 'k-2'),
+      sel('pc', 'gog', 'k-3'),
+      sel('pc', undefined, 'k-4'),
+    ];
 
     render(
       <PlatformSelector
-        selectedPlatforms={[]}
+        selectedPlatforms={[...exhausted, blank('k-5')]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
       />,
     );
 
-    await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
-    await user.type(screen.getByPlaceholderText('Search platforms...'), 'nonexistent');
+    await user.click(screen.getByRole('combobox', { name: /select platform/i }));
 
-    expect(screen.getByText(/no platforms matching/i)).toBeInTheDocument();
-  });
-
-  it('shows empty state when no platforms are available', async () => {
-    const user = userEvent.setup();
-
-    render(<PlatformSelector selectedPlatforms={[]} availablePlatforms={[]} onChange={vi.fn()} />);
-
-    await user.click(screen.getByRole('combobox', { name: 'Select platforms' }));
-
-    expect(screen.getByText('No platforms available')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^PC$/ })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('option', { name: /PlayStation 5/ })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('removes only the targeted row when two rows share a platform (#846)', async () => {
@@ -415,7 +224,7 @@ describe('PlatformSelector', () => {
     const handleChange = vi.fn();
     const selected: PlatformSelection[] = [
       { key: 'k-1', platform: 'pc', storefront: 'steam' },
-      { key: 'k-2', platform: 'pc', storefront: undefined },
+      { key: 'k-2', platform: 'pc', storefront: 'epic' },
     ];
 
     render(
@@ -426,18 +235,29 @@ describe('PlatformSelector', () => {
       />,
     );
 
-    // Two rows share the platform; their remove buttons are disambiguated by storefront.
-    expect(screen.getByRole('button', { name: 'Remove PC / Steam' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Remove PC' })); // the no-storefront row
+    await user.click(screen.getByRole('button', { name: 'Remove PC / Epic Games Store' }));
 
     expect(handleChange).toHaveBeenCalledWith([
       { key: 'k-1', platform: 'pc', storefront: 'steam' },
     ]);
   });
+
+  it('disables the Add platform button when disabled', () => {
+    render(
+      <PlatformSelector
+        selectedPlatforms={[]}
+        availablePlatforms={mockPlatforms}
+        onChange={vi.fn()}
+        disabled
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /add platform/i })).toBeDisabled();
+  });
 });
 
 // ============================================================================
-// PlatformSelectorCompact Tests
+// PlatformSelectorCompact (add wizard)
 // ============================================================================
 
 describe('PlatformSelectorCompact', () => {
@@ -450,33 +270,24 @@ describe('PlatformSelectorCompact', () => {
       />,
     );
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes).toHaveLength(4); // All 4 mock platforms
-
+    expect(screen.getAllByRole('checkbox')).toHaveLength(4);
     expect(screen.getByText('PC')).toBeInTheDocument();
     expect(screen.getByText('PlayStation 5')).toBeInTheDocument();
-    expect(screen.getByText('Xbox Series X|S')).toBeInTheDocument();
-    expect(screen.getByText('Nintendo Switch')).toBeInTheDocument();
   });
 
   it('shows selected platforms as checked', () => {
-    const selected: PlatformSelection[] = [sel('pc')];
-
     render(
       <PlatformSelectorCompact
-        selectedPlatforms={selected}
+        selectedPlatforms={[sel('pc')]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
       />,
     );
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    const pcCheckbox = checkboxes[0]; // PC is first
-
-    expect(pcCheckbox).toBeChecked();
+    expect(screen.getAllByRole('checkbox')[0]).toBeChecked();
   });
 
-  it('calls onChange when checkbox is toggled', async () => {
+  it('adds a row with the default storefront when a checkbox is checked', async () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
 
@@ -488,76 +299,113 @@ describe('PlatformSelectorCompact', () => {
       />,
     );
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    await user.click(checkboxes[0]); // Click PC
+    await user.click(screen.getAllByRole('checkbox')[0]); // PC
 
     expect(handleChange).toHaveBeenCalledWith([
       expect.objectContaining({ platform: 'pc', storefront: 'steam' }),
     ]);
   });
 
-  it('removes platform when unchecked', async () => {
+  it('removes all rows of a platform when unchecked', async () => {
     const user = userEvent.setup();
     const handleChange = vi.fn();
-    const selected: PlatformSelection[] = [sel('pc', 'steam')];
 
     render(
       <PlatformSelectorCompact
-        selectedPlatforms={selected}
+        selectedPlatforms={[sel('pc', 'steam', 'k-1'), sel('pc', 'epic', 'k-2')]}
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
       />,
     );
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    await user.click(checkboxes[0]); // Uncheck PC
+    await user.click(screen.getAllByRole('checkbox')[0]); // uncheck PC
 
     expect(handleChange).toHaveBeenCalledWith([]);
   });
 
-  it('shows storefront selector for selected platforms with storefronts', async () => {
-    const selected: PlatformSelection[] = [sel('pc', 'steam')];
-
+  it('shows an "add another storefront" affordance for a checked platform with free slots', () => {
     render(
       <PlatformSelectorCompact
-        selectedPlatforms={selected}
-        availablePlatforms={mockPlatforms}
+        selectedPlatforms={[sel('pc', 'steam')]}
+        availablePlatforms={[mockPlatforms[0]]}
         onChange={vi.fn()}
       />,
     );
 
-    // Should show storefront label
-    expect(screen.getByText('Storefront:')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add another storefront/i })).toBeInTheDocument();
   });
 
-  it('shows storefront selector when platform with storefronts is selected', () => {
-    const selected: PlatformSelection[] = [sel('pc', 'steam')];
+  it('adds a second copy with a different storefront via "add another storefront" (#848)', async () => {
+    const user = userEvent.setup();
+    const handleChange = vi.fn();
 
     render(
       <PlatformSelectorCompact
-        selectedPlatforms={selected}
-        availablePlatforms={mockPlatforms}
-        onChange={vi.fn()}
+        selectedPlatforms={[sel('pc', 'steam', 'k-1')]}
+        availablePlatforms={[mockPlatforms[0]]}
+        onChange={handleChange}
       />,
     );
 
-    // The storefront selector combobox should be present
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /add another storefront/i }));
+
+    expect(handleChange).toHaveBeenCalledTimes(1);
+    const next = handleChange.mock.calls[0][0] as PlatformSelection[];
+    expect(next).toHaveLength(2);
+    expect(next[1]).toEqual(expect.objectContaining({ platform: 'pc', storefront: 'epic' }));
   });
 
-  it('does not show storefront selector for platforms without storefronts', () => {
-    const selected: PlatformSelection[] = [sel('xbox')];
+  it('hides "add another storefront" when the platform is exhausted', () => {
+    render(
+      <PlatformSelectorCompact
+        selectedPlatforms={[
+          sel('pc', 'steam', 'k-1'),
+          sel('pc', 'epic', 'k-2'),
+          sel('pc', 'gog', 'k-3'),
+          sel('pc', undefined, 'k-4'),
+        ]}
+        availablePlatforms={[mockPlatforms[0]]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole('button', { name: /add another storefront/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('lets an extra storefront row be removed individually', async () => {
+    const user = userEvent.setup();
+    const handleChange = vi.fn();
 
     render(
       <PlatformSelectorCompact
-        selectedPlatforms={selected}
+        selectedPlatforms={[sel('pc', 'steam', 'k-1'), sel('pc', 'epic', 'k-2')]}
+        availablePlatforms={[mockPlatforms[0]]}
+        onChange={handleChange}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Remove PC / Epic Games Store' }));
+
+    expect(handleChange).toHaveBeenCalledWith([
+      { key: 'k-1', platform: 'pc', storefront: 'steam' },
+    ]);
+  });
+
+  it('does not show a storefront selector for platforms without storefronts', () => {
+    render(
+      <PlatformSelectorCompact
+        selectedPlatforms={[sel('xbox')]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
       />,
     );
 
-    // Xbox has no storefronts, so no storefront label should appear
     expect(screen.queryByText('Storefront:')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /add another storefront/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows empty state when no platforms are available', () => {
@@ -581,27 +429,34 @@ describe('PlatformSelectorCompact', () => {
       />,
     );
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes[0]).toBeDisabled();
-
-    await user.click(checkboxes[0]);
+    expect(screen.getAllByRole('checkbox')[0]).toBeDisabled();
+    await user.click(screen.getAllByRole('checkbox')[0]);
     expect(handleChange).not.toHaveBeenCalled();
   });
 
   it('highlights selected platforms visually', () => {
-    const selected: PlatformSelection[] = [sel('pc')];
-
     render(
       <PlatformSelectorCompact
-        selectedPlatforms={selected}
+        selectedPlatforms={[sel('pc')]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
       />,
     );
 
-    // The PC platform container should have the selected styling
-    const pcText = screen.getByText('PC');
-    const pcContainer = pcText.closest('.rounded-lg');
+    const pcContainer = screen.getByText('PC').closest('.rounded-lg');
     expect(pcContainer).toHaveClass('bg-primary/5');
+  });
+
+  it('renders a storefront selector per row for a checked platform', () => {
+    render(
+      <PlatformSelectorCompact
+        selectedPlatforms={[sel('pc', 'steam', 'k-1'), sel('pc', 'epic', 'k-2')]}
+        availablePlatforms={[mockPlatforms[0]]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const pcCard = screen.getByText('PC').closest('.rounded-lg') as HTMLElement;
+    expect(within(pcCard).getAllByText('Storefront:')).toHaveLength(2);
   });
 });

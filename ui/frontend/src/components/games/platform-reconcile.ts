@@ -10,7 +10,13 @@ export interface PlatformDetailState {
 }
 
 interface PlatformChangeSet {
-  adds: { platform: string; storefront?: string }[];
+  adds: {
+    platform: string;
+    storefront?: string;
+    hoursPlayed: number;
+    ownershipStatus: OwnershipStatus;
+    acquiredDate?: string;
+  }[];
   removes: { id: string }[];
   updates: {
     id: string;
@@ -24,10 +30,14 @@ interface PlatformChangeSet {
 
 /**
  * Diffs the persisted platform rows against the edited selections by row id.
- * - selections without an `id` are adds
+ * - selections without an `id` are adds, carrying their edited detail state
  * - original rows whose id is no longer selected are removes
  * - selected rows whose storefront (from the selection) or ownership/date/hours
  *   (from `details`) changed are updates
+ *
+ * `details` is keyed by the row's client `key` (present on every selection,
+ * persisted or not), so both adds and updates resolve their detail state the
+ * same way.
  */
 export function planPlatformChanges(
   original: UserGamePlatform[],
@@ -38,7 +48,20 @@ export function planPlatformChanges(
 
   const adds = selections
     .filter((s) => !s.id)
-    .map((s) => ({ platform: s.platform, storefront: s.storefront }));
+    .map((s) => {
+      const d = details[s.key] ?? {
+        hoursPlayed: 0,
+        ownershipStatus: OwnershipStatus.OWNED,
+        acquiredDate: '',
+      };
+      return {
+        platform: s.platform,
+        storefront: s.storefront,
+        hoursPlayed: d.hoursPlayed,
+        ownershipStatus: d.ownershipStatus,
+        acquiredDate: d.acquiredDate || undefined,
+      };
+    });
 
   const removes = original.filter((o) => !currentIds.has(o.id)).map((o) => ({ id: o.id }));
 
@@ -49,7 +72,7 @@ export function planPlatformChanges(
     const o = original.find((p) => p.id === s.id);
     if (!o) continue;
 
-    const d = details[s.id] ?? {
+    const d = details[s.key] ?? {
       hoursPlayed: o.hours_played,
       ownershipStatus: o.ownership_status,
       acquiredDate: o.acquired_date ?? '',
