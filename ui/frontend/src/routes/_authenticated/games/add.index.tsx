@@ -19,6 +19,12 @@ export function AddGamePage() {
   const igdbUnavailable = health?.igdb_status !== undefined && health.igdb_status !== 'ok';
 
   const handleGameSelect = (game: IGDBGameCandidate) => {
+    // Already in the library: jump straight to its edit page instead of walking
+    // the user through the add flow only to reject it as a duplicate (#856).
+    if (game.user_game_id) {
+      navigate({ to: '/games/$id/edit', params: { id: game.user_game_id } });
+      return;
+    }
     sessionStorage.setItem(SELECTED_GAME_STORAGE_KEY, JSON.stringify(game));
     navigate({ to: '/games/add/confirm', search: { igdb_id: String(game.igdb_id) } });
   };
@@ -29,6 +35,7 @@ export function AddGamePage() {
       autoFocus
       placeholder="Search for a game to add..."
       disabled={igdbUnavailable}
+      showLibraryStatus
     />
   );
 

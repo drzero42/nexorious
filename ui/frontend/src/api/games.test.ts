@@ -604,6 +604,25 @@ describe('games.ts', () => {
 
       await searchIGDB('test', 5);
     });
+
+    it('preserves user_game_id for games already in the library (#856)', async () => {
+      server.use(
+        http.post(`${API_URL}/games/search/igdb`, () =>
+          HttpResponse.json({
+            games: [
+              { igdb_id: 1, title: 'Owned', platforms: [], user_game_id: 'ug-1' },
+              { igdb_id: 2, title: 'Not owned', platforms: [] },
+            ],
+            total: 2,
+          }),
+        ),
+      );
+
+      const result = await searchIGDB('game');
+
+      expect(result[0].user_game_id).toBe('ug-1');
+      expect(result[1].user_game_id).toBeUndefined();
+    });
   });
 
   describe('searchIGDB external_game_id', () => {

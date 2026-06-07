@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -57,6 +58,11 @@ type IGDBGameCandidate struct {
 	HowlongtobeatMain          *float64 `json:"howlongtobeat_main"`
 	HowlongtobeatExtra         *float64 `json:"howlongtobeat_extra"`
 	HowlongtobeatCompletionist *float64 `json:"howlongtobeat_completionist"`
+	// UserGameID is the id of the requesting user's existing library entry for
+	// this game, or nil when the game is not yet in their library. It lets the
+	// Add Game UI surface "already in library" and link to the edit page
+	// instead of re-adding (#856).
+	UserGameID *string `json:"user_game_id"`
 }
 
 // IGDBSearchResponse wraps IGDB search results.
@@ -207,10 +213,10 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+	userID := auth.UserIDFromContext(c)
 
 	var platformIDs []int
 	if req.ExternalGameID != nil && *req.ExternalGameID != "" {
-		userID := auth.UserIDFromContext(c)
 		if userID == "" {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		}
@@ -242,6 +248,11 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 	for i, md := range results {
 		candidates[i] = metadataToCandidate(md)
 	}
+	if err := h.annotateLibraryMembership(ctx, userID, candidates); err != nil {
+		// Annotation is best-effort enrichment; a failure here should not break
+		// search. Log and return unannotated results.
+		slog.Error("HandleSearchIGDB: library membership annotation failed", "err", err)
+	}
 	return c.JSON(http.StatusOK, IGDBSearchResponse{
 		Games: candidates,
 		Total: len(candidates),
@@ -256,14 +267,18 @@ func (h *GamesHandler) HandleGetIGDBGame(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid IGDB ID"})
 	}
 
-	md, err := h.igdb.GetGameByID(c.Request().Context(), igdbID)
+	ctx := c.Request().Context()
+	md, err := h.igdb.GetGameByID(ctx, igdbID)
 	if err != nil {
 		return h.mapIGDBError(c, err)
 	}
 
-	candidate := metadataToCandidate(*md)
+	candidates := []IGDBGameCandidate{metadataToCandidate(*md)}
+	if err := h.annotateLibraryMembership(ctx, auth.UserIDFromContext(c), candidates); err != nil {
+		slog.Error("HandleGetIGDBGame: library membership annotation failed", "err", err)
+	}
 	return c.JSON(http.StatusOK, IGDBSearchResponse{
-		Games: []IGDBGameCandidate{candidate},
+		Games: candidates,
 		Total: 1,
 	})
 }
@@ -377,6 +392,46 @@ func (h *GamesHandler) mapIGDBError(c *echo.Context, err error) error {
 	default:
 		return c.JSON(http.StatusBadGateway, map[string]string{"error": "IGDB API error: " + err.Error()})
 	}
+}
+
+// annotateLibraryMembership stamps UserGameID onto every candidate that already
+// exists in userID's library, so the Add Game UI can surface "already in
+// library" and link to the edit page instead of re-adding (#856). Candidates not
+// in the library are left with a nil UserGameID. A nil/empty userID or empty
+// candidate slice is a no-op.
+func (h *GamesHandler) annotateLibraryMembership(ctx context.Context, userID string, candidates []IGDBGameCandidate) error {
+	if userID == "" || len(candidates) == 0 {
+		return nil
+	}
+
+	igdbIDs := make([]int, len(candidates))
+	for i, c := range candidates {
+		igdbIDs[i] = c.IgdbID
+	}
+
+	var rows []struct {
+		ID     string `bun:"id"`
+		GameID int32  `bun:"game_id"`
+	}
+	if err := h.db.NewSelect().
+		Table("user_games").
+		Column("id", "game_id").
+		Where("user_id = ?", userID).
+		Where("game_id IN (?)", bun.List(igdbIDs)).
+		Scan(ctx, &rows); err != nil {
+		return err
+	}
+
+	owned := make(map[int32]string, len(rows))
+	for _, r := range rows {
+		owned[r.GameID] = r.ID
+	}
+	for i := range candidates {
+		if ugID, ok := owned[int32(candidates[i].IgdbID)]; ok { //nolint:gosec // IGDB game IDs are positive and fit within int32 (games.id is int32)
+			candidates[i].UserGameID = &ugID
+		}
+	}
+	return nil
 }
 
 func metadataToCandidate(md igdb.GameMetadata) IGDBGameCandidate {

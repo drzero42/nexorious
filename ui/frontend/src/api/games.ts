@@ -128,6 +128,7 @@ interface IGDBGameCandidateApiResponse {
   howlongtobeat_main?: number;
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;
+  user_game_id?: string;
 }
 
 interface IGDBSearchApiResponse {
@@ -332,6 +333,7 @@ function transformIGDBGameCandidate(apiCandidate: IGDBGameCandidateApiResponse):
     howlongtobeat_main: apiCandidate.howlongtobeat_main,
     howlongtobeat_extra: apiCandidate.howlongtobeat_extra,
     howlongtobeat_completionist: apiCandidate.howlongtobeat_completionist,
+    user_game_id: apiCandidate.user_game_id,
   };
 }
 
