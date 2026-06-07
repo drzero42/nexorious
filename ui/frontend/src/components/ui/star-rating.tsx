@@ -32,7 +32,6 @@ export function StarRating({
   id,
 }: StarRatingProps) {
   const [hoveredStar, setHoveredStar] = React.useState<number | null>(null);
-  const [isFocused, setIsFocused] = React.useState(false);
   const [focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
 
   const isInteractive = !readonly && !disabled;
@@ -104,7 +103,6 @@ export function StarRating({
 
   const handleFocus = () => {
     if (!isInteractive) return;
-    setIsFocused(true);
     if (focusedIndex === null) {
       setFocusedIndex(value ? value - 1 : 0);
       // Only seed the preview fill for keyboard focus. When focus arrives via a
@@ -118,7 +116,6 @@ export function StarRating({
   };
 
   const handleBlur = () => {
-    setIsFocused(false);
     setHoveredStar(null);
     setFocusedIndex(null);
   };
@@ -151,7 +148,6 @@ export function StarRating({
         {stars.map((star) => {
           const isFilled = currentRating !== null && star <= currentRating;
           const isHovered = hoveredStar !== null && star <= hoveredStar;
-          const isFocusedStar = isFocused && focusedIndex === star - 1;
 
           return (
             <button
@@ -168,7 +164,6 @@ export function StarRating({
                 config.star,
                 isInteractive && 'cursor-pointer hover:scale-110',
                 !isInteractive && 'cursor-default',
-                isFocusedStar && 'ring-2 ring-yellow-400 ring-offset-1 rounded-sm',
               )}
             >
               <Star
