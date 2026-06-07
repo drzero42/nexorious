@@ -29,7 +29,7 @@ describe('PSN API', () => {
 
       const result = await configurePSN('valid-npsso-token');
 
-      expect(api.put).toHaveBeenCalledWith('/sync/psn/connection', {
+      expect(api.put).toHaveBeenCalledWith('/sync/playstation-store/connection', {
         npsso_token: 'valid-npsso-token',
       });
       expect(result).toEqual({
@@ -94,7 +94,7 @@ describe('PSN API', () => {
 
       const result = await getPSNStatus();
 
-      expect(api.get).toHaveBeenCalledWith('/sync/psn/connection');
+      expect(api.get).toHaveBeenCalledWith('/sync/playstation-store/connection');
       expect(result).toEqual({
         configured: true,
         onlineId: 'TestPSNUser',
@@ -162,7 +162,7 @@ describe('PSN API', () => {
 
       await disconnectPSN();
 
-      expect(api.delete).toHaveBeenCalledWith('/sync/psn/connection');
+      expect(api.delete).toHaveBeenCalledWith('/sync/playstation-store/connection');
     });
   });
 });

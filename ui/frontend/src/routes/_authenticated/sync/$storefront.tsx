@@ -18,6 +18,7 @@ import {
   useHumbleStatus,
   jobsKeys,
   useJobCompletionEffect,
+  useStorefront,
 } from '@/hooks';
 import {
   SteamConnectionCard,
@@ -32,7 +33,6 @@ import {
   SyncStorefront,
   SyncFrequency,
   SUPPORTED_SYNC_STOREFRONTS,
-  getStorefrontDisplayInfo,
   getSyncFrequencyLabel,
 } from '@/types';
 import type { SyncConfigUpdateData } from '@/types';
@@ -66,16 +66,7 @@ import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { formatRelativeTime } from '@/types/jobs';
 
 export const Route = createFileRoute('/_authenticated/sync/$storefront')({
-  head: ({ params }) => {
-    const names: Record<string, string> = {
-      steam: 'Steam',
-      psn: 'PSN',
-      gog: 'GOG',
-      epic: 'Epic',
-    };
-    const name = names[params.storefront] ?? params.storefront;
-    return { meta: [{ title: `${name} Sync | Nexorious` }] };
-  },
+  head: () => ({ meta: [{ title: 'Sync | Nexorious' }] }),
   component: SyncDetailPage,
 });
 
@@ -179,9 +170,15 @@ function SyncDetailPage() {
     wasResettingRef.current = isResetting;
   }, [isResetting]);
 
-  const platformInfo = getStorefrontDisplayInfo(storefront);
+  const { data: storefrontInfo } = useStorefront(storefront);
+  const displayName = storefrontInfo?.display_name ?? storefront;
   const isLoading = configLoading || statusLoading;
   const isSyncing = isTriggeringSyncPending || status?.isSyncing;
+
+  // Title and heading share one source (the catalog), so they cannot disagree.
+  useEffect(() => {
+    document.title = `${displayName} Sync | Nexorious`;
+  }, [displayName]);
 
   // Use local state if set, otherwise use config values
   const effectiveFrequency = localFrequency ?? config?.frequency ?? SyncFrequency.DAILY;
@@ -189,8 +186,9 @@ function SyncDetailPage() {
   // Derive credentials error state from storefront-specific connection data
   const credentialsError =
     (storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
-    (storefront === SyncStorefront.PSN && (psnStatus?.credentialsError ?? false)) ||
-    (storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.PLAYSTATION_STORE && (psnStatus?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.EPIC_GAMES_STORE &&
+      (epicConnection?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
 
@@ -230,7 +228,7 @@ function SyncDetailPage() {
   const handleTriggerSync = async () => {
     try {
       await triggerSync(storefront);
-      toast.success(`${platformInfo.name} sync started`);
+      toast.success(`${displayName} sync started`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start sync';
       toast.error(message);
@@ -243,7 +241,7 @@ function SyncDetailPage() {
     event.preventDefault();
     try {
       await resetSync(storefront);
-      toast.success(`${platformInfo.name} sync data reset`);
+      toast.success(`${displayName} sync data reset`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to reset sync data';
       toast.error(message);
@@ -296,7 +294,7 @@ function SyncDetailPage() {
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>
-            Failed to load sync configuration for {platformInfo.name}. Please try again later.
+            Failed to load sync configuration for {displayName}. Please try again later.
           </AlertDescription>
         </Alert>
       </div>
@@ -316,7 +314,7 @@ function SyncDetailPage() {
             Sync
           </Link>
           <span className="mx-2">/</span>
-          <span className="text-foreground">{platformInfo.name}</span>
+          <span className="text-foreground">{displayName}</span>
         </nav>
 
         <div className="flex items-center gap-2">
@@ -337,8 +335,8 @@ function SyncDetailPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Reset sync data?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will remove all imported games and match history for {platformInfo.name}.
-                    Your game library entries will not be deleted. This cannot be undone.
+                    This will remove all imported games and match history for {displayName}. Your
+                    game library entries will not be deleted. This cannot be undone.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -377,19 +375,19 @@ function SyncDetailPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-4">
-            <div
-              className={`flex h-16 w-16 items-center justify-center rounded-lg ${platformInfo.bgColor}`}
-            >
-              <img
-                src={`${envConfig.staticUrl}${platformInfo.iconUrl}`}
-                alt={`${platformInfo.name} icon`}
-                loading="lazy"
-                className="h-10 w-10"
-              />
+            <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-muted">
+              {storefrontInfo?.icon_url && (
+                <img
+                  src={`${envConfig.staticUrl}${storefrontInfo.icon_url}`}
+                  alt={`${displayName} icon`}
+                  loading="lazy"
+                  className="h-10 w-10"
+                />
+              )}
             </div>
             <div>
               <CardTitle className="text-2xl">
-                {platformInfo.name}
+                {displayName}
                 {(status?.externalGameCount ?? 0) > 0 && (
                   <span className="ml-2 text-base font-normal text-muted-foreground">
                     {status!.externalGameCount} games
@@ -477,7 +475,7 @@ function SyncDetailPage() {
           )}
 
           {/* Epic Connection Card - only show for Epic storefront */}
-          {storefront === SyncStorefront.EPIC && (
+          {storefront === SyncStorefront.EPIC_GAMES_STORE && (
             <EpicConnectionCard
               isConfigured={config.isConfigured}
               onConnectionChange={() => {
@@ -497,7 +495,7 @@ function SyncDetailPage() {
           )}
 
           {/* PSN Connection Card - only show for PSN storefront */}
-          {storefront === SyncStorefront.PSN && (
+          {storefront === SyncStorefront.PLAYSTATION_STORE && (
             <PSNConnectionCard
               isConfigured={config.isConfigured}
               credentialsError={psnStatus?.credentialsError ?? false}

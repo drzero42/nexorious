@@ -4,8 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { config as envConfig } from '@/lib/env';
+import { useStorefront } from '@/hooks';
 import type { SyncConfig, SyncStatus } from '@/types';
-import { getStorefrontDisplayInfo } from '@/types';
 import { formatRelativeTime } from '@/types/jobs';
 
 interface SyncServiceCardProps {
@@ -27,7 +27,8 @@ export function SyncServiceCard({
   isSyncing = false,
   externalGameCount,
 }: SyncServiceCardProps) {
-  const platformInfo = getStorefrontDisplayInfo(config.storefront);
+  const { data: storefront } = useStorefront(config.storefront);
+  const displayName = storefront?.display_name ?? config.storefront;
   const isCurrentlySyncing = isSyncing || status?.isSyncing;
 
   return (
@@ -35,17 +36,17 @@ export function SyncServiceCard({
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div
-              className={`flex h-12 w-12 items-center justify-center rounded-lg ${platformInfo.bgColor}`}
-            >
-              <img
-                src={`${envConfig.staticUrl}${platformInfo.iconUrl}`}
-                alt={`${platformInfo.name} icon`}
-                width={28}
-                height={28}
-                className="h-7 w-7"
-                loading="lazy"
-              />
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+              {storefront?.icon_url && (
+                <img
+                  src={`${envConfig.staticUrl}${storefront.icon_url}`}
+                  alt={`${displayName} icon`}
+                  width={28}
+                  height={28}
+                  className="h-7 w-7"
+                  loading="lazy"
+                />
+              )}
             </div>
             <div>
               <CardTitle className="text-lg">
@@ -54,7 +55,7 @@ export function SyncServiceCard({
                   params={{ storefront: config.storefront }}
                   className="hover:underline"
                 >
-                  {platformInfo.name}
+                  {displayName}
                 </Link>
               </CardTitle>
               <p className="text-sm text-muted-foreground">

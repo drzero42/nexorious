@@ -5,6 +5,28 @@ import { SyncServiceCard } from './sync-service-card';
 import { SyncStorefront, SyncFrequency } from '@/types';
 import type { SyncConfig, SyncStatus } from '@/types';
 
+// The card derives its name/icon from the storefronts catalog via useStorefront.
+// Mock it to deterministic catalog display names so render tests don't depend on
+// the network.
+vi.mock('@/hooks', () => ({
+  useStorefront: (name: string) => ({
+    data: {
+      name,
+      display_name:
+        (
+          {
+            steam: 'Steam',
+            gog: 'GOG',
+            'epic-games-store': 'Epic Games Store',
+            'playstation-store': 'PlayStation Store',
+            'humble-bundle': 'Humble Bundle',
+          } as Record<string, string>
+        )[name] ?? name,
+      icon_url: null,
+    },
+  }),
+}));
+
 const createMockConfig = (overrides: Partial<SyncConfig> = {}): SyncConfig => ({
   id: 'config-1',
   userId: 'user-1',
@@ -50,11 +72,11 @@ describe('SyncServiceCard', () => {
       expect(screen.getByText('GOG')).toBeInTheDocument();
     });
 
-    it('renders Epic Games platform name', () => {
-      const config = createMockConfig({ storefront: SyncStorefront.EPIC });
+    it('renders Epic Games Store platform name', () => {
+      const config = createMockConfig({ storefront: SyncStorefront.EPIC_GAMES_STORE });
       render(<SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} />);
 
-      expect(screen.getByText('Epic Games')).toBeInTheDocument();
+      expect(screen.getByText('Epic Games Store')).toBeInTheDocument();
     });
 
     it('creates correct detail link for GOG platform', () => {
@@ -66,11 +88,11 @@ describe('SyncServiceCard', () => {
     });
 
     it('creates correct detail link for Epic platform', () => {
-      const config = createMockConfig({ storefront: SyncStorefront.EPIC });
+      const config = createMockConfig({ storefront: SyncStorefront.EPIC_GAMES_STORE });
       render(<SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} />);
 
-      const link = screen.getByRole('link', { name: 'Epic Games' });
-      expect(link).toHaveAttribute('href', '/sync/epic');
+      const link = screen.getByRole('link', { name: 'Epic Games Store' });
+      expect(link).toHaveAttribute('href', '/sync/epic-games-store');
     });
 
     it('does not render frequency select', () => {

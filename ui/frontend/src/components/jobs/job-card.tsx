@@ -12,11 +12,11 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react';
+import { useJobSourceLabel } from '@/hooks';
 import type { Job } from '@/types';
 import {
   JobStatus,
   getJobTypeLabel,
-  getJobSourceLabel,
   getJobStatusLabel,
   getJobStatusVariant,
   formatDuration,
@@ -45,6 +45,7 @@ export function JobCard({
   isCancelling,
   isDeleting,
 }: JobCardProps) {
+  const jobSourceLabel = useJobSourceLabel();
   const showProgress = job.status === JobStatus.PROCESSING;
 
   if (compact) {
@@ -58,7 +59,7 @@ export function JobCard({
               </Badge>
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">
-                  {getJobTypeLabel(job.jobType)} - {getJobSourceLabel(job.source)}
+                  {getJobTypeLabel(job.jobType)} - {jobSourceLabel(job.source)}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {formatRelativeTime(job.createdAt)}
@@ -82,7 +83,7 @@ export function JobCard({
         <div className="flex items-start justify-between">
           <div>
             <CardTitle className="text-lg">
-              {getJobTypeLabel(job.jobType)} - {getJobSourceLabel(job.source)}
+              {getJobTypeLabel(job.jobType)} - {jobSourceLabel(job.source)}
             </CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
               Started {formatRelativeTime(job.startedAt || job.createdAt)}

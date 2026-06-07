@@ -136,12 +136,12 @@ describe('use-sync hooks', () => {
 
     it('handles 404 error', async () => {
       server.use(
-        http.get(`${API_URL}/sync/config/epic`, () => {
+        http.get(`${API_URL}/sync/config/epic-games-store`, () => {
           return HttpResponse.json({ detail: 'Config not found' }, { status: 404 });
         }),
       );
 
-      const { result } = renderHook(() => useSyncConfig(SyncStorefront.EPIC), {
+      const { result } = renderHook(() => useSyncConfig(SyncStorefront.EPIC_GAMES_STORE), {
         wrapper: QueryWrapper,
       });
 

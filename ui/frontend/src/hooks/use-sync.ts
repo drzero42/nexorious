@@ -189,7 +189,7 @@ export function useConnectEpic() {
     mutationFn: (authCode: string) => syncApi.connectEpic(authCode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.EPIC) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.EPIC_GAMES_STORE) });
       queryClient.invalidateQueries({ queryKey: syncKeys.epicConnection() });
     },
   });
@@ -205,7 +205,7 @@ export function useDisconnectEpic() {
     mutationFn: syncApi.disconnectEpic,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.EPIC) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.EPIC_GAMES_STORE) });
       queryClient.invalidateQueries({ queryKey: syncKeys.epicConnection() });
     },
     onError: (error) => {
@@ -268,7 +268,9 @@ export function useConfigurePSN() {
     onSuccess: () => {
       // Invalidate sync configs to refresh connection status
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.PSN) });
+      queryClient.invalidateQueries({
+        queryKey: syncKeys.config(SyncStorefront.PLAYSTATION_STORE),
+      });
       queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
     },
     onError: (error) => {
@@ -301,7 +303,9 @@ export function useDisconnectPSN() {
     onSuccess: () => {
       // Invalidate all PSN-related queries
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
-      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.PSN) });
+      queryClient.invalidateQueries({
+        queryKey: syncKeys.config(SyncStorefront.PLAYSTATION_STORE),
+      });
       queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
     },
     onError: (error) => {

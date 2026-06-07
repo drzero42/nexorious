@@ -16,8 +16,8 @@ export enum JobType {
 
 export enum JobSource {
   STEAM = 'steam',
-  EPIC = 'epic',
-  PSN = 'psn',
+  EPIC_GAMES_STORE = 'epic-games-store',
+  PLAYSTATION_STORE = 'playstation-store',
   GOG = 'gog',
   HUMBLE_BUNDLE = 'humble-bundle',
   MANUAL = 'manual',
@@ -216,23 +216,17 @@ export function getJobTypeLabel(type: JobType): string {
 }
 
 /**
- * Get a human-readable label for a job source.
+ * Static labels for non-storefront job sources. Storefront-typed sources derive
+ * their label from the storefronts catalog via useJobSourceLabel() — the catalog
+ * is the single source of truth for storefront display names.
  */
-export function getJobSourceLabel(source: JobSource): string {
-  const labels: Record<JobSource, string> = {
-    [JobSource.STEAM]: 'Steam',
-    [JobSource.EPIC]: 'Epic Games',
-    [JobSource.PSN]: 'PlayStation Network',
-    [JobSource.GOG]: 'GOG',
-    [JobSource.HUMBLE_BUNDLE]: 'Humble Bundle',
-    [JobSource.MANUAL]: 'Manual',
-    [JobSource.DARKADIA]: 'Darkadia',
-    [JobSource.NEXORIOUS]: 'Nexorious',
-    [JobSource.CSV]: 'CSV',
-    [JobSource.SYSTEM]: 'System',
-  };
-  return labels[source] || source;
-}
+export const NON_STOREFRONT_JOB_SOURCE_LABELS: Partial<Record<JobSource, string>> = {
+  [JobSource.MANUAL]: 'Manual',
+  [JobSource.DARKADIA]: 'Darkadia',
+  [JobSource.NEXORIOUS]: 'Nexorious',
+  [JobSource.CSV]: 'CSV',
+  [JobSource.SYSTEM]: 'System',
+};
 
 /**
  * Get a human-readable label for a job status.

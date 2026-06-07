@@ -5,6 +5,22 @@ import { JobCard } from './job-card';
 import type { Job } from '@/types';
 import { JobType, JobSource, JobStatus } from '@/types';
 
+// JobCard derives storefront labels from the catalog via useJobSourceLabel.
+// Mock it to a deterministic labeller so these render tests stay provider-free.
+vi.mock('@/hooks', () => ({
+  useJobSourceLabel:
+    () =>
+    (source: string): string =>
+      (
+        ({
+          steam: 'Steam',
+          'epic-games-store': 'Epic Games Store',
+          gog: 'GOG',
+          darkadia: 'Darkadia',
+        }) as Record<string, string>
+      )[source] ?? source,
+}));
+
 const mockJob: Job = {
   id: 'job-1',
   userId: 'user-1',
@@ -205,10 +221,10 @@ describe('JobCard', () => {
     });
 
     it('displays Epic source correctly', () => {
-      const epicJob = { ...mockJob, source: JobSource.EPIC };
+      const epicJob = { ...mockJob, source: JobSource.EPIC_GAMES_STORE };
       render(<JobCard job={epicJob} />);
 
-      expect(screen.getByText('Sync - Epic Games')).toBeInTheDocument();
+      expect(screen.getByText('Sync - Epic Games Store')).toBeInTheDocument();
     });
 
     it('displays GOG source correctly', () => {

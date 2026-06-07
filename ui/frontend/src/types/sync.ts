@@ -4,17 +4,17 @@
 
 export enum SyncStorefront {
   STEAM = 'steam',
-  EPIC = 'epic',
+  EPIC_GAMES_STORE = 'epic-games-store',
   GOG = 'gog',
-  PSN = 'psn',
+  PLAYSTATION_STORE = 'playstation-store',
   HUMBLE = 'humble-bundle',
 }
 
 export const SUPPORTED_SYNC_STOREFRONTS: SyncStorefront[] = [
   SyncStorefront.STEAM,
-  SyncStorefront.EPIC,
+  SyncStorefront.EPIC_GAMES_STORE,
   SyncStorefront.GOG,
-  SyncStorefront.PSN,
+  SyncStorefront.PLAYSTATION_STORE,
   SyncStorefront.HUMBLE,
 ];
 
@@ -66,51 +66,6 @@ export function getSyncFrequencyLabel(frequency: SyncFrequency): string {
     [SyncFrequency.WEEKLY]: 'Weekly',
   };
   return labels[frequency];
-}
-
-// Helper to get storefront display info
-export function getStorefrontDisplayInfo(storefront: SyncStorefront): {
-  name: string;
-  color: string;
-  bgColor: string;
-  iconUrl: string;
-} {
-  const info: Record<
-    SyncStorefront,
-    { name: string; color: string; bgColor: string; iconUrl: string }
-  > = {
-    [SyncStorefront.STEAM]: {
-      name: 'Steam',
-      color: 'text-[#1b2838]',
-      bgColor: 'bg-[#1b2838]/10 dark:bg-[#1b2838]/30',
-      iconUrl: '/logos/storefronts/steam/steam-icon-light.svg',
-    },
-    [SyncStorefront.EPIC]: {
-      name: 'Epic Games',
-      color: 'text-gray-800 dark:text-gray-200',
-      bgColor: 'bg-gray-100 dark:bg-gray-700',
-      iconUrl: '/logos/storefronts/epic-games-store/epic-games-store-icon-light.svg',
-    },
-    [SyncStorefront.GOG]: {
-      name: 'GOG',
-      color: 'text-purple-700 dark:text-purple-400',
-      bgColor: 'bg-purple-100 dark:bg-purple-900/30',
-      iconUrl: '/logos/storefronts/gog/gog-icon-light.svg',
-    },
-    [SyncStorefront.PSN]: {
-      name: 'PlayStation Network',
-      color: 'text-[#003087]',
-      bgColor: 'bg-[#003087]/10 dark:bg-[#003087]/30',
-      iconUrl: '/logos/storefronts/playstation-store/playstation-store-icon-light.svg',
-    },
-    [SyncStorefront.HUMBLE]: {
-      name: 'Humble Bundle',
-      color: 'text-[#cc2929]',
-      bgColor: 'bg-[#cc2929]/10 dark:bg-[#cc2929]/30',
-      iconUrl: '/logos/storefronts/humble-bundle/humble-bundle-icon-light.svg',
-    },
-  };
-  return info[storefront];
 }
 
 export interface SteamVerifyResponse {
