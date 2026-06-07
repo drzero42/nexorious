@@ -83,6 +83,24 @@ describe('planPlatformChanges', () => {
     expect(cs).toEqual({ adds: [], removes: [], updates: [] });
   });
 
+  it('emits an update when an existing storefront is cleared to none (#847)', () => {
+    const original = [orig('ugp-1', 'pc', 'steam', { hours_played: 4 })];
+    const selections = [{ key: 'ugp-1', id: 'ugp-1', platform: 'pc', storefront: undefined }];
+    const details = { 'ugp-1': detail(4) };
+
+    const cs = planPlatformChanges(original, selections, details);
+
+    expect(cs.updates).toEqual([
+      {
+        id: 'ugp-1',
+        platform: 'pc',
+        storefront: undefined,
+        hoursPlayed: 4,
+        ownershipStatus: OwnershipStatus.OWNED,
+      },
+    ]);
+  });
+
   it('emits an update when ownership or hours change', () => {
     const original = [orig('ugp-1', 'pc', 'steam', { hours_played: 5 })];
     const selections = [{ key: 'ugp-1', id: 'ugp-1', platform: 'pc', storefront: 'steam' }];

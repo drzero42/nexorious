@@ -43,6 +43,7 @@ export function planPlatformChanges(
   const removes = original.filter((o) => !currentIds.has(o.id)).map((o) => ({ id: o.id }));
 
   const updates: PlatformChangeSet['updates'] = [];
+  // Caller guarantees at most one selection per persisted id (one row -> one selection).
   for (const s of selections) {
     if (!s.id) continue;
     const o = original.find((p) => p.id === s.id);
