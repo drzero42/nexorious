@@ -95,6 +95,8 @@ export function GameEditForm({ game }: GameEditFormProps) {
     game.platforms
       .filter((p) => p.platform)
       .map((p) => ({
+        key: p.id,
+        id: p.id,
         platform: p.platform!,
         storefront: p.storefront,
       })),

@@ -27,8 +27,19 @@ import type { Platform, Storefront } from '@/types';
 // ============================================================================
 
 export interface PlatformSelection {
+  /** Stable client-side identity for this selected row. Always present. */
+  key: string;
+  /** Server UUID. Present only once the row is persisted in the database. */
+  id?: string;
   platform: string;
   storefront?: string;
+}
+
+/** Generates a stable client-side key for a newly-created selection row. */
+function newSelectionKey(): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `sel-${Math.random().toString(36).slice(2)}`;
 }
 
 // ============================================================================
@@ -195,6 +206,7 @@ export function PlatformSelector({
       onChange([
         ...selectedPlatforms,
         {
+          key: newSelectionKey(),
           platform: platformName,
           storefront: defaultStorefront,
         },
@@ -242,7 +254,7 @@ export function PlatformSelector({
                     ({ selection, platform, storefront }) =>
                       platform && (
                         <PlatformBadge
-                          key={selection.platform}
+                          key={selection.key}
                           platform={platform}
                           storefront={storefront}
                         />
@@ -256,7 +268,7 @@ export function PlatformSelector({
                         ({ selection, platform, storefront }) =>
                           platform && (
                             <PlatformBadge
-                              key={selection.platform}
+                              key={selection.key}
                               platform={platform}
                               storefront={storefront}
                             />
@@ -375,7 +387,7 @@ export function PlatformSelector({
 
             return (
               <div
-                key={selection.platform}
+                key={selection.key}
                 className="flex items-center gap-3 p-3 rounded-lg border bg-card"
               >
                 <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -450,6 +462,7 @@ export function PlatformSelectorCompact({
       onChange([
         ...selectedPlatforms,
         {
+          key: newSelectionKey(),
           platform: platformName,
           storefront: defaultStorefront,
         },
