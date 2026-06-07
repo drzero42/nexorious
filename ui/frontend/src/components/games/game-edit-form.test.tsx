@@ -219,21 +219,46 @@ describe('GameEditForm', () => {
     expect(checkbox).toBeChecked();
   });
 
-  it('deletes the correct row id when a platform is removed, then saved (#846)', async () => {
+  it('deletes only the clicked duplicate row id on save (#846)', async () => {
     const user = userEvent.setup();
-    state.platforms = mockPlatformsData; // so the selected PC row + its remove button render
+    state.platforms = mockPlatformsData; // PC available with a Steam storefront
 
-    render(<GameEditForm game={mockGame} />);
+    // A game with TWO PC rows: ugp-1 (Steam) and ugp-2 (no storefront).
+    const twoRowGame: UserGame = {
+      ...mockGame,
+      platforms: [
+        mockGame.platforms[0], // ugp-1, pc, steam
+        {
+          id: 'ugp-2',
+          platform: 'pc',
+          storefront: undefined,
+          platform_details: mockGame.platforms[0].platform_details,
+          is_available: true,
+          hours_played: 0,
+          ownership_status: OwnershipStatus.OWNED,
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    };
 
-    await user.click(screen.getByRole('button', { name: /remove pc/i }));
+    render(<GameEditForm game={twoRowGame} />);
+
+    // Two remove buttons exist, disambiguated by storefront in their accessible name.
+    expect(screen.getByRole('button', { name: 'Remove PC / Steam' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Remove PC' })); // the no-storefront row (ugp-2)
     await user.click(screen.getAllByRole('button', { name: /save changes/i })[0]);
 
     await waitFor(() =>
       expect(hooks.removePlatform).toHaveBeenCalledWith({
-        userGameId: mockGame.id,
-        platformAssociationId: 'ugp-1',
+        userGameId: twoRowGame.id,
+        platformAssociationId: 'ugp-2',
       }),
     );
+    // The Steam row must NOT be deleted.
+    expect(hooks.removePlatform).not.toHaveBeenCalledWith({
+      userGameId: twoRowGame.id,
+      platformAssociationId: 'ugp-1',
+    });
     expect(hooks.addPlatform).not.toHaveBeenCalled();
   });
 });
