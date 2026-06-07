@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@/test/test-utils';
+import { render, screen, waitFor } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
 import { GameEditForm } from './game-edit-form';
 import { PlayStatus, OwnershipStatus } from '@/types';
@@ -30,17 +30,29 @@ vi.mock('sonner', () => ({
   },
 }));
 
-// Mock hooks
+// Stable, resettable spies + controllable platform data
+const hooks = vi.hoisted(() => ({
+  updateGame: vi.fn(),
+  addPlatform: vi.fn(),
+  removePlatform: vi.fn(),
+  updatePlatform: vi.fn(),
+  assignTags: vi.fn(),
+  removeTags: vi.fn(),
+  createOrGetTag: vi.fn(),
+}));
+
+const state = vi.hoisted(() => ({ platforms: [] as unknown[] }));
+
 vi.mock('@/hooks', () => ({
-  useUpdateUserGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
-  useAddPlatformToUserGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
-  useRemovePlatformFromUserGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
-  useUpdatePlatformAssociation: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
-  useAssignTagsToGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
-  useRemoveTagsFromGame: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
-  useAllPlatforms: () => ({ data: [], isLoading: false }),
+  useUpdateUserGame: () => ({ mutateAsync: hooks.updateGame }),
+  useAddPlatformToUserGame: () => ({ mutateAsync: hooks.addPlatform }),
+  useRemovePlatformFromUserGame: () => ({ mutateAsync: hooks.removePlatform }),
+  useUpdatePlatformAssociation: () => ({ mutateAsync: hooks.updatePlatform }),
+  useAssignTagsToGame: () => ({ mutateAsync: hooks.assignTags }),
+  useRemoveTagsFromGame: () => ({ mutateAsync: hooks.removeTags }),
+  useAllPlatforms: () => ({ data: state.platforms, isLoading: false }),
   useAllTags: () => ({ data: [], isLoading: false }),
-  useCreateOrGetTag: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useCreateOrGetTag: () => ({ mutateAsync: hooks.createOrGetTag }),
   useSyncConfig: () => ({ data: null }),
 }));
 
@@ -107,10 +119,34 @@ const mockGame: UserGame = {
   updated_at: '2024-01-01T00:00:00Z',
 };
 
+const mockPlatformsData = [
+  {
+    name: 'pc',
+    display_name: 'PC',
+    is_active: true,
+    source: 'official',
+    default_storefront: 'steam',
+    storefronts: [
+      {
+        name: 'steam',
+        display_name: 'Steam',
+        is_active: true,
+        source: 'official',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+    ],
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+];
+
 describe('GameEditForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockNavigate.mockReset();
+    Object.values(hooks).forEach((fn) => fn.mockResolvedValue({}));
+    state.platforms = [];
   });
 
   it('renders the form with game title', async () => {
@@ -181,5 +217,48 @@ describe('GameEditForm', () => {
 
     await user.click(checkbox);
     expect(checkbox).toBeChecked();
+  });
+
+  it('deletes only the clicked duplicate row id on save (#846)', async () => {
+    const user = userEvent.setup();
+    state.platforms = mockPlatformsData; // PC available with a Steam storefront
+
+    // A game with TWO PC rows: ugp-1 (Steam) and ugp-2 (no storefront).
+    const twoRowGame: UserGame = {
+      ...mockGame,
+      platforms: [
+        mockGame.platforms[0], // ugp-1, pc, steam
+        {
+          id: 'ugp-2',
+          platform: 'pc',
+          storefront: undefined,
+          platform_details: mockGame.platforms[0].platform_details,
+          is_available: true,
+          hours_played: 0,
+          ownership_status: OwnershipStatus.OWNED,
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    };
+
+    render(<GameEditForm game={twoRowGame} />);
+
+    // Two remove buttons exist, disambiguated by storefront in their accessible name.
+    expect(screen.getByRole('button', { name: 'Remove PC / Steam' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Remove PC' })); // the no-storefront row (ugp-2)
+    await user.click(screen.getAllByRole('button', { name: /save changes/i })[0]);
+
+    await waitFor(() =>
+      expect(hooks.removePlatform).toHaveBeenCalledWith({
+        userGameId: twoRowGame.id,
+        platformAssociationId: 'ugp-2',
+      }),
+    );
+    // The Steam row must NOT be deleted.
+    expect(hooks.removePlatform).not.toHaveBeenCalledWith({
+      userGameId: twoRowGame.id,
+      platformAssociationId: 'ugp-1',
+    });
+    expect(hooks.addPlatform).not.toHaveBeenCalled();
   });
 });

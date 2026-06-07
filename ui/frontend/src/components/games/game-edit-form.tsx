@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,7 @@ import {
 } from '@/hooks';
 import { SyncStorefront, SyncFrequency } from '@/types/sync';
 import { formatHoursPlayed, formatPlatformLabel, resolveImageUrl } from '@/lib/game-utils';
+import { planPlatformChanges, type PlatformDetailState } from './platform-reconcile';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame } from '@/types';
 import { ArrowLeft, Save, Loader2, Heart } from 'lucide-react';
@@ -95,6 +96,8 @@ export function GameEditForm({ game }: GameEditFormProps) {
     game.platforms
       .filter((p) => p.platform)
       .map((p) => ({
+        key: p.id,
+        id: p.id,
         platform: p.platform!,
         storefront: p.storefront,
       })),
@@ -133,21 +136,8 @@ export function GameEditForm({ game }: GameEditFormProps) {
     [platformPlaytimes],
   );
 
-  // Track original values for comparison
+  // Track original tag ids for comparison
   const originalTagIds = useMemo(() => game.tags?.map((t) => t.id) ?? [], [game.tags]);
-  const originalPlatformNames = useMemo(
-    () => game.platforms.map((p) => p.platform).filter(Boolean) as string[],
-    [game.platforms],
-  );
-
-  // Get platform association ID by platform name
-  const getPlatformAssociationId = useCallback(
-    (platformName: string): string | undefined => {
-      const assoc = game.platforms.find((p) => p.platform === platformName);
-      return assoc?.id;
-    },
-    [game.platforms],
-  );
 
   const handleSave = async () => {
     try {
@@ -162,64 +152,52 @@ export function GameEditForm({ game }: GameEditFormProps) {
         },
       });
 
-      // 2. Handle platform changes
-      const currentPlatformNames = selectedPlatforms.map((p) => p.platform);
-      const platformsToAdd = selectedPlatforms.filter(
-        (p) => !originalPlatformNames.includes(p.platform),
-      );
-      const platformsToRemove = originalPlatformNames.filter(
-        (name) => !currentPlatformNames.includes(name),
+      // 2. Reconcile platform associations by row identity.
+      const details: Record<string, PlatformDetailState> = {};
+      for (const p of game.platforms) {
+        const ownership = platformOwnership[p.id];
+        details[p.id] = {
+          hoursPlayed: platformPlaytimes[p.id] ?? p.hours_played,
+          ownershipStatus: ownership?.ownershipStatus ?? p.ownership_status,
+          acquiredDate: ownership?.acquiredDate ?? p.acquired_date ?? '',
+        };
+      }
+
+      const { adds, removes, updates } = planPlatformChanges(
+        game.platforms,
+        selectedPlatforms,
+        details,
       );
 
-      // Add new platforms
-      for (const platform of platformsToAdd) {
+      for (const add of adds) {
         await addPlatform.mutateAsync({
           userGameId: game.id,
+          data: { platform: add.platform, storefront: add.storefront },
+        });
+      }
+
+      for (const remove of removes) {
+        await removePlatform.mutateAsync({
+          userGameId: game.id,
+          platformAssociationId: remove.id,
+        });
+      }
+
+      for (const update of updates) {
+        await updatePlatformAssoc.mutateAsync({
+          userGameId: game.id,
+          platformAssociationId: update.id,
           data: {
-            platform: platform.platform,
-            storefront: platform.storefront,
+            platform: update.platform,
+            storefront: update.storefront,
+            hoursPlayed: update.hoursPlayed,
+            ownershipStatus: update.ownershipStatus,
+            acquiredDate: update.acquiredDate,
           },
         });
       }
 
-      // Remove platforms
-      for (const platformName of platformsToRemove) {
-        const associationId = getPlatformAssociationId(platformName);
-        if (associationId) {
-          await removePlatform.mutateAsync({
-            userGameId: game.id,
-            platformAssociationId: associationId,
-          });
-        }
-      }
-
-      // 3. Update platform playtimes and ownership
-      for (const [platformId, data] of Object.entries(platformOwnership)) {
-        const originalPlatform = game.platforms.find((p) => p.id === platformId);
-        if (originalPlatform) {
-          const hours = platformPlaytimes[platformId] ?? originalPlatform.hours_played;
-          const needsUpdate =
-            originalPlatform.hours_played !== hours ||
-            originalPlatform.ownership_status !== data.ownershipStatus ||
-            (originalPlatform.acquired_date ?? '') !== data.acquiredDate;
-
-          if (needsUpdate) {
-            await updatePlatformAssoc.mutateAsync({
-              userGameId: game.id,
-              platformAssociationId: platformId,
-              data: {
-                platform: originalPlatform.platform || '',
-                storefront: originalPlatform.storefront,
-                hoursPlayed: hours,
-                ownershipStatus: data.ownershipStatus,
-                acquiredDate: data.acquiredDate || undefined,
-              },
-            });
-          }
-        }
-      }
-
-      // 4. Handle tag changes
+      // 3. Handle tag changes
       const tagsToAdd = selectedTagIds.filter((id) => !originalTagIds.includes(id));
       const tagsToRemove = originalTagIds.filter((id) => !selectedTagIds.includes(id));
 

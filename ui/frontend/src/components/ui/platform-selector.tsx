@@ -27,8 +27,19 @@ import type { Platform, Storefront } from '@/types';
 // ============================================================================
 
 export interface PlatformSelection {
+  /** Stable client-side identity for this selected row. Always present. */
+  key: string;
+  /** Server UUID. Present only once the row is persisted in the database. */
+  id?: string;
   platform: string;
   storefront?: string;
+}
+
+/** Generates a stable client-side key for a newly-created selection row. */
+function newSelectionKey(): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `sel-${Math.random().toString(36).slice(2)}`;
 }
 
 // ============================================================================
@@ -180,6 +191,8 @@ export function PlatformSelector({
   // Check if we've reached max selection
   const isMaxReached = maxSelection !== undefined && selectedPlatforms.length >= maxSelection;
 
+  // Toggles a platform's presence by name (one row per dropdown click; per-row removal is
+  // handled by handleRemovePlatform which targets the specific row by key).
   const handlePlatformToggle = (platformName: string) => {
     if (disabled) return;
 
@@ -195,6 +208,7 @@ export function PlatformSelector({
       onChange([
         ...selectedPlatforms,
         {
+          key: newSelectionKey(),
           platform: platformName,
           storefront: defaultStorefront,
         },
@@ -202,17 +216,15 @@ export function PlatformSelector({
     }
   };
 
-  const handleStorefrontChange = (platformName: string, storefront: string | undefined) => {
+  const handleStorefrontChange = (key: string, storefront: string | undefined) => {
     if (disabled) return;
 
-    onChange(
-      selectedPlatforms.map((s) => (s.platform === platformName ? { ...s, storefront } : s)),
-    );
+    onChange(selectedPlatforms.map((s) => (s.key === key ? { ...s, storefront } : s)));
   };
 
-  const handleRemovePlatform = (platformName: string) => {
+  const handleRemovePlatform = (key: string) => {
     if (disabled) return;
-    onChange(selectedPlatforms.filter((s) => s.platform !== platformName));
+    onChange(selectedPlatforms.filter((s) => s.key !== key));
   };
 
   const handleClearAll = () => {
@@ -242,7 +254,7 @@ export function PlatformSelector({
                     ({ selection, platform, storefront }) =>
                       platform && (
                         <PlatformBadge
-                          key={selection.platform}
+                          key={selection.key}
                           platform={platform}
                           storefront={storefront}
                         />
@@ -256,7 +268,7 @@ export function PlatformSelector({
                         ({ selection, platform, storefront }) =>
                           platform && (
                             <PlatformBadge
-                              key={selection.platform}
+                              key={selection.key}
                               platform={platform}
                               storefront={storefront}
                             />
@@ -372,10 +384,17 @@ export function PlatformSelector({
           {selectedPlatformObjects.map(({ selection, platform }) => {
             if (!platform) return null;
             const storefronts = platform.storefronts ?? [];
+            const storefrontLabel = selection.storefront
+              ? (storefronts.find((s) => s.name === selection.storefront)?.display_name ??
+                selection.storefront)
+              : undefined;
+            const removeLabel = storefrontLabel
+              ? `Remove ${platform.display_name} / ${storefrontLabel}`
+              : `Remove ${platform.display_name}`;
 
             return (
               <div
-                key={selection.platform}
+                key={selection.key}
                 className="flex items-center gap-3 p-3 rounded-lg border bg-card"
               >
                 <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -388,7 +407,7 @@ export function PlatformSelector({
                       storefronts={storefronts}
                       selectedStorefront={selection.storefront}
                       onStorefrontChange={(storefront) =>
-                        handleStorefrontChange(selection.platform, storefront)
+                        handleStorefrontChange(selection.key, storefront)
                       }
                       disabled={disabled}
                     />
@@ -397,12 +416,12 @@ export function PlatformSelector({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleRemovePlatform(selection.platform)}
+                  onClick={() => handleRemovePlatform(selection.key)}
                   disabled={disabled}
                   className="flex-shrink-0 h-8 w-8 p-0"
                 >
                   <X className="h-4 w-4" />
-                  <span className="sr-only">Remove {platform.display_name}</span>
+                  <span className="sr-only">{removeLabel}</span>
                 </Button>
               </div>
             );
@@ -450,6 +469,7 @@ export function PlatformSelectorCompact({
       onChange([
         ...selectedPlatforms,
         {
+          key: newSelectionKey(),
           platform: platformName,
           storefront: defaultStorefront,
         },
@@ -457,6 +477,8 @@ export function PlatformSelectorCompact({
     }
   };
 
+  // The compact variant renders one row per available platform, so name-based matching is
+  // unambiguous here (unlike PlatformSelector where rows are keyed to allow duplicates).
   const handleStorefrontChange = (platformName: string, storefront: string | undefined) => {
     if (disabled) return;
 
