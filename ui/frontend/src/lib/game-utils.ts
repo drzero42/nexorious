@@ -39,6 +39,16 @@ export function formatIgdbRating(value: number | null | undefined): string {
   return (value / 10).toFixed(1);
 }
 
+// Normalize a stored date — RFC3339 ("2024-06-01T00:00:00Z", the API format)
+// or a bare "2024-06-01" — to the YYYY-MM-DD form an <input type="date">
+// requires. The input silently renders blank for any other format, so the edit
+// form must convert before binding. Returns '' for missing/unparseable values.
+export function toDateInputValue(value: string | null | undefined): string {
+  if (!value) return '';
+  const match = /^\d{4}-\d{2}-\d{2}/.exec(value);
+  return match ? match[0] : '';
+}
+
 export function formatPlatformLabel(p: {
   platform?: string | null;
   storefront?: string | null;
