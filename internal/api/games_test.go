@@ -43,6 +43,22 @@ func insertTestGame(t *testing.T, db *bun.DB, title string) int32 {
 	return game.ID
 }
 
+// insertTestGameWithID inserts a game with an explicit id so tests can match it
+// against IGDB candidate ids returned by a mock IGDB server.
+func insertTestGameWithID(t *testing.T, db *bun.DB, id int32, title string) {
+	t.Helper()
+	now := time.Now()
+	game := &models.Game{
+		ID:          id,
+		Title:       title,
+		LastUpdated: now,
+		CreatedAt:   now,
+	}
+	if _, err := db.NewInsert().Model(game).Exec(context.Background()); err != nil {
+		t.Fatalf("insertTestGameWithID: %v", err)
+	}
+}
+
 func TestGamesList(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
@@ -278,6 +294,65 @@ func TestImportFromIGDB_MissingIGDBID(t *testing.T) {
 	rec := postAuth(t, e, "/api/games/igdb-import", token, body)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for missing igdb_id, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestSearchIGDB_AnnotatesLibraryMembership verifies the search response stamps
+// user_game_id onto candidates that are already in the requesting user's library
+// (issue #856), while leaving other users' library entries out.
+func TestSearchIGDB_AnnotatesLibraryMembership(t *testing.T) {
+	truncateAllTables(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": 90101, "name": "Owned Game", "slug": "owned-game"},
+			{"id": 90202, "name": "Unowned Game", "slug": "unowned-game"},
+		})
+	}))
+	defer srv.Close()
+
+	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
+
+	insertAuthTestUser(t, testDB, "u-lib-1", "libuser", "pass123", true, false)
+	token := loginAndGetToken(t, e, "libuser", "pass123")
+
+	// A different user owns 90202 — it must NOT leak into the caller's results.
+	insertAuthTestUser(t, testDB, "u-lib-other", "libother", "pass123", true, false)
+
+	// Both games must exist in the games table (user_games.game_id FK).
+	insertTestGameWithID(t, testDB, 90101, "Owned Game")
+	insertTestGameWithID(t, testDB, 90202, "Unowned Game")
+
+	insertTestUserGame(t, testDB, "ug-caller-90101", "u-lib-1", 90101)
+	insertTestUserGame(t, testDB, "ug-other-90202", "u-lib-other", 90202)
+
+	body := `{"query": "game", "limit": 10}`
+	rec := postAuth(t, e, "/api/games/search/igdb", token, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Games []struct {
+			IgdbID     int     `json:"igdb_id"`
+			UserGameID *string `json:"user_game_id"`
+		} `json:"games"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	byID := make(map[int]*string, len(resp.Games))
+	for _, g := range resp.Games {
+		byID[g.IgdbID] = g.UserGameID
+	}
+
+	got, ok := byID[90101]
+	if !ok || got == nil || *got != "ug-caller-90101" {
+		t.Fatalf("expected igdb 90101 to carry caller's user_game_id %q, got %v (present=%v)", "ug-caller-90101", got, ok)
+	}
+	if got, ok := byID[90202]; !ok || got != nil {
+		t.Fatalf("expected igdb 90202 to have nil user_game_id (owned by another user), got %v", got)
 	}
 }
 

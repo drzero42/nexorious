@@ -123,4 +123,11 @@ export interface IGDBGameCandidate {
   howlongtobeat_main?: number;
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;
+  /**
+   * The id of the requesting user's existing library entry for this game, or
+   * undefined when the game is not yet in their library. Set by the IGDB search
+   * endpoint so the Add Game UI can surface "already in library" and link to the
+   * edit page instead of re-adding (#856).
+   */
+  user_game_id?: string;
 }

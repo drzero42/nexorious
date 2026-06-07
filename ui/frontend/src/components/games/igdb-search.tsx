@@ -9,6 +9,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
+import { Badge } from '@/components/ui/badge';
 import { useSearchIGDB } from '@/hooks/use-games';
 import { toast } from 'sonner';
 import { ApiErrorException } from '@/api/client';
@@ -31,6 +32,14 @@ export interface IGDBSearchProps {
   autoFocus?: boolean;
   /** Pre-fill the search field with this query */
   initialQuery?: string;
+  /**
+   * When true, results already present in the user's library (i.e. carrying a
+   * `user_game_id`) are marked with an "In library" badge and a "Click to edit"
+   * hint. Used by the Add Game page so existing games route to the edit page
+   * instead of the add flow (#856). Left off elsewhere (e.g. the sync
+   * manual-match dialog) to preserve their selection behaviour.
+   */
+  showLibraryStatus?: boolean;
   /**
    * When set, the search is scoped to platforms IGDB tags for the given
    * external_game (issue #615). Used by the sync pending-review manual-match
@@ -70,11 +79,14 @@ function formatPlatforms(platforms: string[], maxDisplay = 3): string {
 interface GameResultItemProps {
   game: IGDBGameCandidate;
   onSelect: () => void;
+  /** Show the "In library" badge + "Click to edit" hint for owned games. */
+  showLibraryStatus?: boolean;
 }
 
-function GameResultItem({ game, onSelect }: GameResultItemProps) {
+function GameResultItem({ game, onSelect, showLibraryStatus }: GameResultItemProps) {
   const releaseYear = formatReleaseYear(game.release_date);
   const platformsDisplay = formatPlatforms(game.platforms);
+  const inLibrary = Boolean(showLibraryStatus && game.user_game_id);
 
   return (
     <CommandItem
@@ -101,7 +113,16 @@ function GameResultItem({ game, onSelect }: GameResultItemProps) {
 
         {/* Game Info */}
         <div className="flex-1 min-w-0 space-y-1">
-          <div className="font-medium text-sm truncate">{game.title}</div>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-medium text-sm truncate">{game.title}</span>
+            {inLibrary && (
+              <Badge variant="secondary" className="flex-shrink-0">
+                In library
+              </Badge>
+            )}
+          </div>
+
+          {inLibrary && <div className="text-xs text-muted-foreground">Click to edit</div>}
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {releaseYear && (
@@ -139,6 +160,7 @@ export function IGDBSearch({
   autoFocus = false,
   initialQuery = '',
   externalGameId,
+  showLibraryStatus = false,
 }: IGDBSearchProps) {
   const [query, setQuery] = React.useState(initialQuery);
   const debouncedQuery = useDebounce(query, 300);
@@ -216,6 +238,7 @@ export function IGDBSearch({
                   key={game.igdb_id}
                   game={game}
                   onSelect={() => handleSelect(game)}
+                  showLibraryStatus={showLibraryStatus}
                 />
               ))}
             </CommandGroup>
