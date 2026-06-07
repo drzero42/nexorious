@@ -32,7 +32,6 @@ export function StarRating({
   id,
 }: StarRatingProps) {
   const [hoveredStar, setHoveredStar] = React.useState<number | null>(null);
-  const [isFocused, setIsFocused] = React.useState(false);
   const [focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
 
   const isInteractive = !readonly && !disabled;
@@ -43,8 +42,11 @@ export function StarRating({
   const handleClick = (starValue: number) => {
     if (!isInteractive || !onChange) return;
 
-    // If clearable and clicking on the same star, clear the rating
+    // If clearable and clicking on the same star, clear the rating. Drop the
+    // pointer hover too, so the empty state shows immediately instead of the
+    // just-clicked star lingering filled until the pointer leaves (see #845).
     if (clearable && value === starValue) {
+      setHoveredStar(null);
       onChange(null);
       return;
     }
@@ -101,15 +103,19 @@ export function StarRating({
 
   const handleFocus = () => {
     if (!isInteractive) return;
-    setIsFocused(true);
     if (focusedIndex === null) {
       setFocusedIndex(value ? value - 1 : 0);
-      setHoveredStar(value ?? 1);
+      // Only seed the preview fill for keyboard focus. When focus arrives via a
+      // mouse click, `hoveredStar` is already set by the star's `mouseEnter` and
+      // must win — otherwise the stale `value` would clobber the just-clicked
+      // star until the pointer leaves (see #845).
+      if (hoveredStar === null) {
+        setHoveredStar(value ?? 1);
+      }
     }
   };
 
   const handleBlur = () => {
-    setIsFocused(false);
     setHoveredStar(null);
     setFocusedIndex(null);
   };
@@ -142,7 +148,6 @@ export function StarRating({
         {stars.map((star) => {
           const isFilled = currentRating !== null && star <= currentRating;
           const isHovered = hoveredStar !== null && star <= hoveredStar;
-          const isFocusedStar = isFocused && focusedIndex === star - 1;
 
           return (
             <button
@@ -159,7 +164,6 @@ export function StarRating({
                 config.star,
                 isInteractive && 'cursor-pointer hover:scale-110',
                 !isInteractive && 'cursor-default',
-                isFocusedStar && 'ring-2 ring-yellow-400 ring-offset-1 rounded-sm',
               )}
             >
               <Star
