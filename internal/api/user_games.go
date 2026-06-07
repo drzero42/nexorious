@@ -894,6 +894,18 @@ type platformRequest struct {
 	AcquiredDate    *string  `json:"acquired_date"`
 }
 
+// parseAcquiredDate parses the request's acquired_date string into a time. It
+// accepts the date-only form sent by the edit form (YYYY-MM-DD) as well as
+// RFC3339, mirroring the import/export paths. A malformed value is an error.
+func parseAcquiredDate(s string) (*time.Time, error) {
+	for _, layout := range []string{"2006-01-02", time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return &t, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid acquired_date %q (want YYYY-MM-DD)", s)
+}
+
 // HandleListPlatforms handles GET /api/user-games/:id/platforms.
 func (h *UserGamesHandler) HandleListPlatforms(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
@@ -975,6 +987,13 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 	}
 	if req.IsAvailable != nil {
 		plat.IsAvailable = *req.IsAvailable
+	}
+	if req.AcquiredDate != nil && *req.AcquiredDate != "" {
+		acquired, err := parseAcquiredDate(*req.AcquiredDate)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+		plat.AcquiredDate = acquired
 	}
 
 	_, err := h.db.NewInsert().Model(plat).Exec(ctx)
@@ -1065,6 +1084,19 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 	}
 	if req.OwnershipStatus != nil {
 		plat.OwnershipStatus = req.OwnershipStatus
+	}
+	// AcquiredDate is three-way: omitted (nil) leaves it unchanged, an empty
+	// string clears it to NULL, a valid date sets it.
+	if req.AcquiredDate != nil {
+		if *req.AcquiredDate == "" {
+			plat.AcquiredDate = nil
+		} else {
+			acquired, err := parseAcquiredDate(*req.AcquiredDate)
+			if err != nil {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+			}
+			plat.AcquiredDate = acquired
+		}
 	}
 	plat.UpdatedAt = time.Now()
 

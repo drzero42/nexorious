@@ -122,6 +122,28 @@ describe('planPlatformChanges', () => {
         storefront: undefined,
         hoursPlayed: 4,
         ownershipStatus: OwnershipStatus.OWNED,
+        acquiredDate: '',
+      },
+    ]);
+  });
+
+  it('emits an update carrying an empty acquiredDate when a set date is cleared (#849)', () => {
+    const original = [
+      orig('ugp-1', 'pc', 'steam', { hours_played: 10, acquired_date: '2024-01-15' }),
+    ];
+    const selections = [{ key: 'ugp-1', id: 'ugp-1', platform: 'pc', storefront: 'steam' }];
+    const details = { 'ugp-1': detail(10, OwnershipStatus.OWNED, '') };
+
+    const cs = planPlatformChanges(original, selections, details);
+
+    expect(cs.updates).toEqual([
+      {
+        id: 'ugp-1',
+        platform: 'pc',
+        storefront: 'steam',
+        hoursPlayed: 10,
+        ownershipStatus: OwnershipStatus.OWNED,
+        acquiredDate: '',
       },
     ]);
   });
@@ -140,6 +162,7 @@ describe('planPlatformChanges', () => {
         storefront: 'steam',
         hoursPlayed: 12,
         ownershipStatus: OwnershipStatus.BORROWED,
+        acquiredDate: '',
       },
     ]);
   });
