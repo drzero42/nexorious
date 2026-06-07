@@ -8,5 +8,19 @@
   ],
   "gitIgnoredAuthors": [
     "github-actions[bot]@users.noreply.github.com"
+  ],
+  "packageRules": [
+    {
+      "description": "Group all non-major npm updates into a single PR (shares package-lock.json + npmDepsHash, so separate PRs conflict).",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "npm non-major"
+    },
+    {
+      "description": "Group all non-major Go module updates into a single PR (shares go.sum + vendorHash, so separate PRs conflict).",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "go non-major"
+    }
   ]
 }
