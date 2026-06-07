@@ -182,7 +182,7 @@ func TestSkipItem_RejectsSyncJob(t *testing.T) {
 	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "ji-skip-sync")
 
-	insertJob(t, testDB, "job-ss", userID, "sync", "psn", "processing")
+	insertJob(t, testDB, "job-ss", userID, "sync", "playstation-store", "processing")
 	insertJobItem(t, testDB, "ss-1", "job-ss", userID, "k", "Sync Game", "pending_review")
 
 	rec := postJSONAuth(t, e, "/api/job-items/ss-1/skip", nil, token)

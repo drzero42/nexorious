@@ -80,7 +80,7 @@ func TestListJobs(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "jobs-list")
 
 	insertJob(t, testDB, "job-list-1", userID, "import", "steam", "completed")
-	insertJob(t, testDB, "job-list-2", userID, "sync", "psn", "processing")
+	insertJob(t, testDB, "job-list-2", userID, "sync", "playstation-store", "processing")
 
 	rec := getAuth(t, e, "/api/jobs", token)
 	if rec.Code != http.StatusOK {
@@ -330,7 +330,7 @@ func TestJobsSummary(t *testing.T) {
 
 	insertJob(t, testDB, "job-sum-1", userID, "sync", "steam", "processing")
 	insertJob(t, testDB, "job-sum-2", userID, "import", "csv", "pending")
-	insertJob(t, testDB, "job-sum-3", userID, "sync", "psn", "failed")
+	insertJob(t, testDB, "job-sum-3", userID, "sync", "playstation-store", "failed")
 	insertJob(t, testDB, "job-sum-4", userID, "import", "steam", "completed")
 
 	rec := getAuth(t, e, "/api/jobs/summary", token)
@@ -446,12 +446,12 @@ func TestPendingReviewCount_Deduplicates(t *testing.T) {
 	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "prc-dedup")
 
-	insertJob(t, testDB, "job-prc-dedup", userID, "sync", "psn", "processing")
+	insertJob(t, testDB, "job-prc-dedup", userID, "sync", "playstation-store", "processing")
 
 	// Insert parent external_game and link its job_item.
 	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-prc-parent', ?, 'psn', 'CUSA12345_00', 'Call of Duty', false, true, false, now(), now())`,
+		 VALUES ('eg-prc-parent', ?, 'playstation-store', 'CUSA12345_00', 'Call of Duty', false, true, false, now(), now())`,
 		userID,
 	)
 	if err != nil {
@@ -469,7 +469,7 @@ func TestPendingReviewCount_Deduplicates(t *testing.T) {
 	// Insert child external_game and link its job_item.
 	_, err = testDB.ExecContext(context.Background(),
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
-		 VALUES ('eg-prc-child', ?, 'psn', 'PPSA07890_00', 'Call of Duty', false, true, false, 'eg-prc-parent', now(), now())`,
+		 VALUES ('eg-prc-child', ?, 'playstation-store', 'PPSA07890_00', 'Call of Duty', false, true, false, 'eg-prc-parent', now(), now())`,
 		userID,
 	)
 	if err != nil {
@@ -496,8 +496,8 @@ func TestPendingReviewCount_Deduplicates(t *testing.T) {
 		t.Fatalf("expected pending_review_count=1 (child excluded), got %v", resp["pending_review_count"])
 	}
 	bySource := resp["counts_by_source"].(map[string]any)
-	if bySource["psn"].(float64) != 1 {
-		t.Fatalf("expected counts_by_source.psn=1, got %v", bySource["psn"])
+	if bySource["playstation-store"].(float64) != 1 {
+		t.Fatalf("expected counts_by_source.psn=1, got %v", bySource["playstation-store"])
 	}
 }
 
@@ -508,18 +508,18 @@ func TestPendingReviewCount_ExcludesChildren(t *testing.T) {
 	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "prc-exclude-child")
 
-	insertJob(t, testDB, "job-prc-child", userID, "sync", "psn", "processing")
+	insertJob(t, testDB, "job-prc-child", userID, "sync", "playstation-store", "processing")
 
 	// Parent: no pending_review item.
 	_, _ = testDB.ExecContext(context.Background(),
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-prc-ex-parent', ?, 'psn', 'CUSA999', 'Ratchet', false, true, false, now(), now())`,
+		 VALUES ('eg-prc-ex-parent', ?, 'playstation-store', 'CUSA999', 'Ratchet', false, true, false, now(), now())`,
 		userID,
 	)
 	// Child: has a pending_review item — must NOT be counted.
 	_, _ = testDB.ExecContext(context.Background(),
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
-		 VALUES ('eg-prc-ex-child', ?, 'psn', 'PPSA999', 'Ratchet', false, true, false, 'eg-prc-ex-parent', now(), now())`,
+		 VALUES ('eg-prc-ex-child', ?, 'playstation-store', 'PPSA999', 'Ratchet', false, true, false, 'eg-prc-ex-parent', now(), now())`,
 		userID,
 	)
 	_, _ = testDB.ExecContext(context.Background(),
@@ -845,7 +845,7 @@ func TestListJobs_WithFilters(t *testing.T) {
 
 	insertJob(t, testDB, "job-filter-1", userID, "sync", "steam", "completed")
 	insertJob(t, testDB, "job-filter-2", userID, "import", "csv", "failed")
-	insertJob(t, testDB, "job-filter-3", userID, "sync", "psn", "processing")
+	insertJob(t, testDB, "job-filter-3", userID, "sync", "playstation-store", "processing")
 
 	t.Run("filter by job_type", func(t *testing.T) {
 		rec := getAuth(t, e, "/api/jobs?job_type=sync", token)
@@ -1272,7 +1272,7 @@ func TestHandleGetJobItems_DeduplicatesPendingReview(t *testing.T) {
 	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "items-dedup")
 
-	insertJob(t, testDB, "job-dedup", userID, "sync", "psn", "processing")
+	insertJob(t, testDB, "job-dedup", userID, "sync", "playstation-store", "processing")
 	// Same source_title, different item_key (PS4 and PS5 SKUs of the same game).
 	insertJobItem(t, testDB, "ji-dedup-ps4", "job-dedup", userID, "CUSA12345_00", "Call of Duty", "pending_review")
 	insertJobItem(t, testDB, "ji-dedup-ps5", "job-dedup", userID, "PPSA07890_00", "Call of Duty", "pending_review")

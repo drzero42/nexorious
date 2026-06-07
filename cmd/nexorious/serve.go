@@ -526,7 +526,7 @@ func buildAdapterFactory(
 					return encErr
 				}
 				_, dbErr := db.NewRaw(
-					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic'`,
+					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic-games-store'`,
 					enc, cfg.UserID,
 				).Exec(context.Background())
 				return dbErr
