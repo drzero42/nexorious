@@ -190,14 +190,15 @@ Cross-repo: `Closes owner/repo#123`. The keyword must be in the **PR body** (the
 
 ### Merging Renovate PRs
 
-All Renovate dependency PRs that touch `ui/frontend/package-lock.json`, `flake.lock`, or `nix/frontend.nix` conflict with each other — merging one immediately invalidates the others' lockfiles. **Never attempt to merge multiple such PRs in a single step.**
+Non-major npm and Go updates arrive **pre-grouped** — one "npm non-major" PR (`package-lock.json` + `npmDepsHash`) and one "go non-major" PR (`go.sum` + `vendorHash`), configured via `packageRules` in `.github/renovate.json`. These two group PRs touch disjoint files, so they do **not** conflict with each other — merge them independently.
 
-The correct workflow:
+The conflict mechanism still exists within a single ecosystem: a **major** PR and its same-ecosystem **group** PR both touch the same lockfile + hash, so merging one invalidates the other. `rebase-renovate-prs.yaml` auto-rebases open `renovate/` branches onto main (with `nix flake update`) on every push to main that touches `go.sum`/`package-lock.json`, and `nix.yaml` auto-patches the `npmDepsHash`/`vendorHash` on each PR — so in most cases the rebase is handled for you.
+
+When you do need to merge two same-ecosystem PRs (major + group) by hand:
 1. Verify all CI checks pass on the target PR (use `gh run list --branch <branch>` — the GitHub API's `statusCheckRollup` field lags and often shows stale/empty data)
 2. Merge **one PR** with `gh pr merge <n> --squash --delete-branch`
-3. The remaining PRs are now conflicting — trigger a rebase on each: `gh pr comment <n> --body "@renovatebot rebase"`
-4. Wait for Renovate to push the rebase (~1–2 min) and CI to pass (~4 min), then repeat from step 1
-5. Do **not** batch-trigger `@renovatebot rebase` on more PRs than you intend to merge in this cycle — each rebase triggers a full CI run and generates GitHub notification emails
+3. The other PR now conflicts — wait for `rebase-renovate-prs.yaml` to rebase it, or trigger it manually with `gh pr comment <n> --body "@renovatebot rebase"`
+4. Wait for the rebase to land (~1–2 min) and CI to pass (~4 min) before merging it
 
 ### Code Style
 
