@@ -455,7 +455,7 @@ func buildAdapterFactory(
 			}
 			return steamsvc.NewAdapter(steamsvc.NewClient(), creds.WebAPIKey, creds.SteamID), nil
 
-		case "psn":
+		case "playstation-store":
 			if cfg.StorefrontCredentials == nil {
 				return nil, tasks.ErrCredentials
 			}
@@ -506,7 +506,7 @@ func buildAdapterFactory(
 			}
 			return gogsvc.NewAdapter(gogsvc.NewClient(), creds.RefreshToken, onNewTokens), nil
 
-		case "epic":
+		case "epic-games-store":
 			if cfg.StorefrontCredentials == nil {
 				return nil, tasks.ErrCredentials
 			}
