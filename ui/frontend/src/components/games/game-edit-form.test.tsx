@@ -261,4 +261,33 @@ describe('GameEditForm', () => {
     });
     expect(hooks.addPlatform).not.toHaveBeenCalled();
   });
+
+  it('adds a second copy of a platform with default ownership/hours on save (#848)', async () => {
+    const user = userEvent.setup();
+    state.platforms = mockPlatformsData; // PC available (Steam storefront)
+
+    // mockGame already holds PC + Steam (ugp-1); add a second PC copy.
+    render(<GameEditForm game={mockGame} />);
+
+    await user.click(screen.getByRole('button', { name: /add platform/i }));
+    await user.click(screen.getByRole('combobox', { name: /select platform/i }));
+    await user.click(screen.getByRole('option', { name: /^PC$/ }));
+    await user.click(screen.getAllByRole('button', { name: /save changes/i })[0]);
+
+    // The only free slot for a second PC copy is "No storefront".
+    await waitFor(() =>
+      expect(hooks.addPlatform).toHaveBeenCalledWith({
+        userGameId: mockGame.id,
+        data: {
+          platform: 'pc',
+          storefront: undefined,
+          hoursPlayed: 0,
+          ownershipStatus: OwnershipStatus.OWNED,
+          acquiredDate: undefined,
+        },
+      }),
+    );
+    // The existing Steam row is untouched.
+    expect(hooks.removePlatform).not.toHaveBeenCalled();
+  });
 });

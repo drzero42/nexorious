@@ -31,7 +31,7 @@ import {
   useSyncConfig,
 } from '@/hooks';
 import { SyncStorefront, SyncFrequency } from '@/types/sync';
-import { formatHoursPlayed, formatPlatformLabel, resolveImageUrl } from '@/lib/game-utils';
+import { formatHoursPlayed, resolveImageUrl } from '@/lib/game-utils';
 import { planPlatformChanges, type PlatformDetailState } from './platform-reconcile';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame } from '@/types';
@@ -129,11 +129,32 @@ export function GameEditForm({ game }: GameEditFormProps) {
     assignTags.isPending ||
     removeTags.isPending;
 
-  // Total hours = sum of the per-platform playtime inputs (the calculated value the API
-  // now returns as game.hours_played, kept live so in-progress edits are reflected).
+  // Selections that have a platform chosen (blank rows from "Add platform" are
+  // ignored until the user picks a platform).
+  const activeSelections = useMemo(
+    () => selectedPlatforms.filter((s) => s.platform),
+    [selectedPlatforms],
+  );
+
+  // Per-row detail state resolved for one selection: edited value, else the
+  // persisted row's value, else a sensible default for a brand-new row.
+  const detailFor = (s: PlatformSelection) => {
+    const persisted = game.platforms.find((p) => p.id === s.id);
+    const ownership = platformOwnership[s.key];
+    return {
+      hoursPlayed: platformPlaytimes[s.key] ?? persisted?.hours_played ?? 0,
+      ownershipStatus:
+        ownership?.ownershipStatus ?? persisted?.ownership_status ?? OwnershipStatus.OWNED,
+      acquiredDate: ownership?.acquiredDate ?? persisted?.acquired_date ?? '',
+    };
+  };
+
+  // Total hours = sum of the per-platform playtime across the selected rows, kept
+  // live so in-progress edits (and newly-added rows) are reflected.
   const totalHoursPlayed = useMemo(
-    () => Object.values(platformPlaytimes).reduce((sum, h) => sum + h, 0),
-    [platformPlaytimes],
+    () => activeSelections.reduce((sum, s) => sum + detailFor(s).hoursPlayed, 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeSelections, platformPlaytimes],
   );
 
   // Track original tag ids for comparison
@@ -152,27 +173,29 @@ export function GameEditForm({ game }: GameEditFormProps) {
         },
       });
 
-      // 2. Reconcile platform associations by row identity.
+      // 2. Reconcile platform associations by row identity. Details are keyed by
+      //    the row `key` (present on both persisted and newly-added rows).
       const details: Record<string, PlatformDetailState> = {};
-      for (const p of game.platforms) {
-        const ownership = platformOwnership[p.id];
-        details[p.id] = {
-          hoursPlayed: platformPlaytimes[p.id] ?? p.hours_played,
-          ownershipStatus: ownership?.ownershipStatus ?? p.ownership_status,
-          acquiredDate: ownership?.acquiredDate ?? p.acquired_date ?? '',
-        };
+      for (const s of activeSelections) {
+        details[s.key] = detailFor(s);
       }
 
       const { adds, removes, updates } = planPlatformChanges(
         game.platforms,
-        selectedPlatforms,
+        activeSelections,
         details,
       );
 
       for (const add of adds) {
         await addPlatform.mutateAsync({
           userGameId: game.id,
-          data: { platform: add.platform, storefront: add.storefront },
+          data: {
+            platform: add.platform,
+            storefront: add.storefront,
+            hoursPlayed: add.hoursPlayed,
+            ownershipStatus: add.ownershipStatus,
+            acquiredDate: add.acquiredDate,
+          },
         });
       }
 
@@ -370,35 +393,38 @@ export function GameEditForm({ game }: GameEditFormProps) {
                 selectedPlatforms={selectedPlatforms}
                 availablePlatforms={platforms}
                 onChange={setSelectedPlatforms}
-                placeholder="Select platforms..."
               />
 
-              {/* Per-platform details */}
-              {game.platforms.length > 0 && (
+              {/* Per-platform details — one card per selected row (incl. unsaved adds) */}
+              {activeSelections.length > 0 && (
                 <div className="space-y-4 pt-4 border-t">
-                  {game.platforms.map((p) => {
-                    const isSteamPlatform = p.storefront === 'steam';
-                    const isSteamSynced = isSteamSyncEnabled && isSteamPlatform;
-                    const ownership = platformOwnership[p.id] ?? {
-                      ownershipStatus: p.ownership_status,
-                      acquiredDate: p.acquired_date ?? '',
-                    };
-                    const platformName = formatPlatformLabel(p);
+                  {activeSelections.map((s) => {
+                    const isSteamSynced = isSteamSyncEnabled && s.storefront === 'steam';
+                    const platform = platforms.find((pp) => pp.name === s.platform);
+                    const storefront = platform?.storefronts?.find(
+                      (sf) => sf.name === s.storefront,
+                    );
+                    const label = platform
+                      ? storefront
+                        ? `${platform.display_name} / ${storefront.display_name}`
+                        : platform.display_name
+                      : s.platform;
+                    const detail = detailFor(s);
 
                     return (
-                      <div key={p.id} className="p-4 rounded-lg border bg-muted/30">
-                        <div className="font-medium mb-3">{platformName}</div>
+                      <div key={s.key} className="p-4 rounded-lg border bg-muted/30">
+                        <div className="font-medium mb-3">{label}</div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           {/* Ownership Status */}
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Ownership</Label>
                             <Select
-                              value={ownership.ownershipStatus}
+                              value={detail.ownershipStatus}
                               onValueChange={(v) =>
                                 setPlatformOwnership((prev) => ({
                                   ...prev,
-                                  [p.id]: {
-                                    ...prev[p.id],
+                                  [s.key]: {
+                                    ...detail,
                                     ownershipStatus: v as OwnershipStatus,
                                   },
                                 }))
@@ -423,12 +449,12 @@ export function GameEditForm({ game }: GameEditFormProps) {
                             <Input
                               type="date"
                               className="h-9"
-                              value={ownership.acquiredDate}
+                              value={detail.acquiredDate}
                               onChange={(e) =>
                                 setPlatformOwnership((prev) => ({
                                   ...prev,
-                                  [p.id]: {
-                                    ...prev[p.id],
+                                  [s.key]: {
+                                    ...detail,
                                     acquiredDate: e.target.value,
                                   },
                                 }))
@@ -447,11 +473,11 @@ export function GameEditForm({ game }: GameEditFormProps) {
                                 min="0"
                                 step="0.5"
                                 className="h-9 w-24"
-                                value={platformPlaytimes[p.id] ?? p.hours_played}
+                                value={detail.hoursPlayed}
                                 onChange={(e) =>
                                   setPlatformPlaytimes((prev) => ({
                                     ...prev,
-                                    [p.id]: parseFloat(e.target.value) || 0,
+                                    [s.key]: parseFloat(e.target.value) || 0,
                                   }))
                                 }
                                 disabled={isSteamSynced}

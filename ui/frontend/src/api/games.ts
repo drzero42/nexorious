@@ -648,6 +648,8 @@ export async function addPlatformToUserGame(
     storefront: data.storefront,
     is_available: data.isAvailable ?? true,
     hours_played: data.hoursPlayed ?? 0,
+    ownership_status: data.ownershipStatus,
+    acquired_date: data.acquiredDate,
   };
 
   const response = await api.post<UserGamePlatformApiResponse>(
