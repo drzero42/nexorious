@@ -181,6 +181,13 @@ When working with code, if you identify a problem, bug, or inconsistency that yo
 
 **`gh pr merge` handles everything locally:** when you run `gh pr merge --squash --delete-branch` while checked out on the PR's branch, `gh` switches your local checkout to `main`, deletes the local feature branch, **and pulls `main`** so it is already up to date with the new squash commit. Do **not** run `git checkout main`, `git branch -D`, `git pull`, or `git reset --hard origin/main` afterward — `gh` has already done it. Just confirm with `git status` (expect `## main...origin/main`, no divergence).
 
+**Auto-closing issues from a PR (MANDATORY syntax):** a [closing keyword](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue) (`Closes`/`Fixes`/`Resolves`) applies **only to the single issue number immediately following it**. A comma-separated list does **not** work: `Closes #846, #847` auto-closes only #846 and leaves #847 open. Repeat the keyword for every issue — `Closes #846, closes #847` — or put one per line:
+```
+Closes #846
+Closes #847
+```
+Cross-repo: `Closes owner/repo#123`. The keyword must be in the **PR body** (the squash commit body is the PR body via `squash_merge_commit_message=PR_BODY`), not only the title. After merging a multi-issue PR, verify every referenced issue actually closed (`gh issue view <n> --json state`) and close any stragglers manually with a comment linking the PR.
+
 ### Merging Renovate PRs
 
 All Renovate dependency PRs that touch `ui/frontend/package-lock.json`, `flake.lock`, or `nix/frontend.nix` conflict with each other — merging one immediately invalidates the others' lockfiles. **Never attempt to merge multiple such PRs in a single step.**
