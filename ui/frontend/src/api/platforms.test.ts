@@ -468,4 +468,46 @@ describe('platforms.ts', () => {
       expect(result).toHaveLength(2);
     });
   });
+
+  describe('transform boundary', () => {
+    it('passes an unexpected new field through getPlatform untouched', async () => {
+      server.use(
+        http.get(`${API_URL}/platforms/pc`, () =>
+          HttpResponse.json({
+            name: 'pc',
+            display_name: 'PC',
+            is_active: true,
+            source: 'official',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            brand_new_field: 'survives',
+          }),
+        ),
+      );
+
+      const result = await getPlatform('pc');
+
+      expect((result as unknown as Record<string, unknown>).brand_new_field).toBe('survives');
+    });
+
+    it('passes an unexpected new field through getStorefront untouched', async () => {
+      server.use(
+        http.get(`${API_URL}/platforms/storefronts/steam`, () =>
+          HttpResponse.json({
+            name: 'steam',
+            display_name: 'Steam',
+            is_active: true,
+            source: 'official',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            brand_new_field: 'survives',
+          }),
+        ),
+      );
+
+      const result = await getStorefront('steam');
+
+      expect((result as unknown as Record<string, unknown>).brand_new_field).toBe('survives');
+    });
+  });
 });

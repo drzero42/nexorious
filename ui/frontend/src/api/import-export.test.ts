@@ -131,4 +131,20 @@ describe('importExportApi', () => {
       expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/mock-url');
     });
   });
+
+  describe('transform boundary', () => {
+    it('passes an unexpected new field through exportCollectionJson untouched', async () => {
+      vi.mocked(api.post).mockResolvedValueOnce({
+        job_id: 'job-1',
+        status: 'pending',
+        message: 'started',
+        estimated_items: 5,
+        brand_new_field: 'survives',
+      });
+
+      const result = await importExportApi.exportCollectionJson();
+
+      expect((result as unknown as Record<string, unknown>).brand_new_field).toBe('survives');
+    });
+  });
 });

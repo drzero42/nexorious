@@ -5,22 +5,6 @@ import type { Tag } from '@/types';
 // API Response Types (snake_case from backend)
 // ============================================================================
 
-interface TagApiResponse {
-  id: string;
-  user_id: string;
-  name: string;
-  color: string;
-  description?: string;
-  created_at: string;
-  updated_at: string;
-  game_count?: number;
-}
-
-interface TagCreateOrGetApiResponse {
-  tag: TagApiResponse;
-  created: boolean;
-}
-
 interface TagAssignApiResponse {
   message: string;
   new_associations: number;
@@ -85,23 +69,6 @@ interface TagRemoveResponse {
 }
 
 // ============================================================================
-// Transformation Functions
-// ============================================================================
-
-function transformTag(apiTag: TagApiResponse): Tag {
-  return {
-    id: apiTag.id,
-    user_id: apiTag.user_id,
-    name: apiTag.name,
-    color: apiTag.color,
-    description: apiTag.description,
-    created_at: apiTag.created_at,
-    updated_at: apiTag.updated_at,
-    game_count: apiTag.game_count,
-  };
-}
-
-// ============================================================================
 // API Functions
 // ============================================================================
 
@@ -121,12 +88,12 @@ export async function getTags(params?: GetTagsParams): Promise<TagsListResponse>
     queryParams.include_game_count = params.includeGameCount;
   }
 
-  const response = await api.get<TagApiResponse[]>('/tags', {
+  const response = await api.get<Tag[]>('/tags', {
     params: queryParams,
   });
 
   return {
-    tags: response.map(transformTag),
+    tags: response,
     total: response.length,
     page: 1,
     perPage: response.length,
@@ -138,28 +105,28 @@ export async function getTags(params?: GetTagsParams): Promise<TagsListResponse>
  * Get all tags (paginate through all pages).
  */
 export async function getAllTags(): Promise<Tag[]> {
-  const response = await api.get<TagApiResponse[]>('/tags');
-  return response.map(transformTag);
+  const response = await api.get<Tag[]>('/tags');
+  return response;
 }
 
 /**
  * Get a single tag by ID.
  */
 export async function getTag(id: string): Promise<Tag> {
-  const response = await api.get<TagApiResponse>(`/tags/${id}`);
-  return transformTag(response);
+  const response = await api.get<Tag>(`/tags/${id}`);
+  return response;
 }
 
 /**
  * Create a new tag.
  */
 export async function createTag(data: TagCreateData): Promise<Tag> {
-  const response = await api.post<TagApiResponse>('/tags', {
+  const response = await api.post<Tag>('/tags', {
     name: data.name,
     color: data.color,
     description: data.description,
   });
-  return transformTag(response);
+  return response;
 }
 
 /**
@@ -174,14 +141,11 @@ export async function createOrGetTag(
     queryParams.color = color;
   }
 
-  const response = await api.post<TagCreateOrGetApiResponse>('/tags/create-or-get', undefined, {
+  const response = await api.post<TagCreateOrGetResponse>('/tags/create-or-get', undefined, {
     params: queryParams,
   });
 
-  return {
-    tag: transformTag(response.tag),
-    created: response.created,
-  };
+  return response;
 }
 
 /**
@@ -200,8 +164,8 @@ export async function updateTag(id: string, data: TagUpdateData): Promise<Tag> {
     requestBody.description = data.description;
   }
 
-  const response = await api.put<TagApiResponse>(`/tags/${id}`, requestBody);
-  return transformTag(response);
+  const response = await api.put<Tag>(`/tags/${id}`, requestBody);
+  return response;
 }
 
 /**

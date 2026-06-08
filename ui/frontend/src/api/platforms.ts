@@ -5,28 +5,28 @@ import type { Platform, Storefront } from '@/types/platform';
 // API Response Types (snake_case from backend)
 // ============================================================================
 
-interface PlatformApiResponse {
+export interface PlatformApiResponse {
   name: string;
   display_name: string;
   icon_url?: string;
   igdb_platform_id?: number | null;
-  is_active: boolean;
-  source: string;
+  is_active?: boolean;
+  source?: string;
   default_storefront?: string;
   storefronts?: StorefrontApiResponse[];
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-interface StorefrontApiResponse {
+export interface StorefrontApiResponse {
   name: string;
   display_name: string;
   icon_url?: string;
   base_url?: string;
-  is_active: boolean;
-  source: string;
-  created_at: string;
-  updated_at: string;
+  is_active?: boolean;
+  source?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface PlatformListApiResponse {
@@ -87,31 +87,24 @@ export interface StorefrontsListResponse {
 // Transformation Functions
 // ============================================================================
 
-function transformStorefront(apiStorefront: StorefrontApiResponse): Storefront {
+export function transformStorefront(apiStorefront: StorefrontApiResponse): Storefront {
   return {
-    name: apiStorefront.name,
-    display_name: apiStorefront.display_name,
-    icon_url: apiStorefront.icon_url,
-    base_url: apiStorefront.base_url,
-    is_active: apiStorefront.is_active,
-    source: apiStorefront.source,
-    created_at: apiStorefront.created_at,
-    updated_at: apiStorefront.updated_at,
+    ...apiStorefront,
+    is_active: apiStorefront.is_active ?? false,
+    source: apiStorefront.source ?? '',
+    created_at: apiStorefront.created_at ?? '',
+    updated_at: apiStorefront.updated_at ?? '',
   };
 }
 
-function transformPlatform(apiPlatform: PlatformApiResponse): Platform {
+export function transformPlatform(apiPlatform: PlatformApiResponse): Platform {
   return {
-    name: apiPlatform.name,
-    display_name: apiPlatform.display_name,
-    icon_url: apiPlatform.icon_url,
-    igdb_platform_id: apiPlatform.igdb_platform_id,
-    is_active: apiPlatform.is_active,
-    source: apiPlatform.source,
-    default_storefront: apiPlatform.default_storefront,
+    ...apiPlatform,
+    is_active: apiPlatform.is_active ?? false,
+    source: apiPlatform.source ?? '',
     storefronts: apiPlatform.storefronts?.map(transformStorefront),
-    created_at: apiPlatform.created_at,
-    updated_at: apiPlatform.updated_at,
+    created_at: apiPlatform.created_at ?? '',
+    updated_at: apiPlatform.updated_at ?? '',
   };
 }
 
