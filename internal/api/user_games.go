@@ -1183,6 +1183,117 @@ func (h *UserGamesHandler) HandleDeletePlatform(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+type moveToLibraryRequest struct {
+	Platforms []platformRequest `json:"platforms"`
+}
+
+// HandleMoveToLibrary handles POST /api/user-games/:id/move-to-library. It
+// converts a wishlisted entry into a library entry by attaching the supplied
+// platform(s) and clearing is_wishlisted, atomically. Notes/rating/loved/tags
+// stay on the same row and so carry over automatically.
+func (h *UserGamesHandler) HandleMoveToLibrary(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	userGameID := c.Param("id")
+	ctx := c.Request().Context()
+
+	var req moveToLibraryRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if len(req.Platforms) == 0 {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "at least one platform is required")
+	}
+
+	var ug models.UserGame
+	err := h.db.NewSelect().Model(&ug).
+		Where("id = ?", userGameID).
+		Where("user_id = ?", userID).
+		Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "user game not found")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if !ug.IsWishlisted {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "user game is not on the wishlist")
+	}
+
+	now := time.Now().UTC()
+	plats := make([]*models.UserGamePlatform, 0, len(req.Platforms))
+	for _, p := range req.Platforms {
+		if p.OwnershipStatus != nil && *p.OwnershipStatus != "" {
+			if !enum.OwnershipStatus(*p.OwnershipStatus).Valid() {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+*p.OwnershipStatus)
+			}
+		}
+		pl := &models.UserGamePlatform{
+			ID:              uuid.NewString(),
+			UserGameID:      userGameID,
+			Platform:        p.Platform,
+			Storefront:      p.Storefront,
+			HoursPlayed:     p.HoursPlayed,
+			OwnershipStatus: p.OwnershipStatus,
+			IsAvailable:     true,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}
+		if p.IsAvailable != nil {
+			pl.IsAvailable = *p.IsAvailable
+		}
+		if p.AcquiredDate != nil && *p.AcquiredDate != "" {
+			acquired, err := parseAcquiredDate(*p.AcquiredDate)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+			}
+			pl.AcquiredDate = acquired
+		}
+		plats = append(plats, pl)
+	}
+
+	tx, err := h.db.BeginTx(ctx, nil)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.NewInsert().Model(&plats).Exec(ctx); err != nil {
+		if isDuplicateKeyError(err) {
+			return echo.NewHTTPError(http.StatusConflict, "platform/storefront combination already exists")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if err := usergame.ClearWishlistOnAcquire(ctx, tx, userGameID); err != nil {
+		slog.Error("user_games: clear wishlist on move-to-library", "err", err, "user_game_id", userGameID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if err := usergame.PromoteToInProgressIfPlayed(ctx, tx, userGameID); err != nil {
+		slog.Error("user_games: auto-promote play_status on move-to-library", "err", err, "user_game_id", userGameID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+
+	if err := h.db.NewSelect().Model(&ug).
+		Where("user_game.id = ?", userGameID).
+		Relation("Game").
+		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
+		}).
+		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("Tag")
+		}).
+		Scan(ctx); err != nil {
+		slog.Error("user_games: reload after move-to-library", "err", err, "user_game_id", userGameID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
+}
+
 // ── Utility endpoint types ──────────────────────────────────────────────
 
 // UserGameIDsResponse is the response for GET /api/user-games/ids.

@@ -294,6 +294,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		userGamesGroup.PUT("/:id/progress", ugh.HandleUpdateProgress)
 		userGamesGroup.GET("/:id/platforms", ugh.HandleListPlatforms)
 		userGamesGroup.POST("/:id/platforms", ugh.HandleCreatePlatform)
+		userGamesGroup.POST("/:id/move-to-library", ugh.HandleMoveToLibrary)
 		userGamesGroup.PUT("/:id/platforms/:platform_id", ugh.HandleUpdatePlatform)
 		userGamesGroup.DELETE("/:id/platforms/:platform_id", ugh.HandleDeletePlatform)
 
