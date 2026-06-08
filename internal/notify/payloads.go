@@ -42,9 +42,15 @@ type SyncNeedsReviewPayload struct {
 }
 
 type SyncDiffPayload struct {
-	Added   []DiffGame `json:"added"`
-	Removed []DiffGame `json:"removed"`
-	JobID   string     `json:"job_id"`
+	// Storefront is the storefront's human-readable display name (e.g. "Steam",
+	// "PlayStation Store"), resolved from the storefronts reference table at
+	// emit time — unlike the other sync payloads, which carry the raw source
+	// slug. Empty when the source is unknown; Format then falls back to the
+	// generic "Game library changes" title.
+	Storefront string     `json:"storefront"`
+	Added      []DiffGame `json:"added"`
+	Removed    []DiffGame `json:"removed"`
+	JobID      string     `json:"job_id"`
 }
 
 type ImportCompletedPayload struct {

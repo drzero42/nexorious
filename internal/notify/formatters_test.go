@@ -31,6 +31,30 @@ func TestFormatSyncDiff(t *testing.T) {
 	}
 }
 
+func TestFormatSyncDiff_NamesStorefrontInTitle(t *testing.T) {
+	payload, _ := json.Marshal(map[string]any{
+		"storefront": "PlayStation Store",
+		"added":      []map[string]any{{"title": "Bloodborne", "platforms": []string{}}},
+		"removed":    []map[string]any{},
+	})
+	title, _, _ := Format(TypeSyncDiff, payload)
+	if title != "PlayStation Store library changes" {
+		t.Errorf("title = %q, want %q", title, "PlayStation Store library changes")
+	}
+}
+
+func TestFormatSyncDiff_EmptyStorefrontFallsBackToGeneric(t *testing.T) {
+	// An empty/unknown source must fall back to the generic title.
+	payload, _ := json.Marshal(map[string]any{
+		"added":   []map[string]any{{"title": "Tetris", "platforms": []string{}}},
+		"removed": []map[string]any{},
+	})
+	title, _, _ := Format(TypeSyncDiff, payload)
+	if title != "Game library changes" {
+		t.Errorf("title = %q, want %q", title, "Game library changes")
+	}
+}
+
 func TestFormatSyncDiff_EmptyPlatformsOmitsBrackets(t *testing.T) {
 	// A game with no platforms must render without any bracket notation.
 	payload, _ := json.Marshal(map[string]any{
@@ -65,7 +89,7 @@ var samplePayloads = map[string]any{
 	TypeSyncFailed:              SyncFailedPayload{Storefront: "Steam", Error: "bad token", JobID: "j1"},
 	TypeSyncAuthExpired:         SyncAuthExpiredPayload{Storefront: "Steam"},
 	TypeSyncNeedsReview:         SyncNeedsReviewPayload{Storefront: "Steam", Count: 2, JobID: "j1"},
-	TypeSyncDiff:                SyncDiffPayload{Added: []DiffGame{{Title: "Hades", Platforms: []string{"Steam"}}}, JobID: "j1"},
+	TypeSyncDiff:                SyncDiffPayload{Storefront: "Steam", Added: []DiffGame{{Title: "Hades", Platforms: []string{"Steam"}}}, JobID: "j1"},
 	TypeImportCompleted:         ImportCompletedPayload{JobID: "j1"},
 	TypeImportFailed:            ImportFailedPayload{JobID: "j1", Failed: 2, Error: "2 item(s) failed to import"},
 	TypeExportCompleted:         ExportCompletedPayload{JobID: "j1", FilePath: "/tmp/export.zip"},
@@ -88,7 +112,7 @@ var wantRender = map[string]struct{ title, body string }{
 	TypeSyncFailed:              {"Sync failed", "Your Steam sync failed: bad token"},
 	TypeSyncAuthExpired:         {"Storefront needs reconnect", "Your Steam connection has expired. Open Sync settings to reconnect."},
 	TypeSyncNeedsReview:         {"Sync needs review", "Your Steam sync has 2 item(s) needing review."},
-	TypeSyncDiff:                {"Game library changes", "Added (1):\n  + Hades [Steam]"},
+	TypeSyncDiff:                {"Steam library changes", "Added (1):\n  + Hades [Steam]"},
 	TypeImportCompleted:         {"Import completed", "Your import finished successfully."},
 	TypeImportFailed:            {"Import failed", "Your import failed: 2 item(s) failed to import"},
 	TypeExportCompleted:         {"Export completed", "Your export is ready."},

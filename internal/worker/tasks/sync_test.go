@@ -2213,6 +2213,61 @@ func TestSyncCheckJobCompletion_FailedItemsYieldsCompleted(t *testing.T) {
 	}
 }
 
+// TestSyncCheckJobCompletion_SyncDiffNamesStorefront verifies the emitted
+// sync.diff payload carries the storefront's display name (looked up from the
+// storefronts table by source slug), so the notification can name its source.
+func TestSyncCheckJobCompletion_SyncDiffNamesStorefront(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	// playstation-store → "PlayStation Store" exercises a multi-word display
+	// name that a naive slug-titlecase would mangle.
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
+		 VALUES (?, ?, 'sync', 'playstation-store', 'processing', 'low', 1)`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+
+	// One resolved item so the job finalizes, plus a changes row so emitSyncDiff fires.
+	if _, err := testDB.NewRaw(`
+		INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		VALUES (gen_random_uuid(), ?, ?, 'key1', 'Bloodborne', '{}', 'completed', '{}', '[]', now())`,
+		jobID, userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert job_item: %v", err)
+	}
+	if _, err := testDB.NewRaw(`
+		INSERT INTO changes (id, job_id, user_id, change_type, title, created_at)
+		VALUES (gen_random_uuid(), ?, ?, 'added', 'Bloodborne', now())`,
+		jobID, userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert change: %v", err)
+	}
+
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
+
+	var payload []byte
+	if err := testDB.NewRaw(
+		`SELECT payload FROM events WHERE type = ? AND actor_user_id = ?`,
+		notify.TypeSyncDiff, userID,
+	).Scan(ctx, &payload); err != nil {
+		t.Fatalf("query sync.diff event: %v", err)
+	}
+	var p notify.SyncDiffPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if p.Storefront != "PlayStation Store" {
+		t.Errorf("payload storefront = %q, want %q", p.Storefront, "PlayStation Store")
+	}
+}
+
 // TestSyncCheckJobCompletion_DispatchIncomplete_StaysProcessing is the #642
 // regression guard: while DispatchSyncWorker is still streaming batches
 // (dispatch_complete=false), a transiently-empty active set must NOT finalize

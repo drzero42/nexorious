@@ -987,7 +987,7 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, riverClient *river.
 			DedupKey: jobID + ":" + notify.TypeSyncCompleted,
 		})
 	}
-	emitSyncDiff(ctx, db, jobID, userID)
+	emitSyncDiff(ctx, db, jobID, userID, storefrontDisplayName(ctx, db, storefront))
 
 	// Kick off scoped, incremental store-link enrichment for this storefront.
 	// Best-effort: a missing River client (e.g. in tests) simply skips it.
@@ -1014,8 +1014,28 @@ func syncJobUserAndStorefront(ctx context.Context, db *bun.DB, jobID string) (us
 	return row.UserID, row.Source
 }
 
-// emitSyncDiff emits sync.diff iff changes rows exist for the job.
-func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID string) {
+// storefrontDisplayName resolves a storefront source slug (e.g. "steam",
+// "playstation-store") to its human-readable display name from the storefronts
+// reference table. Returns "" when the slug is empty, unknown, or on error —
+// callers fall back to a generic label.
+func storefrontDisplayName(ctx context.Context, db *bun.DB, slug string) string {
+	if slug == "" {
+		return ""
+	}
+	var name string
+	if err := db.NewRaw(`SELECT display_name FROM storefronts WHERE name = ?`, slug).Scan(ctx, &name); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			slog.Error("sync: lookup storefront display_name", "slug", slug, "err", err)
+		}
+		return ""
+	}
+	return name
+}
+
+// emitSyncDiff emits sync.diff iff changes rows exist for the job. storefront is
+// the resolved storefront display name (may be empty) carried in the payload so
+// the notification names its source.
+func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID, storefront string) {
 	var rows []struct {
 		ChangeType string `bun:"change_type"`
 		Title      string `bun:"title"`
@@ -1054,7 +1074,7 @@ func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID string) {
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeSyncDiff, Scope: notify.ScopeUser, ActorUserID: userID,
-		Payload:  notify.SyncDiffPayload{Added: added, Removed: removed, JobID: jobID},
+		Payload:  notify.SyncDiffPayload{Storefront: storefront, Added: added, Removed: removed, JobID: jobID},
 		DedupKey: jobID + ":" + notify.TypeSyncDiff,
 	})
 }
