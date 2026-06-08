@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryWrapper } from '@/test/test-utils';
-import { useConfigurePSN, usePSNStatus, useDisconnectPSN, syncKeys } from './use-sync';
+import {
+  useConfigurePlaystationStore,
+  usePlaystationStoreStatus,
+  useDisconnectPlaystationStore,
+  syncKeys,
+} from './use-sync';
 import * as syncApi from '@/api/sync';
 
 describe('PSN Hooks', () => {
@@ -9,17 +14,17 @@ describe('PSN Hooks', () => {
     vi.clearAllMocks();
   });
 
-  describe('useConfigurePSN', () => {
+  describe('useConfigurePlaystationStore', () => {
     it('configures PSN with NPSSO token successfully', async () => {
-      const mockConfigurePSN = vi.spyOn(syncApi, 'configurePSN');
-      mockConfigurePSN.mockResolvedValue({
+      const mockConfigurePlaystationStore = vi.spyOn(syncApi, 'configurePlaystationStore');
+      mockConfigurePlaystationStore.mockResolvedValue({
         valid: true,
         accountId: 'test-account-id',
         onlineId: 'TestUser',
         error: null,
       });
 
-      const { result } = renderHook(() => useConfigurePSN(), {
+      const { result } = renderHook(() => useConfigurePlaystationStore(), {
         wrapper: QueryWrapper,
       });
 
@@ -31,7 +36,7 @@ describe('PSN Hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(mockConfigurePSN).toHaveBeenCalledWith('test-npsso-token');
+      expect(mockConfigurePlaystationStore).toHaveBeenCalledWith('test-npsso-token');
       expect(result.current.data).toEqual({
         valid: true,
         accountId: 'test-account-id',
@@ -39,14 +44,14 @@ describe('PSN Hooks', () => {
         error: null,
       });
 
-      mockConfigurePSN.mockRestore();
+      mockConfigurePlaystationStore.mockRestore();
     });
 
     it('handles PSN configuration error', async () => {
-      const mockConfigurePSN = vi.spyOn(syncApi, 'configurePSN');
-      mockConfigurePSN.mockRejectedValue(new Error('Invalid NPSSO token'));
+      const mockConfigurePlaystationStore = vi.spyOn(syncApi, 'configurePlaystationStore');
+      mockConfigurePlaystationStore.mockRejectedValue(new Error('Invalid NPSSO token'));
 
-      const { result } = renderHook(() => useConfigurePSN(), {
+      const { result } = renderHook(() => useConfigurePlaystationStore(), {
         wrapper: QueryWrapper,
       });
 
@@ -64,19 +69,19 @@ describe('PSN Hooks', () => {
 
       expect(result.current.error?.message).toBe('Invalid NPSSO token');
 
-      mockConfigurePSN.mockRestore();
+      mockConfigurePlaystationStore.mockRestore();
     });
 
     it('invalidates queries on successful configuration', async () => {
-      const mockConfigurePSN = vi.spyOn(syncApi, 'configurePSN');
-      mockConfigurePSN.mockResolvedValue({
+      const mockConfigurePlaystationStore = vi.spyOn(syncApi, 'configurePlaystationStore');
+      mockConfigurePlaystationStore.mockResolvedValue({
         valid: true,
         accountId: 'test-account-id',
         onlineId: 'TestUser',
         error: null,
       });
 
-      const { result } = renderHook(() => useConfigurePSN(), {
+      const { result } = renderHook(() => useConfigurePlaystationStore(), {
         wrapper: QueryWrapper,
       });
 
@@ -91,20 +96,20 @@ describe('PSN Hooks', () => {
       // Query invalidation happens automatically via TanStack Query
       // We verify the mutation was successful
 
-      mockConfigurePSN.mockRestore();
+      mockConfigurePlaystationStore.mockRestore();
     });
   });
 
-  describe('usePSNStatus', () => {
+  describe('usePlaystationStoreStatus', () => {
     it('fetches PSN status successfully', async () => {
-      const mockGetPSNStatus = vi.spyOn(syncApi, 'getPSNStatus');
-      mockGetPSNStatus.mockResolvedValue({
+      const mockGetPlaystationStoreStatus = vi.spyOn(syncApi, 'getPlaystationStoreStatus');
+      mockGetPlaystationStoreStatus.mockResolvedValue({
         configured: true,
         onlineId: 'TestUser',
         credentialsError: false,
       });
 
-      const { result } = renderHook(() => usePSNStatus(), {
+      const { result } = renderHook(() => usePlaystationStoreStatus(), {
         wrapper: QueryWrapper,
       });
 
@@ -118,18 +123,18 @@ describe('PSN Hooks', () => {
         credentialsError: false,
       });
 
-      mockGetPSNStatus.mockRestore();
+      mockGetPlaystationStoreStatus.mockRestore();
     });
 
     it('handles PSN status with expired token', async () => {
-      const mockGetPSNStatus = vi.spyOn(syncApi, 'getPSNStatus');
-      mockGetPSNStatus.mockResolvedValue({
+      const mockGetPlaystationStoreStatus = vi.spyOn(syncApi, 'getPlaystationStoreStatus');
+      mockGetPlaystationStoreStatus.mockResolvedValue({
         configured: true,
         onlineId: 'TestUser',
         credentialsError: true,
       });
 
-      const { result } = renderHook(() => usePSNStatus(), {
+      const { result } = renderHook(() => usePlaystationStoreStatus(), {
         wrapper: QueryWrapper,
       });
 
@@ -139,14 +144,14 @@ describe('PSN Hooks', () => {
 
       expect(result.current.data?.credentialsError).toBe(true);
 
-      mockGetPSNStatus.mockRestore();
+      mockGetPlaystationStoreStatus.mockRestore();
     });
 
     it('handles PSN status fetch error', async () => {
-      const mockGetPSNStatus = vi.spyOn(syncApi, 'getPSNStatus');
-      mockGetPSNStatus.mockRejectedValue(new Error('Failed to fetch PSN status'));
+      const mockGetPlaystationStoreStatus = vi.spyOn(syncApi, 'getPlaystationStoreStatus');
+      mockGetPlaystationStoreStatus.mockRejectedValue(new Error('Failed to fetch PSN status'));
 
-      const { result } = renderHook(() => usePSNStatus(), {
+      const { result } = renderHook(() => usePlaystationStoreStatus(), {
         wrapper: QueryWrapper,
       });
 
@@ -156,16 +161,16 @@ describe('PSN Hooks', () => {
 
       expect(result.current.error?.message).toBe('Failed to fetch PSN status');
 
-      mockGetPSNStatus.mockRestore();
+      mockGetPlaystationStoreStatus.mockRestore();
     });
   });
 
-  describe('useDisconnectPSN', () => {
+  describe('useDisconnectPlaystationStore', () => {
     it('disconnects PSN successfully', async () => {
-      const mockDisconnectPSN = vi.spyOn(syncApi, 'disconnectPSN');
-      mockDisconnectPSN.mockResolvedValue(undefined);
+      const mockDisconnectPlaystationStore = vi.spyOn(syncApi, 'disconnectPlaystationStore');
+      mockDisconnectPlaystationStore.mockResolvedValue(undefined);
 
-      const { result } = renderHook(() => useDisconnectPSN(), {
+      const { result } = renderHook(() => useDisconnectPlaystationStore(), {
         wrapper: QueryWrapper,
       });
 
@@ -177,16 +182,16 @@ describe('PSN Hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(mockDisconnectPSN).toHaveBeenCalled();
+      expect(mockDisconnectPlaystationStore).toHaveBeenCalled();
 
-      mockDisconnectPSN.mockRestore();
+      mockDisconnectPlaystationStore.mockRestore();
     });
 
     it('handles PSN disconnect error', async () => {
-      const mockDisconnectPSN = vi.spyOn(syncApi, 'disconnectPSN');
-      mockDisconnectPSN.mockRejectedValue(new Error('Failed to disconnect PSN'));
+      const mockDisconnectPlaystationStore = vi.spyOn(syncApi, 'disconnectPlaystationStore');
+      mockDisconnectPlaystationStore.mockRejectedValue(new Error('Failed to disconnect PSN'));
 
-      const { result } = renderHook(() => useDisconnectPSN(), {
+      const { result } = renderHook(() => useDisconnectPlaystationStore(), {
         wrapper: QueryWrapper,
       });
 
@@ -204,14 +209,14 @@ describe('PSN Hooks', () => {
 
       expect(result.current.error?.message).toBe('Failed to disconnect PSN');
 
-      mockDisconnectPSN.mockRestore();
+      mockDisconnectPlaystationStore.mockRestore();
     });
 
     it('invalidates all PSN queries on successful disconnect', async () => {
-      const mockDisconnectPSN = vi.spyOn(syncApi, 'disconnectPSN');
-      mockDisconnectPSN.mockResolvedValue(undefined);
+      const mockDisconnectPlaystationStore = vi.spyOn(syncApi, 'disconnectPlaystationStore');
+      mockDisconnectPlaystationStore.mockResolvedValue(undefined);
 
-      const { result } = renderHook(() => useDisconnectPSN(), {
+      const { result } = renderHook(() => useDisconnectPlaystationStore(), {
         wrapper: QueryWrapper,
       });
 
@@ -226,13 +231,13 @@ describe('PSN Hooks', () => {
       // Query invalidation happens automatically via TanStack Query
       // We verify the mutation was successful
 
-      mockDisconnectPSN.mockRestore();
+      mockDisconnectPlaystationStore.mockRestore();
     });
   });
 
   describe('syncKeys', () => {
     it('generates correct query key for PSN status', () => {
-      expect(syncKeys.psnStatus()).toEqual(['sync', 'psnStatus']);
+      expect(syncKeys.playstationStoreStatus()).toEqual(['sync', 'playstationStoreStatus']);
     });
   });
 });

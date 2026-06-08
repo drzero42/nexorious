@@ -11,9 +11,9 @@ import {
   useResetSyncData,
   useJob,
   useCancelJob,
-  usePSNStatus,
+  usePlaystationStoreStatus,
   useSteamConnection,
-  useEpicConnection,
+  useEpicGamesStoreConnection,
   useGOGConnection,
   useHumbleStatus,
   jobsKeys,
@@ -22,9 +22,9 @@ import {
 } from '@/hooks';
 import {
   SteamConnectionCard,
-  EpicConnectionCard,
+  EpicGamesStoreConnectionCard,
   GOGConnectionCard,
-  PSNConnectionCard,
+  PlaystationStoreConnectionCard,
   HumbleConnectionCard,
   ExternalGamesSection,
 } from '@/components/sync';
@@ -131,13 +131,13 @@ function SyncDetailPage() {
   const { data: status, isLoading: statusLoading } = useSyncStatus(storefront);
 
   // Fetch PSN-specific status
-  const { data: psnStatus } = usePSNStatus();
+  const { data: playstationStoreStatus } = usePlaystationStoreStatus();
 
   // Fetch Steam connection status
   const { data: steamConnection } = useSteamConnection();
 
   // Fetch Epic and GOG connection status
-  const { data: epicConnection } = useEpicConnection();
+  const { data: epicGamesStoreConnection } = useEpicGamesStoreConnection();
   const { data: gogConnection } = useGOGConnection();
 
   // Fetch Humble Bundle status
@@ -186,9 +186,10 @@ function SyncDetailPage() {
   // Derive credentials error state from storefront-specific connection data
   const credentialsError =
     (storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
-    (storefront === SyncStorefront.PLAYSTATION_STORE && (psnStatus?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.PLAYSTATION_STORE &&
+      (playstationStoreStatus?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.EPIC_GAMES_STORE &&
-      (epicConnection?.credentialsError ?? false)) ||
+      (epicGamesStoreConnection?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
 
@@ -476,7 +477,7 @@ function SyncDetailPage() {
 
           {/* Epic Connection Card - only show for Epic storefront */}
           {storefront === SyncStorefront.EPIC_GAMES_STORE && (
-            <EpicConnectionCard
+            <EpicGamesStoreConnectionCard
               isConfigured={config.isConfigured}
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
@@ -496,13 +497,13 @@ function SyncDetailPage() {
 
           {/* PSN Connection Card - only show for PSN storefront */}
           {storefront === SyncStorefront.PLAYSTATION_STORE && (
-            <PSNConnectionCard
+            <PlaystationStoreConnectionCard
               isConfigured={config.isConfigured}
-              credentialsError={psnStatus?.credentialsError ?? false}
-              onlineId={psnStatus?.onlineId ?? undefined}
+              credentialsError={playstationStoreStatus?.credentialsError ?? false}
+              onlineId={playstationStoreStatus?.onlineId ?? undefined}
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
-                queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
+                queryClient.invalidateQueries({ queryKey: syncKeys.playstationStoreStatus() });
               }}
             />
           )}

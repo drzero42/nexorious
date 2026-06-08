@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { EpicConnectionCard } from './epic-connection-card';
+import { EpicGamesStoreConnectionCard } from './epic-games-store-connection-card';
 import * as hooks from '@/hooks';
 
 vi.mock('sonner', () => ({
@@ -26,45 +26,52 @@ const createWrapper = () => {
   return Wrapper;
 };
 
-function stubEpicConnection(data: Partial<ReturnType<typeof hooks.useEpicConnection>['data']>) {
-  vi.spyOn(hooks, 'useEpicConnection').mockReturnValue({
+function stubEpicGamesStoreConnection(
+  data: Partial<ReturnType<typeof hooks.useEpicGamesStoreConnection>['data']>,
+) {
+  vi.spyOn(hooks, 'useEpicGamesStoreConnection').mockReturnValue({
     data: { connected: false, disabled: false, ...data },
-  } as ReturnType<typeof hooks.useEpicConnection>);
+  } as ReturnType<typeof hooks.useEpicGamesStoreConnection>);
 }
 
-function stubConnectEpic(
+function stubConnectEpicGamesStore(
   mutateAsync = vi.fn().mockResolvedValue({ displayName: 'X', accountId: 'y' }),
 ) {
-  vi.spyOn(hooks, 'useConnectEpic').mockReturnValue({
+  vi.spyOn(hooks, 'useConnectEpicGamesStore').mockReturnValue({
     mutateAsync,
     isPending: false,
-  } as Partial<ReturnType<typeof hooks.useConnectEpic>> as ReturnType<typeof hooks.useConnectEpic>);
-  return mutateAsync;
-}
-
-function stubDisconnectEpic(mutateAsync = vi.fn().mockResolvedValue(undefined)) {
-  vi.spyOn(hooks, 'useDisconnectEpic').mockReturnValue({
-    mutateAsync,
-    isPending: false,
-  } as Partial<ReturnType<typeof hooks.useDisconnectEpic>> as ReturnType<
-    typeof hooks.useDisconnectEpic
+  } as Partial<ReturnType<typeof hooks.useConnectEpicGamesStore>> as ReturnType<
+    typeof hooks.useConnectEpicGamesStore
   >);
   return mutateAsync;
 }
 
-describe('EpicConnectionCard', () => {
+function stubDisconnectEpicGamesStore(mutateAsync = vi.fn().mockResolvedValue(undefined)) {
+  vi.spyOn(hooks, 'useDisconnectEpicGamesStore').mockReturnValue({
+    mutateAsync,
+    isPending: false,
+  } as Partial<ReturnType<typeof hooks.useDisconnectEpicGamesStore>> as ReturnType<
+    typeof hooks.useDisconnectEpicGamesStore
+  >);
+  return mutateAsync;
+}
+
+describe('EpicGamesStoreConnectionCard', () => {
   const mockOnConnectionChange = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
-    stubEpicConnection({ connected: false, disabled: false });
-    stubConnectEpic();
-    stubDisconnectEpic();
+    stubEpicGamesStoreConnection({ connected: false, disabled: false });
+    stubConnectEpicGamesStore();
+    stubDisconnectEpicGamesStore();
   });
 
   it('renders not-configured state with inline auth-code form', () => {
     render(
-      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      <EpicGamesStoreConnectionCard
+        isConfigured={false}
+        onConnectionChange={mockOnConnectionChange}
+      />,
       { wrapper: createWrapper() },
     );
 
@@ -74,10 +81,17 @@ describe('EpicConnectionCard', () => {
   });
 
   it('renders disabled state keyed off the reason code, without naming the backend env var', () => {
-    stubEpicConnection({ connected: false, disabled: true, reason: 'legendary_not_configured' });
+    stubEpicGamesStoreConnection({
+      connected: false,
+      disabled: true,
+      reason: 'legendary_not_configured',
+    });
 
     render(
-      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      <EpicGamesStoreConnectionCard
+        isConfigured={false}
+        onConnectionChange={mockOnConnectionChange}
+      />,
       { wrapper: createWrapper() },
     );
 
@@ -89,10 +103,13 @@ describe('EpicConnectionCard', () => {
   });
 
   it('renders a generic disabled message when the reason code is absent or unknown', () => {
-    stubEpicConnection({ connected: false, disabled: true });
+    stubEpicGamesStoreConnection({ connected: false, disabled: true });
 
     render(
-      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      <EpicGamesStoreConnectionCard
+        isConfigured={false}
+        onConnectionChange={mockOnConnectionChange}
+      />,
       { wrapper: createWrapper() },
     );
 
@@ -101,26 +118,35 @@ describe('EpicConnectionCard', () => {
   });
 
   it('renders connected state with display name from connection hook', () => {
-    stubEpicConnection({
+    stubEpicGamesStoreConnection({
       connected: true,
       disabled: false,
       displayName: 'EpicUser123',
     });
 
-    render(<EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
-      wrapper: createWrapper(),
-    });
+    render(
+      <EpicGamesStoreConnectionCard
+        isConfigured={true}
+        onConnectionChange={mockOnConnectionChange}
+      />,
+      {
+        wrapper: createWrapper(),
+      },
+    );
 
     expect(screen.getByText(/Connected as EpicUser123/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
   });
 
-  it('calls connectEpic with the entered auth code', async () => {
+  it('calls connectEpicGamesStore with the entered auth code', async () => {
     const user = userEvent.setup();
-    const connect = stubConnectEpic();
+    const connect = stubConnectEpicGamesStore();
 
     render(
-      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      <EpicGamesStoreConnectionCard
+        isConfigured={false}
+        onConnectionChange={mockOnConnectionChange}
+      />,
       { wrapper: createWrapper() },
     );
 
@@ -135,10 +161,13 @@ describe('EpicConnectionCard', () => {
 
   it('shows a validation error when auth code is blank', async () => {
     const user = userEvent.setup();
-    const connect = stubConnectEpic();
+    const connect = stubConnectEpicGamesStore();
 
     render(
-      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      <EpicGamesStoreConnectionCard
+        isConfigured={false}
+        onConnectionChange={mockOnConnectionChange}
+      />,
       { wrapper: createWrapper() },
     );
 
@@ -152,11 +181,17 @@ describe('EpicConnectionCard', () => {
 
   it('opens a confirmation dialog before disconnecting', async () => {
     const user = userEvent.setup();
-    stubEpicConnection({ connected: true, disabled: false, displayName: 'X' });
+    stubEpicGamesStoreConnection({ connected: true, disabled: false, displayName: 'X' });
 
-    render(<EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
-      wrapper: createWrapper(),
-    });
+    render(
+      <EpicGamesStoreConnectionCard
+        isConfigured={true}
+        onConnectionChange={mockOnConnectionChange}
+      />,
+      {
+        wrapper: createWrapper(),
+      },
+    );
 
     await user.click(screen.getByRole('button', { name: 'Disconnect' }));
 
@@ -165,14 +200,20 @@ describe('EpicConnectionCard', () => {
     });
   });
 
-  it('calls disconnectEpic when the confirmation is accepted', async () => {
+  it('calls disconnectEpicGamesStore when the confirmation is accepted', async () => {
     const user = userEvent.setup();
-    const disconnect = stubDisconnectEpic();
-    stubEpicConnection({ connected: true, disabled: false, displayName: 'X' });
+    const disconnect = stubDisconnectEpicGamesStore();
+    stubEpicGamesStoreConnection({ connected: true, disabled: false, displayName: 'X' });
 
-    render(<EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />, {
-      wrapper: createWrapper(),
-    });
+    render(
+      <EpicGamesStoreConnectionCard
+        isConfigured={true}
+        onConnectionChange={mockOnConnectionChange}
+      />,
+      {
+        wrapper: createWrapper(),
+      },
+    );
 
     await user.click(screen.getByRole('button', { name: 'Disconnect' }));
     await waitFor(() => screen.getByText('Disconnect Epic Games Store?'));
@@ -191,16 +232,22 @@ describe('EpicConnectionCard', () => {
 
   it('shows the playtime limitation note both before and after connecting', () => {
     const { rerender } = render(
-      <EpicConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+      <EpicGamesStoreConnectionCard
+        isConfigured={false}
+        onConnectionChange={mockOnConnectionChange}
+      />,
       { wrapper: createWrapper() },
     );
     expect(
       screen.getByText(/Epic Games Store does not provide playtime data/i),
     ).toBeInTheDocument();
 
-    stubEpicConnection({ connected: true, disabled: false, displayName: 'X' });
+    stubEpicGamesStoreConnection({ connected: true, disabled: false, displayName: 'X' });
     rerender(
-      <EpicConnectionCard isConfigured={true} onConnectionChange={mockOnConnectionChange} />,
+      <EpicGamesStoreConnectionCard
+        isConfigured={true}
+        onConnectionChange={mockOnConnectionChange}
+      />,
     );
     expect(
       screen.getByText(/Epic Games Store does not provide playtime data/i),

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { configurePSN, getPSNStatus, disconnectPSN } from './sync';
+import {
+  configurePlaystationStore,
+  getPlaystationStoreStatus,
+  disconnectPlaystationStore,
+} from './sync';
 import { api } from './client';
 
 vi.mock('./client', () => ({
@@ -16,7 +20,7 @@ describe('PSN API', () => {
     vi.clearAllMocks();
   });
 
-  describe('configurePSN', () => {
+  describe('configurePlaystationStore', () => {
     it('should configure PSN with valid NPSSO token', async () => {
       const mockResponse = {
         success: true,
@@ -27,7 +31,7 @@ describe('PSN API', () => {
 
       vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
-      const result = await configurePSN('valid-npsso-token');
+      const result = await configurePlaystationStore('valid-npsso-token');
 
       expect(api.put).toHaveBeenCalledWith('/sync/playstation-store/connection', {
         npsso_token: 'valid-npsso-token',
@@ -50,7 +54,7 @@ describe('PSN API', () => {
 
       vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
-      const result = await configurePSN('invalid-token');
+      const result = await configurePlaystationStore('invalid-token');
 
       expect(result).toEqual({
         valid: false,
@@ -70,7 +74,7 @@ describe('PSN API', () => {
 
       vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
-      const result = await configurePSN('test-token');
+      const result = await configurePlaystationStore('test-token');
 
       // Verify transformed keys
       expect(result).toHaveProperty('valid');
@@ -82,7 +86,7 @@ describe('PSN API', () => {
     });
   });
 
-  describe('getPSNStatus', () => {
+  describe('getPlaystationStoreStatus', () => {
     it('should fetch PSN connection status when configured', async () => {
       const mockResponse = {
         is_configured: true,
@@ -92,7 +96,7 @@ describe('PSN API', () => {
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await getPSNStatus();
+      const result = await getPlaystationStoreStatus();
 
       expect(api.get).toHaveBeenCalledWith('/sync/playstation-store/connection');
       expect(result).toEqual({
@@ -111,7 +115,7 @@ describe('PSN API', () => {
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await getPSNStatus();
+      const result = await getPlaystationStoreStatus();
 
       expect(result).toEqual({
         configured: false,
@@ -129,7 +133,7 @@ describe('PSN API', () => {
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await getPSNStatus();
+      const result = await getPlaystationStoreStatus();
 
       expect(result.credentialsError).toBe(true);
       expect(result.configured).toBe(true);
@@ -144,7 +148,7 @@ describe('PSN API', () => {
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await getPSNStatus();
+      const result = await getPlaystationStoreStatus();
 
       // Verify transformed keys
       expect(result).toHaveProperty('configured');
@@ -156,11 +160,11 @@ describe('PSN API', () => {
     });
   });
 
-  describe('disconnectPSN', () => {
+  describe('disconnectPlaystationStore', () => {
     it('should disconnect PSN', async () => {
       vi.mocked(api.delete).mockResolvedValueOnce(undefined);
 
-      await disconnectPSN();
+      await disconnectPlaystationStore();
 
       expect(api.delete).toHaveBeenCalledWith('/sync/playstation-store/connection');
     });

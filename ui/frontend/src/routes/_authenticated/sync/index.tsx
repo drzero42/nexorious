@@ -5,8 +5,8 @@ import {
   useSyncStatus,
   usePendingReviewCount,
   useSteamConnection,
-  usePSNStatus,
-  useEpicConnection,
+  usePlaystationStoreStatus,
+  useEpicGamesStoreConnection,
   useGOGConnection,
   useHumbleStatus,
 } from '@/hooks';
@@ -60,10 +60,10 @@ function SyncServiceCardWithStatus({
   const { data: steamConnection } = useSteamConnection({
     enabled: config.storefront === SyncStorefront.STEAM,
   });
-  const { data: psnStatus } = usePSNStatus({
+  const { data: playstationStoreStatus } = usePlaystationStoreStatus({
     enabled: config.storefront === SyncStorefront.PLAYSTATION_STORE,
   });
-  const { data: epicConnection } = useEpicConnection({
+  const { data: epicGamesStoreConnection } = useEpicGamesStoreConnection({
     enabled: config.storefront === SyncStorefront.EPIC_GAMES_STORE,
   });
   const { data: gogConnection } = useGOGConnection({
@@ -78,9 +78,9 @@ function SyncServiceCardWithStatus({
   const credentialsError =
     (config.storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.PLAYSTATION_STORE &&
-      (psnStatus?.credentialsError ?? false)) ||
+      (playstationStoreStatus?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.EPIC_GAMES_STORE &&
-      (epicConnection?.credentialsError ?? false)) ||
+      (epicGamesStoreConnection?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
 

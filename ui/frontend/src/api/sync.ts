@@ -8,12 +8,12 @@ import type {
   SyncFrequency,
   SteamVerifyResponse,
   SteamConnectionData,
-  EpicConnectResponse,
-  EpicConnectionResponse,
+  EpicGamesStoreConnectResponse,
+  EpicGamesStoreConnectionResponse,
   GOGConnectResponse,
   GOGConnectionResponse,
-  PSNConfigureResponse,
-  PSNStatusResponse,
+  PlaystationStoreConfigureResponse,
+  PlaystationStoreStatusResponse,
   HumbleConnectResponse,
   HumbleStatusResponse,
   ExternalGame,
@@ -180,16 +180,16 @@ interface SteamConnectionApiResponse {
 // Epic Auth API Types
 // ============================================================================
 
-interface EpicConnectApiRequest {
+interface EpicGamesStoreConnectApiRequest {
   auth_code: string;
 }
 
-interface EpicConnectApiResponse {
+interface EpicGamesStoreConnectApiResponse {
   display_name: string;
   account_id: string;
 }
 
-interface EpicConnectionApiResponse {
+interface EpicGamesStoreConnectionApiResponse {
   connected: boolean;
   disabled: boolean;
   credentials_error?: boolean;
@@ -236,10 +236,15 @@ export async function disconnectSteam(): Promise<void> {
  * access/refresh token. Backend runs `legendary auth --code <code>` and
  * persists the resulting state snapshot.
  */
-export async function connectEpic(authCode: string): Promise<EpicConnectResponse> {
-  const response = await api.put<EpicConnectApiResponse>('/sync/epic-games-store/connection', {
-    auth_code: authCode,
-  } as EpicConnectApiRequest);
+export async function connectEpicGamesStore(
+  authCode: string,
+): Promise<EpicGamesStoreConnectResponse> {
+  const response = await api.put<EpicGamesStoreConnectApiResponse>(
+    '/sync/epic-games-store/connection',
+    {
+      auth_code: authCode,
+    } as EpicGamesStoreConnectApiRequest,
+  );
   return {
     displayName: response.display_name,
     accountId: response.account_id,
@@ -249,8 +254,10 @@ export async function connectEpic(authCode: string): Promise<EpicConnectResponse
 /**
  * Get current Epic Games Store connection status.
  */
-export async function getEpicConnection(): Promise<EpicConnectionResponse> {
-  const response = await api.get<EpicConnectionApiResponse>('/sync/epic-games-store/connection');
+export async function getEpicGamesStoreConnection(): Promise<EpicGamesStoreConnectionResponse> {
+  const response = await api.get<EpicGamesStoreConnectionApiResponse>(
+    '/sync/epic-games-store/connection',
+  );
   return {
     connected: response.connected,
     disabled: response.disabled,
@@ -263,7 +270,7 @@ export async function getEpicConnection(): Promise<EpicConnectionResponse> {
 /**
  * Disconnect Epic Games Store. Clears legendary state and per-user working dir.
  */
-export async function disconnectEpic(): Promise<void> {
+export async function disconnectEpicGamesStore(): Promise<void> {
   await api.delete('/sync/epic-games-store/connection');
 }
 
@@ -317,18 +324,18 @@ export async function disconnectGOG(): Promise<void> {
 // PSN API Types
 // ============================================================================
 
-interface PSNConfigureApiRequest {
+interface PlaystationStoreConfigureApiRequest {
   npsso_token: string;
 }
 
-interface PSNConfigureApiResponse {
+interface PlaystationStoreConfigureApiResponse {
   success: boolean;
   online_id: string | null;
   account_id: string | null;
   message: string;
 }
 
-interface PSNStatusApiResponse {
+interface PlaystationStoreStatusApiResponse {
   is_configured: boolean;
   credentials_error?: boolean;
   online_id: string | null;
@@ -341,10 +348,15 @@ interface PSNStatusApiResponse {
 /**
  * Configure PSN with NPSSO token.
  */
-export async function configurePSN(npssoToken: string): Promise<PSNConfigureResponse> {
-  const response = await api.put<PSNConfigureApiResponse>('/sync/playstation-store/connection', {
-    npsso_token: npssoToken,
-  } as PSNConfigureApiRequest);
+export async function configurePlaystationStore(
+  npssoToken: string,
+): Promise<PlaystationStoreConfigureResponse> {
+  const response = await api.put<PlaystationStoreConfigureApiResponse>(
+    '/sync/playstation-store/connection',
+    {
+      npsso_token: npssoToken,
+    } as PlaystationStoreConfigureApiRequest,
+  );
 
   return {
     valid: response.success,
@@ -357,8 +369,10 @@ export async function configurePSN(npssoToken: string): Promise<PSNConfigureResp
 /**
  * Get PSN connection status.
  */
-export async function getPSNStatus(): Promise<PSNStatusResponse> {
-  const response = await api.get<PSNStatusApiResponse>('/sync/playstation-store/connection');
+export async function getPlaystationStoreStatus(): Promise<PlaystationStoreStatusResponse> {
+  const response = await api.get<PlaystationStoreStatusApiResponse>(
+    '/sync/playstation-store/connection',
+  );
 
   return {
     configured: response.is_configured,
@@ -437,7 +451,7 @@ export async function getSteamConnection(): Promise<SteamConnectionData> {
 /**
  * Disconnect PSN integration.
  */
-export async function disconnectPSN(): Promise<void> {
+export async function disconnectPlaystationStore(): Promise<void> {
   await api.delete('/sync/playstation-store/connection');
 }
 

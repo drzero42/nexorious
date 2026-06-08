@@ -85,7 +85,7 @@ Old entries are pruned by a periodic maintenance job (see Maintenance).
 
 ## Architecture
 
-The sync pipeline has three stages. Each stage is implemented as a River worker job in the `tasks` package. The `DispatchSyncWorker` defines a standard adapter interface; each storefront implements that interface in its own `services/` package (`services/steam`, `services/psn`, `services/gog`, `services/epic`, `services/humble`). Storefront-specific knowledge — auth, API communication, credential lifecycle — never crosses into the workers.
+The sync pipeline has three stages. Each stage is implemented as a River worker job in the `tasks` package. The `DispatchSyncWorker` defines a standard adapter interface; each storefront implements that interface in its own `services/` package (`services/steam`, `services/playstationstore`, `services/gog`, `services/epicgamesstore`, `services/humble`). Storefront-specific knowledge — auth, API communication, credential lifecycle — never crosses into the workers.
 
 ```mermaid
 flowchart TD
