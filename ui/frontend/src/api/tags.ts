@@ -141,15 +141,11 @@ export async function createOrGetTag(
     queryParams.color = color;
   }
 
-  const response = await api.post<{ tag: Tag; created: boolean }>(
-    '/tags/create-or-get',
-    undefined,
-    {
-      params: queryParams,
-    },
-  );
+  const response = await api.post<TagCreateOrGetResponse>('/tags/create-or-get', undefined, {
+    params: queryParams,
+  });
 
-  return { tag: response.tag, created: response.created };
+  return response;
 }
 
 /**
