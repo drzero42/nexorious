@@ -25,11 +25,11 @@ import (
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/scheduler"
-	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
+	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
 	"github.com/drzero42/nexorious/internal/services/igdb"
-	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
+	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
 	"github.com/drzero42/nexorious/internal/services/storelink"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -174,7 +174,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		staleThreshold = 4 * time.Hour
 	}
 
-	epicClient := epicsvc.NewClient(cfg.LegendaryWorkDir)
+	epicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
 		DB:      db,
 		Adapter: buildAdapterFactory(db, encrypter, epicClient),
@@ -263,7 +263,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				return fmt.Errorf("RebuildServices: pgxpool: %w", err)
 			}
 
-			newEpicClient := epicsvc.NewClient(cfg.LegendaryWorkDir)
+			newEpicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 			newDispatchSync := &tasks.DispatchSyncWorker{
 				DB:      newDB,
 				Adapter: buildAdapterFactory(newDB, encrypter, newEpicClient),
@@ -444,7 +444,7 @@ func reconcileOrphanedDispatchJobs(ctx context.Context, db *bun.DB) {
 func buildAdapterFactory(
 	db *bun.DB,
 	encrypter *crypto.Encrypter,
-	epicClient *epicsvc.Client,
+	epicClient *epicgamesstoresvc.Client,
 ) func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 	return func(ctx context.Context, storefront string, cfg models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 		switch storefront {
@@ -481,7 +481,7 @@ func buildAdapterFactory(
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
-			return psnsvc.NewAdapter(psnsvc.NewClient(), creds.NPSSOToken), nil
+			return playstationstoresvc.NewAdapter(playstationstoresvc.NewClient(), creds.NPSSOToken), nil
 
 		case "gog":
 			if cfg.StorefrontCredentials == nil {
@@ -542,7 +542,7 @@ func buildAdapterFactory(
 				).Exec(context.Background())
 				return dbErr
 			}
-			return epicsvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot), nil
+			return epicgamesstoresvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot), nil
 
 		case "humble-bundle":
 			if cfg.StorefrontCredentials == nil {
@@ -597,7 +597,7 @@ func buildStoreLinkResolverFactory(db *bun.DB, encrypter *crypto.Encrypter) func
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, fmt.Errorf("parse psn creds: %w", err)
 			}
-			return storelink.NewPSNResolver(psnsvc.NewClient(), creds.NPSSOToken), nil
+			return storelink.NewPSNResolver(playstationstoresvc.NewClient(), creds.NPSSOToken), nil
 		default:
 			return nil, fmt.Errorf("unknown storefront: %s", storefront)
 		}

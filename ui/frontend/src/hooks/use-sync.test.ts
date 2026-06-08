@@ -9,9 +9,9 @@ import {
   useSyncStatus,
   useUpdateSyncConfig,
   useTriggerSync,
-  useConnectEpic,
-  useEpicConnection,
-  useDisconnectEpic,
+  useConnectEpicGamesStore,
+  useEpicGamesStoreConnection,
+  useDisconnectEpicGamesStore,
   syncKeys,
 } from './use-sync';
 import { SyncStorefront, SyncFrequency } from '@/types';
@@ -325,14 +325,14 @@ describe('use-sync hooks', () => {
   });
 
   describe('Epic Auth Hooks', () => {
-    it('should call connectEpic with the auth code', async () => {
-      const mockConnectEpic = vi.spyOn(syncApi, 'connectEpic');
-      mockConnectEpic.mockResolvedValue({
+    it('should call connectEpicGamesStore with the auth code', async () => {
+      const mockConnectEpicGamesStore = vi.spyOn(syncApi, 'connectEpicGamesStore');
+      mockConnectEpicGamesStore.mockResolvedValue({
         displayName: 'EpicUser',
         accountId: 'acct-abc',
       });
 
-      const { result } = renderHook(() => useConnectEpic(), {
+      const { result } = renderHook(() => useConnectEpicGamesStore(), {
         wrapper: QueryWrapper,
       });
 
@@ -340,19 +340,19 @@ describe('use-sync hooks', () => {
         await result.current.mutateAsync('TESTCODE');
       });
 
-      expect(mockConnectEpic).toHaveBeenCalledWith('TESTCODE');
-      mockConnectEpic.mockRestore();
+      expect(mockConnectEpicGamesStore).toHaveBeenCalledWith('TESTCODE');
+      mockConnectEpicGamesStore.mockRestore();
     });
 
     it('should fetch Epic connection status', async () => {
-      const mockGetEpicConnection = vi.spyOn(syncApi, 'getEpicConnection');
-      mockGetEpicConnection.mockResolvedValue({
+      const mockGetEpicGamesStoreConnection = vi.spyOn(syncApi, 'getEpicGamesStoreConnection');
+      mockGetEpicGamesStoreConnection.mockResolvedValue({
         connected: true,
         disabled: false,
         displayName: 'EpicUser',
       });
 
-      const { result } = renderHook(() => useEpicConnection(), {
+      const { result } = renderHook(() => useEpicGamesStoreConnection(), {
         wrapper: QueryWrapper,
       });
 
@@ -366,14 +366,14 @@ describe('use-sync hooks', () => {
         displayName: 'EpicUser',
       });
 
-      mockGetEpicConnection.mockRestore();
+      mockGetEpicGamesStoreConnection.mockRestore();
     });
 
     it('should invalidate Epic queries on disconnect', async () => {
-      const mockDisconnectEpic = vi.spyOn(syncApi, 'disconnectEpic');
-      mockDisconnectEpic.mockResolvedValue(undefined);
+      const mockDisconnectEpicGamesStore = vi.spyOn(syncApi, 'disconnectEpicGamesStore');
+      mockDisconnectEpicGamesStore.mockResolvedValue(undefined);
 
-      const { result } = renderHook(() => useDisconnectEpic(), {
+      const { result } = renderHook(() => useDisconnectEpicGamesStore(), {
         wrapper: QueryWrapper,
       });
 
@@ -381,8 +381,8 @@ describe('use-sync hooks', () => {
         await result.current.mutateAsync();
       });
 
-      expect(mockDisconnectEpic).toHaveBeenCalled();
-      mockDisconnectEpic.mockRestore();
+      expect(mockDisconnectEpicGamesStore).toHaveBeenCalled();
+      mockDisconnectEpicGamesStore.mockRestore();
     });
   });
 });

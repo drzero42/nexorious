@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ExternalLink } from 'lucide-react';
-import { useConfigurePSN, useDisconnectPSN } from '@/hooks';
+import { useConfigurePlaystationStore, useDisconnectPlaystationStore } from '@/hooks';
 import {
   CodeHelpAccordion,
   ConnectSubmitButton,
@@ -15,44 +15,44 @@ import {
   DisconnectDialog,
 } from './connection';
 
-const psnCredentialsSchema = z.object({
+const playstationStoreCredentialsSchema = z.object({
   npssoToken: z
     .string()
     .length(64, 'NPSSO token must be exactly 64 characters')
     .regex(/^[A-Za-z0-9]+$/, 'NPSSO token must contain only alphanumeric characters'),
 });
 
-type PSNCredentialsForm = z.infer<typeof psnCredentialsSchema>;
+type PlaystationStoreCredentialsForm = z.infer<typeof playstationStoreCredentialsSchema>;
 
-interface PSNConnectionCardProps {
+interface PlaystationStoreConnectionCardProps {
   isConfigured: boolean;
   credentialsError: boolean;
   onlineId?: string;
   onConnectionChange: () => void;
 }
 
-export function PSNConnectionCard({
+export function PlaystationStoreConnectionCard({
   isConfigured,
   credentialsError,
   onlineId,
   onConnectionChange,
-}: PSNConnectionCardProps) {
+}: PlaystationStoreConnectionCardProps) {
   const {
     register,
     handleSubmit,
     formState: { errors },
     setError,
-  } = useForm<PSNCredentialsForm>({
-    resolver: zodResolver(psnCredentialsSchema),
+  } = useForm<PlaystationStoreCredentialsForm>({
+    resolver: zodResolver(playstationStoreCredentialsSchema),
   });
 
-  const configureMutation = useConfigurePSN();
-  const disconnectMutation = useDisconnectPSN();
+  const configureMutation = useConfigurePlaystationStore();
+  const disconnectMutation = useDisconnectPlaystationStore();
 
   const isConfiguring = configureMutation.isPending;
   const isDisconnecting = disconnectMutation.isPending;
 
-  const onSubmit = async (data: PSNCredentialsForm) => {
+  const onSubmit = async (data: PlaystationStoreCredentialsForm) => {
     try {
       const result = await configureMutation.mutateAsync(data.npssoToken);
 

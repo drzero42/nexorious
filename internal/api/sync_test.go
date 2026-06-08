@@ -29,16 +29,16 @@ func (s *stubSteamClient) GetPlayerSummaries(_ context.Context, _, _ string) (*a
 	return s.summary, s.err
 }
 
-type stubPSNClient struct {
-	info *api.PSNAccountInfo
+type stubPlaystationStoreClient struct {
+	info *api.PlaystationStoreAccountInfo
 	err  error
 }
 
-func (s *stubPSNClient) GetAccountInfo(_ context.Context, _ string) (*api.PSNAccountInfo, error) {
+func (s *stubPlaystationStoreClient) GetAccountInfo(_ context.Context, _ string) (*api.PlaystationStoreAccountInfo, error) {
 	return s.info, s.err
 }
 
-func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient) interface {
+func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PlaystationStoreClient) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
@@ -46,7 +46,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSN
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -56,7 +56,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSN
 
 func TestSyncConfig_ListDefaults(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "cfg-list-1")
 
 	rec := getAuth(t, e, "/api/sync/config", token)
@@ -84,7 +84,7 @@ func TestSyncConfig_ListDefaults(t *testing.T) {
 
 func TestSyncConfig_Put_CreatesRow(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "cfg-put-1")
 
 	rec := putJSONAuth(t, e, "/api/sync/config/steam", map[string]any{
@@ -104,7 +104,7 @@ func TestSyncConfig_Put_CreatesRow(t *testing.T) {
 
 func TestSyncConfig_Put_InvalidStorefront(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "cfg-invalid-1")
 
 	rec := putJSONAuth(t, e, "/api/sync/config/battlenet", map[string]any{"frequency": "daily"}, token)
@@ -113,9 +113,9 @@ func TestSyncConfig_Put_InvalidStorefront(t *testing.T) {
 	}
 }
 
-func TestSyncConfig_Put_EpicAllowed(t *testing.T) {
+func TestSyncConfig_Put_EpicGamesStoreAllowed(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "cfg-epic-1")
 
 	rec := putJSONAuth(t, e, "/api/sync/config/epic-games-store", map[string]any{"frequency": "weekly"}, token)
@@ -128,7 +128,7 @@ func TestSyncConfig_Put_EpicAllowed(t *testing.T) {
 
 func TestSyncTrigger_CreatesJob(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "trig-1")
 
 	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
@@ -152,7 +152,7 @@ func TestSyncTrigger_CreatesJob(t *testing.T) {
 
 func TestSyncTrigger_EpicGamesStoreCreatesJob(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "trig-epic-1")
 
 	rec := postJSONAuth(t, e, "/api/sync/epic-games-store", nil, token)
@@ -176,7 +176,7 @@ func TestSyncTrigger_EpicGamesStoreCreatesJob(t *testing.T) {
 
 func TestSyncTrigger_DuplicateReturns409(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "trig-dup-1")
 
 	postJSONAuth(t, e, "/api/sync/steam", nil, token)
@@ -188,7 +188,7 @@ func TestSyncTrigger_DuplicateReturns409(t *testing.T) {
 
 func TestSyncTrigger_RejectsOldSlugs(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "trig-oldslug-1")
 
 	// Clean cutover: the pre-rename slugs are no longer valid storefronts.
@@ -202,7 +202,7 @@ func TestSyncTrigger_RejectsOldSlugs(t *testing.T) {
 
 func TestSyncTrigger_PlaystationStoreCreatesJob(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "trig-pss-1")
 
 	rec := postJSONAuth(t, e, "/api/sync/playstation-store", nil, token)
@@ -220,7 +220,7 @@ func TestSyncTrigger_PlaystationStoreCreatesJob(t *testing.T) {
 
 func TestSyncStatus_ReflectsActiveJob(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "stat-1")
 
 	rec := getAuth(t, e, "/api/sync/steam/status", token)
@@ -254,7 +254,7 @@ func TestSyncStatus_ReflectsActiveJob(t *testing.T) {
 
 func TestSteamConnect_BadSteamID(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "sv-bad-id")
 
 	rec := putJSONAuth(t, e, "/api/sync/steam/connection", map[string]any{
@@ -278,7 +278,7 @@ func TestSteamConnect_BadSteamID(t *testing.T) {
 
 func TestSteamConnect_BadAPIKey(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "sv-bad-key")
 
 	rec := putJSONAuth(t, e, "/api/sync/steam/connection", map[string]any{
@@ -302,7 +302,7 @@ func TestSteamConnect_StubSuccess(t *testing.T) {
 	stub := &stubSteamClient{
 		summary: &api.SteamPlayerSummary{PersonaName: "Frostbyte", CommunityVisibilityState: 3},
 	}
-	e := newSyncTestApp(t, testDB, stub, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, stub, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "sv-ok")
 
 	rec := putJSONAuth(t, e, "/api/sync/steam/connection", map[string]any{
@@ -343,7 +343,7 @@ func TestSteamConnect_StubSuccess(t *testing.T) {
 
 func TestSteamDisconnect_Idempotent(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "sd-1")
 
 	rec := deleteAuth(t, e, "/api/sync/steam/connection", token)
@@ -354,9 +354,9 @@ func TestSteamDisconnect_Idempotent(t *testing.T) {
 
 // --- PSN tests ---------------------------------------------------------------
 
-func TestPSNConnect_ShortToken(t *testing.T) {
+func TestPlaystationStoreConnect_ShortToken(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-short")
 
 	rec := putJSONAuth(t, e, "/api/sync/playstation-store/connection", map[string]any{
@@ -367,10 +367,10 @@ func TestPSNConnect_ShortToken(t *testing.T) {
 	}
 }
 
-func TestPSNConnect_StubSuccess(t *testing.T) {
+func TestPlaystationStoreConnect_StubSuccess(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubPSNClient{
-		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
+	stub := &stubPlaystationStoreClient{
+		info: &api.PlaystationStoreAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-ok")
@@ -403,9 +403,9 @@ func TestPSNConnect_StubSuccess(t *testing.T) {
 	}
 }
 
-func TestPSNStatus_NoRow(t *testing.T) {
+func TestPlaystationStoreStatus_NoRow(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-stat-empty")
 
 	rec := getAuth(t, e, "/api/sync/playstation-store/connection", token)
@@ -427,9 +427,9 @@ func TestPSNStatus_NoRow(t *testing.T) {
 	}
 }
 
-func TestPSNDisconnect_Idempotent(t *testing.T) {
+func TestPlaystationStoreDisconnect_Idempotent(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-disc-1")
 
 	rec := deleteAuth(t, e, "/api/sync/playstation-store/connection", token)
@@ -480,7 +480,7 @@ func insertExternalGamePlatform(t *testing.T, db *bun.DB, egID, platform string)
 
 func TestIgnored_EmptyList(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "ign-empty")
 
 	rec := getAuth(t, e, "/api/sync/ignored", token)
@@ -498,7 +498,7 @@ func TestIgnored_EmptyList(t *testing.T) {
 
 func TestIgnored_SkipAndUnskip(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "ign-roundtrip")
 	insertExternalGame(t, testDB, "eg-1", userID, "steam", "730", "CS2")
 
@@ -537,7 +537,7 @@ func TestIgnored_SkipAndUnskip(t *testing.T) {
 
 func TestSkipGame_MarksJobItemSkippedAndCompletesJob(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "skip-jobitem")
 	insertExternalGame(t, testDB, "eg-skip-ji", userID, "steam", "777", "Skip Me")
 	insertJob(t, testDB, "job-skip-ji", userID, "sync", "steam", "processing")
@@ -595,7 +595,7 @@ func TestSkipGame_MarksJobItemSkippedAndCompletesJob(t *testing.T) {
 func TestSkipGame_CascadesToChildren(t *testing.T) {
 	// Skipping a parent must also skip its children and their job_items.
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "skip-cascade")
 
 	insertExternalGame(t, testDB, "eg-skip-parent", userID, "playstation-store", "CUSA001", "Horizon")
@@ -640,7 +640,7 @@ func TestSkipGame_CascadesToChildren(t *testing.T) {
 func TestUnskipGame_CascadesToChildren(t *testing.T) {
 	// Unskipping a parent must also unskip its children.
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "unskip-cascade")
 
 	// Insert parent and child, both pre-skipped.
@@ -677,7 +677,7 @@ func TestUnskipGame_CascadesToChildren(t *testing.T) {
 
 func TestIgnored_404ForUnknown(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "ign-404")
 
 	rec := postJSONAuth(t, e, "/api/sync/ignored/nonexistent", nil, token)
@@ -690,7 +690,7 @@ func TestIgnored_404ForUnknown(t *testing.T) {
 
 func TestSyncListConfig_AfterPut(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "listcfg-afterput")
 
 	// Create a steam config.
@@ -732,7 +732,7 @@ func TestSyncListConfig_AfterPut(t *testing.T) {
 
 func TestSyncGetConfig_NoRow_ReturnsDefault(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "getcfg-norow")
 
 	rec := getAuth(t, e, "/api/sync/config/steam", token)
@@ -754,7 +754,7 @@ func TestSyncGetConfig_NoRow_ReturnsDefault(t *testing.T) {
 
 func TestSyncGetConfig_AfterPut(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "getcfg-afterput")
 
 	// Create a config first.
@@ -781,7 +781,7 @@ func TestSyncGetConfig_AfterPut(t *testing.T) {
 
 func TestSyncGetConfig_InvalidStorefront(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "getcfg-invalid")
 
 	rec := getAuth(t, e, "/api/sync/config/battlenet", token)
@@ -790,12 +790,12 @@ func TestSyncGetConfig_InvalidStorefront(t *testing.T) {
 	}
 }
 
-// ─── TestHandleGetPSNConnection with credentials ──────────────────────────────────
+// ─── TestHandleGetPlaystationStoreConnection with credentials ──────────────────────────────────
 
-func TestPSNStatus_WithCredentials(t *testing.T) {
+func TestPlaystationStoreStatus_WithCredentials(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubPSNClient{
-		info: &api.PSNAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
+	stub := &stubPlaystationStoreClient{
+		info: &api.PlaystationStoreAccountInfo{OnlineID: "MyPSNName", AccountID: "123456"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-stat-cred")
@@ -843,9 +843,9 @@ func insertCorruptedSyncConfig(t *testing.T, db *bun.DB, userID, storefront stri
 	}
 }
 
-func TestPSNStatus_CorruptedCredentials(t *testing.T) {
+func TestPlaystationStoreStatus_CorruptedCredentials(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "psn-corrupt-creds")
 	insertCorruptedSyncConfig(t, testDB, userID, "playstation-store")
 
@@ -878,9 +878,9 @@ func TestPSNStatus_CorruptedCredentials(t *testing.T) {
 	}
 }
 
-func TestEpicStatus_CorruptedCredentials(t *testing.T) {
+func TestEpicGamesStoreStatus_CorruptedCredentials(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubEpicClient{configured: true})
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubEpicGamesStoreClient{configured: true})
 	userID, token := setupTagUser(t, testDB, e, "epic-corrupt-creds")
 	insertCorruptedSyncConfig(t, testDB, userID, "epic-games-store")
 
@@ -915,7 +915,7 @@ func TestEpicStatus_CorruptedCredentials(t *testing.T) {
 
 func TestGOGStatus_CorruptedCredentials(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubGOGClient{})
+	e := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubGOGClient{})
 	userID, token := setupTagUser(t, testDB, e, "gog-corrupt-creds")
 	insertCorruptedSyncConfig(t, testDB, userID, "gog")
 
@@ -952,7 +952,7 @@ func TestGOGStatus_CorruptedCredentials(t *testing.T) {
 
 func TestListExternalGames_EmptyList(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "eg-empty")
 
 	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
@@ -970,7 +970,7 @@ func TestListExternalGames_EmptyList(t *testing.T) {
 
 func TestListExternalGames_InvalidStorefront(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "eg-bad-sf")
 
 	rec := getAuth(t, e, "/api/sync/notaplatform/external-games", token)
@@ -981,7 +981,7 @@ func TestListExternalGames_InvalidStorefront(t *testing.T) {
 
 func TestListExternalGames_IsolatedByUser(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userA, tokenA := setupTagUser(t, testDB, e, "eg-user-a")
 	_, tokenB := setupTagUser(t, testDB, e, "eg-user-b")
 	insertExternalGame(t, testDB, "eg-a1", userA, "steam", "730", "CS2")
@@ -1004,7 +1004,7 @@ func TestListExternalGames_IsolatedByUser(t *testing.T) {
 func TestListExternalGames_ExcludesChildren(t *testing.T) {
 	// A child row (parent_id IS NOT NULL) must never appear in the list.
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "list-excludes-children")
 
 	insertExternalGame(t, testDB, "eg-parent-1", userID, "playstation-store", "CUSA001", "Horizon")
@@ -1029,7 +1029,7 @@ func TestListExternalGames_ExcludesChildren(t *testing.T) {
 func TestListExternalGames_AggregatesChildPlatforms(t *testing.T) {
 	// The parent entry must include platform slugs from child rows.
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "list-agg-platforms")
 
 	insertExternalGame(t, testDB, "eg-par-2", userID, "playstation-store", "CUSA002", "God of War")
@@ -1090,7 +1090,7 @@ func insertUserGameAndPlatform(t *testing.T, db *bun.DB, ugID, userID, gameIDInt
 
 func TestRematchExternalGame_NotFound(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "rm-404")
 
 	rec := postJSONAuth(t, e, "/api/sync/external-games/nonexistent/rematch",
@@ -1102,7 +1102,7 @@ func TestRematchExternalGame_NotFound(t *testing.T) {
 
 func TestRematchExternalGame_OtherUsersGame(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userA, _ := setupTagUser(t, testDB, e, "rm-userA")
 	_, tokenB := setupTagUser(t, testDB, e, "rm-userB")
 	insertExternalGame(t, testDB, "eg-rm-a", userA, "steam", "42", "Some Game")
@@ -1116,7 +1116,7 @@ func TestRematchExternalGame_OtherUsersGame(t *testing.T) {
 
 func TestRematchExternalGame_OrphanRequiresAction(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-orphan")
 	insertExternalGame(t, testDB, "eg-rm-1", userID, "steam", "1", "Game")
 	// Link to a user_game that has only this one platform
@@ -1131,7 +1131,7 @@ func TestRematchExternalGame_OrphanRequiresAction(t *testing.T) {
 
 func TestRematchExternalGame_KeepOrphan(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-keep")
 	insertExternalGame(t, testDB, "eg-rm-2", userID, "steam", "2", "Game Two")
 	insertUserGameAndPlatform(t, testDB, "ug-rm-2", userID, "2222", "ugp-rm-2", "eg-rm-2")
@@ -1170,7 +1170,7 @@ func TestRematchExternalGame_KeepOrphan(t *testing.T) {
 
 func TestRematchExternalGame_RemoveOrphan(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-remove")
 	insertExternalGame(t, testDB, "eg-rm-3", userID, "steam", "3", "Game Three")
 	insertUserGameAndPlatform(t, testDB, "ug-rm-3", userID, "3333", "ugp-rm-3", "eg-rm-3")
@@ -1195,7 +1195,7 @@ func TestRematchExternalGame_RemoveOrphan(t *testing.T) {
 
 func TestRematchExternalGame_ResolvesSiblings(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-siblings")
 
 	// Two PSN external_games for the same game title (PS4 parent + PS5 child variant).
@@ -1254,7 +1254,7 @@ func TestRematchExternalGame_ResolvesSiblings(t *testing.T) {
 // so the game disappears from the needs-review list without waiting for River.
 func TestRematchExternalGame_UpdatesJobItemStatusToPending(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-status")
 	insertExternalGame(t, testDB, "eg-status-1", userID, "steam", "111", "Portal 2")
 	insertJob(t, testDB, "job-status-1", userID, "sync", "steam", "processing")
@@ -1291,7 +1291,7 @@ func TestRematchExternalGame_UpdatesJobItemStatusToPending(t *testing.T) {
 // to pending when a rematch resolves the whole sibling group.
 func TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-sib-status")
 
 	insertExternalGame(t, testDB, "eg-sib-s1", userID, "playstation-store", "PPSA-101", "God of War")
@@ -1340,7 +1340,7 @@ func TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending(t *testing.T) 
 // duplicate that would violate the UNIQUE(job_id, item_key) constraint.
 func TestRematchExternalGame_AfterSyncCompleted(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-postcomplete")
 	insertExternalGame(t, testDB, "eg-pc-1", userID, "steam", "555", "Half-Life 3")
 	insertJob(t, testDB, "job-pc-1", userID, "sync", "steam", "completed")
@@ -1382,7 +1382,7 @@ func TestRematchExternalGame_AfterSyncCompleted(t *testing.T) {
 // without triggering a duplicate-key error.
 func TestRematchExternalGame_SiblingAfterSyncCompleted(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-sib-postcomplete")
 
 	insertExternalGame(t, testDB, "eg-sib-pc1", userID, "playstation-store", "CUSA-001", "Horizon")
@@ -1429,7 +1429,7 @@ func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
 	// not title search. A second game with the same title but different user must NOT
 	// be affected.
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userA, tokenA := setupTagUser(t, testDB, e, "rm-fk-userA")
 	userB, _ := setupTagUser(t, testDB, e, "rm-fk-userB")
 
@@ -1483,7 +1483,7 @@ func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
 // used id != ugpID instead of external_game_id IS DISTINCT FROM eg.id.
 func TestRematchExternalGame_MultiPlatformOrphanRemove(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-mp-orphan")
 
 	// Wrong IGDB match — external_game must exist before UGPs (FK constraint).
@@ -1547,7 +1547,7 @@ func TestRematchExternalGame_MultiPlatformOrphanRemove(t *testing.T) {
 // wrong match because the sibling query filtered resolved_igdb_id IS NULL.
 func TestRematchExternalGame_SiblingAlreadyMatchedWrong(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-sib-wrong")
 
 	// Two Steam entries for "Another World" — both previously matched to the wrong IGDB game (id 1111).
@@ -1606,7 +1606,7 @@ func TestRematchExternalGame_SiblingAlreadyMatchedWrong(t *testing.T) {
 
 func TestUnskipGame_EnqueuesJobItem(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "unskip-enqueue")
 	insertExternalGame(t, testDB, "eg-unskip", userID, "steam", "42", "Half-Life 3")
 
@@ -1649,7 +1649,7 @@ func TestUnskipGame_EnqueuesJobItem(t *testing.T) {
 
 func TestResetSyncData_DeletesDataAndResetsTimestamp(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "reset-data")
 
 	_, _ = testDB.ExecContext(context.Background(),
@@ -1695,7 +1695,7 @@ func TestResetSyncData_DeletesDataAndResetsTimestamp(t *testing.T) {
 
 func TestResetSyncData_CancelsActiveJob(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "reset-cancel")
 
 	insertJob(t, testDB, "job-reset-active", userID, "sync", "steam", "processing")
@@ -1720,7 +1720,7 @@ func TestResetSyncData_CancelsActiveJob(t *testing.T) {
 
 func TestResetSyncData_InvalidStorefront(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "reset-invalid")
 
 	rec := deleteAuth(t, e, "/api/sync/fakefront/data", token)
@@ -1731,7 +1731,7 @@ func TestResetSyncData_InvalidStorefront(t *testing.T) {
 
 func TestResetSyncData_Unauthorized(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/sync/steam/data", nil)
 	rec := httptest.NewRecorder()
@@ -1743,7 +1743,7 @@ func TestResetSyncData_Unauthorized(t *testing.T) {
 
 func TestResetSyncData_EmptyState(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "reset-empty")
 
 	rec := deleteAuth(t, e, "/api/sync/steam/data", token)
@@ -1754,7 +1754,7 @@ func TestResetSyncData_EmptyState(t *testing.T) {
 
 func TestListExternalGames_AllStates(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "eg-states")
 	insertExternalGame(t, testDB, "eg-matched", userID, "steam", "1", "Matched Game")
 	insertExternalGame(t, testDB, "eg-unmatched", userID, "steam", "2", "Unmatched Game")
@@ -1798,7 +1798,7 @@ func TestListExternalGames_AllStates(t *testing.T) {
 
 func TestListExternalGames_ExcludesInFlight(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "eg-inflight")
 
 	insertExternalGame(t, testDB, "eg-stable", userID, "steam", "10", "Stable Game")
@@ -1833,7 +1833,7 @@ func TestListExternalGames_ExcludesInFlight(t *testing.T) {
 
 func TestListExternalGames_ReturnsPlatforms(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "eg-plat")
 
 	insertExternalGame(t, testDB, "eg-p1", userID, "steam", "730", "CS2")
@@ -1881,7 +1881,7 @@ func TestListExternalGames_ReturnsPlatforms(t *testing.T) {
 
 func TestListExternalGames_NoPlatforms_ReturnsEmptyArray(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "eg-noplat")
 
 	insertExternalGame(t, testDB, "eg-np1", userID, "steam", "999", "Orphan Game")
@@ -1907,8 +1907,8 @@ func TestListExternalGames_NoPlatforms_ReturnsEmptyArray(t *testing.T) {
 
 // ─── Epic connection-handler tests ────────────────────────────────────────────
 
-type stubEpicClient struct {
-	info       *api.EpicAccountInfo
+type stubEpicGamesStoreClient struct {
+	info       *api.EpicGamesStoreAccountInfo
 	snapshot   map[string]string
 	authErr    error
 	cleanupErr error
@@ -1919,24 +1919,24 @@ type stubEpicClient struct {
 	cleanupUserID string
 }
 
-func (s *stubEpicClient) Authenticate(_ context.Context, _, _ string) (*api.EpicAccountInfo, map[string]string, error) {
+func (s *stubEpicGamesStoreClient) Authenticate(_ context.Context, _, _ string) (*api.EpicGamesStoreAccountInfo, map[string]string, error) {
 	s.authCalled = true
 	return s.info, s.snapshot, s.authErr
 }
 
-func (s *stubEpicClient) Cleanup(_ context.Context, userID string) error {
+func (s *stubEpicGamesStoreClient) Cleanup(_ context.Context, userID string) error {
 	s.cleanupCalled = true
 	s.cleanupUserID = userID
 	return s.cleanupErr
 }
 
-func (s *stubEpicClient) Configured() bool {
+func (s *stubEpicGamesStoreClient) Configured() bool {
 	return s.configured
 }
 
-// newSyncTestAppWithEpic builds the sync app with a custom EpicClient. Used by
+// newSyncTestAppWithEpicGamesStore builds the sync app with a custom EpicGamesStoreClient. Used by
 // the Epic connection tests; other tests use newSyncTestApp which passes nil.
-func newSyncTestAppWithEpic(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient, epic api.EpicClient) interface {
+func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PlaystationStoreClient, epic api.EpicGamesStoreClient) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
@@ -1969,7 +1969,7 @@ func (s *stubGOGClient) ExchangeCode(_ context.Context, code string) (*api.GOGTo
 	return s.token, s.err
 }
 
-func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient, rc *river.Client[pgx.Tx]) interface {
+func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PlaystationStoreClient, rc *river.Client[pgx.Tx]) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
@@ -1977,7 +1977,7 @@ func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClie
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1989,7 +1989,7 @@ func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClie
 func TestHandleTriggerSync_RiverInsertFails_Returns500(t *testing.T) {
 	truncateAllTables(t)
 	rc := newFailingRiverClient(t)
-	e := newSyncTestAppWithRiverClient(t, testDB, &stubSteamClient{}, &stubPSNClient{}, rc)
+	e := newSyncTestAppWithRiverClient(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, rc)
 	_, token := setupTagUser(t, testDB, e, "trigger-river-fail")
 
 	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
@@ -1998,7 +1998,7 @@ func TestHandleTriggerSync_RiverInsertFails_Returns500(t *testing.T) {
 	}
 }
 
-func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PSNClient, gog api.GOGClient) interface {
+func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PlaystationStoreClient, gog api.GOGClient) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
 	t.Helper()
@@ -2006,16 +2006,16 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicClient)(nil), gog, (api.HumbleClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicGamesStoreClient)(nil), gog, (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
 }
 
-func TestHandleEpicConnect_503WhenNotConfigured(t *testing.T) {
+func TestHandleEpicGamesStoreConnect_503WhenNotConfigured(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicClient{configured: false}
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	stub := &stubEpicGamesStoreClient{configured: false}
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-503")
 
 	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "abc"}, token)
@@ -2027,10 +2027,10 @@ func TestHandleEpicConnect_503WhenNotConfigured(t *testing.T) {
 	}
 }
 
-func TestHandleEpicConnect_400OnMissingAuthCode(t *testing.T) {
+func TestHandleEpicGamesStoreConnect_400OnMissingAuthCode(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicClient{configured: true}
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	stub := &stubEpicGamesStoreClient{configured: true}
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-400")
 
 	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{}, token)
@@ -2042,10 +2042,10 @@ func TestHandleEpicConnect_400OnMissingAuthCode(t *testing.T) {
 	}
 }
 
-func TestHandleEpicConnect_400OnAuthError(t *testing.T) {
+func TestHandleEpicGamesStoreConnect_400OnAuthError(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicClient{configured: true, authErr: fmt.Errorf("legendary: invalid code")}
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	stub := &stubEpicGamesStoreClient{configured: true, authErr: fmt.Errorf("legendary: invalid code")}
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-auth-fail")
 
 	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "bad"}, token)
@@ -2054,10 +2054,10 @@ func TestHandleEpicConnect_400OnAuthError(t *testing.T) {
 	}
 }
 
-func TestHandleEpicConnect_500OnNilInfo(t *testing.T) {
+func TestHandleEpicGamesStoreConnect_500OnNilInfo(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicClient{configured: true, info: nil, snapshot: map[string]string{"user.json": "{}"}}
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	stub := &stubEpicGamesStoreClient{configured: true, info: nil, snapshot: map[string]string{"user.json": "{}"}}
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-nil")
 
 	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "ok"}, token)
@@ -2066,14 +2066,14 @@ func TestHandleEpicConnect_500OnNilInfo(t *testing.T) {
 	}
 }
 
-func TestHandleEpicConnect_HappyPathPersistsConfig(t *testing.T) {
+func TestHandleEpicGamesStoreConnect_HappyPathPersistsConfig(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicClient{
+	stub := &stubEpicGamesStoreClient{
 		configured: true,
-		info:       &api.EpicAccountInfo{DisplayName: "EpicTester", AccountID: "acct-123"},
+		info:       &api.EpicGamesStoreAccountInfo{DisplayName: "EpicTester", AccountID: "acct-123"},
 		snapshot:   map[string]string{"user.json": `{"displayName":"EpicTester","account_id":"acct-123"}`},
 	}
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-conn-ok")
 
 	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "ok"}, token)
@@ -2111,10 +2111,10 @@ func TestHandleEpicConnect_HappyPathPersistsConfig(t *testing.T) {
 	}
 }
 
-func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
+func TestHandleEpicGamesStoreDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicClient{configured: true}
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	stub := &stubEpicGamesStoreClient{configured: true}
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-disc")
 
 	// Pre-populate a connected Epic row: storefront_credentials holds the encrypted snapshot.
@@ -2153,10 +2153,10 @@ func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 	}
 }
 
-func TestHandleGetEpicConnection_DisabledWhenNotConfigured(t *testing.T) {
+func TestHandleGetEpicGamesStoreConnection_DisabledWhenNotConfigured(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicClient{configured: false}
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	stub := &stubEpicGamesStoreClient{configured: false}
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-status-disabled")
 
 	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
@@ -2170,10 +2170,10 @@ func TestHandleGetEpicConnection_DisabledWhenNotConfigured(t *testing.T) {
 	}
 }
 
-func TestHandleGetEpicConnection_NotConnectedWhenNoRow(t *testing.T) {
+func TestHandleGetEpicGamesStoreConnection_NotConnectedWhenNoRow(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicClient{configured: true}
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	stub := &stubEpicGamesStoreClient{configured: true}
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-status-noconn")
 
 	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
@@ -2190,10 +2190,10 @@ func TestHandleGetEpicConnection_NotConnectedWhenNoRow(t *testing.T) {
 	}
 }
 
-func TestHandleGetEpicConnection_ConnectedReturnsDisplayName(t *testing.T) {
+func TestHandleGetEpicGamesStoreConnection_ConnectedReturnsDisplayName(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubEpicClient{configured: true}
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	stub := &stubEpicGamesStoreClient{configured: true}
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-status-conn")
 
 	// Seed the realistic legendary snapshot shape the connect flow actually
@@ -2231,7 +2231,7 @@ func TestHandleGetEpicConnection_ConnectedReturnsDisplayName(t *testing.T) {
 func TestGOGConnect_MissingAuthCode(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-missing")
 
 	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{}, token)
@@ -2243,7 +2243,7 @@ func TestGOGConnect_MissingAuthCode(t *testing.T) {
 func TestGOGConnect_ExchangeFailure(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{err: fmt.Errorf("invalid code")}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-fail")
 
 	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{"auth_code": "bad"}, token)
@@ -2260,7 +2260,7 @@ func TestGOGConnect_Success(t *testing.T) {
 			Username:     "goguser",
 		},
 	}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-ok")
 
 	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{"auth_code": "good"}, token)
@@ -2282,7 +2282,7 @@ func TestGOGConnect_FullURL(t *testing.T) {
 			Username:     "goguser",
 		},
 	}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, app, "gog-conn-url")
 
 	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{
@@ -2299,7 +2299,7 @@ func TestGOGConnect_FullURL(t *testing.T) {
 func TestGOGDisconnect_Idempotent(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, app, "gog-disc")
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/sync/gog/connection", nil)
@@ -2314,7 +2314,7 @@ func TestGOGDisconnect_Idempotent(t *testing.T) {
 func TestGOGConnection_NotConnected(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	_, token := setupTagUser(t, testDB, app, "gog-status-notconn")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sync/gog/connection", nil)
@@ -2336,7 +2336,7 @@ func TestGOGConnection_Connected(t *testing.T) {
 	stub := &stubGOGClient{
 		token: &api.GOGTokenResponse{Username: "goguser", RefreshToken: "r"},
 	}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
+	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
 	userID, token := setupTagUser(t, testDB, app, "gog-status-conn")
 
 	rawCreds := `{"access_token":"a","refresh_token":"r","user_id":"u1","username":"goguser"}`
@@ -2374,7 +2374,7 @@ func TestGOGConnection_Connected(t *testing.T) {
 
 func TestGetSteamConnection_NotConnected(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	_, token := setupTagUser(t, testDB, e, "steam-conn-notconn")
 
 	rec := getAuth(t, e, "/api/sync/steam/connection", token)
@@ -2393,7 +2393,7 @@ func TestGetSteamConnection_NotConnected(t *testing.T) {
 
 func TestGetSteamConnection_Connected(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "steam-conn-ok")
 
 	rawCreds := `{"web_api_key":"AABBCCDD00112233445566778899AABB","steam_id":"76561198012345678","display_name":"Frostbyte"}`
@@ -2429,7 +2429,7 @@ func TestGetSteamConnection_Connected(t *testing.T) {
 
 func TestGetSteamConnection_DBCredentialsErrorFlag(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "sc-db-cred-err")
 
 	rawCreds := `{"steam_id":"76561198000000001","web_api_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","display_name":"TestUser"}`
@@ -2454,9 +2454,9 @@ func TestGetSteamConnection_DBCredentialsErrorFlag(t *testing.T) {
 	}
 }
 
-func TestGetPSNStatus_DBCredentialsErrorFlag(t *testing.T) {
+func TestGetPlaystationStoreStatus_DBCredentialsErrorFlag(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "psn-db-cred-err")
 
 	rawCreds := `{"npsso_token":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","online_id":"MyPSN","account_id":"123","region":"GB","is_verified":true,"token_expired_at":null}`
@@ -2480,7 +2480,7 @@ func TestGetPSNStatus_DBCredentialsErrorFlag(t *testing.T) {
 
 func TestGetGOGConnection_DBCredentialsErrorFlag(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubGOGClient{})
+	e := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubGOGClient{})
 	userID, token := setupTagUser(t, testDB, e, "gog-db-cred-err")
 
 	rawCreds := `{"access_token":"aaa","refresh_token":"bbb","user_id":"u1","username":"GogUser"}`
@@ -2502,9 +2502,9 @@ func TestGetGOGConnection_DBCredentialsErrorFlag(t *testing.T) {
 	}
 }
 
-func TestGetEpicConnection_DBCredentialsErrorFlag(t *testing.T) {
+func TestGetEpicGamesStoreConnection_DBCredentialsErrorFlag(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubEpicClient{configured: true})
+	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubEpicGamesStoreClient{configured: true})
 	userID, token := setupTagUser(t, testDB, e, "epic-db-cred-err")
 
 	rawCreds := `{"user.json":"{\"displayName\":\"EpicUser\",\"account_id\":\"abc123\"}"}`
@@ -2531,7 +2531,7 @@ func TestSteamConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 	stub := &stubSteamClient{
 		summary: &api.SteamPlayerSummary{PersonaName: "TestUser", CommunityVisibilityState: 3},
 	}
-	e := newSyncTestApp(t, testDB, stub, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, stub, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "sv-clear-cred")
 
 	// Seed a pre-existing row with credentials_error=true.
@@ -2557,10 +2557,10 @@ func TestSteamConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 	}
 }
 
-func TestPSNConnect_ClearsCredentialsErrorFlag(t *testing.T) {
+func TestPlaystationStoreConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubPSNClient{
-		info: &api.PSNAccountInfo{OnlineID: "MyPSN", AccountID: "123"},
+	stub := &stubPlaystationStoreClient{
+		info: &api.PlaystationStoreAccountInfo{OnlineID: "MyPSN", AccountID: "123"},
 	}
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "psn-clear-cred")
@@ -2589,7 +2589,7 @@ func TestPSNConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 
 func TestGetSteamConnection_CorruptedCredentials(t *testing.T) {
 	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
 	userID, token := setupTagUser(t, testDB, e, "steam-conn-corrupt")
 	insertCorruptedSyncConfig(t, testDB, userID, "steam")
 

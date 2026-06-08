@@ -24,11 +24,11 @@ import (
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	migrate "github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/notify"
-	epicsvc "github.com/drzero42/nexorious/internal/services/epic"
+	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
 	"github.com/drzero42/nexorious/internal/services/igdb"
-	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
+	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
 	"github.com/drzero42/nexorious/ui"
 )
@@ -372,11 +372,11 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 
 		// Sync routes (all auth-protected)
 		steamSvc := steamsvc.NewClient()
-		psnSvc := psnsvc.NewClient()
-		epicSvc := epicsvc.NewClient(cfg.LegendaryWorkDir)
+		psnSvc := playstationstoresvc.NewClient()
+		epicSvc := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 		gogSvc := gogsvc.NewClient()
 		humbleSvc := humblesvc.NewClient()
-		synch := NewSyncHandler(encrypter, db, riverClient, &steamClientAdapter{c: steamSvc}, &psnClientAdapter{c: psnSvc}, &epicClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc}, &humbleClientAdapter{c: humbleSvc})
+		synch := NewSyncHandler(encrypter, db, riverClient, &steamClientAdapter{c: steamSvc}, &playstationStoreClientAdapter{c: psnSvc}, &epicGamesStoreClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc}, &humbleClientAdapter{c: humbleSvc})
 		syncGroup := e.Group("/api/sync", auth.AuthMiddleware(db))
 		synch.RegisterRoutes(syncGroup)
 	}
@@ -407,41 +407,41 @@ func (a *steamClientAdapter) GetPlayerSummaries(ctx context.Context, apiKey, ste
 	}, err
 }
 
-// psnClientAdapter bridges psnsvc.Client to the PSNClient interface
-// without creating an import cycle between internal/api and internal/services/psn.
-type psnClientAdapter struct{ c *psnsvc.Client }
+// playstationStoreClientAdapter bridges playstationstoresvc.Client to the PlaystationStoreClient interface
+// without creating an import cycle between internal/api and internal/services/playstationstore.
+type playstationStoreClientAdapter struct{ c *playstationstoresvc.Client }
 
-func (a *psnClientAdapter) GetAccountInfo(ctx context.Context, npssoToken string) (*PSNAccountInfo, error) {
+func (a *playstationStoreClientAdapter) GetAccountInfo(ctx context.Context, npssoToken string) (*PlaystationStoreAccountInfo, error) {
 	info, err := a.c.GetAccountInfo(ctx, npssoToken)
 	if err != nil {
-		if errors.Is(err, psnsvc.ErrInvalidNPSSOToken) {
+		if errors.Is(err, playstationstoresvc.ErrInvalidNPSSOToken) {
 			return nil, ErrInvalidNPSSOToken
 		}
 		return nil, err
 	}
-	return &PSNAccountInfo{
+	return &PlaystationStoreAccountInfo{
 		OnlineID:  info.OnlineID,
 		AccountID: info.AccountID,
 	}, nil
 }
 
-// epicClientAdapter bridges epicsvc.Client to the EpicClient interface
-// without creating an import cycle between internal/api and internal/services/epic.
-type epicClientAdapter struct{ c *epicsvc.Client }
+// epicGamesStoreClientAdapter bridges epicgamesstoresvc.Client to the EpicGamesStoreClient interface
+// without creating an import cycle between internal/api and internal/services/epicgamesstore.
+type epicGamesStoreClientAdapter struct{ c *epicgamesstoresvc.Client }
 
-func (a *epicClientAdapter) Authenticate(ctx context.Context, userID, authCode string) (*EpicAccountInfo, map[string]string, error) {
+func (a *epicGamesStoreClientAdapter) Authenticate(ctx context.Context, userID, authCode string) (*EpicGamesStoreAccountInfo, map[string]string, error) {
 	info, snapshot, err := a.c.Authenticate(ctx, userID, authCode)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &EpicAccountInfo{DisplayName: info.DisplayName, AccountID: info.AccountID}, snapshot, nil
+	return &EpicGamesStoreAccountInfo{DisplayName: info.DisplayName, AccountID: info.AccountID}, snapshot, nil
 }
 
-func (a *epicClientAdapter) Cleanup(ctx context.Context, userID string) error {
+func (a *epicGamesStoreClientAdapter) Cleanup(ctx context.Context, userID string) error {
 	return a.c.Cleanup(ctx, userID)
 }
 
-func (a *epicClientAdapter) Configured() bool {
+func (a *epicGamesStoreClientAdapter) Configured() bool {
 	return a.c.Configured()
 }
 

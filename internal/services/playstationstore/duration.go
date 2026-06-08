@@ -1,4 +1,4 @@
-package psn
+package playstationstore
 
 import (
 	"regexp"

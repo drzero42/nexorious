@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as syncApi from './sync';
-import { connectEpic, getEpicConnection, disconnectEpic } from './sync';
+import {
+  connectEpicGamesStore,
+  getEpicGamesStoreConnection,
+  disconnectEpicGamesStore,
+} from './sync';
 import { api } from './client';
 import { SyncStorefront, SyncFrequency } from '@/types';
 
@@ -144,7 +148,7 @@ describe('syncApi', () => {
 
       vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
 
-      const result = await connectEpic('TESTCODE123');
+      const result = await connectEpicGamesStore('TESTCODE123');
 
       expect(api.put).toHaveBeenCalledWith('/sync/epic-games-store/connection', {
         auth_code: 'TESTCODE123',
@@ -164,7 +168,7 @@ describe('syncApi', () => {
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await getEpicConnection();
+      const result = await getEpicGamesStoreConnection();
 
       expect(api.get).toHaveBeenCalledWith('/sync/epic-games-store/connection');
       expect(result).toEqual({
@@ -185,7 +189,7 @@ describe('syncApi', () => {
 
       vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
 
-      const result = await getEpicConnection();
+      const result = await getEpicGamesStoreConnection();
 
       expect(result).toEqual({
         connected: false,
@@ -199,7 +203,7 @@ describe('syncApi', () => {
     it('should disconnect Epic via DELETE /epic/connection', async () => {
       vi.mocked(api.delete).mockResolvedValueOnce(undefined);
 
-      await disconnectEpic();
+      await disconnectEpicGamesStore();
 
       expect(api.delete).toHaveBeenCalledWith('/sync/epic-games-store/connection');
     });

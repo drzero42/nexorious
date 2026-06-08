@@ -37,28 +37,28 @@ type SteamPlayerSummary struct {
 	CommunityVisibilityState int
 }
 
-// PSNClient abstracts the PSN NPSSO exchange and account info retrieval.
-type PSNClient interface {
-	GetAccountInfo(ctx context.Context, npssoToken string) (*PSNAccountInfo, error)
+// PlaystationStoreClient abstracts the PSN NPSSO exchange and account info retrieval.
+type PlaystationStoreClient interface {
+	GetAccountInfo(ctx context.Context, npssoToken string) (*PlaystationStoreAccountInfo, error)
 }
 
-// PSNAccountInfo holds the account details retrieved from PSN.
-type PSNAccountInfo struct {
+// PlaystationStoreAccountInfo holds the account details retrieved from PSN.
+type PlaystationStoreAccountInfo struct {
 	OnlineID  string
 	AccountID string
 }
 
-// EpicClient abstracts legendary CLI calls used during Epic account connection.
-type EpicClient interface {
+// EpicGamesStoreClient abstracts legendary CLI calls used during Epic account connection.
+type EpicGamesStoreClient interface {
 	// Authenticate runs legendary auth, returns account info and the resulting
 	// state snapshot. The caller stores the snapshot in the DB.
-	Authenticate(ctx context.Context, userID, authCode string) (*EpicAccountInfo, map[string]string, error)
+	Authenticate(ctx context.Context, userID, authCode string) (*EpicGamesStoreAccountInfo, map[string]string, error)
 	Cleanup(ctx context.Context, userID string) error
 	Configured() bool
 }
 
-// EpicAccountInfo holds the Epic account details.
-type EpicAccountInfo struct {
+// EpicGamesStoreAccountInfo holds the Epic account details.
+type EpicGamesStoreAccountInfo struct {
 	DisplayName string
 	AccountID   string
 }
@@ -197,19 +197,19 @@ type steamConnectionResponse struct {
 
 // SyncHandler handles sync configuration, trigger, and status endpoints.
 type SyncHandler struct {
-	db           *bun.DB
-	encrypter    *crypto.Encrypter
-	riverClient  *river.Client[pgx.Tx]
-	steamClient  SteamClient
-	psnClient    PSNClient
-	epicClient   EpicClient
-	gogClient    GOGClient
-	humbleClient HumbleClient
+	db                     *bun.DB
+	encrypter              *crypto.Encrypter
+	riverClient            *river.Client[pgx.Tx]
+	steamClient            SteamClient
+	playstationStoreClient PlaystationStoreClient
+	epicGamesStoreClient   EpicGamesStoreClient
+	gogClient              GOGClient
+	humbleClient           HumbleClient
 }
 
 // NewSyncHandler constructs a SyncHandler.
-func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, psn PSNClient, epic EpicClient, gog GOGClient, humble HumbleClient) *SyncHandler {
-	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, psnClient: psn, epicClient: epic, gogClient: gog, humbleClient: humble}
+func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient) *SyncHandler {
+	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
@@ -218,12 +218,12 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.PUT("/steam/connection", h.HandleSteamConnect)
 	g.GET("/steam/connection", h.HandleGetSteamConnection)
 	g.DELETE("/steam/connection", h.HandleSteamDisconnect)
-	g.PUT("/playstation-store/connection", h.HandlePSNConnect)
-	g.GET("/playstation-store/connection", h.HandleGetPSNConnection)
-	g.DELETE("/playstation-store/connection", h.HandlePSNDisconnect)
-	g.PUT("/epic-games-store/connection", h.HandleEpicConnect)
-	g.DELETE("/epic-games-store/connection", h.HandleEpicDisconnect)
-	g.GET("/epic-games-store/connection", h.HandleGetEpicConnection)
+	g.PUT("/playstation-store/connection", h.HandlePlaystationStoreConnect)
+	g.GET("/playstation-store/connection", h.HandleGetPlaystationStoreConnection)
+	g.DELETE("/playstation-store/connection", h.HandlePlaystationStoreDisconnect)
+	g.PUT("/epic-games-store/connection", h.HandleEpicGamesStoreConnect)
+	g.DELETE("/epic-games-store/connection", h.HandleEpicGamesStoreDisconnect)
+	g.GET("/epic-games-store/connection", h.HandleGetEpicGamesStoreConnection)
 	g.PUT("/gog/connection", h.HandleGOGConnect)
 	g.GET("/gog/connection", h.HandleGetGOGConnection)
 	g.DELETE("/gog/connection", h.HandleGOGDisconnect)
@@ -677,7 +677,7 @@ func (h *SyncHandler) HandleGetSteamConnection(c *echo.Context) error {
 		})
 }
 
-func (h *SyncHandler) HandlePSNConnect(c *echo.Context) error {
+func (h *SyncHandler) HandlePlaystationStoreConnect(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
@@ -693,7 +693,7 @@ func (h *SyncHandler) HandlePSNConnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "npsso_token must be exactly 64 characters")
 	}
 
-	info, err := h.psnClient.GetAccountInfo(c.Request().Context(), req.NpssoToken)
+	info, err := h.playstationStoreClient.GetAccountInfo(c.Request().Context(), req.NpssoToken)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid_npsso_token")
 	}
@@ -718,7 +718,7 @@ func (h *SyncHandler) HandlePSNConnect(c *echo.Context) error {
 	})
 }
 
-func (h *SyncHandler) HandleGetPSNConnection(c *echo.Context) error {
+func (h *SyncHandler) HandleGetPlaystationStoreConnection(c *echo.Context) error {
 	return h.serveConnectionStatus(c, "playstation-store",
 		psnConnectionResponse{},
 		psnConnectionResponse{IsConfigured: true, CredentialsError: true},
@@ -737,7 +737,7 @@ func (h *SyncHandler) HandleGetPSNConnection(c *echo.Context) error {
 		})
 }
 
-func (h *SyncHandler) HandlePSNDisconnect(c *echo.Context) error {
+func (h *SyncHandler) HandlePlaystationStoreDisconnect(c *echo.Context) error {
 	return h.disconnectStorefront(c, "playstation-store")
 }
 
@@ -792,14 +792,14 @@ func (h *SyncHandler) HandleHumbleDisconnect(c *echo.Context) error {
 	return h.disconnectStorefront(c, "humble-bundle")
 }
 
-// HandleEpicConnect exchanges an Epic auth code via legendary and stores the
+// HandleEpicGamesStoreConnect exchanges an Epic auth code via legendary and stores the
 // resulting legendary state snapshot in the DB.
-func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
+func (h *SyncHandler) HandleEpicGamesStoreConnect(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	if h.epicClient == nil || !h.epicClient.Configured() {
+	if h.epicGamesStoreClient == nil || !h.epicGamesStoreClient.Configured() {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "Epic sync not configured (LEGENDARY_WORK_DIR unset)")
 	}
 
@@ -810,7 +810,7 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "auth_code is required")
 	}
 
-	info, snapshot, err := h.epicClient.Authenticate(c.Request().Context(), userID, body.AuthCode)
+	info, snapshot, err := h.epicGamesStoreClient.Authenticate(c.Request().Context(), userID, body.AuthCode)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("epic auth failed: %v", err))
 	}
@@ -829,9 +829,9 @@ func (h *SyncHandler) HandleEpicConnect(c *echo.Context) error {
 	})
 }
 
-// HandleEpicDisconnect clears the user's Epic credentials and snapshot, and
+// HandleEpicGamesStoreDisconnect clears the user's Epic credentials and snapshot, and
 // removes the legendary working directory.
-func (h *SyncHandler) HandleEpicDisconnect(c *echo.Context) error {
+func (h *SyncHandler) HandleEpicGamesStoreDisconnect(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
@@ -841,23 +841,23 @@ func (h *SyncHandler) HandleEpicDisconnect(c *echo.Context) error {
 		slog.Error("sync: epic disconnect failed", "err", err, "user_id", userID)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect Epic")
 	}
-	if h.epicClient != nil {
-		if err := h.epicClient.Cleanup(ctx, userID); err != nil {
+	if h.epicGamesStoreClient != nil {
+		if err := h.epicGamesStoreClient.Cleanup(ctx, userID); err != nil {
 			slog.Error("sync: epic cleanup failed", "err", err, "user_id", userID)
 		}
 	}
 	return c.NoContent(http.StatusNoContent)
 }
 
-// HandleGetEpicConnection returns the current Epic connection status for the
+// HandleGetEpicGamesStoreConnection returns the current Epic connection status for the
 // authenticated user.
-func (h *SyncHandler) HandleGetEpicConnection(c *echo.Context) error {
+func (h *SyncHandler) HandleGetEpicGamesStoreConnection(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 
-	if h.epicClient == nil || !h.epicClient.Configured() {
+	if h.epicGamesStoreClient == nil || !h.epicGamesStoreClient.Configured() {
 		return c.JSON(http.StatusOK, map[string]any{
 			"connected": false,
 			"disabled":  true,
