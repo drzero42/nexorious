@@ -31,6 +31,7 @@ import (
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	psnsvc "github.com/drzero42/nexorious/internal/services/psn"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
+	"github.com/drzero42/nexorious/internal/services/storelink"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -187,6 +188,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, IGDBClient: igdbClient}
 	userGameWorker := &tasks.UserGameWorker{DB: db, IGDBClient: igdbClient}
 	darkadiaMatchWorker := &tasks.DarkadiaMatchWorker{DB: db, IGDBClient: igdbClient}
+	storeLinkDispatchWorker := &tasks.StoreLinkRefreshDispatchWorker{DB: db}
+	storeLinkItemWorker := &tasks.StoreLinkRefreshItemWorker{DB: db, ResolverFor: buildStoreLinkResolverFactory(db, encrypter)}
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -198,6 +201,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, darkadiaMatchWorker)
 	river.AddWorker(workers, &tasks.DarkadiaFinalizeWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, metaDispatchWorker)
+	river.AddWorker(workers, storeLinkDispatchWorker)
+	river.AddWorker(workers, storeLinkItemWorker)
 	river.AddWorker(workers, &tasks.MetadataRefreshItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.MetadataFetchWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &scheduler.CleanupOldJobsWorker{DB: db})
@@ -225,6 +230,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// Wire River client into workers that submit sub-jobs.
 	dispatchSyncWorker.RiverClient = riverClient
 	metaDispatchWorker.RiverClient = riverClient
+	storeLinkDispatchWorker.RiverClient = riverClient
 	checkPendingSyncsWorker.RiverClient = riverClient
 	rescueOrphanedWorker.RiverClient = riverClient
 	igdbMatchWorker.RiverClient = riverClient
@@ -271,6 +277,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newIGDBMatch := &tasks.IGDBMatchWorker{DB: newDB, IGDBClient: igdbClient}
 			newUserGame := &tasks.UserGameWorker{DB: newDB, IGDBClient: igdbClient}
 			newDarkadiaMatch := &tasks.DarkadiaMatchWorker{DB: newDB, IGDBClient: igdbClient}
+			newStoreLinkDispatch := &tasks.StoreLinkRefreshDispatchWorker{DB: newDB}
+			newStoreLinkItem := &tasks.StoreLinkRefreshItemWorker{DB: newDB, ResolverFor: buildStoreLinkResolverFactory(newDB, encrypter)}
 
 			newWorkers := river.NewWorkers()
 			river.AddWorker(newWorkers, &tasks.ImportItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
@@ -282,6 +290,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			river.AddWorker(newWorkers, newDarkadiaMatch)
 			river.AddWorker(newWorkers, &tasks.DarkadiaFinalizeWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, newMetaDispatch)
+			river.AddWorker(newWorkers, newStoreLinkDispatch)
+			river.AddWorker(newWorkers, newStoreLinkItem)
 			river.AddWorker(newWorkers, &tasks.MetadataRefreshItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &tasks.MetadataFetchWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, &scheduler.CleanupOldJobsWorker{DB: newDB})
@@ -307,6 +317,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 			newDispatchSync.RiverClient = newClient
 			newMetaDispatch.RiverClient = newClient
+			newStoreLinkDispatch.RiverClient = newClient
 			newCheckSyncs.RiverClient = newClient
 			newRescueOrphaned.RiverClient = newClient
 			newIGDBMatch.RiverClient = newClient
@@ -550,6 +561,43 @@ func buildAdapterFactory(
 			}
 			return humblesvc.NewAdapter(humblesvc.NewClient(), creds.SessionCookie), nil
 
+		default:
+			return nil, fmt.Errorf("unknown storefront: %s", storefront)
+		}
+	}
+}
+
+// buildStoreLinkResolverFactory returns a factory the store-link enrichment item
+// worker uses to build a per-storefront resolver. Steam/GOG/Epic resolution is
+// credential-free (public endpoints / a copied appid); only PSN needs the user's
+// decrypted NPSSO token.
+func buildStoreLinkResolverFactory(db *bun.DB, encrypter *crypto.Encrypter) func(context.Context, string, string) (storelink.Resolver, error) {
+	return func(ctx context.Context, storefront, userID string) (storelink.Resolver, error) {
+		switch storefront {
+		case "steam":
+			return storelink.NewSteamResolver(), nil
+		case "gog":
+			return storelink.NewGOGResolver(nil, ""), nil
+		case "epic-games-store":
+			return storelink.NewEpicResolver(nil, ""), nil
+		case "playstation-store":
+			var encCreds string
+			if err := db.NewRaw(
+				`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'playstation-store'`, userID,
+			).Scan(ctx, &encCreds); err != nil {
+				return nil, fmt.Errorf("load psn creds: %w", err)
+			}
+			plain, err := encrypter.Decrypt(encCreds)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt psn creds: %w", err)
+			}
+			var creds struct {
+				NPSSOToken string `json:"npsso_token"`
+			}
+			if err := json.Unmarshal(plain, &creds); err != nil {
+				return nil, fmt.Errorf("parse psn creds: %w", err)
+			}
+			return storelink.NewPSNResolver(psnsvc.NewClient(), creds.NPSSOToken), nil
 		default:
 			return nil, fmt.Errorf("unknown storefront: %s", storefront)
 		}
