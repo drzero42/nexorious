@@ -371,6 +371,12 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		notificationsGroup.PUT("/subscriptions", nh.HandlePutSubscriptions)
 		notificationsGroup.POST("/subscriptions/reset", nh.HandleResetSubscriptions)
 
+		// Settings routes (all auth-protected)
+		sh := NewSettingsHandler(db)
+		settingsGroup := e.Group("/api/settings", auth.AuthMiddleware(db))
+		settingsGroup.GET("", sh.HandleGet)
+		settingsGroup.PATCH("", sh.HandlePatch)
+
 		// Sync routes (all auth-protected)
 		steamSvc := steamsvc.NewClient()
 		psnSvc := playstationstoresvc.NewClient()
