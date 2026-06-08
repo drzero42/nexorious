@@ -215,7 +215,7 @@ describe('games.ts', () => {
         http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           const storefronts = url.searchParams.getAll('storefront');
-          expect(storefronts).toEqual(['steam', 'epic']);
+          expect(storefronts).toEqual(['steam', 'epic-games-store']);
 
           return HttpResponse.json({
             user_games: [],
@@ -228,7 +228,7 @@ describe('games.ts', () => {
       );
 
       const result = await getUserGames({
-        storefront: ['steam', 'epic'],
+        storefront: ['steam', 'epic-games-store'],
       });
       expect(result).toBeDefined();
       expect(result.items).toEqual([]);
@@ -891,7 +891,7 @@ describe('games.ts', () => {
 
       await addPlatformToUserGame('user-game-123', {
         platform: 'pc',
-        storefront: 'epic',
+        storefront: 'epic-games-store',
         hoursPlayed: 5,
         ownershipStatus: OwnershipStatus.BORROWED,
         acquiredDate: '2024-06-01',
