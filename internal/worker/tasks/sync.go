@@ -808,6 +808,10 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		}
 	}
 
+	if err := usergame.ClearWishlistOnAcquire(ctx, w.DB, ugID); err != nil {
+		slog.Error("user_game_write: clear wishlist on acquire", "err", err, "user_game_id", ugID)
+	}
+
 	// Auto-promote not_started → in_progress when the game has any played
 	// hours. The shared helper keys off the SUM of all the game's platforms in
 	// the DB and its play_status = 'not_started' guard covers freshly-upserted

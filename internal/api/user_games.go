@@ -448,6 +448,9 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 			slog.Error("user_games: failed to insert platforms on create", "err", err, "user_game_id", ug.ID)
 			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 		}
+		if err := usergame.ClearWishlistOnAcquire(ctx, h.db, ug.ID); err != nil {
+			slog.Error("user_games: clear wishlist on create", "err", err, "user_game_id", ug.ID)
+		}
 		if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, ug.ID); err != nil {
 			slog.Error("user_games: auto-promote play_status on create", "err", err, "user_game_id", ug.ID)
 		}
@@ -840,6 +843,12 @@ func (h *UserGamesHandler) HandleBulkAddPlatforms(c *echo.Context) error {
 		}
 		rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 		added += rows
+		if rows > 0 {
+			// In-transaction: a failed wishlist-clear must roll back the platform inserts, so propagate rather than log-and-continue.
+			if err := usergame.ClearWishlistOnAcquire(ctx, tx, ugID); err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+			}
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -1020,6 +1029,9 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "platform/storefront combination already exists"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
+	}
+	if err := usergame.ClearWishlistOnAcquire(ctx, h.db, userGameID); err != nil {
+		slog.Error("user_games: clear wishlist on create platform", "err", err, "user_game_id", userGameID)
 	}
 	if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, userGameID); err != nil {
 		slog.Error("user_games: auto-promote play_status on create platform", "err", err, "user_game_id", userGameID)
