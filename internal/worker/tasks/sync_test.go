@@ -2202,7 +2202,7 @@ func TestSyncCheckJobCompletion_FailedItemsYieldsCompleted(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var status string
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
@@ -2241,7 +2241,7 @@ func TestSyncCheckJobCompletion_DispatchIncomplete_StaysProcessing(t *testing.T)
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var status string
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
@@ -2272,7 +2272,7 @@ func TestSyncCheckJobCompletion_DispatchComplete_Finalizes(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var status string
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
@@ -2302,7 +2302,7 @@ func TestSyncCheckJobCompletion_PendingReviewBlocks(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var status string
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
@@ -3098,7 +3098,7 @@ func TestSyncCheckJobCompletionEmitsCompleted(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var typ string
 	if err := testDB.NewRaw(`SELECT type FROM events WHERE dedup_key = ?`, jobID+":sync.completed").Scan(ctx, &typ); err != nil {
@@ -3132,7 +3132,7 @@ func TestSyncCheckJobCompletionEmitsCompletedWithErrors(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var count int
 	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.completed_with_errors").Scan(ctx, &count); err != nil {
@@ -3166,7 +3166,7 @@ func TestSyncCheckJobCompletionEmitsNeedsReview(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	// sync.needs_review event must have been emitted.
 	var nrCount int
@@ -3287,7 +3287,7 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 		t.Fatalf("insert change removed: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	// sync.diff event must have been emitted.
 	var diffCount int
@@ -3341,7 +3341,7 @@ func TestNoSyncDiffWhenNoChanges(t *testing.T) {
 	}
 	// No changes rows inserted.
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	// No sync.diff event should have been emitted.
 	var diffCount int

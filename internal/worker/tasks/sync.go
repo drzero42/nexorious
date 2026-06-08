@@ -316,7 +316,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		slog.Error("dispatch_sync: mark dispatch_complete failed", "err", err, "job_id", p.JobID)
 		return nil
 	}
-	SyncCheckJobCompletion(ctx, w.DB, p.JobID)
+	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, p.JobID)
 
 	return nil
 }
@@ -449,14 +449,14 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 
 	if item.ExternalGameID == nil {
 		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
 	var eg models.ExternalGame
 	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
 		markItemFailed(ctx, w.DB, &item, "external game not found", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
@@ -525,7 +525,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 				slog.Warn("igdb_match: IGDB failed on final attempt, marking pending_review",
 					"item_id", p.JobItemID, "err", err)
 				syncMarkItemPendingReview(ctx, w.DB, &item)
-				SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+				SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 				return nil
 			}
 			return fmt.Errorf("igdb_match: search failed (will retry): %w", err)
@@ -579,21 +579,21 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		bs := decision.BestScore
 		item.MatchConfidence = &bs
 		syncMarkItemPendingReview(ctx, w.DB, &item)
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
 	// No IGDB client configured — mark pending_review.
 	slog.Debug("igdb_match: no IGDB client configured, marking pending_review", "item_id", p.JobItemID, "title", eg.Title)
 	syncMarkItemPendingReview(ctx, w.DB, &item)
-	SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 	return nil
 }
 
 func (w *IGDBMatchWorker) enqueueUserGame(ctx context.Context, jobItemID, jobID string) error {
 	if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, jobItemID, UserGameArgs{JobItemID: jobItemID}); err != nil {
 		slog.Error("igdb_match: enqueue user_game_write failed", "item_id", jobItemID, "err", err)
-		SyncCheckJobCompletion(ctx, w.DB, jobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, jobID)
 	}
 	return nil
 }
@@ -629,14 +629,14 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 
 	if item.ExternalGameID == nil {
 		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
 	var eg models.ExternalGame
 	if err := w.DB.NewSelect().Model(&eg).Where("id = ?", *item.ExternalGameID).Scan(ctx); err != nil {
 		markItemFailed(ctx, w.DB, &item, "external game not found", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
@@ -655,7 +655,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			slog.Error("user_game_write: insert sync_change (skipped)", "err", err)
 		}
 		markItemSkipped(ctx, w.DB, &item, "process_sync_item: markItemSkipped")
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
@@ -679,7 +679,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 
 	if eg.ResolvedIGDBID == nil {
 		markItemFailed(ctx, w.DB, &item, "no resolved_igdb_id on external_game", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
@@ -708,7 +708,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		ugID, item.UserID, *eg.ResolvedIGDBID, now, now,
 	).Scan(ctx, &isNewRow); err != nil {
 		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("upsert user_game: %v", err), "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 	ugID = isNewRow.ID
@@ -719,12 +719,12 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		Where("external_game_id = ?", eg.ID).
 		Scan(ctx); err != nil {
 		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("load platforms: %v", err), "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 	if len(egPlatforms) == 0 {
 		markItemFailed(ctx, w.DB, &item, "external game has no platform rows", "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 		return nil
 	}
 
@@ -876,7 +876,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		}
 	}
 
-	SyncCheckJobCompletion(ctx, w.DB, item.JobID)
+	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 	return nil
 }
 
@@ -941,7 +941,7 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 // entry and true only after the full library has been dispatched, so the
 // completion check below treats dispatch_complete=false as "more work may
 // still arrive" and refuses to finalize.
-func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
+func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, riverClient *river.Client[pgx.Tx], jobID string) {
 	activeRemaining, ok := countJobItems(ctx, db, jobID, "status IN ('pending', 'processing')", "sync: SyncCheckJobCompletion count")
 	if !ok || activeRemaining > 0 {
 		return
@@ -988,6 +988,16 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, jobID string) {
 		})
 	}
 	emitSyncDiff(ctx, db, jobID, userID)
+
+	// Kick off scoped, incremental store-link enrichment for this storefront.
+	// Best-effort: a missing River client (e.g. in tests) simply skips it.
+	if riverClient != nil && userID != "" && storefront != "" {
+		if _, err := riverClient.Insert(ctx, StoreLinkRefreshDispatchArgs{
+			UserID: userID, Storefront: storefront, Force: false,
+		}, nil); err != nil {
+			slog.Error("sync: enqueue store_link_refresh", "err", err, "job_id", jobID)
+		}
+	}
 }
 
 // syncJobUserAndStorefront fetches the owning user_id and storefront (source)

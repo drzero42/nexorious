@@ -967,7 +967,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 				).Exec(ctx); err != nil {
 					slog.Error("sync: skip game: cascade child job_item", "err", err, "job_item_id", childItem.ID)
 				} else {
-					tasks.SyncCheckJobCompletion(ctx, h.db, childItem.JobID)
+					tasks.SyncCheckJobCompletion(ctx, h.db, h.riverClient, childItem.JobID)
 				}
 			}
 		}
@@ -998,7 +998,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 			).Exec(ctx); err != nil {
 				slog.Error("sync: skip game: insert sync_change (skipped)", "err", err)
 			}
-			tasks.SyncCheckJobCompletion(ctx, h.db, jobItemRow.JobID)
+			tasks.SyncCheckJobCompletion(ctx, h.db, h.riverClient, jobItemRow.JobID)
 		}
 	}
 
