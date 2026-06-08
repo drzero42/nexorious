@@ -1970,3 +1970,53 @@ func TestAutoPromotePlayStatus(t *testing.T) {
 		}
 	})
 }
+
+func TestCreateUserGame_Wishlist(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	_, token := setupUserGamesUser(t, testDB, e, "wl-create")
+
+	t.Run("wishlist create with no platforms succeeds and sets the flag", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Hades Wishlist")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id":       gameID,
+			"is_wishlisted": true,
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("want 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["is_wishlisted"] != true {
+			t.Fatalf("want is_wishlisted=true, got %v", resp["is_wishlisted"])
+		}
+		plats, _ := resp["platforms"].([]any)
+		if len(plats) != 0 {
+			t.Fatalf("want 0 platforms, got %d", len(plats))
+		}
+	})
+
+	t.Run("wishlist create with platforms is rejected with 422", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Celeste Wishlist")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id":       gameID,
+			"is_wishlisted": true,
+			"platforms": []map[string]any{
+				{"platform": "pc-windows"},
+			},
+		}, token)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("want 422 for wishlist+platforms, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var errResp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &errResp); err != nil {
+			t.Fatalf("unmarshal error body: %v", err)
+		}
+		if msg, _ := errResp["message"].(string); msg != "a wishlisted game cannot have platforms" {
+			t.Fatalf("want specific error message, got %q", msg)
+		}
+	})
+}

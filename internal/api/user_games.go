@@ -44,6 +44,7 @@ type createUserGameRequest struct {
 	PersonalRating *int32            `json:"personal_rating"`
 	IsLoved        bool              `json:"is_loved"`
 	PersonalNotes  *string           `json:"personal_notes"`
+	IsWishlisted   bool              `json:"is_wishlisted"`
 	Platforms      []platformRequest `json:"platforms"`
 }
 
@@ -375,6 +376,10 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "game_id is required")
 	}
 
+	if req.IsWishlisted && len(req.Platforms) > 0 {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "a wishlisted game cannot have platforms")
+	}
+
 	// Validate game exists.
 	ctx := context.Background()
 	gameExists, err := h.db.NewSelect().Model((*models.Game)(nil)).
@@ -400,6 +405,7 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		PersonalRating: req.PersonalRating,
 		IsLoved:        req.IsLoved,
 		PersonalNotes:  req.PersonalNotes,
+		IsWishlisted:   req.IsWishlisted,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
