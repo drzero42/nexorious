@@ -14,14 +14,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Loader2, XCircle } from 'lucide-react';
 import { useState } from 'react';
+import { useJobSourceLabel } from '@/hooks';
 import type { Job } from '@/types';
-import {
-  getJobTypeLabel,
-  getJobSourceLabel,
-  getJobStatusLabel,
-  getJobStatusVariant,
-  isJobInProgress,
-} from '@/types';
+import { getJobTypeLabel, getJobStatusLabel, getJobStatusVariant, isJobInProgress } from '@/types';
 
 interface JobProgressCardProps {
   job: Job;
@@ -31,6 +26,7 @@ interface JobProgressCardProps {
 
 export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCardProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const jobSourceLabel = useJobSourceLabel();
   const showProgress = isJobInProgress(job);
 
   const handleCancel = async () => {
@@ -44,7 +40,7 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg">
-              {getJobTypeLabel(job.jobType)} - {getJobSourceLabel(job.source)}
+              {getJobTypeLabel(job.jobType)} - {jobSourceLabel(job.source)}
             </CardTitle>
             <Badge variant={getJobStatusVariant(job.status)}>
               {isJobInProgress(job) && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}

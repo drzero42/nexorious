@@ -9,6 +9,7 @@ const downloadExport = vi.fn();
 vi.mock('@/hooks', () => ({
   useRecentJobs: vi.fn(),
   useDownloadExport: () => ({ mutate: downloadExport, isPending: false }),
+  useJobSourceLabel: () => (source: string) => source,
 }));
 // JobItemsDetails fetches on mount; stub it to a marker for the fallback case.
 vi.mock('./job-items-details', () => ({

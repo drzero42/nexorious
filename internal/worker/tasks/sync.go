@@ -714,12 +714,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		return nil
 	}
 
-	storefrontSlug, ok := platformresolution.StorefrontToCollectionSlug(eg.Storefront)
-	if !ok {
-		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("unresolved storefront=%s", eg.Storefront), "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, item.JobID)
-		return nil
-	}
+	storefrontSlug := eg.Storefront
 
 	ownership := "owned"
 	if eg.OwnershipStatus != nil {

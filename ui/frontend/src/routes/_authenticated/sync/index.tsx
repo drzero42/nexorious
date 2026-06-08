@@ -61,10 +61,10 @@ function SyncServiceCardWithStatus({
     enabled: config.storefront === SyncStorefront.STEAM,
   });
   const { data: psnStatus } = usePSNStatus({
-    enabled: config.storefront === SyncStorefront.PSN,
+    enabled: config.storefront === SyncStorefront.PLAYSTATION_STORE,
   });
   const { data: epicConnection } = useEpicConnection({
-    enabled: config.storefront === SyncStorefront.EPIC,
+    enabled: config.storefront === SyncStorefront.EPIC_GAMES_STORE,
   });
   const { data: gogConnection } = useGOGConnection({
     enabled: config.storefront === SyncStorefront.GOG,
@@ -77,8 +77,10 @@ function SyncServiceCardWithStatus({
 
   const credentialsError =
     (config.storefront === SyncStorefront.STEAM && (steamConnection?.credentialsError ?? false)) ||
-    (config.storefront === SyncStorefront.PSN && (psnStatus?.credentialsError ?? false)) ||
-    (config.storefront === SyncStorefront.EPIC && (epicConnection?.credentialsError ?? false)) ||
+    (config.storefront === SyncStorefront.PLAYSTATION_STORE &&
+      (psnStatus?.credentialsError ?? false)) ||
+    (config.storefront === SyncStorefront.EPIC_GAMES_STORE &&
+      (epicConnection?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
 

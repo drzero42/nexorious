@@ -5,14 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useRecentJobs, useDownloadExport } from '@/hooks';
+import { useRecentJobs, useDownloadExport, useJobSourceLabel } from '@/hooks';
 import { JobItemsDetails } from './job-items-details';
 import type { RecentJobDetail, SyncChangeItem, JobType as JobTypeEnum } from '@/types';
 import {
   JobStatus,
   JobType,
   getJobTypeLabel,
-  getJobSourceLabel,
   getJobStatusLabel,
   getJobStatusVariant,
   formatRelativeTime,
@@ -182,6 +181,7 @@ function JobActivityItem({
   onToggle: () => void;
 }) {
   const showBreakdown = hasChangeRows(job);
+  const jobSourceLabel = useJobSourceLabel();
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <div className="rounded-lg border">
@@ -195,7 +195,7 @@ function JobActivityItem({
                 {getJobStatusLabel(job.status as JobStatus)}
               </Badge>
               <span className="font-medium truncate">
-                {getJobTypeLabel(job.jobType)} - {getJobSourceLabel(job.source)}
+                {getJobTypeLabel(job.jobType)} - {jobSourceLabel(job.source)}
               </span>
             </div>
             <div className="flex items-center gap-4 text-sm text-muted-foreground shrink-0 ml-4">

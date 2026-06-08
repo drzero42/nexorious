@@ -146,7 +146,7 @@ describe('syncApi', () => {
 
       const result = await connectEpic('TESTCODE123');
 
-      expect(api.put).toHaveBeenCalledWith('/sync/epic/connection', {
+      expect(api.put).toHaveBeenCalledWith('/sync/epic-games-store/connection', {
         auth_code: 'TESTCODE123',
       });
       expect(result).toEqual({
@@ -166,7 +166,7 @@ describe('syncApi', () => {
 
       const result = await getEpicConnection();
 
-      expect(api.get).toHaveBeenCalledWith('/sync/epic/connection');
+      expect(api.get).toHaveBeenCalledWith('/sync/epic-games-store/connection');
       expect(result).toEqual({
         connected: true,
         disabled: false,
@@ -201,7 +201,7 @@ describe('syncApi', () => {
 
       await disconnectEpic();
 
-      expect(api.delete).toHaveBeenCalledWith('/sync/epic/connection');
+      expect(api.delete).toHaveBeenCalledWith('/sync/epic-games-store/connection');
     });
   });
 });

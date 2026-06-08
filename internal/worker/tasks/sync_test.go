@@ -413,11 +413,11 @@ func TestDispatchSync_SetsSiblingParentID(t *testing.T) {
 
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
-		 VALUES (?, ?, 'sync', 'psn', 'pending', 'low', 0)`,
+		 VALUES (?, ?, 'sync', 'playstation-store', 'pending', 'low', 0)`,
 		jobID, userID,
 	)
 	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'psn', 'daily')`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'playstation-store', 'daily')`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
 
@@ -430,7 +430,7 @@ func TestDispatchSync_SetsSiblingParentID(t *testing.T) {
 	rc := newTestRiverClient(t)
 	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
 	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
 	}
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -926,18 +926,18 @@ func TestDispatchSync_PSNInvalidCredentials(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'playstation-store', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'psn', 'daily')`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'playstation-store', 'daily')`,
 		configID, userID,
 	).Exec(ctx)
 
 	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
 	}
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -960,11 +960,11 @@ func TestDispatchSync_PSNFetchError_FailsJob(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'playstation-store', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
 	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'psn', 'daily')`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'playstation-store', 'daily')`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
 
@@ -974,7 +974,7 @@ func TestDispatchSync_PSNFetchError_FailsJob(t *testing.T) {
 		RiverClient: nil,
 	}
 	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
 	}
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -996,11 +996,11 @@ func TestDispatchSync_PSNFetchError_CredentialsErrFailsJob(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'psn', 'pending', 'low')`,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'playstation-store', 'pending', 'low')`,
 		jobID, userID,
 	).Exec(ctx)
 	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'psn', 'daily')`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'playstation-store', 'daily')`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
 
@@ -1010,7 +1010,7 @@ func TestDispatchSync_PSNFetchError_CredentialsErrFailsJob(t *testing.T) {
 		RiverClient: nil,
 	}
 	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
 	}
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1030,12 +1030,12 @@ func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'pending', 'low', 0)`,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'playstation-store', 'pending', 'low', 0)`,
 		jobID, userID,
 	).Exec(ctx)
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'psn', 'daily')`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'playstation-store', 'daily')`,
 		configID, userID,
 	).Exec(ctx)
 
@@ -1051,7 +1051,7 @@ func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 	rc := newTestRiverClient(t)
 	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
 	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
 	}
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1059,7 +1059,7 @@ func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 
 	// All 3 games upserted as external_games.
 	var egCount int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'psn'`, userID).Scan(ctx, &egCount)
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'playstation-store'`, userID).Scan(ctx, &egCount)
 	if egCount != 3 {
 		t.Errorf("expected 3 external_games, got %d", egCount)
 	}
@@ -1087,11 +1087,11 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'pending', 'low', 0)`,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'playstation-store', 'pending', 'low', 0)`,
 		jobID, userID,
 	).Exec(ctx)
 	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'psn', 'daily')`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'playstation-store', 'daily')`,
 		uuid.NewString(), userID,
 	).Exec(ctx)
 
@@ -1100,7 +1100,7 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 	egID := uuid.NewString()
 	_, _ = testDB.NewRaw(
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
-		 VALUES (?, ?, 'psn', 'NPWR00001_00', 'God of War', true, true, false)`,
+		 VALUES (?, ?, 'playstation-store', 'NPWR00001_00', 'God of War', true, true, false)`,
 		egID, userID,
 	).Exec(ctx)
 	_, _ = testDB.NewRaw(
@@ -1115,7 +1115,7 @@ func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
 	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{page1}}
 	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
 	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "psn"},
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
 	}
 	if err := w.Work(ctx, job); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1144,12 +1144,12 @@ func TestDispatchSync_Epic_HappyPath(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'epic', 'pending', 'high')`,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'epic-games-store', 'pending', 'high')`,
 		jobID, userID,
 	)
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic', 'manual')`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic-games-store', 'manual')`,
 		configID, userID,
 	).Exec(ctx)
 
@@ -1166,7 +1166,7 @@ func TestDispatchSync_Epic_HappyPath(t *testing.T) {
 		RiverClient: nil,
 	}
 	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic"},
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"},
 	}
 
 	if err := w.Work(ctx, job); err != nil {
@@ -1176,7 +1176,7 @@ func TestDispatchSync_Epic_HappyPath(t *testing.T) {
 	// Verify external_games rows were created.
 	var count int
 	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'epic'`,
+		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'epic-games-store'`,
 		userID,
 	).Scan(ctx, &count)
 	if count != 2 {
@@ -1188,7 +1188,7 @@ func TestDispatchSync_Epic_HappyPath(t *testing.T) {
 	_ = testDB.NewRaw(
 		`SELECT COUNT(*) FROM external_game_platforms egp
 		 JOIN external_games eg ON eg.id = egp.external_game_id
-		 WHERE eg.user_id = ? AND eg.storefront = 'epic' AND eg.external_id = 'Fortnite' AND egp.platform = 'pc-windows'`,
+		 WHERE eg.user_id = ? AND eg.storefront = 'epic-games-store' AND eg.external_id = 'Fortnite' AND egp.platform = 'pc-windows'`,
 		userID,
 	).Scan(ctx, &platformCount)
 	if platformCount != 1 {
@@ -1213,12 +1213,12 @@ func TestDispatchSync_Epic_NotConfigured_FailsJob(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'epic', 'pending', 'high')`,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'epic-games-store', 'pending', 'high')`,
 		jobID, userID,
 	)
 	configID := uuid.NewString()
 	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic', 'manual')`,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic-games-store', 'manual')`,
 		configID, userID,
 	).Exec(ctx)
 
@@ -1227,7 +1227,7 @@ func TestDispatchSync_Epic_NotConfigured_FailsJob(t *testing.T) {
 		Adapter: credErrFactory(),
 	}
 	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic"},
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"},
 	}
 
 	if err := w.Work(ctx, job); err != nil {
@@ -1469,7 +1469,7 @@ func TestIGDBMatchWorker_ChildInheritsFromResolvedParent(t *testing.T) {
 
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
-		 VALUES (?, ?, 'sync', 'psn', 'processing', 'normal', 2)`,
+		 VALUES (?, ?, 'sync', 'playstation-store', 'processing', 'normal', 2)`,
 		jobID, userID,
 	)
 	const igdbID = int32(7777)
@@ -1482,14 +1482,14 @@ func TestIGDBMatchWorker_ChildInheritsFromResolvedParent(t *testing.T) {
 	parentID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id, created_at, updated_at)
-		 VALUES (?, ?, 'psn', 'CUSA001', 'Horizon', false, true, false, ?, now(), now())`,
+		 VALUES (?, ?, 'playstation-store', 'CUSA001', 'Horizon', false, true, false, ?, now(), now())`,
 		parentID, userID, igdbID,
 	)
 	// Child row: points to parent, not yet resolved.
 	childID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
-		 VALUES (?, ?, 'psn', 'PPSA001', 'Horizon', false, true, false, ?, now(), now())`,
+		 VALUES (?, ?, 'playstation-store', 'PPSA001', 'Horizon', false, true, false, ?, now(), now())`,
 		childID, userID, parentID,
 	)
 	_, _ = testDB.NewRaw(
@@ -1539,7 +1539,7 @@ func TestIGDBMatchWorker_ChildWaitsForUnresolvedParent(t *testing.T) {
 
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
-		 VALUES (?, ?, 'sync', 'psn', 'processing', 'normal', 2)`,
+		 VALUES (?, ?, 'sync', 'playstation-store', 'processing', 'normal', 2)`,
 		jobID, userID,
 	)
 
@@ -1547,14 +1547,14 @@ func TestIGDBMatchWorker_ChildWaitsForUnresolvedParent(t *testing.T) {
 	parentID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES (?, ?, 'psn', 'CUSA001', 'Horizon', false, true, false, now(), now())`,
+		 VALUES (?, ?, 'playstation-store', 'CUSA001', 'Horizon', false, true, false, now(), now())`,
 		parentID, userID,
 	)
 	// Child row: points to parent.
 	childID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
-		 VALUES (?, ?, 'psn', 'PPSA001', 'Horizon', false, true, false, ?, now(), now())`,
+		 VALUES (?, ?, 'playstation-store', 'PPSA001', 'Horizon', false, true, false, ?, now(), now())`,
 		childID, userID, parentID,
 	)
 	_, _ = testDB.NewRaw(
@@ -1604,7 +1604,7 @@ func TestUserGameWorker_SiblingTrigger(t *testing.T) {
 
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, dispatch_complete)
-		 VALUES (?, ?, 'sync', 'psn', 'processing', 'normal', 2, true)`,
+		 VALUES (?, ?, 'sync', 'playstation-store', 'processing', 'normal', 2, true)`,
 		jobID, userID,
 	)
 	const igdbID = int32(9999)
@@ -1617,7 +1617,7 @@ func TestUserGameWorker_SiblingTrigger(t *testing.T) {
 	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('playstation-store', 'PlayStation Store') ON CONFLICT DO NOTHING`)
 
 	// Parent: already resolved.
-	parentID := insertTestExternalGame(t, userID, "psn", "CUSA001", "Elden Ring", "playstation-4")
+	parentID := insertTestExternalGame(t, userID, "playstation-store", "CUSA001", "Elden Ring", "playstation-4")
 	_, _ = testDB.NewRaw(
 		`UPDATE external_games SET resolved_igdb_id = ? WHERE id = ?`, igdbID, parentID,
 	).Exec(ctx)
@@ -1626,7 +1626,7 @@ func TestUserGameWorker_SiblingTrigger(t *testing.T) {
 	childID := uuid.NewString()
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
-		 VALUES (?, ?, 'psn', 'PPSA001', 'Elden Ring', false, true, false, ?, now(), now())`,
+		 VALUES (?, ?, 'playstation-store', 'PPSA001', 'Elden Ring', false, true, false, ?, now(), now())`,
 		childID, userID, parentID,
 	)
 	_, _ = testDB.NewRaw(
@@ -1933,12 +1933,12 @@ func TestUserGameWorker_OwnershipRankGuard(t *testing.T) {
 	insertTestUser(t, testDB, userID)
 
 	// Seed platform and storefront required by user_game_platforms FKs.
-	// psn storefront maps to 'playstation-store' via StorefrontToCollectionSlug.
+	// The playstation-store storefront slug equals storefronts.name (no translation).
 	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('playstation-4', 'PlayStation 4') ON CONFLICT DO NOTHING`)
 	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('playstation-store', 'PlayStation Store') ON CONFLICT DO NOTHING`)
 
 	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'psn', 'processing', 'low', 1)`,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'playstation-store', 'processing', 'low', 1)`,
 		jobID, userID,
 	)
 	const igdbID = int32(800)
@@ -1961,7 +1961,7 @@ func TestUserGameWorker_OwnershipRankGuard(t *testing.T) {
 	subOwnership := "subscription"
 	_, _ = testDB.ExecContext(ctx,
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, ownership_status, resolved_igdb_id)
-		 VALUES (?, ?, 'psn', 'CUSA800', 'PSN Game', false, true, true, ?, ?)`,
+		 VALUES (?, ?, 'playstation-store', 'CUSA800', 'PSN Game', false, true, true, ?, ?)`,
 		egID, userID, subOwnership, igdbID,
 	)
 	_, _ = testDB.NewRaw(

@@ -34,6 +34,8 @@ export {
   useStorefrontNames,
 } from './use-platforms';
 
+export { useJobSourceLabel } from './use-job-source-label';
+
 // Tag hooks
 export {
   tagKeys,

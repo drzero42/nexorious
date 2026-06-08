@@ -118,9 +118,9 @@ func TestSyncConfig_Put_EpicAllowed(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "cfg-epic-1")
 
-	rec := putJSONAuth(t, e, "/api/sync/config/epic", map[string]any{"frequency": "weekly"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/config/epic-games-store", map[string]any{"frequency": "weekly"}, token)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for epic config, got %d", rec.Code)
+		t.Fatalf("expected 200 for epic-games-store config, got %d", rec.Code)
 	}
 }
 
@@ -150,21 +150,21 @@ func TestSyncTrigger_CreatesJob(t *testing.T) {
 	}
 }
 
-func TestSyncTrigger_EpicCreatesJob(t *testing.T) {
+func TestSyncTrigger_EpicGamesStoreCreatesJob(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "trig-epic-1")
 
-	rec := postJSONAuth(t, e, "/api/sync/epic", nil, token)
+	rec := postJSONAuth(t, e, "/api/sync/epic-games-store", nil, token)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for epic trigger, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("expected 200 for epic-games-store trigger, got %d: %s", rec.Code, rec.Body.String())
 	}
 	var resp map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["storefront"] != "epic" {
-		t.Fatalf("expected storefront=epic, got %v", resp["storefront"])
+	if resp["storefront"] != "epic-games-store" {
+		t.Fatalf("expected storefront=epic-games-store, got %v", resp["storefront"])
 	}
 	if resp["status"] != "queued" {
 		t.Fatalf("expected status=queued, got %v", resp["status"])
@@ -183,6 +183,38 @@ func TestSyncTrigger_DuplicateReturns409(t *testing.T) {
 	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected 409 on duplicate, got %d", rec.Code)
+	}
+}
+
+func TestSyncTrigger_RejectsOldSlugs(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, testDB, e, "trig-oldslug-1")
+
+	// Clean cutover: the pre-rename slugs are no longer valid storefronts.
+	for _, sf := range []string{"psn", "epic"} {
+		rec := postJSONAuth(t, e, "/api/sync/"+sf, nil, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("old slug %q: got %d, want 400", sf, rec.Code)
+		}
+	}
+}
+
+func TestSyncTrigger_PlaystationStoreCreatesJob(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
+	_, token := setupTagUser(t, testDB, e, "trig-pss-1")
+
+	rec := postJSONAuth(t, e, "/api/sync/playstation-store", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for playstation-store trigger, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp["storefront"] != "playstation-store" {
+		t.Fatalf("expected storefront=playstation-store, got %v", resp["storefront"])
 	}
 }
 
@@ -327,7 +359,7 @@ func TestPSNConnect_ShortToken(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-short")
 
-	rec := putJSONAuth(t, e, "/api/sync/psn/connection", map[string]any{
+	rec := putJSONAuth(t, e, "/api/sync/playstation-store/connection", map[string]any{
 		"npsso_token": "tooshort",
 	}, token)
 	if rec.Code != http.StatusBadRequest {
@@ -344,7 +376,7 @@ func TestPSNConnect_StubSuccess(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "psn-ok")
 
 	token64 := strings.Repeat("a", 64)
-	rec := putJSONAuth(t, e, "/api/sync/psn/connection", map[string]any{
+	rec := putJSONAuth(t, e, "/api/sync/playstation-store/connection", map[string]any{
 		"npsso_token": token64,
 	}, token)
 	if rec.Code != http.StatusOK {
@@ -362,7 +394,7 @@ func TestPSNConnect_StubSuccess(t *testing.T) {
 	}
 
 	var creds string
-	if err := testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'psn'`, userID).
+	if err := testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'playstation-store'`, userID).
 		Scan(context.Background(), &creds); err != nil {
 		t.Fatalf("scan credentials: %v", err)
 	}
@@ -376,7 +408,7 @@ func TestPSNStatus_NoRow(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-stat-empty")
 
-	rec := getAuth(t, e, "/api/sync/psn/connection", token)
+	rec := getAuth(t, e, "/api/sync/playstation-store/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
@@ -400,7 +432,7 @@ func TestPSNDisconnect_Idempotent(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	_, token := setupTagUser(t, testDB, e, "psn-disc-1")
 
-	rec := deleteAuth(t, e, "/api/sync/psn/connection", token)
+	rec := deleteAuth(t, e, "/api/sync/playstation-store/connection", token)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", rec.Code)
 	}
@@ -566,9 +598,9 @@ func TestSkipGame_CascadesToChildren(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "skip-cascade")
 
-	insertExternalGame(t, testDB, "eg-skip-parent", userID, "psn", "CUSA001", "Horizon")
-	insertChildExternalGame(t, testDB, "eg-skip-child", userID, "psn", "PPSA001", "Horizon", "eg-skip-parent")
-	insertJob(t, testDB, "job-skip-cascade", userID, "sync", "psn", "processing")
+	insertExternalGame(t, testDB, "eg-skip-parent", userID, "playstation-store", "CUSA001", "Horizon")
+	insertChildExternalGame(t, testDB, "eg-skip-child", userID, "playstation-store", "PPSA001", "Horizon", "eg-skip-parent")
+	insertJob(t, testDB, "job-skip-cascade", userID, "sync", "playstation-store", "processing")
 
 	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
@@ -614,7 +646,7 @@ func TestUnskipGame_CascadesToChildren(t *testing.T) {
 	// Insert parent and child, both pre-skipped.
 	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, created_at, updated_at)
-		 VALUES ('eg-unskip-parent', ?, 'psn', 'CUSA002', 'Ratchet', true, true, false, now(), now())`,
+		 VALUES ('eg-unskip-parent', ?, 'playstation-store', 'CUSA002', 'Ratchet', true, true, false, now(), now())`,
 		userID,
 	)
 	if err != nil {
@@ -622,7 +654,7 @@ func TestUnskipGame_CascadesToChildren(t *testing.T) {
 	}
 	_, err = testDB.ExecContext(context.Background(),
 		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, parent_id, created_at, updated_at)
-		 VALUES ('eg-unskip-child', ?, 'psn', 'PPSA002', 'Ratchet', true, true, false, 'eg-unskip-parent', now(), now())`,
+		 VALUES ('eg-unskip-child', ?, 'playstation-store', 'PPSA002', 'Ratchet', true, true, false, 'eg-unskip-parent', now(), now())`,
 		userID,
 	)
 	if err != nil {
@@ -726,7 +758,7 @@ func TestSyncGetConfig_AfterPut(t *testing.T) {
 	_, token := setupTagUser(t, testDB, e, "getcfg-afterput")
 
 	// Create a config first.
-	rec := putJSONAuth(t, e, "/api/sync/config/psn", map[string]any{
+	rec := putJSONAuth(t, e, "/api/sync/config/playstation-store", map[string]any{
 		"frequency": "weekly",
 	}, token)
 	if rec.Code != http.StatusOK {
@@ -734,7 +766,7 @@ func TestSyncGetConfig_AfterPut(t *testing.T) {
 	}
 
 	// Now GET the same config.
-	rec = getAuth(t, e, "/api/sync/config/psn", token)
+	rec = getAuth(t, e, "/api/sync/config/playstation-store", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -775,7 +807,7 @@ func TestPSNStatus_WithCredentials(t *testing.T) {
 	}
 	_, err = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
-		 VALUES (?, ?, 'psn', 'manual', ?, now(), now())`,
+		 VALUES (?, ?, 'playstation-store', 'manual', ?, now(), now())`,
 		"cfg-psn-cred", userID, credsCiphertext,
 	).Exec(context.Background())
 	if err != nil {
@@ -783,7 +815,7 @@ func TestPSNStatus_WithCredentials(t *testing.T) {
 	}
 
 	// Now get PSN status — should return configured=true.
-	rec := getAuth(t, e, "/api/sync/psn/connection", token)
+	rec := getAuth(t, e, "/api/sync/playstation-store/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -815,10 +847,10 @@ func TestPSNStatus_CorruptedCredentials(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "psn-corrupt-creds")
-	insertCorruptedSyncConfig(t, testDB, userID, "psn")
+	insertCorruptedSyncConfig(t, testDB, userID, "playstation-store")
 
 	// Decrypt failure must surface credentials_error=true without clearing the row.
-	rec := getAuth(t, e, "/api/sync/psn/connection", token)
+	rec := getAuth(t, e, "/api/sync/playstation-store/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200 for undecryptable PSN credentials", rec.Code)
 	}
@@ -836,7 +868,7 @@ func TestPSNStatus_CorruptedCredentials(t *testing.T) {
 	// Credentials row must NOT be cleared.
 	var creds string
 	err := testDB.NewRaw(
-		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'psn'`, userID,
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'playstation-store'`, userID,
 	).Scan(context.Background(), &creds)
 	if err != nil {
 		t.Fatalf("credentials row missing after decrypt failure: %v", err)
@@ -850,10 +882,10 @@ func TestEpicStatus_CorruptedCredentials(t *testing.T) {
 	truncateAllTables(t)
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, &stubEpicClient{configured: true})
 	userID, token := setupTagUser(t, testDB, e, "epic-corrupt-creds")
-	insertCorruptedSyncConfig(t, testDB, userID, "epic")
+	insertCorruptedSyncConfig(t, testDB, userID, "epic-games-store")
 
 	// Decrypt failure must surface credentials_error=true without clearing the row.
-	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200 for undecryptable Epic credentials", rec.Code)
 	}
@@ -871,7 +903,7 @@ func TestEpicStatus_CorruptedCredentials(t *testing.T) {
 	// Credentials row must NOT be cleared.
 	var creds string
 	err := testDB.NewRaw(
-		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`, userID,
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic-games-store'`, userID,
 	).Scan(context.Background(), &creds)
 	if err != nil {
 		t.Fatalf("credentials row missing after decrypt failure: %v", err)
@@ -975,10 +1007,10 @@ func TestListExternalGames_ExcludesChildren(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "list-excludes-children")
 
-	insertExternalGame(t, testDB, "eg-parent-1", userID, "psn", "CUSA001", "Horizon")
-	insertChildExternalGame(t, testDB, "eg-child-1", userID, "psn", "PPSA001", "Horizon", "eg-parent-1")
+	insertExternalGame(t, testDB, "eg-parent-1", userID, "playstation-store", "CUSA001", "Horizon")
+	insertChildExternalGame(t, testDB, "eg-child-1", userID, "playstation-store", "PPSA001", "Horizon", "eg-parent-1")
 
-	rec := getAuth(t, e, "/api/sync/psn/external-games", token)
+	rec := getAuth(t, e, "/api/sync/playstation-store/external-games", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -1000,12 +1032,12 @@ func TestListExternalGames_AggregatesChildPlatforms(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "list-agg-platforms")
 
-	insertExternalGame(t, testDB, "eg-par-2", userID, "psn", "CUSA002", "God of War")
+	insertExternalGame(t, testDB, "eg-par-2", userID, "playstation-store", "CUSA002", "God of War")
 	insertExternalGamePlatform(t, testDB, "eg-par-2", "playstation-4")
-	insertChildExternalGame(t, testDB, "eg-chi-2", userID, "psn", "PPSA002", "God of War", "eg-par-2")
+	insertChildExternalGame(t, testDB, "eg-chi-2", userID, "playstation-store", "PPSA002", "God of War", "eg-par-2")
 	insertExternalGamePlatform(t, testDB, "eg-chi-2", "playstation-5")
 
-	rec := getAuth(t, e, "/api/sync/psn/external-games", token)
+	rec := getAuth(t, e, "/api/sync/playstation-store/external-games", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -1167,11 +1199,11 @@ func TestRematchExternalGame_ResolvesSiblings(t *testing.T) {
 	userID, token := setupTagUser(t, testDB, e, "rm-siblings")
 
 	// Two PSN external_games for the same game title (PS4 parent + PS5 child variant).
-	insertExternalGame(t, testDB, "eg-ps4", userID, "psn", "PPSA-001", "Spider-Man 2")
-	insertChildExternalGame(t, testDB, "eg-ps5", userID, "psn", "PPSA-002", "Spider-Man 2", "eg-ps4")
+	insertExternalGame(t, testDB, "eg-ps4", userID, "playstation-store", "PPSA-001", "Spider-Man 2")
+	insertChildExternalGame(t, testDB, "eg-ps5", userID, "playstation-store", "PPSA-002", "Spider-Man 2", "eg-ps4")
 
 	// A recent sync job for the sibling fallback path.
-	insertJob(t, testDB, "job-sib", userID, "sync", "psn", "processing")
+	insertJob(t, testDB, "job-sib", userID, "sync", "playstation-store", "processing")
 
 	// pending_review job_item for the primary (PS4).
 	_, err := testDB.ExecContext(context.Background(),
@@ -1262,9 +1294,9 @@ func TestRematchExternalGame_UpdatesSiblingJobItemStatusToPending(t *testing.T) 
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-sib-status")
 
-	insertExternalGame(t, testDB, "eg-sib-s1", userID, "psn", "PPSA-101", "God of War")
-	insertChildExternalGame(t, testDB, "eg-sib-s2", userID, "psn", "PPSA-102", "God of War", "eg-sib-s1")
-	insertJob(t, testDB, "job-sib-s", userID, "sync", "psn", "processing")
+	insertExternalGame(t, testDB, "eg-sib-s1", userID, "playstation-store", "PPSA-101", "God of War")
+	insertChildExternalGame(t, testDB, "eg-sib-s2", userID, "playstation-store", "PPSA-102", "God of War", "eg-sib-s1")
+	insertJob(t, testDB, "job-sib-s", userID, "sync", "playstation-store", "processing")
 
 	for _, row := range []struct{ id, egID, extID string }{
 		{"ji-sib-s1", "eg-sib-s1", "PPSA-101"},
@@ -1353,9 +1385,9 @@ func TestRematchExternalGame_SiblingAfterSyncCompleted(t *testing.T) {
 	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPSNClient{})
 	userID, token := setupTagUser(t, testDB, e, "rm-sib-postcomplete")
 
-	insertExternalGame(t, testDB, "eg-sib-pc1", userID, "psn", "CUSA-001", "Horizon")
-	insertChildExternalGame(t, testDB, "eg-sib-pc2", userID, "psn", "CUSA-002", "Horizon", "eg-sib-pc1")
-	insertJob(t, testDB, "job-sib-pc", userID, "sync", "psn", "completed")
+	insertExternalGame(t, testDB, "eg-sib-pc1", userID, "playstation-store", "CUSA-001", "Horizon")
+	insertChildExternalGame(t, testDB, "eg-sib-pc2", userID, "playstation-store", "CUSA-002", "Horizon", "eg-sib-pc1")
+	insertJob(t, testDB, "job-sib-pc", userID, "sync", "playstation-store", "completed")
 
 	for _, row := range []struct{ id, egID, extID string }{
 		{"ji-sib-pc1", "eg-sib-pc1", "CUSA-001"},
@@ -1402,9 +1434,9 @@ func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
 	userB, _ := setupTagUser(t, testDB, e, "rm-fk-userB")
 
 	// User A: parent + child, same title.
-	insertExternalGame(t, testDB, "eg-fk-parent", userA, "psn", "CUSA100", "Spider-Man")
-	insertChildExternalGame(t, testDB, "eg-fk-child", userA, "psn", "PPSA100", "Spider-Man", "eg-fk-parent")
-	insertJob(t, testDB, "job-fk", userA, "sync", "psn", "processing")
+	insertExternalGame(t, testDB, "eg-fk-parent", userA, "playstation-store", "CUSA100", "Spider-Man")
+	insertChildExternalGame(t, testDB, "eg-fk-child", userA, "playstation-store", "PPSA100", "Spider-Man", "eg-fk-parent")
+	insertJob(t, testDB, "job-fk", userA, "sync", "playstation-store", "processing")
 	_, err := testDB.ExecContext(context.Background(),
 		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates, created_at)
 		 VALUES ('ji-fk-child', 'job-fk', ?, 'PPSA100', 'Spider-Man', 'eg-fk-child', '{}', 'pending', '{}', '[]', now())`,
@@ -1415,7 +1447,7 @@ func TestRematchExternalGame_CascadesToChildrenViaParentID(t *testing.T) {
 	}
 
 	// User B: unrelated game with same title — must NOT be touched.
-	insertExternalGame(t, testDB, "eg-fk-other", userB, "psn", "CUSA200", "Spider-Man")
+	insertExternalGame(t, testDB, "eg-fk-other", userB, "playstation-store", "CUSA200", "Spider-Man")
 
 	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-fk-parent/rematch",
 		map[string]any{"igdb_id": 4242}, tokenA)
@@ -1986,7 +2018,7 @@ func TestHandleEpicConnect_503WhenNotConfigured(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-503")
 
-	rec := putJSONAuth(t, e, "/api/sync/epic/connection", map[string]any{"auth_code": "abc"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "abc"}, token)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2001,7 +2033,7 @@ func TestHandleEpicConnect_400OnMissingAuthCode(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-400")
 
-	rec := putJSONAuth(t, e, "/api/sync/epic/connection", map[string]any{}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{}, token)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
@@ -2016,7 +2048,7 @@ func TestHandleEpicConnect_400OnAuthError(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-auth-fail")
 
-	rec := putJSONAuth(t, e, "/api/sync/epic/connection", map[string]any{"auth_code": "bad"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "bad"}, token)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2028,7 +2060,7 @@ func TestHandleEpicConnect_500OnNilInfo(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-conn-nil")
 
-	rec := putJSONAuth(t, e, "/api/sync/epic/connection", map[string]any{"auth_code": "ok"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "ok"}, token)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", rec.Code)
 	}
@@ -2044,7 +2076,7 @@ func TestHandleEpicConnect_HappyPathPersistsConfig(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	userID, token := setupTagUser(t, testDB, e, "epic-conn-ok")
 
-	rec := putJSONAuth(t, e, "/api/sync/epic/connection", map[string]any{"auth_code": "ok"}, token)
+	rec := putJSONAuth(t, e, "/api/sync/epic-games-store/connection", map[string]any{"auth_code": "ok"}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2056,7 +2088,7 @@ func TestHandleEpicConnect_HappyPathPersistsConfig(t *testing.T) {
 
 	var credsRaw string
 	err := testDB.NewRaw(
-		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic-games-store'`,
 		userID,
 	).Scan(context.Background(), &credsRaw)
 	if err != nil {
@@ -2093,14 +2125,14 @@ func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 	}
 	_, err = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
-		 VALUES (?, ?, 'epic', 'manual', ?, now(), now())`,
+		 VALUES (?, ?, 'epic-games-store', 'manual', ?, now(), now())`,
 		"cfg-epic-disc", userID, snapCiphertext,
 	).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("seed user_sync_configs: %v", err)
 	}
 
-	rec := deleteAuth(t, e, "/api/sync/epic/connection", token)
+	rec := deleteAuth(t, e, "/api/sync/epic-games-store/connection", token)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2110,7 +2142,7 @@ func TestHandleEpicDisconnect_ClearsCredsSnapshotAndCallsCleanup(t *testing.T) {
 
 	var credsAfter *string
 	err = testDB.NewRaw(
-		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic'`,
+		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic-games-store'`,
 		userID,
 	).Scan(context.Background(), &credsAfter)
 	if err != nil {
@@ -2127,7 +2159,7 @@ func TestHandleGetEpicConnection_DisabledWhenNotConfigured(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-status-disabled")
 
-	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
@@ -2144,7 +2176,7 @@ func TestHandleGetEpicConnection_NotConnectedWhenNoRow(t *testing.T) {
 	e := newSyncTestAppWithEpic(t, testDB, &stubSteamClient{}, &stubPSNClient{}, stub)
 	_, token := setupTagUser(t, testDB, e, "epic-status-noconn")
 
-	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
@@ -2173,14 +2205,14 @@ func TestHandleGetEpicConnection_ConnectedReturnsDisplayName(t *testing.T) {
 	}
 	_, err = testDB.NewRaw(
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, created_at, updated_at)
-		 VALUES (?, ?, 'epic', 'manual', ?, now(), now())`,
+		 VALUES (?, ?, 'epic-games-store', 'manual', ?, now(), now())`,
 		"cfg-epic-conn", userID, credsCiphertext,
 	).Exec(context.Background())
 	if err != nil {
 		t.Fatalf("seed user_sync_configs: %v", err)
 	}
 
-	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
@@ -2431,11 +2463,11 @@ func TestGetPSNStatus_DBCredentialsErrorFlag(t *testing.T) {
 	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
 	_, _ = testDB.ExecContext(context.Background(),
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
-		 VALUES (?, ?, 'psn', 'manual', ?, true, now(), now())`,
+		 VALUES (?, ?, 'playstation-store', 'manual', ?, true, now(), now())`,
 		uuid.NewString(), userID, ciphertext,
 	)
 
-	rec := getAuth(t, e, "/api/sync/psn/connection", token)
+	rec := getAuth(t, e, "/api/sync/playstation-store/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2479,11 +2511,11 @@ func TestGetEpicConnection_DBCredentialsErrorFlag(t *testing.T) {
 	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
 	_, _ = testDB.ExecContext(context.Background(),
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
-		 VALUES (?, ?, 'epic', 'manual', ?, true, now(), now())`,
+		 VALUES (?, ?, 'epic-games-store', 'manual', ?, true, now(), now())`,
 		uuid.NewString(), userID, ciphertext,
 	)
 
-	rec := getAuth(t, e, "/api/sync/epic/connection", token)
+	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -2535,19 +2567,19 @@ func TestPSNConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 
 	_, _ = testDB.ExecContext(context.Background(),
 		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, credentials_error, created_at, updated_at)
-		 VALUES (?, ?, 'psn', 'manual', true, now(), now())`,
+		 VALUES (?, ?, 'playstation-store', 'manual', true, now(), now())`,
 		uuid.NewString(), userID,
 	)
 
 	body := `{"npsso_token":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}`
-	rec := putAuth(t, e, "/api/sync/psn/connection", token, body)
+	rec := putAuth(t, e, "/api/sync/playstation-store/connection", token, body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
 	var credsErr bool
 	_ = testDB.NewRaw(
-		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'psn'`,
+		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'playstation-store'`,
 		userID,
 	).Scan(context.Background(), &credsErr)
 	if credsErr {
