@@ -230,3 +230,14 @@ type JobChange struct {
 	NewStatus      *string   `bun:"new_status"          json:"new_status"`
 	CreatedAt      time.Time `bun:"created_at,notnull"  json:"created_at"`
 }
+
+// UserSettings mirrors the user_settings table — one row per user, lazily
+// upserted. Holds typed per-user app preferences (e.g. deal_region).
+type UserSettings struct {
+	bun.BaseModel `bun:"table:user_settings"`
+
+	UserID     string    `bun:"user_id,pk"          json:"user_id"`
+	DealRegion string    `bun:"deal_region,notnull" json:"deal_region"`
+	CreatedAt  time.Time `bun:"created_at,notnull"  json:"created_at"`
+	UpdatedAt  time.Time `bun:"updated_at,notnull"  json:"updated_at"`
+}
