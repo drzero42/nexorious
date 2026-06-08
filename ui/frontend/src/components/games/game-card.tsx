@@ -68,12 +68,14 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
           </div>
         )}
 
-        {/* Status badge */}
-        <div className="absolute bottom-2 left-2">
-          <Badge className={cn('text-white border-0', statusColors[game.play_status])}>
-            {statusLabels[game.play_status]}
-          </Badge>
-        </div>
+        {/* Status badge — hidden for wishlisted entries */}
+        {!game.is_wishlisted && (
+          <div className="absolute bottom-2 left-2">
+            <Badge className={cn('text-white border-0', statusColors[game.play_status])}>
+              {statusLabels[game.play_status]}
+            </Badge>
+          </div>
+        )}
 
         {/* Loved indicator */}
         {game.is_loved && (

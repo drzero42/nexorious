@@ -266,6 +266,16 @@ describe('GameCard', () => {
 
       expect(screen.getByText(label)).toBeInTheDocument();
     });
+
+    it('does not render play-status badge when is_wishlisted is true', () => {
+      const game = createMockGame({
+        is_wishlisted: true,
+        play_status: PlayStatus.NOT_STARTED,
+      });
+      render(<GameCard game={game} />);
+
+      expect(screen.queryByText('Not Started')).not.toBeInTheDocument();
+    });
   });
 
   describe('loved indicator', () => {
