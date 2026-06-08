@@ -2020,3 +2020,78 @@ func TestCreateUserGame_Wishlist(t *testing.T) {
 		}
 	})
 }
+
+func TestListUserGames_WishlistExclusion(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	_, token := setupUserGamesUser(t, testDB, e, "wl-list")
+
+	// One library entry (with a platform).
+	libGameID := insertTestGame(t, testDB, "Library Game")
+	rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+		"game_id": libGameID,
+		"platforms": []map[string]any{
+			{"platform": "pc-windows"},
+		},
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create library game: want 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// One wishlist entry (no platforms).
+	wishGameID := insertTestGame(t, testDB, "Wishlist Game")
+	rec = postJSONAuth(t, e, "/api/user-games", map[string]any{
+		"game_id":       wishGameID,
+		"is_wishlisted": true,
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create wishlist game: want 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	t.Run("default list excludes wishlisted", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		total := int(resp["total"].(float64))
+		if total != 1 {
+			t.Fatalf("default list want total=1 (library only), got %d", total)
+		}
+		games := resp["user_games"].([]any)
+		if len(games) != 1 {
+			t.Fatalf("default list want 1 user_game, got %d", len(games))
+		}
+		first := games[0].(map[string]any)
+		if first["is_wishlisted"] != false {
+			t.Fatalf("default list entry should not be wishlisted, got %v", first["is_wishlisted"])
+		}
+	})
+
+	t.Run("wishlist=true returns only wishlisted", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games?wishlist=true", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		total := int(resp["total"].(float64))
+		if total != 1 {
+			t.Fatalf("wishlist list want total=1, got %d", total)
+		}
+		games := resp["user_games"].([]any)
+		if len(games) != 1 {
+			t.Fatalf("wishlist list want 1 user_game, got %d", len(games))
+		}
+		first := games[0].(map[string]any)
+		if first["is_wishlisted"] != true {
+			t.Fatalf("wishlist list entry should be wishlisted, got %v", first["is_wishlisted"])
+		}
+	})
+}

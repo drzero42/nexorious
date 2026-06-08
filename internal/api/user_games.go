@@ -217,6 +217,7 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	filter.ApplyPlayStatus(fb, c.QueryParam("play_status"))
 	filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
 	filter.ApplySearch(fb, c.QueryParam("q"))
+	filter.ApplyWishlist(fb, c.QueryParam("wishlist") == "true")
 
 	if str := c.QueryParam("is_loved"); str != "" {
 		v := str == "true"
@@ -1313,6 +1314,7 @@ func (h *UserGamesHandler) HandleListUserGameIDs(c *echo.Context) error {
 	filter.ApplyPlayStatus(fb, c.QueryParam("play_status"))
 	filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
 	filter.ApplySearch(fb, c.QueryParam("q"))
+	filter.ApplyWishlist(fb, c.QueryParam("wishlist") == "true")
 
 	if str := c.QueryParam("is_loved"); str != "" {
 		v := str == "true"
@@ -1459,6 +1461,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 	total, err := h.db.NewSelect().
 		TableExpr("user_games").
 		Where("user_id = ?", userID).
+		Where("is_wishlisted = ?", false).
 		Count(ctx)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
@@ -1475,6 +1478,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		TableExpr("user_games").
 		ColumnExpr("COALESCE(play_status, 'not_started') AS play_status, COUNT(*) AS count").
 		Where("user_id = ?", userID).
+		Where("is_wishlisted = ?", false).
 		GroupExpr("play_status").
 		Scan(ctx, &statusCounts)
 	if err != nil {
@@ -1495,6 +1499,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		Join("JOIN user_games AS ug ON ug.id = ugp.user_game_id").
 		ColumnExpr("COALESCE(ugp.ownership_status, 'owned') AS ownership_status, COUNT(DISTINCT ugp.user_game_id) AS count").
 		Where("ug.user_id = ?", userID).
+		Where("ug.is_wishlisted = ?", false).
 		GroupExpr("ugp.ownership_status").
 		Scan(ctx, &ownershipCounts)
 	if err != nil {
@@ -1516,6 +1521,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		Join("JOIN platforms AS p ON p.name = ugp.platform").
 		ColumnExpr("p.display_name, COUNT(*) AS count").
 		Where("ug.user_id = ?", userID).
+		Where("ug.is_wishlisted = ?", false).
 		GroupExpr("p.name, p.display_name").
 		Scan(ctx, &platformCounts)
 	if err != nil {
@@ -1532,6 +1538,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		Join("JOIN user_games AS ug ON g.id = ug.game_id").
 		ColumnExpr("g.genre").
 		Where("ug.user_id = ?", userID).
+		Where("ug.is_wishlisted = ?", false).
 		Where("g.genre IS NOT NULL").
 		Scan(ctx, &rawGenres)
 	if err != nil {
@@ -1556,6 +1563,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		TableExpr("user_games").
 		ColumnExpr("AVG(personal_rating)").
 		Where("user_id = ?", userID).
+		Where("is_wishlisted = ?", false).
 		Where("personal_rating IS NOT NULL").
 		Scan(ctx, &avgRating)
 	if err != nil {
@@ -1573,6 +1581,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		ColumnExpr("COALESCE(SUM(ugp.hours_played), 0)").
 		Join("LEFT JOIN user_game_platforms AS ugp ON ugp.user_game_id = ug.id").
 		Where("ug.user_id = ?", userID).
+		Where("ug.is_wishlisted = ?", false).
 		Scan(ctx, &totalHours)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
