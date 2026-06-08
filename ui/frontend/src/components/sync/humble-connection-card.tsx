@@ -2,9 +2,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
+import { ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { useConnectHumble, useDisconnectHumble } from '@/hooks';
 import {
   CodeHelpAccordion,
@@ -99,10 +100,11 @@ export function HumbleConnectionCard({
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="sessionCookie">Session cookie (_simpleauth_sess)</Label>
-                <Textarea
+                <Input
                   id="sessionCookie"
-                  rows={3}
+                  type="text"
                   placeholder="Paste the value of your _simpleauth_sess cookie"
+                  autoComplete="off"
                   {...register('sessionCookie')}
                   disabled={isConnecting}
                 />
@@ -120,7 +122,18 @@ export function HumbleConnectionCard({
                     audio, video, or Steam-key-only titles.
                   </p>
                   <ol className="list-inside list-decimal space-y-1">
-                    <li>Sign in at humblebundle.com in your browser.</li>
+                    <li>
+                      Sign in at{' '}
+                      <a
+                        href="https://www.humblebundle.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        humblebundle.com <ExternalLink className="inline h-3 w-3" />
+                      </a>{' '}
+                      in your browser.
+                    </li>
                     <li>
                       Open your browser&apos;s developer tools (F12) and go to the{' '}
                       <strong>Application</strong> tab (Chrome/Edge) or <strong>Storage</strong> tab
