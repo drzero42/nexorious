@@ -364,6 +364,24 @@ describe('games.ts', () => {
         status: 404,
       });
     });
+
+    it('carries store_url through the platform transform', async () => {
+      const withStoreURL = {
+        ...mockUserGameApi,
+        platforms: [
+          { ...mockUserGameApi.platforms[0], store_url: 'https://store.steampowered.com/app/440/' },
+        ],
+      };
+      server.use(
+        http.get(`${API_URL}/user-games/user-game-123`, () => {
+          return HttpResponse.json(withStoreURL);
+        }),
+      );
+
+      const result = await getUserGame('user-game-123');
+
+      expect(result.platforms[0].store_url).toBe('https://store.steampowered.com/app/440/');
+    });
   });
 
   describe('createUserGame', () => {
