@@ -11,10 +11,11 @@ import (
 
 // Job type constants.
 const (
-	JobTypeSync            = "sync"
-	JobTypeImport          = "import"
-	JobTypeExport          = "export"
-	JobTypeMetadataRefresh = "metadata_refresh"
+	JobTypeSync             = "sync"
+	JobTypeImport           = "import"
+	JobTypeExport           = "export"
+	JobTypeMetadataRefresh  = "metadata_refresh"
+	JobTypeStoreLinkRefresh = "store_link_refresh"
 )
 
 // Job source constants.
