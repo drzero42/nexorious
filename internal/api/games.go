@@ -371,6 +371,7 @@ func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 	}
 
 	if _, err := h.riverClient.Insert(c.Request().Context(), tasks.MetadataRefreshDispatchArgs{}, nil); err != nil {
+		slog.Error("failed to enqueue metadata refresh dispatch", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
 	}
 
@@ -395,6 +396,7 @@ func (h *GamesHandler) HandleStartStoreLinkRefreshJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "worker not available")
 	}
 	if _, err := h.riverClient.Insert(c.Request().Context(), tasks.StoreLinkRefreshDispatchArgs{Force: true}, nil); err != nil {
+		slog.Error("failed to enqueue store-link refresh dispatch", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue store link refresh")
 	}
 	return c.JSON(http.StatusOK, map[string]any{
