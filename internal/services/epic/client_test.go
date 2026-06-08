@@ -147,3 +147,31 @@ func TestRestoreSnapshot_RejectsUnsafePaths(t *testing.T) {
 		})
 	}
 }
+
+// TestParseLegendaryList_NamespaceFromMetadata verifies namespace is read from
+// metadata.namespace (legendary's actual location), not a top-level key — the
+// value Epic store-link resolution depends on.
+func TestParseLegendaryList_NamespaceFromMetadata(t *testing.T) {
+	// Shape mirrors `legendary list --json`: catalog fields nested under metadata,
+	// no top-level "namespace".
+	out := []byte(`[
+	  {"app_name":"abc123","app_title":"A Plague Tale: Innocence","metadata":{"namespace":"ns-plague"}},
+	  {"app_name":"def456","app_title":"Other Game","metadata":{"namespace":"ns-other"}}
+	]`)
+	entries, err := parseLegendaryList(out)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+	if entries[0].ExternalID != "abc123" || entries[0].Title != "A Plague Tale: Innocence" {
+		t.Fatalf("unexpected entry[0]: %+v", entries[0])
+	}
+	if entries[0].Namespace != "ns-plague" {
+		t.Fatalf("entry[0].Namespace = %q, want ns-plague (from metadata.namespace)", entries[0].Namespace)
+	}
+	if entries[1].Namespace != "ns-other" {
+		t.Fatalf("entry[1].Namespace = %q, want ns-other", entries[1].Namespace)
+	}
+}

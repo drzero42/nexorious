@@ -98,17 +98,39 @@ func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]E
 		return err
 	}
 
-	var raw []struct {
-		AppName         string `json:"app_name"`
-		AppTitle        string `json:"app_title"`
-		Namespace       string `json:"namespace"`
-		CatalogItemID   string `json:"catalog_item_id"`
-		MainGameAppName string `json:"main_game_appname"` // non-empty for DLC
-	}
-	if err := json.Unmarshal(out, &raw); err != nil {
+	entries, err := parseLegendaryList(out)
+	if err != nil {
 		return fmt.Errorf("epic: parse legendary list output: %w", err)
 	}
 
+	slog.Info("epic: library parsed", "user_id", userID, "after_dlc_filter", len(entries))
+
+	if len(entries) == 0 {
+		return nil
+	}
+	return onBatch(entries)
+}
+
+// parseLegendaryList parses `legendary list --json` output into owned-game
+// entries. legendary nests the catalog fields under "metadata": the product
+// namespace is metadata.namespace, NOT a top-level key, so it is read from there
+// (it is the value Epic's productmapping is keyed by for store-link resolution).
+// The DLC filter preserves the existing main_game_appname check; note that field
+// is also not top-level in legendary's output, so DLC filtering is currently a
+// no-op (tracked separately).
+func parseLegendaryList(out []byte) ([]ExternalGameEntry, error) {
+	var raw []struct {
+		AppName         string `json:"app_name"`
+		AppTitle        string `json:"app_title"`
+		CatalogItemID   string `json:"catalog_item_id"`
+		MainGameAppName string `json:"main_game_appname"` // intended DLC marker (see note)
+		Metadata        struct {
+			Namespace string `json:"namespace"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, err
+	}
 	entries := make([]ExternalGameEntry, 0, len(raw))
 	for _, r := range raw {
 		if r.MainGameAppName != "" {
@@ -117,18 +139,12 @@ func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]E
 		entries = append(entries, ExternalGameEntry{
 			ExternalID:      r.AppName,
 			Title:           r.AppTitle,
-			Namespace:       r.Namespace,
+			Namespace:       r.Metadata.Namespace,
 			CatalogItemID:   r.CatalogItemID,
 			OwnershipStatus: "owned",
 		})
 	}
-
-	slog.Info("epic: library parsed", "user_id", userID, "total", len(raw), "after_dlc_filter", len(entries))
-
-	if len(entries) == 0 {
-		return nil
-	}
-	return onBatch(entries)
+	return entries, nil
 }
 
 // Cleanup removes the per-user working directory.
