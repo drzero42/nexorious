@@ -146,6 +146,7 @@ export interface UserGameCreateData {
     platform: string;
     storefront?: string;
     isAvailable?: boolean;
+    hoursPlayed?: number;
     ownershipStatus?: OwnershipStatus;
     acquiredDate?: string;
   }>;
@@ -322,6 +323,7 @@ export async function createUserGame(data: UserGameCreateData): Promise<UserGame
       platform: p.platform,
       storefront: p.storefront,
       is_available: p.isAvailable ?? true,
+      hours_played: p.hoursPlayed,
       ownership_status: p.ownershipStatus,
       acquired_date: p.acquiredDate,
     })),

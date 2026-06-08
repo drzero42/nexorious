@@ -138,6 +138,76 @@ func TestCreateUserGame(t *testing.T) {
 			t.Fatalf("expected 2 platform associations, got %d", len(platforms))
 		}
 	})
+
+	t.Run("platform ownership/acquired/hours are persisted on create", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Test Game Platform Details")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id": gameID,
+			"platforms": []map[string]any{
+				{
+					"platform":         "pc-windows",
+					"storefront":       "steam",
+					"ownership_status": "borrowed",
+					"acquired_date":    "2026-05-01",
+					"hours_played":     12.5,
+				},
+			},
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		platforms, ok := resp["platforms"].([]any)
+		if !ok || len(platforms) != 1 {
+			t.Fatalf("expected 1 platform association, got: %v", resp["platforms"])
+		}
+		p, ok := platforms[0].(map[string]any)
+		if !ok {
+			t.Fatalf("expected platform object, got %T", platforms[0])
+		}
+		if p["ownership_status"] != "borrowed" {
+			t.Fatalf("expected ownership_status=borrowed, got %v", p["ownership_status"])
+		}
+		if p["hours_played"] != 12.5 {
+			t.Fatalf("expected hours_played=12.5, got %v", p["hours_played"])
+		}
+		acquired, _ := p["acquired_date"].(string)
+		if acquired == "" {
+			t.Fatalf("expected acquired_date to be persisted, got %v", p["acquired_date"])
+		}
+		if got := acquired[:10]; got != "2026-05-01" {
+			t.Fatalf("expected acquired_date 2026-05-01, got %q", got)
+		}
+	})
+
+	t.Run("invalid acquired_date is rejected", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Test Game Bad Acquired")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id": gameID,
+			"platforms": []map[string]any{
+				{"platform": "pc-windows", "storefront": "steam", "acquired_date": "not-a-date"},
+			},
+		}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for invalid acquired_date, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("invalid ownership_status is rejected", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Test Game Bad Ownership")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id": gameID,
+			"platforms": []map[string]any{
+				{"platform": "pc-windows", "storefront": "steam", "ownership_status": "bogus"},
+			},
+		}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for invalid ownership_status, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
 }
 
 func TestGetUserGame(t *testing.T) {
