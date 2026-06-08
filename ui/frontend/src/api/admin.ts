@@ -127,6 +127,14 @@ export async function startMetadataRefreshJob(
 }
 
 /**
+ * Start a store-link refresh job (admin only). Re-resolves every storefront
+ * product link from upstream.
+ */
+export async function startStoreLinkRefreshJob(): Promise<{ success: boolean; message: string }> {
+  return api.post<{ success: boolean; message: string }>('/games/store-links/refresh-job', {});
+}
+
+/**
  * Reset the database to post-admin-creation state (admin only).
  */
 export async function resetDatabase(): Promise<{ deleted: number }> {

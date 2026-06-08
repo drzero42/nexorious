@@ -46,6 +46,7 @@ function MaintenancePage() {
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
   const [isRefreshLoading, setIsRefreshLoading] = useState(false);
+  const [isStoreLinkLoading, setIsStoreLinkLoading] = useState(false);
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
   const { data: health } = useHealthStatus();
@@ -102,6 +103,19 @@ function MaintenancePage() {
       navigate({ to: '/dashboard', replace: true });
     }
   }, [currentUser, navigate]);
+
+  const handleStartStoreLinkRefresh = async () => {
+    try {
+      setIsStoreLinkLoading(true);
+      await adminApi.startStoreLinkRefreshJob();
+      toast.success('Store link refresh job started');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start store link refresh';
+      toast.error(message);
+    } finally {
+      setIsStoreLinkLoading(false);
+    }
+  };
 
   const handleStartMetadataRefresh = async () => {
     try {
@@ -241,6 +255,44 @@ function MaintenancePage() {
                 )}
               </Button>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Store Links Section */}
+      {!hasActiveJob && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Store Links
+            </CardTitle>
+            <CardDescription>
+              Re-fetch storefront product links for your synced games.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Start a background job to re-resolve storefront product links for all synced games.
+              This operation runs asynchronously and re-fetches links from upstream storefronts.
+            </p>
+            <Button
+              onClick={handleStartStoreLinkRefresh}
+              disabled={isStoreLinkLoading}
+              className="w-full"
+            >
+              {isStoreLinkLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh store links
+                </>
+              )}
+            </Button>
           </CardContent>
         </Card>
       )}

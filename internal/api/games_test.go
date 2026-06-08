@@ -519,3 +519,33 @@ func TestSearchIGDB_NoExternalGameID_UnfilteredCall(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleStartStoreLinkRefreshJob(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+
+	t.Run("non-admin gets 403", func(t *testing.T) {
+		_, regTok := setupRegularUser(t, testDB, e, "slr-nonadmin")
+		rec := postJSONAuth(t, e, "/api/games/store-links/refresh-job", nil, regTok)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("admin gets 200 and enqueues store_link_refresh_dispatch", func(t *testing.T) {
+		_, adminTok := setupAdminUser(t, testDB, e, "slr-admin")
+		rec := postJSONAuth(t, e, "/api/games/store-links/refresh-job", nil, adminTok)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body)
+		}
+		var n int
+		if err := testDB.NewRaw(
+			`SELECT count(*) FROM river_job WHERE kind = 'store_link_refresh_dispatch'`,
+		).Scan(context.Background(), &n); err != nil {
+			t.Fatalf("count river_job: %v", err)
+		}
+		if n < 1 {
+			t.Fatalf("expected at least 1 store_link_refresh_dispatch river job, got %d", n)
+		}
+	})
+}
