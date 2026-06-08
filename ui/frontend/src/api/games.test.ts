@@ -1024,4 +1024,73 @@ describe('games.ts', () => {
       expect(ids).toEqual(['game-1', 'game-2']);
     });
   });
+
+  describe('transform boundary', () => {
+    it('keeps an unexpected new field on IGDB search results', async () => {
+      server.use(
+        http.post(`${API_URL}/games/search/igdb`, () =>
+          HttpResponse.json({
+            games: [
+              {
+                igdb_id: 42,
+                title: 'Surprise',
+                platforms: [],
+                brand_new_field: 'survives',
+              },
+            ],
+            total: 1,
+          }),
+        ),
+      );
+
+      const result = await searchIGDB('surprise');
+
+      expect((result[0] as unknown as Record<string, unknown>).brand_new_field).toBe('survives');
+    });
+
+    it('keeps igdb_platform_id on a nested platform_details object', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games/ug-1`, () =>
+          HttpResponse.json({
+            id: 'ug-1',
+            game: {
+              id: 1,
+              title: 'Test',
+              rating_count: 0,
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+            },
+            is_loved: false,
+            play_status: PlayStatus.IN_PROGRESS,
+            hours_played: 0,
+            platforms: [
+              {
+                id: 'p-1',
+                platform: 'pc',
+                is_available: true,
+                hours_played: 0,
+                ownership_status: OwnershipStatus.OWNED,
+                created_at: '2024-01-01T00:00:00Z',
+                platform_details: {
+                  name: 'pc',
+                  display_name: 'PC',
+                  igdb_platform_id: 6,
+                  is_active: true,
+                  source: 'official',
+                  created_at: '2024-01-01T00:00:00Z',
+                  updated_at: '2024-01-01T00:00:00Z',
+                },
+              },
+            ],
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          }),
+        ),
+      );
+
+      const result = await getUserGame('ug-1');
+
+      expect(result.platforms[0].platform_details?.igdb_platform_id).toBe(6);
+    });
+  });
 });

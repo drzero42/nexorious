@@ -10,7 +10,12 @@ import type {
   Tag,
   IGDBGameCandidate,
 } from '@/types';
-import type { Platform, Storefront } from '@/types/platform';
+import {
+  transformPlatform,
+  transformStorefront,
+  type PlatformApiResponse,
+  type StorefrontApiResponse,
+} from './platforms';
 
 // ============================================================================
 // API Response Types (snake_case from backend)
@@ -47,29 +52,6 @@ interface FilterOptionsApiResponse {
   player_perspectives: string[];
 }
 
-interface PlatformApiResponse {
-  name: string;
-  display_name: string;
-  icon_url?: string;
-  is_active?: boolean;
-  source?: string;
-  default_storefront?: string;
-  storefronts?: StorefrontApiResponse[];
-  created_at?: string;
-  updated_at?: string;
-}
-
-interface StorefrontApiResponse {
-  name: string;
-  display_name: string;
-  icon_url?: string;
-  base_url?: string;
-  is_active?: boolean;
-  source?: string;
-  created_at?: string;
-  updated_at: string;
-}
-
 interface UserGamePlatformApiResponse {
   id: string;
   platform?: string;
@@ -84,17 +66,6 @@ interface UserGamePlatformApiResponse {
   created_at: string;
 }
 
-interface TagApiResponse {
-  id: string;
-  user_id: string;
-  name: string;
-  color: string;
-  description?: string;
-  created_at: string;
-  updated_at: string;
-  game_count?: number;
-}
-
 interface UserGameApiResponse {
   id: string;
   game: GameApiResponse;
@@ -104,7 +75,7 @@ interface UserGameApiResponse {
   hours_played: number;
   personal_notes?: string;
   platforms: UserGamePlatformApiResponse[];
-  tags?: TagApiResponse[];
+  tags?: Tag[];
   created_at: string;
   updated_at: string;
 }
@@ -220,123 +191,34 @@ export interface UserGamesListResponse {
 // Transformation Functions
 // ============================================================================
 
-function transformPlatform(apiPlatform: PlatformApiResponse): Platform {
-  return {
-    name: apiPlatform.name,
-    display_name: apiPlatform.display_name,
-    icon_url: apiPlatform.icon_url,
-    is_active: apiPlatform.is_active ?? false,
-    source: apiPlatform.source ?? '',
-    default_storefront: apiPlatform.default_storefront,
-    storefronts: apiPlatform.storefronts?.map(transformStorefront),
-    created_at: apiPlatform.created_at ?? '',
-    updated_at: apiPlatform.updated_at ?? '',
-  };
-}
-
-function transformStorefront(apiStorefront: StorefrontApiResponse): Storefront {
-  return {
-    name: apiStorefront.name,
-    display_name: apiStorefront.display_name,
-    icon_url: apiStorefront.icon_url,
-    base_url: apiStorefront.base_url,
-    is_active: apiStorefront.is_active ?? false,
-    source: apiStorefront.source ?? '',
-    created_at: apiStorefront.created_at ?? '',
-    updated_at: apiStorefront.updated_at ?? '',
-  };
-}
-
 function transformUserGamePlatform(apiPlatform: UserGamePlatformApiResponse): UserGamePlatform {
   return {
-    id: apiPlatform.id,
-    platform: apiPlatform.platform,
-    storefront: apiPlatform.storefront,
+    ...apiPlatform,
     platform_details: apiPlatform.platform_details
       ? transformPlatform(apiPlatform.platform_details)
       : undefined,
     storefront_details: apiPlatform.storefront_details
       ? transformStorefront(apiPlatform.storefront_details)
       : undefined,
-    is_available: apiPlatform.is_available,
-    hours_played: apiPlatform.hours_played,
-    ownership_status: apiPlatform.ownership_status,
-    acquired_date: apiPlatform.acquired_date,
-    store_url: apiPlatform.store_url,
-    created_at: apiPlatform.created_at,
-  };
-}
-
-function transformTag(apiTag: TagApiResponse): Tag {
-  return {
-    id: apiTag.id,
-    user_id: apiTag.user_id,
-    name: apiTag.name,
-    color: apiTag.color,
-    description: apiTag.description,
-    created_at: apiTag.created_at,
-    updated_at: apiTag.updated_at,
-    game_count: apiTag.game_count,
   };
 }
 
 function transformGame(apiGame: GameApiResponse): Game {
-  return {
-    id: apiGame.id as GameId,
-    title: apiGame.title,
-    description: apiGame.description,
-    genre: apiGame.genre,
-    developer: apiGame.developer,
-    publisher: apiGame.publisher,
-    release_date: apiGame.release_date,
-    cover_art_url: apiGame.cover_art_url,
-    rating_average: apiGame.rating_average,
-    rating_count: apiGame.rating_count,
-    game_metadata: apiGame.game_metadata,
-    howlongtobeat_main: apiGame.howlongtobeat_main,
-    howlongtobeat_extra: apiGame.howlongtobeat_extra,
-    howlongtobeat_completionist: apiGame.howlongtobeat_completionist,
-    igdb_slug: apiGame.igdb_slug,
-    igdb_platform_names: apiGame.igdb_platform_names,
-    game_modes: apiGame.game_modes,
-    themes: apiGame.themes,
-    player_perspectives: apiGame.player_perspectives,
-    created_at: apiGame.created_at,
-    updated_at: apiGame.updated_at,
-  };
+  return { ...apiGame, id: apiGame.id as GameId };
 }
 
 function transformUserGame(apiUserGame: UserGameApiResponse): UserGame {
   return {
+    ...apiUserGame,
     id: apiUserGame.id as UserGameId,
     game: transformGame(apiUserGame.game),
-    personal_rating: apiUserGame.personal_rating,
-    is_loved: apiUserGame.is_loved,
-    play_status: apiUserGame.play_status,
-    hours_played: apiUserGame.hours_played,
-    personal_notes: apiUserGame.personal_notes,
     platforms: (apiUserGame.platforms ?? []).map(transformUserGamePlatform),
-    tags: apiUserGame.tags?.map(transformTag),
-    created_at: apiUserGame.created_at,
-    updated_at: apiUserGame.updated_at,
+    tags: apiUserGame.tags,
   };
 }
 
 function transformIGDBGameCandidate(apiCandidate: IGDBGameCandidateApiResponse): IGDBGameCandidate {
-  return {
-    igdb_id: apiCandidate.igdb_id as GameId,
-    igdb_slug: apiCandidate.igdb_slug,
-    title: apiCandidate.title,
-    release_date: apiCandidate.release_date,
-    cover_art_url: apiCandidate.cover_art_url,
-    description: apiCandidate.description,
-    platforms: apiCandidate.platforms,
-    platform_ids: apiCandidate.platform_ids,
-    howlongtobeat_main: apiCandidate.howlongtobeat_main,
-    howlongtobeat_extra: apiCandidate.howlongtobeat_extra,
-    howlongtobeat_completionist: apiCandidate.howlongtobeat_completionist,
-    user_game_id: apiCandidate.user_game_id,
-  };
+  return { ...apiCandidate, igdb_id: apiCandidate.igdb_id as GameId };
 }
 
 // ============================================================================
