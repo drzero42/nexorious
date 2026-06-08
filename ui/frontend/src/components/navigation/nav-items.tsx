@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Library,
   Plus,
+  Heart,
   RefreshCw,
   Tag,
   ArrowLeftRight,
@@ -34,6 +35,11 @@ export function useNavItems() {
       href: '/games',
       label: 'Library',
       icon: <Library className="h-4 w-4" />,
+    },
+    {
+      href: '/wishlist',
+      label: 'Wishlist',
+      icon: <Heart className="h-4 w-4" />,
     },
     {
       href: '/games/add',
