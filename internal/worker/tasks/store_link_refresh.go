@@ -146,7 +146,7 @@ func (w *StoreLinkRefreshDispatchWorker) Work(ctx context.Context, job *river.Jo
 		if _, e := tx.NewRaw(
 			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
 			 VALUES (?, ?, ?, ?, 'processing', 'low', ?, now())`,
-			jobID, jobUserID, models.JobTypeStoreLinkRefresh, source, total,
+			jobID, jobUserID, models.JobTypeStoreLinkRefresh, source, len(groups),
 		).Exec(ctx); e != nil {
 			return fmt.Errorf("insert job: %w", e)
 		}

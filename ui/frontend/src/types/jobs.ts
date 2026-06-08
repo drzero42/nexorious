@@ -12,6 +12,7 @@ export enum JobType {
   IMPORT = 'import',
   EXPORT = 'export',
   METADATA_REFRESH = 'metadata_refresh',
+  STORE_LINK_REFRESH = 'store_link_refresh',
 }
 
 export enum JobSource {
@@ -218,6 +219,7 @@ export function getJobTypeLabel(type: JobType): string {
     [JobType.IMPORT]: 'Import',
     [JobType.EXPORT]: 'Export',
     [JobType.METADATA_REFRESH]: 'Metadata Refresh',
+    [JobType.STORE_LINK_REFRESH]: 'Store Link Refresh',
   };
   return labels[type] || type;
 }
