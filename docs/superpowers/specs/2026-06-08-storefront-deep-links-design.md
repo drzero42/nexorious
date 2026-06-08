@@ -72,7 +72,7 @@ A storefront is rendered as a link iff the builder returns a URL.
 | Storefront | `store_link` holds | Resolution (in the enrichment item worker) | Creds needed | Resolvable from `external_games` alone? |
 |---|---|---|---|---|
 | **steam** | appid | copy `external_id` | none | yes |
-| **gog** | product slug | `GET https://api.gog.com/products/{external_id}` → `slug` | refresh token | yes |
+| **gog** | product slug | `GET https://api.gog.com/products/{external_id}` → `slug` | none (public catalog API) | yes |
 | **playstation-store** | concept ID | authenticate (NPSSO) once, then `GET https://m.np.playstation.com/api/catalog/v2/titles/{external_id}/concepts` → concept ID | NPSSO token | yes (+ creds) |
 | **epic-games-store** | product slug | look up `source_metadata.namespace` in `productmapping` (`GET https://store-content-ipv4.ak.epicgames.com/api/content/productmapping`, fetched once per item) | none | **no** — needs persisted `namespace` |
 | **humble-bundle** | — (always null) | none | — | n/a (excluded) |
