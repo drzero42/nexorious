@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink, Gamepad2 } from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
+import { StorefrontLabel } from '@/components/storefront-link';
 import {
   formatIgdbRating,
   formatHoursPlayed,
@@ -280,9 +281,10 @@ export function GameDetailPage() {
                             {p.platform_details?.display_name || p.platform || 'Unknown'}
                           </span>
                           {p.storefront_details && (
-                            <span className="text-sm text-muted-foreground">
-                              ({p.storefront_details.display_name})
-                            </span>
+                            <StorefrontLabel
+                              displayName={p.storefront_details.display_name}
+                              storeUrl={p.store_url}
+                            />
                           )}
                         </div>
                         <div className="flex items-center gap-2">

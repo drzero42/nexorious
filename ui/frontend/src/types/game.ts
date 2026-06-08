@@ -79,6 +79,7 @@ export interface UserGamePlatform {
   storefront?: string;
   platform_details?: Platform;
   storefront_details?: Storefront;
+  store_url?: string;
   is_available: boolean;
   hours_played: number;
   ownership_status: OwnershipStatus;
