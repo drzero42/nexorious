@@ -2,14 +2,76 @@ package tasks_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/services/storelink"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
+
+// itemStatus returns the current status of a job_item.
+func itemStatus(t *testing.T, itemID string) string {
+	t.Helper()
+	var s string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(context.Background(), &s); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// jobStatus returns the current status of a job.
+func jobStatus(t *testing.T, jobID string) string {
+	t.Helper()
+	var s string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(context.Background(), &s); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// seedStoreLinkJobItem inserts a store_link_refresh job + one pending item for
+// the given storefront, with the item created `ageSeconds` in the past.
+func seedStoreLinkJobItem(t *testing.T, userID, storefront string, ageSeconds int) (jobID, itemID string) {
+	t.Helper()
+	ctx := context.Background()
+	jobID = uuid.NewString()
+	if _, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+		 VALUES (?, ?, ?, ?, 'processing', 'low', 1, now())`,
+		jobID, userID, models.JobTypeStoreLinkRefresh, storefront,
+	).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	itemID = uuid.NewString()
+	meta := `{"storefront":"` + storefront + `","force":false}`
+	if _, err := testDB.NewRaw(
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now() - (?::text || ' seconds')::interval)`,
+		itemID, jobID, userID, storefront, storefront, meta, ageSeconds,
+	).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return jobID, itemID
+}
+
+// cancelOnceResolver cancels the supplied context on its first Resolve call,
+// then returns no link. Used to exercise the mid-loop cancellation path.
+type cancelOnceResolver struct {
+	cancel context.CancelFunc
+	done   bool
+}
+
+func (c *cancelOnceResolver) Resolve(_ context.Context, _ string, _ map[string]string) (string, error) {
+	if !c.done {
+		c.done = true
+		c.cancel()
+	}
+	return "", nil
+}
 
 func seedExternalGameSL(t *testing.T, userID, storefront, externalID string, storeLink *string) {
 	t.Helper()
@@ -129,5 +191,78 @@ func TestStoreLinkRefreshItem_ResolvesGroupRows(t *testing.T) {
 	}
 	if n != 2 {
 		t.Fatalf("resolved rows = %d, want 2", n)
+	}
+}
+
+func TestStoreLinkRefreshItem_ResolverErrorMarksFailed(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	seedExternalGameSL(t, userID, "steam", "10", nil)
+	_, itemID := seedStoreLinkJobItem(t, userID, "steam", 0)
+
+	w := &tasks.StoreLinkRefreshItemWorker{
+		DB: testDB,
+		ResolverFor: func(_ context.Context, _, _ string) (storelink.Resolver, error) {
+			return nil, errors.New("creds boom")
+		},
+	}
+	if err := w.ProcessItem(ctx, itemID); err != nil {
+		t.Fatalf("ProcessItem returned error: %v", err)
+	}
+	if got := itemStatus(t, itemID); got != "failed" {
+		t.Fatalf("item status = %q, want failed", got)
+	}
+}
+
+func TestStoreLinkRefreshItem_CancelledMidLoopMarksFailed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	truncateAllTables(t)
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	// Two rows so the loop runs a second iteration after the context is cancelled.
+	seedExternalGameSL(t, userID, "steam", "10", nil)
+	seedExternalGameSL(t, userID, "steam", "20", nil)
+	_, itemID := seedStoreLinkJobItem(t, userID, "steam", 0)
+
+	w := &tasks.StoreLinkRefreshItemWorker{
+		DB: testDB,
+		ResolverFor: func(_ context.Context, _, _ string) (storelink.Resolver, error) {
+			return &cancelOnceResolver{cancel: cancel}, nil
+		},
+	}
+	// Returns nil (finalize-as-failed, not River retry); the item must end failed,
+	// never left orphaned in pending.
+	if err := w.ProcessItem(ctx, itemID); err != nil {
+		t.Fatalf("ProcessItem returned error: %v", err)
+	}
+	if got := itemStatus(t, itemID); got != "failed" {
+		t.Fatalf("item status = %q, want failed", got)
+	}
+}
+
+func TestStoreLinkRefreshDispatch_ReapsOrphanedItem(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	// No external_games rows → SelectGroups is empty, so Work only performs the
+	// reap and then returns without creating a new job. The orphaned item is old
+	// enough to be eligible and has no River job backing it.
+	jobID, itemID := seedStoreLinkJobItem(t, userID, "playstation-store", 600)
+
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB}
+	if err := w.Work(ctx, &river.Job[tasks.StoreLinkRefreshDispatchArgs]{
+		Args: tasks.StoreLinkRefreshDispatchArgs{Force: true},
+	}); err != nil {
+		t.Fatalf("dispatch Work returned error: %v", err)
+	}
+	if got := itemStatus(t, itemID); got != "failed" {
+		t.Fatalf("orphaned item status = %q, want failed", got)
+	}
+	if got := jobStatus(t, jobID); got != "completed" {
+		t.Fatalf("wedged job status = %q, want completed", got)
 	}
 }
