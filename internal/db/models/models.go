@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -106,8 +107,9 @@ type UserGamePlatform struct {
 	CreatedAt       time.Time  `bun:"created_at,notnull"           json:"created_at"`
 	UpdatedAt       time.Time  `bun:"updated_at,notnull"           json:"updated_at"`
 
-	PlatformRecord   *Platform   `bun:"rel:belongs-to,join:platform=name"   json:"-"`
-	StorefrontRecord *Storefront `bun:"rel:belongs-to,join:storefront=name" json:"-"`
+	PlatformRecord   *Platform     `bun:"rel:belongs-to,join:platform=name"        json:"-"`
+	StorefrontRecord *Storefront   `bun:"rel:belongs-to,join:storefront=name"      json:"-"`
+	ExternalGame     *ExternalGame `bun:"rel:belongs-to,join:external_game_id=id"  json:"-"`
 }
 
 type Platform struct {
@@ -165,19 +167,21 @@ type UserGameTag struct {
 type ExternalGame struct {
 	bun.BaseModel `bun:"table:external_games"`
 
-	ID              string    `bun:"id,pk"                   json:"id"`
-	UserID          string    `bun:"user_id,notnull"          json:"user_id"`
-	Storefront      string    `bun:"storefront,notnull"       json:"storefront"`
-	ExternalID      string    `bun:"external_id,notnull"      json:"external_id"`
-	Title           string    `bun:"title,notnull"            json:"title"`
-	ResolvedIGDBID  *int32    `bun:"resolved_igdb_id"         json:"resolved_igdb_id"`
-	IsSkipped       bool      `bun:"is_skipped,notnull"       json:"is_skipped"`
-	IsAvailable     bool      `bun:"is_available,notnull"     json:"is_available"`
-	IsSubscription  bool      `bun:"is_subscription,notnull"  json:"is_subscription"`
-	OwnershipStatus *string   `bun:"ownership_status"         json:"ownership_status"`
-	ParentID        *string   `bun:"parent_id"                json:"parent_id,omitempty"`
-	CreatedAt       time.Time `bun:"created_at,notnull"       json:"created_at"`
-	UpdatedAt       time.Time `bun:"updated_at,notnull"       json:"updated_at"`
+	ID              string          `bun:"id,pk"                   json:"id"`
+	UserID          string          `bun:"user_id,notnull"          json:"user_id"`
+	Storefront      string          `bun:"storefront,notnull"       json:"storefront"`
+	ExternalID      string          `bun:"external_id,notnull"      json:"external_id"`
+	Title           string          `bun:"title,notnull"            json:"title"`
+	ResolvedIGDBID  *int32          `bun:"resolved_igdb_id"         json:"resolved_igdb_id"`
+	IsSkipped       bool            `bun:"is_skipped,notnull"       json:"is_skipped"`
+	IsAvailable     bool            `bun:"is_available,notnull"     json:"is_available"`
+	IsSubscription  bool            `bun:"is_subscription,notnull"  json:"is_subscription"`
+	OwnershipStatus *string         `bun:"ownership_status"         json:"ownership_status"`
+	ParentID        *string         `bun:"parent_id"                json:"parent_id,omitempty"`
+	StoreLink       *string         `bun:"store_link"               json:"store_link,omitempty"`
+	SourceMetadata  json.RawMessage `bun:"source_metadata"          json:"source_metadata,omitempty"`
+	CreatedAt       time.Time       `bun:"created_at,notnull"       json:"created_at"`
+	UpdatedAt       time.Time       `bun:"updated_at,notnull"       json:"updated_at"`
 
 	Platforms []ExternalGamePlatform `bun:"rel:has-many,join:id=external_game_id" json:"-"`
 }
