@@ -2,48 +2,6 @@ import { api, apiUploadFile, apiDownloadFile } from './client';
 import type { ImportJobCreatedResponse, ExportJobCreatedResponse } from '@/types';
 
 // ============================================================================
-// API Response Types (snake_case from backend)
-// ============================================================================
-
-interface ImportJobApiResponse {
-  job_id: string;
-  source: string;
-  status: string;
-  message: string;
-  total_items: number | null;
-}
-
-interface ExportJobApiResponse {
-  job_id: string;
-  status: string;
-  message: string;
-  estimated_items: number;
-}
-
-// ============================================================================
-// Transformation Functions
-// ============================================================================
-
-function transformImportJobResponse(apiResponse: ImportJobApiResponse): ImportJobCreatedResponse {
-  return {
-    job_id: apiResponse.job_id,
-    source: apiResponse.source,
-    status: apiResponse.status,
-    message: apiResponse.message,
-    total_items: apiResponse.total_items,
-  };
-}
-
-function transformExportJobResponse(apiResponse: ExportJobApiResponse): ExportJobCreatedResponse {
-  return {
-    job_id: apiResponse.job_id,
-    status: apiResponse.status,
-    message: apiResponse.message,
-    estimated_items: apiResponse.estimated_items,
-  };
-}
-
-// ============================================================================
 // Import API Functions
 // ============================================================================
 
@@ -52,8 +10,8 @@ function transformExportJobResponse(apiResponse: ExportJobApiResponse): ExportJo
  * This is a non-interactive import that trusts the IGDB IDs in the export.
  */
 export async function importNexoriousJson(file: File): Promise<ImportJobCreatedResponse> {
-  const response = await apiUploadFile<ImportJobApiResponse>('/import/nexorious', file);
-  return transformImportJobResponse(response);
+  const response = await apiUploadFile<ImportJobCreatedResponse>('/import/nexorious', file);
+  return response;
 }
 
 /**
@@ -61,8 +19,8 @@ export async function importNexoriousJson(file: File): Promise<ImportJobCreatedR
  * returned job drives IGDB matching and the interactive pending-review flow.
  */
 export async function importDarkadiaCsv(file: File): Promise<ImportJobCreatedResponse> {
-  const response = await apiUploadFile<ImportJobApiResponse>('/import/darkadia', file);
-  return transformImportJobResponse(response);
+  const response = await apiUploadFile<ImportJobCreatedResponse>('/import/darkadia', file);
+  return response;
 }
 
 // ============================================================================
@@ -73,16 +31,16 @@ export async function importDarkadiaCsv(file: File): Promise<ImportJobCreatedRes
  * Start a JSON export of all user games.
  */
 export async function exportCollectionJson(): Promise<ExportJobCreatedResponse> {
-  const response = await api.post<ExportJobApiResponse>('/export/json');
-  return transformExportJobResponse(response);
+  const response = await api.post<ExportJobCreatedResponse>('/export/json');
+  return response;
 }
 
 /**
  * Start a CSV export of all user games.
  */
 export async function exportCollectionCsv(): Promise<ExportJobCreatedResponse> {
-  const response = await api.post<ExportJobApiResponse>('/export/csv');
-  return transformExportJobResponse(response);
+  const response = await api.post<ExportJobCreatedResponse>('/export/csv');
+  return response;
 }
 
 /**
