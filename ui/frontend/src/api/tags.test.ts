@@ -477,4 +477,26 @@ describe('tags.ts', () => {
       expect(result.gamesProcessed).toBe(2);
     });
   });
+
+  describe('transform boundary', () => {
+    it('passes an unexpected new field through getTag untouched', async () => {
+      server.use(
+        http.get(`${API_URL}/tags/tag-1`, () =>
+          HttpResponse.json({
+            id: 'tag-1',
+            user_id: 'user-1',
+            name: 'RPG',
+            color: '#ff0000',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            brand_new_field: 'survives',
+          }),
+        ),
+      );
+
+      const result = await getTag('tag-1');
+
+      expect((result as unknown as Record<string, unknown>).brand_new_field).toBe('survives');
+    });
+  });
 });
