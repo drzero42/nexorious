@@ -17,6 +17,7 @@ export {
   useAddPlatformToUserGame,
   useUpdatePlatformAssociation,
   useRemovePlatformFromUserGame,
+  useMoveToLibrary,
 } from './use-games';
 
 // Platform hooks
@@ -117,3 +118,6 @@ export type { VersionInfo } from './use-version';
 
 // API key hooks
 export { apiKeysKeys, useApiKeys, useCreateApiKey, useRevokeApiKey } from './use-api-keys';
+
+// Settings hooks
+export { useSettings, useUpdateSettings } from './use-settings';

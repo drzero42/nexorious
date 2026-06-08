@@ -1,5 +1,6 @@
+import * as React from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useUserGame, useDeleteUserGame } from '@/hooks';
+import { useUserGame, useDeleteUserGame, useMoveToLibrary } from '@/hooks';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +16,24 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Edit, Trash2, Heart, Clock, ExternalLink, Gamepad2 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  ArrowLeft,
+  Edit,
+  Trash2,
+  Heart,
+  Clock,
+  ExternalLink,
+  Gamepad2,
+  Library,
+} from 'lucide-react';
 import { StarRating } from '@/components/ui/star-rating';
 import { StorefrontLabel } from '@/components/storefront-link';
 import {
@@ -31,6 +49,14 @@ import {
   type PlayStatus,
   type OwnershipStatus as OwnershipStatusType,
 } from '@/types';
+import { PlatformSelector, type PlatformSelection } from '@/components/ui/platform-selector';
+import {
+  PlatformDetailFields,
+  type PlatformDetail,
+} from '@/components/games/platform-detail-fields';
+import { useAllPlatforms, useSettings } from '@/hooks';
+import { buildDealLinks } from '@/lib/deal-links';
+import type { UserGamePlatformData } from '@/api/games';
 
 export const Route = createFileRoute('/_authenticated/games/$id/')({
   head: () => ({ meta: [{ title: 'Game Details | Nexorious' }] }),
@@ -78,12 +104,129 @@ function formatOwnershipStatus(status: OwnershipStatusType): string {
   return labels[status] || status;
 }
 
+// ============================================================================
+// Move to Library dialog
+// ============================================================================
+
+function MoveToLibraryDialog({
+  userGameId,
+  open,
+  onOpenChange,
+}: {
+  userGameId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { data: allPlatforms = [] } = useAllPlatforms();
+  const moveToLibrary = useMoveToLibrary();
+
+  const [selections, setSelections] = React.useState<PlatformSelection[]>([]);
+  const [detail, setDetail] = React.useState<PlatformDetail>({
+    ownershipStatus: OwnershipStatus.OWNED,
+    acquiredDate: '',
+    hoursPlayed: 0,
+  });
+  const [error, setError] = React.useState<string | null>(null);
+
+  const canConfirm =
+    selections.length > 0 && selections.every((s) => s.platform !== '') && !moveToLibrary.isPending;
+
+  const handleConfirm = async () => {
+    if (!canConfirm) return;
+    setError(null);
+
+    // Build platforms array — one PlatformDetailFields drives shared ownership/hours/acquired
+    // for all selected rows; each row contributes its own platform + storefront.
+    const platforms: UserGamePlatformData[] = selections.map((s) => ({
+      platform: s.platform,
+      storefront: s.storefront,
+      ownershipStatus: detail.ownershipStatus,
+      hoursPlayed: detail.hoursPlayed > 0 ? detail.hoursPlayed : undefined,
+      acquiredDate: detail.acquiredDate !== '' ? detail.acquiredDate : undefined,
+    }));
+
+    try {
+      await moveToLibrary.mutateAsync({ userGameId, platforms });
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to move game to library.');
+    }
+  };
+
+  const firstSelection = selections[0];
+  const firstPlatform = firstSelection
+    ? allPlatforms.find((p) => p.name === firstSelection.platform)
+    : undefined;
+  const detailLabel =
+    selections.length > 1
+      ? `Ownership & playtime (applies to all ${selections.length} selected)`
+      : firstSelection?.platform !== ''
+        ? (firstPlatform?.display_name ?? firstSelection?.platform ?? 'Platform')
+        : 'Platform';
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Move to library</DialogTitle>
+          <DialogDescription>
+            Choose at least one platform to add this game to your library.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div>
+            <p className="text-sm font-medium mb-2">Platform</p>
+            <PlatformSelector
+              selectedPlatforms={selections}
+              availablePlatforms={allPlatforms}
+              onChange={setSelections}
+              disabled={moveToLibrary.isPending}
+              placeholder="Select platform..."
+            />
+          </div>
+
+          {selections.length > 0 && selections[0].platform !== '' && (
+            <PlatformDetailFields
+              label={detailLabel}
+              value={detail}
+              onChange={setDetail}
+              disabled={moveToLibrary.isPending}
+            />
+          )}
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={moveToLibrary.isPending}
+          >
+            Cancel
+          </Button>
+          <Button onClick={handleConfirm} disabled={!canConfirm}>
+            {moveToLibrary.isPending ? 'Moving…' : 'Move to library'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ============================================================================
+// Main detail page
+// ============================================================================
+
 export function GameDetailPage() {
   const { id: gameId } = Route.useParams();
   const navigate = useNavigate();
+  const [moveDialogOpen, setMoveDialogOpen] = React.useState(false);
 
   const { data: game, isLoading, error } = useUserGame(gameId);
   const deleteGame = useDeleteUserGame();
+  const { data: settings } = useSettings();
 
   const handleDelete = async () => {
     await deleteGame.mutateAsync(gameId);
@@ -112,6 +255,8 @@ export function GameDetailPage() {
       </div>
     );
   }
+
+  const dealLinks = buildDealLinks(game.game.title, settings?.dealRegion ?? 'us');
 
   return (
     <div className="space-y-6">
@@ -266,41 +411,82 @@ export function GameDetailPage() {
                 )}
               </div>
 
-              {/* Platforms & Ownership */}
-              {game.platforms && game.platforms.length > 0 && (
-                <div>
-                  <h3 className="font-medium mb-2">Platforms & Ownership</h3>
-                  <div className="space-y-2">
-                    {game.platforms.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-lg"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">
-                            {p.platform_details?.display_name || p.platform || 'Unknown'}
-                          </span>
-                          {p.storefront_details && (
-                            <StorefrontLabel
-                              displayName={p.storefront_details.display_name}
-                              storeUrl={p.store_url}
-                            />
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">
-                            {formatOwnershipStatus(p.ownership_status ?? OwnershipStatus.OWNED)}
-                          </Badge>
-                          {p.acquired_date && (
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(p.acquired_date).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+              {/* Wishlist section — shown instead of platform attachment when wishlisted */}
+              {game.is_wishlisted ? (
+                <div className="space-y-4 p-4 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+                  {/* Move-to-library dialog — remounts on each open so state is always fresh */}
+                  <MoveToLibraryDialog
+                    key={String(moveDialogOpen)}
+                    userGameId={game.id}
+                    open={moveDialogOpen}
+                    onOpenChange={setMoveDialogOpen}
+                  />
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium">Wishlist</h3>
+                    <Button size="sm" onClick={() => setMoveDialogOpen(true)}>
+                      <Library className="mr-2 h-4 w-4" />
+                      Move to library
+                    </Button>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3 text-sm">
+                    <a
+                      href={dealLinks.itad}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
+                    >
+                      Find PC deals (IsThereAnyDeal)
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                    <a
+                      href={dealLinks.psprices}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
+                    >
+                      Find console deals (PSprices)
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   </div>
                 </div>
+              ) : (
+                /* Platforms & Ownership — shown only for library entries */
+                game.platforms &&
+                game.platforms.length > 0 && (
+                  <div>
+                    <h3 className="font-medium mb-2">Platforms & Ownership</h3>
+                    <div className="space-y-2">
+                      {game.platforms.map((p) => (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-lg"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">
+                              {p.platform_details?.display_name || p.platform || 'Unknown'}
+                            </span>
+                            {p.storefront_details && (
+                              <StorefrontLabel
+                                displayName={p.storefront_details.display_name}
+                                storeUrl={p.store_url}
+                              />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">
+                              {formatOwnershipStatus(p.ownership_status ?? OwnershipStatus.OWNED)}
+                            </Badge>
+                            {p.acquired_date && (
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(p.acquired_date).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
               )}
 
               {/* How Long to Beat */}
