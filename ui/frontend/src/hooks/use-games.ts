@@ -352,6 +352,24 @@ export function useUpdatePlatformAssociation() {
   });
 }
 
+export function useMoveToLibrary() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    UserGame,
+    Error,
+    { userGameId: string; platforms: gamesApi.UserGamePlatformData[] }
+  >({
+    mutationFn: ({ userGameId, platforms }) => gamesApi.moveToLibrary(userGameId, platforms),
+    onSuccess: (updated, { userGameId }) => {
+      queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: gameKeys.stats() });
+      queryClient.invalidateQueries({ queryKey: ['user-games', 'active'] });
+      queryClient.setQueryData(gameKeys.detail(userGameId), updated);
+    },
+  });
+}
+
 export function useRemovePlatformFromUserGame() {
   const queryClient = useQueryClient();
 

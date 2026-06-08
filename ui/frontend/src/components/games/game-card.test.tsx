@@ -30,6 +30,7 @@ const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
   },
   personal_rating: 4,
   is_loved: false,
+  is_wishlisted: false,
   play_status: PlayStatus.IN_PROGRESS,
   hours_played: 10,
   personal_notes: '<p>Some notes</p>',

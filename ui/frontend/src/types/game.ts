@@ -104,6 +104,7 @@ export interface UserGame {
   personal_rating?: number | null;
   is_loved: boolean;
   play_status: PlayStatus;
+  is_wishlisted: boolean;
   hours_played: number;
   personal_notes?: string;
   platforms: UserGamePlatform[];
