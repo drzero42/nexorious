@@ -199,6 +199,16 @@ type StoreLinkRefreshItemWorker struct {
 	ResolverFor resolverFactory
 }
 
+// Timeout overrides River's 1-minute default: an item resolves a whole
+// (user, storefront) group, which for a large rate-limited storefront (PSN
+// makes one ~200ms-throttled call per title) easily exceeds a minute. The bound
+// is generous rather than disabled (-1) so a hung upstream still hits the
+// deadline; the work loop then sees the cancelled context, the item is finalized
+// failed, and the next incremental refresh re-resolves its still-null rows.
+func (w *StoreLinkRefreshItemWorker) Timeout(*river.Job[StoreLinkRefreshItemArgs]) time.Duration {
+	return 30 * time.Minute
+}
+
 func (w *StoreLinkRefreshItemWorker) Work(ctx context.Context, job *river.Job[StoreLinkRefreshItemArgs]) error {
 	if err := w.ProcessItem(ctx, job.Args.JobItemID); err != nil {
 		// Only the pre-load failure path returns an error; surface it so River

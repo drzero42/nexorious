@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/riverqueue/river"
@@ -264,5 +265,15 @@ func TestStoreLinkRefreshDispatch_ReapsOrphanedItem(t *testing.T) {
 	}
 	if got := jobStatus(t, jobID); got != "completed" {
 		t.Fatalf("wedged job status = %q, want completed", got)
+	}
+}
+
+func TestStoreLinkRefreshItem_TimeoutIsGenerous(t *testing.T) {
+	// A per-(user, storefront) group can make hundreds of rate-limited calls, so
+	// the item worker must override River's 1-minute default. Guard against a
+	// regression that drops it back.
+	w := &tasks.StoreLinkRefreshItemWorker{}
+	if got := w.Timeout(nil); got < 10*time.Minute {
+		t.Fatalf("item Timeout = %v, want >= 10m (must exceed River's 1m default)", got)
 	}
 }
