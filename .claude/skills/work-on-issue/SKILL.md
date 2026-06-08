@@ -1,6 +1,6 @@
 ---
 name: work-on-issue
-description: Use when the user asks to work on, pick up, implement, fix, or start a GitHub issue by number (e.g. "/work-on-issue 825", "work on issue 825", "let's do #825"). Primes superpowers, verifies the issue's claims instead of trusting them, and routes between a direct fix and the full spec/plan workflow.
+description: Use when the user asks to work on, pick up, implement, fix, or start a GitHub issue by number (e.g. "/work-on-issue 825", "work on issue 825", "let's do #825"). Primes superpowers, verifies the issue's claims instead of trusting them, routes between a direct fix and the full spec/plan workflow, and gets the user's approval before making any changes.
 ---
 
 # Work on a GitHub Issue
@@ -49,11 +49,25 @@ Judge the size and risk of the **verified** work (not the issue's framing) and p
 | Single-file or localized change, clear correct fix, low risk, no design decisions | **Direct approach** — branch, TDD the change, verify, PR |
 | Touches multiple subsystems, schema/migration, new feature, ambiguous design, security-sensitive, or "large" by feel | **Full cycle** — superpowers:writing-plans (and a spec if design is open) → superpowers:executing-plans |
 
-This is a judgment call, not a formula. State which lane you're taking and why before proceeding. If it's borderline, ask the user which they'd prefer.
+This is a judgment call, not a formula. If it's borderline, ask the user which they'd prefer.
 
 Either lane still follows the project's mandatory workflow (feature branch, migrations as new files, tests, quality gates) from CLAUDE.md.
 
-## Step 6 — Ask on any uncertainty
+## Step 6 — Get the user's approval before making any changes
+
+**Do not start implementing on your own initiative.** Once you've verified the issue and chosen a lane, present a short summary to the user and **wait for their explicit approval before you touch anything**:
+
+- What you actually found when verifying (especially if it differs from the issue's claims).
+- The lane you propose (direct fix vs. full cycle) and why.
+- The concrete change you intend to make — the file(s), the approach, and roughly what "done" looks like.
+
+Then **stop and let the user respond.** "Making changes" includes creating the branch, writing the first test, and editing code — none of it begins until the user says go. Announcing your plan is not the same as getting approval; you must actually pause for their answer.
+
+This gate holds even when the fix is obvious and verified. A one-line typo fix still gets a one-line "here's what I'll do — okay to proceed?" The point is the user, not you, decides when implementation starts.
+
+If the user has already told you in this session to proceed without checking in (e.g. "just fix it, don't ask"), honor that — their explicit instruction overrides this gate.
+
+## Step 7 — Ask on any uncertainty
 
 Whenever the issue is ambiguous, claims conflict, scope is unclear, or you're unsure what "done" means — **ask the user** rather than guessing. A clarifying question now is cheaper than a wrong implementation. Use AskUserQuestion for concrete either/or decisions.
 
@@ -62,5 +76,8 @@ Whenever the issue is ambiguous, claims conflict, scope is unclear, or you're un
 - "The issue says to change X, so I'll change X" — without having read X yourself. **Verify first.**
 - "This looks simple, I'll skip brainstorming" — on something with design or behavior choices. **Brainstorm.**
 - "I'll just start coding" — before deciding the lane or branching. **Route first.**
+- "I verified it and it's obviously right, so I'll go ahead and implement" — **no.** Present your plan and wait for the user's approval first (Step 6). Verified ≠ approved.
+- "I stated my lane, so I can proceed" — announcing is not approval. **Stop and wait for their answer.**
+- "I'll just branch and write the test while I'm here" — branching and the first test ARE making changes. **Not until approved.**
 - "I'll assume they mean…" — on an ambiguous point. **Ask.**
 - Implementing the issue's proposed fix after finding its diagnosis was wrong. **Tell the user what you found.**
