@@ -415,6 +415,11 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 	if len(req.Platforms) > 0 {
 		plats := make([]*models.UserGamePlatform, len(req.Platforms))
 		for i, p := range req.Platforms {
+			if p.OwnershipStatus != nil && *p.OwnershipStatus != "" {
+				if !enum.OwnershipStatus(*p.OwnershipStatus).Valid() {
+					return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+*p.OwnershipStatus)
+				}
+			}
 			pl := &models.UserGamePlatform{
 				ID:              uuid.New().String(),
 				UserGameID:      ug.ID,
@@ -429,6 +434,13 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 				pl.IsAvailable = *p.IsAvailable
 			} else {
 				pl.IsAvailable = true
+			}
+			if p.AcquiredDate != nil && *p.AcquiredDate != "" {
+				acquired, err := parseAcquiredDate(*p.AcquiredDate)
+				if err != nil {
+					return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+				}
+				pl.AcquiredDate = acquired
 			}
 			plats[i] = pl
 		}

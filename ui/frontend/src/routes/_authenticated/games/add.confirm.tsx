@@ -17,11 +17,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PlatformSelectorCompact } from '@/components/ui/platform-selector';
 import type { PlatformSelection } from '@/components/ui/platform-selector';
+import {
+  PlatformDetailFields,
+  type PlatformDetail,
+} from '@/components/games/platform-detail-fields';
 import { useImportFromIGDB, useCreateUserGame, useIGDBGameByID } from '@/hooks/use-games';
 import { useAllPlatforms } from '@/hooks/use-platforms';
 import type { IGDBGameCandidate } from '@/types';
 import type { Platform } from '@/types/platform';
-import { toGameId } from '@/types';
+import { OwnershipStatus, toGameId } from '@/types';
 import { SELECTED_GAME_STORAGE_KEY } from './add';
 
 export const Route = createFileRoute('/_authenticated/games/add/confirm')({
@@ -312,6 +316,84 @@ function PlatformSelectionSection({
   );
 }
 
+const DEFAULT_PLATFORM_DETAIL: PlatformDetail = {
+  ownershipStatus: OwnershipStatus.OWNED,
+  acquiredDate: '',
+  hoursPlayed: 0,
+};
+
+/** Human label for a selected row, e.g. "Steam / Windows". */
+function selectionLabel(platforms: Platform[], selection: PlatformSelection): string {
+  const platform = platforms.find((p) => p.name === selection.platform);
+  if (!platform) return selection.platform;
+  const storefront = platform.storefronts?.find((sf) => sf.name === selection.storefront);
+  return storefront
+    ? `${platform.display_name} / ${storefront.display_name}`
+    : platform.display_name;
+}
+
+interface PlatformDetailsSectionProps {
+  platforms: Platform[];
+  selectedPlatforms: PlatformSelection[];
+  details: Record<string, PlatformDetail>;
+  onChange: (key: string, detail: PlatformDetail) => void;
+  disabled?: boolean;
+}
+
+/**
+ * Collapsed-by-default section letting the user set ownership/acquired/hours for
+ * each platform chosen above. Reuses the edit page's per-platform detail card so
+ * the two flows stay consistent. Hidden until at least one platform is selected.
+ */
+function PlatformDetailsSection({
+  platforms,
+  selectedPlatforms,
+  details,
+  onChange,
+  disabled = false,
+}: PlatformDetailsSectionProps) {
+  const [open, setOpen] = React.useState(false);
+  const active = selectedPlatforms.filter((s) => s.platform);
+
+  if (active.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          disabled={disabled}
+          className="flex items-center gap-2 text-left w-full"
+        >
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            Ownership &amp; playtime (optional)
+          </CardTitle>
+          <span className="ml-auto text-xs text-muted-foreground">{open ? '▼' : '▶'}</span>
+        </button>
+        <p className="text-sm text-muted-foreground">
+          Set ownership, acquired date, and hours per platform. You can also do this later from the
+          game&apos;s edit page.
+        </p>
+      </CardHeader>
+      {open && (
+        <CardContent className="space-y-4">
+          {active.map((s) => (
+            <PlatformDetailFields
+              key={s.key}
+              label={selectionLabel(platforms, s)}
+              value={details[s.key] ?? DEFAULT_PLATFORM_DETAIL}
+              onChange={(next) => onChange(s.key, next)}
+              disabled={disabled}
+            />
+          ))}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 function ConfirmPageSkeleton() {
   return (
     <div className="space-y-6">
@@ -405,6 +487,8 @@ function GameConfirmPage() {
 
   // State for platform selection and game data
   const [selectedPlatforms, setSelectedPlatforms] = React.useState<PlatformSelection[]>([]);
+  // Optional per-platform ownership/acquired/hours, keyed by the selection row key.
+  const [platformDetails, setPlatformDetails] = React.useState<Record<string, PlatformDetail>>({});
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // Read game data from sessionStorage on first render — lazy initializer avoids an effect.
@@ -470,13 +554,20 @@ function GameConfirmPage() {
         downloadCoverArt: true,
       });
 
-      // Step 2: Create the user game entry with selected platforms
+      // Step 2: Create the user game entry with selected platforms and their
+      // optional ownership/acquired/hours details.
       const userGame = await createUserGame.mutateAsync({
         gameId: importedGame.id,
-        platforms: selectedPlatforms.map((p) => ({
-          platform: p.platform,
-          storefront: p.storefront,
-        })),
+        platforms: selectedPlatforms.map((p) => {
+          const detail = platformDetails[p.key];
+          return {
+            platform: p.platform,
+            storefront: p.storefront,
+            ownershipStatus: detail?.ownershipStatus,
+            acquiredDate: detail?.acquiredDate || undefined,
+            hoursPlayed: detail?.hoursPlayed || undefined,
+          };
+        }),
       });
 
       toast.success(`Added "${resolvedGame.title}" to your library!`);
@@ -533,6 +624,15 @@ function GameConfirmPage() {
         igdbPlatformIds={resolvedGame.platform_ids}
         selectedPlatforms={selectedPlatforms}
         onChange={setSelectedPlatforms}
+        disabled={isSubmitting}
+      />
+
+      {/* Optional per-platform ownership/playtime details */}
+      <PlatformDetailsSection
+        platforms={platforms ?? []}
+        selectedPlatforms={selectedPlatforms}
+        details={platformDetails}
+        onChange={(key, detail) => setPlatformDetails((prev) => ({ ...prev, [key]: detail }))}
         disabled={isSubmitting}
       />
 

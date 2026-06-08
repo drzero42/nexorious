@@ -3,7 +3,6 @@ import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -33,6 +32,7 @@ import {
 import { SyncStorefront, SyncFrequency } from '@/types/sync';
 import { formatHoursPlayed, resolveImageUrl, toDateInputValue } from '@/lib/game-utils';
 import { planPlatformChanges, type PlatformDetailState } from './platform-reconcile';
+import { PlatformDetailFields } from './platform-detail-fields';
 import { PlayStatus, OwnershipStatus } from '@/types';
 import type { UserGame } from '@/types';
 import { ArrowLeft, Save, Loader2, Heart } from 'lucide-react';
@@ -47,14 +47,6 @@ const PLAY_STATUS_OPTIONS: { value: PlayStatus; label: string }[] = [
   { value: PlayStatus.SHELVED, label: 'Shelved' },
   { value: PlayStatus.DROPPED, label: 'Dropped' },
   { value: PlayStatus.REPLAY, label: 'Replay' },
-];
-
-const OWNERSHIP_STATUS_OPTIONS: { value: OwnershipStatus; label: string }[] = [
-  { value: OwnershipStatus.OWNED, label: 'Owned' },
-  { value: OwnershipStatus.BORROWED, label: 'Borrowed' },
-  { value: OwnershipStatus.RENTED, label: 'Rented' },
-  { value: OwnershipStatus.SUBSCRIPTION, label: 'Subscription' },
-  { value: OwnershipStatus.NO_LONGER_OWNED, label: 'No Longer Owned' },
 ];
 
 export interface GameEditFormProps {
@@ -412,81 +404,25 @@ export function GameEditForm({ game }: GameEditFormProps) {
                     const detail = detailFor(s);
 
                     return (
-                      <div key={s.key} className="p-4 rounded-lg border bg-muted/30">
-                        <div className="font-medium mb-3">{label}</div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          {/* Ownership Status */}
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Ownership</Label>
-                            <Select
-                              value={detail.ownershipStatus}
-                              onValueChange={(v) =>
-                                setPlatformOwnership((prev) => ({
-                                  ...prev,
-                                  [s.key]: {
-                                    ...detail,
-                                    ownershipStatus: v as OwnershipStatus,
-                                  },
-                                }))
-                              }
-                            >
-                              <SelectTrigger className="h-9">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {OWNERSHIP_STATUS_OPTIONS.map((option) => (
-                                  <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {/* Acquired Date */}
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Acquired</Label>
-                            <Input
-                              type="date"
-                              className="h-9"
-                              value={detail.acquiredDate}
-                              onChange={(e) =>
-                                setPlatformOwnership((prev) => ({
-                                  ...prev,
-                                  [s.key]: {
-                                    ...detail,
-                                    acquiredDate: e.target.value,
-                                  },
-                                }))
-                              }
-                            />
-                          </div>
-
-                          {/* Hours Played */}
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">
-                              Hours{isSteamSynced && ' (Synced)'}
-                            </Label>
-                            <div className="flex items-center gap-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.5"
-                                className="h-9 w-24"
-                                value={detail.hoursPlayed}
-                                onChange={(e) =>
-                                  setPlatformPlaytimes((prev) => ({
-                                    ...prev,
-                                    [s.key]: parseFloat(e.target.value) || 0,
-                                  }))
-                                }
-                                disabled={isSteamSynced}
-                              />
-                              <span className="text-sm text-muted-foreground">hrs</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      <PlatformDetailFields
+                        key={s.key}
+                        label={label}
+                        value={detail}
+                        hoursSynced={isSteamSynced}
+                        onChange={(next) => {
+                          setPlatformOwnership((prev) => ({
+                            ...prev,
+                            [s.key]: {
+                              ownershipStatus: next.ownershipStatus,
+                              acquiredDate: next.acquiredDate,
+                            },
+                          }));
+                          setPlatformPlaytimes((prev) => ({
+                            ...prev,
+                            [s.key]: next.hoursPlayed,
+                          }));
+                        }}
+                      />
                     );
                   })}
                 </div>
