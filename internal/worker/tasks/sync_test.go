@@ -3474,3 +3474,52 @@ func TestDispatchSync_CredentialsError_Repeat_EmitsNothing(t *testing.T) {
 		t.Errorf("expected 0 sync.failed events on repeat, got %d", got)
 	}
 }
+
+// TestUpsertExternalGame_PersistsSourceMetadata verifies that when an
+// ExternalGameEntry carries SourceMetadata (e.g. Epic's namespace), the
+// key/value pair is written to external_games.source_metadata as JSONB.
+func TestUpsertExternalGame_PersistsSourceMetadata(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	jobID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'epic-games-store', 'pending', 'low', 0)`,
+		jobID, userID,
+	).Exec(ctx)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic-games-store', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
+		{{
+			ExternalID:      "abc123",
+			Title:           "Some Epic Game",
+			Platforms:       []string{"pc-windows"},
+			OwnershipStatus: "owned",
+			SourceMetadata:  map[string]string{"namespace": "ns-xyz"},
+		}},
+	}}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var ns string
+	if err := testDB.NewRaw(
+		`SELECT source_metadata->>'namespace' FROM external_games WHERE user_id = ? AND external_id = 'abc123'`,
+		userID,
+	).Scan(ctx, &ns); err != nil {
+		t.Fatalf("scan source_metadata->>'namespace': %v", err)
+	}
+	if ns != "ns-xyz" {
+		t.Fatalf("namespace = %q, want %q", ns, "ns-xyz")
+	}
+}

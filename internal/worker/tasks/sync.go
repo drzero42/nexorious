@@ -64,24 +64,38 @@ type DispatchSyncWorker struct {
 	RiverClient *river.Client[pgx.Tx]
 }
 
+// nullableJSON returns nil when b is empty so the column is written as SQL NULL.
+// When non-empty it returns a json.RawMessage so pgdriver encodes it as JSONB.
+func nullableJSON(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+	return json.RawMessage(b)
+}
+
 func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p DispatchSyncArgs) (egID string, isSkipped bool) {
 	var row struct {
 		ID        string `bun:"id"`
 		IsSkipped bool   `bun:"is_skipped"`
 		IsNew     bool   `bun:"is_new"`
 	}
+	var sourceMetaJSON []byte
+	if len(e.SourceMetadata) > 0 {
+		sourceMetaJSON, _ = json.Marshal(e.SourceMetadata) //nolint:errcheck // marshaling a map[string]string cannot fail
+	}
 	if err := db.NewRaw(`
-		INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, true, ?, ?, now(), now())
+		INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, is_subscription, ownership_status, source_metadata, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, true, ?, ?, ?, now(), now())
 		ON CONFLICT (user_id, storefront, external_id) DO UPDATE SET
 			title = EXCLUDED.title,
 			is_subscription = EXCLUDED.is_subscription,
 			ownership_status = EXCLUDED.ownership_status,
+			source_metadata = COALESCE(EXCLUDED.source_metadata, external_games.source_metadata),
 			is_available = true,
 			updated_at = now()
 		RETURNING id, is_skipped, (xmax = 0) AS is_new`,
 		uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
-		e.IsSubscription, e.OwnershipStatus,
+		e.IsSubscription, e.OwnershipStatus, nullableJSON(sourceMetaJSON),
 	).Scan(ctx, &row); err != nil {
 		slog.Error("dispatch_sync: upsert external_game failed", "err", err, "job_id", p.JobID, "external_id", e.ExternalID)
 		return "", false
