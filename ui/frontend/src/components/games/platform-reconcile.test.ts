@@ -30,7 +30,9 @@ describe('planPlatformChanges', () => {
     const original = [
       orig('ugp-1', 'pc', 'steam', { hours_played: 10, acquired_date: '2024-01-15' }),
     ];
-    const selections = [{ key: 'ugp-1', id: 'ugp-1', platform: 'pc', storefront: 'epic' }];
+    const selections = [
+      { key: 'ugp-1', id: 'ugp-1', platform: 'pc', storefront: 'epic-games-store' },
+    ];
     const details = { 'ugp-1': detail(10, OwnershipStatus.OWNED, '2024-01-15') };
 
     const cs = planPlatformChanges(original, selections, details);
@@ -41,7 +43,7 @@ describe('planPlatformChanges', () => {
       {
         id: 'ugp-1',
         platform: 'pc',
-        storefront: 'epic',
+        storefront: 'epic-games-store',
         hoursPlayed: 10,
         ownershipStatus: OwnershipStatus.OWNED,
         acquiredDate: '2024-01-15',
@@ -62,7 +64,7 @@ describe('planPlatformChanges', () => {
   });
 
   it('treats a selection without an id as an add carrying its detail state (keyed by key)', () => {
-    const selections = [{ key: 'new-1', platform: 'ps5', storefront: 'psn' }];
+    const selections = [{ key: 'new-1', platform: 'ps5', storefront: 'playstation-store' }];
     const details = { 'new-1': detail(8, OwnershipStatus.BORROWED, '2024-03-01') };
 
     const cs = planPlatformChanges([], selections, details);
@@ -70,7 +72,7 @@ describe('planPlatformChanges', () => {
     expect(cs.adds).toEqual([
       {
         platform: 'ps5',
-        storefront: 'psn',
+        storefront: 'playstation-store',
         hoursPlayed: 8,
         ownershipStatus: OwnershipStatus.BORROWED,
         acquiredDate: '2024-03-01',
@@ -81,14 +83,14 @@ describe('planPlatformChanges', () => {
   });
 
   it('defaults an add’s detail fields when no detail state is present', () => {
-    const selections = [{ key: 'new-1', platform: 'ps5', storefront: 'psn' }];
+    const selections = [{ key: 'new-1', platform: 'ps5', storefront: 'playstation-store' }];
 
     const cs = planPlatformChanges([], selections, {});
 
     expect(cs.adds).toEqual([
       {
         platform: 'ps5',
-        storefront: 'psn',
+        storefront: 'playstation-store',
         hoursPlayed: 0,
         ownershipStatus: OwnershipStatus.OWNED,
         acquiredDate: undefined,

@@ -60,7 +60,7 @@ const mockPlatform2Api = {
 
 const mockStorefrontApi = {
   id: 'storefront-2',
-  name: 'epic',
+  name: 'epic-games-store',
   display_name: 'Epic Games Store',
   icon_url: 'https://example.com/epic.png',
   base_url: 'https://store.epicgames.com',
@@ -453,8 +453,8 @@ describe('use-platforms hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.name).toBe('epic');
-      expect(result.current.data?.name).toBe('epic');
+      expect(result.current.data?.name).toBe('epic-games-store');
+      expect(result.current.data?.name).toBe('epic-games-store');
     });
 
     it('does not fetch when ID is undefined', async () => {

@@ -30,7 +30,7 @@ const mockStorefronts: Storefront[] = [
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    name: 'epic',
+    name: 'epic-games-store',
     display_name: 'Epic Games Store',
     is_active: true,
     source: 'official',
@@ -65,7 +65,7 @@ const mockPlatforms: Platform[] = [
     source: 'official',
     storefronts: [
       {
-        name: 'psn',
+        name: 'playstation-store',
         display_name: 'PlayStation Store',
         is_active: true,
         source: 'official',
@@ -140,7 +140,7 @@ describe('PlatformSelector', () => {
   it('renders one row per selection showing the platform name', () => {
     render(
       <PlatformSelector
-        selectedPlatforms={[sel('pc', 'steam'), sel('ps5', 'psn')]}
+        selectedPlatforms={[sel('pc', 'steam'), sel('ps5', 'playstation-store')]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
       />,
@@ -189,7 +189,7 @@ describe('PlatformSelector', () => {
 
     expect(handleChange).toHaveBeenCalledWith([
       { key: 'k-1', platform: 'pc', storefront: 'steam' },
-      { key: 'k-2', platform: 'pc', storefront: 'epic' }, // not steam — that slot is taken
+      { key: 'k-2', platform: 'pc', storefront: 'epic-games-store' }, // not steam — that slot is taken
     ]);
   });
 
@@ -197,7 +197,7 @@ describe('PlatformSelector', () => {
     const user = userEvent.setup();
     const exhausted: PlatformSelection[] = [
       sel('pc', 'steam', 'k-1'),
-      sel('pc', 'epic', 'k-2'),
+      sel('pc', 'epic-games-store', 'k-2'),
       sel('pc', 'gog', 'k-3'),
       sel('pc', undefined, 'k-4'),
     ];
@@ -224,7 +224,7 @@ describe('PlatformSelector', () => {
     const handleChange = vi.fn();
     const selected: PlatformSelection[] = [
       { key: 'k-1', platform: 'pc', storefront: 'steam' },
-      { key: 'k-2', platform: 'pc', storefront: 'epic' },
+      { key: 'k-2', platform: 'pc', storefront: 'epic-games-store' },
     ];
 
     render(
@@ -312,7 +312,7 @@ describe('PlatformSelectorCompact', () => {
 
     render(
       <PlatformSelectorCompact
-        selectedPlatforms={[sel('pc', 'steam', 'k-1'), sel('pc', 'epic', 'k-2')]}
+        selectedPlatforms={[sel('pc', 'steam', 'k-1'), sel('pc', 'epic-games-store', 'k-2')]}
         availablePlatforms={mockPlatforms}
         onChange={handleChange}
       />,
@@ -352,7 +352,9 @@ describe('PlatformSelectorCompact', () => {
     expect(handleChange).toHaveBeenCalledTimes(1);
     const next = handleChange.mock.calls[0][0] as PlatformSelection[];
     expect(next).toHaveLength(2);
-    expect(next[1]).toEqual(expect.objectContaining({ platform: 'pc', storefront: 'epic' }));
+    expect(next[1]).toEqual(
+      expect.objectContaining({ platform: 'pc', storefront: 'epic-games-store' }),
+    );
   });
 
   it('hides "add another storefront" when the platform is exhausted', () => {
@@ -360,7 +362,7 @@ describe('PlatformSelectorCompact', () => {
       <PlatformSelectorCompact
         selectedPlatforms={[
           sel('pc', 'steam', 'k-1'),
-          sel('pc', 'epic', 'k-2'),
+          sel('pc', 'epic-games-store', 'k-2'),
           sel('pc', 'gog', 'k-3'),
           sel('pc', undefined, 'k-4'),
         ]}
@@ -380,7 +382,7 @@ describe('PlatformSelectorCompact', () => {
 
     render(
       <PlatformSelectorCompact
-        selectedPlatforms={[sel('pc', 'steam', 'k-1'), sel('pc', 'epic', 'k-2')]}
+        selectedPlatforms={[sel('pc', 'steam', 'k-1'), sel('pc', 'epic-games-store', 'k-2')]}
         availablePlatforms={[mockPlatforms[0]]}
         onChange={handleChange}
       />,
@@ -450,7 +452,7 @@ describe('PlatformSelectorCompact', () => {
   it('renders a storefront selector per row for a checked platform', () => {
     render(
       <PlatformSelectorCompact
-        selectedPlatforms={[sel('pc', 'steam', 'k-1'), sel('pc', 'epic', 'k-2')]}
+        selectedPlatforms={[sel('pc', 'steam', 'k-1'), sel('pc', 'epic-games-store', 'k-2')]}
         availablePlatforms={[mockPlatforms[0]]}
         onChange={vi.fn()}
       />,

@@ -105,7 +105,7 @@ const mockStorefronts: Storefront[] = [
     updated_at: '2024-01-01T00:00:00Z',
   },
   {
-    name: 'epic',
+    name: 'epic-games-store',
     display_name: 'Epic Games Store',
     is_active: true,
     source: 'system',

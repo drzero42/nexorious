@@ -38,24 +38,32 @@ const row = (key: string, plat: string, storefront?: string): PlatformRow => ({
   storefront,
 });
 
-const pc = platform('pc', [sf('steam', 'Steam'), sf('epic', 'Epic'), sf('gog', 'GOG')], 'steam');
+const pc = platform(
+  'pc',
+  [sf('steam', 'Steam'), sf('epic-games-store', 'Epic'), sf('gog', 'GOG')],
+  'steam',
+);
 const switchConsole = platform('switch', []); // no storefronts -> single "No storefront" slot
 
 describe('usedStorefronts', () => {
   it('collects storefront values used by rows of the platform, including undefined', () => {
-    const rows = [row('a', 'pc', 'steam'), row('b', 'pc', undefined), row('c', 'ps5', 'psn')];
+    const rows = [
+      row('a', 'pc', 'steam'),
+      row('b', 'pc', undefined),
+      row('c', 'ps5', 'playstation-store'),
+    ];
     const used = usedStorefronts(rows, 'pc');
     expect(used.has('steam')).toBe(true);
     expect(used.has(undefined)).toBe(true);
-    expect(used.has('psn')).toBe(false); // different platform
+    expect(used.has('playstation-store')).toBe(false); // different platform
     expect(used.size).toBe(2);
   });
 
   it('excludes the row identified by exceptKey', () => {
-    const rows = [row('a', 'pc', 'steam'), row('b', 'pc', 'epic')];
+    const rows = [row('a', 'pc', 'steam'), row('b', 'pc', 'epic-games-store')];
     const used = usedStorefronts(rows, 'pc', 'a');
     expect(used.has('steam')).toBe(false); // row "a" excluded
-    expect(used.has('epic')).toBe(true);
+    expect(used.has('epic-games-store')).toBe(true);
   });
 });
 
@@ -63,13 +71,13 @@ describe('availableStorefronts', () => {
   it('omits storefronts taken by sibling rows', () => {
     const rows = [row('a', 'pc', 'steam')];
     const names = availableStorefronts(pc, rows, 'b').map((s) => s.name);
-    expect(names).toEqual(['epic', 'gog']); // steam taken by sibling "a"
+    expect(names).toEqual(['epic-games-store', 'gog']); // steam taken by sibling "a"
   });
 
   it('keeps the current row’s own storefront selectable', () => {
-    const rows = [row('a', 'pc', 'steam'), row('b', 'pc', 'epic')];
+    const rows = [row('a', 'pc', 'steam'), row('b', 'pc', 'epic-games-store')];
     const names = availableStorefronts(pc, rows, 'b').map((s) => s.name);
-    expect(names).toContain('epic'); // own value retained
+    expect(names).toContain('epic-games-store'); // own value retained
     expect(names).not.toContain('steam'); // sibling's value omitted
     expect(names).toContain('gog');
   });
@@ -77,20 +85,20 @@ describe('availableStorefronts', () => {
   it('a sibling using the No-storefront slot does not remove any named storefront', () => {
     const rows = [row('a', 'pc', undefined)];
     const names = availableStorefronts(pc, rows, 'b').map((s) => s.name);
-    expect(names).toEqual(['steam', 'epic', 'gog']);
+    expect(names).toEqual(['steam', 'epic-games-store', 'gog']);
   });
 });
 
 describe('isPlatformExhausted', () => {
   it('is false while a slot remains free', () => {
-    const rows = [row('a', 'pc', 'steam'), row('b', 'pc', 'epic')];
+    const rows = [row('a', 'pc', 'steam'), row('b', 'pc', 'epic-games-store')];
     expect(isPlatformExhausted(pc, rows)).toBe(false); // gog + No-storefront still free
   });
 
   it('is true once every slot (storefronts + No-storefront) is taken', () => {
     const rows = [
       row('a', 'pc', 'steam'),
-      row('b', 'pc', 'epic'),
+      row('b', 'pc', 'epic-games-store'),
       row('c', 'pc', 'gog'),
       row('d', 'pc', undefined),
     ];
@@ -109,11 +117,15 @@ describe('firstFreeStorefront', () => {
   });
 
   it('falls back to the first free storefront when the default is taken', () => {
-    expect(firstFreeStorefront(pc, [row('a', 'pc', 'steam')])).toBe('epic');
+    expect(firstFreeStorefront(pc, [row('a', 'pc', 'steam')])).toBe('epic-games-store');
   });
 
   it('returns undefined (No storefront) when every named storefront is taken', () => {
-    const rows = [row('a', 'pc', 'steam'), row('b', 'pc', 'epic'), row('c', 'pc', 'gog')];
+    const rows = [
+      row('a', 'pc', 'steam'),
+      row('b', 'pc', 'epic-games-store'),
+      row('c', 'pc', 'gog'),
+    ];
     expect(firstFreeStorefront(pc, rows)).toBeUndefined();
   });
 
