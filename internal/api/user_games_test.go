@@ -292,6 +292,64 @@ func TestDeleteUserGame(t *testing.T) {
 	})
 }
 
+func TestHandleGetUserGame_StoreURL(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "store-url")
+	gameID := insertTestGame(t, testDB, "Store URL Game")
+	insertTestUserGame(t, testDB, "ug-surl-1", userID, int(gameID))
+
+	// Insert an external_game with store_link so buildStoreURL can produce a URL.
+	egID := "eg-surl-steam-440"
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, store_link)
+		 VALUES (?, ?, 'steam', '440', 'Half-Life 2', false, true, false, '440')`,
+		egID, userID,
+	)
+	if err != nil {
+		t.Fatalf("insert external_game: %v", err)
+	}
+
+	// Insert a user_game_platform linked to that external_game.
+	pcWindows := "pc-windows"
+	steam := "steam"
+	_, err = testDB.ExecContext(context.Background(),
+		`INSERT INTO user_game_platforms (id, user_game_id, platform, storefront, external_game_id)
+		 VALUES (?, 'ug-surl-1', ?, ?, ?)`,
+		"ugp-surl-1", pcWindows, steam, egID,
+	)
+	if err != nil {
+		t.Fatalf("insert user_game_platform with external_game_id: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/user-games/ug-surl-1", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	platforms, ok := resp["platforms"].([]any)
+	if !ok || len(platforms) != 1 {
+		t.Fatalf("expected 1 platform, got: %v", resp["platforms"])
+	}
+
+	platform := platforms[0].(map[string]any)
+	storeURL, exists := platform["store_url"]
+	if !exists || storeURL == nil {
+		t.Fatalf("expected store_url to be set, got nil (platforms[0]=%v)", platform)
+	}
+
+	const wantURL = "https://store.steampowered.com/app/440/"
+	if storeURL != wantURL {
+		t.Fatalf("expected store_url=%q, got %q", wantURL, storeURL)
+	}
+}
+
 func TestDeleteUserGame_Cascades(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()

@@ -346,6 +346,86 @@ func applyPlaytimeToOwned(owned, played map[string]ExternalGameEntry) []External
 	return all
 }
 
+// Authenticate exchanges an NPSSO token for a PSN access token.
+func (c *Client) Authenticate(ctx context.Context, npssoToken string) (string, error) {
+	if c.authFn != nil {
+		return c.authFn(ctx, npssoToken)
+	}
+	psnClient, err := psnsdk.NewClient(&psnsdk.Options{Lang: "en", Region: "us", Npsso: npssoToken})
+	if err != nil {
+		return "", fmt.Errorf("psn: failed to create client: %w", err)
+	}
+	if err := psnClient.AuthWithNPSSO(ctx, npssoToken); err != nil {
+		return "", ErrInvalidNPSSOToken
+	}
+	token, _ := psnClient.AccessToken()
+	if token == "" {
+		return "", fmt.Errorf("psn: access token unavailable after authentication")
+	}
+	return token, nil
+}
+
+// conceptSummary is one element of the catalog concepts response, which is a
+// top-level JSON array. The concept ID builds the store URL /concept/{id}.
+// `id` is decoded as json.Number to tolerate either a string or numeric form.
+type conceptSummary struct {
+	ID json.Number `json:"id"`
+}
+
+// bodySnippet truncates a response body for inclusion in diagnostics.
+func bodySnippet(b []byte) string {
+	const max = 400
+	if len(b) > max {
+		return string(b[:max]) + "…"
+	}
+	return string(b)
+}
+
+// ResolveConceptID resolves a PSN titleId to its store concept ID via the
+// catalog API. Returns "" (no error) when the title has no resolvable concept
+// (404). The response is a top-level JSON array of concept summaries; the first
+// element's `id` is the concept ID. On an unexpected payload the error embeds a
+// body snippet so the actual shape surfaces in logs. Authenticated with the
+// access token from Authenticate.
+func (c *Client) ResolveConceptID(ctx context.Context, accessToken, titleID string) (string, error) {
+	if err := c.limiter.Wait(ctx); err != nil {
+		return "", fmt.Errorf("psn: rate limiter wait: %w", err)
+	}
+	u := fmt.Sprintf("%s/api/catalog/v2/titles/%s/concepts", c.gamelistURL, titleID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", fmt.Errorf("psn: concepts request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("psn: concepts fetch: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("psn: concepts read: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("psn: concepts HTTP %d (body: %s)", resp.StatusCode, bodySnippet(body))
+	}
+	var concepts []conceptSummary
+	if err := json.Unmarshal(body, &concepts); err != nil {
+		return "", fmt.Errorf("psn: concepts decode: %w (body: %s)", err, bodySnippet(body))
+	}
+	if len(concepts) == 0 {
+		return "", nil
+	}
+	id := concepts[0].ID.String()
+	if id == "" {
+		return "", fmt.Errorf("psn: concepts: first element has no id (body: %s)", bodySnippet(body))
+	}
+	return id, nil
+}
+
 // GetLibrary fetches the user's PSN game library. The owned/purchased endpoint
 // (GraphQL) is the single source of truth for library membership and ownership /
 // subscription classification; play history (gamelist/v2) is used only to enrich

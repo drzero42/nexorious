@@ -63,6 +63,7 @@ type userGamePlatformResponse struct {
 	UpdatedAt         time.Time           `json:"updated_at"`
 	PlatformDetails   *platformResponse   `json:"platform_details,omitempty"`
 	StorefrontDetails *storefrontResponse `json:"storefront_details,omitempty"`
+	StoreURL          *string             `json:"store_url,omitempty"`
 }
 
 func toUserGamePlatformResponse(ugp models.UserGamePlatform) userGamePlatformResponse {
@@ -87,6 +88,11 @@ func toUserGamePlatformResponse(ugp models.UserGamePlatform) userGamePlatformRes
 	if ugp.StorefrontRecord != nil {
 		sr := toStorefrontResponse(*ugp.StorefrontRecord)
 		resp.StorefrontDetails = &sr
+	}
+	if ugp.ExternalGame != nil && ugp.ExternalGame.StoreLink != nil {
+		if url, ok := buildStoreURL(ugp.ExternalGame.Storefront, *ugp.ExternalGame.StoreLink); ok {
+			resp.StoreURL = &url
+		}
 	}
 	return resp
 }
@@ -468,7 +474,7 @@ func (h *UserGamesHandler) HandleGetUserGame(c *echo.Context) error {
 		Where("user_game.user_id = ?", userID).
 		Relation("Game").
 		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
+			return q.Relation("PlatformRecord").Relation("StorefrontRecord").Relation("ExternalGame")
 		}).
 		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
 			return q.Relation("Tag")

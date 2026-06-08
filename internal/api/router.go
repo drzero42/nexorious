@@ -268,6 +268,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		gamesGroup := e.Group("/api/games", auth.AuthMiddleware(db))
 		gamesGroup.GET("", gh.HandleListGames)
 		gamesGroup.POST("/metadata/refresh-job", gh.HandleStartMetadataRefreshJob)
+		gamesGroup.POST("/store-links/refresh-job", gh.HandleStartStoreLinkRefreshJob)
 		gamesGroup.POST("/search/igdb", gh.HandleSearchIGDB)
 		gamesGroup.GET("/igdb/:igdb_id", gh.HandleGetIGDBGame)
 		gamesGroup.POST("/igdb-import", gh.HandleImportFromIGDB)

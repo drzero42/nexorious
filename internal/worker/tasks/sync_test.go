@@ -2202,7 +2202,7 @@ func TestSyncCheckJobCompletion_FailedItemsYieldsCompleted(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var status string
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
@@ -2241,7 +2241,7 @@ func TestSyncCheckJobCompletion_DispatchIncomplete_StaysProcessing(t *testing.T)
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var status string
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
@@ -2272,7 +2272,7 @@ func TestSyncCheckJobCompletion_DispatchComplete_Finalizes(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var status string
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
@@ -2302,7 +2302,7 @@ func TestSyncCheckJobCompletion_PendingReviewBlocks(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var status string
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
@@ -3098,7 +3098,7 @@ func TestSyncCheckJobCompletionEmitsCompleted(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var typ string
 	if err := testDB.NewRaw(`SELECT type FROM events WHERE dedup_key = ?`, jobID+":sync.completed").Scan(ctx, &typ); err != nil {
@@ -3132,7 +3132,7 @@ func TestSyncCheckJobCompletionEmitsCompletedWithErrors(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	var count int
 	if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.completed_with_errors").Scan(ctx, &count); err != nil {
@@ -3166,7 +3166,7 @@ func TestSyncCheckJobCompletionEmitsNeedsReview(t *testing.T) {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	// sync.needs_review event must have been emitted.
 	var nrCount int
@@ -3287,7 +3287,7 @@ func TestEmitsSyncDiffWhenChangesExist(t *testing.T) {
 		t.Fatalf("insert change removed: %v", err)
 	}
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	// sync.diff event must have been emitted.
 	var diffCount int
@@ -3341,7 +3341,7 @@ func TestNoSyncDiffWhenNoChanges(t *testing.T) {
 	}
 	// No changes rows inserted.
 
-	tasks.SyncCheckJobCompletion(ctx, testDB, jobID)
+	tasks.SyncCheckJobCompletion(ctx, testDB, nil, jobID)
 
 	// No sync.diff event should have been emitted.
 	var diffCount int
@@ -3472,5 +3472,54 @@ func TestDispatchSync_CredentialsError_Repeat_EmitsNothing(t *testing.T) {
 	}
 	if got := eventCount(t, jobID+":sync.failed"); got != 0 {
 		t.Errorf("expected 0 sync.failed events on repeat, got %d", got)
+	}
+}
+
+// TestUpsertExternalGame_PersistsSourceMetadata verifies that when an
+// ExternalGameEntry carries SourceMetadata (e.g. Epic's namespace), the
+// key/value pair is written to external_games.source_metadata as JSONB.
+func TestUpsertExternalGame_PersistsSourceMetadata(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	jobID := uuid.NewString()
+	_, _ = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'epic-games-store', 'pending', 'low', 0)`,
+		jobID, userID,
+	).Exec(ctx)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic-games-store', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+
+	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
+		{{
+			ExternalID:      "abc123",
+			Title:           "Some Epic Game",
+			Platforms:       []string{"pc-windows"},
+			OwnershipStatus: "owned",
+			SourceMetadata:  map[string]string{"namespace": "ns-xyz"},
+		}},
+	}}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
+	job := &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"},
+	}
+
+	if err := w.Work(ctx, job); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var ns string
+	if err := testDB.NewRaw(
+		`SELECT source_metadata->>'namespace' FROM external_games WHERE user_id = ? AND external_id = 'abc123'`,
+		userID,
+	).Scan(ctx, &ns); err != nil {
+		t.Fatalf("scan source_metadata->>'namespace': %v", err)
+	}
+	if ns != "ns-xyz" {
+		t.Fatalf("namespace = %q, want %q", ns, "ns-xyz")
 	}
 }

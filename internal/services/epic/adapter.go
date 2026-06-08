@@ -68,6 +68,10 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 			end := min(start+chunkSize, len(batch))
 			mapped := make([]storefrontadapter.ExternalGameEntry, 0, end-start)
 			for _, e := range batch[start:end] {
+				var sourceMeta map[string]string
+				if e.Namespace != "" {
+					sourceMeta = map[string]string{"namespace": e.Namespace}
+				}
 				mapped = append(mapped, storefrontadapter.ExternalGameEntry{
 					ExternalID:      e.ExternalID,
 					Title:           e.Title,
@@ -75,6 +79,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 					Platforms:       []string{"pc-windows"},
 					OwnershipStatus: e.OwnershipStatus,
 					IsSubscription:  false,
+					SourceMetadata:  sourceMeta,
 				})
 			}
 			if err := onBatch(mapped); err != nil {

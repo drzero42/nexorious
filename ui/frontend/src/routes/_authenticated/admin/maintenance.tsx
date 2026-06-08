@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/providers';
 import { useJob, useJobTypeStatus, useJobCompletionEffect, useCancelJob, jobsKeys } from '@/hooks';
-import { JobType } from '@/types';
+import { JobType, type JobTypeStatus } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,21 @@ export const Route = createFileRoute('/_authenticated/admin/maintenance')({
   component: MaintenancePage,
 });
 
+// mostRecentCompletedJobId returns the id of whichever status has the more
+// recent last-completed job, so the result card shows the job that finished most
+// recently across both maintenance job types.
+function mostRecentCompletedJobId(
+  a: JobTypeStatus | undefined,
+  b: JobTypeStatus | undefined,
+): string | undefined {
+  const aId = a?.lastCompletedJobId ?? undefined;
+  const bId = b?.lastCompletedJobId ?? undefined;
+  if (aId && bId) {
+    return (a?.lastCompletedAt ?? '') >= (b?.lastCompletedAt ?? '') ? aId : bId;
+  }
+  return aId ?? bId;
+}
+
 function MaintenancePageSkeleton() {
   return (
     <div className="space-y-6">
@@ -46,6 +61,7 @@ function MaintenancePage() {
   const queryClient = useQueryClient();
   const { user: currentUser } = useAuth();
   const [isRefreshLoading, setIsRefreshLoading] = useState(false);
+  const [isStoreLinkLoading, setIsStoreLinkLoading] = useState(false);
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
   const { data: health } = useHealthStatus();
@@ -73,12 +89,16 @@ function MaintenancePage() {
     }
   };
 
-  // Track the metadata-refresh job status, fetching the displayed job by id
-  // (active job, falling back to the last completed one so the result card
-  // survives completion).
+  // Track both maintenance job types (metadata refresh + store-link refresh) and
+  // display whichever is relevant: any active job first, else the most recently
+  // completed of the two, so the result card survives completion.
   const { data: refreshStatus } = useJobTypeStatus(JobType.METADATA_REFRESH);
-  const refreshJobId = refreshStatus?.activeJobId ?? refreshStatus?.lastCompletedJobId ?? undefined;
-  const { data: activeMaintenanceJob } = useJob(refreshJobId);
+  const { data: storeLinkStatus } = useJobTypeStatus(JobType.STORE_LINK_REFRESH);
+  const displayJobId =
+    refreshStatus?.activeJobId ??
+    storeLinkStatus?.activeJobId ??
+    mostRecentCompletedJobId(refreshStatus, storeLinkStatus);
+  const { data: activeMaintenanceJob } = useJob(displayJobId);
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
 
   const handleRefreshComplete = useCallback(() => {
@@ -86,6 +106,7 @@ function MaintenancePage() {
     queryClient.invalidateQueries({ queryKey: jobsKeys.recents() });
   }, [queryClient]);
   useJobCompletionEffect(refreshStatus?.activeJobId, handleRefreshComplete);
+  useJobCompletionEffect(storeLinkStatus?.activeJobId, handleRefreshComplete);
 
   // Determine which job to display (not dismissed)
   const activeJob =
@@ -102,6 +123,21 @@ function MaintenancePage() {
       navigate({ to: '/dashboard', replace: true });
     }
   }, [currentUser, navigate]);
+
+  const handleStartStoreLinkRefresh = async () => {
+    try {
+      setIsStoreLinkLoading(true);
+      setDismissedJobId(null);
+      await adminApi.startStoreLinkRefreshJob();
+      toast.success('Store link refresh job started');
+      queryClient.invalidateQueries({ queryKey: jobsKeys.typeStatus(JobType.STORE_LINK_REFRESH) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start store link refresh';
+      toast.error(message);
+    } finally {
+      setIsStoreLinkLoading(false);
+    }
+  };
 
   const handleStartMetadataRefresh = async () => {
     try {
@@ -125,6 +161,9 @@ function MaintenancePage() {
       onSuccess: () => {
         toast.success('Job cancelled');
         queryClient.invalidateQueries({ queryKey: jobsKeys.typeStatus(JobType.METADATA_REFRESH) });
+        queryClient.invalidateQueries({
+          queryKey: jobsKeys.typeStatus(JobType.STORE_LINK_REFRESH),
+        });
       },
       onError: (error) => {
         toast.error(error.message || 'Failed to cancel job');
@@ -245,10 +284,48 @@ function MaintenancePage() {
         </Card>
       )}
 
+      {/* Store Links Section */}
+      {!hasActiveJob && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Store Links
+            </CardTitle>
+            <CardDescription>
+              Re-fetch storefront product links for your synced games.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Start a background job to re-resolve storefront product links for all synced games.
+              This operation runs asynchronously and re-fetches links from upstream storefronts.
+            </p>
+            <Button
+              onClick={handleStartStoreLinkRefresh}
+              disabled={isStoreLinkLoading}
+              className="w-full"
+            >
+              {isStoreLinkLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh store links
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Recent Maintenance Jobs - shows completed jobs from last 7 days */}
       {!hasActiveJob && (
         <RecentActivity
-          jobTypes={[JobType.METADATA_REFRESH]}
+          jobTypes={[JobType.METADATA_REFRESH, JobType.STORE_LINK_REFRESH]}
           excludeJobIds={activeJob ? [activeJob.id] : []}
         />
       )}

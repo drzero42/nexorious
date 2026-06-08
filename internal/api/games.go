@@ -371,6 +371,7 @@ func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 	}
 
 	if _, err := h.riverClient.Insert(c.Request().Context(), tasks.MetadataRefreshDispatchArgs{}, nil); err != nil {
+		slog.Error("failed to enqueue metadata refresh dispatch", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
 	}
 
@@ -378,6 +379,29 @@ func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 		"success": true,
 		"message": "Metadata refresh job queued",
 		"job_id":  "",
+	})
+}
+
+// HandleStartStoreLinkRefreshJob handles POST /api/games/store-links/refresh-job.
+// Admin-only: dispatches a global, forced store-link re-resolution.
+func (h *GamesHandler) HandleStartStoreLinkRefreshJob(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	if !auth.IsAdminFromContext(c) {
+		return echo.NewHTTPError(http.StatusForbidden, "admin access required")
+	}
+	if h.riverClient == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "worker not available")
+	}
+	if _, err := h.riverClient.Insert(c.Request().Context(), tasks.StoreLinkRefreshDispatchArgs{Force: true}, nil); err != nil {
+		slog.Error("failed to enqueue store-link refresh dispatch", "err", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue store link refresh")
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Store link refresh job queued",
 	})
 }
 
