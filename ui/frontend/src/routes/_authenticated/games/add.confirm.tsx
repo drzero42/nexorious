@@ -485,6 +485,9 @@ function GameConfirmPage() {
     }
   }, [igdbIdParam]);
 
+  // Destination toggle: add to Library (default) or Wishlist
+  const [destination, setDestination] = React.useState<'library' | 'wishlist'>('library');
+
   // State for platform selection and game data
   const [selectedPlatforms, setSelectedPlatforms] = React.useState<PlatformSelection[]>([]);
   // Optional per-platform ownership/acquired/hours, keyed by the selection row key.
@@ -539,7 +542,7 @@ function GameConfirmPage() {
     navigate({ to: '/games/add' });
   };
 
-  const handleAddToLibrary = async () => {
+  const handleSubmit = async () => {
     if (!igdbId || !resolvedGame) {
       toast.error('No game selected');
       return;
@@ -554,28 +557,38 @@ function GameConfirmPage() {
         downloadCoverArt: true,
       });
 
-      // Step 2: Create the user game entry with selected platforms and their
-      // optional ownership/acquired/hours details.
-      const userGame = await createUserGame.mutateAsync({
-        gameId: importedGame.id,
-        platforms: selectedPlatforms.map((p) => {
-          const detail = platformDetails[p.key];
-          return {
-            platform: p.platform,
-            storefront: p.storefront,
-            ownershipStatus: detail?.ownershipStatus,
-            acquiredDate: detail?.acquiredDate || undefined,
-            hoursPlayed: detail?.hoursPlayed || undefined,
-          };
-        }),
-      });
+      if (destination === 'wishlist') {
+        // Wishlist path: no platforms, set isWishlisted flag
+        await createUserGame.mutateAsync({
+          gameId: importedGame.id,
+          isWishlisted: true,
+        });
 
-      toast.success(`Added "${resolvedGame.title}" to your library!`);
+        toast.success(`Added "${resolvedGame.title}" to your wishlist!`);
+        navigate({ to: '/wishlist' });
+      } else {
+        // Library path: existing behavior unchanged
+        const userGame = await createUserGame.mutateAsync({
+          gameId: importedGame.id,
+          platforms: selectedPlatforms.map((p) => {
+            const detail = platformDetails[p.key];
+            return {
+              platform: p.platform,
+              storefront: p.storefront,
+              ownershipStatus: detail?.ownershipStatus,
+              acquiredDate: detail?.acquiredDate || undefined,
+              hoursPlayed: detail?.hoursPlayed || undefined,
+            };
+          }),
+        });
 
-      // Navigate to the newly created user game
-      navigate({ to: '/games/$id', params: { id: userGame.id } });
+        toast.success(`Added "${resolvedGame.title}" to your library!`);
+
+        // Navigate to the newly created user game
+        navigate({ to: '/games/$id', params: { id: userGame.id } });
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to add game to library';
+      const message = error instanceof Error ? error.message : 'Failed to add game';
       toast.error(message);
       setIsSubmitting(false);
     }
@@ -610,47 +623,82 @@ function GameConfirmPage() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold">Confirm Game</h1>
-          <p className="text-muted-foreground">Review the game details and select your platforms</p>
+          <p className="text-muted-foreground">
+            {destination === 'library'
+              ? 'Review the game details and select your platforms'
+              : 'Review the game details before adding to your wishlist'}
+          </p>
         </div>
       </div>
 
       {/* Game Preview Card */}
       <GamePreviewCard game={resolvedGame} />
 
-      {/* Platform Selection */}
-      <PlatformSelectionSection
-        platforms={platforms ?? []}
-        igdbPlatformNames={resolvedGame.platforms}
-        igdbPlatformIds={resolvedGame.platform_ids}
-        selectedPlatforms={selectedPlatforms}
-        onChange={setSelectedPlatforms}
-        disabled={isSubmitting}
-      />
+      {/* Destination toggle */}
+      <div className="flex gap-2" role="group" aria-label="Add destination">
+        <Button
+          type="button"
+          variant={destination === 'library' ? 'default' : 'outline'}
+          onClick={() => setDestination('library')}
+          disabled={isSubmitting}
+          aria-pressed={destination === 'library'}
+        >
+          Library
+        </Button>
+        <Button
+          type="button"
+          variant={destination === 'wishlist' ? 'default' : 'outline'}
+          onClick={() => setDestination('wishlist')}
+          disabled={isSubmitting}
+          aria-pressed={destination === 'wishlist'}
+        >
+          Wishlist
+        </Button>
+      </div>
 
-      {/* Optional per-platform ownership/playtime details */}
-      <PlatformDetailsSection
-        platforms={platforms ?? []}
-        selectedPlatforms={selectedPlatforms}
-        details={platformDetails}
-        onChange={(key, detail) => setPlatformDetails((prev) => ({ ...prev, [key]: detail }))}
-        disabled={isSubmitting}
-      />
+      {destination === 'library' ? (
+        <>
+          {/* Platform Selection */}
+          <PlatformSelectionSection
+            platforms={platforms ?? []}
+            igdbPlatformNames={resolvedGame.platforms}
+            igdbPlatformIds={resolvedGame.platform_ids}
+            selectedPlatforms={selectedPlatforms}
+            onChange={setSelectedPlatforms}
+            disabled={isSubmitting}
+          />
+
+          {/* Optional per-platform ownership/playtime details */}
+          <PlatformDetailsSection
+            platforms={platforms ?? []}
+            selectedPlatforms={selectedPlatforms}
+            details={platformDetails}
+            onChange={(key, detail) => setPlatformDetails((prev) => ({ ...prev, [key]: detail }))}
+            disabled={isSubmitting}
+          />
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Wishlisted games have no platforms yet — you&apos;ll choose them when you move the game to
+          your library.
+        </p>
+      )}
 
       {/* Action Buttons */}
       <div className="flex justify-end gap-3 pt-2">
         <Button variant="outline" onClick={handleBack} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button onClick={handleAddToLibrary} disabled={isSubmitting}>
+        <Button onClick={handleSubmit} disabled={isSubmitting}>
           {isSubmitting ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Adding to Library...
+              {destination === 'wishlist' ? 'Adding to Wishlist...' : 'Adding to Library...'}
             </>
           ) : (
             <>
               <Plus className="mr-2 h-4 w-4" />
-              Add to Library
+              {destination === 'wishlist' ? 'Add to Wishlist' : 'Add to Library'}
             </>
           )}
         </Button>
