@@ -133,6 +133,7 @@ interface RetryFailedApiResponse {
 
 interface SyncChangeItemApiResponse {
   title: string;
+  user_game_id?: string | null;
   old_status?: string | null;
   new_status?: string | null;
 }
@@ -237,6 +238,7 @@ function transformJobItemDetail(apiItem: JobItemDetailApiResponse): JobItemDetai
 function transformSyncChangeItem(sc: SyncChangeItemApiResponse): SyncChangeItem {
   return {
     title: sc.title,
+    userGameId: sc.user_game_id ?? null,
     oldStatus: sc.old_status ?? null,
     newStatus: sc.new_status ?? null,
   };

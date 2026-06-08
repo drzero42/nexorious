@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -84,7 +85,17 @@ function ChangeList({
         <div className="ml-6 pl-2 border-l space-y-1 py-1">
           {items.map((item, idx) => (
             <div key={idx} className="text-sm py-1 text-muted-foreground">
-              {item.title}
+              {item.userGameId ? (
+                <Link
+                  to="/games/$id"
+                  params={{ id: item.userGameId }}
+                  className="hover:underline text-primary"
+                >
+                  {item.title}
+                </Link>
+              ) : (
+                item.title
+              )}
               {item.oldStatus && item.newStatus && (
                 <span className="ml-2 text-xs">
                   {item.oldStatus} → {item.newStatus}

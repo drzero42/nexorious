@@ -771,9 +771,9 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 				// Insert the status_changed sync_change BEFORE the UPDATE so
 				// that old_status reflects the pre-UPDATE value.
 				if _, err := w.DB.NewRaw(
-					`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, old_status, new_status, created_at)
-					 VALUES (?, ?, ?, ?, 'status_changed', ?, ?, ?, now())`,
-					uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title, existingOwnership, &ownership,
+					`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, old_status, new_status, created_at)
+					 VALUES (?, ?, ?, ?, ?, 'status_changed', ?, ?, ?, now())`,
+					uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title, existingOwnership, &ownership,
 				).Exec(ctx); err != nil {
 					slog.Error("user_game_write: insert sync_change (status_changed)", "err", err)
 				}
@@ -812,17 +812,17 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	// preventing orphan user_games + changes rows on platform-load failure.
 	if isNewRow.IsNew {
 		if _, err := w.DB.NewRaw(
-			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-			 VALUES (?, ?, ?, ?, 'added', ?, now())`,
-			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
+			`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, created_at)
+			 VALUES (?, ?, ?, ?, ?, 'added', ?, now())`,
+			uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title,
 		).Exec(ctx); err != nil {
 			slog.Error("user_game_write: insert sync_change (added)", "err", err)
 		}
 	} else if !platformUpgraded {
 		if _, err := w.DB.NewRaw(
-			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-			 VALUES (?, ?, ?, ?, 'already_in_library', ?, now())`,
-			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
+			`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, created_at)
+			 VALUES (?, ?, ?, ?, ?, 'already_in_library', ?, now())`,
+			uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title,
 		).Exec(ctx); err != nil {
 			slog.Error("user_game_write: insert sync_change (already_in_library)", "err", err)
 		}

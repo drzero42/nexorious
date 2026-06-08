@@ -1140,6 +1140,66 @@ func TestRecentJobs_ReturnsProgressAndAddedItems(t *testing.T) {
 	}
 }
 
+// TestRecentJobs_SurfacesUserGameID verifies that a change row carrying a
+// user_game_id surfaces it in the recent-jobs payload (so the UI can link to
+// /games/$id), while a change without one (e.g. removed) omits the field.
+func TestRecentJobs_SurfacesUserGameID(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "recent-usergame-link")
+
+	insertGame(t, testDB, 4242, "Game A")
+	insertUserGame(t, testDB, "ug-link-1", userID, 4242)
+
+	jobID := uuid.NewString()
+	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed")
+
+	// 'added' change points at the resulting library entry.
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO changes (id, job_id, user_id, user_game_id, title, change_type, created_at)
+         VALUES (gen_random_uuid(), ?, ?, ?, 'Game A', 'added', now())`,
+		jobID, userID, "ug-link-1",
+	); err != nil {
+		t.Fatalf("insert added change: %v", err)
+	}
+	// 'removed' change has no resulting library entry → no user_game_id.
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO changes (id, job_id, user_id, title, change_type, created_at)
+         VALUES (gen_random_uuid(), ?, ?, 'Gone Game', 'removed', now())`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert removed change: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/jobs/recent?source=steam", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	job := resp["jobs"].([]any)[0].(map[string]any)
+
+	addedItems, _ := job["added_items"].([]any)
+	if len(addedItems) != 1 {
+		t.Fatalf("expected 1 added_item, got %d", len(addedItems))
+	}
+	added := addedItems[0].(map[string]any)
+	if added["user_game_id"] != "ug-link-1" {
+		t.Errorf("expected added user_game_id=ug-link-1, got %v", added["user_game_id"])
+	}
+
+	removedItems, _ := job["removed_items"].([]any)
+	if len(removedItems) != 1 {
+		t.Fatalf("expected 1 removed_item, got %d", len(removedItems))
+	}
+	removed := removedItems[0].(map[string]any)
+	if _, present := removed["user_game_id"]; present {
+		t.Errorf("removed item should omit user_game_id, got %v", removed["user_game_id"])
+	}
+}
+
 func TestHandleGetJobItems_SortsPendingReviewAlphabetically(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)

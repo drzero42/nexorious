@@ -327,9 +327,9 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 	if _, err := w.DB.NewRaw(
-		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-		 VALUES (?, ?, ?, NULL, ?, ?, now())`,
-		uuid.NewString(), item.JobID, item.UserID, changeType, item.SourceTitle,
+		`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, created_at)
+		 VALUES (?, ?, ?, NULL, ?, ?, ?, now())`,
+		uuid.NewString(), item.JobID, item.UserID, ug.ID, changeType, item.SourceTitle,
 	).Exec(ctx); err != nil {
 		slog.Error("import_item: insert change", "err", err)
 	}
