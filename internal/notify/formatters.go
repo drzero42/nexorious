@@ -77,6 +77,9 @@ func Format(eventType string, payload json.RawMessage) (title, body string, deco
 		if decodeErr != nil {
 			body = "Your game library changed."
 		} else {
+			if p.Storefront != "" {
+				title = p.Storefront + " library changes"
+			}
 			body = formatDiff(p.Added, p.Removed)
 		}
 
