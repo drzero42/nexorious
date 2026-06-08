@@ -235,7 +235,7 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.DELETE("/ignored/:id", h.HandleUnskipGame)
 	// "external-games" is a static prefix — must be registered before /:storefront (POST)
 	// per Echo v5 route ordering rules.
-	g.POST("/external-games/:id/rematch", h.HandleRematchExternalGame) // implemented in Task 4
+	g.POST("/external-games/:id/rematch", h.HandleRematchExternalGame)
 	// static route /:storefront/external-games/retry-failed registered before
 	// parameterised /:storefront routes per Echo v5 ordering rules.
 	g.POST("/:storefront/external-games/retry-failed", h.HandleRetryFailedExternalGames)
