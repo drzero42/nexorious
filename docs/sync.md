@@ -38,7 +38,7 @@ The sync system reads and writes these core tables:
 | Table | Role |
 |---|---|
 | `user_sync_configs` | Credentials, sync frequency, and last sync timestamp per user and storefront |
-| `external_games` | One row per user + storefront + game; persists across sync runs. `parent_id` (nullable FK to self) marks duplicate-SKU siblings established at Stage 1 |
+| `external_games` | One row per user + storefront + game; persists across sync runs. `parent_id` (nullable FK to self) marks duplicate-SKU siblings established at Stage 1. `store_link` (nullable) holds the product-page identifier written by store-link enrichment; `source_metadata` (jsonb, nullable) captures per-source resolution inputs (e.g. Epic's namespace) at Stage 1 |
 | `external_game_platforms` | Platform slugs and per-platform playtime for each ExternalGame |
 | `jobs` | One row per sync run; tracks status and lifecycle |
 | `job_items` | One row per game per sync run; tracks matching progress |
@@ -164,6 +164,7 @@ The interface requires a `GetLibrary` method that accepts a context, a batch siz
 | `Platforms` | []string | Platform names in storefront-specific format; resolved to canonical slugs by the worker |
 | `OwnershipStatus` | string | `owned`, `subscription`, etc. |
 | `IsSubscription` | bool | True if the game is accessed via a subscription service |
+| `SourceMetadata` | map[string]string | Optional per-source resolution inputs captured for later store-link enrichment (currently only Epic sets `{"namespace": …}`); persisted to `external_games.source_metadata`. Never used to build the link directly |
 
 ---
 
@@ -323,6 +324,46 @@ Credentials are stored encrypted at rest in `user_sync_configs.storefront_creden
 
 ---
 
+## Store-Link Enrichment
+
+The game details page renders each storefront a game is associated with as a deep-link to that game's product page on that store. The link target is resolved by a dedicated background worker, decoupled from the sync pipeline so sync never blocks on per-game store lookups.
+
+### Storage & URL model
+
+A single `external_games.store_link` column holds whatever a store needs to build its product URL — always the same column for every storefront, holding a slug or an ID depending on the store. A pure URL-builder in the API layer (`internal/api/store_url.go`, `buildStoreURL`) turns `(storefront, store_link)` into the product URL when serving the game details endpoint, reading only `store_link`. URL formats live in code, so a store changing its scheme is a code fix, not a re-sync. A storefront is rendered as a link iff the builder returns a URL; otherwise it stays a plain label.
+
+| Storefront | `store_link` holds | URL |
+|---|---|---|
+| `steam` | appid | `https://store.steampowered.com/app/{store_link}/` |
+| `gog` | product slug | `https://www.gog.com/game/{store_link}` |
+| `epic-games-store` | product slug | `https://store.epicgames.com/en-US/p/{store_link}` |
+| `playstation-store` | concept ID | `https://store.playstation.com/en-us/concept/{store_link}` |
+| `humble-bundle` | — (always null) | no link |
+
+### Ownership: enrichment is the sole writer
+
+`store_link` is written **only** by the enrichment worker; the sync upsert (Stage 1) never touches it, so a re-sync can never null a resolved link. Sync's only contribution is capturing resolution *inputs*: the Epic adapter records its `namespace` into `external_games.source_metadata` (Epic's `productmapping` is keyed by namespace, which is not derivable from `external_id` alone). The other stores resolve from `external_id` directly.
+
+### Workers
+
+Modelled on the metadata-refresh pattern (a dispatch + item worker pair, in `internal/worker/tasks/store_link_refresh.go`):
+
+- **`StoreLinkRefreshDispatchWorker`** selects the distinct `(user, storefront)` groups needing work from `external_games` (restricted to the resolvable storefronts), creates a `jobs` row plus **one `job_item` per group**, and enqueues a per-group item job. A scoped active-job guard prevents a duplicate pass for the same scope (a Steam sync finishing never blocks a GOG enrichment).
+  - `Force = false` (incremental): only rows where `store_link IS NULL`.
+  - `Force = true`: re-resolves every row from upstream (the "fix stale/broken links" pass).
+- **`StoreLinkRefreshItemWorker`** resolves the rows for its one `(user, storefront)` group, amortising shared setup once per group (Epic's `productmapping` fetch; PSN authentication). Resolution is **best-effort**: a failed or empty lookup leaves `store_link` null and never fails the job. Per-storefront resolvers live in `internal/services/storelink` (Steam copies the appid; GOG hits the public `api.gog.com/products/{id}`; Epic looks up the captured namespace in `productmapping`; PSN resolves a concept ID via the catalog API using the user's NPSSO).
+
+### Triggers
+
+Enrichment is **event-driven, never periodic**:
+
+- **Sync completion** — when a sync job finalizes, `SyncCheckJobCompletion` enqueues a **scoped, incremental** dispatch (`Force = false`) for that job's storefront only. New/changed games get links shortly after their sync.
+- **Admin maintenance** — `POST /api/games/store-links/refresh-job` (admin-only; the "Refresh store links" button on the maintenance page) enqueues a **global, forced** dispatch (`Force = true`) that re-resolves every resolvable row from upstream.
+
+Storefront associations created outside sync (e.g. CSV import onto non-sync stores) have no resolver and render no link. Existing rows show no link until their storefront re-syncs (or an admin runs the manual refresh); there is no migration-time backfill.
+
+---
+
 ## Scheduled Sync
 
 A periodic worker checks `user_sync_configs` for all users where the sync frequency is not `manual` and the last sync was more than the configured interval ago (hourly / daily / weekly). For each, it creates a Job and enqueues a Stage 1 run — provided no active job already exists for that user and storefront. All five storefronts support scheduled sync.
@@ -332,6 +373,8 @@ A periodic worker checks `user_sync_configs` for all users where the sync freque
 ## Maintenance
 
 Maintenance tasks that support the sync system — sync history pruning, orphaned item rescue, and stale job cleanup — are documented in [docs/maintenance.md](maintenance.md).
+
+An admin can also trigger a global store-link refresh (re-resolving every storefront product link from upstream) from the maintenance page; see [Store-Link Enrichment](#store-link-enrichment).
 
 ---
 
@@ -346,6 +389,7 @@ All adapters implement the same interface. The differences below are the only pl
 - **Rate limiting:** A token bucket enforces a minimum delay between AppDetails calls. On a 429 response, the adapter backs off and retries. Rate limiting is handled consistently with the shared library's backoff interface
 - **Platforms:** `pc-windows`, `mac`, `pc-linux` as reported by AppDetails; all supported platforms are recorded as separate `external_game_platforms` rows
 - **Playtime:** Provided as a single total across all platforms. The adapter assigns this value to the `hours_played` of the highest-priority platform row in the order `pc-windows` → `mac` → `pc-linux`; all other platform rows for the same game receive 0
+- **Store link:** `store_link` is the appid (the same value as `external_id`); enrichment copies it directly, no API call
 
 ### PSN
 
@@ -354,6 +398,7 @@ All adapters implement the same interface. The differences below are the only pl
 - **Rate limiting:** No published hard limit; the adapter applies a conservative request delay between pages
 - **Platforms:** Derived from the `category` field in the API response — `ps4_game` maps to `playstation-4`, `ps5_native_game` maps to `playstation-5`. PSN creates one ExternalGame row per title ID, so the PS4 and PS5 versions of the same game appear as two separate ExternalGame rows, each with their own platform and playtime
 - **Playtime:** Provided per title ID as an ISO 8601 duration string, parsed to hours
+- **Store link:** `store_link` is a store concept ID; enrichment resolves it from the title ID via the catalog API (`GET /api/catalog/v2/titles/{titleId}/concepts`) using the user's NPSSO. Titles with no resolvable concept stay null
 
 ### GOG
 
@@ -362,6 +407,7 @@ All adapters implement the same interface. The differences below are the only pl
 - **Rate limiting:** Conservative request delay between pages
 - **Platforms:** Reported per entry; mapped to canonical slugs
 - **Playtime:** Not provided by the GOG API; always 0
+- **Store link:** `store_link` is the product slug; enrichment resolves it from the numeric product id via the public `GET https://api.gog.com/products/{id}` endpoint (no auth — separate from the OAuth library fetch)
 
 ### Epic Games Store
 
@@ -371,6 +417,7 @@ All adapters implement the same interface. The differences below are the only pl
 - **Rate limiting:** Handled internally by the Legendary CLI
 - **Platforms:** Epic does not expose per-game platform data; all entries are `pc-windows`
 - **Playtime:** Not provided; always 0
+- **Store link:** `store_link` is the product slug. The adapter captures each entry's `namespace` into `source_metadata` at Stage 1; enrichment looks that namespace up in the public `productmapping` dictionary (`GET https://store-content-ipv4.ak.epicgames.com/api/content/productmapping`, fetched once per group). Namespaces absent from the mapping stay null
 
 ### Humble Bundle
 
@@ -380,6 +427,7 @@ All adapters implement the same interface. The differences below are the only pl
 - **Rate limiting:** Conservative request delay (5 req/sec) between API calls
 - **Platforms:** Mapped in-adapter — `windows`→`pc-windows`, `mac`→`mac`, `linux`→`pc-linux`, `android`→`android` (union across a subproduct's qualifying downloads). PC and Android editions are separate subproducts (distinct `machine_name`, shared title); the adapter emits both and the pipeline collapses them into one library entry with the union of platforms
 - **Playtime:** Not provided by Humble; always 0
+- **Store link:** none — there is no reliable public per-game store URL for the items ingested; `store_link` stays null and no link is rendered
 
 ---
 
