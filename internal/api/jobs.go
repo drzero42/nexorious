@@ -313,10 +313,14 @@ func (h *JobsHandler) HandleJobTypeStatus(c *echo.Context) error {
 }
 
 // syncChangeItem is a summary of a changes row for the recent jobs endpoint.
+// UserGameID is populated for changes that resulted in a library entry (added,
+// updated, status_changed, already_in_library); the frontend renders the title
+// as a link to /games/$id when present and as plain text otherwise.
 type syncChangeItem struct {
-	Title     string  `bun:"title"      json:"title"`
-	OldStatus *string `bun:"old_status" json:"old_status,omitempty"`
-	NewStatus *string `bun:"new_status" json:"new_status,omitempty"`
+	Title      string  `bun:"title"        json:"title"`
+	UserGameID *string `bun:"user_game_id" json:"user_game_id,omitempty"`
+	OldStatus  *string `bun:"old_status"   json:"old_status,omitempty"`
+	NewStatus  *string `bun:"new_status"   json:"new_status,omitempty"`
 }
 
 // HandleRecentJobs handles GET /api/jobs/recent (filters: source, job_type, days_back, limit).
@@ -397,11 +401,12 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		var allChanges []struct {
 			ChangeType string  `bun:"change_type"`
 			Title      string  `bun:"title"`
+			UserGameID *string `bun:"user_game_id"`
 			OldStatus  *string `bun:"old_status"`
 			NewStatus  *string `bun:"new_status"`
 		}
 		if err := h.db.NewRaw(`
-			SELECT change_type, title, old_status, new_status
+			SELECT change_type, title, user_game_id, old_status, new_status
 			FROM changes
 			WHERE job_id = ?
 			ORDER BY created_at`,
@@ -420,19 +425,19 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		for _, sc := range allChanges {
 			switch sc.ChangeType {
 			case "added":
-				addedItems = append(addedItems, syncChangeItem{Title: sc.Title})
+				addedItems = append(addedItems, syncChangeItem{Title: sc.Title, UserGameID: sc.UserGameID})
 			case "updated":
-				updatedItems = append(updatedItems, syncChangeItem{Title: sc.Title})
+				updatedItems = append(updatedItems, syncChangeItem{Title: sc.Title, UserGameID: sc.UserGameID})
 			case "removed":
 				removedItems = append(removedItems, syncChangeItem{Title: sc.Title})
 			case "status_changed":
 				statusChangedItems = append(statusChangedItems, syncChangeItem{
-					Title: sc.Title, OldStatus: sc.OldStatus, NewStatus: sc.NewStatus,
+					Title: sc.Title, UserGameID: sc.UserGameID, OldStatus: sc.OldStatus, NewStatus: sc.NewStatus,
 				})
 			case "skipped":
 				skippedItems = append(skippedItems, syncChangeItem{Title: sc.Title})
 			case "already_in_library":
-				alreadyInLibraryItems = append(alreadyInLibraryItems, syncChangeItem{Title: sc.Title})
+				alreadyInLibraryItems = append(alreadyInLibraryItems, syncChangeItem{Title: sc.Title, UserGameID: sc.UserGameID})
 			}
 		}
 

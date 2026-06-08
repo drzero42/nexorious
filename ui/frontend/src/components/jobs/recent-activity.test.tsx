@@ -68,6 +68,36 @@ describe('RecentActivity', () => {
     expect(screen.queryByTestId('job-items-details')).not.toBeInTheDocument();
   });
 
+  it('links a change to its library entry when userGameId is present, plain text otherwise', () => {
+    vi.mocked(useRecentJobs).mockReturnValue({
+      data: {
+        jobs: [
+          baseJob({
+            addedItems: [
+              { title: 'Portal', userGameId: 'ug-123', oldStatus: null, newStatus: null },
+              { title: 'Half-Life', userGameId: null, oldStatus: null, newStatus: null },
+            ],
+          }),
+        ],
+      },
+      isLoading: false,
+    } as ReturnType<typeof useRecentJobs>);
+
+    render(<RecentActivity source="steam" />);
+
+    // Expand the job row, then the "Added to library" group.
+    fireEvent.click(screen.getByRole('button', { name: /completed/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Added to library/i }));
+
+    // With an id, the title is a link to /games/$id.
+    const link = screen.getByRole('link', { name: 'Portal' });
+    expect(link).toHaveAttribute('href', '/games/ug-123');
+
+    // Without an id, the title is plain text (no link).
+    expect(screen.queryByRole('link', { name: 'Half-Life' })).not.toBeInTheDocument();
+    expect(screen.getByText('Half-Life')).toBeInTheDocument();
+  });
+
   it('falls back to per-item details when there are no change rows', () => {
     vi.mocked(useRecentJobs).mockReturnValue({
       data: {

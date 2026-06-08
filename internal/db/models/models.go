@@ -218,6 +218,7 @@ type JobChange struct {
 	JobID          string    `bun:"job_id,notnull"      json:"job_id"`
 	UserID         string    `bun:"user_id,notnull"     json:"user_id"`
 	ExternalGameID *string   `bun:"external_game_id"    json:"external_game_id"`
+	UserGameID     *string   `bun:"user_game_id"        json:"user_game_id"`
 	ChangeType     string    `bun:"change_type,notnull" json:"change_type"`
 	Title          string    `bun:"title,notnull"       json:"title"`
 	OldStatus      *string   `bun:"old_status"          json:"old_status"`

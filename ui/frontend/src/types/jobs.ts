@@ -169,6 +169,13 @@ export interface JobItemDetail extends JobItem {
 
 export interface SyncChangeItem {
   title: string;
+  /**
+   * The resulting library entry's user_game id, when the change produced one
+   * (added, updated, status_changed, already_in_library). Null for skipped and
+   * removed changes, and for legacy rows written before this was captured. When
+   * present, Recent Activity renders the title as a link to /games/$id.
+   */
+  userGameId?: string | null;
   oldStatus?: string | null;
   newStatus?: string | null;
 }
