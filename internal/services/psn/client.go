@@ -365,18 +365,28 @@ func (c *Client) Authenticate(ctx context.Context, npssoToken string) (string, e
 	return token, nil
 }
 
-type conceptsResponse struct {
-	Concepts []struct {
-		ID string `json:"id"`
-	} `json:"concepts"`
+// conceptSummary is one element of the catalog concepts response, which is a
+// top-level JSON array. The concept ID builds the store URL /concept/{id}.
+// `id` is decoded as json.Number to tolerate either a string or numeric form.
+type conceptSummary struct {
+	ID json.Number `json:"id"`
+}
+
+// bodySnippet truncates a response body for inclusion in diagnostics.
+func bodySnippet(b []byte) string {
+	const max = 400
+	if len(b) > max {
+		return string(b[:max]) + "…"
+	}
+	return string(b)
 }
 
 // ResolveConceptID resolves a PSN titleId to its store concept ID via the
-// catalog API. Returns "" (no error) when the title has no resolvable concept.
-//
-// NOTE: the exact JSON shape of /catalog/v2/titles/{id}/concepts is unverified;
-// confirm against a live response and adjust conceptsResponse + extraction if
-// needed. Authenticated with the access token from Authenticate.
+// catalog API. Returns "" (no error) when the title has no resolvable concept
+// (404). The response is a top-level JSON array of concept summaries; the first
+// element's `id` is the concept ID. On an unexpected payload the error embeds a
+// body snippet so the actual shape surfaces in logs. Authenticated with the
+// access token from Authenticate.
 func (c *Client) ResolveConceptID(ctx context.Context, accessToken, titleID string) (string, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
 		return "", fmt.Errorf("psn: rate limiter wait: %w", err)
@@ -395,17 +405,25 @@ func (c *Client) ResolveConceptID(ctx context.Context, accessToken, titleID stri
 	if resp.StatusCode == http.StatusNotFound {
 		return "", nil
 	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("psn: concepts read: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("psn: concepts HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("psn: concepts HTTP %d (body: %s)", resp.StatusCode, bodySnippet(body))
 	}
-	var body conceptsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", fmt.Errorf("psn: concepts decode: %w", err)
+	var concepts []conceptSummary
+	if err := json.Unmarshal(body, &concepts); err != nil {
+		return "", fmt.Errorf("psn: concepts decode: %w (body: %s)", err, bodySnippet(body))
 	}
-	if len(body.Concepts) == 0 || body.Concepts[0].ID == "" {
+	if len(concepts) == 0 {
 		return "", nil
 	}
-	return body.Concepts[0].ID, nil
+	id := concepts[0].ID.String()
+	if id == "" {
+		return "", fmt.Errorf("psn: concepts: first element has no id (body: %s)", bodySnippet(body))
+	}
+	return id, nil
 }
 
 // GetLibrary fetches the user's PSN game library. The owned/purchased endpoint
