@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.1](https://github.com/drzero42/nexorious/compare/v0.10.0...v0.10.1) (2026-06-09)
+
+
+### Bug Fixes
+
+* embed only user and admin guides in-app ([#902](https://github.com/drzero42/nexorious/issues/902)) ([aa03b95](https://github.com/drzero42/nexorious/commit/aa03b95bc38b795e5aca688a6bd9bc6bc7984158))
+* include embedded docs in container build context ([#904](https://github.com/drzero42/nexorious/issues/904)) ([1cd607a](https://github.com/drzero42/nexorious/commit/1cd607a010ebb92bfb6e7a0000100e5be016c6c6))
+
 ## [0.10.0](https://github.com/drzero42/nexorious/compare/v0.9.0...v0.10.0) (2026-06-09)
 
 
