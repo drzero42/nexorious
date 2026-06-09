@@ -68,7 +68,7 @@ func newTestEcho(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 } {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(testEncrypter, cfg, m, db, "", nil, nil, nil, "dev", "unknown")
+	return api.New(testEncrypter, cfg, m, db, "", nil, nil, nil, "dev", "unknown", nil)
 }
 
 // newTestEchoPool returns an Echo instance wired with a real db, ready
@@ -80,7 +80,7 @@ func newTestEchoPool(t *testing.T, db *bun.DB, cfg *config.Config) interface {
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	rc := newTestRiverClient(t)
-	return api.New(testEncrypter, cfg, m, db, "", nil, nil, nil, "dev", "unknown", rc)
+	return api.New(testEncrypter, cfg, m, db, "", nil, nil, nil, "dev", "unknown", nil, rc)
 }
 
 // newTestRiverClient builds a non-started River client against the shared
@@ -274,7 +274,7 @@ func TestHandleLogin_MalformedJSON(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testEncrypter, cfg, m, testDB, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, cfg, m, testDB, "", nil, nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader("{not-json"))
 	req.Header.Set("Content-Type", "application/json")

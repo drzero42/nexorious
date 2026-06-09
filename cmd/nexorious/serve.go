@@ -366,7 +366,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		RebuildBackupJob: func(_ context.Context, _, _ string, _ int) {},
 	}
 
-	e := api.New(encrypter, cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, version, commit, riverClient)
+	e := api.New(encrypter, cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, version, commit, updateState, riverClient)
 
 	// StartDBProbe — polls every 5s, calls initAppState on recovery.
 	migrator.StartDBProbe(shutdownCtx, db, initAppState)
