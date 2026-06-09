@@ -22,6 +22,7 @@ func TestUpdateAvailable(t *testing.T) {
 		{"garbage latest", "0.9.0", "next", false},
 		{"empty latest", "0.9.0", "", false},
 		{"prerelease latest older than stable", "1.0.0", "1.1.0-rc1", true},
+		{"stable latest newer than prerelease running", "1.1.0-rc1", "1.1.0", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
