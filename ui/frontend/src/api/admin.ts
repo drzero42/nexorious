@@ -128,10 +128,23 @@ export async function startMetadataRefreshJob(
 
 /**
  * Start a store-link refresh job (admin only). Re-resolves every storefront
- * product link from upstream.
+ * product link from upstream. Returns the real job id created server-side.
  */
-export async function startStoreLinkRefreshJob(): Promise<{ success: boolean; message: string }> {
-  return api.post<{ success: boolean; message: string }>('/games/store-links/refresh-job', {});
+export async function startStoreLinkRefreshJob(): Promise<{
+  success: boolean;
+  message: string;
+  jobId: string;
+}> {
+  const response = await api.post<{
+    success: boolean;
+    message: string;
+    job_id: string;
+  }>('/games/store-links/refresh-job', {});
+  return {
+    success: response.success,
+    message: response.message,
+    jobId: response.job_id,
+  };
 }
 
 /**
