@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.10.0](https://github.com/drzero42/nexorious/compare/v0.9.0...v0.10.0) (2026-06-09)
+
+
+### Features
+
+* render docs/ guides in-app (embedded markdown viewer) ([#900](https://github.com/drzero42/nexorious/issues/900)) ([f7433f9](https://github.com/drzero42/nexorious/commit/f7433f9b35210db8be7d37d8db417bd1846b1d28)), closes [#887](https://github.com/drzero42/nexorious/issues/887)
+
+
+### Bug Fixes
+
+* clamp howlongtobeat values to NUMERIC(6,2) column max ([#882](https://github.com/drzero42/nexorious/issues/882)) ([e533dff](https://github.com/drzero42/nexorious/commit/e533dffe13258ce41fe7406f8668ab1f2f6042e5)), closes [#869](https://github.com/drzero42/nexorious/issues/869)
+* default is_available to true in HandleCreatePlatform ([#886](https://github.com/drzero42/nexorious/issues/886)) ([ac671e0](https://github.com/drzero42/nexorious/commit/ac671e000f7ee470312ab98edf276a2410f9ae07)), closes [#880](https://github.com/drzero42/nexorious/issues/880)
+* detect Epic DLC via metadata.mainGameItem ([#885](https://github.com/drzero42/nexorious/issues/885)) ([461ea86](https://github.com/drzero42/nexorious/commit/461ea863ff331c01f2a70e0d2d6d9e4be41358ad)), closes [#870](https://github.com/drzero42/nexorious/issues/870)
+* maintenance start handlers create jobs row and return real job_id ([#892](https://github.com/drzero42/nexorious/issues/892)) ([6ea2c09](https://github.com/drzero42/nexorious/commit/6ea2c09ed5db62dd614daf4eec6b5c34ab708198)), closes [#890](https://github.com/drzero42/nexorious/issues/890)
+* prevent stale completed maintenance job from re-appearing on start ([#889](https://github.com/drzero42/nexorious/issues/889)) ([a64a9dd](https://github.com/drzero42/nexorious/commit/a64a9dd5c0ac05fac71bb1db8fcd0f00430da38d)), closes [#884](https://github.com/drzero42/nexorious/issues/884)
+* serialize job creation with advisory locks to close TOCTOU duplicate-job races ([#894](https://github.com/drzero42/nexorious/issues/894)) ([ecbe152](https://github.com/drzero42/nexorious/commit/ecbe152bb29b9934aee4fa8a0fa3eeeac6ef9213)), closes [#891](https://github.com/drzero42/nexorious/issues/891)
+
 ## [0.9.0](https://github.com/drzero42/nexorious/compare/v0.8.1...v0.9.0) (2026-06-09)
 
 
