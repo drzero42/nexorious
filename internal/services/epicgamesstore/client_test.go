@@ -175,3 +175,26 @@ func TestParseLegendaryList_NamespaceFromMetadata(t *testing.T) {
 		t.Fatalf("entry[1].Namespace = %q, want ns-other", entries[1].Namespace)
 	}
 }
+
+// TestParseLegendaryList_SkipsDLC verifies DLC entries are filtered out. legendary
+// marks a DLC by nesting metadata.mainGameItem (the main game it belongs to);
+// main games carry no mainGameItem. The legacy top-level main_game_appname field
+// is never emitted by legendary, so the filter must key off metadata.mainGameItem.
+func TestParseLegendaryList_SkipsDLC(t *testing.T) {
+	// Shape mirrors `legendary list --json`: a main game (no mainGameItem) and a
+	// DLC entry (metadata.mainGameItem present and non-null).
+	out := []byte(`[
+	  {"app_name":"main123","app_title":"Main Game","metadata":{"namespace":"ns-main"}},
+	  {"app_name":"dlc456","app_title":"Main Game - Season Pass","metadata":{"namespace":"ns-main","mainGameItem":{"id":"main123"}}}
+	]`)
+	entries, err := parseLegendaryList(out)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1 (DLC should be filtered out)", len(entries))
+	}
+	if entries[0].ExternalID != "main123" {
+		t.Fatalf("kept entry ExternalID = %q, want main123 (the main game)", entries[0].ExternalID)
+	}
+}
