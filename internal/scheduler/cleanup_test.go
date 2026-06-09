@@ -42,6 +42,16 @@ func TestCleanupOldJobs_DeletesExpiredJobs(t *testing.T) {
 		t.Fatalf("insert recent job: %v", err)
 	}
 
+	// Insert an active job with no completed_at — should never be deleted.
+	_, err = testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority)
+		 VALUES ('active-job-1', ?, 'import', 'manual', 'processing', 'low')`,
+		userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert active job: %v", err)
+	}
+
 	scheduler.CleanupOldJobs(ctx, testDB)
 
 	// Old job should be gone.
@@ -59,6 +69,14 @@ func TestCleanupOldJobs_DeletesExpiredJobs(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("expected recent job to remain, got count=%d", count)
+	}
+
+	// Active job (no completed_at) should survive cleanup.
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE id = 'active-job-1'`).Scan(ctx, &count); err != nil {
+		t.Fatalf("check active job: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected active job to remain, got count=%d", count)
 	}
 }
 

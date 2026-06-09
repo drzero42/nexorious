@@ -89,24 +89,53 @@ func TestGetAppDetailsPlatforms_HappyPath_MixedPlatforms(t *testing.T) {
 	}
 }
 
-func TestGetAppDetailsPlatforms_SuccessFalse_ReturnsZeroValueNoError(t *testing.T) {
-	// success=false means Steam has no current store data for this appid (e.g. removed
-	// or delisted games). The caller treats Platforms{} the same as all-false platforms
-	// and falls back to a default, so we must not error here.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"730": map[string]any{"success": false},
-		})
-	}))
-	defer srv.Close()
-
-	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
-	pl, err := c.GetAppDetailsPlatforms(context.Background(), 730)
-	if err != nil {
-		t.Fatalf("expected no error for success=false, got %v", err)
+func TestGetAppDetailsPlatforms_ReturnsZeroValueNoError(t *testing.T) {
+	tests := []struct {
+		name string
+		// body is the JSON the appdetails endpoint returns for appid 730.
+		body map[string]any
+	}{
+		{
+			// success=false means Steam has no current store data for this appid
+			// (e.g. removed or delisted games). The caller treats Platforms{} the
+			// same as all-false platforms and falls back to a default, so we must
+			// not error here.
+			name: "success false",
+			body: map[string]any{"730": map[string]any{"success": false}},
+		},
+		{
+			name: "all-false platforms",
+			body: map[string]any{
+				"730": map[string]any{
+					"success": true,
+					"data": map[string]any{
+						"platforms": map[string]any{
+							"windows": false,
+							"mac":     false,
+							"linux":   false,
+						},
+					},
+				},
+			},
+		},
 	}
-	if pl.Windows || pl.Mac || pl.Linux {
-		t.Errorf("expected all-false Platforms{}, got %+v", pl)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(tt.body)
+			}))
+			defer srv.Close()
+
+			c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
+			pl, err := c.GetAppDetailsPlatforms(context.Background(), 730)
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if pl.Windows || pl.Mac || pl.Linux {
+				t.Errorf("expected all-false Platforms{}, got %+v", pl)
+			}
+		})
 	}
 }
 
@@ -133,33 +162,6 @@ func TestGetAppDetailsPlatforms_HTTP500_ReturnsError(t *testing.T) {
 	_, err := c.GetAppDetailsPlatforms(context.Background(), 730)
 	if err == nil {
 		t.Fatal("expected error for HTTP 500, got nil")
-	}
-}
-
-func TestGetAppDetailsPlatforms_AllFalsePlatforms_ReturnsZeroValueNoError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"730": map[string]any{
-				"success": true,
-				"data": map[string]any{
-					"platforms": map[string]any{
-						"windows": false,
-						"mac":     false,
-						"linux":   false,
-					},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
-	pl, err := c.GetAppDetailsPlatforms(context.Background(), 730)
-	if err != nil {
-		t.Fatalf("expected no error for all-false platforms, got %v", err)
-	}
-	if pl.Windows || pl.Mac || pl.Linux {
-		t.Errorf("expected all-false Platforms{}, got %+v", pl)
 	}
 }
 
@@ -200,28 +202,19 @@ func TestGetAppDetailsPlatforms_MissingAppIDKey_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestGetOwnedGames_403_ReturnsErrAPIKeyRejected(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer srv.Close()
+func TestGetOwnedGames_AuthFailure_ReturnsErrAPIKeyRejected(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
 
-	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
-	_, err := c.GetOwnedGames(context.Background(), "badkey", "steamid")
-	if !errors.Is(err, steam.ErrAPIKeyRejected) {
-		t.Errorf("expected ErrAPIKeyRejected on 403, got %v", err)
-	}
-}
-
-func TestGetOwnedGames_401_ReturnsErrAPIKeyRejected(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer srv.Close()
-
-	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
-	_, err := c.GetOwnedGames(context.Background(), "badkey", "steamid")
-	if !errors.Is(err, steam.ErrAPIKeyRejected) {
-		t.Errorf("expected ErrAPIKeyRejected on 401, got %v", err)
+			c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
+			_, err := c.GetOwnedGames(context.Background(), "badkey", "steamid")
+			if !errors.Is(err, steam.ErrAPIKeyRejected) {
+				t.Errorf("expected ErrAPIKeyRejected on %d, got %v", status, err)
+			}
+		})
 	}
 }

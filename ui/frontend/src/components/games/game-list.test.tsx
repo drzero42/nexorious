@@ -98,19 +98,6 @@ describe('GameList', () => {
 
       expect(screen.queryByText('No games found')).not.toBeInTheDocument();
     });
-
-    it('renders table headers during loading', () => {
-      render(<GameList games={[]} isLoading={true} />);
-
-      expect(screen.getByText('Cover')).toBeInTheDocument();
-      expect(screen.getByText('Title')).toBeInTheDocument();
-      expect(screen.getByText('Status')).toBeInTheDocument();
-      expect(screen.getByText('Platform(s)')).toBeInTheDocument();
-      expect(screen.getByText('Hours')).toBeInTheDocument();
-      expect(screen.getByText('Time to Beat')).toBeInTheDocument();
-      expect(screen.getByText('Rating')).toBeInTheDocument();
-      expect(screen.getByText('IGDB')).toBeInTheDocument();
-    });
   });
 
   describe('empty state', () => {
@@ -199,13 +186,6 @@ describe('GameList', () => {
       const rows = screen.getAllByRole('row');
       // 1 header row + 3 data rows = 4 total
       expect(rows.length).toBe(4);
-    });
-
-    it('renders game title', () => {
-      const games = [createMockGame()];
-      render(<GameList games={games} />);
-
-      expect(screen.getByText('Test Game')).toBeInTheDocument();
     });
 
     it('renders "Unknown Game" when game title is not available', () => {
@@ -501,22 +481,12 @@ describe('GameList', () => {
       expect(screen.getByText('25h')).toBeInTheDocument();
     });
 
-    it('renders "0h" when hours_played is 0', () => {
-      const games = [createMockGame({ hours_played: 0 })];
-      render(<GameList games={games} />);
-
-      expect(screen.getByText('0h')).toBeInTheDocument();
-    });
-
-    it('renders "0h" when hours_played is undefined', () => {
-      const games = [createMockGame({ hours_played: undefined as unknown as number })];
-      render(<GameList games={games} />);
-
-      expect(screen.getByText('0h')).toBeInTheDocument();
-    });
-
-    it('renders "0h" when hours_played is null', () => {
-      const games = [createMockGame({ hours_played: null as unknown as number })];
+    it.each<{ name: string; value: number }>([
+      { name: '0', value: 0 },
+      { name: 'undefined', value: undefined as unknown as number },
+      { name: 'null', value: null as unknown as number },
+    ])('renders "0h" when hours_played is $name', ({ value }) => {
+      const games = [createMockGame({ hours_played: value })];
       render(<GameList games={games} />);
 
       expect(screen.getByText('0h')).toBeInTheDocument();
@@ -573,13 +543,6 @@ describe('GameList', () => {
       const cells = screen.getAllByRole('cell');
       const ttbCell = cells.find((cell) => cell.textContent === '—');
       expect(ttbCell).toBeInTheDocument();
-    });
-
-    it('renders TTB column header', () => {
-      const games = [createMockGame()];
-      render(<GameList games={games} />);
-
-      expect(screen.getByText('Time to Beat')).toBeInTheDocument();
     });
   });
 
@@ -752,20 +715,6 @@ describe('GameList', () => {
   });
 
   describe('edge cases', () => {
-    it('renders large number of games without issues', () => {
-      const games = Array.from({ length: 100 }, (_, i) =>
-        createMockGame({
-          id: `game-${i}` as UserGameId,
-          game: { ...createMockGame().game, title: `Game ${i}` },
-        }),
-      );
-
-      render(<GameList games={games} />);
-
-      expect(screen.getByText('Game 0')).toBeInTheDocument();
-      expect(screen.getByText('Game 99')).toBeInTheDocument();
-    });
-
     it('handles games with null game object', () => {
       const game = createMockGame({
         id: 'game-1' as UserGameId,
@@ -790,13 +739,6 @@ describe('GameList', () => {
   });
 
   describe('IGDB rating display', () => {
-    it('renders "IGDB" column header', () => {
-      const games = [createMockGame()];
-      render(<GameList games={games} />);
-
-      expect(screen.getByText('IGDB')).toBeInTheDocument();
-    });
-
     it('renders formatted IGDB rating when rating_average is provided', () => {
       const games = [
         createMockGame({
@@ -906,45 +848,6 @@ describe('GameList', () => {
 
       // Game 2 should not be selected
       expect(checkboxes[1]).not.toBeChecked();
-    });
-
-    it('displays all game information fields together', () => {
-      const games = [
-        createMockGame({
-          game: { ...createMockGame().game, title: 'Complete Game' },
-          play_status: PlayStatus.COMPLETED,
-          is_loved: true,
-          hours_played: 42,
-          personal_rating: 5,
-          platforms: [
-            {
-              id: 'ugp-1',
-              platform: 'pc',
-              platform_details: {
-                name: 'pc',
-                display_name: 'PC',
-                is_active: true,
-                source: 'system',
-                created_at: '2024-01-01T00:00:00Z',
-                updated_at: '2024-01-01T00:00:00Z',
-              },
-              is_available: true,
-              hours_played: 42,
-              ownership_status: OwnershipStatus.OWNED,
-              created_at: '2024-01-01T00:00:00Z',
-            },
-          ],
-        }),
-      ];
-
-      render(<GameList games={games} />);
-
-      expect(screen.getByText('Complete Game')).toBeInTheDocument();
-      expect(screen.getByText('Completed')).toBeInTheDocument();
-      expect(screen.getByText('♥')).toBeInTheDocument();
-      expect(screen.getByText('42h')).toBeInTheDocument();
-      expect(screen.getByText('5')).toBeInTheDocument();
-      expect(screen.getByText('PC')).toBeInTheDocument();
     });
   });
 });

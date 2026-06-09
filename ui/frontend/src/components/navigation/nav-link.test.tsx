@@ -37,18 +37,6 @@ describe('NavLink', () => {
     icon: <Library className="h-4 w-4" data-testid="icon" />,
   };
 
-  it('renders label and icon', () => {
-    render(<NavLink {...defaultProps} />);
-    expect(screen.getByText('Library')).toBeInTheDocument();
-    expect(screen.getByTestId('icon')).toBeInTheDocument();
-  });
-
-  it('renders as a link', () => {
-    render(<NavLink {...defaultProps} />);
-    const link = screen.getByRole('link');
-    expect(link).toHaveAttribute('href', '/games');
-  });
-
   it('shows badge when count > 0', () => {
     render(<NavLink {...defaultProps} badge={5} />);
     expect(screen.getByText('5')).toBeInTheDocument();

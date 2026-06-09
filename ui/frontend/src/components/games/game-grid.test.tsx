@@ -139,12 +139,6 @@ describe('GameGrid', () => {
 
       expect(screen.queryByTestId(/^game-card-/)).not.toBeInTheDocument();
     });
-
-    it('does not render empty state when isLoading is true', () => {
-      render(<GameGrid games={[]} isLoading={true} />);
-
-      expect(screen.queryByText('No games found')).not.toBeInTheDocument();
-    });
   });
 
   describe('rendering games', () => {
@@ -284,20 +278,6 @@ describe('GameGrid', () => {
   });
 
   describe('edge cases', () => {
-    it('renders large number of games without issues', () => {
-      const games = Array.from({ length: 100 }, (_, i) =>
-        createMockGame({
-          id: `game-${i}` as UserGameId,
-          game: { ...createMockGame().game, title: `Game ${i}` },
-        }),
-      );
-
-      render(<GameGrid games={games} />);
-
-      expect(screen.getByText('Game 0')).toBeInTheDocument();
-      expect(screen.getByText('Game 99')).toBeInTheDocument();
-    });
-
     it('handles games with null or undefined game object', () => {
       const game = createMockGame({
         id: 'game-1' as UserGameId,

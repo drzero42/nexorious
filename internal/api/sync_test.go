@@ -127,51 +127,43 @@ func TestSyncConfig_Put_EpicGamesStoreAllowed(t *testing.T) {
 
 // ─── Sync trigger and status tests ───────────────────────────────────────────
 
+// TestSyncTrigger_CreatesJob verifies that triggering a sync for each supported
+// storefront returns 200 with status=queued and a job_id, echoing the storefront.
 func TestSyncTrigger_CreatesJob(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	_, token := setupTagUser(t, testDB, e, "trig-1")
+	tests := []struct {
+		name       string
+		suffix     string
+		storefront string
+	}{
+		{name: "steam", suffix: "trig-1", storefront: "steam"},
+		{name: "epic-games-store", suffix: "trig-epic-1", storefront: "epic-games-store"},
+		{name: "playstation-store", suffix: "trig-pss-1", storefront: "playstation-store"},
+	}
 
-	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["storefront"] != "steam" {
-		t.Fatalf("expected storefront=steam, got %v", resp["storefront"])
-	}
-	if resp["status"] != "queued" {
-		t.Fatalf("expected status=queued, got %v", resp["status"])
-	}
-	if resp["job_id"] == nil {
-		t.Fatal("expected job_id")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+			_, token := setupTagUser(t, testDB, e, tt.suffix)
 
-func TestSyncTrigger_EpicGamesStoreCreatesJob(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	_, token := setupTagUser(t, testDB, e, "trig-epic-1")
-
-	rec := postJSONAuth(t, e, "/api/sync/epic-games-store", nil, token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for epic-games-store trigger, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["storefront"] != "epic-games-store" {
-		t.Fatalf("expected storefront=epic-games-store, got %v", resp["storefront"])
-	}
-	if resp["status"] != "queued" {
-		t.Fatalf("expected status=queued, got %v", resp["status"])
-	}
-	if resp["job_id"] == nil {
-		t.Fatal("expected job_id")
+			rec := postJSONAuth(t, e, "/api/sync/"+tt.storefront, nil, token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200 for %s trigger, got %d: %s", tt.storefront, rec.Code, rec.Body.String())
+			}
+			var resp map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp["storefront"] != tt.storefront {
+				t.Fatalf("expected storefront=%s, got %v", tt.storefront, resp["storefront"])
+			}
+			if resp["status"] != "queued" {
+				t.Fatalf("expected status=queued, got %v", resp["status"])
+			}
+			if resp["job_id"] == nil {
+				t.Fatal("expected job_id")
+			}
+		})
 	}
 }
 
@@ -228,24 +220,6 @@ func TestSyncTrigger_RejectsOldSlugs(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("old slug %q: got %d, want 400", sf, rec.Code)
 		}
-	}
-}
-
-func TestSyncTrigger_PlaystationStoreCreatesJob(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	_, token := setupTagUser(t, testDB, e, "trig-pss-1")
-
-	rec := postJSONAuth(t, e, "/api/sync/playstation-store", nil, token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for playstation-store trigger, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["storefront"] != "playstation-store" {
-		t.Fatalf("expected storefront=playstation-store, got %v", resp["storefront"])
 	}
 }
 
@@ -874,108 +848,105 @@ func insertCorruptedSyncConfig(t *testing.T, db *bun.DB, userID, storefront stri
 	}
 }
 
-func TestPlaystationStoreStatus_CorruptedCredentials(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "psn-corrupt-creds")
-	insertCorruptedSyncConfig(t, testDB, userID, "playstation-store")
-
-	// Decrypt failure must surface credentials_error=true without clearing the row.
-	rec := getAuth(t, e, "/api/sync/playstation-store/connection", token)
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200 for undecryptable PSN credentials", rec.Code)
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["is_configured"] != true {
-		t.Errorf("expected is_configured=true (row still exists), got %v", resp["is_configured"])
-	}
-	if resp["credentials_error"] != true {
-		t.Errorf("expected credentials_error=true, got %v", resp["credentials_error"])
-	}
-
-	// Credentials row must NOT be cleared.
-	var creds string
-	err := testDB.NewRaw(
-		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'playstation-store'`, userID,
-	).Scan(context.Background(), &creds)
-	if err != nil {
-		t.Fatalf("credentials row missing after decrypt failure: %v", err)
-	}
-	if creds == "" {
-		t.Error("expected credentials to remain non-null after decrypt failure")
-	}
-}
-
-func TestEpicGamesStoreStatus_CorruptedCredentials(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubEpicGamesStoreClient{configured: true})
-	userID, token := setupTagUser(t, testDB, e, "epic-corrupt-creds")
-	insertCorruptedSyncConfig(t, testDB, userID, "epic-games-store")
-
-	// Decrypt failure must surface credentials_error=true without clearing the row.
-	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200 for undecryptable Epic credentials", rec.Code)
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["connected"] != true {
-		t.Errorf("expected connected=true (row still exists), got %v", resp["connected"])
-	}
-	if resp["credentials_error"] != true {
-		t.Errorf("expected credentials_error=true, got %v", resp["credentials_error"])
-	}
-
-	// Credentials row must NOT be cleared.
-	var creds string
-	err := testDB.NewRaw(
-		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'epic-games-store'`, userID,
-	).Scan(context.Background(), &creds)
-	if err != nil {
-		t.Fatalf("credentials row missing after decrypt failure: %v", err)
-	}
-	if creds == "" {
-		t.Error("expected credentials to remain non-null after decrypt failure")
-	}
-}
-
-func TestGOGStatus_CorruptedCredentials(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubGOGClient{})
-	userID, token := setupTagUser(t, testDB, e, "gog-corrupt-creds")
-	insertCorruptedSyncConfig(t, testDB, userID, "gog")
-
-	// Decrypt failure must surface credentials_error=true without clearing the row.
-	rec := getAuth(t, e, "/api/sync/gog/connection", token)
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200 for undecryptable GOG credentials", rec.Code)
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["connected"] != true {
-		t.Errorf("expected connected=true (row still exists), got %v", resp["connected"])
-	}
-	if resp["credentials_error"] != true {
-		t.Errorf("expected credentials_error=true, got %v", resp["credentials_error"])
+// TestStatus_CorruptedCredentials verifies, for every storefront, that an
+// undecryptable storefront_credentials row surfaces credentials_error=true and
+// keeps the connected/configured flag true, without clearing the row.
+func TestStatus_CorruptedCredentials(t *testing.T) {
+	tests := []struct {
+		name           string
+		suffix         string
+		storefront     string
+		path           string
+		connectedField string // "connected" or "is_configured"
+		newApp         func(t *testing.T) interface {
+			ServeHTTP(http.ResponseWriter, *http.Request)
+		}
+	}{
+		{
+			name:           "playstation-store",
+			suffix:         "psn-corrupt-creds",
+			storefront:     "playstation-store",
+			path:           "/api/sync/playstation-store/connection",
+			connectedField: "is_configured",
+			newApp: func(t *testing.T) interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			} {
+				return newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+			},
+		},
+		{
+			name:           "epic-games-store",
+			suffix:         "epic-corrupt-creds",
+			storefront:     "epic-games-store",
+			path:           "/api/sync/epic-games-store/connection",
+			connectedField: "connected",
+			newApp: func(t *testing.T) interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			} {
+				return newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubEpicGamesStoreClient{configured: true})
+			},
+		},
+		{
+			name:           "gog",
+			suffix:         "gog-corrupt-creds",
+			storefront:     "gog",
+			path:           "/api/sync/gog/connection",
+			connectedField: "connected",
+			newApp: func(t *testing.T) interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			} {
+				return newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubGOGClient{})
+			},
+		},
+		{
+			name:           "steam",
+			suffix:         "steam-conn-corrupt",
+			storefront:     "steam",
+			path:           "/api/sync/steam/connection",
+			connectedField: "connected",
+			newApp: func(t *testing.T) interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			} {
+				return newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+			},
+		},
 	}
 
-	// Credentials row must NOT be cleared.
-	var creds string
-	err := testDB.NewRaw(
-		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'gog'`, userID,
-	).Scan(context.Background(), &creds)
-	if err != nil {
-		t.Fatalf("credentials row missing after decrypt failure: %v", err)
-	}
-	if creds == "" {
-		t.Error("expected credentials to remain non-null after decrypt failure")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			e := tt.newApp(t)
+			userID, token := setupTagUser(t, testDB, e, tt.suffix)
+			insertCorruptedSyncConfig(t, testDB, userID, tt.storefront)
+
+			// Decrypt failure must surface credentials_error=true without clearing the row.
+			rec := getAuth(t, e, tt.path, token)
+			if rec.Code != http.StatusOK {
+				t.Errorf("status = %d, want 200 for undecryptable %s credentials", rec.Code, tt.storefront)
+			}
+			var resp map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp[tt.connectedField] != true {
+				t.Errorf("expected %s=true (row still exists), got %v", tt.connectedField, resp[tt.connectedField])
+			}
+			if resp["credentials_error"] != true {
+				t.Errorf("expected credentials_error=true, got %v", resp["credentials_error"])
+			}
+
+			// Credentials row must NOT be cleared.
+			var creds string
+			err := testDB.NewRaw(
+				`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = ?`, userID, tt.storefront,
+			).Scan(context.Background(), &creds)
+			if err != nil {
+				t.Fatalf("credentials row missing after decrypt failure: %v", err)
+			}
+			if creds == "" {
+				t.Error("expected credentials to remain non-null after decrypt failure")
+			}
+		})
 	}
 }
 
@@ -2283,28 +2254,9 @@ func TestGOGConnect_ExchangeFailure(t *testing.T) {
 	}
 }
 
-func TestGOGConnect_Success(t *testing.T) {
-	truncateAllTables(t)
-	stub := &stubGOGClient{
-		token: &api.GOGTokenResponse{
-			RefreshToken: "ref",
-			Username:     "goguser",
-		},
-	}
-	app := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, stub)
-	_, token := setupTagUser(t, testDB, app, "gog-conn-ok")
-
-	rec := putJSONAuth(t, app, "/api/sync/gog/connection", map[string]any{"auth_code": "good"}, token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var body map[string]string
-	_ = json.NewDecoder(rec.Body).Decode(&body)
-	if body["username"] != "goguser" {
-		t.Errorf("username: got %q", body["username"])
-	}
-}
-
+// TestGOGConnect_FullURL verifies a GOG connect with a full login-success URL:
+// the bare code is extracted and passed to ExchangeCode, and the response
+// carries the resolved username.
 func TestGOGConnect_FullURL(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubGOGClient{
@@ -2324,6 +2276,11 @@ func TestGOGConnect_FullURL(t *testing.T) {
 	}
 	if stub.gotCode != "XXX" {
 		t.Errorf("ExchangeCode received %q, want extracted code %q", stub.gotCode, "XXX")
+	}
+	var body map[string]string
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body["username"] != "goguser" {
+		t.Errorf("username: got %q", body["username"])
 	}
 }
 
@@ -2458,195 +2415,170 @@ func TestGetSteamConnection_Connected(t *testing.T) {
 	}
 }
 
-func TestGetSteamConnection_DBCredentialsErrorFlag(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "sc-db-cred-err")
-
-	rawCreds := `{"steam_id":"76561198000000001","web_api_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","display_name":"TestUser"}`
-	ciphertext, err := testEncrypter.Encrypt([]byte(rawCreds))
-	if err != nil {
-		t.Fatalf("encrypt: %v", err)
+// TestGetConnection_DBCredentialsErrorFlag verifies that a persisted
+// credentials_error=true flag is surfaced in the connection status response for
+// every storefront, even when the stored credentials are otherwise valid.
+func TestGetConnection_DBCredentialsErrorFlag(t *testing.T) {
+	tests := []struct {
+		name       string
+		suffix     string
+		storefront string
+		path       string
+		rawCreds   string
+		newApp     func(t *testing.T) interface {
+			ServeHTTP(http.ResponseWriter, *http.Request)
+		}
+	}{
+		{
+			name:       "steam",
+			suffix:     "sc-db-cred-err",
+			storefront: "steam",
+			path:       "/api/sync/steam/connection",
+			rawCreds:   `{"steam_id":"76561198000000001","web_api_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","display_name":"TestUser"}`,
+			newApp: func(t *testing.T) interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			} {
+				return newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+			},
+		},
+		{
+			name:       "playstation-store",
+			suffix:     "psn-db-cred-err",
+			storefront: "playstation-store",
+			path:       "/api/sync/playstation-store/connection",
+			rawCreds:   `{"npsso_token":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","online_id":"MyPSN","account_id":"123","region":"GB","is_verified":true,"token_expired_at":null}`,
+			newApp: func(t *testing.T) interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			} {
+				return newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+			},
+		},
+		{
+			name:       "gog",
+			suffix:     "gog-db-cred-err",
+			storefront: "gog",
+			path:       "/api/sync/gog/connection",
+			rawCreds:   `{"access_token":"aaa","refresh_token":"bbb","user_id":"u1","username":"GogUser"}`,
+			newApp: func(t *testing.T) interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			} {
+				return newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubGOGClient{})
+			},
+		},
+		{
+			name:       "epic-games-store",
+			suffix:     "epic-db-cred-err",
+			storefront: "epic-games-store",
+			path:       "/api/sync/epic-games-store/connection",
+			rawCreds:   `{"user.json":"{\"displayName\":\"EpicUser\",\"account_id\":\"abc123\"}"}`,
+			newApp: func(t *testing.T) interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			} {
+				return newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubEpicGamesStoreClient{configured: true})
+			},
+		},
 	}
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
-		 VALUES (?, ?, 'steam', 'manual', ?, true, now(), now())`,
-		uuid.NewString(), userID, ciphertext,
-	)
 
-	rec := getAuth(t, e, "/api/sync/steam/connection", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["credentials_error"] != true {
-		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			e := tt.newApp(t)
+			userID, token := setupTagUser(t, testDB, e, tt.suffix)
 
-func TestGetPlaystationStoreStatus_DBCredentialsErrorFlag(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "psn-db-cred-err")
+			ciphertext, err := testEncrypter.Encrypt([]byte(tt.rawCreds))
+			if err != nil {
+				t.Fatalf("encrypt: %v", err)
+			}
+			_, _ = testDB.ExecContext(context.Background(),
+				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
+				 VALUES (?, ?, ?, 'manual', ?, true, now(), now())`,
+				uuid.NewString(), userID, tt.storefront, ciphertext,
+			)
 
-	rawCreds := `{"npsso_token":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","online_id":"MyPSN","account_id":"123","region":"GB","is_verified":true,"token_expired_at":null}`
-	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
-		 VALUES (?, ?, 'playstation-store', 'manual', ?, true, now(), now())`,
-		uuid.NewString(), userID, ciphertext,
-	)
-
-	rec := getAuth(t, e, "/api/sync/playstation-store/connection", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["credentials_error"] != true {
-		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
-	}
-}
-
-func TestGetGOGConnection_DBCredentialsErrorFlag(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestAppWithGOG(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubGOGClient{})
-	userID, token := setupTagUser(t, testDB, e, "gog-db-cred-err")
-
-	rawCreds := `{"access_token":"aaa","refresh_token":"bbb","user_id":"u1","username":"GogUser"}`
-	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
-		 VALUES (?, ?, 'gog', 'manual', ?, true, now(), now())`,
-		uuid.NewString(), userID, ciphertext,
-	)
-
-	rec := getAuth(t, e, "/api/sync/gog/connection", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["credentials_error"] != true {
-		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
-	}
-}
-
-func TestGetEpicGamesStoreConnection_DBCredentialsErrorFlag(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestAppWithEpicGamesStore(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, &stubEpicGamesStoreClient{configured: true})
-	userID, token := setupTagUser(t, testDB, e, "epic-db-cred-err")
-
-	rawCreds := `{"user.json":"{\"displayName\":\"EpicUser\",\"account_id\":\"abc123\"}"}`
-	ciphertext, _ := testEncrypter.Encrypt([]byte(rawCreds))
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
-		 VALUES (?, ?, 'epic-games-store', 'manual', ?, true, now(), now())`,
-		uuid.NewString(), userID, ciphertext,
-	)
-
-	rec := getAuth(t, e, "/api/sync/epic-games-store/connection", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp["credentials_error"] != true {
-		t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
+			rec := getAuth(t, e, tt.path, token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			var resp map[string]any
+			_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+			if resp["credentials_error"] != true {
+				t.Errorf("expected credentials_error=true from DB flag, got %v", resp["credentials_error"])
+			}
+		})
 	}
 }
 
-func TestSteamConnect_ClearsCredentialsErrorFlag(t *testing.T) {
-	truncateAllTables(t)
-	stub := &stubSteamClient{
-		summary: &api.SteamPlayerSummary{PersonaName: "TestUser", CommunityVisibilityState: 3},
-	}
-	e := newSyncTestApp(t, testDB, stub, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "sv-clear-cred")
-
-	// Seed a pre-existing row with credentials_error=true.
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, credentials_error, created_at, updated_at)
-		 VALUES (?, ?, 'steam', 'manual', true, now(), now())`,
-		uuid.NewString(), userID,
-	)
-
-	body := `{"steam_id":"76561198000000001","web_api_key":"AABBCCDD00112233445566778899AABB"}`
-	rec := putAuth(t, e, "/api/sync/steam/connection", token, body)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var credsErr bool
-	_ = testDB.NewRaw(
-		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`,
-		userID,
-	).Scan(context.Background(), &credsErr)
-	if credsErr {
-		t.Error("expected credentials_error=false after successful Steam connect, got true")
-	}
-}
-
-func TestPlaystationStoreConnect_ClearsCredentialsErrorFlag(t *testing.T) {
-	truncateAllTables(t)
-	stub := &stubPlaystationStoreClient{
-		info: &api.PlaystationStoreAccountInfo{OnlineID: "MyPSN", AccountID: "123"},
-	}
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
-	userID, token := setupTagUser(t, testDB, e, "psn-clear-cred")
-
-	_, _ = testDB.ExecContext(context.Background(),
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, credentials_error, created_at, updated_at)
-		 VALUES (?, ?, 'playstation-store', 'manual', true, now(), now())`,
-		uuid.NewString(), userID,
-	)
-
-	body := `{"npsso_token":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}`
-	rec := putAuth(t, e, "/api/sync/playstation-store/connection", token, body)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+// TestConnect_ClearsCredentialsErrorFlag verifies a successful connect clears a
+// previously-set credentials_error=true flag, for both Steam and PSN.
+func TestConnect_ClearsCredentialsErrorFlag(t *testing.T) {
+	tests := []struct {
+		name       string
+		suffix     string
+		storefront string
+		path       string
+		body       string
+		newApp     func(t *testing.T) interface {
+			ServeHTTP(http.ResponseWriter, *http.Request)
+		}
+	}{
+		{
+			name:       "steam",
+			suffix:     "sv-clear-cred",
+			storefront: "steam",
+			path:       "/api/sync/steam/connection",
+			body:       `{"steam_id":"76561198000000001","web_api_key":"AABBCCDD00112233445566778899AABB"}`,
+			newApp: func(t *testing.T) interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			} {
+				stub := &stubSteamClient{
+					summary: &api.SteamPlayerSummary{PersonaName: "TestUser", CommunityVisibilityState: 3},
+				}
+				return newSyncTestApp(t, testDB, stub, &stubPlaystationStoreClient{})
+			},
+		},
+		{
+			name:       "playstation-store",
+			suffix:     "psn-clear-cred",
+			storefront: "playstation-store",
+			path:       "/api/sync/playstation-store/connection",
+			body:       `{"npsso_token":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}`,
+			newApp: func(t *testing.T) interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			} {
+				stub := &stubPlaystationStoreClient{
+					info: &api.PlaystationStoreAccountInfo{OnlineID: "MyPSN", AccountID: "123"},
+				}
+				return newSyncTestApp(t, testDB, &stubSteamClient{}, stub)
+			},
+		},
 	}
 
-	var credsErr bool
-	_ = testDB.NewRaw(
-		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'playstation-store'`,
-		userID,
-	).Scan(context.Background(), &credsErr)
-	if credsErr {
-		t.Error("expected credentials_error=false after PSN connect, got true")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			e := tt.newApp(t)
+			userID, token := setupTagUser(t, testDB, e, tt.suffix)
 
-func TestGetSteamConnection_CorruptedCredentials(t *testing.T) {
-	truncateAllTables(t)
-	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
-	userID, token := setupTagUser(t, testDB, e, "steam-conn-corrupt")
-	insertCorruptedSyncConfig(t, testDB, userID, "steam")
+			// Seed a pre-existing row with credentials_error=true.
+			_, _ = testDB.ExecContext(context.Background(),
+				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, credentials_error, created_at, updated_at)
+				 VALUES (?, ?, ?, 'manual', true, now(), now())`,
+				uuid.NewString(), userID, tt.storefront,
+			)
 
-	// Decrypt failure must surface credentials_error=true without clearing the row.
-	rec := getAuth(t, e, "/api/sync/steam/connection", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var body map[string]any
-	_ = json.NewDecoder(rec.Body).Decode(&body)
-	if body["connected"] != true {
-		t.Errorf("want connected=true (row still exists), got %v", body["connected"])
-	}
-	if body["credentials_error"] != true {
-		t.Errorf("want credentials_error=true, got %v", body["credentials_error"])
-	}
+			rec := putAuth(t, e, tt.path, token, tt.body)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
 
-	// Credentials row must NOT be cleared.
-	var creds string
-	err := testDB.NewRaw(
-		`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`, userID,
-	).Scan(context.Background(), &creds)
-	if err != nil {
-		t.Fatalf("credentials row missing after decrypt failure: %v", err)
-	}
-	if creds == "" {
-		t.Error("expected credentials to remain non-null after decrypt failure")
+			var credsErr bool
+			_ = testDB.NewRaw(
+				`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = ?`,
+				userID, tt.storefront,
+			).Scan(context.Background(), &credsErr)
+			if credsErr {
+				t.Errorf("expected credentials_error=false after successful %s connect, got true", tt.storefront)
+			}
+		})
 	}
 }

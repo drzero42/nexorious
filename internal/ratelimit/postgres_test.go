@@ -2,60 +2,24 @@ package ratelimit_test
 
 import (
 	"context"
-	"database/sql"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
-	bunmigrate "github.com/uptrace/bun/migrate"
 
-	"github.com/drzero42/nexorious/internal/db/migrations"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 )
 
+// setupTestDB resets the shared rate-limiter table and returns the shared
+// *bun.DB. The container is started once in TestMain.
 func setupTestDB(t *testing.T) *bun.DB {
 	t.Helper()
-	ctx := context.Background()
-
-	ctr, err := tcpostgres.Run(ctx,
-		"postgres:18-alpine",
-		tcpostgres.WithDatabase("nexorious_test"),
-		tcpostgres.WithUsername("test"),
-		tcpostgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2),
-		),
-	)
-	if err != nil {
-		t.Fatalf("failed to start postgres container: %v", err)
+	if _, err := testDB.ExecContext(context.Background(),
+		`TRUNCATE TABLE rate_limiter_tokens RESTART IDENTITY`); err != nil {
+		t.Fatalf("truncate rate_limiter_tokens: %v", err)
 	}
-	t.Cleanup(func() { _ = ctr.Terminate(ctx) })
-
-	connStr, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("failed to get connection string: %v", err)
-	}
-
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
-	db := bun.NewDB(sqldb, pgdialect.New())
-	t.Cleanup(func() { _ = db.Close() })
-
-	migrator := bunmigrate.NewMigrator(db, migrations.Migrations)
-	if err := migrator.Init(ctx); err != nil {
-		t.Fatalf("migrator init: %v", err)
-	}
-	if _, err := migrator.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	return db
+	return testDB
 }
 
 func TestPostgres_ConcurrentGoroutinesEachGetToken(t *testing.T) {
@@ -107,27 +71,29 @@ func TestPostgres_ContextCancellation(t *testing.T) {
 	}
 }
 
-// TestPostgres_ZeroRPSClamped verifies that rps<=0 is clamped to 1.
-func TestPostgres_ZeroRPSClamped(t *testing.T) {
-	db := setupTestDB(t)
-	// rps=0 should be clamped to 1; burst=5 so first call succeeds.
-	l := ratelimit.NewPostgres(db, "test-zero-rps", 0, 5)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := l.Wait(ctx); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+// TestPostgres_ClampsInvalidParams verifies that out-of-range rate/burst values
+// are clamped to safe minimums (rps<=0 → 1, burst<1 → 1) so the first Wait still
+// succeeds.
+func TestPostgres_ClampsInvalidParams(t *testing.T) {
+	cases := []struct {
+		name  string
+		key   string
+		rps   float64
+		burst float64
+	}{
+		{"zero rps clamped to 1", "test-zero-rps", 0, 5},
+		{"low burst clamped to 1", "test-low-burst", 10, 0.5},
 	}
-}
-
-// TestPostgres_LowBurstClamped verifies that burst<1 is clamped to 1.
-func TestPostgres_LowBurstClamped(t *testing.T) {
-	db := setupTestDB(t)
-	// burst=0.5 should be clamped to 1.
-	l := ratelimit.NewPostgres(db, "test-low-burst", 10, 0.5)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := l.Wait(ctx); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupTestDB(t)
+			l := ratelimit.NewPostgres(db, tc.key, tc.rps, tc.burst)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := l.Wait(ctx); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

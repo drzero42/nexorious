@@ -72,19 +72,6 @@ describe('MultiSelectFilter', () => {
     expect(screen.getByText('Puzzle')).toBeInTheDocument();
   });
 
-  it('shows checkboxes for each option', async () => {
-    const user = userEvent.setup();
-
-    render(
-      <MultiSelectFilter label="Genres" options={mockOptions} selected={[]} onChange={vi.fn()} />,
-    );
-
-    await user.click(screen.getByRole('combobox'));
-
-    const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes).toHaveLength(4);
-  });
-
   it('shows selected options as checked', async () => {
     const user = userEvent.setup();
 

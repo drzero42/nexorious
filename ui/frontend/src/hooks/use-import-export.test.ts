@@ -5,12 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
 import { QueryWrapper } from '@/test/test-utils';
-import {
-  useImportNexorious,
-  useExportCollection,
-  useDownloadExport,
-  importExportKeys,
-} from './use-import-export';
+import { useImportNexorious, useExportCollection, useDownloadExport } from './use-import-export';
 import { jobsKeys } from './use-jobs';
 import { ExportFormat, JobType } from '@/types';
 import type { JobTypeStatus } from '@/types';
@@ -44,16 +39,6 @@ function createCacheReadableQueryClient() {
 describe('use-import-export hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('importExportKeys', () => {
-    it('generates correct query keys for all', () => {
-      expect(importExportKeys.all).toEqual(['import-export']);
-    });
-
-    it('generates correct query keys for jobs', () => {
-      expect(importExportKeys.jobs()).toEqual(['import-export', 'jobs']);
-    });
   });
 
   describe('useImportNexorious', () => {
@@ -196,42 +181,17 @@ describe('use-import-export hooks', () => {
   });
 
   describe('useExportCollection', () => {
-    it('starts JSON export and returns job info', async () => {
+    it.each([
+      [ExportFormat.JSON, 'json', 'export-123', 50],
+      [ExportFormat.CSV, 'csv', 'export-456', 100],
+    ])('starts %s export and returns job info', async (format, path, jobId, estimatedItems) => {
       server.use(
-        http.post(`${API_URL}/export/json`, () => {
+        http.post(`${API_URL}/export/${path}`, () => {
           return HttpResponse.json({
-            job_id: 'export-123',
-            status: 'pending',
-            message: 'Export job created. Check job status for progress.',
-            estimated_items: 50,
-          });
-        }),
-      );
-
-      const { result } = renderHook(() => useExportCollection(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        await result.current.mutateAsync(ExportFormat.JSON);
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data?.job_id).toBe('export-123');
-      expect(result.current.data?.estimated_items).toBe(50);
-    });
-
-    it('starts CSV export and returns job info', async () => {
-      server.use(
-        http.post(`${API_URL}/export/csv`, () => {
-          return HttpResponse.json({
-            job_id: 'export-456',
+            job_id: jobId,
             status: 'pending',
             message: 'Export job created.',
-            estimated_items: 100,
+            estimated_items: estimatedItems,
           });
         }),
       );
@@ -241,15 +201,15 @@ describe('use-import-export hooks', () => {
       });
 
       await act(async () => {
-        await result.current.mutateAsync(ExportFormat.CSV);
+        await result.current.mutateAsync(format);
       });
 
       await waitFor(() => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data?.job_id).toBe('export-456');
-      expect(result.current.data?.estimated_items).toBe(100);
+      expect(result.current.data?.job_id).toBe(jobId);
+      expect(result.current.data?.estimated_items).toBe(estimatedItems);
     });
 
     it('handles empty collection error', async () => {

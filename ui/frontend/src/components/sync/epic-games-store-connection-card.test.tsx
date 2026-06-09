@@ -80,12 +80,11 @@ describe('EpicGamesStoreConnectionCard', () => {
     expect(screen.getByRole('button', { name: 'Connect Epic Games Store' })).toBeInTheDocument();
   });
 
-  it('renders disabled state keyed off the reason code, without naming the backend env var', () => {
-    stubEpicGamesStoreConnection({
-      connected: false,
-      disabled: true,
-      reason: 'legendary_not_configured',
-    });
+  it.each([
+    ['with a known reason code', { reason: 'legendary_not_configured' }],
+    ['when the reason code is absent or unknown', {}],
+  ])('renders disabled state %s without naming the backend env var', (_desc, extra) => {
+    stubEpicGamesStoreConnection({ connected: false, disabled: true, ...extra });
 
     render(
       <EpicGamesStoreConnectionCard
@@ -100,21 +99,6 @@ describe('EpicGamesStoreConnectionCard', () => {
     // The SPA must not bake in the backend's internal env var name (see #789).
     expect(screen.queryByText(/LEGENDARY_WORK_DIR/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Authorization Code')).not.toBeInTheDocument();
-  });
-
-  it('renders a generic disabled message when the reason code is absent or unknown', () => {
-    stubEpicGamesStoreConnection({ connected: false, disabled: true });
-
-    render(
-      <EpicGamesStoreConnectionCard
-        isConfigured={false}
-        onConnectionChange={mockOnConnectionChange}
-      />,
-      { wrapper: createWrapper() },
-    );
-
-    expect(screen.getByText(/sync is disabled on this server/i)).toBeInTheDocument();
-    expect(screen.queryByText(/LEGENDARY_WORK_DIR/)).not.toBeInTheDocument();
   });
 
   it('renders connected state with display name from connection hook', () => {

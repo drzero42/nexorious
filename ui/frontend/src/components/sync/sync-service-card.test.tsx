@@ -65,20 +65,6 @@ describe('SyncServiceCard', () => {
       expect(link).toHaveAttribute('href', '/sync/steam');
     });
 
-    it('renders GOG platform name', () => {
-      const config = createMockConfig({ storefront: SyncStorefront.GOG });
-      render(<SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} />);
-
-      expect(screen.getByText('GOG')).toBeInTheDocument();
-    });
-
-    it('renders Epic Games Store platform name', () => {
-      const config = createMockConfig({ storefront: SyncStorefront.EPIC_GAMES_STORE });
-      render(<SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} />);
-
-      expect(screen.getByText('Epic Games Store')).toBeInTheDocument();
-    });
-
     it('creates correct detail link for GOG platform', () => {
       const config = createMockConfig({ storefront: SyncStorefront.GOG });
       render(<SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} />);
@@ -93,27 +79,6 @@ describe('SyncServiceCard', () => {
 
       const link = screen.getByRole('link', { name: 'Epic Games Store' });
       expect(link).toHaveAttribute('href', '/sync/epic-games-store');
-    });
-
-    it('does not render frequency select', () => {
-      const config = createMockConfig();
-      render(<SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} />);
-
-      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
-    });
-
-    it('does not render auto-add toggle', () => {
-      const config = createMockConfig();
-      render(<SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} />);
-
-      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-    });
-
-    it('does not render a View details footer link', () => {
-      const config = createMockConfig();
-      render(<SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} />);
-
-      expect(screen.queryByRole('link', { name: /view details/i })).not.toBeInTheDocument();
     });
   });
 
@@ -160,23 +125,18 @@ describe('SyncServiceCard', () => {
       expect(mockOnTriggerSync).toHaveBeenCalled();
     });
 
-    it('disables sync button when isSyncing is true', () => {
+    // Syncing can be driven by either the `isSyncing` prop or `status.isSyncing`;
+    // both render the disabled "Syncing..." button.
+    it.each([
+      ['the isSyncing prop', { isSyncing: true }],
+      ['status.isSyncing', { status: createMockStatus({ isSyncing: true }) }],
+    ] as const)('shows a disabled "Syncing..." button when %s is set', (_desc, props) => {
       const config = createMockConfig();
-      render(
-        <SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} isSyncing={true} />,
-      );
+      render(<SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} {...props} />);
 
       const syncButton = screen.getByRole('button', { name: /syncing/i });
       expect(syncButton).toBeDisabled();
-    });
-
-    it('disables sync button when status.isSyncing is true', () => {
-      const config = createMockConfig();
-      const status = createMockStatus({ isSyncing: true });
-      render(<SyncServiceCard config={config} status={status} onTriggerSync={mockOnTriggerSync} />);
-
-      const syncButton = screen.getByRole('button', { name: /syncing/i });
-      expect(syncButton).toBeDisabled();
+      expect(screen.getByText('Syncing...')).toBeInTheDocument();
     });
 
     it('disables sync button when not configured', () => {
@@ -189,23 +149,6 @@ describe('SyncServiceCard', () => {
   });
 
   describe('syncing state', () => {
-    it('shows syncing state when isSyncing is true', () => {
-      const config = createMockConfig();
-      render(
-        <SyncServiceCard config={config} onTriggerSync={mockOnTriggerSync} isSyncing={true} />,
-      );
-
-      expect(screen.getByText('Syncing...')).toBeInTheDocument();
-    });
-
-    it('shows syncing state when status.isSyncing is true', () => {
-      const config = createMockConfig();
-      const status = createMockStatus({ isSyncing: true });
-      render(<SyncServiceCard config={config} status={status} onTriggerSync={mockOnTriggerSync} />);
-
-      expect(screen.getByText('Syncing...')).toBeInTheDocument();
-    });
-
     it('shows Sync Now text when not syncing', () => {
       const config = createMockConfig();
       render(

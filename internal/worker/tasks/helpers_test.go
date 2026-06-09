@@ -13,40 +13,41 @@ import (
 // parseFlexibleDate
 // ---------------------------------------------------------------------------
 
-func TestParseFlexibleDate_Nil(t *testing.T) {
-	if parseFlexibleDate(nil) != nil {
-		t.Error("expected nil for nil input")
-	}
-}
+func TestParseFlexibleDate(t *testing.T) {
+	rfc3339 := "2024-01-15T00:00:00Z"
+	dateOnly := "2022-06-30"
+	unparseable := "not-a-date"
 
-func TestParseFlexibleDate_RFC3339(t *testing.T) {
-	s := "2024-01-15T00:00:00Z"
-	result := parseFlexibleDate(&s)
-	if result == nil {
-		t.Fatal("expected non-nil for RFC3339 input")
-		return
+	tests := []struct {
+		name  string
+		input *string
+		// wantNil is true when the result must be nil; otherwise wantY/M/D give
+		// the expected parsed date components.
+		wantNil             bool
+		wantY, wantM, wantD int
+	}{
+		{name: "nil", input: nil, wantNil: true},
+		{name: "rfc3339", input: &rfc3339, wantY: 2024, wantM: 1, wantD: 15},
+		{name: "date_only", input: &dateOnly, wantY: 2022, wantM: 6, wantD: 30},
+		{name: "unparseable", input: &unparseable, wantNil: true},
 	}
-	if result.Year() != 2024 || result.Month() != 1 || result.Day() != 15 {
-		t.Errorf("unexpected date: %v", result)
-	}
-}
 
-func TestParseFlexibleDate_DateOnly(t *testing.T) {
-	s := "2022-06-30"
-	result := parseFlexibleDate(&s)
-	if result == nil {
-		t.Fatal("expected non-nil for date-only input")
-		return
-	}
-	if result.Year() != 2022 || result.Month() != 6 || result.Day() != 30 {
-		t.Errorf("unexpected date: %v", result)
-	}
-}
-
-func TestParseFlexibleDate_Unparseable(t *testing.T) {
-	s := "not-a-date"
-	if parseFlexibleDate(&s) != nil {
-		t.Error("expected nil for unparseable input")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := parseFlexibleDate(tc.input)
+			if tc.wantNil {
+				if result != nil {
+					t.Errorf("expected nil, got %v", result)
+				}
+				return
+			}
+			if result == nil {
+				t.Fatalf("expected non-nil result for %q", *tc.input)
+			}
+			if result.Year() != tc.wantY || int(result.Month()) != tc.wantM || result.Day() != tc.wantD {
+				t.Errorf("unexpected date: got %v, want %d-%02d-%02d", result, tc.wantY, tc.wantM, tc.wantD)
+			}
+		})
 	}
 }
 

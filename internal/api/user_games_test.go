@@ -1065,57 +1065,59 @@ func TestUpdatePlatform_InvalidOwnershipStatus(t *testing.T) {
 	}
 }
 
-func TestUpdatePlatform_InvalidPlatform(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-	userID, token := setupUserGamesUser(t, testDB, e, "upd-plat-bad-plat")
-	gameID := insertTestGame(t, testDB, "Update Plat Invalid Game")
-	insertTestUserGame(t, testDB, "ug-upd-plat-b", userID, int(gameID))
-
-	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-plat-b/platforms", map[string]any{
-		"platform":   "pc-windows",
-		"storefront": "steam",
-	}, token)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create expected 201, got %d: %s", rec.Code, rec.Body.String())
+// TestUpdatePlatform_InvalidName verifies that updating a platform row with a
+// non-existent platform or storefront name yields 404.
+func TestUpdatePlatform_InvalidName(t *testing.T) {
+	tests := []struct {
+		name    string
+		suffix  string
+		ugID    string
+		title   string
+		updates map[string]any
+	}{
+		{
+			name:    "invalid platform name",
+			suffix:  "upd-plat-bad-plat",
+			ugID:    "ug-upd-plat-b",
+			title:   "Update Plat Invalid Game",
+			updates: map[string]any{"platform": "nonexistent-platform-xyz"},
+		},
+		{
+			name:    "invalid storefront name",
+			suffix:  "upd-plat-bad-sf",
+			ugID:    "ug-upd-sf",
+			title:   "Update Storefront Game",
+			updates: map[string]any{"storefront": "nonexistent-storefront-xyz"},
+		},
 	}
-	var createResp map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &createResp)
-	platformID := createResp["id"].(string)
 
-	// Update with a non-existent platform name.
-	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-plat-b/platforms/%s", platformID),
-		map[string]any{"platform": "nonexistent-platform-xyz"}, token)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			cfg := testCfg()
+			e := newTestEcho(t, testDB, cfg)
+			userID, token := setupUserGamesUser(t, testDB, e, tt.suffix)
+			gameID := insertTestGame(t, testDB, tt.title)
+			insertTestUserGame(t, testDB, tt.ugID, userID, int(gameID))
 
-func TestUpdatePlatform_InvalidStorefront(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-	userID, token := setupUserGamesUser(t, testDB, e, "upd-plat-bad-sf")
-	gameID := insertTestGame(t, testDB, "Update Storefront Game")
-	insertTestUserGame(t, testDB, "ug-upd-sf", userID, int(gameID))
+			rec := postJSONAuth(t, e, fmt.Sprintf("/api/user-games/%s/platforms", tt.ugID), map[string]any{
+				"platform":   "pc-windows",
+				"storefront": "steam",
+			}, token)
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("create expected 201, got %d: %s", rec.Code, rec.Body.String())
+			}
+			var createResp map[string]any
+			_ = json.Unmarshal(rec.Body.Bytes(), &createResp)
+			platformID := createResp["id"].(string)
 
-	rec := postJSONAuth(t, e, "/api/user-games/ug-upd-sf/platforms", map[string]any{
-		"platform":   "pc-windows",
-		"storefront": "steam",
-	}, token)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create expected 201, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var createResp map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &createResp)
-	platformID := createResp["id"].(string)
-
-	// Update with a non-existent storefront name.
-	rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/ug-upd-sf/platforms/%s", platformID),
-		map[string]any{"storefront": "nonexistent-storefront-xyz"}, token)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+			// Update with a non-existent platform/storefront name.
+			rec = putJSONAuth(t, e, fmt.Sprintf("/api/user-games/%s/platforms/%s", tt.ugID, platformID),
+				tt.updates, token)
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 

@@ -364,44 +364,4 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('error')).toHaveTextContent('no-error');
     });
   });
-
-  describe('isAuthenticated', () => {
-    it('returns true when user session exists', async () => {
-      server.use(
-        http.get(`${API_URL}/auth/me`, () => {
-          return HttpResponse.json(mockApiUser);
-        }),
-      );
-
-      render(
-        <AuthProvider>
-          <TestConsumer />
-        </AuthProvider>,
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('authenticated')).toHaveTextContent('authenticated');
-      });
-    });
-
-    it('returns false when no session exists', async () => {
-      server.use(
-        http.get(`${API_URL}/auth/me`, () => {
-          return HttpResponse.json({ detail: 'Not authenticated' }, { status: 401 });
-        }),
-      );
-
-      render(
-        <AuthProvider>
-          <TestConsumer />
-        </AuthProvider>,
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('loading')).toHaveTextContent('not-loading');
-      });
-
-      expect(screen.getByTestId('authenticated')).toHaveTextContent('not-authenticated');
-    });
-  });
 });

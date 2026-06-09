@@ -10,9 +10,6 @@ import (
 
 	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
 	"github.com/riverqueue/river/rivermigrate"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
@@ -20,30 +17,12 @@ import (
 	migrate "github.com/drzero42/nexorious/internal/migrate"
 )
 
-// setupTestContainer starts a postgres container and returns the postgres:// connection string.
+// setupTestContainer resets the shared container to a pristine, un-migrated
+// state and returns its postgres:// connection string.
 func setupTestContainer(t *testing.T) string {
 	t.Helper()
-	ctx := context.Background()
-	ctr, err := postgres.Run(ctx,
-		"postgres:18-alpine",
-		postgres.WithDatabase("nexorious_test"),
-		postgres.WithUsername("test"),
-		postgres.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2),
-		),
-	)
-	if err != nil {
-		t.Fatalf("failed to start postgres container: %v", err)
-	}
-	t.Cleanup(func() { _ = ctr.Terminate(ctx) })
-
-	connStr, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("failed to get connection string: %v", err)
-	}
-	return connStr // postgres:// URL
+	resetPublicSchema(t)
+	return testDSN
 }
 
 // makeBunDB creates a bun.DB from a postgres:// connection string.
@@ -345,12 +324,6 @@ func TestStartDBProbe_RespectsContext(t *testing.T) {
 	cancel() // should cause goroutine to exit cleanly
 	time.Sleep(100 * time.Millisecond)
 	// No assertion needed — if the goroutine leaks, the race detector will catch it.
-}
-
-func TestAppState_String_MigrationFailed(t *testing.T) {
-	if got := migrate.AppStateMigrationFailed.String(); got != "migration_failed" {
-		t.Errorf("AppStateMigrationFailed.String() = %q, want %q", got, "migration_failed")
-	}
 }
 
 func TestTransitionToFailed_SetsStateAndStoresError(t *testing.T) {

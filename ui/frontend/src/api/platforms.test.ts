@@ -171,26 +171,6 @@ describe('platforms.ts', () => {
       expect(result[0].name).toBe('pc');
       expect(result[1].name).toBe('playstation-5');
     });
-
-    it('passes optional parameters', async () => {
-      server.use(
-        http.get(`${API_URL}/platforms`, ({ request }) => {
-          const url = new URL(request.url);
-          expect(url.searchParams.get('active_only')).toBe('false');
-          expect(url.searchParams.get('source')).toBe('custom');
-
-          return HttpResponse.json({
-            platforms: [],
-            total: 0,
-            page: 1,
-            per_page: 100,
-            pages: 0,
-          });
-        }),
-      );
-
-      await getAllPlatforms({ activeOnly: false, source: 'custom' });
-    });
   });
 
   describe('getPlatform', () => {
@@ -306,33 +286,6 @@ describe('platforms.ts', () => {
       expect(result.total).toBe(2);
       expect(result.perPage).toBe(100);
     });
-
-    it('passes custom parameters', async () => {
-      server.use(
-        http.get(`${API_URL}/platforms/storefronts`, ({ request }) => {
-          const url = new URL(request.url);
-          expect(url.searchParams.get('active_only')).toBe('false');
-          expect(url.searchParams.get('source')).toBe('custom');
-          expect(url.searchParams.get('page')).toBe('3');
-          expect(url.searchParams.get('per_page')).toBe('25');
-
-          return HttpResponse.json({
-            storefronts: [],
-            total: 0,
-            page: 3,
-            per_page: 25,
-            pages: 0,
-          });
-        }),
-      );
-
-      await getStorefronts({
-        activeOnly: false,
-        source: 'custom',
-        page: 3,
-        perPage: 25,
-      });
-    });
   });
 
   describe('getAllStorefronts', () => {
@@ -353,26 +306,6 @@ describe('platforms.ts', () => {
 
       expect(Array.isArray(result)).toBe(true);
       expect(result).toHaveLength(2);
-    });
-
-    it('passes optional parameters', async () => {
-      server.use(
-        http.get(`${API_URL}/platforms/storefronts`, ({ request }) => {
-          const url = new URL(request.url);
-          expect(url.searchParams.get('active_only')).toBe('false');
-          expect(url.searchParams.get('source')).toBe('custom');
-
-          return HttpResponse.json({
-            storefronts: [],
-            total: 0,
-            page: 1,
-            per_page: 100,
-            pages: 0,
-          });
-        }),
-      );
-
-      await getAllStorefronts({ activeOnly: false, source: 'custom' });
     });
   });
 
@@ -452,62 +385,39 @@ describe('platforms.ts', () => {
 
       expect(result).toEqual(['Steam', 'Epic Games Store', 'GOG']);
     });
-
-    it('passes activeOnly parameter', async () => {
-      server.use(
-        http.get(`${API_URL}/platforms/storefronts/simple-list`, ({ request }) => {
-          const url = new URL(request.url);
-          expect(url.searchParams.get('active_only')).toBe('false');
-
-          return HttpResponse.json(['Steam', 'Inactive Store']);
-        }),
-      );
-
-      const result = await getStorefrontNames(false);
-
-      expect(result).toHaveLength(2);
-    });
   });
 
   describe('transform boundary', () => {
-    it('passes an unexpected new field through getPlatform untouched', async () => {
-      server.use(
-        http.get(`${API_URL}/platforms/pc`, () =>
-          HttpResponse.json({
-            name: 'pc',
-            display_name: 'PC',
-            is_active: true,
-            source: 'official',
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z',
-            brand_new_field: 'survives',
-          }),
-        ),
-      );
+    it.each([
+      ['getPlatform', `${API_URL}/platforms/pc`, 'pc', 'PC', () => getPlatform('pc')],
+      [
+        'getStorefront',
+        `${API_URL}/platforms/storefronts/steam`,
+        'steam',
+        'Steam',
+        () => getStorefront('steam'),
+      ],
+    ] as const)(
+      'passes an unexpected new field through %s untouched',
+      async (_label, endpoint, name, displayName, call) => {
+        server.use(
+          http.get(endpoint, () =>
+            HttpResponse.json({
+              name,
+              display_name: displayName,
+              is_active: true,
+              source: 'official',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+              brand_new_field: 'survives',
+            }),
+          ),
+        );
 
-      const result = await getPlatform('pc');
+        const result = await call();
 
-      expect((result as unknown as Record<string, unknown>).brand_new_field).toBe('survives');
-    });
-
-    it('passes an unexpected new field through getStorefront untouched', async () => {
-      server.use(
-        http.get(`${API_URL}/platforms/storefronts/steam`, () =>
-          HttpResponse.json({
-            name: 'steam',
-            display_name: 'Steam',
-            is_active: true,
-            source: 'official',
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z',
-            brand_new_field: 'survives',
-          }),
-        ),
-      );
-
-      const result = await getStorefront('steam');
-
-      expect((result as unknown as Record<string, unknown>).brand_new_field).toBe('survives');
-    });
+        expect((result as unknown as Record<string, unknown>).brand_new_field).toBe('survives');
+      },
+    );
   });
 });

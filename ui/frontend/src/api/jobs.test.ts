@@ -292,41 +292,28 @@ describe('jobsApi', () => {
 });
 
 describe('transformJobItem external_game_id mapping', () => {
-  it('maps external_game_id to externalGameId (non-null)', () => {
-    const apiItem = {
-      id: 'item-1',
-      job_id: 'job-1',
-      item_key: 'k',
-      source_title: 'Test',
-      status: 'pending_review',
-      error_message: null,
-      result_game_title: null,
-      result_igdb_id: null,
-      result_user_game_id: null,
-      created_at: '2026-05-26T00:00:00Z',
-      processed_at: null,
-      external_game_id: 'eg-123',
-    };
-    const result = transformJobItem(apiItem);
-    expect(result.externalGameId).toBe('eg-123');
-  });
-
-  it('maps external_game_id null to externalGameId null', () => {
-    const apiItem = {
-      id: 'item-2',
-      job_id: 'job-1',
-      item_key: 'k',
-      source_title: 'Test',
-      status: 'completed',
-      error_message: null,
-      result_game_title: null,
-      result_igdb_id: null,
-      result_user_game_id: null,
-      created_at: '2026-05-26T00:00:00Z',
-      processed_at: null,
-      external_game_id: null,
-    };
-    const result = transformJobItem(apiItem);
-    expect(result.externalGameId).toBeNull();
-  });
+  it.each([
+    ['non-null', 'item-1', 'pending_review', 'eg-123', 'eg-123'],
+    ['null', 'item-2', 'completed', null, null],
+  ] as const)(
+    'maps external_game_id (%s) to externalGameId',
+    (_label, id, status, externalGameId, expected) => {
+      const apiItem = {
+        id,
+        job_id: 'job-1',
+        item_key: 'k',
+        source_title: 'Test',
+        status,
+        error_message: null,
+        result_game_title: null,
+        result_igdb_id: null,
+        result_user_game_id: null,
+        created_at: '2026-05-26T00:00:00Z',
+        processed_at: null,
+        external_game_id: externalGameId,
+      };
+      const result = transformJobItem(apiItem);
+      expect(result.externalGameId).toBe(expected);
+    },
+  );
 });

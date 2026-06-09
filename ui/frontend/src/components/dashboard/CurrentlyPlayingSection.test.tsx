@@ -236,28 +236,6 @@ describe('CurrentlyPlayingSection', () => {
       expect(link).toHaveAttribute('href', '/games/test-game-id-123');
     });
 
-    it('renders cover art images with correct URLs', () => {
-      const mockGame = createMockGame({
-        game: {
-          ...createMockGame().game,
-          cover_art_url: '/storage/covers/my-game.jpg',
-        },
-      });
-      mockUseActiveGames.mockReturnValue({
-        data: { items: [mockGame], total: 1, page: 1, perPage: 50, pages: 1 },
-        isLoading: false,
-        isError: false,
-        error: null,
-      });
-
-      render(<CurrentlyPlayingSection />);
-      const image = screen.getByAltText('Test Game');
-      // The component correctly constructs the full URL, but the mock Image component
-      // just passes through the src. In production, Next.js Image handles the URL properly.
-      expect(image).toHaveAttribute('src');
-      expect(image.getAttribute('src')).toContain('/storage/covers/my-game.jpg');
-    });
-
     it('handles missing cover art gracefully', () => {
       const mockGame = createMockGame({
         game: { ...createMockGame().game, cover_art_url: undefined },

@@ -198,19 +198,6 @@ describe('GameEditForm', () => {
     });
   });
 
-  it('renders save button', () => {
-    render(<GameEditForm game={mockGame} />);
-
-    const saveButtons = screen.getAllByRole('button', { name: /save changes/i });
-    expect(saveButtons.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('renders is loved checkbox', () => {
-    render(<GameEditForm game={mockGame} />);
-
-    expect(screen.getByRole('checkbox', { name: /mark as loved/i })).toBeInTheDocument();
-  });
-
   it('toggles is loved checkbox', async () => {
     const user = userEvent.setup();
     render(<GameEditForm game={mockGame} />);

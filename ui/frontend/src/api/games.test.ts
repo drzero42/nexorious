@@ -186,12 +186,16 @@ describe('games.ts', () => {
       });
     });
 
-    it('handles multiple platform values', async () => {
+    it.each([
+      ['platform', 'platform', ['windows', 'playstation_5']],
+      ['storefront', 'storefront', ['steam', 'epic-games-store']],
+      ['genre', 'genre', ['RPG', 'Action']],
+      ['tags', 'tag', ['tag-id-1', 'tag-id-2']],
+    ] as const)('handles multiple %s values', async (optionKey, paramKey, values) => {
       server.use(
         http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
-          const platforms = url.searchParams.getAll('platform');
-          expect(platforms).toEqual(['windows', 'playstation_5']);
+          expect(url.searchParams.getAll(paramKey)).toEqual(values);
 
           return HttpResponse.json({
             user_games: [],
@@ -203,81 +207,7 @@ describe('games.ts', () => {
         }),
       );
 
-      const result = await getUserGames({
-        platform: ['windows', 'playstation_5'],
-      });
-      expect(result).toBeDefined();
-      expect(result.items).toEqual([]);
-    });
-
-    it('handles multiple storefront values', async () => {
-      server.use(
-        http.get(`${API_URL}/user-games`, ({ request }) => {
-          const url = new URL(request.url);
-          const storefronts = url.searchParams.getAll('storefront');
-          expect(storefronts).toEqual(['steam', 'epic-games-store']);
-
-          return HttpResponse.json({
-            user_games: [],
-            total: 0,
-            page: 1,
-            per_page: 20,
-            pages: 0,
-          });
-        }),
-      );
-
-      const result = await getUserGames({
-        storefront: ['steam', 'epic-games-store'],
-      });
-      expect(result).toBeDefined();
-      expect(result.items).toEqual([]);
-    });
-
-    it('handles multiple genre values', async () => {
-      server.use(
-        http.get(`${API_URL}/user-games`, ({ request }) => {
-          const url = new URL(request.url);
-          const genres = url.searchParams.getAll('genre');
-          expect(genres).toEqual(['RPG', 'Action']);
-
-          return HttpResponse.json({
-            user_games: [],
-            total: 0,
-            page: 1,
-            per_page: 20,
-            pages: 0,
-          });
-        }),
-      );
-
-      const result = await getUserGames({
-        genre: ['RPG', 'Action'],
-      });
-      expect(result).toBeDefined();
-      expect(result.items).toEqual([]);
-    });
-
-    it('handles multiple tag values', async () => {
-      server.use(
-        http.get(`${API_URL}/user-games`, ({ request }) => {
-          const url = new URL(request.url);
-          const tags = url.searchParams.getAll('tag');
-          expect(tags).toEqual(['tag-id-1', 'tag-id-2']);
-
-          return HttpResponse.json({
-            user_games: [],
-            total: 0,
-            page: 1,
-            per_page: 20,
-            pages: 0,
-          });
-        }),
-      );
-
-      const result = await getUserGames({
-        tags: ['tag-id-1', 'tag-id-2'],
-      });
+      const result = await getUserGames({ [optionKey]: values });
       expect(result).toBeDefined();
       expect(result.items).toEqual([]);
     });
@@ -976,54 +906,21 @@ describe('games.ts', () => {
       expect(ids).toEqual(['game-1', 'game-2', 'game-3']);
     });
 
-    it('handles multiple platform values', async () => {
+    it.each([
+      ['platform', 'platform', ['windows', 'playstation_5']],
+      ['genre', 'genre', ['RPG', 'Action']],
+      ['tags', 'tag', ['tag-id-1', 'tag-id-2']],
+    ] as const)('handles multiple %s values', async (optionKey, paramKey, values) => {
       server.use(
         http.get(`${API_URL}/user-games/ids`, ({ request }) => {
           const url = new URL(request.url);
-          const platforms = url.searchParams.getAll('platform');
-          expect(platforms).toEqual(['windows', 'playstation_5']);
+          expect(url.searchParams.getAll(paramKey)).toEqual(values);
 
           return HttpResponse.json({ ids: ['game-1', 'game-2'] });
         }),
       );
 
-      const ids = await getUserGameIds({
-        platform: ['windows', 'playstation_5'],
-      });
-      expect(ids).toEqual(['game-1', 'game-2']);
-    });
-
-    it('handles multiple genre values', async () => {
-      server.use(
-        http.get(`${API_URL}/user-games/ids`, ({ request }) => {
-          const url = new URL(request.url);
-          const genres = url.searchParams.getAll('genre');
-          expect(genres).toEqual(['RPG', 'Action']);
-
-          return HttpResponse.json({ ids: ['game-1'] });
-        }),
-      );
-
-      const ids = await getUserGameIds({
-        genre: ['RPG', 'Action'],
-      });
-      expect(ids).toEqual(['game-1']);
-    });
-
-    it('handles multiple tag values', async () => {
-      server.use(
-        http.get(`${API_URL}/user-games/ids`, ({ request }) => {
-          const url = new URL(request.url);
-          const tags = url.searchParams.getAll('tag');
-          expect(tags).toEqual(['tag-id-1', 'tag-id-2']);
-
-          return HttpResponse.json({ ids: ['game-1', 'game-2'] });
-        }),
-      );
-
-      const ids = await getUserGameIds({
-        tags: ['tag-id-1', 'tag-id-2'],
-      });
+      const ids = await getUserGameIds({ [optionKey]: values });
       expect(ids).toEqual(['game-1', 'game-2']);
     });
   });

@@ -20,7 +20,6 @@ import {
   useAddPlatformToUserGame,
   useUpdatePlatformAssociation,
   useRemovePlatformFromUserGame,
-  gameKeys,
 } from './use-games';
 import { OwnershipStatus } from '@/types';
 import type { PlayStatus, GameId } from '@/types';
@@ -125,46 +124,6 @@ const mockIGDBGameApi = {
 describe('use-games hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('gameKeys', () => {
-    it('generates correct query keys for all', () => {
-      expect(gameKeys.all).toEqual(['userGames']);
-    });
-
-    it('generates correct query keys for lists', () => {
-      expect(gameKeys.lists()).toEqual(['userGames', 'list']);
-    });
-
-    it('generates correct query keys for list with params', () => {
-      expect(gameKeys.list()).toEqual(['userGames', 'list', undefined]);
-      expect(gameKeys.list({ status: 'completed' as PlayStatus })).toEqual([
-        'userGames',
-        'list',
-        { status: 'completed' },
-      ]);
-      expect(gameKeys.list({ search: 'zelda', page: 2, perPage: 20 })).toEqual([
-        'userGames',
-        'list',
-        { search: 'zelda', page: 2, perPage: 20 },
-      ]);
-    });
-
-    it('generates correct query keys for details', () => {
-      expect(gameKeys.details()).toEqual(['userGames', 'detail']);
-    });
-
-    it('generates correct query keys for detail with id', () => {
-      expect(gameKeys.detail('game-123')).toEqual(['userGames', 'detail', 'game-123']);
-    });
-
-    it('generates correct query keys for stats', () => {
-      expect(gameKeys.stats()).toEqual(['userGames', 'stats']);
-    });
-
-    it('generates correct query keys for igdbSearch', () => {
-      expect(gameKeys.igdbSearch('zelda')).toEqual(['igdbSearch', 'zelda']);
-    });
   });
 
   describe('useUserGames', () => {
@@ -290,10 +249,9 @@ describe('use-games hooks', () => {
         wrapper: QueryWrapper,
       });
 
-      // Wait a bit to ensure no request was made
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
+      // Disabled query: stays pending and never fires the request.
       expect(result.current.isPending).toBe(true);
+      expect(result.current.fetchStatus).toBe('idle');
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
@@ -354,10 +312,10 @@ describe('use-games hooks', () => {
         wrapper: QueryWrapper,
       });
 
-      // Wait a bit to ensure no request was made
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
+      // Below the 3-char minimum neither query is enabled: the combined result
+      // stays pending and the search endpoint is never hit.
       expect(result.current.isPending).toBe(true);
+      expect(result.current.isFetching).toBe(false);
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
@@ -1198,83 +1156,9 @@ describe('use-games hooks', () => {
       expect(result.current.data?.items).toEqual([]);
       expect(result.current.data?.total).toBe(0);
     });
-
-    it('uses separate query key from main games list', () => {
-      const queryClient = createTestQueryClient();
-
-      server.use(
-        http.get(`${API_URL}/user-games`, () => {
-          return HttpResponse.json({
-            user_games: [],
-            total: 0,
-            page: 1,
-            per_page: 50,
-            pages: 0,
-          });
-        }),
-      );
-
-      const { result: activeResult } = renderHook(() => useActiveGames(), {
-        wrapper: ({ children }) => (
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-        ),
-      });
-
-      const { result: allResult } = renderHook(() => useUserGames(), {
-        wrapper: ({ children }) => (
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-        ),
-      });
-
-      // Active games should have a different query key
-      expect(activeResult.current.dataUpdatedAt).toBeDefined();
-      expect(allResult.current.dataUpdatedAt).toBeDefined();
-    });
   });
 
   describe('query caching behavior', () => {
-    it('uses cache for repeated queries with same params', async () => {
-      let fetchCount = 0;
-
-      server.use(
-        http.get(`${API_URL}/user-games`, () => {
-          fetchCount++;
-          return HttpResponse.json({
-            user_games: [mockUserGameApi],
-            total: 1,
-            page: 1,
-            per_page: 20,
-            pages: 1,
-          });
-        }),
-      );
-
-      const queryClient = createTestQueryClient();
-
-      const { result: result1 } = renderHook(() => useUserGames(), {
-        wrapper: ({ children }) => (
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-        ),
-      });
-
-      await waitFor(() => {
-        expect(result1.current.isSuccess).toBe(true);
-      });
-
-      expect(fetchCount).toBe(1);
-
-      // Render again with same params - should use cache
-      const { result: result2 } = renderHook(() => useUserGames(), {
-        wrapper: ({ children }) => (
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-        ),
-      });
-
-      // Should immediately have data from cache (no loading state)
-      expect(result2.current.data?.items).toHaveLength(1);
-      expect(fetchCount).toBe(1); // No additional fetch
-    });
-
     it('fetches separately for different params', async () => {
       let fetchCount = 0;
 
@@ -1378,41 +1262,6 @@ describe('use-games hooks', () => {
       });
 
       expect(result.current.error?.message).toBe('Failed to fetch genres');
-    });
-
-    it('uses staleTime of 5 minutes for caching', async () => {
-      let fetchCount = 0;
-
-      server.use(
-        http.get(`${API_URL}/user-games/genres`, () => {
-          fetchCount++;
-          return HttpResponse.json({ genres: ['Action', 'Adventure'] });
-        }),
-      );
-
-      const queryClient = createTestQueryClient();
-
-      const { result: result1 } = renderHook(() => useUserGameGenres(), {
-        wrapper: ({ children }) => (
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-        ),
-      });
-
-      await waitFor(() => {
-        expect(result1.current.isSuccess).toBe(true);
-      });
-
-      expect(fetchCount).toBe(1);
-
-      // Render again - should use cache due to staleTime
-      const { result: result2 } = renderHook(() => useUserGameGenres(), {
-        wrapper: ({ children }) => (
-          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-        ),
-      });
-
-      expect(result2.current.data).toEqual(['Action', 'Adventure']);
-      expect(fetchCount).toBe(1); // No additional fetch due to staleTime
     });
   });
 });

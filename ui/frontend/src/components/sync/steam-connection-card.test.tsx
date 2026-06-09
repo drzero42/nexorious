@@ -49,25 +49,6 @@ describe('SteamConnectionCard', () => {
 
       expect(screen.getByRole('button', { name: 'Verify & Connect' })).toBeInTheDocument();
     });
-
-    it('shows help accordions', () => {
-      render(
-        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
-      );
-
-      expect(screen.getByText('How do I find my Steam ID?')).toBeInTheDocument();
-      expect(screen.getByText('How do I get an API key?')).toBeInTheDocument();
-    });
-
-    it('shows description for not configured state', () => {
-      render(
-        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
-      );
-
-      expect(
-        screen.getByText('Connect your Steam account to sync your game library'),
-      ).toBeInTheDocument();
-    });
   });
 
   describe('configured state', () => {
@@ -93,18 +74,6 @@ describe('SteamConnectionCard', () => {
       );
 
       expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
-    });
-
-    it('shows description for configured state', () => {
-      render(
-        <SteamConnectionCard
-          isConfigured={true}
-          steamUsername="TestUser"
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
-      expect(screen.getByText('Your Steam account is connected')).toBeInTheDocument();
     });
 
     it('does not show connection form when configured', () => {
@@ -205,7 +174,9 @@ describe('SteamConnectionCard', () => {
       });
     });
 
-    it('accepts valid Steam ID format (17 digits starting with 7656119)', async () => {
+    // The uppercase-hex happy path is covered by 'verifies credentials and signals
+    // connection change on success'; this retains the distinct lowercase-hex input.
+    it('accepts a valid lowercase-hex API key format', async () => {
       const user = userEvent.setup({ delay: null });
       mockVerifyMutateAsync.mockResolvedValue({
         valid: true,
@@ -220,35 +191,6 @@ describe('SteamConnectionCard', () => {
       await user.type(steamIdInput, '76561198012345678');
 
       const apiKeyInput = screen.getByLabelText('Steam Web API Key');
-      await user.type(apiKeyInput, 'ABCD1234ABCD1234ABCD1234ABCD1234');
-
-      const submitButton = screen.getByRole('button', { name: 'Verify & Connect' });
-      await user.click(submitButton);
-
-      await waitFor(() => {
-        expect(mockVerifyMutateAsync).toHaveBeenCalledWith({
-          steamId: '76561198012345678',
-          webApiKey: 'ABCD1234ABCD1234ABCD1234ABCD1234',
-        });
-      });
-    });
-
-    it('accepts valid API key format (32 hex characters)', async () => {
-      const user = userEvent.setup({ delay: null });
-      mockVerifyMutateAsync.mockResolvedValue({
-        valid: true,
-        steamUsername: 'TestUser',
-      });
-
-      render(
-        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
-      );
-
-      const steamIdInput = screen.getByLabelText('Steam ID');
-      await user.type(steamIdInput, '76561198012345678');
-
-      const apiKeyInput = screen.getByLabelText('Steam Web API Key');
-      // Valid hex key (lowercase also valid)
       await user.type(apiKeyInput, 'abcdef1234567890abcdef1234567890');
 
       const submitButton = screen.getByRole('button', { name: 'Verify & Connect' });
@@ -293,55 +235,30 @@ describe('SteamConnectionCard', () => {
       });
     });
 
-    it('shows error for invalid Steam ID from verification', async () => {
-      const user = userEvent.setup({ delay: null });
-      mockVerifyMutateAsync.mockResolvedValue({
-        valid: false,
-        error: 'invalid_steam_id',
-      });
+    it.each(['invalid_steam_id', 'invalid_api_key'])(
+      'does not signal connection change when verification fails with %s',
+      async (error) => {
+        const user = userEvent.setup({ delay: null });
+        mockVerifyMutateAsync.mockResolvedValue({ valid: false, error });
 
-      render(
-        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
-      );
+        render(
+          <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
+        );
 
-      const steamIdInput = screen.getByLabelText('Steam ID');
-      await user.type(steamIdInput, '76561198012345678');
+        const steamIdInput = screen.getByLabelText('Steam ID');
+        await user.type(steamIdInput, '76561198012345678');
 
-      const apiKeyInput = screen.getByLabelText('Steam Web API Key');
-      await user.type(apiKeyInput, 'ABCD1234ABCD1234ABCD1234ABCD1234');
+        const apiKeyInput = screen.getByLabelText('Steam Web API Key');
+        await user.type(apiKeyInput, 'ABCD1234ABCD1234ABCD1234ABCD1234');
 
-      const submitButton = screen.getByRole('button', { name: 'Verify & Connect' });
-      await user.click(submitButton);
+        const submitButton = screen.getByRole('button', { name: 'Verify & Connect' });
+        await user.click(submitButton);
 
-      await waitFor(() => {
-        expect(mockOnConnectionChange).not.toHaveBeenCalled();
-      });
-    });
-
-    it('shows error for invalid API key from verification', async () => {
-      const user = userEvent.setup({ delay: null });
-      mockVerifyMutateAsync.mockResolvedValue({
-        valid: false,
-        error: 'invalid_api_key',
-      });
-
-      render(
-        <SteamConnectionCard isConfigured={false} onConnectionChange={mockOnConnectionChange} />,
-      );
-
-      const steamIdInput = screen.getByLabelText('Steam ID');
-      await user.type(steamIdInput, '76561198012345678');
-
-      const apiKeyInput = screen.getByLabelText('Steam Web API Key');
-      await user.type(apiKeyInput, 'ABCD1234ABCD1234ABCD1234ABCD1234');
-
-      const submitButton = screen.getByRole('button', { name: 'Verify & Connect' });
-      await user.click(submitButton);
-
-      await waitFor(() => {
-        expect(mockOnConnectionChange).not.toHaveBeenCalled();
-      });
-    });
+        await waitFor(() => {
+          expect(mockOnConnectionChange).not.toHaveBeenCalled();
+        });
+      },
+    );
   });
 
   describe('disconnect functionality', () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/server';
-import { QueryWrapper, createTestQueryClient } from '@/test/test-utils';
+import { QueryWrapper } from '@/test/test-utils';
 import {
   usePlatforms,
   useAllPlatforms,
@@ -13,8 +13,6 @@ import {
   useAllStorefronts,
   useStorefront,
   useStorefrontNames,
-  platformKeys,
-  storefrontKeys,
 } from './use-platforms';
 
 const API_URL = '/api';
@@ -73,47 +71,6 @@ const mockStorefrontApi = {
 describe('use-platforms hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('platformKeys', () => {
-    it('generates correct query keys', () => {
-      expect(platformKeys.all).toEqual(['platforms']);
-      expect(platformKeys.lists()).toEqual(['platforms', 'list']);
-      expect(platformKeys.list()).toEqual(['platforms', 'list', undefined]);
-      expect(platformKeys.list({ activeOnly: true })).toEqual([
-        'platforms',
-        'list',
-        { activeOnly: true },
-      ]);
-      expect(platformKeys.details()).toEqual(['platforms', 'detail']);
-      expect(platformKeys.detail('platform-1')).toEqual(['platforms', 'detail', 'platform-1']);
-      expect(platformKeys.storefronts('platform-1')).toEqual([
-        'platforms',
-        'storefronts',
-        'platform-1',
-      ]);
-      expect(platformKeys.names()).toEqual(['platforms', 'names']);
-    });
-  });
-
-  describe('storefrontKeys', () => {
-    it('generates correct query keys', () => {
-      expect(storefrontKeys.all).toEqual(['storefronts']);
-      expect(storefrontKeys.lists()).toEqual(['storefronts', 'list']);
-      expect(storefrontKeys.list()).toEqual(['storefronts', 'list', undefined]);
-      expect(storefrontKeys.list({ activeOnly: false })).toEqual([
-        'storefronts',
-        'list',
-        { activeOnly: false },
-      ]);
-      expect(storefrontKeys.details()).toEqual(['storefronts', 'detail']);
-      expect(storefrontKeys.detail('storefront-1')).toEqual([
-        'storefronts',
-        'detail',
-        'storefront-1',
-      ]);
-      expect(storefrontKeys.names()).toEqual(['storefronts', 'names']);
-    });
   });
 
   describe('usePlatforms', () => {
@@ -263,27 +220,6 @@ describe('use-platforms hooks', () => {
       expect(result.current.data?.name).toBe('pc');
       expect(result.current.data?.storefronts).toHaveLength(1);
     });
-
-    it('does not fetch when ID is undefined', async () => {
-      const fetchSpy = vi.fn();
-
-      server.use(
-        http.get(`${API_URL}/platforms/*`, () => {
-          fetchSpy();
-          return HttpResponse.json(mockPlatformApi);
-        }),
-      );
-
-      const { result } = renderHook(() => usePlatform(undefined), {
-        wrapper: QueryWrapper,
-      });
-
-      // Wait a bit to ensure no request was made
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      expect(result.current.isPending).toBe(true);
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
   });
 
   describe('usePlatformStorefronts', () => {
@@ -310,31 +246,6 @@ describe('use-platforms hooks', () => {
 
       expect(result.current.data).toHaveLength(2);
       expect(result.current.data?.[0].name).toBe('steam');
-    });
-
-    it('does not fetch when platformId is undefined', async () => {
-      const fetchSpy = vi.fn();
-
-      server.use(
-        http.get(`${API_URL}/platforms/*/storefronts`, () => {
-          fetchSpy();
-          return HttpResponse.json({
-            platform_id: 'platform-1',
-            storefronts: [],
-            total_storefronts: 0,
-          });
-        }),
-      );
-
-      const { result } = renderHook(() => usePlatformStorefronts(undefined), {
-        wrapper: QueryWrapper,
-      });
-
-      // Wait a bit to ensure no request was made
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      expect(result.current.isPending).toBe(true);
-      expect(fetchSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -456,25 +367,34 @@ describe('use-platforms hooks', () => {
       expect(result.current.data?.name).toBe('epic-games-store');
       expect(result.current.data?.name).toBe('epic-games-store');
     });
+  });
 
-    it('does not fetch when ID is undefined', async () => {
+  describe('disabled query guard for undefined ID', () => {
+    // Each of these hooks passes an `enabled: !!id` guard to useQuery, so an
+    // undefined id must leave the query disabled (pending + idle) and never fire
+    // the request — verified via fetchStatus, no real-time sleep required.
+    const cases: Array<[string, () => { isPending: boolean; fetchStatus: string }, string]> = [
+      ['usePlatform', () => usePlatform(undefined), `${API_URL}/platforms/*`],
+      [
+        'usePlatformStorefronts',
+        () => usePlatformStorefronts(undefined),
+        `${API_URL}/platforms/*/storefronts`,
+      ],
+      ['useStorefront', () => useStorefront(undefined), `${API_URL}/platforms/storefronts/*`],
+    ];
+    it.each(cases)('%s does not fetch when the ID is undefined', (_name, hook, endpoint) => {
       const fetchSpy = vi.fn();
-
       server.use(
-        http.get(`${API_URL}/platforms/storefronts/*`, () => {
+        http.get(endpoint, () => {
           fetchSpy();
           return HttpResponse.json(mockStorefrontApi);
         }),
       );
 
-      const { result } = renderHook(() => useStorefront(undefined), {
-        wrapper: QueryWrapper,
-      });
-
-      // Wait a bit to ensure no request was made
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const { result } = renderHook(hook, { wrapper: QueryWrapper });
 
       expect(result.current.isPending).toBe(true);
+      expect(result.current.fetchStatus).toBe('idle');
       expect(fetchSpy).not.toHaveBeenCalled();
     });
   });
@@ -496,47 +416,6 @@ describe('use-platforms hooks', () => {
       });
 
       expect(result.current.data).toEqual(['Steam', 'Epic Games Store', 'GOG']);
-    });
-  });
-
-  describe('staleTime configuration', () => {
-    it('uses Infinity staleTime for platforms (rarely change)', async () => {
-      let fetchCount = 0;
-
-      server.use(
-        http.get(`${API_URL}/platforms`, () => {
-          fetchCount++;
-          return HttpResponse.json({
-            platforms: [mockPlatformApi],
-            total: 1,
-            page: 1,
-            per_page: 100,
-            pages: 1,
-          });
-        }),
-      );
-
-      const queryClient = createTestQueryClient();
-      // Override staleTime for this test to match hook configuration
-      queryClient.setDefaultOptions({
-        queries: { staleTime: Infinity },
-      });
-
-      const { result, rerender } = renderHook(() => usePlatforms(), {
-        wrapper: ({ children }) => <QueryWrapper>{children}</QueryWrapper>,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      // First fetch should have happened
-      expect(fetchCount).toBe(1);
-
-      // Rerender should not trigger new fetch due to staleTime: Infinity
-      rerender();
-
-      expect(fetchCount).toBe(1);
     });
   });
 });

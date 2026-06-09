@@ -560,24 +560,6 @@ describe('BulkActions', () => {
       expect(screen.getByRole('button', { name: /clear/i })).toBeDisabled();
     });
 
-    it('delete button is disabled when bulk delete is pending', async () => {
-      const { useBulkUpdateUserGames, useBulkDeleteUserGames } = vi.mocked(await import('@/hooks'));
-      useBulkUpdateUserGames.mockReturnValue(
-        createMockMutation() as unknown as ReturnType<typeof useBulkUpdateUserGames>,
-      );
-      useBulkDeleteUserGames.mockReturnValue(
-        createMockMutation({ isPending: true }) as unknown as ReturnType<
-          typeof useBulkDeleteUserGames
-        >,
-      );
-
-      const props = createDefaultProps();
-      render(<BulkActions {...props} />);
-
-      // Delete button should be disabled when bulk delete is pending
-      expect(screen.getByRole('button', { name: /delete/i })).toBeDisabled();
-    });
-
     it('enables buttons when not loading', () => {
       const props = createDefaultProps();
       render(<BulkActions {...props} />);

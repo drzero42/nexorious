@@ -49,6 +49,28 @@ func TestListPlatforms(t *testing.T) {
 	if !ok || len(storefronts) == 0 {
 		t.Fatalf("expected pc-windows to have storefronts, got %v", pcWindows["storefronts"])
 	}
+
+	// icon_url is constructed from the bare icon filename.
+	iconURL, ok := pcWindows["icon_url"].(string)
+	if !ok {
+		t.Fatalf("expected icon_url string, got %T: %v", pcWindows["icon_url"], pcWindows["icon_url"])
+	}
+	if want := "/logos/platforms/pc-windows/pc-windows-icon-light.svg"; iconURL != want {
+		t.Fatalf("expected icon_url=%q, got %q", want, iconURL)
+	}
+
+	// Storefronts embedded in platform response also need icon_url.
+	for _, sfAny := range storefronts {
+		sf, ok := sfAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		if sf["icon"] != nil {
+			if _, ok := sf["icon_url"].(string); !ok {
+				t.Fatalf("storefront %v has icon but missing icon_url", sf["name"])
+			}
+		}
+	}
 }
 
 func TestListPlatforms_Unauthorized(t *testing.T) {
@@ -323,58 +345,6 @@ func loginAndGetToken(t *testing.T, handler interface {
 	}
 	t.Fatalf("no session_id cookie in login response")
 	return ""
-}
-
-func TestListPlatforms_HasIconURL(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEcho(t, testDB, cfg)
-	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
-
-	rec := getAuth(t, e, "/api/platforms", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	platforms, _ := resp["platforms"].([]any)
-
-	var pcWindows map[string]any
-	for _, p := range platforms {
-		pm := p.(map[string]any)
-		if pm["name"] == "pc-windows" {
-			pcWindows = pm
-			break
-		}
-	}
-	if pcWindows == nil {
-		t.Fatal("expected pc-windows platform in list")
-	}
-
-	iconURL, ok := pcWindows["icon_url"].(string)
-	if !ok {
-		t.Fatalf("expected icon_url string, got %T: %v", pcWindows["icon_url"], pcWindows["icon_url"])
-	}
-	want := "/logos/platforms/pc-windows/pc-windows-icon-light.svg"
-	if iconURL != want {
-		t.Fatalf("expected icon_url=%q, got %q", want, iconURL)
-	}
-
-	// Storefronts embedded in platform response also need icon_url
-	storefronts, _ := pcWindows["storefronts"].([]any)
-	for _, sfAny := range storefronts {
-		sf, ok := sfAny.(map[string]any)
-		if !ok {
-			continue
-		}
-		if sf["icon"] != nil {
-			if _, ok := sf["icon_url"].(string); !ok {
-				t.Fatalf("storefront %v has icon but missing icon_url", sf["name"])
-			}
-		}
-	}
 }
 
 func TestListStorefronts_HasIconURL(t *testing.T) {

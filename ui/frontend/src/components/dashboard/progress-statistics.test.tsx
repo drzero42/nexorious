@@ -72,26 +72,6 @@ describe('ProgressStatistics', () => {
   });
 
   describe('Progress Breakdown', () => {
-    it('displays progress breakdown section', () => {
-      render(<ProgressStatistics stats={createMockStats()} />);
-
-      expect(screen.getByText('Progress Breakdown')).toBeInTheDocument();
-    });
-
-    it('shows all play status entries', () => {
-      render(<ProgressStatistics stats={createMockStats()} />);
-
-      // Multiple occurrences expected due to Progress Breakdown and Completion Journey
-      expect(screen.getAllByText('Not Started').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('In Progress').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('Completed').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('Mastered').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('Dominated').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('Shelved').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('Dropped').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('Replay').length).toBeGreaterThanOrEqual(1);
-    });
-
     it('displays game counts for each status', () => {
       render(<ProgressStatistics stats={createMockStats()} />);
 
@@ -102,12 +82,6 @@ describe('ProgressStatistics', () => {
   });
 
   describe('Completion Journey', () => {
-    it('displays completion journey section', () => {
-      render(<ProgressStatistics stats={createMockStats()} />);
-
-      expect(screen.getByText('Completion Journey')).toBeInTheDocument();
-    });
-
     it('shows journey milestone descriptions', () => {
       render(<ProgressStatistics stats={createMockStats()} />);
 
@@ -120,15 +94,6 @@ describe('ProgressStatistics', () => {
   });
 
   describe('Time Investment', () => {
-    it('displays time investment section when hours > 0', () => {
-      render(<ProgressStatistics stats={createMockStats()} />);
-
-      expect(screen.getByText('Time Investment')).toBeInTheDocument();
-      expect(screen.getByText('Total Hours Played')).toBeInTheDocument();
-      expect(screen.getByText('Average Hours per Game')).toBeInTheDocument();
-      expect(screen.getByText('Average Completion Time')).toBeInTheDocument();
-    });
-
     it('does not display time investment when hours is 0', () => {
       render(<ProgressStatistics stats={createMockStats({ totalHoursPlayed: 0 })} />);
 
@@ -144,7 +109,8 @@ describe('ProgressStatistics', () => {
   });
 
   describe('Edge cases', () => {
-    it('handles zero total games', () => {
+    it('renders without crashing on sparse input (zero totals / missing statuses)', () => {
+      // Zero total games with all statuses at 0.
       const emptyStats = createMockStats({
         totalGames: 0,
         completionStats: {
@@ -159,25 +125,19 @@ describe('ProgressStatistics', () => {
         },
         totalHoursPlayed: 0,
       });
-
-      render(<ProgressStatistics stats={emptyStats} />);
-
-      // Should render without crashing
+      const { unmount } = render(<ProgressStatistics stats={emptyStats} />);
       expect(screen.getByText('Total Games')).toBeInTheDocument();
-      // Multiple 0s expected (total games, hours, percentages)
       expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(1);
-    });
+      unmount();
 
-    it('handles missing completion stats gracefully', () => {
+      // Sparse completionStats with most status keys missing.
       const partialStats = createMockStats({
         completionStats: {
           [PlayStatus.IN_PROGRESS]: 5,
         } as Record<PlayStatus, number>,
       });
-
       render(<ProgressStatistics stats={partialStats} />);
-
-      // Should render without crashing - In Progress appears in both progress breakdown and journey
+      // In Progress appears in both progress breakdown and journey.
       expect(screen.getAllByText('In Progress').length).toBeGreaterThanOrEqual(1);
     });
 

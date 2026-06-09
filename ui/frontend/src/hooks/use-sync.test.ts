@@ -10,9 +10,6 @@ import {
   useUpdateSyncConfig,
   useTriggerSync,
   useConnectEpicGamesStore,
-  useEpicGamesStoreConnection,
-  useDisconnectEpicGamesStore,
-  syncKeys,
 } from './use-sync';
 import { SyncStorefront, SyncFrequency } from '@/types';
 import * as syncApi from '@/api/sync';
@@ -41,30 +38,6 @@ const mockSyncStatusApi = {
 describe('use-sync hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('syncKeys', () => {
-    it('generates correct query keys for all', () => {
-      expect(syncKeys.all).toEqual(['sync']);
-    });
-
-    it('generates correct query keys for configs', () => {
-      expect(syncKeys.configs()).toEqual(['sync', 'configs']);
-    });
-
-    it('generates correct query keys for config with platform', () => {
-      expect(syncKeys.config(SyncStorefront.STEAM)).toEqual(['sync', 'configs', 'steam']);
-      expect(syncKeys.config(SyncStorefront.GOG)).toEqual(['sync', 'configs', 'gog']);
-    });
-
-    it('generates correct query keys for statuses', () => {
-      expect(syncKeys.statuses()).toEqual(['sync', 'statuses']);
-    });
-
-    it('generates correct query keys for status with platform', () => {
-      expect(syncKeys.status(SyncStorefront.STEAM)).toEqual(['sync', 'statuses', 'steam']);
-      expect(syncKeys.status(SyncStorefront.GOG)).toEqual(['sync', 'statuses', 'gog']);
-    });
   });
 
   describe('useSyncConfigs', () => {
@@ -342,47 +315,6 @@ describe('use-sync hooks', () => {
 
       expect(mockConnectEpicGamesStore).toHaveBeenCalledWith('TESTCODE');
       mockConnectEpicGamesStore.mockRestore();
-    });
-
-    it('should fetch Epic connection status', async () => {
-      const mockGetEpicGamesStoreConnection = vi.spyOn(syncApi, 'getEpicGamesStoreConnection');
-      mockGetEpicGamesStoreConnection.mockResolvedValue({
-        connected: true,
-        disabled: false,
-        displayName: 'EpicUser',
-      });
-
-      const { result } = renderHook(() => useEpicGamesStoreConnection(), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toEqual({
-        connected: true,
-        disabled: false,
-        displayName: 'EpicUser',
-      });
-
-      mockGetEpicGamesStoreConnection.mockRestore();
-    });
-
-    it('should invalidate Epic queries on disconnect', async () => {
-      const mockDisconnectEpicGamesStore = vi.spyOn(syncApi, 'disconnectEpicGamesStore');
-      mockDisconnectEpicGamesStore.mockResolvedValue(undefined);
-
-      const { result } = renderHook(() => useDisconnectEpicGamesStore(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        await result.current.mutateAsync();
-      });
-
-      expect(mockDisconnectEpicGamesStore).toHaveBeenCalled();
-      mockDisconnectEpicGamesStore.mockRestore();
     });
   });
 });

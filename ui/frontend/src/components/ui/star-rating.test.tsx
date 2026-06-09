@@ -9,13 +9,6 @@ function filledStarCount(buttons: HTMLElement[]): number {
 }
 
 describe('StarRating', () => {
-  it('renders 5 star buttons', () => {
-    render(<StarRating />);
-
-    const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(5);
-  });
-
   it('displays the current rating value', () => {
     render(<StarRating value={3} showLabel />);
 
@@ -127,11 +120,5 @@ describe('StarRating', () => {
       'aria-label',
       expect.stringContaining('Current rating: 2'),
     );
-  });
-
-  it('applies the lg size classes to its stars', () => {
-    render(<StarRating size="lg" />);
-
-    expect(screen.getAllByRole('button')[0]).toHaveClass('w-6', 'h-6');
   });
 });

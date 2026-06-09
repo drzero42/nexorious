@@ -264,61 +264,38 @@ func TestExportCSV_Task(t *testing.T) {
 	}
 }
 
-func TestExportJSON_MarkJobFailed_OnWriteError(t *testing.T) {
-	// Use a path that can't be written to (a file instead of a dir) to force
-	// writeJSONExport to fail and trigger markJobFailed.
-	truncateAllTables(t)
-	ctx := context.Background()
-
-	// Create a file where the exports dir would be — this causes MkdirAll to fail.
-	tmpDir := t.TempDir()
-	exportsPath := filepath.Join(tmpDir, "exports")
-	if err := os.WriteFile(exportsPath, []byte("block"), 0o444); err != nil {
-		t.Fatalf("create blocking file: %v", err)
+// TestExport_JobNotFound exercises the "load job not found" path for both export
+// workers; each must return nil (no error, no panic) for a missing job id.
+// The blocked-write markJobFailed path is covered by TestExportJSON_EmitsExportFailed
+// (and TestExportCSV_MarkJobFailed_OnWriteError).
+func TestExport_JobNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T) error
+	}{
+		{
+			name: "json",
+			run: func(t *testing.T) error {
+				w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: t.TempDir()}
+				return w.Work(context.Background(), &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: "non-existent-job"}})
+			},
+		},
+		{
+			name: "csv",
+			run: func(t *testing.T) error {
+				w := &tasks.ExportCSVWorker{DB: testDB, StoragePath: t.TempDir()}
+				return w.Work(context.Background(), &river.Job[tasks.ExportCSVArgs]{Args: tasks.ExportCSVArgs{JobID: "non-existent-job"}})
+			},
+		},
 	}
 
-	userID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	jobID := uuid.NewString()
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items)
-		 VALUES (?, ?, 'export', 'nexorious', 'pending', 'normal', 0)`,
-		jobID, userID,
-	); err != nil {
-		t.Fatalf("insert job: %v", err)
-	}
-
-	w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: tmpDir}
-	if err := w.Work(ctx, &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: jobID}}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Job should be marked failed.
-	var status string
-	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
-		t.Fatalf("read job status: %v", err)
-	}
-	if status != "failed" {
-		t.Errorf("expected job status=failed when write fails, got %q", status)
-	}
-}
-
-// TestExportJSON_JobNotFound exercises the "load job not found" path.
-func TestExportJSON_JobNotFound(t *testing.T) {
-	truncateAllTables(t)
-	w := &tasks.ExportJSONWorker{DB: testDB, StoragePath: t.TempDir()}
-	if err := w.Work(context.Background(), &river.Job[tasks.ExportJSONArgs]{Args: tasks.ExportJSONArgs{JobID: "non-existent-job"}}); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-}
-
-// TestExportCSV_JobNotFound exercises the "load job not found" path.
-func TestExportCSV_JobNotFound(t *testing.T) {
-	truncateAllTables(t)
-	w := &tasks.ExportCSVWorker{DB: testDB, StoragePath: t.TempDir()}
-	if err := w.Work(context.Background(), &river.Job[tasks.ExportCSVArgs]{Args: tasks.ExportCSVArgs{JobID: "non-existent-job"}}); err != nil {
-		t.Fatalf("expected nil, got %v", err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			if err := tc.run(t); err != nil {
+				t.Fatalf("expected nil, got %v", err)
+			}
+		})
 	}
 }
 
@@ -432,6 +409,17 @@ func TestExportJSON_EmitsExportFailed(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// The blocked write must mark the job failed (folded in from the former
+	// TestExportJSON_MarkJobFailed_OnWriteError, which shared this exact setup).
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("read job status: %v", err)
+	}
+	if status != "failed" {
+		t.Errorf("expected job status=failed when write fails, got %q", status)
+	}
+
+	// …and emit the export.failed event.
 	dedupKey := jobID + ":" + notify.TypeExportFailed
 	var count int
 	if err := testDB.QueryRowContext(ctx,

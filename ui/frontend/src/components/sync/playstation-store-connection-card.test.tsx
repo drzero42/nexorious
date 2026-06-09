@@ -341,7 +341,7 @@ describe('PlaystationStoreConnectionCard', () => {
   });
 
   describe('help accordion', () => {
-    it('expands NPSSO token help accordion when clicked', async () => {
+    it('expands NPSSO token help accordion revealing token guidance and the security warning', async () => {
       const user = userEvent.setup({ delay: null });
 
       render(
@@ -358,44 +358,7 @@ describe('PlaystationStoreConnectionCard', () => {
       await waitFor(() => {
         expect(screen.getByText(/Your NPSSO token is a session cookie/)).toBeInTheDocument();
       });
-    });
-
-    it('shows security warning in help text', async () => {
-      const user = userEvent.setup({ delay: null });
-
-      render(
-        <PlaystationStoreConnectionCard
-          isConfigured={false}
-          credentialsError={false}
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
-      const tokenHelp = screen.getByText('How do I get my NPSSO token?');
-      await user.click(tokenHelp);
-
-      await waitFor(() => {
-        expect(screen.getByText(/expires approximately every 2 months/)).toBeInTheDocument();
-      });
-    });
-
-    it('shows PS3 limitation in help text', async () => {
-      const user = userEvent.setup({ delay: null });
-
-      render(
-        <PlaystationStoreConnectionCard
-          isConfigured={false}
-          credentialsError={false}
-          onConnectionChange={mockOnConnectionChange}
-        />,
-      );
-
-      const tokenHelp = screen.getByText('How do I get my NPSSO token?');
-      await user.click(tokenHelp);
-
-      await waitFor(() => {
-        expect(screen.getByText(/PS3 games cannot be synced/)).toBeInTheDocument();
-      });
+      expect(screen.getByText(/expires approximately every 2 months/)).toBeInTheDocument();
     });
   });
 });

@@ -103,39 +103,57 @@ func newTestMetadataRiverClient(t *testing.T) *river.Client[pgx.Tx] {
 
 // ─── Dispatch tests ───────────────────────────────────────────────────────────
 
-func TestMetadataRefreshDispatch_IGDBNotConfigured(t *testing.T) {
-	truncateAllTables(t)
-	insertMetaRefreshAdminUser(t)
-
-	unconfigured := igdbsvc.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
-	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: unconfigured, RiverClient: nil}
-	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
-		t.Fatalf("expected nil, got %v", err)
+// TestMetadataRefreshDispatch_PreconditionMissing consolidates the dispatch
+// guard tests that each leave 0 metadata_refresh jobs when a precondition is
+// missing: IGDB not configured, no admin user, or no stale games to refresh.
+func TestMetadataRefreshDispatch_PreconditionMissing(t *testing.T) {
+	tests := []struct {
+		name string
+		// setup configures the precondition and returns the IGDB client to use.
+		setup func(t *testing.T) *igdbsvc.Client
+	}{
+		{
+			name: "igdb_not_configured",
+			setup: func(t *testing.T) *igdbsvc.Client {
+				insertMetaRefreshAdminUser(t)
+				return igdbsvc.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
+			},
+		},
+		{
+			name: "no_admin_user",
+			setup: func(t *testing.T) *igdbsvc.Client {
+				srv := igdbTestServer(t, `[]`)
+				t.Cleanup(srv.Close)
+				return newTestIGDBClient(t, srv)
+			},
+		},
+		{
+			name: "no_games",
+			setup: func(t *testing.T) *igdbsvc.Client {
+				insertMetaRefreshAdminUser(t)
+				srv := igdbTestServer(t, `[]`)
+				t.Cleanup(srv.Close)
+				return newTestIGDBClient(t, srv)
+			},
+		},
 	}
 
-	var count int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(context.Background(), &count)
-	if count != 0 {
-		t.Errorf("expected 0 jobs, got %d", count)
-	}
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			igdbClient := tc.setup(t)
 
-func TestMetadataRefreshDispatch_NoAdminUser(t *testing.T) {
-	truncateAllTables(t)
+			w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
+			if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
+				t.Fatalf("expected nil, got %v", err)
+			}
 
-	srv := igdbTestServer(t, `[]`)
-	defer srv.Close()
-	igdbClient := newTestIGDBClient(t, srv)
-
-	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
-	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-
-	var count int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(context.Background(), &count)
-	if count != 0 {
-		t.Errorf("expected 0 jobs, got %d", count)
+			var count int
+			_ = testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(context.Background(), &count)
+			if count != 0 {
+				t.Errorf("expected 0 jobs, got %d", count)
+			}
+		})
 	}
 }
 
@@ -164,26 +182,6 @@ func TestMetadataRefreshDispatch_AlreadyRunning(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(ctx, &count)
 	if count != 1 {
 		t.Errorf("expected 1 job (the existing one), got %d", count)
-	}
-}
-
-func TestMetadataRefreshDispatch_NoGames(t *testing.T) {
-	truncateAllTables(t)
-	insertMetaRefreshAdminUser(t)
-
-	srv := igdbTestServer(t, `[]`)
-	defer srv.Close()
-	igdbClient := newTestIGDBClient(t, srv)
-
-	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
-	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-
-	var count int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(context.Background(), &count)
-	if count != 0 {
-		t.Errorf("expected 0 jobs, got %d", count)
 	}
 }
 
@@ -339,35 +337,106 @@ func TestMetadataRefreshItem_Success(t *testing.T) {
 	}
 }
 
-func TestMetadataRefreshItem_IGDBError(t *testing.T) {
-	truncateAllTables(t)
-	adminID := insertMetaRefreshAdminUser(t)
-	insertTestGame(t, 2002, "Some Game", time.Now().Add(-24*time.Hour))
-	itemID := setupItemTest(t, adminID, 2002, "Some Game")
-
-	srv := igdbTestServer(t, `[]`)
-	defer srv.Close()
-	igdbClient := newTestIGDBClient(t, srv)
-
-	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
-	_ = w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
-	})
-
-	ctx := context.Background()
-
-	var item models.JobItem
-	_ = testDB.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
-	if item.Status != models.JobItemStatusFailed {
-		t.Errorf("item status: want failed, got %s", item.Status)
+// TestMetadataRefreshItem_Failures consolidates the per-item failure paths that
+// must mark the job_item failed: the IGDB lookup returning no match, the
+// per-item igdb_not_configured guard, unparseable source_metadata, and the
+// backing game row not existing. The igdb_match row additionally asserts the
+// owning job finalizes to completed once its sole item settles.
+func TestMetadataRefreshItem_Failures(t *testing.T) {
+	tests := []struct {
+		name string
+		// setup configures fixtures and returns (itemID, IGDB client).
+		setup func(t *testing.T, adminID string) (string, *igdbsvc.Client)
+		// checkJobCompleted asserts the owning job finalized to completed.
+		checkJobCompleted bool
+	}{
+		{
+			// IGDB returns [] → no match for the looked-up game.
+			name: "igdb_no_match",
+			setup: func(t *testing.T, adminID string) (string, *igdbsvc.Client) {
+				insertTestGame(t, 2002, "Some Game", time.Now().Add(-24*time.Hour))
+				itemID := setupItemTest(t, adminID, 2002, "Some Game")
+				srv := igdbTestServer(t, `[]`)
+				t.Cleanup(srv.Close)
+				return itemID, newTestIGDBClient(t, srv)
+			},
+			checkJobCompleted: true,
+		},
+		{
+			// Per-item "igdb_not_configured" defensive guard.
+			name: "igdb_not_configured_at_item_level",
+			setup: func(t *testing.T, adminID string) (string, *igdbsvc.Client) {
+				insertTestGame(t, 2010, "IGDB Guard Game", time.Now().Add(-24*time.Hour))
+				itemID := setupItemTest(t, adminID, 2010, "IGDB Guard Game")
+				unconfigured := igdbsvc.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
+				return itemID, unconfigured
+			},
+		},
+		{
+			// source_metadata is not an object with game_id → parse failure.
+			name: "bad_source_metadata",
+			setup: func(t *testing.T, adminID string) (string, *igdbsvc.Client) {
+				ctx := context.Background()
+				jobID := uuid.NewString()
+				_, _ = testDB.NewRaw(
+					`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at, started_at)
+					 VALUES (?, ?, 'metadata_refresh', 'system', 'processing', 'low', 1, now(), now())`,
+					jobID, adminID,
+				).Exec(ctx)
+				itemID := uuid.NewString()
+				_, _ = testDB.NewRaw(
+					`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+					 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
+					itemID, jobID, adminID, "bad-key", "Bad Meta", json.RawMessage(`"not-an-object"`),
+				).Exec(ctx)
+				srv := igdbTestServer(t, `[]`)
+				t.Cleanup(srv.Close)
+				return itemID, newTestIGDBClient(t, srv)
+			},
+		},
+		{
+			// Backing game row not inserted → "load game" no-rows failure.
+			name: "game_not_found",
+			setup: func(t *testing.T, adminID string) (string, *igdbsvc.Client) {
+				itemID := setupItemTest(t, adminID, 9999, "Ghost Game")
+				srv := igdbTestServer(t, `[]`)
+				t.Cleanup(srv.Close)
+				return itemID, newTestIGDBClient(t, srv)
+			},
+		},
 	}
 
-	var jobID string
-	_ = testDB.NewRaw(`SELECT job_id FROM job_items WHERE id = ?`, itemID).Scan(ctx, &jobID)
-	var jobStatus string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
-	if jobStatus != models.JobStatusCompleted {
-		t.Errorf("job status: want completed, got %s", jobStatus)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			adminID := insertMetaRefreshAdminUser(t)
+			itemID, igdbClient := tc.setup(t, adminID)
+
+			w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
+			if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
+				Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
+			}); err != nil {
+				t.Fatalf("expected nil, got %v", err)
+			}
+
+			ctx := context.Background()
+
+			var item models.JobItem
+			_ = testDB.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
+			if item.Status != models.JobItemStatusFailed {
+				t.Errorf("item status: want failed, got %s", item.Status)
+			}
+
+			if tc.checkJobCompleted {
+				var jobID string
+				_ = testDB.NewRaw(`SELECT job_id FROM job_items WHERE id = ?`, itemID).Scan(ctx, &jobID)
+				var jobStatus string
+				_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &jobStatus)
+				if jobStatus != models.JobStatusCompleted {
+					t.Errorf("job status: want completed, got %s", jobStatus)
+				}
+			}
+		})
 	}
 }
 
@@ -435,97 +504,6 @@ func TestMetadataRefreshItem_JobItemNotFound(t *testing.T) {
 		Args: tasks.MetadataRefreshItemArgs{JobItemID: "non-existent-item"},
 	}); err != nil {
 		t.Fatalf("expected nil, got %v", err)
-	}
-}
-
-// TestMetadataRefreshItem_IGDBNotConfiguredAtItemLevel exercises the per-item
-// "igdb_not_configured" defensive guard.
-func TestMetadataRefreshItem_IGDBNotConfiguredAtItemLevel(t *testing.T) {
-	truncateAllTables(t)
-	adminID := insertMetaRefreshAdminUser(t)
-	insertTestGame(t, 2010, "IGDB Guard Game", time.Now().Add(-24*time.Hour))
-	itemID := setupItemTest(t, adminID, 2010, "IGDB Guard Game")
-
-	// Use an unconfigured IGDB client — triggers the per-item guard.
-	unconfigured := igdbsvc.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
-
-	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: unconfigured, StoragePath: t.TempDir()}
-	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
-	}); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-
-	ctx := context.Background()
-	var item models.JobItem
-	_ = testDB.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
-	if item.Status != models.JobItemStatusFailed {
-		t.Errorf("item status: want failed, got %s", item.Status)
-	}
-}
-
-// TestMetadataRefreshItem_BadSourceMetadata exercises the "parse source_metadata" failure path.
-func TestMetadataRefreshItem_BadSourceMetadata(t *testing.T) {
-	truncateAllTables(t)
-	adminID := insertMetaRefreshAdminUser(t)
-
-	ctx := context.Background()
-	jobID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at, started_at)
-		 VALUES (?, ?, 'metadata_refresh', 'system', 'processing', 'low', 1, now(), now())`,
-		jobID, adminID,
-	).Exec(ctx)
-
-	// Insert item with invalid source_metadata (not an object with game_id).
-	itemID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-		itemID, jobID, adminID, "bad-key", "Bad Meta", json.RawMessage(`"not-an-object"`),
-	).Exec(ctx)
-
-	srv := igdbTestServer(t, `[]`)
-	defer srv.Close()
-	igdbClient := newTestIGDBClient(t, srv)
-
-	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
-	}); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-
-	var item models.JobItem
-	_ = testDB.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
-	if item.Status != models.JobItemStatusFailed {
-		t.Errorf("item status: want failed, got %s", item.Status)
-	}
-}
-
-// TestMetadataRefreshItem_GameNotFound exercises the "load game" failure path (game not in DB).
-func TestMetadataRefreshItem_GameNotFound(t *testing.T) {
-	truncateAllTables(t)
-	adminID := insertMetaRefreshAdminUser(t)
-	// Do NOT insert game 9999 — so the SELECT will fail with "no rows".
-	itemID := setupItemTest(t, adminID, 9999, "Ghost Game")
-
-	srv := igdbTestServer(t, `[]`)
-	defer srv.Close()
-	igdbClient := newTestIGDBClient(t, srv)
-
-	w := &tasks.MetadataRefreshItemWorker{DB: testDB, IGDBClient: igdbClient, StoragePath: t.TempDir()}
-	if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshItemArgs]{
-		Args: tasks.MetadataRefreshItemArgs{JobItemID: itemID},
-	}); err != nil {
-		t.Fatalf("expected nil, got %v", err)
-	}
-
-	ctx := context.Background()
-	var item models.JobItem
-	_ = testDB.NewSelect().Model(&item).Where("id = ?", itemID).Scan(ctx)
-	if item.Status != models.JobItemStatusFailed {
-		t.Errorf("item status: want failed, got %s", item.Status)
 	}
 }
 

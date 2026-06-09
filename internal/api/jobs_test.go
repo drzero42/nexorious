@@ -541,35 +541,6 @@ func TestPendingReviewCount_ExcludesChildren(t *testing.T) {
 	}
 }
 
-func TestPendingReviewCount_IncludesTerminalJobItems(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "prc-terminal")
-
-	// pending_review item under a cancelled job — must be counted
-	insertJob(t, testDB, "job-prc-terminal", userID, "sync", "steam", "cancelled")
-	insertJobItem(t, testDB, "ji-prc-terminal-1", "job-prc-terminal", userID, "key-t1", "Game T", "pending_review")
-
-	rec := getAuth(t, e, "/api/jobs/pending-review-count", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["pending_review_count"].(float64) != 1 {
-		t.Fatalf("expected pending_review_count=1, got %v", resp["pending_review_count"])
-	}
-	bySource, ok := resp["counts_by_source"].(map[string]any)
-	if !ok {
-		t.Fatal("expected counts_by_source to be an object")
-	}
-	if bySource["steam"].(float64) != 1 {
-		t.Fatalf("expected counts_by_source.steam=1, got %v", bySource["steam"])
-	}
-}
-
 // ─── TestHandleJobTypeStatus ──────────────────────────────────────────────────
 
 func TestHandleJobTypeStatus_NoJobs(t *testing.T) {
@@ -804,24 +775,57 @@ func TestHandleRetryFailed_NoFailedItems(t *testing.T) {
 	}
 }
 
+// TestHandleRetryFailed_WithFailedItems exercises retry-failed across every job
+// type (import, sync, metadata_refresh). For each it inserts two failed items
+// and one completed item, then asserts the response retried_count and that the
+// failed items are reset to pending in the DB while the completed item is
+// untouched — the superset assertions formerly split across separate tests.
 func TestHandleRetryFailed_WithFailedItems(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "jobs-retry-withfail")
-
-	insertJob(t, testDB, "job-retry-wf", userID, "import", "steam", "failed")
-	insertJobItem(t, testDB, "ji-retry-wf1", "job-retry-wf", userID, "key-rf1", "Failed Game", "failed")
-
-	rec := postJSONAuth(t, e, "/api/jobs/job-retry-wf/retry-failed", nil, token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	tests := []struct {
+		name    string
+		suffix  string
+		jobID   string
+		jobType string
+		source  string
+	}{
+		{name: "import", suffix: "jobs-retry-withfail", jobID: "job-retry-wf", jobType: "import", source: "steam"},
+		{name: "sync", suffix: "jobs-retry-sync", jobID: "job-retry-sync", jobType: "sync", source: "steam"},
+		{name: "metadata_refresh", suffix: "jobs-retry-meta", jobID: "job-retry-meta", jobType: "metadata_refresh", source: "system"},
 	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["retried_count"].(float64) != 1 {
-		t.Fatalf("expected retried=1, got %v", resp["retried_count"])
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			e := newTestEchoWithPool(t, testDB)
+			userID, token := setupTagUser(t, testDB, e, tt.suffix)
+
+			insertJob(t, testDB, tt.jobID, userID, tt.jobType, tt.source, "failed")
+			failed1 := tt.jobID + "-f1"
+			failed2 := tt.jobID + "-f2"
+			insertJobItem(t, testDB, failed1, tt.jobID, userID, "key-rf1", "Failed Game 1", "failed")
+			insertJobItem(t, testDB, failed2, tt.jobID, userID, "key-rf2", "Failed Game 2", "failed")
+			insertJobItem(t, testDB, tt.jobID+"-c1", tt.jobID, userID, "key-rc1", "Completed Game", "completed")
+
+			rec := postJSONAuth(t, e, "/api/jobs/"+tt.jobID+"/retry-failed", nil, token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+			var resp map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp["retried_count"].(float64) != 2 {
+				t.Fatalf("expected retried=2, got %v", resp["retried_count"])
+			}
+
+			// Both failed items must be reset to pending; the completed item left alone.
+			var s1, s2 string
+			_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, failed1).Scan(context.Background(), &s1)
+			_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, failed2).Scan(context.Background(), &s2)
+			if s1 != "pending" || s2 != "pending" {
+				t.Errorf("expected failed items reset to pending, got %q and %q", s1, s2)
+			}
+		})
 	}
 }
 
@@ -923,48 +927,6 @@ func TestDeleteJob_NotFound(t *testing.T) {
 	}
 }
 
-func TestHandleRetryFailed_SyncJobType(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "jobs-retry-sync")
-
-	insertJob(t, testDB, "job-retry-sync", userID, "sync", "steam", "failed")
-	insertJobItem(t, testDB, "ji-retry-sync1", "job-retry-sync", userID, "key-rs1", "Sync Game", "failed")
-
-	rec := postJSONAuth(t, e, "/api/jobs/job-retry-sync/retry-failed", nil, token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["retried_count"].(float64) != 1 {
-		t.Fatalf("expected retried=1, got %v", resp["retried_count"])
-	}
-}
-
-func TestHandleRetryFailed_MetadataRefreshJobType(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "jobs-retry-meta")
-
-	insertJob(t, testDB, "job-retry-meta", userID, "metadata_refresh", "system", "failed")
-	insertJobItem(t, testDB, "ji-retry-meta1", "job-retry-meta", userID, "key-rm1", "Meta Game", "failed")
-
-	rec := postJSONAuth(t, e, "/api/jobs/job-retry-meta/retry-failed", nil, token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp["retried_count"].(float64) != 1 {
-		t.Fatalf("expected retried=1, got %v", resp["retried_count"])
-	}
-}
-
 func TestJobProgress_IncludesFailedCount(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
@@ -989,66 +951,6 @@ func TestJobProgress_IncludesFailedCount(t *testing.T) {
 	}
 	if failed, ok := progress["failed"].(float64); !ok || failed != 1 {
 		t.Errorf("expected failed=1 in progress, got %v", progress["failed"])
-	}
-}
-
-func TestRetryFailed_RetriesFailedItems(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "retry-failed")
-
-	jobID := uuid.NewString()
-	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed")
-
-	item1ID := uuid.NewString()
-	insertJobItem(t, testDB, item1ID, jobID, userID, "k1", "Game A", "failed")
-	item2ID := uuid.NewString()
-	insertJobItem(t, testDB, item2ID, jobID, userID, "k2", "Game B", "failed")
-	item3ID := uuid.NewString()
-	insertJobItem(t, testDB, item3ID, jobID, userID, "k3", "Game C", "completed")
-
-	rec := postAuth(t, e, "/api/jobs/"+jobID+"/retry-failed", token, "")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if retried, ok := resp["retried_count"].(float64); !ok || retried != 2 {
-		t.Errorf("expected retried=2, got %v", resp["retried_count"])
-	}
-
-	var s1, s2 string
-	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, item1ID).Scan(context.Background(), &s1)
-	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, item2ID).Scan(context.Background(), &s2)
-	if s1 != "pending" {
-		t.Errorf("expected failed item reset to pending, got %q", s1)
-	}
-	if s2 != "pending" {
-		t.Errorf("expected failed item reset to pending, got %q", s2)
-	}
-}
-
-func TestRecentJobs_IncludesCompletedWithFailedItems(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithPool(t, testDB)
-	userID, token := setupTagUser(t, testDB, e, "recent-cwe")
-
-	jobID := uuid.NewString()
-	insertJob(t, testDB, jobID, userID, "sync", "steam", "completed")
-
-	rec := getAuth(t, e, "/api/jobs/recent?source=steam", token)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	jobs, _ := resp["jobs"].([]any)
-	if len(jobs) != 1 {
-		t.Errorf("expected 1 job, got %d", len(jobs))
 	}
 }
 

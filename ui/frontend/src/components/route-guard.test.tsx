@@ -67,20 +67,7 @@ describe('RouteGuard', () => {
       await waitFor(() => {
         expect(mockNavigate).toHaveBeenCalledWith({ to: '/login', replace: true });
       });
-    });
-
-    it('renders nothing while redirecting', async () => {
-      mockUseAuth.mockReturnValue({ isLoading: false, isAuthenticated: false });
-
-      render(
-        <RouteGuard>
-          <div data-testid="children">Protected Content</div>
-        </RouteGuard>,
-      );
-
-      await waitFor(() => {
-        expect(mockNavigate).toHaveBeenCalledWith({ to: '/login', replace: true });
-      });
+      // The guard renders nothing (no children) while the redirect is in flight.
       expect(screen.queryByTestId('children')).not.toBeInTheDocument();
     });
   });
@@ -113,36 +100,6 @@ describe('RouteGuard', () => {
       await waitFor(() => {
         expect(mockNavigate).not.toHaveBeenCalled();
       });
-    });
-
-    it('does not show loading spinner when authenticated', async () => {
-      mockUseAuth.mockReturnValue({ isLoading: false, isAuthenticated: true });
-
-      render(
-        <RouteGuard>
-          <div>Protected Content</div>
-        </RouteGuard>,
-      );
-
-      await waitFor(() => {
-        expect(document.querySelector('.animate-spin')).not.toBeInTheDocument();
-      });
-    });
-
-    it('renders multiple children when authenticated', async () => {
-      mockUseAuth.mockReturnValue({ isLoading: false, isAuthenticated: true });
-
-      render(
-        <RouteGuard>
-          <div data-testid="child1">Child 1</div>
-          <div data-testid="child2">Child 2</div>
-        </RouteGuard>,
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('child1')).toBeInTheDocument();
-      });
-      expect(screen.getByTestId('child2')).toBeInTheDocument();
     });
   });
 
