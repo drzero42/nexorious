@@ -19,6 +19,7 @@ import (
 	"github.com/drzero42/nexorious/internal/services/darkadia"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/matching"
+	"github.com/drzero42/nexorious/internal/usergame"
 )
 
 // ── Stage 1: match ───────────────────────────────────────────────────────────
@@ -225,6 +226,9 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 		} else {
 			newPlatforms++
 		}
+	}
+	if err := usergame.ClearWishlistOnAcquire(ctx, w.DB, ug.ID); err != nil {
+		slog.Error("darkadia_finalize: clear wishlist on acquire", "err", err, "user_game_id", ug.ID)
 	}
 
 	existingTagIDs := map[string]bool{}

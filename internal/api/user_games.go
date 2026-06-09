@@ -44,6 +44,7 @@ type createUserGameRequest struct {
 	PersonalRating *int32            `json:"personal_rating"`
 	IsLoved        bool              `json:"is_loved"`
 	PersonalNotes  *string           `json:"personal_notes"`
+	IsWishlisted   bool              `json:"is_wishlisted"`
 	Platforms      []platformRequest `json:"platforms"`
 }
 
@@ -216,6 +217,7 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	filter.ApplyPlayStatus(fb, c.QueryParam("play_status"))
 	filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
 	filter.ApplySearch(fb, c.QueryParam("q"))
+	filter.ApplyWishlist(fb, c.QueryParam("wishlist") == "true")
 
 	if str := c.QueryParam("is_loved"); str != "" {
 		v := str == "true"
@@ -375,6 +377,10 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "game_id is required")
 	}
 
+	if req.IsWishlisted && len(req.Platforms) > 0 {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "a wishlisted game cannot have platforms")
+	}
+
 	// Validate game exists.
 	ctx := context.Background()
 	gameExists, err := h.db.NewSelect().Model((*models.Game)(nil)).
@@ -400,6 +406,7 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		PersonalRating: req.PersonalRating,
 		IsLoved:        req.IsLoved,
 		PersonalNotes:  req.PersonalNotes,
+		IsWishlisted:   req.IsWishlisted,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -447,6 +454,9 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		if _, err := h.db.NewInsert().Model(&plats).Exec(ctx); err != nil {
 			slog.Error("user_games: failed to insert platforms on create", "err", err, "user_game_id", ug.ID)
 			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		}
+		if err := usergame.ClearWishlistOnAcquire(ctx, h.db, ug.ID); err != nil {
+			slog.Error("user_games: clear wishlist on create", "err", err, "user_game_id", ug.ID)
 		}
 		if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, ug.ID); err != nil {
 			slog.Error("user_games: auto-promote play_status on create", "err", err, "user_game_id", ug.ID)
@@ -840,6 +850,12 @@ func (h *UserGamesHandler) HandleBulkAddPlatforms(c *echo.Context) error {
 		}
 		rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 		added += rows
+		if rows > 0 {
+			// In-transaction: a failed wishlist-clear must roll back the platform inserts, so propagate rather than log-and-continue.
+			if err := usergame.ClearWishlistOnAcquire(ctx, tx, ugID); err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+			}
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -1021,6 +1037,9 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
+	if err := usergame.ClearWishlistOnAcquire(ctx, h.db, userGameID); err != nil {
+		slog.Error("user_games: clear wishlist on create platform", "err", err, "user_game_id", userGameID)
+	}
 	if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, userGameID); err != nil {
 		slog.Error("user_games: auto-promote play_status on create platform", "err", err, "user_game_id", userGameID)
 	}
@@ -1164,6 +1183,117 @@ func (h *UserGamesHandler) HandleDeletePlatform(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+type moveToLibraryRequest struct {
+	Platforms []platformRequest `json:"platforms"`
+}
+
+// HandleMoveToLibrary handles POST /api/user-games/:id/move-to-library. It
+// converts a wishlisted entry into a library entry by attaching the supplied
+// platform(s) and clearing is_wishlisted, atomically. Notes/rating/loved/tags
+// stay on the same row and so carry over automatically.
+func (h *UserGamesHandler) HandleMoveToLibrary(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	userGameID := c.Param("id")
+	ctx := c.Request().Context()
+
+	var req moveToLibraryRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if len(req.Platforms) == 0 {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "at least one platform is required")
+	}
+
+	var ug models.UserGame
+	err := h.db.NewSelect().Model(&ug).
+		Where("id = ?", userGameID).
+		Where("user_id = ?", userID).
+		Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "user game not found")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if !ug.IsWishlisted {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "user game is not on the wishlist")
+	}
+
+	now := time.Now().UTC()
+	plats := make([]*models.UserGamePlatform, 0, len(req.Platforms))
+	for _, p := range req.Platforms {
+		if p.OwnershipStatus != nil && *p.OwnershipStatus != "" {
+			if !enum.OwnershipStatus(*p.OwnershipStatus).Valid() {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+*p.OwnershipStatus)
+			}
+		}
+		pl := &models.UserGamePlatform{
+			ID:              uuid.NewString(),
+			UserGameID:      userGameID,
+			Platform:        p.Platform,
+			Storefront:      p.Storefront,
+			HoursPlayed:     p.HoursPlayed,
+			OwnershipStatus: p.OwnershipStatus,
+			IsAvailable:     true,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}
+		if p.IsAvailable != nil {
+			pl.IsAvailable = *p.IsAvailable
+		}
+		if p.AcquiredDate != nil && *p.AcquiredDate != "" {
+			acquired, err := parseAcquiredDate(*p.AcquiredDate)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+			}
+			pl.AcquiredDate = acquired
+		}
+		plats = append(plats, pl)
+	}
+
+	tx, err := h.db.BeginTx(ctx, nil)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.NewInsert().Model(&plats).Exec(ctx); err != nil {
+		if isDuplicateKeyError(err) {
+			return echo.NewHTTPError(http.StatusConflict, "platform/storefront combination already exists")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if err := usergame.ClearWishlistOnAcquire(ctx, tx, userGameID); err != nil {
+		slog.Error("user_games: clear wishlist on move-to-library", "err", err, "user_game_id", userGameID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if err := usergame.PromoteToInProgressIfPlayed(ctx, tx, userGameID); err != nil {
+		slog.Error("user_games: auto-promote play_status on move-to-library", "err", err, "user_game_id", userGameID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+
+	if err := h.db.NewSelect().Model(&ug).
+		Where("user_game.id = ?", userGameID).
+		Relation("Game").
+		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
+		}).
+		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("Tag")
+		}).
+		Scan(ctx); err != nil {
+		slog.Error("user_games: reload after move-to-library", "err", err, "user_game_id", userGameID)
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
+}
+
 // ── Utility endpoint types ──────────────────────────────────────────────
 
 // UserGameIDsResponse is the response for GET /api/user-games/ids.
@@ -1295,6 +1425,7 @@ func (h *UserGamesHandler) HandleListUserGameIDs(c *echo.Context) error {
 	filter.ApplyPlayStatus(fb, c.QueryParam("play_status"))
 	filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
 	filter.ApplySearch(fb, c.QueryParam("q"))
+	filter.ApplyWishlist(fb, c.QueryParam("wishlist") == "true")
 
 	if str := c.QueryParam("is_loved"); str != "" {
 		v := str == "true"
@@ -1441,6 +1572,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 	total, err := h.db.NewSelect().
 		TableExpr("user_games").
 		Where("user_id = ?", userID).
+		Where("is_wishlisted = ?", false).
 		Count(ctx)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
@@ -1457,6 +1589,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		TableExpr("user_games").
 		ColumnExpr("COALESCE(play_status, 'not_started') AS play_status, COUNT(*) AS count").
 		Where("user_id = ?", userID).
+		Where("is_wishlisted = ?", false).
 		GroupExpr("play_status").
 		Scan(ctx, &statusCounts)
 	if err != nil {
@@ -1477,6 +1610,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		Join("JOIN user_games AS ug ON ug.id = ugp.user_game_id").
 		ColumnExpr("COALESCE(ugp.ownership_status, 'owned') AS ownership_status, COUNT(DISTINCT ugp.user_game_id) AS count").
 		Where("ug.user_id = ?", userID).
+		Where("ug.is_wishlisted = ?", false).
 		GroupExpr("ugp.ownership_status").
 		Scan(ctx, &ownershipCounts)
 	if err != nil {
@@ -1498,6 +1632,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		Join("JOIN platforms AS p ON p.name = ugp.platform").
 		ColumnExpr("p.display_name, COUNT(*) AS count").
 		Where("ug.user_id = ?", userID).
+		Where("ug.is_wishlisted = ?", false).
 		GroupExpr("p.name, p.display_name").
 		Scan(ctx, &platformCounts)
 	if err != nil {
@@ -1514,6 +1649,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		Join("JOIN user_games AS ug ON g.id = ug.game_id").
 		ColumnExpr("g.genre").
 		Where("ug.user_id = ?", userID).
+		Where("ug.is_wishlisted = ?", false).
 		Where("g.genre IS NOT NULL").
 		Scan(ctx, &rawGenres)
 	if err != nil {
@@ -1538,6 +1674,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		TableExpr("user_games").
 		ColumnExpr("AVG(personal_rating)").
 		Where("user_id = ?", userID).
+		Where("is_wishlisted = ?", false).
 		Where("personal_rating IS NOT NULL").
 		Scan(ctx, &avgRating)
 	if err != nil {
@@ -1555,6 +1692,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 		ColumnExpr("COALESCE(SUM(ugp.hours_played), 0)").
 		Join("LEFT JOIN user_game_platforms AS ugp ON ugp.user_game_id = ug.id").
 		Where("ug.user_id = ?", userID).
+		Where("ug.is_wishlisted = ?", false).
 		Scan(ctx, &totalHours)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")

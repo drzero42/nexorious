@@ -2,8 +2,16 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/providers';
-import { useCollectionStats, gameKeys } from '@/hooks';
+import { useCollectionStats, gameKeys, useSettings, useUpdateSettings } from '@/hooks';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { DEAL_REGIONS } from '@/lib/deal-regions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -49,6 +57,43 @@ function calculatePasswordStrength(password: string): PasswordStrength {
   if (score <= 2) return { score, label: 'Weak', color: 'bg-red-500' };
   if (score <= 4) return { score, label: 'Medium', color: 'bg-yellow-500' };
   return { score, label: 'Strong', color: 'bg-green-500' };
+}
+
+function PreferencesSection() {
+  const { data: settings } = useSettings();
+  const updateSettings = useUpdateSettings();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Preferences</CardTitle>
+        <CardDescription>Personalise how Nexorious works for you</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <Label htmlFor="dealRegion">Deal region</Label>
+          <p className="mb-2 text-sm text-muted-foreground">
+            Used for PSprices deal links on your wishlist.
+          </p>
+          <Select
+            value={settings?.dealRegion ?? 'us'}
+            onValueChange={(code) => updateSettings.mutate({ dealRegion: code })}
+          >
+            <SelectTrigger id="dealRegion" className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DEAL_REGIONS.map((r) => (
+                <SelectItem key={r.code} value={r.code}>
+                  {r.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function ProfilePageSkeleton() {
@@ -461,6 +506,9 @@ function ProfilePage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Preferences Section */}
+          <PreferencesSection />
 
           {/* Notifications Section */}
           <NotificationsSection />

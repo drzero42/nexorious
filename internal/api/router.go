@@ -294,6 +294,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		userGamesGroup.PUT("/:id/progress", ugh.HandleUpdateProgress)
 		userGamesGroup.GET("/:id/platforms", ugh.HandleListPlatforms)
 		userGamesGroup.POST("/:id/platforms", ugh.HandleCreatePlatform)
+		userGamesGroup.POST("/:id/move-to-library", ugh.HandleMoveToLibrary)
 		userGamesGroup.PUT("/:id/platforms/:platform_id", ugh.HandleUpdatePlatform)
 		userGamesGroup.DELETE("/:id/platforms/:platform_id", ugh.HandleDeletePlatform)
 
@@ -369,6 +370,12 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		notificationsGroup.GET("/subscriptions", nh.HandleListSubscriptions)
 		notificationsGroup.PUT("/subscriptions", nh.HandlePutSubscriptions)
 		notificationsGroup.POST("/subscriptions/reset", nh.HandleResetSubscriptions)
+
+		// Settings routes (all auth-protected)
+		sh := NewSettingsHandler(db)
+		settingsGroup := e.Group("/api/settings", auth.AuthMiddleware(db))
+		settingsGroup.GET("", sh.HandleGet)
+		settingsGroup.PATCH("", sh.HandlePatch)
 
 		// Sync routes (all auth-protected)
 		steamSvc := steamsvc.NewClient()

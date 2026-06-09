@@ -3126,6 +3126,80 @@ func TestUserGameWorker_PlayStatus_ExistingUserSet_NeverOverwritten(t *testing.T
 	}
 }
 
+// TestUserGameWorker_PromotesWishlistedGame is a regression guard for #867: a
+// wishlisted user_games row (is_wishlisted=true, no platforms) must be
+// auto-promoted to the library (is_wishlisted cleared) when the sync worker
+// attaches a platform to the same (user, game).
+func TestUserGameWorker_PromotesWishlistedGame(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx, `INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING`)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 1)`,
+		jobID, userID,
+	)
+	const igdbID = int32(1005)
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, 'Wishlist Game', now(), now()) ON CONFLICT (id) DO NOTHING`, igdbID,
+	)
+
+	// Pre-create a wishlisted user_games row for this (user, game) — no platforms yet.
+	wishlistUGID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO user_games (id, user_id, game_id, is_wishlisted, created_at, updated_at) VALUES (?, ?, ?, true, now(), now())`,
+		wishlistUGID, userID, igdbID,
+	)
+
+	egID := uuid.NewString()
+	igdbIDVal := igdbID
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription, resolved_igdb_id)
+		 VALUES (?, ?, 'steam', 'ext-1005', 'Wishlist Game', false, true, false, ?)`,
+		egID, userID, igdbIDVal,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'pc-windows', 5.0, now())`,
+		uuid.NewString(), egID,
+	).Exec(ctx)
+	itemID := uuid.NewString()
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, external_game_id, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, 'ext-1005', 'Wishlist Game', ?, '{}', 'pending', '{}', '[]')`,
+		itemID, jobID, userID, egID,
+	)
+
+	w := &tasks.UserGameWorker{DB: testDB, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.UserGameArgs]{Args: tasks.UserGameArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The wishlisted game must be auto-promoted to the library (is_wishlisted cleared).
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).
+		Where("user_id = ?", userID).
+		Where("game_id = ?", igdbID).
+		Scan(ctx); err != nil {
+		t.Fatalf("load user_game: %v", err)
+	}
+	if ug.IsWishlisted {
+		t.Fatal("sync should have cleared is_wishlisted (auto-promote to library)")
+	}
+
+	// The game must also have at least one platform after the sync.
+	var ugpCount int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = ?`, ug.ID,
+	).Scan(ctx, &ugpCount)
+	if ugpCount < 1 {
+		t.Errorf("expected ≥1 platform after sync, got %d", ugpCount)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // SyncCheckJobCompletion — notification emission (Task 14)
 // ---------------------------------------------------------------------------

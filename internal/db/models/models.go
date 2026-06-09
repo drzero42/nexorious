@@ -81,8 +81,9 @@ type UserGame struct {
 	GameID         int32     `bun:"game_id,notnull"    json:"game_id"`
 	PlayStatus     *string   `bun:"play_status"        json:"play_status"`
 	PersonalRating *int32    `bun:"personal_rating"    json:"personal_rating"`
-	IsLoved        bool      `bun:"is_loved,notnull"   json:"is_loved"`
-	PersonalNotes  *string   `bun:"personal_notes"     json:"personal_notes"`
+	IsLoved        bool      `bun:"is_loved,notnull"      json:"is_loved"`
+	IsWishlisted   bool      `bun:"is_wishlisted,notnull" json:"is_wishlisted"`
+	PersonalNotes  *string   `bun:"personal_notes"        json:"personal_notes"`
 	CreatedAt      time.Time `bun:"created_at,notnull" json:"created_at"`
 	UpdatedAt      time.Time `bun:"updated_at,notnull" json:"updated_at"`
 
@@ -228,4 +229,15 @@ type JobChange struct {
 	OldStatus      *string   `bun:"old_status"          json:"old_status"`
 	NewStatus      *string   `bun:"new_status"          json:"new_status"`
 	CreatedAt      time.Time `bun:"created_at,notnull"  json:"created_at"`
+}
+
+// UserSettings mirrors the user_settings table — one row per user, lazily
+// upserted. Holds typed per-user app preferences (e.g. deal_region).
+type UserSettings struct {
+	bun.BaseModel `bun:"table:user_settings"`
+
+	UserID     string    `bun:"user_id,pk"          json:"user_id"`
+	DealRegion string    `bun:"deal_region,notnull" json:"deal_region"`
+	CreatedAt  time.Time `bun:"created_at,notnull"  json:"created_at"`
+	UpdatedAt  time.Time `bun:"updated_at,notnull"  json:"updated_at"`
 }

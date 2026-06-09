@@ -72,6 +72,7 @@ interface UserGameApiResponse {
   personal_rating?: number | null;
   is_loved: boolean;
   play_status: PlayStatus;
+  is_wishlisted: boolean;
   hours_played: number;
   personal_notes?: string;
   platforms: UserGamePlatformApiResponse[];
@@ -101,6 +102,7 @@ interface IGDBGameCandidateApiResponse {
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;
   user_game_id?: string;
+  user_game_is_wishlisted?: boolean;
 }
 
 interface IGDBSearchApiResponse {
@@ -133,6 +135,7 @@ export interface GetUserGamesParams {
   ratingMax?: number;
   hasNotes?: boolean;
   fuzzyThreshold?: number;
+  wishlist?: boolean;
 }
 
 export interface UserGameCreateData {
@@ -140,6 +143,7 @@ export interface UserGameCreateData {
   playStatus?: PlayStatus;
   personalRating?: number | null;
   isLoved?: boolean;
+  isWishlisted?: boolean;
   hoursPlayed?: number;
   personalNotes?: string;
   platforms?: Array<{
@@ -274,6 +278,7 @@ function buildUserGamesQueryParams(params?: GetUserGamesParams): string | undefi
   appendParam(searchParams, 'rating_max', params.ratingMax);
   appendParam(searchParams, 'has_notes', params.hasNotes);
   appendParam(searchParams, 'fuzzy_threshold', params.fuzzyThreshold);
+  appendParam(searchParams, 'wishlist', params.wishlist);
 
   const queryString = searchParams.toString();
   return queryString || undefined;
@@ -317,6 +322,7 @@ export async function createUserGame(data: UserGameCreateData): Promise<UserGame
     play_status: data.playStatus,
     personal_rating: data.personalRating,
     is_loved: data.isLoved,
+    is_wishlisted: data.isWishlisted,
     hours_played: data.hoursPlayed,
     personal_notes: data.personalNotes,
     platforms: data.platforms?.map((p) => ({
@@ -545,6 +551,29 @@ export async function addPlatformToUserGame(
     requestBody,
   );
   return transformUserGamePlatform(response);
+}
+
+/**
+ * Move a wishlisted game to the library by attaching platforms and clearing the wishlist flag.
+ */
+export async function moveToLibrary(
+  userGameId: string,
+  platforms: UserGamePlatformData[],
+): Promise<UserGame> {
+  const response = await api.post<UserGameApiResponse>(
+    `/user-games/${userGameId}/move-to-library`,
+    {
+      platforms: platforms.map((p) => ({
+        platform: p.platform,
+        storefront: p.storefront,
+        is_available: p.isAvailable ?? true,
+        hours_played: p.hoursPlayed,
+        ownership_status: p.ownershipStatus,
+        acquired_date: p.acquiredDate,
+      })),
+    },
+  );
+  return transformUserGame(response);
 }
 
 /**

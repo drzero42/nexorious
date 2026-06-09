@@ -21,6 +21,9 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 vi.mock('@/hooks', () => ({
   useUserGame: vi.fn(),
   useDeleteUserGame: vi.fn(),
+  useSettings: vi.fn(),
+  useMoveToLibrary: vi.fn(),
+  useAllPlatforms: vi.fn(),
 }));
 
 // Minimal mock game — only the fields the component null-checks against
@@ -59,7 +62,8 @@ describe('GameDetailPage — Back to Games navigation', () => {
     // Mock Route.useParams so the component doesn't need a router context
     vi.spyOn(Route, 'useParams').mockReturnValue({ id: 'game-123' });
 
-    const { useUserGame, useDeleteUserGame } = vi.mocked(await import('@/hooks'));
+    const { useUserGame, useDeleteUserGame, useSettings, useMoveToLibrary, useAllPlatforms } =
+      vi.mocked(await import('@/hooks'));
     useUserGame.mockReturnValue({
       data: mockGame,
       isLoading: false,
@@ -68,6 +72,17 @@ describe('GameDetailPage — Back to Games navigation', () => {
     useDeleteUserGame.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue(undefined),
     } as unknown as ReturnType<typeof useDeleteUserGame>);
+    useSettings.mockReturnValue({
+      data: { dealRegion: 'us' },
+    } as unknown as ReturnType<typeof useSettings>);
+    useMoveToLibrary.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+      isPending: false,
+      error: null,
+    } as unknown as ReturnType<typeof useMoveToLibrary>);
+    useAllPlatforms.mockReturnValue({
+      data: [],
+    } as unknown as ReturnType<typeof useAllPlatforms>);
   });
 
   it('navigates to stored return URL when Back to Games is clicked', async () => {
@@ -221,10 +236,23 @@ describe('GameDetailPage — IGDB rating display', () => {
 
     vi.spyOn(Route, 'useParams').mockReturnValue({ id: 'game-123' });
 
-    const { useDeleteUserGame } = vi.mocked(await import('@/hooks'));
+    const { useDeleteUserGame, useSettings, useMoveToLibrary, useAllPlatforms } = vi.mocked(
+      await import('@/hooks'),
+    );
     useDeleteUserGame.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue(undefined),
     } as unknown as ReturnType<typeof useDeleteUserGame>);
+    useSettings.mockReturnValue({
+      data: { dealRegion: 'us' },
+    } as unknown as ReturnType<typeof useSettings>);
+    useMoveToLibrary.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+      isPending: false,
+      error: null,
+    } as unknown as ReturnType<typeof useMoveToLibrary>);
+    useAllPlatforms.mockReturnValue({
+      data: [],
+    } as unknown as ReturnType<typeof useAllPlatforms>);
   });
 
   it('shows IGDB rating in Quick Stats bar when rating_average is present', async () => {

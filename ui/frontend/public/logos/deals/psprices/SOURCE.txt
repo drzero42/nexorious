@@ -1,0 +1,7 @@
+PSprices logo
+=============
+Source: psprices.com site favicon
+URL: https://psprices.com/staticfiles/i/favicon/icon.dbc0cc400577.svg
+Downloaded: 2026-06-09
+Description: PSprices brand mark (white discount glyph on a blue #004ACC tile).
+Used as a link affordance to the PSprices deal-search page for wishlisted games.

@@ -19,10 +19,12 @@ export function AddGamePage() {
   const igdbUnavailable = health?.igdb_status !== undefined && health.igdb_status !== 'ok';
 
   const handleGameSelect = (game: IGDBGameCandidate) => {
-    // Already in the library: jump straight to its edit page instead of walking
-    // the user through the add flow only to reject it as a duplicate (#856).
+    // Already in the library or wishlist: jump straight to the detail page
+    // instead of walking the user through the add flow only to reject it as a
+    // duplicate (#856). For wishlisted entries the detail page hosts the
+    // wishlist UI; for library entries it lets the user navigate to edit.
     if (game.user_game_id) {
-      navigate({ to: '/games/$id/edit', params: { id: game.user_game_id } });
+      navigate({ to: '/games/$id', params: { id: game.user_game_id } });
       return;
     }
     sessionStorage.setItem(SELECTED_GAME_STORAGE_KEY, JSON.stringify(game));

@@ -209,6 +209,15 @@ func ApplyTag(fb *FilterBuilder, tagIDs []string) {
 	})
 }
 
+// ApplyWishlist filters user_games by wishlist state. With onlyWishlisted=true
+// it returns only wishlisted entries; otherwise it excludes them (the default
+// for the main library and bulk-selection ID lists).
+func ApplyWishlist(fb *FilterBuilder, onlyWishlisted bool) {
+	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
+		return q.Where("ug.is_wishlisted = ?", onlyWishlisted)
+	})
+}
+
 // ApplySearch filters by title or personal notes (ILIKE match).
 func ApplySearch(fb *FilterBuilder, query string) {
 	if query == "" {

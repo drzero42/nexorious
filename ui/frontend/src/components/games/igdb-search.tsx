@@ -33,11 +33,11 @@ export interface IGDBSearchProps {
   /** Pre-fill the search field with this query */
   initialQuery?: string;
   /**
-   * When true, results already present in the user's library (i.e. carrying a
-   * `user_game_id`) are marked with an "In library" badge and a "Click to edit"
-   * hint. Used by the Add Game page so existing games route to the edit page
-   * instead of the add flow (#856). Left off elsewhere (e.g. the sync
-   * manual-match dialog) to preserve their selection behaviour.
+   * When true, results already present in the user's library or wishlist (i.e.
+   * carrying a `user_game_id`) are marked with an "In library" or "In wishlist"
+   * badge and a "Click to view" hint, and route to the game detail page instead
+   * of the add flow (#856). Left off elsewhere (e.g. the sync manual-match
+   * dialog) to preserve their selection behaviour.
    */
   showLibraryStatus?: boolean;
   /**
@@ -79,7 +79,7 @@ function formatPlatforms(platforms: string[], maxDisplay = 3): string {
 interface GameResultItemProps {
   game: IGDBGameCandidate;
   onSelect: () => void;
-  /** Show the "In library" badge + "Click to edit" hint for owned games. */
+  /** Show the "In library"/"In wishlist" badge + "Click to view" hint for existing entries. */
   showLibraryStatus?: boolean;
 }
 
@@ -117,12 +117,12 @@ function GameResultItem({ game, onSelect, showLibraryStatus }: GameResultItemPro
             <span className="font-medium text-sm truncate">{game.title}</span>
             {inLibrary && (
               <Badge variant="secondary" className="flex-shrink-0">
-                In library
+                {game.user_game_is_wishlisted ? 'In wishlist' : 'In library'}
               </Badge>
             )}
           </div>
 
-          {inLibrary && <div className="text-xs text-muted-foreground">Click to edit</div>}
+          {inLibrary && <div className="text-xs text-muted-foreground">Click to view</div>}
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {releaseYear && (

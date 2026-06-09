@@ -17,6 +17,7 @@ import (
 	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/usergame"
 )
 
 // ImportItemArgs is the River job args type for "import_item".
@@ -277,6 +278,9 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		} else {
 			newPlatformCount++
 		}
+	}
+	if err := usergame.ClearWishlistOnAcquire(ctx, w.DB, ug.ID); err != nil {
+		slog.Error("import_item: clear wishlist on acquire", "err", err, "user_game_id", ug.ID)
 	}
 
 	// Tags
