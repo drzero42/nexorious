@@ -563,11 +563,27 @@ func TestHandleStartStoreLinkRefreshJob(t *testing.T) {
 		}
 	})
 
-	t.Run("admin gets 200 and enqueues store_link_refresh_dispatch", func(t *testing.T) {
+	t.Run("admin gets 200 with a real job_id, a pending row, and a dispatch", func(t *testing.T) {
 		_, adminTok := setupAdminUser(t, testDB, e, "slr-admin")
 		rec := postJSONAuth(t, e, "/api/games/store-links/refresh-job", nil, adminTok)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body)
+		}
+		var body struct {
+			JobID string `json:"job_id"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if body.JobID == "" {
+			t.Fatalf("expected non-empty job_id")
+		}
+		var status string
+		if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, body.JobID).Scan(context.Background(), &status); err != nil {
+			t.Fatalf("job row not found: %v", err)
+		}
+		if status != "pending" {
+			t.Errorf("status: want pending, got %s", status)
 		}
 		var n int
 		if err := testDB.NewRaw(
@@ -577,6 +593,71 @@ func TestHandleStartStoreLinkRefreshJob(t *testing.T) {
 		}
 		if n < 1 {
 			t.Fatalf("expected at least 1 store_link_refresh_dispatch river job, got %d", n)
+		}
+	})
+}
+
+func TestHandleStartMetadataRefreshJob(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+
+	t.Run("non-admin gets 403", func(t *testing.T) {
+		_, regTok := setupRegularUser(t, testDB, e, "mr-nonadmin")
+		rec := postJSONAuth(t, e, "/api/games/metadata/refresh-job", nil, regTok)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body)
+		}
+	})
+
+	t.Run("admin gets 200 with a real job_id and a pending row", func(t *testing.T) {
+		_, adminTok := setupAdminUser(t, testDB, e, "mr-admin")
+		rec := postJSONAuth(t, e, "/api/games/metadata/refresh-job", nil, adminTok)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body)
+		}
+		var body struct {
+			Success bool   `json:"success"`
+			JobID   string `json:"job_id"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if body.JobID == "" {
+			t.Fatalf("expected non-empty job_id")
+		}
+		var status string
+		if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, body.JobID).Scan(context.Background(), &status); err != nil {
+			t.Fatalf("job row not found for returned id: %v", err)
+		}
+		if status != "pending" {
+			t.Errorf("status: want pending, got %s", status)
+		}
+	})
+
+	t.Run("second start while active returns the same id and no duplicate", func(t *testing.T) {
+		truncateAllTables(t)
+		e := newTestEchoWithPool(t, testDB)
+		_, adminTok := setupAdminUser(t, testDB, e, "mr-admin2")
+
+		first := postJSONAuth(t, e, "/api/games/metadata/refresh-job", nil, adminTok)
+		second := postJSONAuth(t, e, "/api/games/metadata/refresh-job", nil, adminTok)
+		if second.Code != http.StatusOK {
+			t.Fatalf("expected 200 on second call, got %d: %s", second.Code, second.Body)
+		}
+		idOf := func(rec *httptest.ResponseRecorder) string {
+			var b struct {
+				JobID string `json:"job_id"`
+			}
+			_ = json.Unmarshal(rec.Body.Bytes(), &b)
+			return b.JobID
+		}
+		if idOf(first) == "" || idOf(first) != idOf(second) {
+			t.Fatalf("expected identical non-empty ids, got %q and %q", idOf(first), idOf(second))
+		}
+		var count int
+		_ = testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(context.Background(), &count)
+		if count != 1 {
+			t.Errorf("expected exactly 1 job row, got %d", count)
 		}
 	})
 }
