@@ -1,6 +1,7 @@
 package epicgamesstore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -115,17 +116,18 @@ func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]E
 // entries. legendary nests the catalog fields under "metadata": the product
 // namespace is metadata.namespace, NOT a top-level key, so it is read from there
 // (it is the value Epic's productmapping is keyed by for store-link resolution).
-// The DLC filter preserves the existing main_game_appname check; note that field
-// is also not top-level in legendary's output, so DLC filtering is currently a
-// no-op (tracked separately).
+// DLC entries are detected via metadata.mainGameItem — present and non-null only
+// on DLC (it references the main game) — which is also how legendary's own
+// Game.is_dlc is derived. The legacy top-level main_game_appname field legendary
+// never emits, so it is not used.
 func parseLegendaryList(out []byte) ([]ExternalGameEntry, error) {
 	var raw []struct {
-		AppName         string `json:"app_name"`
-		AppTitle        string `json:"app_title"`
-		CatalogItemID   string `json:"catalog_item_id"`
-		MainGameAppName string `json:"main_game_appname"` // intended DLC marker (see note)
-		Metadata        struct {
-			Namespace string `json:"namespace"`
+		AppName       string `json:"app_name"`
+		AppTitle      string `json:"app_title"`
+		CatalogItemID string `json:"catalog_item_id"`
+		Metadata      struct {
+			Namespace    string          `json:"namespace"`
+			MainGameItem json.RawMessage `json:"mainGameItem"` // present & non-null on DLC entries
 		} `json:"metadata"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
@@ -133,7 +135,7 @@ func parseLegendaryList(out []byte) ([]ExternalGameEntry, error) {
 	}
 	entries := make([]ExternalGameEntry, 0, len(raw))
 	for _, r := range raw {
-		if r.MainGameAppName != "" {
+		if isDLC(r.Metadata.MainGameItem) {
 			continue // skip DLC
 		}
 		entries = append(entries, ExternalGameEntry{
@@ -145,6 +147,14 @@ func parseLegendaryList(out []byte) ([]ExternalGameEntry, error) {
 		})
 	}
 	return entries, nil
+}
+
+// isDLC reports whether a legendary entry's metadata.mainGameItem marks it as
+// DLC. The field is present and non-null (a JSON object referencing the main
+// game) only on DLC entries; main games omit it or carry null.
+func isDLC(mainGameItem json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(mainGameItem)
+	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null"))
 }
 
 // Cleanup removes the per-user working directory.
