@@ -125,7 +125,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 	// itemIDs is populated by the insertItems closure (run once inside the tx) and
 	// read only after writeMaintenanceJobInTx returns.
 	itemIDs := make([]string, 0, len(games))
-	if err := writeMaintenanceJobInTx(ctx, w.DB, maintenanceJobParams{
+	skipped, err := writeMaintenanceJobInTx(ctx, w.DB, maintenanceJobParams{
 		HandlerOwned: handlerOwned,
 		JobID:        jobID,
 		OwnerID:      ownerID,
@@ -148,12 +148,17 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 			}
 		}
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		slog.Error("metadata_refresh_dispatch: transaction failed", "err", err)
 		notify.Emit(ctx, w.DB, notify.EmitParams{
 			Type: notify.TypeAdminMaintFailed, Scope: notify.ScopeAdmin,
 			Payload: notify.MaintPayload{Action: "metadata_refresh_dispatch", Error: err.Error()},
 		})
+		return nil
+	}
+	if skipped {
+		slog.Info("metadata_refresh_dispatch: job already active (in-tx guard), skipping", "job_id", jobID)
 		return nil
 	}
 

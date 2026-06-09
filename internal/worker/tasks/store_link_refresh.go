@@ -164,12 +164,13 @@ func (w *StoreLinkRefreshDispatchWorker) Work(ctx context.Context, job *river.Jo
 	// read only after writeMaintenanceJobInTx returns; River jobs are enqueued then,
 	// once the tx has committed and the job_items rows are visible.
 	itemIDs := make([]string, 0, len(groups))
-	if err := writeMaintenanceJobInTx(ctx, w.DB, maintenanceJobParams{
+	skipped, err := writeMaintenanceJobInTx(ctx, w.DB, maintenanceJobParams{
 		HandlerOwned: handlerOwned,
 		JobID:        jobID,
 		OwnerID:      jobUserID,
 		JobType:      models.JobTypeStoreLinkRefresh,
 		Source:       source,
+		GuardUserID:  args.UserID,
 		TotalItems:   len(groups),
 	}, func(ctx context.Context, tx bun.Tx) error {
 		for _, g := range groups {
@@ -185,12 +186,17 @@ func (w *StoreLinkRefreshDispatchWorker) Work(ctx context.Context, job *river.Jo
 			}
 		}
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		slog.Error("store_link_refresh_dispatch: tx failed", "err", err)
 		notify.Emit(ctx, w.DB, notify.EmitParams{
 			Type: notify.TypeAdminMaintFailed, Scope: notify.ScopeAdmin,
 			Payload: notify.MaintPayload{Action: "store_link_refresh_dispatch", Error: err.Error()},
 		})
+		return nil
+	}
+	if skipped {
+		slog.Info("store_link_refresh_dispatch: equivalent job active (in-tx guard), skipping", "job_id", jobID, "source", source)
 		return nil
 	}
 

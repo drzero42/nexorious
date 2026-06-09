@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -183,6 +184,36 @@ func TestSyncTrigger_DuplicateReturns409(t *testing.T) {
 	rec := postJSONAuth(t, e, "/api/sync/steam", nil, token)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected 409 on duplicate, got %d", rec.Code)
+	}
+}
+
+func TestSyncTrigger_ConcurrentCreatesOneJob(t *testing.T) {
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+	_, token := setupTagUser(t, testDB, e, "trig-race-1")
+
+	const n = 16
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	wg.Add(n)
+	for range n {
+		go func() {
+			defer wg.Done()
+			<-start // release together to maximise the TOCTOU race window
+			postJSONAuth(t, e, "/api/sync/steam", nil, token)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	var count int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM jobs WHERE job_type = 'sync' AND source = 'steam' AND status IN ('pending','processing')`,
+	).Scan(context.Background(), &count); err != nil {
+		t.Fatalf("count jobs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 active steam sync job after %d concurrent triggers, got %d", n, count)
 	}
 }
 

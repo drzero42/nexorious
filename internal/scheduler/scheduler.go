@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"log/slog"
 	"os"
 	"time"
@@ -169,23 +171,43 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 			continue
 		}
 
-		var existingID string
-		err := w.DB.NewRaw(
-			`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
-			cfg.UserID, cfg.Storefront,
-		).Scan(ctx, &existingID)
-		if err == nil {
-			continue // already running
-		}
-
+		// Guard + insert run in one transaction fronted by a transaction-scoped
+		// advisory lock on the (sync, storefront, user) dedup key (same key the
+		// manual-trigger handler uses), so a scheduler tick and a concurrent
+		// manual trigger can't both pass the guard and create duplicate active
+		// sync jobs for the same user+storefront.
 		jobID := uuid.NewString()
-		_, err = w.DB.NewRaw(
-			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at) VALUES (?, ?, 'sync', ?, 'pending', 'low', now())`,
-			jobID, cfg.UserID, cfg.Storefront,
-		).Exec(ctx)
-		if err != nil {
-			slog.Error("CheckPendingSyncs: insert job", "err", err)
+		var inserted bool
+		txErr := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+			if e := tasks.AcquireJobDedupLock(ctx, tx, "sync", cfg.Storefront, cfg.UserID); e != nil {
+				return e
+			}
+			var existingID string
+			e := tx.NewRaw(
+				`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
+				cfg.UserID, cfg.Storefront,
+			).Scan(ctx, &existingID)
+			if e == nil {
+				return nil // already running; leave inserted=false
+			}
+			if !errors.Is(e, sql.ErrNoRows) {
+				return e
+			}
+			if _, e := tx.NewRaw(
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at) VALUES (?, ?, 'sync', ?, 'pending', 'low', now())`,
+				jobID, cfg.UserID, cfg.Storefront,
+			).Exec(ctx); e != nil {
+				return e
+			}
+			inserted = true
+			return nil
+		})
+		if txErr != nil {
+			slog.Error("CheckPendingSyncs: create job", "err", txErr, "user_id", cfg.UserID, "storefront", cfg.Storefront)
 			continue
+		}
+		if !inserted {
+			continue // already running
 		}
 
 		if _, err := w.RiverClient.Insert(ctx, tasks.DispatchSyncArgs{

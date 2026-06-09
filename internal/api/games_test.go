@@ -660,4 +660,37 @@ func TestHandleStartMetadataRefreshJob(t *testing.T) {
 			t.Errorf("expected exactly 1 job row, got %d", count)
 		}
 	})
+
+	t.Run("concurrent starts create exactly one job (no TOCTOU duplicates)", func(t *testing.T) {
+		truncateAllTables(t)
+		e := newTestEchoWithPool(t, testDB)
+		_, adminTok := setupAdminUser(t, testDB, e, "mr-admin-race")
+
+		const n = 16
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		wg.Add(n)
+		for range n {
+			go func() {
+				defer wg.Done()
+				<-start // release all goroutines at once to maximise the race window
+				rec := postJSONAuth(t, e, "/api/games/metadata/refresh-job", nil, adminTok)
+				if rec.Code != http.StatusOK {
+					t.Errorf("expected 200, got %d: %s", rec.Code, rec.Body)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		var count int
+		if err := testDB.NewRaw(
+			`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh' AND status IN ('pending','processing')`,
+		).Scan(context.Background(), &count); err != nil {
+			t.Fatalf("count jobs: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("expected exactly 1 active metadata_refresh job after %d concurrent starts, got %d", n, count)
+		}
+	})
 }
