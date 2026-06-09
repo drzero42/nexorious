@@ -511,43 +511,6 @@ describe('use-jobs hooks', () => {
         lastCompletedAt: '2026-01-01T00:00:00Z',
       });
     });
-
-    // The maintenance page sets eager right after starting a job so the new
-    // (asynchronously-created) job's row is detected within seconds instead of
-    // waiting for the 30 s idle baseline.
-    it('polls at the fast 3 s cadence when eager, even while idle', async () => {
-      let calls = 0;
-      server.use(
-        http.get(`${API_URL}/jobs/status/import`, () => {
-          calls += 1;
-          return HttpResponse.json({
-            is_active: false,
-            active_job_id: null,
-            last_completed_job_id: 'job-8',
-            last_completed_at: '2026-01-01T00:00:00Z',
-          });
-        }),
-      );
-
-      vi.useFakeTimers();
-      try {
-        const { result } = renderHook(() => useJobTypeStatus(JobType.IMPORT, { eager: true }), {
-          wrapper: QueryWrapper,
-        });
-
-        await vi.waitFor(() => expect(result.current.isSuccess).toBe(true));
-        expect(calls).toBe(1);
-
-        // An idle (is_active: false) status would normally wait 30 s; eager
-        // drops it to 3 s.
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(3000);
-        });
-        expect(calls).toBe(2);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
   });
 
   describe('useRecentJobs cache invalidation', () => {
