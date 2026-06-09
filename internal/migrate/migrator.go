@@ -79,11 +79,11 @@ func (mg *Migrator) determineState() error {
 		return nil
 	}
 
-	riverPending, err := mg.riverPendingCount(context.Background())
+	riverNeeds, err := mg.riverNeedsMigration(context.Background())
 	if err != nil {
 		return fmt.Errorf("determine state: river: %w", err)
 	}
-	if riverPending > 0 {
+	if riverNeeds {
 		mg.state.Store(int32(AppStateNeedsMigration))
 		return nil
 	}
@@ -92,16 +92,22 @@ func (mg *Migrator) determineState() error {
 	return nil
 }
 
-func (mg *Migrator) riverPendingCount(ctx context.Context) (int, error) {
+// riverNeedsMigration reports whether River has unapplied migrations, using
+// River's own Validate (result.OK is false when migrations are pending). This
+// is preferred over subtracting len(AllVersions)-len(ExistingVersions): that
+// difference goes negative if the DB carries a newer River schema than the
+// linked library knows about (e.g. after a binary downgrade), which a ">0"
+// guard would silently misread as "up to date". Validate surfaces any drift.
+func (mg *Migrator) riverNeedsMigration(ctx context.Context) (bool, error) {
 	riverMig, err := rivermigrate.New(riverdatabasesql.New(mg.db.DB), nil)
 	if err != nil {
-		return 0, err
+		return false, err
 	}
-	existing, err := riverMig.ExistingVersions(ctx)
+	res, err := riverMig.Validate(ctx, nil)
 	if err != nil {
-		return 0, err
+		return false, err
 	}
-	return len(riverMig.AllVersions()) - len(existing), nil
+	return !res.OK, nil
 }
 
 func (mg *Migrator) DetermineState() error {
@@ -147,11 +153,15 @@ func (mg *Migrator) PendingCount() (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("pending count: %w", err)
 	}
-	riverPending, err := mg.riverPendingCount(context.Background())
+	riverNeeds, err := mg.riverNeedsMigration(context.Background())
 	if err != nil {
 		return 0, fmt.Errorf("pending count: river: %w", err)
 	}
-	return len(ms.Unapplied()) + riverPending, nil
+	n := len(ms.Unapplied())
+	if riverNeeds {
+		n++
+	}
+	return n, nil
 }
 
 // Status returns the pending migration count and the name of the most-recently
