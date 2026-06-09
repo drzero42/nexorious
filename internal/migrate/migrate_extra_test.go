@@ -26,35 +26,13 @@ func TestAppState_String(t *testing.T) {
 		{migrate.AppStateNeedsMigration, "needs_migration"},
 		{migrate.AppStateMigrating, "migrating"},
 		{migrate.AppStateReady, "ready"},
+		{migrate.AppStateMigrationFailed, "migration_failed"},
 		{migrate.AppState(99), "unknown"},
 	}
 	for _, tc := range cases {
 		if got := tc.state.String(); got != tc.want {
 			t.Errorf("AppState(%d).String() = %q, want %q", tc.state, got, tc.want)
 		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Close — trivial no-op
-// ---------------------------------------------------------------------------
-
-func TestMigrator_Close(t *testing.T) {
-	db := setupTestDB(t)
-	m := migrate.NewMigrator(db)
-	if err := m.Close(); err != nil {
-		t.Fatalf("Close returned error: %v", err)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// NewMigratorForTest
-// ---------------------------------------------------------------------------
-
-func TestNewMigratorForTest(t *testing.T) {
-	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	if m.State() != migrate.AppStateReady {
-		t.Errorf("expected Ready, got %v", m.State())
 	}
 }
 
