@@ -86,6 +86,13 @@ export function MarkdownDoc({ slug, markdown }: { slug: string; markdown: string
       });
     });
     setToc(entries);
+    // Honor a deep link (e.g. arriving at /help/sync#some-heading): the target
+    // heading only exists once the fetched markdown has rendered, which is when
+    // this effect re-runs, so scroll to it here rather than at navigation time.
+    const hash = window.location.hash;
+    if (hash.length > 1) {
+      scrollToId(hash.slice(1));
+    }
   }, [markdown, slug]);
 
   return (
