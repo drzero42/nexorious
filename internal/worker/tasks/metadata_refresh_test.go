@@ -488,6 +488,58 @@ func TestMetadataRefreshItem_GameNotFound(t *testing.T) {
 	}
 }
 
+func TestMetadataRefreshDispatch_HandlerOwned_PopulatesExistingRow(t *testing.T) {
+	truncateAllTables(t)
+	adminID := insertMetaRefreshAdminUser(t)
+	now := time.Now().UTC()
+	insertTestGame(t, 1001, "Game One", now.Add(-48*time.Hour))
+	insertTestGame(t, 1002, "Game Two", now.Add(-24*time.Hour))
+
+	ctx := context.Background()
+	// Simulate the handler having created a pending row up front.
+	jobID := uuid.NewString()
+	if _, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+		 VALUES (?, ?, 'metadata_refresh', 'system', 'pending', 'low', 0, now())`,
+		jobID, adminID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert pending job: %v", err)
+	}
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+	rc := newTestMetadataRiverClient(t)
+
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
+	if err := w.Work(ctx, &river.Job[tasks.MetadataRefreshDispatchArgs]{
+		Args: tasks.MetadataRefreshDispatchArgs{JobID: jobID},
+	}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	// Exactly one job row (no duplicate), flipped to processing with total_items set.
+	var count int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh'`).Scan(ctx, &count)
+	if count != 1 {
+		t.Fatalf("expected 1 job row, got %d", count)
+	}
+	var status string
+	var total int
+	_ = testDB.NewRaw(`SELECT status, total_items FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status, &total)
+	if status != "processing" {
+		t.Errorf("status: want processing, got %s", status)
+	}
+	if total != 2 {
+		t.Errorf("total_items: want 2, got %d", total)
+	}
+	var itemCount int
+	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
+	if itemCount != 2 {
+		t.Errorf("job_items: want 2, got %d", itemCount)
+	}
+}
+
 // TestMetadataRefreshItem_CoverArtUpdated exercises the cover-art update branch
 // when the image ID exists and the stored URL differs from what IGDB would produce.
 func TestMetadataRefreshItem_CoverArtUpdated(t *testing.T) {

@@ -54,30 +54,51 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		return nil
 	}
 
-	var adminID string
-	err := w.DB.NewRaw(`SELECT id FROM users WHERE is_admin = true LIMIT 1`).Scan(ctx, &adminID)
-	if errors.Is(err, sql.ErrNoRows) {
-		slog.Warn("metadata_refresh_dispatch: no admin user found, skipping")
-		return nil
-	}
-	if err != nil {
-		slog.Error("metadata_refresh_dispatch: query admin user", "err", err)
-		return nil
-	}
+	jobID := job.Args.JobID
+	handlerOwned := jobID != ""
 
-	// Skip if a refresh job is already active.
-	var existingJobID string
-	err = w.DB.NewRaw(
-		`SELECT id FROM jobs WHERE job_type = ? AND status IN ('pending', 'processing') LIMIT 1`,
-		models.JobTypeMetadataRefresh,
-	).Scan(ctx, &existingJobID)
-	if err == nil {
-		slog.Info("metadata_refresh_dispatch: job already active, skipping", "existing_job_id", existingJobID)
-		return nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		slog.Error("metadata_refresh_dispatch: duplicate check", "err", err)
-		return nil
+	// Resolve the job owner (used to stamp job_items). Handler-owned rows already
+	// carry user_id; the self-created (periodic) path falls back to the first admin.
+	var ownerID string
+	if handlerOwned {
+		err := w.DB.NewRaw(`SELECT user_id FROM jobs WHERE id = ?`, jobID).Scan(ctx, &ownerID)
+		if errors.Is(err, sql.ErrNoRows) {
+			slog.Warn("metadata_refresh_dispatch: handler job row missing, skipping", "job_id", jobID)
+			return nil
+		}
+		if err != nil {
+			slog.Error("metadata_refresh_dispatch: load job owner", "err", err)
+			return nil
+		}
+	} else {
+		err := w.DB.NewRaw(`SELECT id FROM users WHERE is_admin = true LIMIT 1`).Scan(ctx, &ownerID)
+		if errors.Is(err, sql.ErrNoRows) {
+			slog.Warn("metadata_refresh_dispatch: no admin user found, skipping")
+			return nil
+		}
+		if err != nil {
+			slog.Error("metadata_refresh_dispatch: query admin user", "err", err)
+			return nil
+		}
+
+		// Skip if a refresh job is already active. Only the self-created path runs
+		// this guard; for handler-owned jobs the handler owns dedup (and the row it
+		// created would otherwise match here and make the worker skip its own work).
+		var existingJobID string
+		err = w.DB.NewRaw(
+			`SELECT id FROM jobs WHERE job_type = ? AND status IN ('pending', 'processing') LIMIT 1`,
+			models.JobTypeMetadataRefresh,
+		).Scan(ctx, &existingJobID)
+		if err == nil {
+			slog.Info("metadata_refresh_dispatch: job already active, skipping", "existing_job_id", existingJobID)
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			slog.Error("metadata_refresh_dispatch: duplicate check", "err", err)
+			return nil
+		}
+
+		jobID = uuid.NewString()
 	}
 
 	// Oldest-refreshed games first.
@@ -85,28 +106,39 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		ID    int32  `bun:"id"`
 		Title string `bun:"title"`
 	}
-	err = w.DB.NewRaw(`SELECT id, title FROM games ORDER BY last_updated ASC`).Scan(ctx, &games)
-	if err != nil {
+	if err := w.DB.NewRaw(`SELECT id, title FROM games ORDER BY last_updated ASC`).Scan(ctx, &games); err != nil {
 		slog.Error("metadata_refresh_dispatch: query games", "err", err)
 		return nil
 	}
 	if len(games) == 0 {
+		// A handler-owned row is already pending; finalize it so it never sticks
+		// in 'pending' forever. The self-created path created nothing, so no-op.
+		if handlerOwned {
+			finalizeJobCompleted(ctx, w.DB, jobID, "metadata_refresh_dispatch: finalize empty", false)
+		}
 		return nil
 	}
 
 	// River jobs must be inserted AFTER the transaction commits: riverClient.Insert uses a
 	// separate connection and commits immediately, so workers can dequeue and attempt to load
 	// job_items before the bun transaction is visible — causing "no rows" errors.
-	jobID := uuid.NewString()
 	itemIDs := make([]string, 0, len(games))
 	if err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		_, err := tx.NewRaw(
-			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-			 VALUES (?, ?, ?, ?, 'processing', 'low', ?, now())`,
-			jobID, adminID, models.JobTypeMetadataRefresh, models.JobSourceSystem, len(games),
-		).Exec(ctx)
-		if err != nil {
-			return fmt.Errorf("insert job: %w", err)
+		if handlerOwned {
+			if _, err := tx.NewRaw(
+				`UPDATE jobs SET total_items = ?, status = 'processing' WHERE id = ?`,
+				len(games), jobID,
+			).Exec(ctx); err != nil {
+				return fmt.Errorf("update job: %w", err)
+			}
+		} else {
+			if _, err := tx.NewRaw(
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+				 VALUES (?, ?, ?, ?, 'processing', 'low', ?, now())`,
+				jobID, ownerID, models.JobTypeMetadataRefresh, models.JobSourceSystem, len(games),
+			).Exec(ctx); err != nil {
+				return fmt.Errorf("insert job: %w", err)
+			}
 		}
 
 		// Insert job_items only; River jobs are enqueued after commit.
@@ -115,14 +147,12 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 			itemIDs = append(itemIDs, itemID)
 
 			sourceMeta, _ := json.Marshal(map[string]any{"game_id": g.ID}) //nolint:errcheck // marshaling a fixed map cannot fail
-			sourceMetaRaw := json.RawMessage(sourceMeta)
 
-			_, err = tx.NewRaw(
+			if _, err := tx.NewRaw(
 				`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
 				 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', now())`,
-				itemID, jobID, adminID, strconv.Itoa(int(g.ID)), g.Title, sourceMetaRaw,
-			).Exec(ctx)
-			if err != nil {
+				itemID, jobID, ownerID, strconv.Itoa(int(g.ID)), g.Title, json.RawMessage(sourceMeta),
+			).Exec(ctx); err != nil {
 				return fmt.Errorf("insert job_item for game %d: %w", g.ID, err)
 			}
 		}
