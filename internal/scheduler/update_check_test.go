@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -67,6 +68,18 @@ func TestCheckForUpdates_EmitsOncePerRelease(t *testing.T) {
 	}
 	if url != "https://github.com/drzero42/nexorious/releases/tag/v9.9.9" {
 		t.Errorf("state url = %q", url)
+	}
+
+	var payload string
+	if err := testDB.NewRaw(
+		`SELECT payload::text FROM events WHERE type = 'admin.version.available'`,
+	).Scan(context.Background(), &payload); err != nil {
+		t.Fatalf("read payload: %v", err)
+	}
+	for _, want := range []string{`"current_version": "0.1.0"`, `"available_version": "9.9.9"`, `"release_url": "https://github.com/drzero42/nexorious/releases/tag/v9.9.9"`} {
+		if !strings.Contains(payload, want) {
+			t.Errorf("payload %s missing %s", payload, want)
+		}
 	}
 }
 
@@ -160,5 +173,35 @@ func TestCheckForUpdates_FetchFailureKeepsLastGoodState(t *testing.T) {
 	}
 	if latest, _ := st.Latest(); latest != "0.2.0" {
 		t.Errorf("state latest = %q, want last good value 0.2.0", latest)
+	}
+}
+
+func TestCheckForUpdates_EachNewReleaseEmitsOnce(t *testing.T) {
+	truncateAllTables(t)
+	var tag atomic.Value
+	tag.Store("v0.10.0")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"` + tag.Load().(string) + `","html_url":"https://github.com/drzero42/nexorious/releases"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	st := updatecheck.NewState()
+	w := &scheduler.CheckForUpdatesWorker{
+		DB:             testDB,
+		State:          st,
+		Client:         updatecheck.NewClientWithBaseURL(srv.URL),
+		RunningVersion: "0.9.0",
+		Enabled:        true,
+	}
+	if err := w.Work(context.Background(), nil); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	tag.Store("v0.11.0")
+	if err := w.Work(context.Background(), nil); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	if got := countVersionEvents(t); got != 2 {
+		t.Errorf("events = %d, want 2 (one per release)", got)
 	}
 }
