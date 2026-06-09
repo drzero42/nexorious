@@ -102,6 +102,7 @@ interface IGDBGameCandidateApiResponse {
   howlongtobeat_extra?: number;
   howlongtobeat_completionist?: number;
   user_game_id?: string;
+  user_game_is_wishlisted?: boolean;
 }
 
 interface IGDBSearchApiResponse {

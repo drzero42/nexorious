@@ -88,14 +88,14 @@ describe('AddGamePage selection routing (#856)', () => {
     expect(lastShowLibraryStatus).toBe(true);
   });
 
-  it('navigates to the edit page when the selected game is already in the library', async () => {
+  it('navigates to the detail page when the selected game is already in the library or wishlist', async () => {
     const user = userEvent.setup();
     render(<AddGamePage />);
 
     await user.click(screen.getByText('select-owned'));
 
     expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/games/$id/edit',
+      to: '/games/$id',
       params: { id: 'ug-1' },
     });
   });

@@ -31,12 +31,21 @@ describe('IGDBSearch library status (#856)', () => {
     vi.clearAllMocks();
   });
 
-  it('marks a result already in the library when showLibraryStatus is set', () => {
-    mockResults([candidate({ user_game_id: 'ug-1' })]);
+  it('marks a regular library entry with "In library" and "Click to view"', () => {
+    mockResults([candidate({ user_game_id: 'ug-1', user_game_is_wishlisted: false })]);
     render(<IGDBSearch onSelect={vi.fn()} showLibraryStatus />);
 
     expect(screen.getByText('In library')).toBeInTheDocument();
-    expect(screen.getByText(/click to edit/i)).toBeInTheDocument();
+    expect(screen.getByText(/click to view/i)).toBeInTheDocument();
+  });
+
+  it('marks a wishlisted entry with "In wishlist" and "Click to view"', () => {
+    mockResults([candidate({ user_game_id: 'ug-1', user_game_is_wishlisted: true })]);
+    render(<IGDBSearch onSelect={vi.fn()} showLibraryStatus />);
+
+    expect(screen.getByText('In wishlist')).toBeInTheDocument();
+    expect(screen.getByText(/click to view/i)).toBeInTheDocument();
+    expect(screen.queryByText('In library')).not.toBeInTheDocument();
   });
 
   it('does not mark library results when showLibraryStatus is not set', () => {
@@ -44,6 +53,7 @@ describe('IGDBSearch library status (#856)', () => {
     render(<IGDBSearch onSelect={vi.fn()} />);
 
     expect(screen.queryByText('In library')).not.toBeInTheDocument();
+    expect(screen.queryByText('In wishlist')).not.toBeInTheDocument();
   });
 
   it('does not mark a result that is not in the library', () => {
@@ -51,5 +61,6 @@ describe('IGDBSearch library status (#856)', () => {
     render(<IGDBSearch onSelect={vi.fn()} showLibraryStatus />);
 
     expect(screen.queryByText('In library')).not.toBeInTheDocument();
+    expect(screen.queryByText('In wishlist')).not.toBeInTheDocument();
   });
 });
