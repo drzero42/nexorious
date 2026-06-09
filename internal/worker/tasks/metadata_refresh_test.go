@@ -591,6 +591,39 @@ func TestMetadataRefreshItem_CoverArtUpdated(t *testing.T) {
 	}
 }
 
+func TestMetadataRefreshDispatch_HandlerOwned_EmptyFinalizesCompleted(t *testing.T) {
+	truncateAllTables(t)
+	adminID := insertMetaRefreshAdminUser(t)
+	// No games inserted.
+
+	ctx := context.Background()
+	jobID := uuid.NewString()
+	if _, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+		 VALUES (?, ?, 'metadata_refresh', 'system', 'pending', 'low', 0, now())`,
+		jobID, adminID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert pending job: %v", err)
+	}
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.MetadataRefreshDispatchArgs]{
+		Args: tasks.MetadataRefreshDispatchArgs{JobID: jobID},
+	}); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+	if status != "completed" {
+		t.Errorf("status: want completed, got %s", status)
+	}
+}
+
 func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
 	truncateAllTables(t)
 	adminID := insertMetaRefreshAdminUser(t)
