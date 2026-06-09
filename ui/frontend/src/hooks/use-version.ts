@@ -3,6 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 export interface VersionInfo {
   version: string;
   commit: string;
+  update_check_enabled: boolean;
+  update_available: boolean;
+  latest_version: string;
+  release_url: string;
 }
 
 export function useVersion() {
