@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	riverdatabasesql "github.com/riverqueue/river/riverdriver/riverdatabasesql"
+	"github.com/riverqueue/river/rivermigrate"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -123,6 +125,52 @@ func TestNewMigrator_AlreadyMigrated(t *testing.T) {
 
 	if m2.State() != migrate.AppStateReady {
 		t.Errorf("expected Ready on already-migrated DB, got %v", m2.State())
+	}
+}
+
+// TestDetermineState_RiverDriftAlone verifies that River drift alone (bun
+// migrations fully applied, but River missing a version) flips state to
+// NeedsMigration. On a fresh DB the bun check short-circuits before River is
+// consulted, so this is the only path that exercises riverNeedsMigration in the
+// "needs migration" direction — guarding the Validate-based detection.
+func TestDetermineState_RiverDriftAlone(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	// Apply everything (bun + River) so the DB starts fully migrated.
+	m1 := migrate.NewMigrator(db)
+	if err := m1.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
+	if err := m1.RunMigrations(ctx); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	// Roll River back a single version, leaving bun untouched. The single-step
+	// default keeps the river_migration table (only a version-1 downmigration
+	// would drop it), so River now reports one unapplied version.
+	riverMig, err := rivermigrate.New(riverdatabasesql.New(db.DB), nil)
+	if err != nil {
+		t.Fatalf("rivermigrate.New: %v", err)
+	}
+	if _, err := riverMig.Migrate(ctx, rivermigrate.DirectionDown, nil); err != nil {
+		t.Fatalf("River down-migrate: %v", err)
+	}
+
+	// bun is current, but River drift must drive the decision to NeedsMigration.
+	m2 := migrate.NewMigrator(db)
+	if err := m2.DetermineState(); err != nil {
+		t.Fatalf("DetermineState after River drift: %v", err)
+	}
+	if m2.State() != migrate.AppStateNeedsMigration {
+		t.Errorf("expected NeedsMigration from River drift, got %v", m2.State())
+	}
+	count, err := m2.PendingCount()
+	if err != nil {
+		t.Fatalf("PendingCount: %v", err)
+	}
+	if count <= 0 {
+		t.Errorf("expected positive pending count from River drift, got %d", count)
 	}
 }
 
