@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/providers';
@@ -43,6 +43,35 @@ function mostRecentCompletedJobId(
   return aId ?? bId;
 }
 
+// candidateDisplayJobId picks which job the page would display, ignoring
+// dismissal: any active job first, else the most recently completed of the two
+// types (so the result card survives completion).
+export function candidateDisplayJobId(
+  refreshStatus: JobTypeStatus | undefined,
+  storeLinkStatus: JobTypeStatus | undefined,
+): string | undefined {
+  return (
+    refreshStatus?.activeJobId ??
+    storeLinkStatus?.activeJobId ??
+    mostRecentCompletedJobId(refreshStatus, storeLinkStatus) ??
+    undefined
+  );
+}
+
+// resolveDisplayJobId is candidateDisplayJobId with dismissal applied: a
+// dismissed candidate is suppressed (returns undefined) so a just-finished job
+// the user dismissed via "Start New" is not resurrected by the
+// most-recent-completed fallback while a newly-started job's row is still being
+// created server-side.
+export function resolveDisplayJobId(
+  refreshStatus: JobTypeStatus | undefined,
+  storeLinkStatus: JobTypeStatus | undefined,
+  dismissedJobId: string | null,
+): string | undefined {
+  const candidate = candidateDisplayJobId(refreshStatus, storeLinkStatus);
+  return candidate && candidate === dismissedJobId ? undefined : candidate;
+}
+
 function MaintenancePageSkeleton() {
   return (
     <div className="space-y-6">
@@ -63,6 +92,11 @@ function MaintenancePage() {
   const [isRefreshLoading, setIsRefreshLoading] = useState(false);
   const [isStoreLinkLoading, setIsStoreLinkLoading] = useState(false);
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
+  // After starting a job, poll the type-status endpoints quickly for a bounded
+  // window so the newly-created (server-side, async) job is detected within
+  // seconds instead of waiting for the 30 s baseline poll.
+  const [eagerPoll, setEagerPoll] = useState(false);
+  const eagerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: health } = useHealthStatus();
   const igdbUnavailable = health?.igdb_status !== undefined && health.igdb_status !== 'ok';
@@ -92,12 +126,12 @@ function MaintenancePage() {
   // Track both maintenance job types (metadata refresh + store-link refresh) and
   // display whichever is relevant: any active job first, else the most recently
   // completed of the two, so the result card survives completion.
-  const { data: refreshStatus } = useJobTypeStatus(JobType.METADATA_REFRESH);
-  const { data: storeLinkStatus } = useJobTypeStatus(JobType.STORE_LINK_REFRESH);
-  const displayJobId =
-    refreshStatus?.activeJobId ??
-    storeLinkStatus?.activeJobId ??
-    mostRecentCompletedJobId(refreshStatus, storeLinkStatus);
+  const { data: refreshStatus } = useJobTypeStatus(JobType.METADATA_REFRESH, { eager: eagerPoll });
+  const { data: storeLinkStatus } = useJobTypeStatus(JobType.STORE_LINK_REFRESH, {
+    eager: eagerPoll,
+  });
+  const candidateJobId = candidateDisplayJobId(refreshStatus, storeLinkStatus);
+  const displayJobId = resolveDisplayJobId(refreshStatus, storeLinkStatus, dismissedJobId);
   const { data: activeMaintenanceJob } = useJob(displayJobId);
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
 
@@ -108,11 +142,9 @@ function MaintenancePage() {
   useJobCompletionEffect(refreshStatus?.activeJobId, handleRefreshComplete);
   useJobCompletionEffect(storeLinkStatus?.activeJobId, handleRefreshComplete);
 
-  // Determine which job to display (not dismissed)
-  const activeJob =
-    activeMaintenanceJob && activeMaintenanceJob.id !== dismissedJobId
-      ? activeMaintenanceJob
-      : null;
+  // displayJobId already excludes the dismissed candidate, so whatever useJob
+  // returned is the job to display.
+  const activeJob = activeMaintenanceJob ?? null;
 
   const showJobProgress = activeJob != null;
   const hasActiveJob = activeJob != null && !activeJob.isTerminal;
@@ -124,10 +156,31 @@ function MaintenancePage() {
     }
   }, [currentUser, navigate]);
 
+  // Clear any pending eager-poll timer on unmount.
+  useEffect(
+    () => () => {
+      if (eagerTimerRef.current) clearTimeout(eagerTimerRef.current);
+    },
+    [],
+  );
+
+  // beginEagerPoll dismisses whatever job is currently shown (the just-finished
+  // one) and switches the type-status polls to the fast cadence for ~20 s so the
+  // newly-started job — whose row is created asynchronously by the dispatch
+  // worker — is picked up promptly. The dismissal targets the raw candidate
+  // (pre-dismissal) so it works whether or not the user pressed "Start New"
+  // first; the new job gets a fresh id and is therefore not suppressed.
+  const beginEagerPoll = useCallback(() => {
+    setDismissedJobId(candidateJobId ?? null);
+    setEagerPoll(true);
+    if (eagerTimerRef.current) clearTimeout(eagerTimerRef.current);
+    eagerTimerRef.current = setTimeout(() => setEagerPoll(false), 20000);
+  }, [candidateJobId]);
+
   const handleStartStoreLinkRefresh = async () => {
     try {
       setIsStoreLinkLoading(true);
-      setDismissedJobId(null);
+      beginEagerPoll();
       await adminApi.startStoreLinkRefreshJob();
       toast.success('Store link refresh job started');
       queryClient.invalidateQueries({ queryKey: jobsKeys.typeStatus(JobType.STORE_LINK_REFRESH) });
@@ -142,7 +195,7 @@ function MaintenancePage() {
   const handleStartMetadataRefresh = async () => {
     try {
       setIsRefreshLoading(true);
-      setDismissedJobId(null);
+      beginEagerPoll();
       await adminApi.startMetadataRefreshJob();
       toast.success('Metadata refresh job started');
       queryClient.invalidateQueries({ queryKey: jobsKeys.typeStatus(JobType.METADATA_REFRESH) });

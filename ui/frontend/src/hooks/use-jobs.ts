@@ -107,13 +107,22 @@ export function useJobItems(
 /**
  * Polls every 30 s at baseline and every 3 s while a job is active — the
  * baseline poll catches background jobs and reliably detects completion.
+ *
+ * `eager` forces the fast 3 s cadence even while no job is active yet. The
+ * maintenance page sets it for a bounded window right after starting a job:
+ * the server-side `jobs` row is created asynchronously by the dispatch worker,
+ * so without this the new job wouldn't be detected until the next 30 s poll.
  */
-export function useJobTypeStatus(jobType: JobType, options?: { enabled?: boolean }) {
+export function useJobTypeStatus(
+  jobType: JobType,
+  options?: { enabled?: boolean; eager?: boolean },
+) {
   return useQuery({
     queryKey: jobsKeys.typeStatus(jobType),
     queryFn: () => jobsApi.getJobTypeStatus(jobType),
     enabled: options?.enabled !== false,
     refetchInterval: (query) => {
+      if (options?.eager) return 3000;
       const data = query.state.data as JobTypeStatus | undefined;
       return data?.isActive ? 3000 : 30000;
     },
