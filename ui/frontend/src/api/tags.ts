@@ -30,13 +30,11 @@ export interface GetTagsParams {
 export interface TagCreateData {
   name: string;
   color?: string;
-  description?: string;
 }
 
 export interface TagUpdateData {
   name?: string;
   color?: string;
-  description?: string;
 }
 
 // ============================================================================
@@ -124,7 +122,6 @@ export async function createTag(data: TagCreateData): Promise<Tag> {
   const response = await api.post<Tag>('/tags', {
     name: data.name,
     color: data.color,
-    description: data.description,
   });
   return response;
 }
@@ -159,9 +156,6 @@ export async function updateTag(id: string, data: TagUpdateData): Promise<Tag> {
   }
   if (data.color !== undefined) {
     requestBody.color = data.color;
-  }
-  if (data.description !== undefined) {
-    requestBody.description = data.description;
   }
 
   const response = await api.put<Tag>(`/tags/${id}`, requestBody);
