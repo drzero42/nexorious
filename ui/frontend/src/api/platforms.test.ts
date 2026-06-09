@@ -52,7 +52,7 @@ const mockPlatform2Api = {
 };
 
 const mockStorefrontApi = {
-  name: 'epic',
+  name: 'epic-games-store',
   display_name: 'Epic Games Store',
   icon_url: 'https://example.com/epic.png',
   base_url: 'https://store.epicgames.com',
@@ -242,7 +242,7 @@ describe('platforms.ts', () => {
 
       expect(result).toHaveLength(2);
       expect(result[0].name).toBe('steam');
-      expect(result[1].name).toBe('epic');
+      expect(result[1].name).toBe('epic-games-store');
     });
 
     it('passes activeOnly parameter', async () => {
@@ -379,14 +379,14 @@ describe('platforms.ts', () => {
   describe('getStorefront', () => {
     it('returns single storefront by name', async () => {
       server.use(
-        http.get(`${API_URL}/platforms/storefronts/epic`, () => {
+        http.get(`${API_URL}/platforms/storefronts/epic-games-store`, () => {
           return HttpResponse.json(mockStorefrontApi);
         }),
       );
 
-      const result = await getStorefront('epic');
+      const result = await getStorefront('epic-games-store');
 
-      expect(result.name).toBe('epic');
+      expect(result.name).toBe('epic-games-store');
       expect(result.display_name).toBe('Epic Games Store');
       expect(result.base_url).toBe('https://store.epicgames.com');
     });

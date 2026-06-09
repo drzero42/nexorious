@@ -1,18 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
-import { PSNConnectionCard } from './psn-connection-card';
+import { PlaystationStoreConnectionCard } from './playstation-store-connection-card';
 
 // Mock hooks
 const mockConfigureMutateAsync = vi.fn();
 const mockDisconnectMutateAsync = vi.fn();
 
 vi.mock('@/hooks', () => ({
-  useConfigurePSN: vi.fn(() => ({
+  useConfigurePlaystationStore: vi.fn(() => ({
     mutateAsync: mockConfigureMutateAsync,
     isPending: false,
   })),
-  useDisconnectPSN: vi.fn(() => ({
+  useDisconnectPlaystationStore: vi.fn(() => ({
     mutateAsync: mockDisconnectMutateAsync,
     isPending: false,
   })),
@@ -25,7 +25,7 @@ vi.mock('sonner', () => ({
   },
 }));
 
-describe('PSNConnectionCard', () => {
+describe('PlaystationStoreConnectionCard', () => {
   const mockOnConnectionChange = vi.fn();
 
   beforeEach(() => {
@@ -35,7 +35,7 @@ describe('PSNConnectionCard', () => {
   describe('not configured state', () => {
     it('shows the connection form, configure button, help accordion, and description', () => {
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
@@ -54,7 +54,7 @@ describe('PSNConnectionCard', () => {
   describe('configured state', () => {
     it('shows account details, disconnect button, and hides the connection form', () => {
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={true}
           credentialsError={false}
           onlineId="TestPSNUser"
@@ -72,7 +72,7 @@ describe('PSNConnectionCard', () => {
   describe('credentials error state', () => {
     it('shows warning when credentials error', () => {
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={true}
           credentialsError={true}
           onlineId="TestPSNUser"
@@ -85,7 +85,7 @@ describe('PSNConnectionCard', () => {
 
     it('shows reconfigure form when credentials error', () => {
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={true}
           credentialsError={true}
           onlineId="TestPSNUser"
@@ -103,7 +103,7 @@ describe('PSNConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
@@ -125,7 +125,7 @@ describe('PSNConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
@@ -147,7 +147,7 @@ describe('PSNConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
@@ -181,7 +181,7 @@ describe('PSNConnectionCard', () => {
       });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
@@ -202,7 +202,7 @@ describe('PSNConnectionCard', () => {
   });
 
   describe('form submission', () => {
-    it('calls configurePSN on successful form submission', async () => {
+    it('calls configurePlaystationStore on successful form submission', async () => {
       const user = userEvent.setup({ delay: null });
       mockConfigureMutateAsync.mockResolvedValue({
         valid: true,
@@ -212,7 +212,7 @@ describe('PSNConnectionCard', () => {
       });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
@@ -242,7 +242,7 @@ describe('PSNConnectionCard', () => {
       });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
@@ -266,7 +266,7 @@ describe('PSNConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={true}
           credentialsError={false}
           onlineId="TestPSNUser"
@@ -290,7 +290,7 @@ describe('PSNConnectionCard', () => {
       mockDisconnectMutateAsync.mockResolvedValue(undefined);
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={true}
           credentialsError={false}
           onlineId="TestPSNUser"
@@ -320,7 +320,7 @@ describe('PSNConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={true}
           credentialsError={false}
           onlineId="TestPSNUser"
@@ -345,7 +345,7 @@ describe('PSNConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
@@ -364,7 +364,7 @@ describe('PSNConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}
@@ -383,7 +383,7 @@ describe('PSNConnectionCard', () => {
       const user = userEvent.setup({ delay: null });
 
       render(
-        <PSNConnectionCard
+        <PlaystationStoreConnectionCard
           isConfigured={false}
           credentialsError={false}
           onConnectionChange={mockOnConnectionChange}

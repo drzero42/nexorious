@@ -215,7 +215,7 @@ describe('games.ts', () => {
         http.get(`${API_URL}/user-games`, ({ request }) => {
           const url = new URL(request.url);
           const storefronts = url.searchParams.getAll('storefront');
-          expect(storefronts).toEqual(['steam', 'epic']);
+          expect(storefronts).toEqual(['steam', 'epic-games-store']);
 
           return HttpResponse.json({
             user_games: [],
@@ -228,7 +228,7 @@ describe('games.ts', () => {
       );
 
       const result = await getUserGames({
-        storefront: ['steam', 'epic'],
+        storefront: ['steam', 'epic-games-store'],
       });
       expect(result).toBeDefined();
       expect(result.items).toEqual([]);
@@ -458,7 +458,7 @@ describe('games.ts', () => {
       });
     });
 
-    it('creates user game with platform-level ownership status and acquired date', async () => {
+    it('creates user game with platform-level ownership status, acquired date and hours', async () => {
       server.use(
         http.post(`${API_URL}/user-games`, async ({ request }) => {
           const body = (await request.json()) as {
@@ -466,11 +466,13 @@ describe('games.ts', () => {
               platform: string;
               ownership_status?: string;
               acquired_date?: string;
+              hours_played?: number;
             }>;
           };
           expect(body.platforms).toHaveLength(1);
           expect(body.platforms?.[0].ownership_status).toBe(OwnershipStatus.OWNED);
           expect(body.platforms?.[0].acquired_date).toBe('2024-06-01');
+          expect(body.platforms?.[0].hours_played).toBe(12.5);
 
           return HttpResponse.json(mockUserGameApi);
         }),
@@ -483,6 +485,7 @@ describe('games.ts', () => {
             platform: 'pc',
             ownershipStatus: OwnershipStatus.OWNED,
             acquiredDate: '2024-06-01',
+            hoursPlayed: 12.5,
           },
         ],
       });
@@ -888,7 +891,7 @@ describe('games.ts', () => {
 
       await addPlatformToUserGame('user-game-123', {
         platform: 'pc',
-        storefront: 'epic',
+        storefront: 'epic-games-store',
         hoursPlayed: 5,
         ownershipStatus: OwnershipStatus.BORROWED,
         acquiredDate: '2024-06-01',

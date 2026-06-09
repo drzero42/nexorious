@@ -17,6 +17,7 @@ export {
   useAddPlatformToUserGame,
   useUpdatePlatformAssociation,
   useRemovePlatformFromUserGame,
+  useMoveToLibrary,
 } from './use-games';
 
 // Platform hooks
@@ -62,15 +63,15 @@ export {
   useVerifySteamCredentials,
   useDisconnectSteam,
   useSteamConnection,
-  useConnectEpic,
-  useEpicConnection,
-  useDisconnectEpic,
+  useConnectEpicGamesStore,
+  useEpicGamesStoreConnection,
+  useDisconnectEpicGamesStore,
   useGOGConnection,
   useConnectGOG,
   useDisconnectGOG,
-  useConfigurePSN,
-  usePSNStatus,
-  useDisconnectPSN,
+  useConfigurePlaystationStore,
+  usePlaystationStoreStatus,
+  useDisconnectPlaystationStore,
   useConnectHumble,
   useHumbleStatus,
   useDisconnectHumble,
@@ -117,3 +118,6 @@ export type { VersionInfo } from './use-version';
 
 // API key hooks
 export { apiKeysKeys, useApiKeys, useCreateApiKey, useRevokeApiKey } from './use-api-keys';
+
+// Settings hooks
+export { useSettings, useUpdateSettings } from './use-settings';

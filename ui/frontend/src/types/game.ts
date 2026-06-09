@@ -104,6 +104,7 @@ export interface UserGame {
   personal_rating?: number | null;
   is_loved: boolean;
   play_status: PlayStatus;
+  is_wishlisted: boolean;
   hours_played: number;
   personal_notes?: string;
   platforms: UserGamePlatform[];
@@ -127,8 +128,14 @@ export interface IGDBGameCandidate {
   /**
    * The id of the requesting user's existing library entry for this game, or
    * undefined when the game is not yet in their library. Set by the IGDB search
-   * endpoint so the Add Game UI can surface "already in library" and link to the
-   * edit page instead of re-adding (#856).
+   * endpoint so the Add Game UI can surface "already in library"/"in wishlist"
+   * and link to the detail page instead of re-adding (#856).
    */
   user_game_id?: string;
+  /**
+   * Set alongside user_game_id. True when the existing entry is wishlist-only;
+   * false when it is a regular library entry. Undefined when user_game_id is
+   * not set.
+   */
+  user_game_is_wishlisted?: boolean;
 }

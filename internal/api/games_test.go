@@ -298,8 +298,9 @@ func TestImportFromIGDB_MissingIGDBID(t *testing.T) {
 }
 
 // TestSearchIGDB_AnnotatesLibraryMembership verifies the search response stamps
-// user_game_id onto candidates that are already in the requesting user's library
-// (issue #856), while leaving other users' library entries out.
+// user_game_id and user_game_is_wishlisted onto candidates that are already in
+// the requesting user's library (issue #856), while leaving other users' library
+// entries out.
 func TestSearchIGDB_AnnotatesLibraryMembership(t *testing.T) {
 	truncateAllTables(t)
 
@@ -307,6 +308,7 @@ func TestSearchIGDB_AnnotatesLibraryMembership(t *testing.T) {
 		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"id": 90101, "name": "Owned Game", "slug": "owned-game"},
 			{"id": 90202, "name": "Unowned Game", "slug": "unowned-game"},
+			{"id": 90303, "name": "Wishlisted Game", "slug": "wishlisted-game"},
 		})
 	}))
 	defer srv.Close()
@@ -319,12 +321,21 @@ func TestSearchIGDB_AnnotatesLibraryMembership(t *testing.T) {
 	// A different user owns 90202 — it must NOT leak into the caller's results.
 	insertAuthTestUser(t, testDB, "u-lib-other", "libother", "pass123", true, false)
 
-	// Both games must exist in the games table (user_games.game_id FK).
+	// All games must exist in the games table (user_games.game_id FK).
 	insertTestGameWithID(t, testDB, 90101, "Owned Game")
 	insertTestGameWithID(t, testDB, 90202, "Unowned Game")
+	insertTestGameWithID(t, testDB, 90303, "Wishlisted Game")
 
 	insertTestUserGame(t, testDB, "ug-caller-90101", "u-lib-1", 90101)
 	insertTestUserGame(t, testDB, "ug-other-90202", "u-lib-other", 90202)
+	// Seed a wishlisted entry for the caller.
+	_, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO user_games (id, user_id, game_id, is_wishlisted) VALUES (?, ?, ?, ?)`,
+		"ug-caller-90303", "u-lib-1", 90303, true,
+	)
+	if err != nil {
+		t.Fatalf("insert wishlisted user_game: %v", err)
+	}
 
 	body := `{"query": "game", "limit": 10}`
 	rec := postAuth(t, e, "/api/games/search/igdb", token, body)
@@ -334,25 +345,45 @@ func TestSearchIGDB_AnnotatesLibraryMembership(t *testing.T) {
 
 	var resp struct {
 		Games []struct {
-			IgdbID     int     `json:"igdb_id"`
-			UserGameID *string `json:"user_game_id"`
+			IgdbID               int     `json:"igdb_id"`
+			UserGameID           *string `json:"user_game_id"`
+			UserGameIsWishlisted *bool   `json:"user_game_is_wishlisted"`
 		} `json:"games"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	byID := make(map[int]*string, len(resp.Games))
+	type candidate struct {
+		userGameID           *string
+		userGameIsWishlisted *bool
+	}
+	byID := make(map[int]candidate, len(resp.Games))
 	for _, g := range resp.Games {
-		byID[g.IgdbID] = g.UserGameID
+		byID[g.IgdbID] = candidate{userGameID: g.UserGameID, userGameIsWishlisted: g.UserGameIsWishlisted}
 	}
 
-	got, ok := byID[90101]
-	if !ok || got == nil || *got != "ug-caller-90101" {
-		t.Fatalf("expected igdb 90101 to carry caller's user_game_id %q, got %v (present=%v)", "ug-caller-90101", got, ok)
+	// Regular library entry: user_game_id set, is_wishlisted false.
+	lib, ok := byID[90101]
+	if !ok || lib.userGameID == nil || *lib.userGameID != "ug-caller-90101" {
+		t.Fatalf("expected igdb 90101 to carry caller's user_game_id %q, got %v (present=%v)", "ug-caller-90101", lib.userGameID, ok)
 	}
-	if got, ok := byID[90202]; !ok || got != nil {
-		t.Fatalf("expected igdb 90202 to have nil user_game_id (owned by another user), got %v", got)
+	if lib.userGameIsWishlisted == nil || *lib.userGameIsWishlisted != false {
+		t.Fatalf("expected igdb 90101 user_game_is_wishlisted=false, got %v", lib.userGameIsWishlisted)
+	}
+
+	// Cross-user isolation: other user's entry must not appear for the caller.
+	if other, ok := byID[90202]; !ok || other.userGameID != nil {
+		t.Fatalf("expected igdb 90202 to have nil user_game_id (owned by another user), got %v", other.userGameID)
+	}
+
+	// Wishlisted entry: user_game_id set, is_wishlisted true.
+	wish, ok := byID[90303]
+	if !ok || wish.userGameID == nil || *wish.userGameID != "ug-caller-90303" {
+		t.Fatalf("expected igdb 90303 to carry caller's user_game_id %q, got %v (present=%v)", "ug-caller-90303", wish.userGameID, ok)
+	}
+	if wish.userGameIsWishlisted == nil || *wish.userGameIsWishlisted != true {
+		t.Fatalf("expected igdb 90303 user_game_is_wishlisted=true, got %v", wish.userGameIsWishlisted)
 	}
 }
 

@@ -138,6 +138,76 @@ func TestCreateUserGame(t *testing.T) {
 			t.Fatalf("expected 2 platform associations, got %d", len(platforms))
 		}
 	})
+
+	t.Run("platform ownership/acquired/hours are persisted on create", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Test Game Platform Details")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id": gameID,
+			"platforms": []map[string]any{
+				{
+					"platform":         "pc-windows",
+					"storefront":       "steam",
+					"ownership_status": "borrowed",
+					"acquired_date":    "2026-05-01",
+					"hours_played":     12.5,
+				},
+			},
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		platforms, ok := resp["platforms"].([]any)
+		if !ok || len(platforms) != 1 {
+			t.Fatalf("expected 1 platform association, got: %v", resp["platforms"])
+		}
+		p, ok := platforms[0].(map[string]any)
+		if !ok {
+			t.Fatalf("expected platform object, got %T", platforms[0])
+		}
+		if p["ownership_status"] != "borrowed" {
+			t.Fatalf("expected ownership_status=borrowed, got %v", p["ownership_status"])
+		}
+		if p["hours_played"] != 12.5 {
+			t.Fatalf("expected hours_played=12.5, got %v", p["hours_played"])
+		}
+		acquired, _ := p["acquired_date"].(string)
+		if acquired == "" {
+			t.Fatalf("expected acquired_date to be persisted, got %v", p["acquired_date"])
+		}
+		if got := acquired[:10]; got != "2026-05-01" {
+			t.Fatalf("expected acquired_date 2026-05-01, got %q", got)
+		}
+	})
+
+	t.Run("invalid acquired_date is rejected", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Test Game Bad Acquired")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id": gameID,
+			"platforms": []map[string]any{
+				{"platform": "pc-windows", "storefront": "steam", "acquired_date": "not-a-date"},
+			},
+		}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for invalid acquired_date, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("invalid ownership_status is rejected", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Test Game Bad Ownership")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id": gameID,
+			"platforms": []map[string]any{
+				{"platform": "pc-windows", "storefront": "steam", "ownership_status": "bogus"},
+			},
+		}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for invalid ownership_status, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
 }
 
 func TestGetUserGame(t *testing.T) {
@@ -1897,6 +1967,258 @@ func TestAutoPromotePlayStatus(t *testing.T) {
 		}
 		if got := readPlayStatus(t, "ug-pr-4"); got != "not_started" {
 			t.Fatalf("expected not_started to be preserved, got %q", got)
+		}
+	})
+}
+
+func TestCreateUserGame_Wishlist(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	_, token := setupUserGamesUser(t, testDB, e, "wl-create")
+
+	t.Run("wishlist create with no platforms succeeds and sets the flag", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Hades Wishlist")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id":       gameID,
+			"is_wishlisted": true,
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("want 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["is_wishlisted"] != true {
+			t.Fatalf("want is_wishlisted=true, got %v", resp["is_wishlisted"])
+		}
+		plats, _ := resp["platforms"].([]any)
+		if len(plats) != 0 {
+			t.Fatalf("want 0 platforms, got %d", len(plats))
+		}
+	})
+
+	t.Run("wishlist create with platforms is rejected with 422", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Celeste Wishlist")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id":       gameID,
+			"is_wishlisted": true,
+			"platforms": []map[string]any{
+				{"platform": "pc-windows"},
+			},
+		}, token)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("want 422 for wishlist+platforms, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var errResp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &errResp); err != nil {
+			t.Fatalf("unmarshal error body: %v", err)
+		}
+		if msg, _ := errResp["message"].(string); msg != "a wishlisted game cannot have platforms" {
+			t.Fatalf("want specific error message, got %q", msg)
+		}
+	})
+}
+
+func TestListUserGames_WishlistExclusion(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	_, token := setupUserGamesUser(t, testDB, e, "wl-list")
+
+	// One library entry (with a platform).
+	libGameID := insertTestGame(t, testDB, "Library Game")
+	rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+		"game_id": libGameID,
+		"platforms": []map[string]any{
+			{"platform": "pc-windows"},
+		},
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create library game: want 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// One wishlist entry (no platforms).
+	wishGameID := insertTestGame(t, testDB, "Wishlist Game")
+	rec = postJSONAuth(t, e, "/api/user-games", map[string]any{
+		"game_id":       wishGameID,
+		"is_wishlisted": true,
+	}, token)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create wishlist game: want 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	t.Run("default list excludes wishlisted", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		total := int(resp["total"].(float64))
+		if total != 1 {
+			t.Fatalf("default list want total=1 (library only), got %d", total)
+		}
+		games := resp["user_games"].([]any)
+		if len(games) != 1 {
+			t.Fatalf("default list want 1 user_game, got %d", len(games))
+		}
+		first := games[0].(map[string]any)
+		if first["is_wishlisted"] != false {
+			t.Fatalf("default list entry should not be wishlisted, got %v", first["is_wishlisted"])
+		}
+	})
+
+	t.Run("wishlist=true returns only wishlisted", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/user-games?wishlist=true", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		total := int(resp["total"].(float64))
+		if total != 1 {
+			t.Fatalf("wishlist list want total=1, got %d", total)
+		}
+		games := resp["user_games"].([]any)
+		if len(games) != 1 {
+			t.Fatalf("wishlist list want 1 user_game, got %d", len(games))
+		}
+		first := games[0].(map[string]any)
+		if first["is_wishlisted"] != true {
+			t.Fatalf("wishlist list entry should be wishlisted, got %v", first["is_wishlisted"])
+		}
+	})
+}
+
+// decodeID unmarshals a recorder body and returns the "id" string field.
+func decodeID(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decodeID unmarshal: %v (body=%s)", err, rec.Body.String())
+	}
+	id, ok := resp["id"].(string)
+	if !ok || id == "" {
+		t.Fatalf("decodeID: expected non-empty string id, got %v", resp["id"])
+	}
+	return id
+}
+
+// doMoveToLibrary posts to POST /api/user-games/:id/move-to-library.
+func doMoveToLibrary(t *testing.T, handler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, token, userGameID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/user-games/"+userGameID+"/move-to-library", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestMoveToLibrary(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	_, token := setupUserGamesUser(t, testDB, e, "mtl")
+
+	t.Run("happy path: platform attached, flag cleared, notes preserved", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Hades MTL")
+		created := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id":        gameID,
+			"is_wishlisted":  true,
+			"personal_notes": "want this",
+		}, token)
+		if created.Code != http.StatusCreated {
+			t.Fatalf("create wishlist: want 201, got %d: %s", created.Code, created.Body.String())
+		}
+		ugID := decodeID(t, created)
+
+		rec := doMoveToLibrary(t, e, token, ugID, `{"platforms":[{"platform":"pc-windows","ownership_status":"owned"}]}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("move-to-library: want 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["is_wishlisted"] != false {
+			t.Fatalf("want is_wishlisted=false after move, got %v", resp["is_wishlisted"])
+		}
+		if resp["personal_notes"] != "want this" {
+			t.Fatalf("personal_notes should carry over, got %v", resp["personal_notes"])
+		}
+		plats, _ := resp["platforms"].([]any)
+		if len(plats) != 1 {
+			t.Fatalf("want 1 platform, got %d", len(plats))
+		}
+	})
+
+	t.Run("moving a library entry again returns 422", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Hades MTL Already Library")
+		created := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id":       gameID,
+			"is_wishlisted": true,
+		}, token)
+		if created.Code != http.StatusCreated {
+			t.Fatalf("create wishlist: want 201, got %d: %s", created.Code, created.Body.String())
+		}
+		ugID := decodeID(t, created)
+
+		// First move succeeds.
+		rec := doMoveToLibrary(t, e, token, ugID, `{"platforms":[{"platform":"pc-windows","ownership_status":"owned"}]}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("first move: want 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		// Second move on a now-library entry is rejected.
+		rec = doMoveToLibrary(t, e, token, ugID, `{"platforms":[{"platform":"ps5"}]}`)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("want 422 moving non-wishlisted, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("empty platforms returns 422", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Celeste MTL")
+		created := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id":       gameID,
+			"is_wishlisted": true,
+		}, token)
+		if created.Code != http.StatusCreated {
+			t.Fatalf("create wishlist: want 201, got %d: %s", created.Code, created.Body.String())
+		}
+		ugID := decodeID(t, created)
+
+		rec := doMoveToLibrary(t, e, token, ugID, `{"platforms":[]}`)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("want 422 for empty platforms, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("another user cannot move-to-library an entry they do not own", func(t *testing.T) {
+		// Create a wishlist entry owned by user A (the existing "mtl" user).
+		gameID := insertTestGame(t, testDB, "Hollow Knight MTL Cross")
+		created := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id":       gameID,
+			"is_wishlisted": true,
+		}, token)
+		if created.Code != http.StatusCreated {
+			t.Fatalf("create wishlist: want 201, got %d: %s", created.Code, created.Body.String())
+		}
+		ugID := decodeID(t, created)
+
+		// User B tries to move user A's entry.
+		_, tokenB := setupUserGamesUser(t, testDB, e, "mtl-other")
+		rec := doMoveToLibrary(t, e, tokenB, ugID, `{"platforms":[{"platform":"pc-windows","ownership_status":"owned"}]}`)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("want 404 when moving another user's wishlist entry, got %d: %s", rec.Code, rec.Body.String())
 		}
 	})
 }

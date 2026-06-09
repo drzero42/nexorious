@@ -7,7 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ExternalLink, Info } from 'lucide-react';
-import { useConnectEpic, useDisconnectEpic, useEpicConnection } from '@/hooks';
+import {
+  useConnectEpicGamesStore,
+  useDisconnectEpicGamesStore,
+  useEpicGamesStoreConnection,
+} from '@/hooks';
 import { EPIC_AUTH_URL } from '@/types';
 import {
   CodeHelpAccordion,
@@ -17,11 +21,11 @@ import {
   DisconnectDialog,
 } from './connection';
 
-const epicAuthCodeSchema = z.object({
+const epicGamesStoreAuthCodeSchema = z.object({
   authCode: z.string().trim().min(1, 'Authorization code is required'),
 });
 
-type EpicAuthCodeForm = z.infer<typeof epicAuthCodeSchema>;
+type EpicGamesStoreAuthCodeForm = z.infer<typeof epicGamesStoreAuthCodeSchema>;
 
 function disabledMessage(reason?: string): string {
   switch (reason) {
@@ -31,20 +35,20 @@ function disabledMessage(reason?: string): string {
   }
 }
 
-interface EpicConnectionCardProps {
+interface EpicGamesStoreConnectionCardProps {
   isConfigured: boolean;
   credentialsError?: boolean;
   onConnectionChange: () => void;
 }
 
-export function EpicConnectionCard({
+export function EpicGamesStoreConnectionCard({
   isConfigured,
   credentialsError = false,
   onConnectionChange,
-}: EpicConnectionCardProps) {
-  const { data: connection } = useEpicConnection();
-  const connectMutation = useConnectEpic();
-  const disconnectMutation = useDisconnectEpic();
+}: EpicGamesStoreConnectionCardProps) {
+  const { data: connection } = useEpicGamesStoreConnection();
+  const connectMutation = useConnectEpicGamesStore();
+  const disconnectMutation = useDisconnectEpicGamesStore();
 
   const {
     register,
@@ -52,8 +56,8 @@ export function EpicConnectionCard({
     formState: { errors },
     setError,
     reset,
-  } = useForm<EpicAuthCodeForm>({
-    resolver: zodResolver(epicAuthCodeSchema),
+  } = useForm<EpicGamesStoreAuthCodeForm>({
+    resolver: zodResolver(epicGamesStoreAuthCodeSchema),
   });
 
   const isConnecting = connectMutation.isPending;
@@ -62,7 +66,7 @@ export function EpicConnectionCard({
   const displayName = connection?.displayName;
   const resolvedCredentialsError = connection?.credentialsError ?? credentialsError;
 
-  const onSubmit = async (data: EpicAuthCodeForm) => {
+  const onSubmit = async (data: EpicGamesStoreAuthCodeForm) => {
     try {
       const result = await connectMutation.mutateAsync(data.authCode);
       toast.success(`Epic Games connected as ${result.displayName}`);

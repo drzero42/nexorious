@@ -996,13 +996,13 @@ describe('use-games hooks', () => {
             storefront?: string;
           };
           expect(body.platform).toBe('ps5');
-          expect(body.storefront).toBe('psn');
+          expect(body.storefront).toBe('playstation-store');
 
           return HttpResponse.json({
             ...mockUserGamePlatformApi,
             id: 'ugp-2',
             platform: 'ps5',
-            storefront: 'psn',
+            storefront: 'playstation-store',
           });
         }),
       );
@@ -1016,7 +1016,7 @@ describe('use-games hooks', () => {
           userGameId,
           data: {
             platform: 'ps5',
-            storefront: 'psn',
+            storefront: 'playstation-store',
           },
         });
       });
@@ -1026,7 +1026,7 @@ describe('use-games hooks', () => {
       });
 
       expect(result.current.data?.platform).toBe('ps5');
-      expect(result.current.data?.storefront).toBe('psn');
+      expect(result.current.data?.storefront).toBe('playstation-store');
     });
   });
 

@@ -9,12 +9,12 @@ import type {
   ManualSyncResponse,
   SteamVerifyResponse,
   SteamConnectionData,
-  EpicConnectResponse,
-  EpicConnectionResponse,
+  EpicGamesStoreConnectResponse,
+  EpicGamesStoreConnectionResponse,
   GOGConnectResponse,
   GOGConnectionResponse,
-  PSNConfigureResponse,
-  PSNStatusResponse,
+  PlaystationStoreConfigureResponse,
+  PlaystationStoreStatusResponse,
   HumbleConnectResponse,
   HumbleStatusResponse,
 } from '@/types';
@@ -28,9 +28,9 @@ export const syncKeys = {
   statuses: () => [...syncKeys.all, 'statuses'] as const,
   status: (platform: SyncStorefront) => [...syncKeys.statuses(), platform] as const,
   steamConnection: () => [...syncKeys.all, 'steamConnection'] as const,
-  epicConnection: () => [...syncKeys.all, 'epicConnection'] as const,
+  epicGamesStoreConnection: () => [...syncKeys.all, 'epicGamesStoreConnection'] as const,
   gogConnection: () => [...syncKeys.all, 'gogConnection'] as const,
-  psnStatus: () => [...syncKeys.all, 'psnStatus'] as const,
+  playstationStoreStatus: () => [...syncKeys.all, 'playstationStoreStatus'] as const,
   humbleStatus: () => [...syncKeys.all, 'humbleStatus'] as const,
   externalGames: (platform: SyncStorefront) =>
     [...syncKeys.all, 'external-games', platform] as const,
@@ -169,10 +169,10 @@ export function useResetSyncData() {
  * Tells the UI whether Epic sync is disabled server-side, connected, or
  * simply not configured.
  */
-export function useEpicConnection(options?: { enabled?: boolean }) {
-  return useQuery<EpicConnectionResponse, Error>({
-    queryKey: syncKeys.epicConnection(),
-    queryFn: syncApi.getEpicConnection,
+export function useEpicGamesStoreConnection(options?: { enabled?: boolean }) {
+  return useQuery<EpicGamesStoreConnectionResponse, Error>({
+    queryKey: syncKeys.epicGamesStoreConnection(),
+    queryFn: syncApi.getEpicGamesStoreConnection,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
     enabled: options?.enabled,
@@ -182,15 +182,15 @@ export function useEpicConnection(options?: { enabled?: boolean }) {
 /**
  * On success, refreshes connection status and the user's sync configs.
  */
-export function useConnectEpic() {
+export function useConnectEpicGamesStore() {
   const queryClient = useQueryClient();
 
-  return useMutation<EpicConnectResponse, Error, string>({
-    mutationFn: (authCode: string) => syncApi.connectEpic(authCode),
+  return useMutation<EpicGamesStoreConnectResponse, Error, string>({
+    mutationFn: (authCode: string) => syncApi.connectEpicGamesStore(authCode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
       queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.EPIC_GAMES_STORE) });
-      queryClient.invalidateQueries({ queryKey: syncKeys.epicConnection() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.epicGamesStoreConnection() });
     },
   });
 }
@@ -198,15 +198,15 @@ export function useConnectEpic() {
 /**
  * Invalidates all Epic-related queries on success.
  */
-export function useDisconnectEpic() {
+export function useDisconnectEpicGamesStore() {
   const queryClient = useQueryClient();
 
   return useMutation<void, Error>({
-    mutationFn: syncApi.disconnectEpic,
+    mutationFn: syncApi.disconnectEpicGamesStore,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
       queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.EPIC_GAMES_STORE) });
-      queryClient.invalidateQueries({ queryKey: syncKeys.epicConnection() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.epicGamesStoreConnection() });
     },
     onError: (error) => {
       console.error('Failed to disconnect Epic:', error);
@@ -260,18 +260,18 @@ export function useDisconnectGOG() {
 /**
  * Invalidates sync configs and PSN status on success.
  */
-export function useConfigurePSN() {
+export function useConfigurePlaystationStore() {
   const queryClient = useQueryClient();
 
-  return useMutation<PSNConfigureResponse, Error, string>({
-    mutationFn: (npssoToken: string) => syncApi.configurePSN(npssoToken),
+  return useMutation<PlaystationStoreConfigureResponse, Error, string>({
+    mutationFn: (npssoToken: string) => syncApi.configurePlaystationStore(npssoToken),
     onSuccess: () => {
       // Invalidate sync configs to refresh connection status
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
       queryClient.invalidateQueries({
         queryKey: syncKeys.config(SyncStorefront.PLAYSTATION_STORE),
       });
-      queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.playstationStoreStatus() });
     },
     onError: (error) => {
       console.error('Failed to configure PSN:', error);
@@ -282,10 +282,10 @@ export function useConfigurePSN() {
 /**
  * Cached for 5 minutes.
  */
-export function usePSNStatus(options?: { enabled?: boolean }) {
-  return useQuery<PSNStatusResponse, Error>({
-    queryKey: syncKeys.psnStatus(),
-    queryFn: syncApi.getPSNStatus,
+export function usePlaystationStoreStatus(options?: { enabled?: boolean }) {
+  return useQuery<PlaystationStoreStatusResponse, Error>({
+    queryKey: syncKeys.playstationStoreStatus(),
+    queryFn: syncApi.getPlaystationStoreStatus,
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: true,
     enabled: options?.enabled,
@@ -295,18 +295,18 @@ export function usePSNStatus(options?: { enabled?: boolean }) {
 /**
  * Invalidates all PSN-related queries on success.
  */
-export function useDisconnectPSN() {
+export function useDisconnectPlaystationStore() {
   const queryClient = useQueryClient();
 
   return useMutation<void, Error>({
-    mutationFn: syncApi.disconnectPSN,
+    mutationFn: syncApi.disconnectPlaystationStore,
     onSuccess: () => {
       // Invalidate all PSN-related queries
       queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
       queryClient.invalidateQueries({
         queryKey: syncKeys.config(SyncStorefront.PLAYSTATION_STORE),
       });
-      queryClient.invalidateQueries({ queryKey: syncKeys.psnStatus() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.playstationStoreStatus() });
     },
     onError: (error) => {
       console.error('Failed to disconnect PSN:', error);

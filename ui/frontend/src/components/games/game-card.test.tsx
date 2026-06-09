@@ -30,6 +30,7 @@ const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
   },
   personal_rating: 4,
   is_loved: false,
+  is_wishlisted: false,
   play_status: PlayStatus.IN_PROGRESS,
   hours_played: 10,
   personal_notes: '<p>Some notes</p>',
@@ -264,6 +265,16 @@ describe('GameCard', () => {
       render(<GameCard game={game} />);
 
       expect(screen.getByText(label)).toBeInTheDocument();
+    });
+
+    it('does not render play-status badge when is_wishlisted is true', () => {
+      const game = createMockGame({
+        is_wishlisted: true,
+        play_status: PlayStatus.NOT_STARTED,
+      });
+      render(<GameCard game={game} />);
+
+      expect(screen.queryByText('Not Started')).not.toBeInTheDocument();
     });
   });
 

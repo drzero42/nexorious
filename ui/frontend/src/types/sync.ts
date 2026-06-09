@@ -97,12 +97,12 @@ export const EPIC_AUTH_URL =
 export const GOG_AUTH_URL =
   'https://login.gog.com/auth?client_id=46899977096215655&redirect_uri=https%3A%2F%2Fembed.gog.com%2Fon_login_success%3Forigin%3Dclient&response_type=code&layout=client2';
 
-export interface EpicConnectResponse {
+export interface EpicGamesStoreConnectResponse {
   displayName: string;
   accountId: string;
 }
 
-export interface EpicConnectionResponse {
+export interface EpicGamesStoreConnectionResponse {
   connected: boolean;
   disabled: boolean;
   credentialsError?: boolean;
@@ -124,14 +124,14 @@ export interface GOGConnectionResponse {
 }
 
 // PSN Auth Types
-export interface PSNConfigureResponse {
+export interface PlaystationStoreConfigureResponse {
   valid: boolean;
   accountId: string | null;
   onlineId: string | null;
   error: string | null;
 }
 
-export interface PSNStatusResponse {
+export interface PlaystationStoreStatusResponse {
   configured: boolean;
   onlineId: string | null;
   credentialsError: boolean;

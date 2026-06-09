@@ -13,6 +13,7 @@ import { Route as PublicRouteImport } from './routes/_public'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PublicLoginRouteImport } from './routes/_public/login'
+import { Route as AuthenticatedWishlistRouteImport } from './routes/_authenticated/wishlist'
 import { Route as AuthenticatedTagsRouteImport } from './routes/_authenticated/tags'
 import { Route as AuthenticatedReviewRouteImport } from './routes/_authenticated/review'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
@@ -54,6 +55,11 @@ const PublicLoginRoute = PublicLoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => PublicRoute,
+} as any)
+const AuthenticatedWishlistRoute = AuthenticatedWishlistRouteImport.update({
+  id: '/wishlist',
+  path: '/wishlist',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedTagsRoute = AuthenticatedTagsRouteImport.update({
   id: '/tags',
@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileRoute
   '/review': typeof AuthenticatedReviewRoute
   '/tags': typeof AuthenticatedTagsRoute
+  '/wishlist': typeof AuthenticatedWishlistRoute
   '/login': typeof PublicLoginRoute
   '/admin/backups': typeof AuthenticatedAdminBackupsRoute
   '/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
@@ -217,6 +224,7 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileRoute
   '/review': typeof AuthenticatedReviewRoute
   '/tags': typeof AuthenticatedTagsRoute
+  '/wishlist': typeof AuthenticatedWishlistRoute
   '/login': typeof PublicLoginRoute
   '/admin/backups': typeof AuthenticatedAdminBackupsRoute
   '/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
@@ -245,6 +253,7 @@ export interface FileRoutesById {
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/review': typeof AuthenticatedReviewRoute
   '/_authenticated/tags': typeof AuthenticatedTagsRoute
+  '/_authenticated/wishlist': typeof AuthenticatedWishlistRoute
   '/_public/login': typeof PublicLoginRoute
   '/_authenticated/admin/backups': typeof AuthenticatedAdminBackupsRoute
   '/_authenticated/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
@@ -274,6 +283,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/review'
     | '/tags'
+    | '/wishlist'
     | '/login'
     | '/admin/backups'
     | '/admin/maintenance'
@@ -301,6 +311,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/review'
     | '/tags'
+    | '/wishlist'
     | '/login'
     | '/admin/backups'
     | '/admin/maintenance'
@@ -328,6 +339,7 @@ export interface FileRouteTypes {
     | '/_authenticated/profile'
     | '/_authenticated/review'
     | '/_authenticated/tags'
+    | '/_authenticated/wishlist'
     | '/_public/login'
     | '/_authenticated/admin/backups'
     | '/_authenticated/admin/maintenance'
@@ -384,6 +396,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/login'
       preLoaderRoute: typeof PublicLoginRouteImport
       parentRoute: typeof PublicRoute
+    }
+    '/_authenticated/wishlist': {
+      id: '/_authenticated/wishlist'
+      path: '/wishlist'
+      fullPath: '/wishlist'
+      preLoaderRoute: typeof AuthenticatedWishlistRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/tags': {
       id: '/_authenticated/tags'
@@ -583,6 +602,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedReviewRoute: typeof AuthenticatedReviewRoute
   AuthenticatedTagsRoute: typeof AuthenticatedTagsRoute
+  AuthenticatedWishlistRoute: typeof AuthenticatedWishlistRoute
   AuthenticatedAdminBackupsRoute: typeof AuthenticatedAdminBackupsRoute
   AuthenticatedAdminMaintenanceRoute: typeof AuthenticatedAdminMaintenanceRoute
   AuthenticatedGamesIdRoute: typeof AuthenticatedGamesIdRouteWithChildren
@@ -605,6 +625,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedReviewRoute: AuthenticatedReviewRoute,
   AuthenticatedTagsRoute: AuthenticatedTagsRoute,
+  AuthenticatedWishlistRoute: AuthenticatedWishlistRoute,
   AuthenticatedAdminBackupsRoute: AuthenticatedAdminBackupsRoute,
   AuthenticatedAdminMaintenanceRoute: AuthenticatedAdminMaintenanceRoute,
   AuthenticatedGamesIdRoute: AuthenticatedGamesIdRouteWithChildren,

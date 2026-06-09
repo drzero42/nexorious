@@ -29,6 +29,7 @@ const createMockGame = (overrides: Partial<UserGame> = {}): UserGame => ({
   play_status: PlayStatus.IN_PROGRESS,
   hours_played: 10,
   is_loved: false,
+  is_wishlisted: false,
   platforms: [
     {
       id: 'ugp-1',

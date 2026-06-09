@@ -1,4 +1,4 @@
-package epic
+package epicgamesstore
 
 import (
 	"os"
