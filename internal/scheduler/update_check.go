@@ -57,6 +57,9 @@ func (w *CheckForUpdatesWorker) Work(ctx context.Context, _ *river.Job[CheckForU
 			AvailableVersion: latest,
 			ReleaseURL:       rel.HTMLURL,
 		},
+		// The dedup row lives in the events table and is pruned after
+		// NOTIFY_EVENTS_RETENTION_DAYS, so "once per release" is bounded by the
+		// retention window: an instance still outdated after pruning re-notifies.
 		DedupKey: notify.TypeAdminVersionAvailable + ":" + latest,
 	})
 	return nil
