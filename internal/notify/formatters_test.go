@@ -147,6 +147,7 @@ func TestFormat_DecodeFailureSafeFallback(t *testing.T) {
 		{"export_failed", TypeExportFailed, `"notobject"`, "Your export failed."},
 		{"backup_failed", TypeAdminBackupFailed, `"notobject"`, "A scheduled backup failed."},
 		{"maint_failed", TypeAdminMaintFailed, `"notobject"`, "Maintenance task failed."},
+		{"version_available", TypeAdminVersionAvailable, `"notobject"`, "A newer version of Nexorious is available."},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

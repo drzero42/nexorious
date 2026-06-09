@@ -24,6 +24,7 @@ func TestDefaultSubscriptionsAreFailuresOnly(t *testing.T) {
 	for _, d := range defaults {
 		got[d] = true
 	}
+	// admin.version.available is the deliberate non-failure exception: it is default-on by design (issue #899).
 	for _, typ := range []string{"sync.failed", "sync.auth_expired", "import.failed", "export.failed", "sync.completed_with_errors", "admin.backup.failed", "admin.maintenance.failed", "admin.version.available"} {
 		if !got[typ] {
 			t.Errorf("expected default-on for %q", typ)
