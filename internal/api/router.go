@@ -263,6 +263,11 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		tagsGroup.PUT("/:id", th.HandleUpdateTag)
 		tagsGroup.DELETE("/:id", th.HandleDeleteTag)
 
+		// Docs routes (auth-protected; admin-guide additionally gated in-handler)
+		dch := NewDocsHandler()
+		docsGroup := e.Group("/api/docs", auth.AuthMiddleware(db))
+		docsGroup.GET("/:slug", dch.HandleGetDoc)
+
 		// Games routes (all auth-protected)
 		gh := NewGamesHandler(db, igdbClient, cfg, riverClient)
 		gamesGroup := e.Group("/api/games", auth.AuthMiddleware(db))

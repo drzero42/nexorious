@@ -121,3 +121,6 @@ export { apiKeysKeys, useApiKeys, useCreateApiKey, useRevokeApiKey } from './use
 
 // Settings hooks
 export { useSettings, useUpdateSettings } from './use-settings';
+
+// Docs hooks
+export { docKeys, useDoc } from './use-docs';
