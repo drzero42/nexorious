@@ -108,22 +108,30 @@ func (w *StoreLinkRefreshDispatchWorker) Work(ctx context.Context, job *river.Jo
 	if args.Storefront != "" {
 		source = args.Storefront
 	}
-	var existing string
-	guard := `SELECT id FROM jobs WHERE job_type = ? AND status IN ('pending','processing') AND source = ?`
-	guardArgs := []any{models.JobTypeStoreLinkRefresh, source}
-	if args.UserID != "" {
-		guard += ` AND user_id = ?`
-		guardArgs = append(guardArgs, args.UserID)
-	}
-	guard += ` LIMIT 1`
-	err := w.DB.NewRaw(guard, guardArgs...).Scan(ctx, &existing)
-	if err == nil {
-		slog.Info("store_link_refresh_dispatch: equivalent job active, skipping", "existing", existing)
-		return nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		slog.Error("store_link_refresh_dispatch: guard query", "err", err)
-		return nil
+
+	jobID := args.JobID
+	handlerOwned := jobID != ""
+
+	// Only the self-created path runs the active-job guard; for handler-owned jobs
+	// the handler owns dedup (and its own pending row would match this guard).
+	if !handlerOwned {
+		var existing string
+		guard := `SELECT id FROM jobs WHERE job_type = ? AND status IN ('pending','processing') AND source = ?`
+		guardArgs := []any{models.JobTypeStoreLinkRefresh, source}
+		if args.UserID != "" {
+			guard += ` AND user_id = ?`
+			guardArgs = append(guardArgs, args.UserID)
+		}
+		guard += ` LIMIT 1`
+		err := w.DB.NewRaw(guard, guardArgs...).Scan(ctx, &existing)
+		if err == nil {
+			slog.Info("store_link_refresh_dispatch: equivalent job active, skipping", "existing", existing)
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			slog.Error("store_link_refresh_dispatch: guard query", "err", err)
+			return nil
+		}
 	}
 
 	groups, total, err := w.SelectGroups(ctx, args)
@@ -132,26 +140,43 @@ func (w *StoreLinkRefreshDispatchWorker) Work(ctx context.Context, job *river.Jo
 		return nil
 	}
 	if len(groups) == 0 {
+		// A handler-owned row is already pending; finalize it so it never sticks.
+		if handlerOwned {
+			finalizeJobCompleted(ctx, w.DB, jobID, "store_link_refresh_dispatch: finalize empty", false)
+		}
 		return nil
 	}
 
+	// jobUserID owns the jobs row on the self-created path. Handler-owned rows
+	// already have an owner, so skip the lookup there.
 	jobUserID := args.UserID
-	if jobUserID == "" {
+	if !handlerOwned && jobUserID == "" {
 		if e := w.DB.NewRaw(`SELECT id FROM users WHERE is_admin = true LIMIT 1`).Scan(ctx, &jobUserID); e != nil {
 			slog.Error("store_link_refresh_dispatch: no admin user", "err", e)
 			return nil
 		}
 	}
 
-	jobID := uuid.NewString()
+	if !handlerOwned {
+		jobID = uuid.NewString()
+	}
 	itemIDs := make([]string, 0, len(groups))
 	if err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if _, e := tx.NewRaw(
-			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-			 VALUES (?, ?, ?, ?, 'processing', 'low', ?, now())`,
-			jobID, jobUserID, models.JobTypeStoreLinkRefresh, source, len(groups),
-		).Exec(ctx); e != nil {
-			return fmt.Errorf("insert job: %w", e)
+		if handlerOwned {
+			if _, e := tx.NewRaw(
+				`UPDATE jobs SET total_items = ?, status = 'processing' WHERE id = ?`,
+				len(groups), jobID,
+			).Exec(ctx); e != nil {
+				return fmt.Errorf("update job: %w", e)
+			}
+		} else {
+			if _, e := tx.NewRaw(
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+				 VALUES (?, ?, ?, ?, 'processing', 'low', ?, now())`,
+				jobID, jobUserID, models.JobTypeStoreLinkRefresh, source, len(groups),
+			).Exec(ctx); e != nil {
+				return fmt.Errorf("insert job: %w", e)
+			}
 		}
 		for _, g := range groups {
 			itemID := uuid.NewString()
