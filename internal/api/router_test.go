@@ -457,3 +457,18 @@ func TestVersionEndpoint_NilStateIsSafe(t *testing.T) {
 		t.Errorf("update_available = %v, want false with nil state", body["update_available"])
 	}
 }
+
+func TestVersionEndpoint_EmptyStateNoUpdate(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	cfg := testCfg()
+	cfg.UpdateCheckEnabled = true
+	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "0.1.0", "abc1234", updatecheck.NewState())
+
+	body := getVersion(t, e)
+	if body["update_available"] != false {
+		t.Errorf("update_available = %v, want false with empty state", body["update_available"])
+	}
+	if body["latest_version"] != "" || body["release_url"] != "" {
+		t.Errorf("latest_version/release_url = %v/%v, want empty", body["latest_version"], body["release_url"])
+	}
+}
