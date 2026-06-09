@@ -407,18 +407,33 @@ func (c *Client) fetchTimeToBeat(ctx context.Context, igdbID int) (*timeToBeatRe
 
 	result := &timeToBeatResult{}
 	if data[0].Hastily != nil {
-		v := float64(*data[0].Hastily) / 3600.0
-		result.hastily = &v
+		result.hastily = clampHowlongtobeat(*data[0].Hastily)
 	}
 	if data[0].Normally != nil {
-		v := float64(*data[0].Normally) / 3600.0
-		result.normally = &v
+		result.normally = clampHowlongtobeat(*data[0].Normally)
 	}
 	if data[0].Completely != nil {
-		v := float64(*data[0].Completely) / 3600.0
-		result.completely = &v
+		result.completely = clampHowlongtobeat(*data[0].Completely)
 	}
 	return result, nil
+}
+
+// maxHowlongtobeat is the largest value the howlongtobeat_* columns can hold
+// (NUMERIC(6,2) → 9999.99). Live-service titles can report completion times in
+// hours that exceed this; clamping here prevents the games UPDATE from
+// overflowing (SQLSTATE 22003) and rolling back the whole metadata enrichment.
+const maxHowlongtobeat = 9999.99
+
+// clampHowlongtobeat converts an IGDB time-to-beat value (seconds) to hours and
+// caps it at the column maximum so an over-range value can never hard-fail
+// enrichment. The capped value is distorted but lets the rest of the metadata
+// populate.
+func clampHowlongtobeat(seconds int) *float64 {
+	v := float64(seconds) / 3600.0
+	if v > maxHowlongtobeat {
+		v = maxHowlongtobeat
+	}
+	return &v
 }
 
 func (c *Client) searchIGDB(ctx context.Context, body string) ([]igdbGameResponse, error) {

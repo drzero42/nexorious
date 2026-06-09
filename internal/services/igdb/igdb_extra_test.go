@@ -262,6 +262,56 @@ func TestClient_FetchFullMetadata_TimeToBeatEmpty(t *testing.T) {
 	}
 }
 
+func TestClient_FetchFullMetadata_TimeToBeatOverflowClamped(t *testing.T) {
+	// Live-service titles (e.g. Fortnite) can report time-to-beat values that,
+	// converted to hours, exceed the NUMERIC(6,2) column max of 9999.99 and
+	// overflow the UPDATE. Such values must be clamped to the column max so
+	// enrichment never hard-fails. In-range values must pass through unchanged.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/game_time_to_beats" {
+			hastily := 7200        // 2h — in range, unchanged
+			normally := 1072800    // 298h — in range, unchanged
+			completely := 45087428 // 12524.29h — over range, must clamp to 9999.99
+			_ = json.NewEncoder(w).Encode([]igdbTimeToBeatResponse{
+				{Hastily: &hastily, Normally: &normally, Completely: &completely},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
+			{ID: 1905, Name: "Fortnite", Slug: "fortnite"},
+		})
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		httpClient: srv.Client(),
+		auth: &AuthManager{
+			accessToken: "tok", expiresAt: time.Now().Add(1 * time.Hour),
+			clientID: "cid", clientSecret: "cs",
+			httpClient: srv.Client(), tokenURL: srv.URL,
+		},
+		limiter: rate.NewLimiter(rate.Inf, 1), apiURL: srv.URL, configured: true,
+	}
+
+	md, err := client.FetchFullMetadata(context.Background(), 1905)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if md.HowlongtobeatMain == nil || *md.HowlongtobeatMain != 2.0 {
+		t.Errorf("expected in-range HowlongtobeatMain=2.0, got %v", md.HowlongtobeatMain)
+	}
+	if md.HowlongtobeatExtra == nil || *md.HowlongtobeatExtra != 298.0 {
+		t.Errorf("expected in-range HowlongtobeatExtra=298.0, got %v", md.HowlongtobeatExtra)
+	}
+	if md.HowlongtobeatCompletionist == nil {
+		t.Fatal("expected HowlongtobeatCompletionist to be set")
+	}
+	if *md.HowlongtobeatCompletionist != maxHowlongtobeat {
+		t.Errorf("expected over-range HowlongtobeatCompletionist clamped to %v, got %v",
+			maxHowlongtobeat, *md.HowlongtobeatCompletionist)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // DownloadCoverArt
 // ---------------------------------------------------------------------------
