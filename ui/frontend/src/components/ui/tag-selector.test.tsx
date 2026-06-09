@@ -24,7 +24,6 @@ const mockTags: Tag[] = [
     user_id: 'user1',
     name: 'Action',
     color: '#FF5733',
-    description: 'Action-packed games',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     game_count: 10,
@@ -34,7 +33,6 @@ const mockTags: Tag[] = [
     user_id: 'user1',
     name: 'RPG',
     color: '#33FF57',
-    description: 'Role-playing games',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     game_count: 5,
@@ -44,7 +42,6 @@ const mockTags: Tag[] = [
     user_id: 'user1',
     name: 'Strategy',
     color: '#3357FF',
-    description: 'Strategic gameplay',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     game_count: 0,
@@ -54,7 +51,6 @@ const mockTags: Tag[] = [
     user_id: 'user1',
     name: 'Puzzle',
     color: '#F0F0F0',
-    description: 'Brain teasers',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     game_count: 3,
@@ -156,18 +152,6 @@ describe('TagSelector', () => {
     expect(screen.getByText('Action')).toBeInTheDocument();
     expect(screen.queryByText('RPG')).not.toBeInTheDocument();
     expect(screen.queryByText('Strategy')).not.toBeInTheDocument();
-  });
-
-  it('filters tags by description', async () => {
-    const user = userEvent.setup();
-
-    render(<TagSelector selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
-
-    await user.click(screen.getByRole('combobox', { name: 'Select tags' }));
-    await user.type(screen.getByPlaceholderText('Search tags...'), 'brain');
-
-    expect(screen.getByText('Puzzle')).toBeInTheDocument();
-    expect(screen.queryByText('Action')).not.toBeInTheDocument();
   });
 
   it('shows create new tag option when allowCreate is true and query does not match', async () => {
@@ -737,23 +721,5 @@ describe('TagSelectorCompact', () => {
 
     const clearButton = screen.getByText('Clear');
     expect(clearButton).toHaveClass('disabled:text-muted-foreground');
-  });
-
-  it('shows tag descriptions', () => {
-    render(<TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
-
-    expect(screen.getByText('Action-packed games')).toBeInTheDocument();
-    expect(screen.getByText('Role-playing games')).toBeInTheDocument();
-  });
-
-  it('filters by tag description', async () => {
-    const user = userEvent.setup();
-
-    render(<TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
-
-    await user.type(screen.getByPlaceholderText('Search tags...'), 'brain');
-
-    expect(screen.getByText('Puzzle')).toBeInTheDocument();
-    expect(screen.queryByText('Action')).not.toBeInTheDocument();
   });
 });

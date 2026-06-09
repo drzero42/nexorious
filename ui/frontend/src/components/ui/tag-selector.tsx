@@ -134,10 +134,7 @@ export function TagSelector({
     if (!searchQuery.trim()) return availableTags;
 
     const query = searchQuery.toLowerCase();
-    return availableTags.filter(
-      (tag) =>
-        tag.name.toLowerCase().includes(query) || tag.description?.toLowerCase().includes(query),
-    );
+    return availableTags.filter((tag) => tag.name.toLowerCase().includes(query));
   }, [availableTags, searchQuery]);
 
   // Check if search query matches any existing tag
@@ -402,10 +399,7 @@ export function TagSelectorCompact({
     if (!searchQuery.trim()) return availableTags;
 
     const query = searchQuery.toLowerCase();
-    return availableTags.filter(
-      (tag) =>
-        tag.name.toLowerCase().includes(query) || tag.description?.toLowerCase().includes(query),
-    );
+    return availableTags.filter((tag) => tag.name.toLowerCase().includes(query));
   }, [availableTags, searchQuery]);
 
   // Separate selected and unselected
@@ -576,9 +570,6 @@ function TagListItem({ tag, isSelected, disabled, onToggle }: TagListItemProps) 
         />
         <div className="min-w-0 flex-1">
           <div className="font-medium text-sm truncate">{tag.name}</div>
-          {tag.description && (
-            <div className="text-xs text-muted-foreground truncate">{tag.description}</div>
-          )}
         </div>
       </div>
       {tag.game_count !== undefined && tag.game_count > 0 && (

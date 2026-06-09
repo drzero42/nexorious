@@ -144,13 +144,11 @@ function TagsPageSkeleton() {
 interface TagFormData {
   name: string;
   color: string;
-  description: string;
 }
 
 const initialFormData: TagFormData = {
   name: '',
   color: '#6B7280',
-  description: '',
 };
 
 function TagsPage() {
@@ -191,10 +189,7 @@ function TagsPage() {
     // Filter by search
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      result = result.filter(
-        (tag) =>
-          tag.name.toLowerCase().includes(query) || tag.description?.toLowerCase().includes(query),
-      );
+      result = result.filter((tag) => tag.name.toLowerCase().includes(query));
     }
 
     // Sort
@@ -239,7 +234,6 @@ function TagsPage() {
     setFormData({
       name: tag.name,
       color: tag.color,
-      description: tag.description ?? '',
     });
     setShowEditDialog(true);
   };
@@ -259,7 +253,6 @@ function TagsPage() {
       await createTagMutation.mutateAsync({
         name: formData.name.trim(),
         color: formData.color,
-        description: formData.description.trim() || undefined,
       });
       toast.success('Tag created successfully');
       setShowCreateDialog(false);
@@ -282,7 +275,6 @@ function TagsPage() {
         data: {
           name: formData.name.trim(),
           color: formData.color,
-          description: formData.description.trim() || undefined,
         },
       });
       toast.success('Tag updated successfully');
@@ -521,9 +513,6 @@ function TagsPage() {
                           </span>
                         )}
                       </div>
-                      {tag.description && (
-                        <p className="truncate text-sm text-muted-foreground">{tag.description}</p>
-                      )}
                       <p className="text-xs text-muted-foreground">
                         Created {new Date(tag.created_at).toLocaleDateString()}
                       </p>
@@ -571,16 +560,6 @@ function TagsPage() {
                 onChange={(color) => setFormData((prev) => ({ ...prev, color }))}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="tag-description">Description</Label>
-              <Input
-                id="tag-description"
-                value={formData.description}
-                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                placeholder="Optional description..."
-                maxLength={500}
-              />
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
@@ -617,16 +596,6 @@ function TagsPage() {
               <ColorPicker
                 value={formData.color}
                 onChange={(color) => setFormData((prev) => ({ ...prev, color }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-tag-description">Description</Label>
-              <Input
-                id="edit-tag-description"
-                value={formData.description}
-                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                placeholder="Optional description..."
-                maxLength={500}
               />
             </div>
           </div>

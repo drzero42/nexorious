@@ -23,7 +23,6 @@ const mockTagApi = {
   user_id: 'user-123',
   name: 'RPG',
   color: '#FF5733',
-  description: 'Role-playing games',
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
   game_count: 5,
@@ -34,7 +33,6 @@ const mockTag2Api = {
   user_id: 'user-123',
   name: 'Action',
   color: '#33FF57',
-  description: 'Action games',
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
   game_count: 3,
@@ -67,7 +65,6 @@ describe('tags.ts', () => {
         user_id: 'user-123',
         name: 'RPG',
         color: '#FF5733',
-        description: 'Role-playing games',
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
         game_count: 5,
@@ -158,18 +155,15 @@ describe('tags.ts', () => {
           const body = (await request.json()) as {
             name: string;
             color?: string;
-            description?: string;
           };
           expect(body.name).toBe('New Tag');
           expect(body.color).toBe('#123456');
-          expect(body.description).toBe('A new tag');
 
           return HttpResponse.json({
             id: 'tag-new',
             user_id: 'user-123',
             name: 'New Tag',
             color: '#123456',
-            description: 'A new tag',
             created_at: '2024-01-02T00:00:00Z',
             updated_at: '2024-01-02T00:00:00Z',
           });
@@ -179,7 +173,6 @@ describe('tags.ts', () => {
       const result = await createTag({
         name: 'New Tag',
         color: '#123456',
-        description: 'A new tag',
       });
 
       expect(result.id).toBe('tag-new');
@@ -281,7 +274,6 @@ describe('tags.ts', () => {
           const body = (await request.json()) as {
             name?: string;
             color?: string;
-            description?: string;
           };
           expect(body.name).toBe('Updated RPG');
           expect(body.color).toBe('#AABBCC');
@@ -307,19 +299,19 @@ describe('tags.ts', () => {
       server.use(
         http.put(`${API_URL}/tags/tag-1`, async ({ request }) => {
           const body = (await request.json()) as Record<string, unknown>;
-          expect(body.description).toBe('New description');
+          expect(body.color).toBe('#AABBCC');
           expect(body.name).toBeUndefined();
 
           return HttpResponse.json({
             ...mockTagApi,
-            description: 'New description',
+            color: '#AABBCC',
           });
         }),
       );
 
-      const result = await updateTag('tag-1', { description: 'New description' });
+      const result = await updateTag('tag-1', { color: '#AABBCC' });
 
-      expect(result.description).toBe('New description');
+      expect(result.color).toBe('#AABBCC');
     });
 
     it('throws error for non-existent tag', async () => {
