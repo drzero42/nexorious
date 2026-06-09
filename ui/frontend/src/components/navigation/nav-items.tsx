@@ -11,6 +11,8 @@ import {
   Wrench,
   DatabaseBackup,
   Activity,
+  HelpCircle,
+  BookOpen,
 } from 'lucide-react';
 import type { NavItem, NavSection } from './types';
 import { usePendingReviewCount } from '@/hooks/use-jobs';
@@ -63,6 +65,11 @@ export function useNavItems() {
       icon: <ArrowLeftRight className="h-4 w-4" />,
       badge: importReviewCount,
     },
+    {
+      href: '/help/user-guide',
+      label: 'Help',
+      icon: <HelpCircle className="h-4 w-4" />,
+    },
   ];
 
   const adminSection: NavSection = {
@@ -93,6 +100,11 @@ export function useNavItems() {
         href: '/admin/backups',
         label: 'Backup / Restore',
         icon: <DatabaseBackup className="h-4 w-4" />,
+      },
+      {
+        href: '/help/admin-guide',
+        label: 'Admin Guide',
+        icon: <BookOpen className="h-4 w-4" />,
       },
     ],
     defaultOpen: false,
