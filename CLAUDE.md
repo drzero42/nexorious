@@ -59,7 +59,7 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 ## Project Structure
 
 - `cmd/nexorious/` — entry point, wires config/db/echo/workers
-- `internal/api/` — Echo route handlers per domain (games, user_games, auth, setup, platforms, tags, jobs, job_items, import, export, backup, sync, db_error)
+- `internal/api/` — Echo route handlers per domain (games, user_games, auth, setup, platforms, tags, jobs, job_items, import, export, backup, sync, settings, docs, store_url, events, notifications, admin_users, admin_reset, db_error)
 - `internal/db/` — database layer
   - `migrations/` — Bun migrate SQL files with timestamp-prefix naming (`20260503000001_name.up.sql` / `.down.sql`); auto-discovered via `//go:embed *.sql` in `migrations.go`
   - `models/` — Bun model structs (hand-edited)
@@ -75,6 +75,7 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 - `internal/middleware/` — Echo middleware (state gate, auth bridge, etc.)
 - `internal/backup/` — backup orchestration (invoked from scheduler)
 - `ui/` — contains `ui/frontend/` (React SPA source + build output), `ui/migrate/` (migration HTML), `ui/db-error/`, `ui/setup/`
+- `docs/` — Markdown guides and reference docs. Only `user-guide.md` and `admin-guide.md` are embedded (`docs/embed.go`, explicit `//go:embed user-guide.md admin-guide.md`) and served in-app by `internal/api/docs.go` at `/api/docs/:slug`, rendered at `/help/:slug` (`admin-guide` is admin-gated). The reference docs (`sync.md`, `maintenance.md`, `import-export-format.md`, `darkadia-import.md`) and the `docs/superpowers/` subtree (specs + plans) stay in the repo for GitHub viewing but are **not** embedded/served. `ui/frontend/src/lib/doc-links.ts` (issue #887) resolves any relative link to a `docs/*.md` sibling into an in-app `/help/:slug` route, and anything outside `docs/` (e.g. `../DEV.md`) into a GitHub source URL — so if you add an in-app link to a reference doc you must also embed it, or it will 404. The two guides currently cross-link only to each other.
 
 ## Architecture
 

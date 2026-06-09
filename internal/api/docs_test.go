@@ -69,6 +69,21 @@ func TestGetDoc_UnknownSlugIs404(t *testing.T) {
 	}
 }
 
+// Only the user and admin guides are embedded (docs/embed.go). The reference
+// docs remain in the repo for GitHub viewing but must not be served in-app.
+func TestGetDoc_ReferenceDocsNotServed(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	_, tok := setupRegularUser(t, testDB, e, "doc-ref")
+
+	for _, slug := range []string{"sync", "maintenance", "import-export-format", "darkadia-import"} {
+		rec := getAuth(t, e, "/api/docs/"+slug, tok)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("/api/docs/%s = %d, want 404; body=%s", slug, rec.Code, rec.Body)
+		}
+	}
+}
+
 func TestGetDoc_InvalidSlugRejected(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEcho(t, testDB, testCfg())
