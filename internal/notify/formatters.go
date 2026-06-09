@@ -116,6 +116,19 @@ func Format(eventType string, payload json.RawMessage) (title, body string, deco
 		title = "Maintenance failed"
 		body = maintBody(p.Action, p.Error, "Maintenance task failed", decodeErr)
 
+	case TypeAdminVersionAvailable:
+		var p VersionAvailablePayload
+		decodeErr = json.Unmarshal(payload, &p)
+		title = "New version available"
+		if decodeErr != nil {
+			body = "A newer version of Nexorious is available."
+		} else {
+			body = fmt.Sprintf("Nexorious %s is available (you are running %s): %s",
+				fallback(p.AvailableVersion, "a newer version"),
+				fallback(p.CurrentVersion, "an unknown version"),
+				fallback(p.ReleaseURL, "https://github.com/drzero42/nexorious/releases"))
+		}
+
 	default:
 		title = label
 		body = "An event occurred: " + eventType

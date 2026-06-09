@@ -73,6 +73,7 @@ var samplePayloads = map[string]any{
 	TypeAdminBackupFailed:       BackupFailedPayload{Error: "s3 unreachable"},
 	TypeAdminMaintCompleted:     MaintPayload{Action: "prune_events", Count: 5},
 	TypeAdminMaintFailed:        MaintPayload{Action: "prune_events", Error: "query failed"},
+	TypeAdminVersionAvailable:   VersionAvailablePayload{CurrentVersion: "0.9.0", AvailableVersion: "0.10.0", ReleaseURL: "https://github.com/drzero42/nexorious/releases/tag/v0.10.0"},
 }
 
 // wantRender is the exact (title, body) each sample must produce. Locks the
@@ -96,6 +97,7 @@ var wantRender = map[string]struct{ title, body string }{
 	TypeAdminBackupFailed:       {"Backup failed", "A scheduled backup failed: s3 unreachable"},
 	TypeAdminMaintCompleted:     {"Maintenance completed", "Maintenance task completed (prune_events)."},
 	TypeAdminMaintFailed:        {"Maintenance failed", "Maintenance task failed (prune_events) - query failed."},
+	TypeAdminVersionAvailable:   {"New version available", "Nexorious 0.10.0 is available (you are running 0.9.0): https://github.com/drzero42/nexorious/releases/tag/v0.10.0"},
 }
 
 func TestFormat_AllRegisteredTypesRoundTrip(t *testing.T) {

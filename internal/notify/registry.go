@@ -23,6 +23,7 @@ const (
 	TypeAdminBackupFailed       = "admin.backup.failed"
 	TypeAdminMaintCompleted     = "admin.maintenance.completed"
 	TypeAdminMaintFailed        = "admin.maintenance.failed"
+	TypeAdminVersionAvailable   = "admin.version.available"
 )
 
 // EventTypeMeta describes one event type for the registry and the settings UI.
@@ -50,6 +51,7 @@ var registry = []EventTypeMeta{
 	{TypeAdminBackupFailed, ScopeAdmin, "Backups", "Scheduled backup failed", true},
 	{TypeAdminMaintCompleted, ScopeAdmin, "Maintenance", "Maintenance tasks completed", false},
 	{TypeAdminMaintFailed, ScopeAdmin, "Maintenance", "Maintenance tasks failed", true},
+	{TypeAdminVersionAvailable, ScopeAdmin, "Updates", "New version available", true},
 }
 
 var metaByType = func() map[string]EventTypeMeta {
