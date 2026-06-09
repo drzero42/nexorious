@@ -38,6 +38,33 @@ Either way, release-please will update the open Release PR to propose the specif
 - [devenv](https://devenv.sh) installed
 - Run `devenv shell` to enter the development environment
 
+## Building
+
+Inside `devenv shell`, the toolchain (Go, Node, make, golangci-lint) is on `PATH`.
+
+```bash
+make             # build the frontend, then the Go binary
+make frontend    # build only the React SPA into ui/frontend/dist/
+make build       # compile only the Go binary (expects dist/ to exist)
+```
+
+`ui/frontend/dist/` is gitignored and embedded into the binary at build time, so `make frontend` (or a full `make`) must run before `make build`.
+
+Common commands:
+
+| Task | Command |
+|---|---|
+| Build everything | `make` |
+| Build backend only | `make build` |
+| Build frontend only | `make frontend` |
+| Run server | `./nexorious serve` |
+| Run migrations only | `./nexorious migrate` |
+| Migration status | `./nexorious migrate status` |
+| Run Go tests | `go test -timeout 600s ./...` |
+| Run frontend tests | `npm run test` (from `ui/frontend/`) |
+| Type check frontend | `npm run check` (from `ui/frontend/`) |
+| Lint Go | `golangci-lint run` |
+
 ## Starting the database
 
 Services (including PostgreSQL) are **not** started by `devenv shell`. You must start them separately:
@@ -92,6 +119,21 @@ rm -rf .devenv/state/postgres
 
 # 3. Restart — devenv recreates the cluster and the nexorious database
 devenv up
+```
+
+## Database Migrations
+
+Migrations live in `internal/db/migrations/` as paired SQL files named `YYYYMMDD<nnnnnn>_name.up.sql` / `.down.sql`, where `<nnnnnn>` is a zero-padded running number (e.g. `20260503000001_initial.up.sql`). They're discovered automatically (via `//go:embed`), but not applied silently — `serve` detects a pending schema and serves the `/migrate` page; apply them there or with `./nexorious migrate`. To add one:
+
+```bash
+touch internal/db/migrations/20260101000001_my_change.up.sql
+touch internal/db/migrations/20260101000001_my_change.down.sql
+```
+
+Check status without applying:
+
+```bash
+./nexorious migrate status
 ```
 
 ## Frontend Dev Server
@@ -168,9 +210,40 @@ Known coverage status (non-trivial packages, as of Phase 5):
 
 `cmd/nexorious` (5%) is excluded — it is startup wiring with no testable logic. The scheduler package is low because the goroutine lifecycle and gocron wiring are not unit-testable.
 
+## Project Layout
+
+```
+nexorious/
+├── cmd/nexorious/   # Entry point — wires config, DB, Echo, workers
+├── internal/
+│   ├── api/         # Echo route handlers (games, auth, sync, import, export, …)
+│   ├── db/          # Bun ORM models and SQL migrations
+│   ├── worker/      # River job workers (sync, import, export, metadata)
+│   ├── scheduler/   # Periodic maintenance jobs (cleanup, backup polling)
+│   ├── services/    # IGDB client, Steam/PSN/GOG/Epic sync, game matching
+│   ├── auth/        # Session and API key auth + Echo middleware
+│   └── config/      # Environment variable config
+├── ui/
+│   ├── frontend/    # React + Vite SPA source
+│   └── migrate/     # Standalone migration UI (embedded in binary)
+├── deploy/
+│   ├── helm/        # Helm chart (bjw-s common library)
+│   └── docker/      # Docker Compose for simple deployments
+└── docs/            # Documentation
+```
+
+The route handlers in `internal/api/` are the source of truth for available API endpoints — each domain (games, user_games, auth, platforms, tags, jobs, import, export, sync, …) has its own handler file with the registered routes.
+
+## Tech Stack
+
+- **Backend**: Go 1.26, Echo v5, Bun ORM, River job queue, pgx/v5
+- **Frontend**: React 19, Vite 8, TypeScript, TanStack Router + Query, Tailwind CSS v4, shadcn/ui
+- **Database**: PostgreSQL 16+
+- **Testing**: stdlib `testing` + testcontainers-go (Go); Vitest + @testing-library/react (frontend)
+
 ## Container Image (Docker)
 
-The repo ships a multi-stage `Dockerfile` that builds the React SPA, compiles the Go binary, and produces a minimal `alpine:3.23` runtime image containing only the `nexorious` binary, `ca-certificates`, and `postgresql18-client` (for backup/restore). No Go or Node toolchain, source, or git is shipped in the final image.
+The repo ships a multi-stage `Dockerfile` that builds the React SPA, compiles the Go binary, and produces a minimal `alpine:3.23` runtime image containing the `nexorious` binary, `ca-certificates`, `postgresql18-client` (for backup/restore), and `legendary-gl` with its Python runtime (for Epic Games Store sync). No Go or Node toolchain, source, or git is shipped in the final image.
 
 **Build:**
 

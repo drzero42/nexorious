@@ -1,0 +1,162 @@
+# Nexorious User Guide
+
+This guide is for anyone using Nexorious to keep track of their game collection. It walks through what you can do with the app and where to do it: cataloguing the games you own, tracking how far you've got with them, syncing your storefront libraries, and moving your data in and out.
+
+It assumes someone has already set up and is running a Nexorious server, and that you have an account on it. If you're the one running the server, see the [Admin Guide](admin-guide.md) for deployment, configuration, and operations.
+
+> Nexorious is under active development. Pages and details described here may change between versions, and you should expect the occasional rough edge.
+
+## Signing in and getting around
+
+Open your Nexorious server in a browser and sign in with the username and password you were given (or that you created when first setting up the server). Sessions last a while, so you usually won't have to sign in again every visit.
+
+Once you're in, everything is reachable from the sidebar on the left (it collapses into a menu on narrow screens):
+
+- **Dashboard** — a landing page with a summary of your collection and recent activity.
+- **Library** — your full collection, where you search, filter, and sort.
+- **Wishlist** — games you want but don't own yet.
+- **Add Game** — search IGDB and add a game to your library or wishlist.
+- **Sync** — connect your Steam, PlayStation, GOG, Epic, and Humble Bundle accounts so your purchases flow in automatically.
+- **Tags** — your own labels for organising games.
+- **Import / Export** — bring a collection in from a file, or take yours out.
+
+Your username sits at the top, with links to your **Profile** and to log out.
+
+If you ever see a banner saying IGDB isn't configured or its credentials are invalid, search and metadata enrichment won't work until whoever runs the server fixes it — that's an admin task, covered in the Admin Guide.
+
+## Your account
+
+Open **Profile** from the user menu to manage your own account.
+
+- **Username** — you can change it. The page checks as you type whether the new name is free. Changing it signs you out, so you'll log back in with the new name.
+- **Password** — change it by entering your current password and a new one (at least 8 characters). A strength indicator gives you a rough sense of how good the new password is. Changing your password also signs you out.
+- **Deal region** — sets the region used for the price and deal links shown on wishlisted games, so the prices you see match where you actually buy.
+- **API keys** — create keys here if you want to talk to Nexorious from a script or the command-line tool. Each key has a name, a scope (read or write), and an optional expiry. A key's full value is shown only once when you create it, so copy it then. You can revoke a key at any time.
+- **Notifications** — set up where you want to be notified and what about (see [Notifications](#notifications) below).
+
+At the bottom is a **Clear Library** action. It removes every game from your collection in one go and can't be undone, so it asks you to type a confirmation first. It clears your games — it doesn't delete your account.
+
+## Adding games
+
+Go to **Add Game** and search for a title. Results come from IGDB, so you get the canonical name, cover art, and details without typing them yourself. Each result tells you whether the game is already in your library or wishlist, so you don't add duplicates.
+
+Pick a game and you'll see a preview — cover, developer, release date, the platforms IGDB knows about, and rough time-to-beat estimates. From here you:
+
+1. Choose whether it goes to your **library** (a game you own) or your **wishlist** (one you want).
+2. Pick the **platforms** you have it on. You can select more than one, and optionally note the storefront for each (for example Steam, GOG, or a physical copy).
+3. Optionally fill in ownership details there and then — how you own it, when you got it, and hours played — or leave that for later.
+
+Add it, and it lands in your collection. If a game genuinely isn't in IGDB you won't be able to add it by search; in practice almost everything is there.
+
+## Viewing and editing a game
+
+Click any game to open its page. You'll see the cover, the metadata pulled from IGDB (publisher, genres, release date, game modes, and so on), a link to its IGDB page, your play status and rating, and a row for each platform you own it on — including any direct links to the game's page on the storefronts you bought it from.
+
+Press **Edit** to change your own details:
+
+- **Play status** — where you are with the game (see below).
+- **Rating** — your personal score, one to five stars.
+- **Loved** — mark a game as a favourite.
+- **Platforms & ownership** — add or remove platform rows, and for each one set how you own it (owned, borrowed, rented, via a subscription, or no longer owned), the date you acquired it, and hours played. Hours for a synced Steam game are filled in from Steam and can't be edited by hand.
+- **Tags** — attach your own labels, creating new ones inline as you go.
+- **Notes** — free-form notes, with basic formatting.
+
+Total hours played is shown as the sum across all your platforms, so you don't add it up yourself.
+
+To remove a game entirely, use the **Remove** button on its page.
+
+## Tracking your progress
+
+Nexorious is as much about working through your backlog as cataloguing it. The main tracking tools are:
+
+- **Play status** — choose from *Not Started*, *In Progress*, *Completed*, *Mastered*, *Dominated*, *Shelved*, *Dropped*, and *Replay*. Use them however makes sense to you; *Completed* through *Dominated* let you distinguish "finished the story" from "did everything."
+- **Rating** — your own one-to-five-star score, separate from the IGDB community rating shown alongside it.
+- **Hours played** — tracked per platform, and summed for you.
+- **Loved** — a simple favourite flag you can filter on.
+- **Notes** — anything you want to remember about a game.
+
+## Finding games in your library
+
+The **Library** page is built for digging through a large collection. At the top you have a search box (by title), a sort control with a direction toggle, and a switch between grid and list views.
+
+You can filter by play status, ownership status, platform, and whether a game is loved, and open a "more filters" section for storefront, genre, game mode, theme, player perspective, and tags. Combine as many as you like; a clear-filters control resets them. Large collections are paged, and you can choose how many games to show at once.
+
+Selecting several games at once lets you act on them together — change their play status or remove them in bulk — which saves a lot of clicking when tidying up.
+
+## Wishlist
+
+The **Wishlist** holds games you want but don't own. Add a game to it the same way you add to your library — just choose "wishlist" as the destination on the add screen.
+
+A wishlisted game's page shows price-and-deal links (for PC and for console) based on the deal region set in your profile, so you can check current prices at a glance. When you do buy it, open the game and use **Move to library**, pick the platform(s) you got it on, and it moves across. Games also leave your wishlist automatically if they turn up in a storefront sync — once you own it, it's no longer something to want.
+
+## Tags
+
+**Tags** are your own labels — "co-op night," "to finish in 2026," whatever suits you. On the Tags page you create them with a name and a colour, and you can see how many games use each one. Edit or delete a tag at any time; deleting it just removes the label, not the games. You attach tags to a game from its edit page.
+
+## Syncing your storefront libraries
+
+Sync is what makes Nexorious worth running if your games are spread across several stores: connect an account once and your purchases there show up in your library automatically, enriched with IGDB metadata. Each person connects their own accounts — your credentials are yours and are stored encrypted on the server.
+
+The **Sync** page shows a card for each supported service — **Steam**, **Epic Games Store**, **PlayStation Store**, **GOG**, and **Humble Bundle** — with its connection status, when it last synced, and how many games are waiting for your attention.
+
+### Connecting a service
+
+Open a service to connect it. What you provide depends on the store:
+
+- **Steam** — your Steam ID and a Steam Web API key. The page links to where you get each.
+- **PlayStation Network** — an NPSSO token from your signed-in PSN session; the page links to instructions for retrieving it.
+- **GOG** and **Epic Games Store** — open the login page Nexorious gives you, sign in at the store, then paste the authorization code (or the redirect URL you land on) back into Nexorious.
+- **Humble Bundle** — sign in to bring across your Humble purchases.
+
+Once connected, the card shows your account on that service and a way to disconnect.
+
+### Sync schedule and running it manually
+
+For each service you can choose how often it syncs — manually only, or hourly, daily, or weekly. Whatever the schedule, **Sync Now** runs it on demand. The service page shows the last sync time and the progress of a running one.
+
+### Reviewing matches
+
+Most games match to IGDB automatically. The ones Nexorious isn't sure about land in a **Needs Review** list on the service page, and the Sync entry in the sidebar shows a badge with how many are waiting. For each one you can **find the right match** from IGDB search, or **skip** it so it's left out and not raised again. Matched games can be **re-matched** if Nexorious got one wrong, and anything you skipped can be unskipped later. Games whose sync failed appear separately with the reason, and you can retry them individually or all at once.
+
+A sync won't be treated as fully done while items still need review, so it's worth clearing the list now and then.
+
+### When credentials expire
+
+Store sessions don't last forever. When a service's credentials stop working, its card shows a credentials error and you'll need to reconnect it — re-enter the token or run the sign-in flow again. You can also have Nexorious notify you when this happens (see below).
+
+## Importing and exporting
+
+The **Import / Export** page moves whole collections in and out.
+
+**Exporting** gives you two formats. JSON is the complete picture — every game with its platforms, tags, notes, and ratings — and is the one to use for a backup or to move to another Nexorious instance. CSV is a flatter, spreadsheet-friendly summary. Both download as a dated file.
+
+**Importing** also comes in two flavours:
+
+- **Nexorious JSON** — restore or merge a collection from a Nexorious export. It merges into what you already have rather than wiping it.
+- **Darkadia CSV** — a one-off migration path for anyone coming from Darkadia. Export your collection from Darkadia to CSV and import it here. Because games are matched to IGDB, some may need your review afterwards, just like a storefront sync; you'll find those on the Import / Export page. Importing from Darkadia needs IGDB configured on the server.
+
+Both imports run in the background, so you can watch their progress and see recent runs listed on the page.
+
+## Notifications
+
+Nexorious can let you know when something needs your attention — a sync's credentials have expired, a job finished, and so on. You set this up under **Notifications** on your profile in two parts:
+
+- **Channels** — where notifications go. Each channel is a [Shoutrrr](https://containrrr.dev/shoutrrr/) URL, so any service Shoutrrr supports works here — Telegram, Discord, Slack, Matrix, email, generic webhooks, and [many more](https://containrrr.dev/shoutrrr/v0.8/). Give the channel a name, paste its URL, and add as many as you like.
+- **Events** — which kinds of events you want to hear about, grouped by category, each one a simple on/off switch. There's a reset-to-defaults option if you want to start over.
+
+If you don't set up any channels, nothing is sent; the in-app badges (like the sync review count) still work regardless.
+
+### Example: Telegram
+
+A Telegram channel is a single Shoutrrr URL of the form `telegram://<token>@telegram?chats=<chat-id>`. To build one:
+
+1. **Create a bot.** In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, and follow the prompts. It hands you a **bot token** like `123456789:AAExampleTokenString`.
+2. **Open a chat with your new bot** (search for the username you gave it).
+3. **Generate the URL** with Shoutrrr's helper, which prompts for the token and your chat and prints the finished `telegram://…` string:
+   ```bash
+   docker run --rm -it containrrr/shoutrrr generate telegram
+   ```
+4. **Send your bot a message.** This step is easy to miss and the Shoutrrr docs don't spell it out: after running the command, send your bot any message in Telegram. The bot can only discover your chat ID once it has received a message from you, so without it the generator won't find the chat.
+5. **Add the channel** on your profile — paste the `telegram://…` URL, give it a name, and save.
+
+The same pattern works for other services: run `docker run --rm -it containrrr/shoutrrr generate <service>`, or check the [Shoutrrr documentation](https://containrrr.dev/shoutrrr/v0.8/) for the URL format.
