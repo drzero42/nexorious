@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
 	"github.com/riverqueue/river"
@@ -358,8 +360,40 @@ func (h *GamesHandler) HandleImportFromIGDB(c *echo.Context) error {
 	return c.JSON(http.StatusOK, game)
 }
 
+// startMaintenanceRefresh runs the "already active?" guard for a maintenance
+// refresh and, when none is active, synchronously inserts a minimal pending jobs
+// row owned by userID so the caller can return a real job_id immediately. It
+// returns the job id to report to the client and created=true only when this
+// call inserted the row; created=false means an equivalent job (same job_type +
+// source) was already active — its id is returned and the caller must NOT enqueue
+// a dispatch. Everything runs in one transaction so the guard and insert are atomic.
+func (h *GamesHandler) startMaintenanceRefresh(ctx context.Context, userID, jobType, source string) (jobID string, created bool, err error) {
+	err = h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var existing string
+		e := tx.NewRaw(
+			`SELECT id FROM jobs WHERE job_type = ? AND source = ? AND status IN ('pending','processing') LIMIT 1`,
+			jobType, source,
+		).Scan(ctx, &existing)
+		if e == nil {
+			jobID, created = existing, false
+			return nil
+		}
+		if !errors.Is(e, sql.ErrNoRows) {
+			return e
+		}
+		jobID, created = uuid.NewString(), true
+		_, e = tx.NewRaw(
+			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+			 VALUES (?, ?, ?, ?, 'pending', 'low', 0, now())`,
+			jobID, userID, jobType, source,
+		).Exec(ctx)
+		return e
+	})
+	return jobID, created, err
+}
+
 // HandleStartMetadataRefreshJob handles POST /api/games/metadata/refresh-job.
-// Admin-only: dispatches a MetadataRefreshDispatch River job immediately.
+// Admin-only: creates a pending jobs row then enqueues a MetadataRefreshDispatch River job.
 func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -374,20 +408,32 @@ func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "worker not available")
 	}
 
-	if _, err := h.riverClient.Insert(c.Request().Context(), tasks.MetadataRefreshDispatchArgs{}, nil); err != nil {
-		slog.Error("failed to enqueue metadata refresh dispatch", "err", err)
+	ctx := c.Request().Context()
+	jobID, created, err := h.startMaintenanceRefresh(ctx, userID, models.JobTypeMetadataRefresh, models.JobSourceSystem)
+	if err != nil {
+		slog.Error("failed to start metadata refresh", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
+	}
+
+	if created {
+		if _, err := h.riverClient.Insert(ctx, tasks.MetadataRefreshDispatchArgs{JobID: jobID}, nil); err != nil {
+			slog.Error("failed to enqueue metadata refresh dispatch", "err", err)
+			if _, derr := h.db.NewRaw(`DELETE FROM jobs WHERE id = ?`, jobID).Exec(ctx); derr != nil {
+				slog.Error("failed to roll back metadata refresh job row", "err", derr, "job_id", jobID)
+			}
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
+		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"success": true,
 		"message": "Metadata refresh job queued",
-		"job_id":  "",
+		"job_id":  jobID,
 	})
 }
 
 // HandleStartStoreLinkRefreshJob handles POST /api/games/store-links/refresh-job.
-// Admin-only: dispatches a global, forced store-link re-resolution.
+// Admin-only: creates a pending jobs row then enqueues a global, forced store-link re-resolution.
 func (h *GamesHandler) HandleStartStoreLinkRefreshJob(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -399,13 +445,28 @@ func (h *GamesHandler) HandleStartStoreLinkRefreshJob(c *echo.Context) error {
 	if h.riverClient == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "worker not available")
 	}
-	if _, err := h.riverClient.Insert(c.Request().Context(), tasks.StoreLinkRefreshDispatchArgs{Force: true}, nil); err != nil {
-		slog.Error("failed to enqueue store-link refresh dispatch", "err", err)
+
+	ctx := c.Request().Context()
+	jobID, created, err := h.startMaintenanceRefresh(ctx, userID, models.JobTypeStoreLinkRefresh, models.JobSourceSystem)
+	if err != nil {
+		slog.Error("failed to start store-link refresh", "err", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue store link refresh")
 	}
+
+	if created {
+		if _, err := h.riverClient.Insert(ctx, tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID}, nil); err != nil {
+			slog.Error("failed to enqueue store-link refresh dispatch", "err", err)
+			if _, derr := h.db.NewRaw(`DELETE FROM jobs WHERE id = ?`, jobID).Exec(ctx); derr != nil {
+				slog.Error("failed to roll back store-link refresh job row", "err", derr, "job_id", jobID)
+			}
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue store link refresh")
+		}
+	}
+
 	return c.JSON(http.StatusOK, map[string]any{
 		"success": true,
 		"message": "Store link refresh job queued",
+		"job_id":  jobID,
 	})
 }
 

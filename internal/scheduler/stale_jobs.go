@@ -7,8 +7,18 @@ import (
 
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/notify"
 )
+
+// maintenanceRefreshJobTypes are the system maintenance refresh job types that
+// share a lifecycle — a handler or the scheduler creates the jobs row, a dispatch
+// worker populates it — and the same stale signature, so CleanupStaleJobs reaps
+// them with one rule.
+var maintenanceRefreshJobTypes = []string{
+	models.JobTypeMetadataRefresh,
+	models.JobTypeStoreLinkRefresh,
+}
 
 // CleanupStaleJobs marks jobs that are stuck in pending or processing with no
 // remaining unfinished items as failed. This releases duplicate-run guards and
@@ -22,7 +32,8 @@ import (
 //     (i.e. items are either all terminal or never existed)
 //
 // Handled job types:
-//   - metadata_refresh: guards against stuck dispatch after a crash
+//   - metadata_refresh, store_link_refresh: the maintenance refresh types; guards
+//     against a stuck dispatch row (incl. one created before any job_items) after a crash
 //   - sync: guards against orphaned dispatch (dispatch_complete=false) after
 //     all River retries are exhausted; dispatch_complete=true jobs are never touched
 //
@@ -33,7 +44,7 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 		   SET status = 'failed',
 		       error_message = 'stale_job_cleaned_up',
 		       completed_at = now()
-		 WHERE job_type = 'metadata_refresh'
+		 WHERE job_type IN (?)
 		   AND status IN ('pending', 'processing')
 		   AND created_at < now() - (? || ' seconds')::interval
 		   AND NOT EXISTS (
@@ -41,7 +52,7 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 		      WHERE job_items.job_id = jobs.id
 		        AND job_items.status NOT IN ('completed', 'failed', 'skipped')
 		   )`,
-		int64(threshold.Seconds()),
+		bun.List(maintenanceRefreshJobTypes), int64(threshold.Seconds()),
 	).Exec(ctx)
 	if err != nil {
 		slog.Error("cleanup_stale_jobs: failed", "err", err)
