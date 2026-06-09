@@ -1,0 +1,8 @@
+IsThereAnyDeal logo
+===================
+Source: isthereanydeal.com site favicon
+URL: https://isthereanydeal.com/public/icons/favicon-b6ae0302.svg
+Downloaded: 2026-06-09
+Description: IsThereAnyDeal brand mark (origami-boat icon). Transparent
+background; rendered on a dark tile in-app. Used as a link affordance to the
+IsThereAnyDeal deal-search page for wishlisted games.

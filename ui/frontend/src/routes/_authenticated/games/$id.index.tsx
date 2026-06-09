@@ -428,24 +428,46 @@ export function GameDetailPage() {
                       Move to library
                     </Button>
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-3 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <a
                       href={dealLinks.itad}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
+                      aria-label={`Search IsThereAnyDeal for ${game.game?.title ?? 'this game'} deals (opens in new tab)`}
+                      className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      Find PC deals (IsThereAnyDeal)
-                      <ExternalLink className="h-3 w-3" />
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[#2f2e35]">
+                        <img
+                          src="/logos/deals/isthereanydeal/isthereanydeal-icon.svg"
+                          alt=""
+                          className="h-6 w-6"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium">IsThereAnyDeal</div>
+                        <div className="text-xs text-muted-foreground">PC deals</div>
+                      </div>
+                      <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
                     </a>
                     <a
                       href={dealLinks.psprices}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
+                      aria-label={`Search PSprices for ${game.game?.title ?? 'this game'} deals (opens in new tab)`}
+                      className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      Find console deals (PSprices)
-                      <ExternalLink className="h-3 w-3" />
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md">
+                        <img
+                          src="/logos/deals/psprices/psprices-icon.svg"
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium">PSprices</div>
+                        <div className="text-xs text-muted-foreground">Console deals</div>
+                      </div>
+                      <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
                     </a>
                   </div>
                 </div>
