@@ -75,7 +75,7 @@ func TestGetDoc_InvalidSlugRejected(t *testing.T) {
 	_, tok := setupRegularUser(t, testDB, e, "doc-bad")
 
 	rec := getAuth(t, e, "/api/docs/..%2f..%2fgo.mod", tok)
-	if rec.Code == http.StatusOK {
-		t.Fatalf("traversal slug returned 200; body=%s", rec.Body)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("traversal slug returned %d, want 404; body=%s", rec.Code, rec.Body)
 	}
 }

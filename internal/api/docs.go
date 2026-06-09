@@ -45,7 +45,7 @@ func (h *DocsHandler) HandleGetDoc(c *echo.Context) error {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "doc not found"})
 		}
 		slog.Error("read embedded doc", "slug", slug, "error", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read doc")
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read doc"})
 	}
 	return c.Blob(http.StatusOK, "text/markdown; charset=utf-8", data)
 }
