@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.9.0](https://github.com/drzero42/nexorious/compare/v0.8.1...v0.9.0) (2026-06-09)
+
+
+### Features
+
+* deep-link to each storefront's product page from the game details page ([#871](https://github.com/drzero42/nexorious/issues/871)) ([bc1a8bf](https://github.com/drzero42/nexorious/commit/bc1a8bf572a5347361bc574858a94eb24ef0f4e0)), closes [#831](https://github.com/drzero42/nexorious/issues/831)
+* link Recent Activity games to their library entry ([#825](https://github.com/drzero42/nexorious/issues/825)) ([#866](https://github.com/drzero42/nexorious/issues/866)) ([e4d91b1](https://github.com/drzero42/nexorious/commit/e4d91b180e87f5eb9c31cb2272306687fcf5e364))
+* search IGDB games by bare numeric ID (no `igdb:` prefix) ([#873](https://github.com/drzero42/nexorious/issues/873)) ([e3bd6ca](https://github.com/drzero42/nexorious/commit/e3bd6caea870769d386fe296d0c79434edbb2c3f)), closes [#843](https://github.com/drzero42/nexorious/issues/843)
+* set per-platform ownership/hours/acquired in the add-game wizard ([#876](https://github.com/drzero42/nexorious/issues/876)) ([3ca760e](https://github.com/drzero42/nexorious/commit/3ca760efa70c525179a1c28e19a2bf8eb5d48bbb)), closes [#858](https://github.com/drzero42/nexorious/issues/858)
+* unify sync-source slugs with storefronts.name (remove epic/psn ↔ catalog mapping) ([#863](https://github.com/drzero42/nexorious/issues/863)) ([b239802](https://github.com/drzero42/nexorious/commit/b2398023917610af287ee8311f216eed48e3cff5))
+* wishlist for games the user wants but doesn't own ([#879](https://github.com/drzero42/nexorious/issues/879)) ([e9a6c8c](https://github.com/drzero42/nexorious/commit/e9a6c8c00997995e483c9173e97d2388c9f18cf4)), closes [#867](https://github.com/drzero42/nexorious/issues/867)
+
+
+### Bug Fixes
+
+* allow adding duplicate platforms with different storefronts ([#848](https://github.com/drzero42/nexorious/issues/848)) ([#857](https://github.com/drzero42/nexorious/issues/857)) ([f21222d](https://github.com/drzero42/nexorious/commit/f21222da0be070515886fd1fd7706e52241aa165))
+* **deps:** update go non-major ([#855](https://github.com/drzero42/nexorious/issues/855)) ([b36a0da](https://github.com/drzero42/nexorious/commit/b36a0da556126e9437f2a6ea00cc4fd9dea152e7))
+* Humble Bundle connection card link and Enter-to-submit ([#868](https://github.com/drzero42/nexorious/issues/868)) ([#872](https://github.com/drzero42/nexorious/issues/872)) ([a1d55a9](https://github.com/drzero42/nexorious/commit/a1d55a99469589695846612eee5cea07b69324c6))
+* identify edit-page platform rows by identity, not name ([#846](https://github.com/drzero42/nexorious/issues/846), [#847](https://github.com/drzero42/nexorious/issues/847)) ([#851](https://github.com/drzero42/nexorious/issues/851)) ([9e5691f](https://github.com/drzero42/nexorious/commit/9e5691f39855ca6aea440f9b0884efc668a136f9))
+* name the storefront in the sync.diff "library changes" notification ([#874](https://github.com/drzero42/nexorious/issues/874)) ([35074e4](https://github.com/drzero42/nexorious/commit/35074e4aae6e695651ebbdbe3b762f772735c36a)), closes [#844](https://github.com/drzero42/nexorious/issues/844)
+* persist and display per-platform acquired date ([#861](https://github.com/drzero42/nexorious/issues/861)) ([7fb6f23](https://github.com/drzero42/nexorious/commit/7fb6f232ca99b5f6770681425a315309b59615f9)), closes [#849](https://github.com/drzero42/nexorious/issues/849)
+* reflect clicked star rating immediately on edit page ([#862](https://github.com/drzero42/nexorious/issues/862)) ([28cde10](https://github.com/drzero42/nexorious/commit/28cde1011481b152e75959d7e7078705e03e2d92))
+* surface games already in library on Add Game search ([#856](https://github.com/drzero42/nexorious/issues/856)) ([#859](https://github.com/drzero42/nexorious/issues/859)) ([1cf5d25](https://github.com/drzero42/nexorious/commit/1cf5d25a876f6d7595ced71b3cb4e81da03e5ab3))
+
 ## [0.8.1](https://github.com/drzero42/nexorious/compare/v0.8.0...v0.8.1) (2026-06-05)
 
 
