@@ -517,32 +517,46 @@ func (h *SyncHandler) HandleTriggerSync(c *echo.Context) error {
 	}
 	ctx := context.Background()
 
-	// Check for an existing active job.
-	var existingID string
-	err := h.db.NewRaw(
-		`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
-		userID, sf,
-	).Scan(ctx, &existingID)
-	if err == nil {
-		return echo.NewHTTPError(http.StatusConflict, "sync already in progress")
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to check existing job")
-	}
-
 	now := time.Now().UTC()
 	jobID := uuid.NewString()
-	// priority is TEXT in the jobs table with default 'high'.
-	_, err = h.db.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at) VALUES (?, ?, 'sync', ?, 'pending', 'high', ?)`,
-		jobID, userID, sf, now,
-	).Exec(ctx)
-	if err != nil {
+	// The active-job guard and the insert run in one transaction fronted by a
+	// transaction-scoped advisory lock on the (sync, storefront, user) dedup key:
+	// without it the bare SELECT+INSERT races under READ COMMITTED and two
+	// concurrent triggers both pass the guard and both create an active job.
+	var duplicate bool
+	txErr := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if e := tasks.AcquireJobDedupLock(ctx, tx, "sync", sf, userID); e != nil {
+			return e
+		}
+		var existingID string
+		e := tx.NewRaw(
+			`SELECT id FROM jobs WHERE user_id = ? AND job_type = 'sync' AND source = ? AND status IN ('pending', 'processing') LIMIT 1`,
+			userID, sf,
+		).Scan(ctx, &existingID)
+		if e == nil {
+			duplicate = true
+			return nil
+		}
+		if !errors.Is(e, sql.ErrNoRows) {
+			return e
+		}
+		// priority is TEXT in the jobs table with default 'high'.
+		_, e = tx.NewRaw(
+			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at) VALUES (?, ?, 'sync', ?, 'pending', 'high', ?)`,
+			jobID, userID, sf, now,
+		).Exec(ctx)
+		return e
+	})
+	if txErr != nil {
+		slog.Error("sync: create job", "err", txErr, "storefront", sf)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job")
+	}
+	if duplicate {
+		return echo.NewHTTPError(http.StatusConflict, "sync already in progress")
 	}
 
 	if h.riverClient != nil {
-		if _, err = h.riverClient.Insert(ctx, tasks.DispatchSyncArgs{
+		if _, err := h.riverClient.Insert(ctx, tasks.DispatchSyncArgs{
 			JobID: jobID, UserID: userID, Storefront: sf,
 		}, nil); err != nil {
 			slog.Error("sync: enqueue dispatch failed", "err", err, "job_id", jobID)

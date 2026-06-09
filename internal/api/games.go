@@ -366,9 +366,17 @@ func (h *GamesHandler) HandleImportFromIGDB(c *echo.Context) error {
 // returns the job id to report to the client and created=true only when this
 // call inserted the row; created=false means an equivalent job (same job_type +
 // source) was already active — its id is returned and the caller must NOT enqueue
-// a dispatch. Everything runs in one transaction so the guard and insert are atomic.
+// a dispatch. Everything runs in one transaction, fronted by a transaction-scoped
+// advisory lock on the (job_type, source) dedup key, so the guard and insert are
+// atomic with respect to any concurrent start — without the lock the bare
+// SELECT+INSERT races under READ COMMITTED (two POSTs both pass the guard and
+// both insert). The handler always uses source=system, so the empty user_id
+// discriminant matches the guard, which is not user-scoped.
 func (h *GamesHandler) startMaintenanceRefresh(ctx context.Context, userID, jobType, source string) (jobID string, created bool, err error) {
 	err = h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if e := tasks.AcquireJobDedupLock(ctx, tx, jobType, source, ""); e != nil {
+			return e
+		}
 		var existing string
 		e := tx.NewRaw(
 			`SELECT id FROM jobs WHERE job_type = ? AND source = ? AND status IN ('pending','processing') LIMIT 1`,

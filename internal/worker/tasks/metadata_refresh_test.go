@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -229,6 +230,46 @@ func TestMetadataRefreshDispatch_CreatesJobAndItems(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT COUNT(*) FROM river_job WHERE kind = 'metadata_refresh_item'`).Scan(ctx, &riverJobCount)
 	if riverJobCount != 3 {
 		t.Errorf("river_job (metadata_refresh_item): want 3, got %d", riverJobCount)
+	}
+}
+
+func TestMetadataRefreshDispatch_ConcurrentSelfCreateCreatesOneJob(t *testing.T) {
+	truncateAllTables(t)
+	insertMetaRefreshAdminUser(t)
+	now := time.Now().UTC()
+	insertTestGame(t, 2001, "Race Game One", now.Add(-72*time.Hour))
+	insertTestGame(t, 2002, "Race Game Two", now.Add(-48*time.Hour))
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+	rc := newTestMetadataRiverClient(t)
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc}
+
+	const n = 12
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	wg.Add(n)
+	for range n {
+		go func() {
+			defer wg.Done()
+			<-start // release together to maximise the self-create TOCTOU window
+			if err := w.Work(context.Background(), &river.Job[tasks.MetadataRefreshDispatchArgs]{}); err != nil {
+				t.Errorf("Work: %v", err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	var count int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM jobs WHERE job_type = 'metadata_refresh' AND status IN ('pending','processing')`,
+	).Scan(context.Background(), &count); err != nil {
+		t.Fatalf("count jobs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 active metadata_refresh job after %d concurrent self-create dispatches, got %d", n, count)
 	}
 }
 
