@@ -6,14 +6,14 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/containrrr/shoutrrr v0.8.0
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v5 v5.1.1
 	github.com/paul-mannino/go-fuzzywuzzy v0.0.0-20241117160931-a1769aeb6b21
-	github.com/riverqueue/river v0.38.0
-	github.com/riverqueue/river/riverdriver/riverdatabasesql v0.38.0
-	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.38.0
-	github.com/riverqueue/river/rivertype v0.38.0
+	github.com/riverqueue/river v0.39.0
+	github.com/riverqueue/river/riverdriver/riverdatabasesql v0.39.0
+	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.39.0
+	github.com/riverqueue/river/rivertype v0.39.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/sizovilya/go-psn-api v1.0.2
 	github.com/spf13/cobra v1.10.2
@@ -22,10 +22,10 @@ require (
 	github.com/uptrace/bun v1.2.18
 	github.com/uptrace/bun/dialect/pgdialect v1.2.18
 	github.com/uptrace/bun/driver/pgdriver v1.2.18
-	golang.org/x/crypto v0.52.0
-	golang.org/x/sync v0.20.0
-	golang.org/x/term v0.43.0
-	golang.org/x/text v0.37.0
+	golang.org/x/crypto v0.53.0
+	golang.org/x/sync v0.21.0
+	golang.org/x/term v0.44.0
+	golang.org/x/text v0.38.0
 	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -76,8 +76,8 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
-	github.com/riverqueue/river/riverdriver v0.38.0 // indirect
-	github.com/riverqueue/river/rivershared v0.38.0 // indirect
+	github.com/riverqueue/river/riverdriver v0.39.0 // indirect
+	github.com/riverqueue/river/rivershared v0.39.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
@@ -98,6 +98,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.41.0 // indirect
 	go.opentelemetry.io/otel/trace v1.41.0 // indirect
 	go.uber.org/goleak v1.3.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 	mellium.im/sasl v0.3.2 // indirect
 )
