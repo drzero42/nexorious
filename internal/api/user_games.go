@@ -1016,6 +1016,7 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 		Storefront:      req.Storefront,
 		HoursPlayed:     req.HoursPlayed,
 		OwnershipStatus: req.OwnershipStatus,
+		IsAvailable:     true,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}

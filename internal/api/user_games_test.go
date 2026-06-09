@@ -878,6 +878,57 @@ func TestPlatformCRUD(t *testing.T) {
 	})
 }
 
+// ── TestCreatePlatformDefaultsIsAvailable ───────────────────────────────
+
+// TestCreatePlatformDefaultsIsAvailable verifies that POST
+// /api/user-games/:id/platforms defaults is_available to true when the field
+// is omitted (consistent with create and move-to-library), and still honors an
+// explicit value. Regression test for #880.
+func TestCreatePlatformDefaultsIsAvailable(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "plat-avail")
+	gameID := insertTestGame(t, testDB, "Avail Default Game")
+	insertTestUserGame(t, testDB, "ug-avail-1", userID, int(gameID))
+
+	isAvailable := func(rec *httptest.ResponseRecorder) any {
+		t.Helper()
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v (body %s)", err, rec.Body.String())
+		}
+		return resp["is_available"]
+	}
+
+	t.Run("omitted defaults to true", func(t *testing.T) {
+		rec := postJSONAuth(t, e, "/api/user-games/ug-avail-1/platforms", map[string]any{
+			"platform":   "pc-windows",
+			"storefront": "steam",
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := isAvailable(rec); got != true {
+			t.Fatalf("expected is_available true when omitted, got %v", got)
+		}
+	})
+
+	t.Run("explicit false is honored", func(t *testing.T) {
+		rec := postJSONAuth(t, e, "/api/user-games/ug-avail-1/platforms", map[string]any{
+			"platform":     "pc-windows",
+			"storefront":   "gog",
+			"is_available": false,
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := isAvailable(rec); got != false {
+			t.Fatalf("expected is_available false when explicitly set, got %v", got)
+		}
+	})
+}
+
 // ── TestPlatformAcquiredDate ────────────────────────────────────────────
 
 // TestPlatformAcquiredDate verifies the acquired date is persisted on create
