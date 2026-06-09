@@ -107,6 +107,8 @@ export DB_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 
 On the first start it detects the pending schema and serves the migration page instead of the app; apply the migrations from there, or run `./nexorious migrate` first (see [First run](#first-run)). After that it serves on `PORT` (default 8000). Building from source is covered in the [Development Guide](../DEV.md).
 
+Note that the in-app backup and restore feature shells out to `pg_dump` and `psql`, so install the PostgreSQL client tools on the host if you want it; see [Backups and restore](#backups-and-restore).
+
 ## Configuration
 
 Nexorious is configured entirely through environment variables. Two things are genuinely required — a database connection and an encryption key — and IGDB credentials are required in practice. Everything else has a sensible default, so a minimal configuration is short.
@@ -263,6 +265,13 @@ Under **Backup / Restore** you manage the instance's data backups.
 - **Manual backup** — create one immediately with a single button.
 - **The backups list** — each backup shows its type (scheduled, manual, or the automatic pre-restore one), when it was made, and its size. You can **download** any backup to keep off-server, **delete** ones you don't need, and **upload** a backup file from elsewhere.
 - **Restore** — restoring replaces the instance's current data with the backup's, so it's guarded by a confirmation and automatically takes a fresh "pre-restore" backup first, giving you a way back if a restore wasn't what you wanted.
+
+Backups and restores are produced by the standard PostgreSQL client tools — `pg_dump` writes each backup and `psql` applies a restore — so both have to be available to the server. As with `legendary`, this depends on how you deploy:
+
+- **Official container image / Helm** — the postgres client tools are already bundled in the image, so there's nothing to install.
+- **Single binary / from source** — install the PostgreSQL client package (`postgresql-client`, ideally matching your server's major version) on the host yourself, so `pg_dump` and `psql` are on the server's `PATH`.
+
+If they're missing, Nexorious starts normally but disables this whole section — backup creation and restore both return an error, and the startup log notes `pg_dump not found` / `psql not found`.
 
 Keeping backups somewhere off the server, especially before upgrades, is the safest habit while the project is still moving quickly.
 
