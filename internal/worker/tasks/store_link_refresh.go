@@ -160,24 +160,18 @@ func (w *StoreLinkRefreshDispatchWorker) Work(ctx context.Context, job *river.Jo
 	if !handlerOwned {
 		jobID = uuid.NewString()
 	}
+	// itemIDs is populated by the insertItems closure (run once inside the tx) and
+	// read only after writeMaintenanceJobInTx returns; River jobs are enqueued then,
+	// once the tx has committed and the job_items rows are visible.
 	itemIDs := make([]string, 0, len(groups))
-	if err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if handlerOwned {
-			if _, e := tx.NewRaw(
-				`UPDATE jobs SET total_items = ?, status = 'processing' WHERE id = ?`,
-				len(groups), jobID,
-			).Exec(ctx); e != nil {
-				return fmt.Errorf("update job: %w", e)
-			}
-		} else {
-			if _, e := tx.NewRaw(
-				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-				 VALUES (?, ?, ?, ?, 'processing', 'low', ?, now())`,
-				jobID, jobUserID, models.JobTypeStoreLinkRefresh, source, len(groups),
-			).Exec(ctx); e != nil {
-				return fmt.Errorf("insert job: %w", e)
-			}
-		}
+	if err := writeMaintenanceJobInTx(ctx, w.DB, maintenanceJobParams{
+		HandlerOwned: handlerOwned,
+		JobID:        jobID,
+		OwnerID:      jobUserID,
+		JobType:      models.JobTypeStoreLinkRefresh,
+		Source:       source,
+		TotalItems:   len(groups),
+	}, func(ctx context.Context, tx bun.Tx) error {
 		for _, g := range groups {
 			itemID := uuid.NewString()
 			itemIDs = append(itemIDs, itemID)

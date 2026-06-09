@@ -122,26 +122,17 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 	// River jobs must be inserted AFTER the transaction commits: riverClient.Insert uses a
 	// separate connection and commits immediately, so workers can dequeue and attempt to load
 	// job_items before the bun transaction is visible — causing "no rows" errors.
+	// itemIDs is populated by the insertItems closure (run once inside the tx) and
+	// read only after writeMaintenanceJobInTx returns.
 	itemIDs := make([]string, 0, len(games))
-	if err := w.DB.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if handlerOwned {
-			if _, err := tx.NewRaw(
-				`UPDATE jobs SET total_items = ?, status = 'processing' WHERE id = ?`,
-				len(games), jobID,
-			).Exec(ctx); err != nil {
-				return fmt.Errorf("update job: %w", err)
-			}
-		} else {
-			if _, err := tx.NewRaw(
-				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
-				 VALUES (?, ?, ?, ?, 'processing', 'low', ?, now())`,
-				jobID, ownerID, models.JobTypeMetadataRefresh, models.JobSourceSystem, len(games),
-			).Exec(ctx); err != nil {
-				return fmt.Errorf("insert job: %w", err)
-			}
-		}
-
-		// Insert job_items only; River jobs are enqueued after commit.
+	if err := writeMaintenanceJobInTx(ctx, w.DB, maintenanceJobParams{
+		HandlerOwned: handlerOwned,
+		JobID:        jobID,
+		OwnerID:      ownerID,
+		JobType:      models.JobTypeMetadataRefresh,
+		Source:       models.JobSourceSystem,
+		TotalItems:   len(games),
+	}, func(ctx context.Context, tx bun.Tx) error {
 		for _, g := range games {
 			itemID := uuid.NewString()
 			itemIDs = append(itemIDs, itemID)
@@ -156,7 +147,6 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 				return fmt.Errorf("insert job_item for game %d: %w", g.ID, err)
 			}
 		}
-
 		return nil
 	}); err != nil {
 		slog.Error("metadata_refresh_dispatch: transaction failed", "err", err)
