@@ -110,6 +110,42 @@ func TestCleanupStaleJobs_StuckProcessingWithPendingItem_LeftAlone(t *testing.T)
 	}
 }
 
+// Symmetric to the metadata case above: a store_link_refresh job that is past
+// the threshold but still has an unfinished item must NOT be reaped — the
+// NOT EXISTS guard protects genuinely-active jobs regardless of job_type.
+func TestCleanupStaleJobs_StoreLinkRefresh_WithPendingItem_LeftAlone(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := insertUser(t, ctx, nil)
+	jobID := uuid.NewString()
+	_, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+		 VALUES (?, ?, 'store_link_refresh', 'system', 'processing', 'low', 1, now() - interval '5 hours')`,
+		jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+	_, err = testDB.NewRaw(
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
+		 VALUES (?, ?, ?, ?, 'steam', '{}', 'pending', '{}', '[]', now())`,
+		uuid.NewString(), jobID, userID, "steam",
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert item: %v", err)
+	}
+
+	scheduler.CleanupStaleJobs(ctx, testDB, 4*time.Hour)
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
+		t.Fatalf("re-read job: %v", err)
+	}
+	if status != "processing" {
+		t.Fatalf("expected status=processing (untouched), got %s", status)
+	}
+}
+
 func TestCleanupStaleJobs_FreshJob_LeftAlone(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
@@ -135,7 +171,7 @@ func TestCleanupStaleJobs_FreshJob_LeftAlone(t *testing.T) {
 	}
 }
 
-func TestCleanupStaleJobs_NonMetadataRefresh_LeftAlone(t *testing.T) {
+func TestCleanupStaleJobs_NonMaintenanceType_LeftAlone(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := insertUser(t, ctx, nil)
@@ -335,6 +371,37 @@ func TestCleanupStaleJobs_EmitsMaintenanceCompleted(t *testing.T) {
 	}
 	if count < 1 {
 		t.Fatalf("expected at least 1 admin.maintenance.completed event for stale_jobs_cleanup, got %d", count)
+	}
+}
+
+func TestCleanupStaleJobs_StoreLinkRefresh_StuckNoItems_Cleaned(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := insertUser(t, ctx, nil)
+	jobID := uuid.NewString()
+	_, err := testDB.NewRaw(
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, created_at)
+		 VALUES (?, ?, 'store_link_refresh', 'system', 'pending', 'low', 0, now() - interval '5 hours')`,
+		jobID, userID,
+	).Exec(ctx)
+	if err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+
+	scheduler.CleanupStaleJobs(ctx, testDB, 4*time.Hour)
+
+	var status string
+	var errMsg *string
+	if err := testDB.NewRaw(
+		`SELECT status, error_message FROM jobs WHERE id = ?`, jobID,
+	).Scan(ctx, &status, &errMsg); err != nil {
+		t.Fatalf("re-read job: %v", err)
+	}
+	if status != "failed" {
+		t.Fatalf("expected status=failed, got %s", status)
+	}
+	if errMsg == nil || *errMsg != "stale_job_cleaned_up" {
+		t.Fatalf("expected error_message=stale_job_cleaned_up, got %v", errMsg)
 	}
 }
 
