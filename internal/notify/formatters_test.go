@@ -6,31 +6,6 @@ import (
 	"testing"
 )
 
-func TestFormatSyncFailed(t *testing.T) {
-	payload, _ := json.Marshal(map[string]any{"storefront": "steam", "error": "bad token"})
-	title, body, _ := Format(TypeSyncFailed, payload)
-	if !strings.Contains(strings.ToLower(title), "sync") {
-		t.Errorf("title missing 'sync': %q", title)
-	}
-	if !strings.Contains(body, "steam") || !strings.Contains(body, "bad token") {
-		t.Errorf("body missing detail: %q", body)
-	}
-}
-
-func TestFormatSyncDiff(t *testing.T) {
-	payload, _ := json.Marshal(map[string]any{
-		"added":   []map[string]any{{"title": "Hades", "platforms": []string{"Steam"}}},
-		"removed": []map[string]any{{"title": "Old Game", "platforms": []string{"GOG"}}},
-	})
-	title, body, _ := Format(TypeSyncDiff, payload)
-	if title == "" {
-		t.Error("expected non-empty title")
-	}
-	if !strings.Contains(body, "Hades") || !strings.Contains(body, "Old Game") {
-		t.Errorf("diff body missing games: %q", body)
-	}
-}
-
 func TestFormatSyncDiff_NamesStorefrontInTitle(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{
 		"storefront": "PlayStation Store",
@@ -89,7 +64,7 @@ var samplePayloads = map[string]any{
 	TypeSyncFailed:              SyncFailedPayload{Storefront: "Steam", Error: "bad token", JobID: "j1"},
 	TypeSyncAuthExpired:         SyncAuthExpiredPayload{Storefront: "Steam"},
 	TypeSyncNeedsReview:         SyncNeedsReviewPayload{Storefront: "Steam", Count: 2, JobID: "j1"},
-	TypeSyncDiff:                SyncDiffPayload{Storefront: "Steam", Added: []DiffGame{{Title: "Hades", Platforms: []string{"Steam"}}}, JobID: "j1"},
+	TypeSyncDiff:                SyncDiffPayload{Storefront: "Steam", Added: []DiffGame{{Title: "Hades", Platforms: []string{"Steam"}}}, Removed: []DiffGame{{Title: "Old Game", Platforms: []string{"GOG"}}}, JobID: "j1"},
 	TypeImportCompleted:         ImportCompletedPayload{JobID: "j1"},
 	TypeImportFailed:            ImportFailedPayload{JobID: "j1", Failed: 2, Error: "2 item(s) failed to import"},
 	TypeExportCompleted:         ExportCompletedPayload{JobID: "j1", FilePath: "/tmp/export.zip"},
@@ -112,7 +87,7 @@ var wantRender = map[string]struct{ title, body string }{
 	TypeSyncFailed:              {"Sync failed", "Your Steam sync failed: bad token"},
 	TypeSyncAuthExpired:         {"Storefront needs reconnect", "Your Steam connection has expired. Open Sync settings to reconnect."},
 	TypeSyncNeedsReview:         {"Sync needs review", "Your Steam sync has 2 item(s) needing review."},
-	TypeSyncDiff:                {"Steam library changes", "Added (1):\n  + Hades [Steam]"},
+	TypeSyncDiff:                {"Steam library changes", "Added (1):\n  + Hades [Steam]\nRemoved (1):\n  - Old Game [GOG]"},
 	TypeImportCompleted:         {"Import completed", "Your import finished successfully."},
 	TypeImportFailed:            {"Import failed", "Your import failed: 2 item(s) failed to import"},
 	TypeExportCompleted:         {"Export completed", "Your export is ready."},

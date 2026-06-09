@@ -212,44 +212,61 @@ func newTestEchoWithIGDB(t *testing.T, db *bun.DB) interface {
 	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, nil, "dev", "unknown")
 }
 
-func TestSearchIGDB_NotConfigured(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithIGDB(t, testDB)
-
-	insertAuthTestUser(t, testDB, "u-igdb-1", "igdbuser", "pass123", true, false)
-	token := loginAndGetToken(t, e, "igdbuser", "pass123")
-
-	body := `{"query": "Zelda", "limit": 10}`
-	rec := postAuth(t, e, "/api/games/search/igdb", token, body)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+// TestIGDB_NotConfigured verifies every IGDB-backed endpoint returns 503 when
+// the IGDB client is not configured.
+func TestIGDB_NotConfigured(t *testing.T) {
+	tests := []struct {
+		name   string
+		userID string
+		user   string
+		do     func(t *testing.T, e interface {
+			ServeHTTP(http.ResponseWriter, *http.Request)
+		}, token string) *httptest.ResponseRecorder
+	}{
+		{
+			name:   "search",
+			userID: "u-igdb-1",
+			user:   "igdbuser",
+			do: func(t *testing.T, e interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			}, token string) *httptest.ResponseRecorder {
+				return postAuth(t, e, "/api/games/search/igdb", token, `{"query": "Zelda", "limit": 10}`)
+			},
+		},
+		{
+			name:   "get game",
+			userID: "u-igdb-2",
+			user:   "igdbuser2",
+			do: func(t *testing.T, e interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			}, token string) *httptest.ResponseRecorder {
+				return getAuth(t, e, "/api/games/igdb/12345", token)
+			},
+		},
+		{
+			name:   "import",
+			userID: "u-igdb-3",
+			user:   "igdbuser3",
+			do: func(t *testing.T, e interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			}, token string) *httptest.ResponseRecorder {
+				return postAuth(t, e, "/api/games/igdb-import", token, `{"igdb_id": 12345}`)
+			},
+		},
 	}
-}
 
-func TestGetIGDBGame_NotConfigured(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithIGDB(t, testDB)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			e := newTestEchoWithIGDB(t, testDB)
+			insertAuthTestUser(t, testDB, tt.userID, tt.user, "pass123", true, false)
+			token := loginAndGetToken(t, e, tt.user, "pass123")
 
-	insertAuthTestUser(t, testDB, "u-igdb-2", "igdbuser2", "pass123", true, false)
-	token := loginAndGetToken(t, e, "igdbuser2", "pass123")
-
-	rec := getAuth(t, e, "/api/games/igdb/12345", token)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("expected 503, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestImportFromIGDB_NotConfigured(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithIGDB(t, testDB)
-
-	insertAuthTestUser(t, testDB, "u-igdb-3", "igdbuser3", "pass123", true, false)
-	token := loginAndGetToken(t, e, "igdbuser3", "pass123")
-
-	body := `{"igdb_id": 12345}`
-	rec := postAuth(t, e, "/api/games/igdb-import", token, body)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+			rec := tt.do(t, e, token)
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Errorf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -442,36 +459,53 @@ func insertTestExternalGamePlatformForUser(t *testing.T, db *bun.DB, externalGam
 
 // ─── ExternalGameID ownership / filter tests ─────────────────────────────────
 
-func TestSearchIGDB_ExternalGameID_CrossUserReturns403(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithIGDB(t, testDB) // unconfigured IGDB client; 403 fires before IGDB is called
-
-	// Owning user.
-	insertAuthTestUser(t, testDB, "u-owner", "owner", "pass123", true, false)
-	otherEGID := insertTestExternalGameForUser(t, testDB, "u-owner", "steam", "Owner's Game")
-
-	// Calling user.
-	insertAuthTestUser(t, testDB, "u-caller", "caller", "pass123", true, false)
-	token := loginAndGetToken(t, e, "caller", "pass123")
-
-	body := fmt.Sprintf(`{"query": "x", "limit": 10, "external_game_id": %q}`, otherEGID)
-	rec := postAuth(t, e, "/api/games/search/igdb", token, body)
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("expected 403 for cross-user external_game_id, got %d: %s", rec.Code, rec.Body.String())
+// TestSearchIGDB_ExternalGameID_Returns403 verifies that an external_game_id
+// the caller does not own — whether owned by another user or non-existent —
+// yields 403 before IGDB is ever consulted.
+func TestSearchIGDB_ExternalGameID_Returns403(t *testing.T) {
+	tests := []struct {
+		name      string
+		caller    string
+		callerUID string
+		// egID resolves the external_game_id to send, given the test DB; it may
+		// seed another user's row and return its ID, or return a ghost ID.
+		egID func(t *testing.T) string
+	}{
+		{
+			name:      "cross-user owned id",
+			caller:    "caller",
+			callerUID: "u-caller",
+			egID: func(t *testing.T) string {
+				insertAuthTestUser(t, testDB, "u-owner", "owner", "pass123", true, false)
+				return insertTestExternalGameForUser(t, testDB, "u-owner", "steam", "Owner's Game")
+			},
+		},
+		{
+			name:      "non-existent id",
+			caller:    "caller2",
+			callerUID: "u-caller-2",
+			egID: func(_ *testing.T) string {
+				return "ghost-id-does-not-exist"
+			},
+		},
 	}
-}
 
-func TestSearchIGDB_ExternalGameID_NonExistentReturns403(t *testing.T) {
-	truncateAllTables(t)
-	e := newTestEchoWithIGDB(t, testDB)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			e := newTestEchoWithIGDB(t, testDB) // unconfigured IGDB client; 403 fires before IGDB is called
 
-	insertAuthTestUser(t, testDB, "u-caller-2", "caller2", "pass123", true, false)
-	token := loginAndGetToken(t, e, "caller2", "pass123")
+			extGameID := tt.egID(t)
 
-	body := `{"query": "x", "limit": 10, "external_game_id": "ghost-id-does-not-exist"}`
-	rec := postAuth(t, e, "/api/games/search/igdb", token, body)
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("expected 403 for non-existent external_game_id, got %d: %s", rec.Code, rec.Body.String())
+			insertAuthTestUser(t, testDB, tt.callerUID, tt.caller, "pass123", true, false)
+			token := loginAndGetToken(t, e, tt.caller, "pass123")
+
+			body := fmt.Sprintf(`{"query": "x", "limit": 10, "external_game_id": %q}`, extGameID)
+			rec := postAuth(t, e, "/api/games/search/igdb", token, body)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 

@@ -406,86 +406,127 @@ func TestImportItem_PlatformsSkippedWithoutSeed(t *testing.T) {
 	}
 }
 
-func TestImportItem_ReimportMergesPlatforms(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	insertTestJob(t, testDB, jobID, userID, 2)
-
-	gameData := map[string]any{
-		"igdb_id": int32(88888),
-		"title":   "Merge Game",
-		"platforms": []any{
-			map[string]any{
-				"platform":         "pc",
-				"storefront":       "steam",
-				"ownership_status": "owned",
-				"is_available":     true,
+// TestImportItem_ReimportDedup verifies the re-import dedup invariant: importing
+// the same game twice must not duplicate its child rows. It covers both
+// platforms (user_game_platforms) and tags (user_game_tags) — the platforms case
+// additionally seeds the platform/storefront tables between imports.
+func TestImportItem_ReimportDedup(t *testing.T) {
+	tests := []struct {
+		name   string
+		igdbID int32
+		// game is the import payload (same on both imports).
+		game map[string]any
+		// betweenImports runs after the first import and before the second.
+		betweenImports func(t *testing.T, ctx context.Context)
+		// childTable is the child table whose row count must stay at 1.
+		childTable string
+	}{
+		{
+			name:   "platforms",
+			igdbID: 88888,
+			game: map[string]any{
+				"igdb_id": int32(88888),
+				"title":   "Merge Game",
+				"platforms": []any{
+					map[string]any{
+						"platform":         "pc",
+						"storefront":       "steam",
+						"ownership_status": "owned",
+						"is_available":     true,
+					},
+				},
 			},
+			betweenImports: func(t *testing.T, ctx context.Context) {
+				if _, err := testDB.ExecContext(ctx,
+					"INSERT INTO platforms (name, display_name) VALUES ('pc', 'PC') ON CONFLICT DO NOTHING",
+				); err != nil {
+					t.Fatalf("insert platform: %v", err)
+				}
+				if _, err := testDB.ExecContext(ctx,
+					"INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING",
+				); err != nil {
+					t.Fatalf("insert storefront: %v", err)
+				}
+			},
+			childTable: "user_game_platforms",
+		},
+		{
+			name:   "tags",
+			igdbID: 36001,
+			game: map[string]any{
+				"igdb_id": int32(36001),
+				"title":   "Tag Dedup Game",
+				"tags": []any{
+					map[string]any{"name": "indie", "color": "#aabbcc"},
+				},
+			},
+			childTable: "user_game_tags",
 		},
 	}
 
-	// First import — no seed, platforms stored via original name.
-	itemID1 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
-		t.Fatalf("first import: %v", err)
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			ctx := context.Background()
 
-	// Seed platform and storefront.
-	if _, err := testDB.ExecContext(ctx,
-		"INSERT INTO platforms (name, display_name) VALUES ('pc', 'PC') ON CONFLICT DO NOTHING",
-	); err != nil {
-		t.Fatalf("insert platform: %v", err)
-	}
-	if _, err := testDB.ExecContext(ctx,
-		"INSERT INTO storefronts (name, display_name) VALUES ('steam', 'Steam') ON CONFLICT DO NOTHING",
-	); err != nil {
-		t.Fatalf("insert storefront: %v", err)
-	}
+			userID := uuid.NewString()
+			jobID := uuid.NewString()
+			insertTestUser(t, testDB, userID)
+			insertTestJob(t, testDB, jobID, userID, 2)
 
-	// Second import of same game — should not duplicate platforms.
-	itemID2 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID2}}); err != nil {
-		t.Fatalf("second import: %v", err)
-	}
+			w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
 
-	var item2 models.JobItem
-	if err := testDB.NewSelect().Model(&item2).Where("id = ?", itemID2).Scan(ctx); err != nil {
-		t.Fatalf("item2 not found: %v", err)
-	}
-	if item2.Status != models.JobItemStatusCompleted {
-		t.Errorf("status = %q, want completed", item2.Status)
-	}
+			// First import.
+			itemID1 := insertTestJobItem(t, testDB, jobID, userID, tc.game)
+			if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
+				t.Fatalf("first import: %v", err)
+			}
 
-	// Still only one UserGame.
-	var ugCount int
-	if err := testDB.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM user_games WHERE user_id = ? AND game_id = ?",
-		userID, int32(88888),
-	).Scan(&ugCount); err != nil {
-		t.Fatalf("count user_games: %v", err)
-	}
-	if ugCount != 1 {
-		t.Errorf("user_game count = %d, want 1", ugCount)
-	}
+			if tc.betweenImports != nil {
+				tc.betweenImports(t, ctx)
+			}
 
-	// Only one platform entry (no duplicate from re-import).
-	var ugpCount int
-	var ug models.UserGame
-	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(88888)).Scan(ctx); err != nil {
-		t.Fatalf("user_game not found: %v", err)
-	}
-	if err := testDB.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = ?", ug.ID,
-	).Scan(&ugpCount); err != nil {
-		t.Fatalf("count platforms: %v", err)
-	}
-	if ugpCount != 1 {
-		t.Errorf("user_game_platform count = %d, want 1 (no duplicates)", ugpCount)
+			// Second import of the same game — must not duplicate child rows.
+			itemID2 := insertTestJobItem(t, testDB, jobID, userID, tc.game)
+			if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID2}}); err != nil {
+				t.Fatalf("second import: %v", err)
+			}
+
+			var item2 models.JobItem
+			if err := testDB.NewSelect().Model(&item2).Where("id = ?", itemID2).Scan(ctx); err != nil {
+				t.Fatalf("item2 not found: %v", err)
+			}
+			if item2.Status != models.JobItemStatusCompleted {
+				t.Errorf("status = %q, want completed", item2.Status)
+			}
+
+			// Still only one UserGame.
+			var ugCount int
+			if err := testDB.QueryRowContext(ctx,
+				"SELECT COUNT(*) FROM user_games WHERE user_id = ? AND game_id = ?",
+				userID, tc.igdbID,
+			).Scan(&ugCount); err != nil {
+				t.Fatalf("count user_games: %v", err)
+			}
+			if ugCount != 1 {
+				t.Errorf("user_game count = %d, want 1", ugCount)
+			}
+
+			// Only one child row (no duplicate from re-import).
+			var ug models.UserGame
+			if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, tc.igdbID).Scan(ctx); err != nil {
+				t.Fatalf("user_game not found: %v", err)
+			}
+			var childCount int
+			if err := testDB.QueryRowContext(ctx,
+				"SELECT COUNT(*) FROM "+tc.childTable+" WHERE user_game_id = ?", ug.ID,
+			).Scan(&childCount); err != nil {
+				t.Fatalf("count %s: %v", tc.childTable, err)
+			}
+			if childCount != 1 {
+				t.Errorf("%s count = %d, want 1 (no duplicates)", tc.childTable, childCount)
+			}
+		})
 	}
 }
 
@@ -687,52 +728,6 @@ func TestImportItem_FailedItemsYieldsCompleted(t *testing.T) {
 
 // TestImportItem_TagError exercises the findOrCreateTag error path via a tag name that causes
 // the existing-tag lookup to succeed on re-import (exercising the existingTagIDs skip branch).
-func TestImportItem_ReimportTagDedup(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	insertTestJob(t, testDB, jobID, userID, 2)
-
-	gameData := map[string]any{
-		"igdb_id": int32(36001),
-		"title":   "Tag Dedup Game",
-		"tags": []any{
-			map[string]any{"name": "indie", "color": "#aabbcc"},
-		},
-	}
-
-	// First import.
-	itemID1 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
-		t.Fatalf("first import: %v", err)
-	}
-
-	// Second import — tag already exists, existingTagIDs[tagID] should be true → skip.
-	itemID2 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID2}}); err != nil {
-		t.Fatalf("second import: %v", err)
-	}
-
-	// Still only one UserGameTag.
-	var ug models.UserGame
-	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(36001)).Scan(ctx); err != nil {
-		t.Fatalf("user_game not found: %v", err)
-	}
-	var count int
-	if err := testDB.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM user_game_tags WHERE user_game_id = ?", ug.ID,
-	).Scan(&count); err != nil {
-		t.Fatalf("count tags: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("tag count = %d, want 1 (no duplicates)", count)
-	}
-}
-
 // TestImportItem_StorefrontNotFound exercises the storefront-not-found warning path.
 func TestImportItem_StorefrontNotFound(t *testing.T) {
 	truncateAllTables(t)

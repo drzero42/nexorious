@@ -52,97 +52,113 @@ func TestSortByScore_SortsDescending(t *testing.T) {
 // convertToGameMetadata — various field combinations
 // ---------------------------------------------------------------------------
 
-func TestConvertToGameMetadata_AllFieldsPopulated(t *testing.T) {
+func TestConvertToGameMetadata(t *testing.T) {
 	ts := int64(1704067200) // 2024-01-01
 	rating := 85.5
 	ratingCount := int32(1000)
 	summary := "A great game"
-	coverID := "abc123"
-	g := igdbGameResponse{
-		ID:               1942,
-		Name:             "Test Game",
-		Slug:             "test-game",
-		Summary:          &summary,
-		FirstReleaseDate: &ts,
-		TotalRating:      &rating,
-		TotalRatingCount: &ratingCount,
-		Cover:            &igdbCover{ImageID: coverID},
-		Genres:           []igdbNamedItem{{Name: "RPG"}, {Name: "Action"}},
-		InvolvedCompanies: []igdbCompany{
-			{Company: igdbNamedItem{ID: 5, Name: "CD Projekt"}, Developer: true, Publisher: false},
-			{Company: igdbNamedItem{ID: 6, Name: "GOG"}, Developer: false, Publisher: true},
+
+	tests := []struct {
+		name  string
+		input igdbGameResponse
+		check func(t *testing.T, md GameMetadata)
+	}{
+		{
+			name: "all fields populated",
+			input: igdbGameResponse{
+				ID:               1942,
+				Name:             "Test Game",
+				Slug:             "test-game",
+				Summary:          &summary,
+				FirstReleaseDate: &ts,
+				TotalRating:      &rating,
+				TotalRatingCount: &ratingCount,
+				Cover:            &igdbCover{ImageID: "abc123"},
+				Genres:           []igdbNamedItem{{Name: "RPG"}, {Name: "Action"}},
+				InvolvedCompanies: []igdbCompany{
+					{Company: igdbNamedItem{ID: 5, Name: "CD Projekt"}, Developer: true, Publisher: false},
+					{Company: igdbNamedItem{ID: 6, Name: "GOG"}, Developer: false, Publisher: true},
+				},
+				Platforms:          []igdbPlatform{{ID: 6, Name: "PC (Microsoft Windows)"}},
+				GameModes:          []igdbNamedItem{{Name: "Single-player"}},
+				Themes:             []igdbNamedItem{{Name: "Fantasy"}},
+				PlayerPerspectives: []igdbNamedItem{{Name: "Third person"}},
+			},
+			check: func(t *testing.T, md GameMetadata) {
+				if md.IgdbID != 1942 {
+					t.Errorf("IgdbID: expected 1942, got %d", md.IgdbID)
+				}
+				if md.Description == nil || *md.Description != "A great game" {
+					t.Errorf("Description mismatch: %v", md.Description)
+				}
+				if md.ReleaseDate == nil || *md.ReleaseDate != "2024-01-01" {
+					t.Errorf("ReleaseDate mismatch: %v", md.ReleaseDate)
+				}
+				if md.CoverImageID != "abc123" {
+					t.Errorf("CoverImageID: expected abc123, got %q", md.CoverImageID)
+				}
+				if md.CoverArtURL == nil {
+					t.Error("expected CoverArtURL to be set")
+				}
+				if md.Genre == nil || *md.Genre != "RPG" {
+					t.Errorf("Genre mismatch: %v", md.Genre)
+				}
+				if md.Developer == nil || *md.Developer != "CD Projekt" {
+					t.Errorf("Developer mismatch: %v", md.Developer)
+				}
+				if md.Publisher == nil || *md.Publisher != "GOG" {
+					t.Errorf("Publisher mismatch: %v", md.Publisher)
+				}
+				if md.GameModes == nil || *md.GameModes != "Single-player" {
+					t.Errorf("GameModes mismatch: %v", md.GameModes)
+				}
+				if md.Themes == nil || *md.Themes != "Fantasy" {
+					t.Errorf("Themes mismatch: %v", md.Themes)
+				}
+				if md.PlayerPerspectives == nil || *md.PlayerPerspectives != "Third person" {
+					t.Errorf("PlayerPerspectives mismatch: %v", md.PlayerPerspectives)
+				}
+			},
 		},
-		Platforms:          []igdbPlatform{{ID: 6, Name: "PC (Microsoft Windows)"}},
-		GameModes:          []igdbNamedItem{{Name: "Single-player"}},
-		Themes:             []igdbNamedItem{{Name: "Fantasy"}},
-		PlayerPerspectives: []igdbNamedItem{{Name: "Third person"}},
+		{
+			name: "minimal fields",
+			input: igdbGameResponse{
+				ID:   42,
+				Name: "Minimal Game",
+				Slug: "minimal-game",
+			},
+			check: func(t *testing.T, md GameMetadata) {
+				if md.IgdbID != 42 || md.Title != "Minimal Game" {
+					t.Errorf("unexpected minimal metadata: %+v", md)
+				}
+				if md.CoverImageID != "" {
+					t.Error("expected empty CoverImageID for game without cover")
+				}
+				if md.Genre != nil {
+					t.Error("expected nil Genre for game without genres")
+				}
+			},
+		},
+		{
+			name: "cover with empty image id",
+			// Cover struct present but ImageID is empty — should not set CoverImageID.
+			input: igdbGameResponse{
+				ID:    99,
+				Name:  "No Cover",
+				Cover: &igdbCover{ImageID: ""},
+			},
+			check: func(t *testing.T, md GameMetadata) {
+				if md.CoverImageID != "" {
+					t.Errorf("expected empty CoverImageID, got %q", md.CoverImageID)
+				}
+			},
+		},
 	}
 
-	md := convertToGameMetadata(g)
-
-	if md.IgdbID != 1942 {
-		t.Errorf("IgdbID: expected 1942, got %d", md.IgdbID)
-	}
-	if md.Description == nil || *md.Description != "A great game" {
-		t.Errorf("Description mismatch: %v", md.Description)
-	}
-	if md.ReleaseDate == nil || *md.ReleaseDate != "2024-01-01" {
-		t.Errorf("ReleaseDate mismatch: %v", md.ReleaseDate)
-	}
-	if md.CoverImageID != "abc123" {
-		t.Errorf("CoverImageID: expected abc123, got %q", md.CoverImageID)
-	}
-	if md.CoverArtURL == nil {
-		t.Error("expected CoverArtURL to be set")
-	}
-	if md.Genre == nil || *md.Genre != "RPG" {
-		t.Errorf("Genre mismatch: %v", md.Genre)
-	}
-	if md.Developer == nil || *md.Developer != "CD Projekt" {
-		t.Errorf("Developer mismatch: %v", md.Developer)
-	}
-	if md.Publisher == nil || *md.Publisher != "GOG" {
-		t.Errorf("Publisher mismatch: %v", md.Publisher)
-	}
-	if md.GameModes == nil || *md.GameModes != "Single-player" {
-		t.Errorf("GameModes mismatch: %v", md.GameModes)
-	}
-	if md.Themes == nil || *md.Themes != "Fantasy" {
-		t.Errorf("Themes mismatch: %v", md.Themes)
-	}
-	if md.PlayerPerspectives == nil || *md.PlayerPerspectives != "Third person" {
-		t.Errorf("PlayerPerspectives mismatch: %v", md.PlayerPerspectives)
-	}
-}
-
-func TestConvertToGameMetadata_MinimalFields(t *testing.T) {
-	g := igdbGameResponse{
-		ID:   42,
-		Name: "Minimal Game",
-		Slug: "minimal-game",
-	}
-	md := convertToGameMetadata(g)
-	if md.IgdbID != 42 || md.Title != "Minimal Game" {
-		t.Errorf("unexpected minimal metadata: %+v", md)
-	}
-	if md.CoverImageID != "" {
-		t.Error("expected empty CoverImageID for game without cover")
-	}
-	if md.Genre != nil {
-		t.Error("expected nil Genre for game without genres")
-	}
-}
-
-func TestConvertToGameMetadata_CoverWithEmptyImageID(t *testing.T) {
-	// Cover struct present but ImageID is empty — should not set CoverImageID.
-	g := igdbGameResponse{
-		ID:    99,
-		Name:  "No Cover",
-		Cover: &igdbCover{ImageID: ""},
-	}
-	md := convertToGameMetadata(g)
-	if md.CoverImageID != "" {
-		t.Errorf("expected empty CoverImageID, got %q", md.CoverImageID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.check(t, convertToGameMetadata(tt.input))
+		})
 	}
 }
 

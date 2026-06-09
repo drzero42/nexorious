@@ -237,76 +237,40 @@ func TestSetupGate_BypassesBrandIconAssets(t *testing.T) {
 	}
 }
 
-func TestHealth_OKWhenReady(t *testing.T) {
-	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
+func TestHealth_Status(t *testing.T) {
+	tests := []struct {
+		name       string
+		state      migrate.AppState
+		needsSetup bool
+		wantStatus string
+	}{
+		{name: "ready", state: migrate.AppStateReady, wantStatus: "ok"},
+		{name: "setup pending", state: migrate.AppStateReady, needsSetup: true, wantStatus: "ok"},
+		{name: "db unavailable", state: migrate.AppStateDBUnavailable, wantStatus: "db_unavailable"},
+		{name: "needs migration", state: migrate.AppStateNeedsMigration, wantStatus: "needs_migration"},
 	}
-	var body map[string]any
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body["status"] != "ok" {
-		t.Errorf("expected status=ok, got %q", body["status"])
-	}
-}
 
-func TestHealth_OKWhenSetupPending(t *testing.T) {
-	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
-	migrator.SetNeedsSetup(true)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-	var body map[string]any
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body["status"] != "ok" {
-		t.Errorf("expected status=ok when needsSetup, got %q", body["status"])
-	}
-}
-
-func TestHealth_DBUnavailableReturns200(t *testing.T) {
-	migrator := migrate.NewMigratorForTest(migrate.AppStateDBUnavailable)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-	var body map[string]any
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body["status"] != "db_unavailable" {
-		t.Errorf("expected db_unavailable, got %q", body["status"])
-	}
-}
-
-func TestHealth_NeedsMigrationReturns200(t *testing.T) {
-	migrator := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-	var body map[string]any
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body["status"] != "needs_migration" {
-		t.Errorf("expected needs_migration, got %q", body["status"])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			migrator := migrate.NewMigratorForTest(tt.state)
+			if tt.needsSetup {
+				migrator.SetNeedsSetup(true)
+			}
+			e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
+			req := httptest.NewRequest(http.MethodGet, "/health", nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Errorf("expected 200, got %d", rec.Code)
+			}
+			var body map[string]any
+			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if body["status"] != tt.wantStatus {
+				t.Errorf("expected status=%q, got %q", tt.wantStatus, body["status"])
+			}
+		})
 	}
 }
 

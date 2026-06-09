@@ -732,19 +732,6 @@ describe('TagSelectorCompact', () => {
     expect(screen.getByText('1 game')).toBeInTheDocument();
   });
 
-  it('applies custom className', () => {
-    const { container } = render(
-      <TagSelectorCompact
-        selectedTagIds={[]}
-        availableTags={mockTags}
-        onChange={vi.fn()}
-        className="custom-class"
-      />,
-    );
-
-    expect(container.querySelector('.custom-class')).toBeInTheDocument();
-  });
-
   it('disables Clear button when no tags are selected', () => {
     render(<TagSelectorCompact selectedTagIds={[]} availableTags={mockTags} onChange={vi.fn()} />);
 
@@ -768,39 +755,5 @@ describe('TagSelectorCompact', () => {
 
     expect(screen.getByText('Puzzle')).toBeInTheDocument();
     expect(screen.queryByText('Action')).not.toBeInTheDocument();
-  });
-});
-
-// ============================================================================
-// Color Utility Tests
-// ============================================================================
-
-describe('getTextColor utility', () => {
-  it('returns white text for dark background', () => {
-    render(
-      <TagSelector
-        selectedTagIds={['1']} // Action tag has dark red color #FF5733
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />,
-    );
-
-    const trigger = screen.getByRole('combobox');
-    // The badge should be rendered with appropriate styling
-    expect(trigger).toBeInTheDocument();
-  });
-
-  it('returns black text for light background', () => {
-    render(
-      <TagSelector
-        selectedTagIds={['4']} // Puzzle tag has light color #F0F0F0
-        availableTags={mockTags}
-        onChange={vi.fn()}
-      />,
-    );
-
-    const trigger = screen.getByRole('combobox');
-    // The badge should be rendered with appropriate styling
-    expect(trigger).toBeInTheDocument();
   });
 });

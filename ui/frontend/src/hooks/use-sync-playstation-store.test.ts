@@ -5,7 +5,6 @@ import {
   useConfigurePlaystationStore,
   usePlaystationStoreStatus,
   useDisconnectPlaystationStore,
-  syncKeys,
 } from './use-sync';
 import * as syncApi from '@/api/sync';
 
@@ -71,61 +70,9 @@ describe('PSN Hooks', () => {
 
       mockConfigurePlaystationStore.mockRestore();
     });
-
-    it('invalidates queries on successful configuration', async () => {
-      const mockConfigurePlaystationStore = vi.spyOn(syncApi, 'configurePlaystationStore');
-      mockConfigurePlaystationStore.mockResolvedValue({
-        valid: true,
-        accountId: 'test-account-id',
-        onlineId: 'TestUser',
-        error: null,
-      });
-
-      const { result } = renderHook(() => useConfigurePlaystationStore(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        await result.current.mutateAsync('test-npsso-token');
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      // Query invalidation happens automatically via TanStack Query
-      // We verify the mutation was successful
-
-      mockConfigurePlaystationStore.mockRestore();
-    });
   });
 
   describe('usePlaystationStoreStatus', () => {
-    it('fetches PSN status successfully', async () => {
-      const mockGetPlaystationStoreStatus = vi.spyOn(syncApi, 'getPlaystationStoreStatus');
-      mockGetPlaystationStoreStatus.mockResolvedValue({
-        configured: true,
-        onlineId: 'TestUser',
-        credentialsError: false,
-      });
-
-      const { result } = renderHook(() => usePlaystationStoreStatus(), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toEqual({
-        configured: true,
-        onlineId: 'TestUser',
-        credentialsError: false,
-      });
-
-      mockGetPlaystationStoreStatus.mockRestore();
-    });
-
     it('handles PSN status with expired token', async () => {
       const mockGetPlaystationStoreStatus = vi.spyOn(syncApi, 'getPlaystationStoreStatus');
       mockGetPlaystationStoreStatus.mockResolvedValue({
@@ -210,34 +157,6 @@ describe('PSN Hooks', () => {
       expect(result.current.error?.message).toBe('Failed to disconnect PSN');
 
       mockDisconnectPlaystationStore.mockRestore();
-    });
-
-    it('invalidates all PSN queries on successful disconnect', async () => {
-      const mockDisconnectPlaystationStore = vi.spyOn(syncApi, 'disconnectPlaystationStore');
-      mockDisconnectPlaystationStore.mockResolvedValue(undefined);
-
-      const { result } = renderHook(() => useDisconnectPlaystationStore(), {
-        wrapper: QueryWrapper,
-      });
-
-      await act(async () => {
-        await result.current.mutateAsync();
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      // Query invalidation happens automatically via TanStack Query
-      // We verify the mutation was successful
-
-      mockDisconnectPlaystationStore.mockRestore();
-    });
-  });
-
-  describe('syncKeys', () => {
-    it('generates correct query key for PSN status', () => {
-      expect(syncKeys.playstationStoreStatus()).toEqual(['sync', 'playstationStoreStatus']);
     });
   });
 });

@@ -136,12 +136,6 @@ describe('JobCard', () => {
       expect(screen.getByText('Connection timed out')).toBeInTheDocument();
     });
 
-    it('shows View Details button', () => {
-      render(<JobCard job={mockJob} />);
-
-      expect(screen.getByText('View Details')).toBeInTheDocument();
-    });
-
     it('shows Cancel button for cancellable jobs', () => {
       const onCancel = vi.fn();
       render(<JobCard job={mockJob} onCancel={onCancel} />);
@@ -159,13 +153,6 @@ describe('JobCard', () => {
     it('shows Delete button for terminal jobs', () => {
       const onDelete = vi.fn();
       render(<JobCard job={mockCompletedJob} onDelete={onDelete} />);
-
-      expect(screen.getByText('Delete')).toBeInTheDocument();
-    });
-
-    it('shows Delete button for non-terminal jobs', () => {
-      const onDelete = vi.fn();
-      render(<JobCard job={mockJob} onDelete={onDelete} />);
 
       expect(screen.getByText('Delete')).toBeInTheDocument();
     });
@@ -206,61 +193,28 @@ describe('JobCard', () => {
   });
 
   describe('job types and sources', () => {
-    it('displays Import job type correctly', () => {
-      const importJob = { ...mockJob, jobType: JobType.IMPORT };
-      render(<JobCard job={importJob} />);
+    it.each([
+      [{ jobType: JobType.IMPORT }, 'Import - Steam'],
+      [{ jobType: JobType.EXPORT }, 'Export - Steam'],
+      [{ source: JobSource.EPIC_GAMES_STORE }, 'Sync - Epic Games Store'],
+      [{ source: JobSource.GOG }, 'Sync - GOG'],
+      [{ source: JobSource.DARKADIA }, 'Sync - Darkadia'],
+    ] as const)('renders %o as "%s"', (overrides, expected) => {
+      render(<JobCard job={{ ...mockJob, ...overrides }} />);
 
-      expect(screen.getByText('Import - Steam')).toBeInTheDocument();
-    });
-
-    it('displays Export job type correctly', () => {
-      const exportJob = { ...mockJob, jobType: JobType.EXPORT };
-      render(<JobCard job={exportJob} />);
-
-      expect(screen.getByText('Export - Steam')).toBeInTheDocument();
-    });
-
-    it('displays Epic source correctly', () => {
-      const epicJob = { ...mockJob, source: JobSource.EPIC_GAMES_STORE };
-      render(<JobCard job={epicJob} />);
-
-      expect(screen.getByText('Sync - Epic Games Store')).toBeInTheDocument();
-    });
-
-    it('displays GOG source correctly', () => {
-      const gogJob = { ...mockJob, source: JobSource.GOG };
-      render(<JobCard job={gogJob} />);
-
-      expect(screen.getByText('Sync - GOG')).toBeInTheDocument();
-    });
-
-    it('displays Darkadia source correctly', () => {
-      const darkadiaJob = { ...mockJob, source: JobSource.DARKADIA };
-      render(<JobCard job={darkadiaJob} />);
-
-      expect(screen.getByText('Sync - Darkadia')).toBeInTheDocument();
+      expect(screen.getByText(expected)).toBeInTheDocument();
     });
   });
 
   describe('job statuses', () => {
-    it('displays Pending status correctly', () => {
-      const pendingJob = { ...mockJob, status: JobStatus.PENDING };
-      render(<JobCard job={pendingJob} />);
+    it.each([
+      [{ status: JobStatus.PENDING }, 'Pending'],
+      [{ status: JobStatus.FAILED, isTerminal: true }, 'Failed'],
+      [{ status: JobStatus.CANCELLED, isTerminal: true }, 'Cancelled'],
+    ] as const)('renders status %o as "%s"', (overrides, expected) => {
+      render(<JobCard job={{ ...mockJob, ...overrides }} />);
 
-      expect(screen.getByText('Pending')).toBeInTheDocument();
-    });
-
-    it('displays Failed status correctly', () => {
-      render(<JobCard job={mockFailedJob} />);
-
-      expect(screen.getByText('Failed')).toBeInTheDocument();
-    });
-
-    it('displays Cancelled status correctly', () => {
-      const cancelledJob = { ...mockJob, status: JobStatus.CANCELLED, isTerminal: true };
-      render(<JobCard job={cancelledJob} />);
-
-      expect(screen.getByText('Cancelled')).toBeInTheDocument();
+      expect(screen.getByText(expected)).toBeInTheDocument();
     });
   });
 });

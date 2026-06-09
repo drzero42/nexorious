@@ -38,60 +38,27 @@ func TestMaintenanceMiddleware_BlocksWhenActive(t *testing.T) {
 	}
 }
 
-func TestMaintenanceMiddleware_AllowsHealth(t *testing.T) {
-	SetMaintenanceMode(true)
-	defer SetMaintenanceMode(false)
+func TestMaintenanceMiddleware_AllowsExemptEndpoints(t *testing.T) {
+	paths := []string{"/health", "/api/admin/backups", "/api/auth/me"}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			SetMaintenanceMode(true)
+			defer SetMaintenanceMode(false)
 
-	e := echo.New()
-	e.Use(MaintenanceMiddleware())
-	e.GET("/health", func(c *echo.Context) error {
-		return c.String(http.StatusOK, "ok")
-	})
+			e := echo.New()
+			e.Use(MaintenanceMiddleware())
+			e.GET(path, func(c *echo.Context) error {
+				return c.String(http.StatusOK, "ok")
+			})
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-}
-
-func TestMaintenanceMiddleware_AllowsBackupEndpoints(t *testing.T) {
-	SetMaintenanceMode(true)
-	defer SetMaintenanceMode(false)
-
-	e := echo.New()
-	e.Use(MaintenanceMiddleware())
-	e.GET("/api/admin/backups", func(c *echo.Context) error {
-		return c.String(http.StatusOK, "ok")
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/backups", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-}
-
-func TestMaintenanceMiddleware_AllowsAuthMe(t *testing.T) {
-	SetMaintenanceMode(true)
-	defer SetMaintenanceMode(false)
-
-	e := echo.New()
-	e.Use(MaintenanceMiddleware())
-	e.GET("/api/auth/me", func(c *echo.Context) error {
-		return c.String(http.StatusOK, "ok")
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
+			if rec.Code != http.StatusOK {
+				t.Errorf("expected 200 for %s, got %d", path, rec.Code)
+			}
+		})
 	}
 }
 

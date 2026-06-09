@@ -59,34 +59,17 @@ describe('StatusProgress', () => {
 });
 
 describe('status exports', () => {
-  it('has colors for all play statuses', () => {
-    const allStatuses = Object.values(PlayStatus);
-    allStatuses.forEach((status) => {
-      expect(statusColors[status]).toBeDefined();
-      expect(statusColors[status]).toMatch(/^bg-/);
-    });
-  });
-
-  it('has labels for all play statuses', () => {
-    const allStatuses = Object.values(PlayStatus);
-    allStatuses.forEach((status) => {
-      expect(statusLabels[status]).toBeDefined();
-      expect(typeof statusLabels[status]).toBe('string');
-    });
-  });
-
-  it('has icons for all play statuses', () => {
-    const allStatuses = Object.values(PlayStatus);
-    allStatuses.forEach((status) => {
-      expect(statusIcons[status]).toBeDefined();
-    });
-  });
-
-  it('has descriptions for all play statuses', () => {
-    const allStatuses = Object.values(PlayStatus);
-    allStatuses.forEach((status) => {
-      expect(statusDescriptions[status]).toBeDefined();
-      expect(typeof statusDescriptions[status]).toBe('string');
+  // Each lookup map must be populated for every PlayStatus (missing-key invariant),
+  // with a per-map shape check that mirrors the original assertions.
+  it.each([
+    ['colors', statusColors, (v: unknown) => expect(v).toMatch(/^bg-/)],
+    ['labels', statusLabels, (v: unknown) => expect(typeof v).toBe('string')],
+    ['icons', statusIcons, (v: unknown) => expect(v).toBeDefined()],
+    ['descriptions', statusDescriptions, (v: unknown) => expect(typeof v).toBe('string')],
+  ] as const)('has %s for all play statuses', (_name, map, check) => {
+    Object.values(PlayStatus).forEach((status) => {
+      expect(map[status]).toBeDefined();
+      check(map[status]);
     });
   });
 });

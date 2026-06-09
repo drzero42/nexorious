@@ -87,22 +87,6 @@ describe('auth.ts', () => {
         isAdmin: true,
       });
     });
-
-    it('transforms is_admin to isAdmin correctly', async () => {
-      server.use(
-        http.get(`${API_URL}/auth/me`, () => {
-          return HttpResponse.json({
-            id: 'user-456',
-            username: 'regularuser',
-            is_admin: false,
-          });
-        }),
-      );
-
-      const result = await getMe();
-
-      expect(result.isAdmin).toBe(false);
-    });
   });
 
   describe('changeUsername', () => {

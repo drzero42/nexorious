@@ -102,168 +102,122 @@ func TestDispatchSync_InvalidPayload(t *testing.T) {
 	}
 }
 
-func TestDispatchSync_NoSyncConfig(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
-		jobID, userID,
-	)
-
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
-
-	// No sync_config row → fails with "no sync config found".
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
-	if status != "failed" {
-		t.Errorf("expected job status=failed, got %q", status)
-	}
-}
-
-func TestDispatchSync_NoCredentials(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
-		jobID, userID,
-	)
-	// Insert sync config with NULL credentials.
-	configID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
-		configID, userID,
-	).Exec(ctx)
-
-	// Adapter factory reports ErrCredentials when creds are missing.
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
-
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
-	if status != "failed" {
-		t.Errorf("expected job status=failed (no credentials), got %q", status)
-	}
-}
-
-func TestDispatchSync_UnknownStorefront(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'bogus', 'pending', 'low')`,
-		jobID, userID,
-	)
-	creds := `{"key":"val"}`
-	configID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'bogus', 'daily', ?)`,
-		configID, userID, creds,
-	).Exec(ctx)
-
-	// Factory returns a non-credentials error for unknown storefront.
+// TestDispatchSync_FailsJob is a table-driven consolidation of every dispatch
+// path that must leave the job in status='failed'. The worker is
+// storefront-agnostic (it drives all storefronts through the injected adapter
+// factory), so these rows vary only by (storefront, adapter factory): the
+// missing-config path, factory/fetch credentials errors, an unknown-storefront
+// factory error, and a transport fetch error, across steam, playstation-store,
+// and epic-games-store.
+func TestDispatchSync_FailsJob(t *testing.T) {
 	unknownFactory := func(_ context.Context, _ string, _ models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 		return nil, errors.New("unknown storefront: bogus")
 	}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: unknownFactory, RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "bogus"},
+
+	tests := []struct {
+		name       string
+		storefront string
+		// withConfig inserts a user_sync_configs row when true; the no-config
+		// row leaves it false to exercise the "no sync config found" path.
+		withConfig bool
+		factory    func() func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error)
+	}{
+		{
+			name:       "no_sync_config",
+			storefront: "steam",
+			withConfig: false,
+			factory: func() func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				return adapterFactory(&fakeStorefrontAdapter{})
+			},
+		},
+		{
+			// Was both _NoCredentials and _SteamInvalidCredentials (exact dupes).
+			name:       "steam_credentials_error",
+			storefront: "steam",
+			withConfig: true,
+			factory:    credErrFactory,
+		},
+		{
+			name:       "unknown_storefront",
+			storefront: "bogus",
+			withConfig: true,
+			factory: func() func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				return unknownFactory
+			},
+		},
+		{
+			name:       "steam_fetch_error",
+			storefront: "steam",
+			withConfig: true,
+			factory: func() func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				return fetchErrFactory(errSteamFetch)
+			},
+		},
+		{
+			name:       "psn_credentials_error",
+			storefront: "playstation-store",
+			withConfig: true,
+			factory:    credErrFactory,
+		},
+		{
+			name:       "psn_fetch_error",
+			storefront: "playstation-store",
+			withConfig: true,
+			factory: func() func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				return fetchErrFactory(errors.New("request failed with status 503: service unavailable"))
+			},
+		},
+		{
+			// Adapter returns ErrCredentials mid-fetch (auth lost during fetch).
+			name:       "psn_fetch_credentials_error",
+			storefront: "playstation-store",
+			withConfig: true,
+			factory: func() func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				return fetchErrFactory(tasks.ErrCredentials)
+			},
+		},
+		{
+			name:       "epic_not_configured",
+			storefront: "epic-games-store",
+			withConfig: true,
+			factory:    credErrFactory,
+		},
 	}
 
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
-	if status != "failed" {
-		t.Errorf("expected job status=failed (unknown storefront), got %q", status)
-	}
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			ctx := context.Background()
+			userID := uuid.NewString()
+			jobID := uuid.NewString()
+			insertTestUser(t, testDB, userID)
 
-func TestDispatchSync_SteamInvalidCredentials(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
+			_, _ = testDB.NewRaw(
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', ?, 'pending', 'low')`,
+				jobID, userID, tc.storefront,
+			).Exec(ctx)
+			if tc.withConfig {
+				_, _ = testDB.NewRaw(
+					`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, ?, 'daily')`,
+					uuid.NewString(), userID, tc.storefront,
+				).Exec(ctx)
+			}
 
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
-		jobID, userID,
-	)
-	configID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
-		configID, userID,
-	).Exec(ctx)
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: tc.factory(), RiverClient: nil}
+			job := &river.Job[tasks.DispatchSyncArgs]{
+				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: tc.storefront},
+			}
 
-	// Invalid credentials → factory returns ErrCredentials.
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
+			if err := w.Work(ctx, job); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
-	if status != "failed" {
-		t.Errorf("expected job status=failed (invalid credentials json), got %q", status)
-	}
-}
-
-func TestDispatchSync_SteamFetchError(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
-		jobID, userID,
-	)
-	configID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
-		configID, userID,
-	).Exec(ctx)
-
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: fetchErrFactory(errSteamFetch), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
-
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
-	if status != "failed" {
-		t.Errorf("expected job status=failed (steam fetch error), got %q", status)
+			var status string
+			_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+			if status != "failed" {
+				t.Errorf("expected job status=failed, got %q", status)
+			}
+		})
 	}
 }
 
@@ -273,48 +227,115 @@ type errType string
 
 func (e errType) Error() string { return string(e) }
 
-func TestDispatchSync_SteamSuccess(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
-		jobID, userID,
-	)
-	configID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
-		configID, userID,
-	).Exec(ctx)
-
-	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
-		{{ExternalID: "730", Title: "Counter-Strike 2", PlaytimeHours: 100, Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
-	}}
-	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+// TestDispatchSync_SingleBatchHappyPath consolidates the single-batch success
+// paths that were per-storefront tests (_SteamSuccess, _GOGDispatch_CreatesExternalGames,
+// _Epic_HappyPath). The worker is storefront-agnostic, so each row varies only
+// by (storefront, library batch) and asserts the same invariants: every game is
+// upserted into external_games, a representative platform row exists, the job is
+// not failed, and last_synced_at is set. The multi-page batch case
+// (_PSNSuccess_ItemsDispatchedPerBatch) is kept separate.
+func TestDispatchSync_SingleBatchHappyPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		storefront string
+		games      []tasks.ExternalGameEntry
+		// probeExternalID + probePlatform identify one (game, platform) pair that
+		// must have a row in external_game_platforms.
+		probeExternalID string
+		probePlatform   string
+	}{
+		{
+			name:       "steam",
+			storefront: "steam",
+			games: []tasks.ExternalGameEntry{
+				{ExternalID: "730", Title: "Counter-Strike 2", PlaytimeHours: 100, Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"},
+			},
+			probeExternalID: "730",
+			probePlatform:   "pc-windows",
+		},
+		{
+			name:       "gog",
+			storefront: "gog",
+			games: []tasks.ExternalGameEntry{
+				{ExternalID: "1001", Title: "GOG Game", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"},
+			},
+			probeExternalID: "1001",
+			probePlatform:   "pc-windows",
+		},
+		{
+			name:       "epic",
+			storefront: "epic-games-store",
+			games: []tasks.ExternalGameEntry{
+				{ExternalID: "Fortnite", Title: "Fortnite", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"},
+				{ExternalID: "RocketLeague", Title: "Rocket League", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"},
+			},
+			probeExternalID: "Fortnite",
+			probePlatform:   "pc-windows",
+		},
 	}
 
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			ctx := context.Background()
+			userID := uuid.NewString()
+			jobID := uuid.NewString()
+			insertTestUser(t, testDB, userID)
 
-	// External game should have been upserted.
-	var count int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'steam'`, userID).Scan(ctx, &count)
-	if count != 1 {
-		t.Errorf("expected 1 external_game, got %d", count)
-	}
+			_, _ = testDB.NewRaw(
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', ?, 'pending', 'low', 0)`,
+				jobID, userID, tc.storefront,
+			).Exec(ctx)
+			configID := uuid.NewString()
+			_, _ = testDB.NewRaw(
+				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, ?, 'daily')`,
+				configID, userID, tc.storefront,
+			).Exec(ctx)
 
-	// last_synced_at should be updated.
-	var lastSynced *time.Time
-	_ = testDB.NewRaw(`SELECT last_synced_at FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &lastSynced)
-	if lastSynced == nil {
-		t.Error("expected last_synced_at to be set after successful sync")
+			fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{tc.games}}
+			rc := newTestRiverClient(t)
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
+			job := &river.Job[tasks.DispatchSyncArgs]{
+				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: tc.storefront},
+			}
+
+			if err := w.Work(ctx, job); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// Every game is upserted into external_games.
+			var count int
+			_ = testDB.NewRaw(`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = ?`, userID, tc.storefront).Scan(ctx, &count)
+			if count != len(tc.games) {
+				t.Errorf("expected %d external_games, got %d", len(tc.games), count)
+			}
+
+			// The probed (game, platform) pair has a platform row.
+			var platformCount int
+			_ = testDB.NewRaw(
+				`SELECT COUNT(*) FROM external_game_platforms egp
+				 JOIN external_games eg ON eg.id = egp.external_game_id
+				 WHERE eg.user_id = ? AND eg.storefront = ? AND eg.external_id = ? AND egp.platform = ?`,
+				userID, tc.storefront, tc.probeExternalID, tc.probePlatform,
+			).Scan(ctx, &platformCount)
+			if platformCount != 1 {
+				t.Errorf("expected 1 %s platform row for %s, got %d", tc.probePlatform, tc.probeExternalID, platformCount)
+			}
+
+			// Job must not be failed.
+			var status string
+			_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+			if status == "failed" {
+				t.Errorf("expected job not to be failed, got status=%q", status)
+			}
+
+			// last_synced_at should be set after a successful sync.
+			var lastSynced *time.Time
+			_ = testDB.NewRaw(`SELECT last_synced_at FROM user_sync_configs WHERE id = ?`, configID).Scan(ctx, &lastSynced)
+			if lastSynced == nil {
+				t.Error("expected last_synced_at to be set after successful sync")
+			}
+		})
 	}
 }
 
@@ -458,70 +479,6 @@ func TestDispatchSync_SetsSiblingParentID(t *testing.T) {
 	// Second row (PS5) must point to first row.
 	if rows[1].ParentID == nil {
 		t.Error("second row should have parent_id set")
-	}
-}
-
-func TestDispatchSync_Steam_MultiPlatform_WindowsAndLinux(t *testing.T) {
-	// Adapter yields Windows+Linux for appid 730 →
-	// expect 1 external_games row, 2 external_game_platforms rows, 1 job_item keyed "730".
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
-		jobID, userID,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
-		uuid.NewString(), userID,
-	).Exec(ctx)
-
-	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
-		{{ExternalID: "730", Title: "Counter-Strike 2", PlaytimeHours: 100, Platforms: []string{"pc-windows", "pc-linux"}, OwnershipStatus: "owned"}},
-	}}
-	rc := newTestRiverClient(t)
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
-
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	var egCount int
-	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'steam' AND external_id = '730'`,
-		userID,
-	).Scan(ctx, &egCount)
-	if egCount != 1 {
-		t.Errorf("expected 1 external_games row, got %d", egCount)
-	}
-
-	var egpCount int
-	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM external_game_platforms egp
-		 JOIN external_games eg ON eg.id = egp.external_game_id
-		 WHERE eg.user_id = ? AND eg.storefront = 'steam' AND eg.external_id = '730'`,
-		userID,
-	).Scan(ctx, &egpCount)
-	if egpCount != 2 {
-		t.Errorf("expected 2 external_game_platforms rows (Windows+Linux), got %d", egpCount)
-	}
-
-	var itemCount int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
-	if itemCount != 1 {
-		t.Errorf("expected 1 job_item, got %d", itemCount)
-	}
-
-	var itemKey string
-	_ = testDB.NewRaw(`SELECT item_key FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemKey)
-	if itemKey != "730" {
-		t.Errorf("expected item_key=730, got %q", itemKey)
 	}
 }
 
@@ -918,110 +875,6 @@ func newIGDBClientForTests(t *testing.T, tokenURL, apiURL string) *igdb.Client {
 	return c
 }
 
-func TestDispatchSync_PSNInvalidCredentials(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'playstation-store', 'pending', 'low')`,
-		jobID, userID,
-	).Exec(ctx)
-	configID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'playstation-store', 'daily')`,
-		configID, userID,
-	).Exec(ctx)
-
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
-	}
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
-	if status != "failed" {
-		t.Errorf("expected job status=failed (invalid psn credentials), got %q", status)
-	}
-}
-
-func TestDispatchSync_PSNFetchError_FailsJob(t *testing.T) {
-	// A library fetch error (auth, transport, schema, etc.) must fail the job.
-	// Token-state side effects now live in the psn adapter / factory and are
-	// covered by tests in those packages.
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'playstation-store', 'pending', 'low')`,
-		jobID, userID,
-	).Exec(ctx)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'playstation-store', 'daily')`,
-		uuid.NewString(), userID,
-	).Exec(ctx)
-
-	w := &tasks.DispatchSyncWorker{
-		DB:          testDB,
-		Adapter:     fetchErrFactory(errors.New("request failed with status 503: service unavailable")),
-		RiverClient: nil,
-	}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
-	}
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
-	if status != "failed" {
-		t.Errorf("expected job status=failed (psn fetch error), got %q", status)
-	}
-}
-
-func TestDispatchSync_PSNFetchError_CredentialsErrFailsJob(t *testing.T) {
-	// When the adapter returns ErrCredentials mid-fetch (e.g. auth lost), the
-	// worker must mark the job failed without panicking.
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'playstation-store', 'pending', 'low')`,
-		jobID, userID,
-	).Exec(ctx)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'playstation-store', 'daily')`,
-		uuid.NewString(), userID,
-	).Exec(ctx)
-
-	w := &tasks.DispatchSyncWorker{
-		DB:          testDB,
-		Adapter:     fetchErrFactory(tasks.ErrCredentials),
-		RiverClient: nil,
-	}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
-	}
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
-	if status != "failed" {
-		t.Errorf("expected job status=failed (psn credentials error), got %q", status)
-	}
-}
-
 func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
@@ -1079,168 +932,6 @@ func TestDispatchSync_PSNSuccess_ItemsDispatchedPerBatch(t *testing.T) {
 	}
 }
 
-func TestDispatchSync_PSNSuccess_SkippedGameExcluded(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'playstation-store', 'pending', 'low', 0)`,
-		jobID, userID,
-	).Exec(ctx)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'playstation-store', 'daily')`,
-		uuid.NewString(), userID,
-	).Exec(ctx)
-
-	// Pre-insert God of War as skipped. The ON CONFLICT upsert does not touch
-	// is_skipped, so it remains true even when the batch includes this game.
-	egID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_skipped, is_available, is_subscription)
-		 VALUES (?, ?, 'playstation-store', 'NPWR00001_00', 'God of War', true, true, false)`,
-		egID, userID,
-	).Exec(ctx)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at) VALUES (?, ?, 'playstation-4', 0, now())`,
-		uuid.NewString(), egID,
-	).Exec(ctx)
-
-	page1 := []tasks.ExternalGameEntry{
-		{ExternalID: "NPWR00001_00", Title: "God of War", Platforms: []string{"playstation-4"}, OwnershipStatus: "owned"},
-		{ExternalID: "NPWR00002_00", Title: "Spider-Man", Platforms: []string{"playstation-4"}, OwnershipStatus: "owned"},
-	}
-	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{page1}}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "playstation-store"},
-	}
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Only 1 job_item (Spider-Man); God of War is skipped.
-	var itemCount int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
-	if itemCount != 1 {
-		t.Errorf("expected 1 job_item (skipped game excluded), got %d", itemCount)
-	}
-
-	// Confirm no job_item for God of War.
-	var gow int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND item_key = 'NPWR00001_00'`, jobID).Scan(ctx, &gow)
-	if gow != 0 {
-		t.Error("expected no job_item for skipped God of War")
-	}
-}
-
-func TestDispatchSync_Epic_HappyPath(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'epic-games-store', 'pending', 'high')`,
-		jobID, userID,
-	)
-	configID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic-games-store', 'manual')`,
-		configID, userID,
-	).Exec(ctx)
-
-	// Epic games are always mapped to pc-windows by the Epic adapter.
-	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
-		{
-			{ExternalID: "Fortnite", Title: "Fortnite", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"},
-			{ExternalID: "RocketLeague", Title: "Rocket League", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"},
-		},
-	}}
-	w := &tasks.DispatchSyncWorker{
-		DB:          testDB,
-		Adapter:     adapterFactory(fakeAdapter),
-		RiverClient: nil,
-	}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"},
-	}
-
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Verify external_games rows were created.
-	var count int
-	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'epic-games-store'`,
-		userID,
-	).Scan(ctx, &count)
-	if count != 2 {
-		t.Errorf("expected 2 external_games rows, got %d", count)
-	}
-
-	// Verify pc-windows platform row exists.
-	var platformCount int
-	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM external_game_platforms egp
-		 JOIN external_games eg ON eg.id = egp.external_game_id
-		 WHERE eg.user_id = ? AND eg.storefront = 'epic-games-store' AND eg.external_id = 'Fortnite' AND egp.platform = 'pc-windows'`,
-		userID,
-	).Scan(ctx, &platformCount)
-	if platformCount != 1 {
-		t.Errorf("expected 1 pc-windows platform row for Fortnite, got %d", platformCount)
-	}
-
-	// Verify job is not failed.
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
-	if status == "failed" {
-		t.Errorf("expected job not to be failed, got status=%q", status)
-	}
-}
-
-func TestDispatchSync_Epic_NotConfigured_FailsJob(t *testing.T) {
-	// When the epic legendary state is missing, the adapter factory returns
-	// ErrCredentials and the worker marks the job failed.
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'epic-games-store', 'pending', 'high')`,
-		jobID, userID,
-	)
-	configID := uuid.NewString()
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'epic-games-store', 'manual')`,
-		configID, userID,
-	).Exec(ctx)
-
-	w := &tasks.DispatchSyncWorker{
-		DB:      testDB,
-		Adapter: credErrFactory(),
-	}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "epic-games-store"},
-	}
-
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	var status string
-	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
-	if status != "failed" {
-		t.Errorf("expected job status=failed when Epic adapter is not configured, got %q", status)
-	}
-}
-
 // insertTestExternalGame inserts a minimal external_games row and one
 // external_game_platforms row. Returns the external_game id.
 func insertTestExternalGame(t *testing.T, userID, storefront, externalID, title, platform string) string {
@@ -1267,91 +958,95 @@ func insertTestExternalGame(t *testing.T, userID, storefront, externalID, title,
 
 // ─── GOG dispatch tests ───────────────────────────────────────────────────────
 
-func TestGOGDispatch_CreatesExternalGames(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'gog', 'pending', 'low')`,
-		jobID, userID,
-	).Exec(ctx)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'gog', 'daily')`,
-		uuid.NewString(), userID,
-	).Exec(ctx)
-
-	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
-		{{ExternalID: "1001", Title: "GOG Game", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"}},
-	}}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter)}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
-	}
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("Work: %v", err)
-	}
-
-	var count int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'gog'`, userID).Scan(ctx, &count)
-	if count != 1 {
-		t.Errorf("want 1 external_game, got %d", count)
-	}
-}
-
-func TestGOGDispatch_DualPlatformCreatesTwoRows(t *testing.T) {
-	// Same external_id with two platform entries → 1 external_games row,
-	// 2 external_game_platforms rows, 1 job_item.
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-
-	_, _ = testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'gog', 'pending', 'low')`,
-		jobID, userID,
-	).Exec(ctx)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'gog', 'daily')`,
-		uuid.NewString(), userID,
-	).Exec(ctx)
-
-	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
-		{{ExternalID: "2001", Title: "Dual Game", Platforms: []string{"pc-windows", "pc-linux"}, OwnershipStatus: "owned"}},
-	}}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter)}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
-	}
-	_ = w.Work(ctx, job)
-
-	var egCount int
-	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'gog' AND external_id = '2001'`,
-		userID,
-	).Scan(ctx, &egCount)
-	if egCount != 1 {
-		t.Errorf("want 1 external_game for dual-platform game, got %d", egCount)
+// TestDispatchSync_DualPlatformCreatesTwoRows consolidates the dual-platform
+// dispatch tests (_Steam_MultiPlatform_WindowsAndLinux and
+// _GOGDispatch_DualPlatformCreatesTwoRows). A single external_id carrying two
+// platforms must yield 1 external_games row, 2 external_game_platforms rows, and
+// exactly 1 job_item (one per game, not per platform). The worker is
+// storefront-agnostic, so steam and gog differ only by storefront and the
+// item_key probe (the Steam case additionally asserted item_key == external_id).
+func TestDispatchSync_DualPlatformCreatesTwoRows(t *testing.T) {
+	tests := []struct {
+		name       string
+		storefront string
+		externalID string
+		platforms  []string
+	}{
+		{
+			name:       "steam_windows_linux",
+			storefront: "steam",
+			externalID: "730",
+			platforms:  []string{"pc-windows", "pc-linux"},
+		},
+		{
+			name:       "gog_windows_linux",
+			storefront: "gog",
+			externalID: "2001",
+			platforms:  []string{"pc-windows", "pc-linux"},
+		},
 	}
 
-	var egpCount int
-	_ = testDB.NewRaw(
-		`SELECT COUNT(*) FROM external_game_platforms egp
-		 JOIN external_games eg ON eg.id = egp.external_game_id
-		 WHERE eg.user_id = ? AND eg.external_id = '2001'`,
-		userID,
-	).Scan(ctx, &egpCount)
-	if egpCount != 2 {
-		t.Errorf("want 2 external_game_platforms rows, got %d", egpCount)
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			ctx := context.Background()
+			userID := uuid.NewString()
+			jobID := uuid.NewString()
+			insertTestUser(t, testDB, userID)
 
-	var itemCount int
-	_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
-	if itemCount != 1 {
-		t.Errorf("want 1 job_item (one per game, not per platform), got %d", itemCount)
+			_, _ = testDB.NewRaw(
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', ?, 'pending', 'low', 0)`,
+				jobID, userID, tc.storefront,
+			).Exec(ctx)
+			_, _ = testDB.NewRaw(
+				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, ?, 'daily')`,
+				uuid.NewString(), userID, tc.storefront,
+			).Exec(ctx)
+
+			fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{
+				{{ExternalID: tc.externalID, Title: "Dual Game", PlaytimeHours: 100, Platforms: tc.platforms, OwnershipStatus: "owned"}},
+			}}
+			rc := newTestRiverClient(t)
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: rc}
+			job := &river.Job[tasks.DispatchSyncArgs]{
+				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: tc.storefront},
+			}
+			if err := w.Work(ctx, job); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			var egCount int
+			_ = testDB.NewRaw(
+				`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = ? AND external_id = ?`,
+				userID, tc.storefront, tc.externalID,
+			).Scan(ctx, &egCount)
+			if egCount != 1 {
+				t.Errorf("want 1 external_game for dual-platform game, got %d", egCount)
+			}
+
+			var egpCount int
+			_ = testDB.NewRaw(
+				`SELECT COUNT(*) FROM external_game_platforms egp
+				 JOIN external_games eg ON eg.id = egp.external_game_id
+				 WHERE eg.user_id = ? AND eg.external_id = ?`,
+				userID, tc.externalID,
+			).Scan(ctx, &egpCount)
+			if egpCount != 2 {
+				t.Errorf("want 2 external_game_platforms rows, got %d", egpCount)
+			}
+
+			var itemCount int
+			_ = testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount)
+			if itemCount != 1 {
+				t.Errorf("want 1 job_item (one per game, not per platform), got %d", itemCount)
+			}
+
+			var itemKey string
+			_ = testDB.NewRaw(`SELECT item_key FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemKey)
+			if itemKey != tc.externalID {
+				t.Errorf("expected item_key=%s, got %q", tc.externalID, itemKey)
+			}
+		})
 	}
 }
 
@@ -2078,73 +1773,59 @@ func TestUserGameWorker_StatusChangedSyncChange(t *testing.T) {
 	}
 }
 
-func TestDispatchSync_FactoryCredentialsError_SetsFlag(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
-		jobID, userID,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
-		uuid.NewString(), userID,
-	).Exec(ctx)
-
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: credErrFactory(), RiverClient: nil}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+// TestDispatchSync_CredentialsError_SetsFlag asserts credentials_error is set
+// to true whether ErrCredentials surfaces from the adapter factory (before the
+// fetch) or from GetLibrary (mid-fetch) — the worker treats both identically.
+func TestDispatchSync_CredentialsError_SetsFlag(t *testing.T) {
+	tests := []struct {
+		name    string
+		factory func() func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error)
+	}{
+		{
+			name:    "factory_error",
+			factory: credErrFactory,
+		},
+		{
+			name: "fetch_error",
+			factory: func() func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				return fetchErrFactory(tasks.ErrCredentials)
+			},
+		},
 	}
 
-	var credsErr bool
-	_ = testDB.NewRaw(
-		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`,
-		userID,
-	).Scan(ctx, &credsErr)
-	if !credsErr {
-		t.Error("expected credentials_error=true after factory ErrCredentials")
-	}
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			ctx := context.Background()
+			userID := uuid.NewString()
+			jobID := uuid.NewString()
+			insertTestUser(t, testDB, userID)
+			_, _ = testDB.ExecContext(ctx,
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
+				jobID, userID,
+			)
+			_, _ = testDB.NewRaw(
+				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+				uuid.NewString(), userID,
+			).Exec(ctx)
 
-func TestDispatchSync_FetchCredentialsError_SetsFlag(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := uuid.NewString()
-	jobID := uuid.NewString()
-	insertTestUser(t, testDB, userID)
-	_, _ = testDB.ExecContext(ctx,
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
-		jobID, userID,
-	)
-	_, _ = testDB.NewRaw(
-		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
-		uuid.NewString(), userID,
-	).Exec(ctx)
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: tc.factory(), RiverClient: nil}
+			job := &river.Job[tasks.DispatchSyncArgs]{
+				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+			}
+			if err := w.Work(ctx, job); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-	w := &tasks.DispatchSyncWorker{
-		DB:          testDB,
-		Adapter:     fetchErrFactory(tasks.ErrCredentials),
-		RiverClient: nil,
-	}
-	job := &river.Job[tasks.DispatchSyncArgs]{
-		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
-	}
-	if err := w.Work(ctx, job); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	var credsErr bool
-	_ = testDB.NewRaw(
-		`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`,
-		userID,
-	).Scan(ctx, &credsErr)
-	if !credsErr {
-		t.Error("expected credentials_error=true after fetch ErrCredentials")
+			var credsErr bool
+			_ = testDB.NewRaw(
+				`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`,
+				userID,
+			).Scan(ctx, &credsErr)
+			if !credsErr {
+				t.Error("expected credentials_error=true after ErrCredentials")
+			}
+		})
 	}
 }
 

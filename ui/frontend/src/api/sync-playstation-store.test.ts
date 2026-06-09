@@ -63,27 +63,6 @@ describe('PSN API', () => {
         error: 'Invalid NPSSO token',
       });
     });
-
-    it('should transform snake_case to camelCase correctly', async () => {
-      const mockResponse = {
-        success: true,
-        online_id: 'TestUser',
-        account_id: '12345',
-        message: 'Success',
-      };
-
-      vi.mocked(api.put).mockResolvedValueOnce(mockResponse);
-
-      const result = await configurePlaystationStore('test-token');
-
-      // Verify transformed keys
-      expect(result).toHaveProperty('valid');
-      expect(result).toHaveProperty('onlineId');
-      expect(result).toHaveProperty('accountId');
-      expect(result).not.toHaveProperty('online_id');
-      expect(result).not.toHaveProperty('account_id');
-      expect(result).not.toHaveProperty('success');
-    });
   });
 
   describe('getPlaystationStoreStatus', () => {
@@ -137,26 +116,6 @@ describe('PSN API', () => {
 
       expect(result.credentialsError).toBe(true);
       expect(result.configured).toBe(true);
-    });
-
-    it('should transform snake_case to camelCase correctly', async () => {
-      const mockResponse = {
-        is_configured: true,
-        online_id: 'TestUser',
-        credentials_error: false,
-      };
-
-      vi.mocked(api.get).mockResolvedValueOnce(mockResponse);
-
-      const result = await getPlaystationStoreStatus();
-
-      // Verify transformed keys
-      expect(result).toHaveProperty('configured');
-      expect(result).toHaveProperty('onlineId');
-      expect(result).toHaveProperty('credentialsError');
-      expect(result).not.toHaveProperty('is_configured');
-      expect(result).not.toHaveProperty('online_id');
-      expect(result).not.toHaveProperty('credentials_error');
     });
   });
 

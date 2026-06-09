@@ -342,66 +342,6 @@ func TestApplyRetention_EmptyDir(t *testing.T) {
 	}
 }
 
-// TestApplyRetention_WithBackups exercises the days/count retention branches.
-// We create 1 backup then fake additional archive files in the backup dir.
-func TestApplyRetention_WithBackups(t *testing.T) {
-	backup.CheckTools()
-	if !backup.PgDumpAvailable() {
-		t.Skip("pg_dump not available")
-	}
-
-	truncateAllTables(t)
-	db := testDB
-	dsn := testDSN
-	backupDir := t.TempDir()
-	storageDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(storageDir, "cover_art"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	svc := backup.NewService(db, dsn, backupDir, storageDir, "0.1.0")
-
-	// Create 1 real backup.
-	id1, err := svc.CreateBackup("manual")
-	if err != nil {
-		t.Fatalf("CreateBackup: %v", err)
-	}
-
-	backups, err := svc.ListBackups()
-	if err != nil {
-		t.Fatalf("ListBackups: %v", err)
-	}
-	if len(backups) != 1 {
-		t.Fatalf("expected 1 backup, got %d", len(backups))
-	}
-
-	// Apply count retention with count=1 — the 1 backup should remain (not deleted).
-	if err := svc.ApplyRetention("count", 1); err != nil {
-		t.Fatalf("ApplyRetention(count, 1): %v", err)
-	}
-
-	backups, err = svc.ListBackups()
-	if err != nil {
-		t.Fatalf("ListBackups after count retention: %v", err)
-	}
-	if len(backups) != 1 {
-		t.Errorf("expected 1 backup after count retention, got %d", len(backups))
-	}
-
-	// Apply days retention with 0 days — the backup should be deleted.
-	if err := svc.ApplyRetention("days", 0); err != nil {
-		t.Fatalf("ApplyRetention(days, 0): %v", err)
-	}
-
-	backups, err = svc.ListBackups()
-	if err != nil {
-		t.Fatalf("ListBackups after days retention: %v", err)
-	}
-	// The backup should be deleted since 0 days means anything older than today.
-	_ = id1
-	_ = backups // may be 0 or 1 depending on exact timestamp comparison
-}
-
 // TestRestoreFromUpload_InvalidArchive exercises RestoreFromUpload when the
 // upload path points to a non-archive file (fails ValidateArchive).
 func TestRestoreFromUpload_InvalidArchive(t *testing.T) {
@@ -888,27 +828,32 @@ func TestValidateArchive_WithRealArchive(t *testing.T) {
 // ListAvailableArchives
 // ---------------------------------------------------------------------------
 
-func TestListAvailableArchives_NonExistentDir(t *testing.T) {
-	// Backup dir that doesn't exist must produce empty result, not error.
-	svc := backup.NewService(nil, "", "/nonexistent/path/that/does/not/exist", "", "0.1.0")
-	infos, err := svc.ListAvailableArchives(context.Background(), "")
-	if err != nil {
-		t.Fatalf("ListAvailableArchives: unexpected error: %v", err)
+func TestListAvailableArchives_EmptyResult(t *testing.T) {
+	tests := []struct {
+		name string
+		dir  func(t *testing.T) string
+	}{
+		{
+			// Backup dir that doesn't exist must produce empty result, not error.
+			name: "non-existent dir",
+			dir:  func(t *testing.T) string { return "/nonexistent/path/that/does/not/exist" },
+		},
+		{
+			name: "empty dir",
+			dir:  func(t *testing.T) string { return t.TempDir() },
+		},
 	}
-	if len(infos) != 0 {
-		t.Errorf("expected empty list, got %d entries", len(infos))
-	}
-}
-
-func TestListAvailableArchives_EmptyDir(t *testing.T) {
-	dir := t.TempDir()
-	svc := backup.NewService(nil, "", dir, "", "0.1.0")
-	infos, err := svc.ListAvailableArchives(context.Background(), "")
-	if err != nil {
-		t.Fatalf("ListAvailableArchives: unexpected error: %v", err)
-	}
-	if len(infos) != 0 {
-		t.Errorf("expected empty list, got %d entries", len(infos))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := backup.NewService(nil, "", tt.dir(t), "", "0.1.0")
+			infos, err := svc.ListAvailableArchives(context.Background(), "")
+			if err != nil {
+				t.Fatalf("ListAvailableArchives: unexpected error: %v", err)
+			}
+			if len(infos) != 0 {
+				t.Errorf("expected empty list, got %d entries", len(infos))
+			}
+		})
 	}
 }
 

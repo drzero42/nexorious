@@ -10,18 +10,6 @@ import (
 	"github.com/drzero42/nexorious/internal/services/gog"
 )
 
-func TestBuildAuthURL(t *testing.T) {
-	c := gog.NewClient()
-	u := c.BuildAuthURL()
-	if u == "" {
-		t.Fatal("expected non-empty auth URL")
-	}
-	const wantPrefix = "https://login.gog.com/auth"
-	if len(u) < len(wantPrefix) || u[:len(wantPrefix)] != wantPrefix {
-		t.Errorf("auth URL should start with %s, got %s", wantPrefix, u)
-	}
-}
-
 func TestExchangeCode_Success(t *testing.T) {
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/token" {

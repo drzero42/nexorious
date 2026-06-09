@@ -29,81 +29,78 @@ func TestExportJSON_NoGames(t *testing.T) {
 	}
 }
 
-func TestExportJSON_Success(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
-
-	userID, token := setupTagUser(t, testDB, e, "exp-json-ok")
-
-	// Insert a game and user_game so the user has something to export.
-	ctx := context.Background()
-	if _, err := testDB.ExecContext(ctx, `INSERT INTO games (id, title) VALUES (1, 'Test Game')`); err != nil {
-		t.Fatalf("insert game: %v", err)
-	}
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO user_games (id, user_id, game_id, is_loved) VALUES ('ug1', ?, 1, false)`,
-		userID,
-	); err != nil {
-		t.Fatalf("insert user_game: %v", err)
-	}
-
-	rec := postJSONAuth(t, e, "/api/export/json", nil, token)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
-	}
-
-	var resp map[string]any
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if resp["job_id"] == nil || resp["job_id"] == "" {
-		t.Fatalf("expected non-empty job_id, got %v", resp["job_id"])
-	}
-	if resp["status"] != "pending" {
-		t.Fatalf("status = %v, want pending", resp["status"])
-	}
-	estimatedItems, ok := resp["estimated_items"].(float64)
-	if !ok || int(estimatedItems) != 1 {
-		t.Fatalf("estimated_items = %v, want 1", resp["estimated_items"])
-	}
-}
-
-func TestExportCSV_Success(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
-
-	userID, token := setupTagUser(t, testDB, e, "exp-csv-ok")
-
-	// Insert a game and user_game so the user has something to export.
-	ctx := context.Background()
-	if _, err := testDB.ExecContext(ctx, `INSERT INTO games (id, title) VALUES (2, 'Test Game 2')`); err != nil {
-		t.Fatalf("insert game: %v", err)
-	}
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO user_games (id, user_id, game_id, is_loved) VALUES ('ug2', ?, 2, false)`,
-		userID,
-	); err != nil {
-		t.Fatalf("insert user_game: %v", err)
+func TestExport_Success(t *testing.T) {
+	tests := []struct {
+		name          string
+		endpoint      string
+		suffix        string
+		gameID        int
+		title         string
+		ugID          string
+		assertEstimat bool
+	}{
+		{
+			name:          "json",
+			endpoint:      "/api/export/json",
+			suffix:        "exp-json-ok",
+			gameID:        1,
+			title:         "Test Game",
+			ugID:          "ug1",
+			assertEstimat: true,
+		},
+		{
+			name:     "csv",
+			endpoint: "/api/export/csv",
+			suffix:   "exp-csv-ok",
+			gameID:   2,
+			title:    "Test Game 2",
+			ugID:     "ug2",
+		},
 	}
 
-	rec := postJSONAuth(t, e, "/api/export/csv", nil, token)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			cfg := testCfg()
+			e := newTestEchoPool(t, testDB, cfg)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
-	}
+			userID, token := setupTagUser(t, testDB, e, tt.suffix)
 
-	var resp map[string]any
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if resp["job_id"] == nil || resp["job_id"] == "" {
-		t.Fatalf("expected non-empty job_id, got %v", resp["job_id"])
-	}
-	if resp["status"] != "pending" {
-		t.Fatalf("status = %v, want pending", resp["status"])
+			// Insert a game and user_game so the user has something to export.
+			ctx := context.Background()
+			if _, err := testDB.ExecContext(ctx, `INSERT INTO games (id, title) VALUES (?, ?)`, tt.gameID, tt.title); err != nil {
+				t.Fatalf("insert game: %v", err)
+			}
+			if _, err := testDB.ExecContext(ctx,
+				`INSERT INTO user_games (id, user_id, game_id, is_loved) VALUES (?, ?, ?, false)`,
+				tt.ugID, userID, tt.gameID,
+			); err != nil {
+				t.Fatalf("insert user_game: %v", err)
+			}
+
+			rec := postJSONAuth(t, e, tt.endpoint, nil, token)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+			}
+
+			var resp map[string]any
+			if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if resp["job_id"] == nil || resp["job_id"] == "" {
+				t.Fatalf("expected non-empty job_id, got %v", resp["job_id"])
+			}
+			if resp["status"] != "pending" {
+				t.Fatalf("status = %v, want pending", resp["status"])
+			}
+			if tt.assertEstimat {
+				estimatedItems, ok := resp["estimated_items"].(float64)
+				if !ok || int(estimatedItems) != 1 {
+					t.Fatalf("estimated_items = %v, want 1", resp["estimated_items"])
+				}
+			}
+		})
 	}
 }
 
@@ -149,35 +146,49 @@ func TestDownload_NotFound(t *testing.T) {
 	}
 }
 
-func TestDownload_NotExportJob(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
-
-	userID, token := setupTagUser(t, testDB, e, "dl-notexport")
-
-	// Insert an import job (not an export job).
-	insertJob(t, testDB, "dl-import-job", userID, "import", "steam", "completed")
-
-	rec := getAuth(t, e, "/api/export/dl-import-job/download", token)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+// TestDownload_BadJobState verifies a 400 for jobs that are not a completed
+// export: a non-export (import) job, and an export job that hasn't completed.
+func TestDownload_BadJobState(t *testing.T) {
+	tests := []struct {
+		name    string
+		suffix  string
+		jobID   string
+		jobType string
+		source  string
+		status  string
+	}{
+		{
+			name:    "not an export job",
+			suffix:  "dl-notexport",
+			jobID:   "dl-import-job",
+			jobType: "import",
+			source:  "steam",
+			status:  "completed",
+		},
+		{
+			name:    "export job not completed",
+			suffix:  "dl-notcomplete",
+			jobID:   "dl-pending-export",
+			jobType: "export",
+			source:  "nexorious",
+			status:  "pending",
+		},
 	}
-}
 
-func TestDownload_NotCompleted(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEchoPool(t, testDB, cfg)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			cfg := testCfg()
+			e := newTestEchoPool(t, testDB, cfg)
 
-	userID, token := setupTagUser(t, testDB, e, "dl-notcomplete")
+			userID, token := setupTagUser(t, testDB, e, tt.suffix)
+			insertJob(t, testDB, tt.jobID, userID, tt.jobType, tt.source, tt.status)
 
-	// Insert a pending export job.
-	insertJob(t, testDB, "dl-pending-export", userID, "export", "nexorious", "pending")
-
-	rec := getAuth(t, e, "/api/export/dl-pending-export/download", token)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+			rec := getAuth(t, e, "/api/export/"+tt.jobID+"/download", token)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+			}
+		})
 	}
 }
 

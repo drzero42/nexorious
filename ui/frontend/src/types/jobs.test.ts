@@ -7,23 +7,12 @@ function makeJob(status: JobStatus, isTerminal: boolean): Job {
 }
 
 describe('isJobInProgress', () => {
-  it('returns true for a pending non-terminal job', () => {
-    expect(isJobInProgress(makeJob(JobStatus.PENDING, false))).toBe(true);
-  });
-
-  it('returns true for a processing non-terminal job', () => {
-    expect(isJobInProgress(makeJob(JobStatus.PROCESSING, false))).toBe(true);
-  });
-
-  it('returns false for a completed terminal job', () => {
-    expect(isJobInProgress(makeJob(JobStatus.COMPLETED, true))).toBe(false);
-  });
-
-  it('returns false for a failed terminal job', () => {
-    expect(isJobInProgress(makeJob(JobStatus.FAILED, true))).toBe(false);
-  });
-
-  it('returns false for a cancelled terminal job', () => {
-    expect(isJobInProgress(makeJob(JobStatus.CANCELLED, true))).toBe(false);
+  // isJobInProgress is `!job.isTerminal` — the status is not inspected, so the
+  // only meaningful axis is the isTerminal flag.
+  it.each([
+    [false, true],
+    [true, false],
+  ])('isTerminal=%s → %s', (isTerminal, expected) => {
+    expect(isJobInProgress(makeJob(JobStatus.PROCESSING, isTerminal))).toBe(expected);
   });
 });

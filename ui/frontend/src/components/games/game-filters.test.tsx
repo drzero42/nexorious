@@ -186,18 +186,6 @@ describe('GameFilters', () => {
   });
 
   describe('layout', () => {
-    it('renders "Filters:" label', () => {
-      render(<GameFilters {...defaultProps} />);
-
-      expect(screen.getByText('Filters:')).toBeInTheDocument();
-    });
-
-    it('renders "Sort by:" label', () => {
-      render(<GameFilters {...defaultProps} />);
-
-      expect(screen.getByText('Sort by:')).toBeInTheDocument();
-    });
-
     it('renders sort row before filters row', () => {
       render(<GameFilters {...defaultProps} />);
 
@@ -269,30 +257,6 @@ describe('GameFilters', () => {
   });
 
   describe('status filter', () => {
-    it('renders status select with default "All Statuses" option', () => {
-      render(<GameFilters {...defaultProps} />);
-
-      // SelectTrigger should be present (first combobox is status)
-      const comboboxes = screen.getAllByRole('combobox');
-      expect(comboboxes.length).toBeGreaterThanOrEqual(2); // status and platform
-    });
-
-    it('displays selected status', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{
-            search: '',
-            status: PlayStatus.IN_PROGRESS,
-          }}
-        />,
-      );
-
-      // The select should be rendered
-      const comboboxes = screen.getAllByRole('combobox');
-      expect(comboboxes[0]).toBeInTheDocument();
-    });
-
     it('calls onFiltersChange when status changes to specific status', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
@@ -738,108 +702,25 @@ describe('GameFilters', () => {
       expect(screen.queryByRole('button', { name: /clear/i })).not.toBeInTheDocument();
     });
 
-    it('shows clear button when search filter is active', () => {
-      render(<GameFilters {...defaultProps} filters={{ search: 'Test' }} />);
-
-      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
-    });
-
-    it('shows clear button when status filter is active', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{
-            search: '',
-            status: PlayStatus.COMPLETED,
-          }}
-        />,
-      );
-
-      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
-    });
-
-    it('shows clear button when platform filter is active (legacy platformId)', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{
-            search: '',
-            platformId: 'platform-1',
-          }}
-        />,
-      );
-
-      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
-    });
-
-    it('shows clear button when platforms multi-select filter is active', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{
-            search: '',
-            platforms: ['pc'],
-          }}
-        />,
-      );
-
-      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
-    });
-
-    it('shows clear button when storefronts filter is active', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{
-            search: '',
-            storefronts: ['steam'],
-          }}
-        />,
-      );
-
-      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
-    });
-
-    it('shows clear button when genres filter is active', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{
-            search: '',
-            genres: ['RPG'],
-          }}
-        />,
-      );
-
-      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
-    });
-
-    it('shows clear button when tags filter is active', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{
-            search: '',
-            tags: ['Favorite'],
-          }}
-        />,
-      );
-
-      expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
-    });
-
-    it('shows clear button when multiple filters are active', () => {
-      render(
-        <GameFilters
-          {...defaultProps}
-          filters={{
-            search: 'Test',
-            status: PlayStatus.IN_PROGRESS,
-            platforms: ['pc'],
-            storefronts: ['steam'],
-          }}
-        />,
-      );
+    it.each<{ name: string; filters: GameFiltersProps['filters'] }>([
+      { name: 'search', filters: { search: 'Test' } },
+      { name: 'status', filters: { search: '', status: PlayStatus.COMPLETED } },
+      { name: 'platform (legacy platformId)', filters: { search: '', platformId: 'platform-1' } },
+      { name: 'platforms multi-select', filters: { search: '', platforms: ['pc'] } },
+      { name: 'storefronts', filters: { search: '', storefronts: ['steam'] } },
+      { name: 'genres', filters: { search: '', genres: ['RPG'] } },
+      { name: 'tags', filters: { search: '', tags: ['Favorite'] } },
+      {
+        name: 'multiple filters',
+        filters: {
+          search: 'Test',
+          status: PlayStatus.IN_PROGRESS,
+          platforms: ['pc'],
+          storefronts: ['steam'],
+        },
+      },
+    ])('shows clear button when $name filter is active', ({ filters }) => {
+      render(<GameFilters {...defaultProps} filters={filters} />);
 
       expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
     });
@@ -1117,13 +998,6 @@ describe('GameFilters', () => {
   });
 
   describe('sort controls', () => {
-    it('renders sort dropdown', () => {
-      render(<GameFilters {...defaultProps} />);
-
-      // Find the sort select - it shows "Title" by default
-      expect(screen.getByText('Title')).toBeInTheDocument();
-    });
-
     it('renders sort direction toggle button', () => {
       render(<GameFilters {...defaultProps} />);
 

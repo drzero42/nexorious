@@ -14,23 +14,22 @@ import (
 	"github.com/drzero42/nexorious/internal/services/igdb"
 )
 
-func TestIsAuthError_TrueForAuthFailure(t *testing.T) {
-	err := fmt.Errorf("%w: Twitch returned status 403", igdb.ErrTwitchAuth)
-	if !igdb.IsAuthError(err) {
-		t.Error("IsAuthError should return true for ErrTwitchAuth wrapping an HTTP status")
+func TestIsAuthError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"auth failure", fmt.Errorf("%w: Twitch returned status 403", igdb.ErrTwitchAuth), true},
+		{"network error", fmt.Errorf("connection refused"), false},
+		{"nil", nil, false},
 	}
-}
-
-func TestIsAuthError_FalseForNetworkError(t *testing.T) {
-	err := fmt.Errorf("connection refused")
-	if igdb.IsAuthError(err) {
-		t.Error("IsAuthError should return false for non-auth errors")
-	}
-}
-
-func TestIsAuthError_FalseForNil(t *testing.T) {
-	if igdb.IsAuthError(nil) {
-		t.Error("IsAuthError should return false for nil")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := igdb.IsAuthError(tt.err); got != tt.want {
+				t.Errorf("IsAuthError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
 	}
 }
 

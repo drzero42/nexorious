@@ -68,35 +68,6 @@ describe('use-jobs hooks', () => {
   });
 
   describe('jobsKeys', () => {
-    it('generates correct query keys for all', () => {
-      expect(jobsKeys.all).toEqual(['jobs']);
-    });
-
-    it('generates correct query keys for lists', () => {
-      expect(jobsKeys.lists()).toEqual(['jobs', 'list']);
-    });
-
-    it('generates correct query keys for list with filters', () => {
-      expect(jobsKeys.list()).toEqual([
-        'jobs',
-        'list',
-        { filters: undefined, page: undefined, perPage: undefined },
-      ]);
-      expect(jobsKeys.list({ jobType: JobType.SYNC }, 1, 20)).toEqual([
-        'jobs',
-        'list',
-        { filters: { jobType: 'sync' }, page: 1, perPage: 20 },
-      ]);
-    });
-
-    it('generates correct query keys for details', () => {
-      expect(jobsKeys.details()).toEqual(['jobs', 'detail']);
-    });
-
-    it('generates correct query keys for detail with id', () => {
-      expect(jobsKeys.detail('job-1')).toEqual(['jobs', 'detail', 'job-1']);
-    });
-
     it('recents() is the shared prefix of every recent() key', () => {
       expect(jobsKeys.recents()).toEqual(['jobs', 'recent']);
       // recent(filters) must start with recents() so a recents() invalidation

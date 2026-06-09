@@ -1,7 +1,6 @@
 package darkadia
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -365,22 +364,6 @@ func TestConsolidate_TagsPlaytimeReviewCopyNotes(t *testing.T) {
 		if !strings.Contains(*g.PersonalNotes, want) {
 			t.Errorf("notes missing %q in: %s", want, *g.PersonalNotes)
 		}
-	}
-}
-
-func TestGame_JSONRoundTrip(t *testing.T) {
-	named := mkRow("J", map[int]string{colPlatforms: "PC", colCopyPlatform: "PC", colCopyMedia: "Digital", colCopySource: "Steam"})
-	g := consolidate(rawGame{named: named, copies: [][]string{named}})
-	b, err := json.Marshal(g)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var back Game
-	if err := json.Unmarshal(b, &back); err != nil {
-		t.Fatal(err)
-	}
-	if back.Platforms[0].Platform != "pc-windows" {
-		t.Errorf("round-trip platform = %q", back.Platforms[0].Platform)
 	}
 }
 

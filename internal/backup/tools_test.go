@@ -3,96 +3,13 @@ package backup
 import (
 	"archive/tar"
 	"compress/gzip"
-	"crypto/sha256"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/uptrace/bun"
 )
-
-// makeValidArchive creates a minimal valid .tar.gz archive that passes ValidateArchive.
-// Used to provide a valid pre-restore backup for handleRestoreFailure tests.
-func makeValidArchive(t *testing.T, dir string) string {
-	t.Helper()
-	sqlContent := "-- minimal sql dump"
-	sqlHash := sha256.Sum256([]byte(sqlContent))
-	dbChecksum := "sha256:" + fmt.Sprintf("%x", sqlHash)
-	emptyHash := sha256.Sum256([]byte(""))
-	coverChecksum := "sha256:" + fmt.Sprintf("%x", emptyHash)
-	manifest := fmt.Sprintf(
-		`{"version":1,"created_at":"2026-01-01T00:00:00Z","app_version":"0.1.0","migration_version":"20260101000001","backup_type":"manual","database_file":"database.sql","database_size_bytes":%d,"database_checksum":"%s","cover_art_count":0,"cover_art_size_bytes":0,"cover_art_checksum":"%s"}`,
-		len(sqlContent), dbChecksum, coverChecksum,
-	)
-
-	archivePath := filepath.Join(dir, "pre-restore.tar.gz")
-	f, err := os.Create(archivePath)
-	if err != nil {
-		t.Fatalf("create archive: %v", err)
-	}
-	defer func() { _ = f.Close() }()
-	gw := gzip.NewWriter(f)
-	tw := tar.NewWriter(gw)
-	for name, content := range map[string]string{
-		"backup-20260101-120000/manifest.json": manifest,
-		"backup-20260101-120000/database.sql":  sqlContent,
-	} {
-		body := []byte(content)
-		hdr := &tar.Header{Typeflag: tar.TypeReg, Name: name, Mode: 0o644, Size: int64(len(body))}
-		if err := tw.WriteHeader(hdr); err != nil {
-			t.Fatalf("tar header: %v", err)
-		}
-		if _, err := tw.Write(body); err != nil {
-			t.Fatalf("tar write: %v", err)
-		}
-	}
-	_ = tw.Close()
-	_ = gw.Close()
-	return archivePath
-}
-
-// TestHandleRestoreFailure_ValidArchivePsqlFails exercises the rollback path where
-// the pre-restore archive is valid but the psql connection is refused.
-func TestHandleRestoreFailure_ValidArchivePsqlFails(t *testing.T) {
-	CheckTools()
-	if !PsqlAvailable() {
-		t.Skip("psql not available")
-	}
-
-	backupDir := t.TempDir()
-	storageDir := t.TempDir()
-	svc := NewService(nil, "", backupDir, storageDir, "0.1.0")
-
-	// Create a valid archive as the "pre-restore" backup.
-	archivePath := makeValidArchive(t, backupDir)
-	preRestoreID := "pre-restore"
-	// Rename to the expected backup path.
-	expectedPath := filepath.Join(backupDir, preRestoreID+".tar.gz")
-	if err := os.Rename(archivePath, expectedPath); err != nil {
-		t.Fatalf("rename: %v", err)
-	}
-
-	origErr := errors.New("simulated restore failure")
-	// Use unreachable DB so psql fails.
-	conn := DBConnParams{Host: "127.0.0.1", Port: "1", User: "u", Password: "p", DBName: "db"}
-	appStateValue := ""
-	opts := RestoreOpts{
-		SetMaintenance:  func(bool) {},
-		ShutdownPool:    func() {},
-		StopScheduler:   func() {},
-		CloseDB:         func() error { return nil },
-		ReconnectDB:     func() (*bun.DB, error) { return nil, nil },
-		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func(*bun.DB) error { return nil },
-		SetAppState:     func(s string) { appStateValue = s },
-	}
-	err := svc.handleRestoreFailure(origErr, preRestoreID, conn, opts)
-	// psql to 127.0.0.1:1 will fail → sets app state to db_unavailable.
-	_ = err
-	_ = appStateValue
-}
 
 // TestExtractTarGz_PathTraversal exercises the path traversal detection path.
 func TestExtractTarGz_PathTraversal(t *testing.T) {
