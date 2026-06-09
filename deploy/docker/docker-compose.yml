@@ -2,7 +2,8 @@
 #
 # Services:
 #   db    — PostgreSQL 18 database
-#   app   — Nexorious binary (embeds frontend, runs migrations on startup)
+#   app   — Nexorious binary (embeds frontend; serves the /migrate page until
+#           the schema is applied — migrations are not run automatically)
 #
 # Usage:
 #   docker compose up -d        # Start all services
