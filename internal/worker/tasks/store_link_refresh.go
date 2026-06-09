@@ -36,6 +36,9 @@ type StoreLinkRefreshDispatchArgs struct {
 	UserID     string `json:"user_id,omitempty"`
 	Storefront string `json:"storefront,omitempty"`
 	Force      bool   `json:"force,omitempty"`
+	// JobID, when set, names a pre-created (handler-owned) jobs row to populate
+	// instead of inserting one; empty means self-create (the sync-completion path).
+	JobID string `json:"job_id,omitempty"`
 }
 
 func (StoreLinkRefreshDispatchArgs) Kind() string { return "store_link_refresh_dispatch" }

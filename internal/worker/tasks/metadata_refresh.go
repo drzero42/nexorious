@@ -23,7 +23,12 @@ import (
 // ─── Dispatch worker ─────────────────────────────────────────────────────────
 
 // MetadataRefreshDispatchArgs is the River job args type for "metadata_refresh_dispatch".
-type MetadataRefreshDispatchArgs struct{}
+// JobID, when set, names a pre-created (handler-owned) jobs row the worker must
+// populate instead of inserting its own; empty means the worker self-creates the
+// row (the periodic-scheduler path).
+type MetadataRefreshDispatchArgs struct {
+	JobID string `json:"job_id,omitempty"`
+}
 
 func (MetadataRefreshDispatchArgs) Kind() string { return "metadata_refresh_dispatch" }
 
