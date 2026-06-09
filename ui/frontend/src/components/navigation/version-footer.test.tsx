@@ -48,6 +48,22 @@ describe('VersionFooter', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
+  it('renders no link when the release URL is missing', () => {
+    mockUseVersion.mockReturnValue({
+      data: {
+        version: '0.9.0',
+        commit: 'abc1234',
+        update_check_enabled: true,
+        update_available: true,
+        latest_version: '0.10.0',
+        release_url: '',
+      },
+    });
+    render(<VersionFooter />);
+    expect(screen.getByText('Version: 0.9.0')).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('renders nothing while version data is missing', () => {
     mockUseVersion.mockReturnValue({ data: undefined });
     const { container } = render(<VersionFooter />);
