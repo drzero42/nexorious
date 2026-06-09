@@ -10,4 +10,13 @@ nexorious
 *.out
 coverage.out
 storage/
+# docs/ is excluded from the build context, EXCEPT the files the Go binary
+# compiles and embeds: docs/embed.go (package docs) is imported by
+# internal/api/docs.go, and it //go:embeds the two in-app guides. Without these
+# exceptions the in-image `go build` fails with "no required module provides
+# package .../docs". The reference docs and docs/superpowers/ subtree stay
+# excluded — they are not embedded.
 docs/
+!docs/embed.go
+!docs/user-guide.md
+!docs/admin-guide.md
