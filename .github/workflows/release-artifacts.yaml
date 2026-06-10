@@ -118,9 +118,9 @@ jobs:
       matrix:
         include:
           - {runner: ubuntu-latest,    image: 'debian:13',    pkg: deb, arch: amd64}
-          - {runner: ubuntu-latest,    image: 'rockylinux:9', pkg: rpm, arch: amd64}
+          - {runner: ubuntu-latest,    image: 'rockylinux/rockylinux:10', pkg: rpm, arch: amd64}
           - {runner: ubuntu-24.04-arm, image: 'debian:13',    pkg: deb, arch: arm64}
-          - {runner: ubuntu-24.04-arm, image: 'rockylinux:9', pkg: rpm, arch: arm64}
+          - {runner: ubuntu-24.04-arm, image: 'rockylinux/rockylinux:10', pkg: rpm, arch: arm64}
     steps:
       - name: Install base tools
         run: |
