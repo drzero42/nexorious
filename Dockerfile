@@ -26,7 +26,7 @@ RUN CGO_ENABLED=0 GOOS=linux \
       ./cmd/nexorious
 
 # ─── Shared runtime layer (defined exactly once) ─────────────────────────────
-FROM docker.io/library/alpine:3.23 AS runtime-base
+FROM docker.io/library/alpine:3.24 AS runtime-base
 RUN apk add --no-cache \
       ca-certificates \
       postgresql18-client \
