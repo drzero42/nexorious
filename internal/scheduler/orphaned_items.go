@@ -9,6 +9,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -47,7 +48,7 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		  )`,
 		int64(age.Seconds()),
 	).Scan(ctx, &orphans); err != nil {
-		slog.Error("rescue_orphaned_items: query failed", "err", err)
+		slog.ErrorContext(ctx, "rescue_orphaned_items: query failed", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		emitMaint(ctx, db, true, notify.MaintPayload{Action: "rescue_orphaned_items", Error: err.Error()})
 		return
 	}
@@ -59,14 +60,14 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		// the right worker rather than the JSON importer.
 		args, err := tasks.ArgsForJobType(o.JobType, o.Source, o.ID)
 		if err != nil {
-			slog.Warn("rescue_orphaned_items: unknown job_type, skipping", "item_id", o.ID, "job_type", o.JobType, "source", o.Source)
+			slog.WarnContext(ctx, "rescue_orphaned_items: unknown job_type, skipping", "item_id", o.ID, logging.KeyJobType, o.JobType, logging.KeySource, o.Source)
 			continue
 		}
 		if _, err := rc.Insert(ctx, args, nil); err != nil {
-			slog.Error("rescue_orphaned_items: re-enqueue failed", "item_id", o.ID, "err", err)
+			slog.WarnContext(ctx, "rescue_orphaned_items: re-enqueue failed", "item_id", o.ID, logging.KeyErr, err)
 			failureCount++
 		} else {
-			slog.Info("rescue_orphaned_items: re-enqueued orphaned item", "item_id", o.ID, "job_type", o.JobType)
+			slog.InfoContext(ctx, "rescue_orphaned_items: re-enqueued orphaned item", "item_id", o.ID, logging.KeyJobType, o.JobType)
 			successCount++
 		}
 	}

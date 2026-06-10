@@ -16,6 +16,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -126,7 +127,7 @@ type CleanupStaleJobsWorker struct {
 func (w *CleanupStaleJobsWorker) Work(ctx context.Context, job *river.Job[CleanupStaleJobsArgs]) error {
 	d, err := time.ParseDuration(job.Args.Threshold)
 	if err != nil {
-		slog.Warn("cleanup_stale_jobs: invalid threshold, defaulting to 4h", "threshold", job.Args.Threshold, "err", err)
+		slog.WarnContext(ctx, "cleanup_stale_jobs: invalid threshold, defaulting to 4h", "threshold", job.Args.Threshold, logging.KeyErr, err)
 		d = 4 * time.Hour
 	}
 	CleanupStaleJobs(ctx, w.DB, d)
@@ -148,7 +149,7 @@ type CheckPendingSyncsWorker struct {
 func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPendingSyncsArgs]) error {
 	var configs []models.UserSyncConfig
 	if err := w.DB.NewSelect().Model(&configs).Where("frequency != 'manual'").Scan(ctx); err != nil {
-		slog.Error("CheckPendingSyncs: query configs", "err", err)
+		slog.ErrorContext(ctx, "CheckPendingSyncs: query configs", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		return nil
 	}
 
@@ -203,7 +204,7 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 			return nil
 		})
 		if txErr != nil {
-			slog.Error("CheckPendingSyncs: create job", "err", txErr, "user_id", cfg.UserID, "storefront", cfg.Storefront)
+			slog.ErrorContext(ctx, "CheckPendingSyncs: create job", logging.Cat(logging.CategoryDB), logging.KeyErr, txErr, logging.KeyUserID, cfg.UserID, logging.KeySource, cfg.Storefront)
 			continue
 		}
 		if !inserted {
@@ -215,7 +216,7 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 			UserID:     cfg.UserID,
 			Storefront: cfg.Storefront,
 		}, nil); err != nil {
-			slog.Error("CheckPendingSyncs: enqueue dispatch failed", "err", err, "job_id", jobID, "user_id", cfg.UserID)
+			slog.ErrorContext(ctx, "CheckPendingSyncs: enqueue dispatch failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.KeyUserID, cfg.UserID)
 		}
 	}
 	return nil
@@ -246,12 +247,12 @@ func CleanupSyncChanges(ctx context.Context, db *bun.DB, retentionDays int) {
 		retentionDays,
 	).Exec(ctx)
 	if err != nil {
-		slog.Error("cleanup: failed to delete old changes", "err", err)
+		slog.ErrorContext(ctx, "cleanup: failed to delete old changes", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		return
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
-		slog.Info("cleanup: deleted old changes", "count", rows)
+		slog.InfoContext(ctx, "cleanup: deleted old changes", "count", rows)
 	}
 }
 
@@ -273,7 +274,7 @@ func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*rive
 	interval, err := time.ParseDuration(cfg.MetadataRefreshInterval)
 	if err != nil {
 		slog.Warn("scheduler: invalid METADATA_REFRESH_INTERVAL, defaulting to 24h",
-			"value", cfg.MetadataRefreshInterval, "err", err)
+			"value", cfg.MetadataRefreshInterval, logging.KeyErr, err)
 		interval = 24 * time.Hour
 	}
 
@@ -365,12 +366,12 @@ func CleanupOldJobs(ctx context.Context, db *bun.DB) {
 		   AND completed_at < now() - interval '30 days'`,
 	).Exec(ctx)
 	if err != nil {
-		slog.Error("cleanup: failed to delete old jobs", "err", err)
+		slog.ErrorContext(ctx, "cleanup: failed to delete old jobs", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		return
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
-		slog.Info("cleanup: deleted old jobs", "count", rows)
+		slog.InfoContext(ctx, "cleanup: deleted old jobs", "count", rows)
 	}
 }
 
@@ -386,7 +387,7 @@ func CleanupExports(ctx context.Context, db *bun.DB) {
 		  AND file_path IS NOT NULL AND completed_at < now() - interval '24 hours'`,
 	).Scan(ctx, &jobs)
 	if err != nil {
-		slog.Error("cleanup: failed to query expired exports", "err", err)
+		slog.ErrorContext(ctx, "cleanup: failed to query expired exports", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		return
 	}
 	if len(jobs) == 0 {
@@ -396,7 +397,7 @@ func CleanupExports(ctx context.Context, db *bun.DB) {
 	for _, j := range jobs {
 		if j.FilePath != nil {
 			if err := os.Remove(*j.FilePath); err != nil && !os.IsNotExist(err) {
-				slog.Warn("cleanup: failed to remove export file", "path", *j.FilePath, "err", err)
+				slog.WarnContext(ctx, "cleanup: failed to remove export file", "path", *j.FilePath, logging.KeyErr, err)
 			}
 		}
 	}
@@ -409,9 +410,9 @@ func CleanupExports(ctx context.Context, db *bun.DB) {
 		`UPDATE jobs SET file_path = NULL WHERE id IN (?)`,
 		bun.List(ids),
 	).Exec(ctx); err != nil {
-		slog.Error("cleanup: clear expired export file_paths failed", "err", err)
+		slog.ErrorContext(ctx, "cleanup: clear expired export file_paths failed", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 	}
-	slog.Info("cleanup: cleaned expired exports", "count", len(jobs))
+	slog.InfoContext(ctx, "cleanup: cleaned expired exports", "count", len(jobs))
 }
 
 // CleanupUnreferencedGames deletes games with no user_games rows.
@@ -421,12 +422,12 @@ func CleanupUnreferencedGames(ctx context.Context, db *bun.DB) {
 		 WHERE id NOT IN (SELECT DISTINCT game_id FROM user_games)`,
 	).Exec(ctx)
 	if err != nil {
-		slog.Error("cleanup: failed to delete unreferenced games", "err", err)
+		slog.ErrorContext(ctx, "cleanup: failed to delete unreferenced games", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		return
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
-		slog.Info("cleanup: deleted unreferenced games", "count", rows)
+		slog.InfoContext(ctx, "cleanup: deleted unreferenced games", "count", rows)
 	}
 }
 
@@ -436,11 +437,11 @@ func CleanupExpiredSessions(ctx context.Context, db *bun.DB) {
 		`DELETE FROM user_sessions WHERE expires_at < now()`,
 	).Exec(ctx)
 	if err != nil {
-		slog.Error("cleanup: failed to delete expired sessions", "err", err)
+		slog.ErrorContext(ctx, "cleanup: failed to delete expired sessions", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		return
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
-		slog.Info("cleanup: deleted expired sessions", "count", rows)
+		slog.InfoContext(ctx, "cleanup: deleted expired sessions", "count", rows)
 	}
 }
