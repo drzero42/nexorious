@@ -96,13 +96,13 @@ jobs:
         run: cd dist && sha256sum nexorious* > sha256sums.txt
 
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
 
       - name: Upload ci-binaries artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ci-binaries
           path: ci-binaries/
@@ -140,7 +140,7 @@ jobs:
                 && github.event.release.tag_name || github.sha }}
 
       - name: Download dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
@@ -172,7 +172,7 @@ jobs:
                 && github.event.release.tag_name || github.sha }}
 
       - name: Download ci-binaries artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ci-binaries
           path: ci-binaries
@@ -236,7 +236,7 @@ jobs:
       contents: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
