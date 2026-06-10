@@ -62,7 +62,7 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
-		slog.InfoContext(ctx, "cleanup_stale_jobs: marked stale jobs failed", "count", rows)
+		slog.WarnContext(ctx, "cleanup_stale_jobs: marked stale jobs failed", "count", rows)
 	}
 
 	syncResult, err := db.NewRaw(
@@ -88,7 +88,7 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 	}
 	syncRows, _ := syncResult.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if syncRows > 0 {
-		slog.InfoContext(ctx, "cleanup_stale_jobs: marked stale sync jobs failed", "count", syncRows)
+		slog.WarnContext(ctx, "cleanup_stale_jobs: marked stale sync jobs failed", "count", syncRows)
 	}
 
 	if rows+syncRows > 0 {
