@@ -230,10 +230,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Enabled:        cfg.UpdateCheckEnabled,
 	})
 
-	// Quiet job kinds: routine periodic-maintenance jobs whose successful
-	// completion logs at Debug (failures still Warn) so they don't drown out
-	// user-initiated job outcomes.
-	quietJobKinds := append(scheduler.MaintenanceJobKinds(), notify.PruneEventsArgs{}.Kind())
+	// Quiet job kinds: routine periodic-maintenance jobs and high-fan-out per-item
+	// workers whose successful completion logs at Debug (failures still Warn) so
+	// they don't drown out user-initiated, top-level job outcomes.
+	quietJobKinds := scheduler.MaintenanceJobKinds()
+	quietJobKinds = append(quietJobKinds, tasks.PerItemJobKinds()...)
+	quietJobKinds = append(quietJobKinds, notify.PruneEventsArgs{}.Kind())
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
 		Workers:      workers,
