@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/riverqueue/river"
 	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 	"github.com/spf13/cobra"
 	"github.com/uptrace/bun"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	"github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/notify"
@@ -56,9 +58,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	slog.SetDefault(slog.New(logging.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseSlogLevel(cfg.LogLevel),
-	})))
+	}))))
 
 	encrypter, err := crypto.NewEncrypter(cfg.DBEncryptionKey)
 	if err != nil {
@@ -232,6 +234,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Workers:      workers,
 		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
+		Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware()},
 	})
 	if err != nil {
 		return fmt.Errorf("river.NewClient: %w", err)
@@ -328,6 +331,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				Workers:      newWorkers,
 				Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
+				Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware()},
 			})
 			if err != nil {
 				return fmt.Errorf("RebuildServices: river.NewClient: %w", err)
