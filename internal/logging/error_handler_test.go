@@ -14,7 +14,7 @@ func TestWorkerErrorHandler_HandlePanic_EmitsPanicLine(t *testing.T) {
 	prev := slog.Default()
 	slog.SetDefault(slog.New(NewContextHandler(
 		slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	defer slog.SetDefault(prev)
 
 	h := &WorkerErrorHandler{}
 	job := &rivertype.JobRow{ID: 4242, Kind: "sync_steam"}
@@ -34,6 +34,9 @@ func TestWorkerErrorHandler_HandlePanic_EmitsPanicLine(t *testing.T) {
 	if m[KeyRiverJobID] != "4242" {
 		t.Errorf("river_job_id = %v, want 4242", m[KeyRiverJobID])
 	}
+	if m[KeyErr] != "nil map write" {
+		t.Errorf("err = %v, want \"nil map write\"", m[KeyErr])
+	}
 	if m["level"] != "ERROR" {
 		t.Errorf("level = %v, want ERROR", m["level"])
 	}
@@ -44,7 +47,7 @@ func TestWorkerErrorHandler_HandleError_IsNoOp(t *testing.T) {
 	prev := slog.Default()
 	slog.SetDefault(slog.New(NewContextHandler(
 		slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	defer slog.SetDefault(prev)
 
 	h := &WorkerErrorHandler{}
 	job := &rivertype.JobRow{ID: 1, Kind: "sync_steam"}
