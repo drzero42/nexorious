@@ -25,8 +25,8 @@ RUN CGO_ENABLED=0 GOOS=linux \
       -o /out/nexorious \
       ./cmd/nexorious
 
-# ─── Stage 3: minimal runtime ────────────────────────────────────────────────
-FROM docker.io/library/alpine:3.23 AS runtime
+# ─── Shared runtime layer (defined exactly once) ─────────────────────────────
+FROM docker.io/library/alpine:3.23 AS runtime-base
 RUN apk add --no-cache \
       ca-certificates \
       postgresql18-client \
@@ -36,12 +36,18 @@ RUN apk add --no-cache \
  && apk del .pip-tmp \
  && addgroup -g 10001 -S nexorious \
  && adduser -u 10001 -S -G nexorious -h /app -s /sbin/nologin nexorious
-
 WORKDIR /app
-COPY --from=go-build /out/nexorious /app/nexorious
-RUN mkdir -p /app/storage /app/storage/backups && chown -R nexorious:nexorious /app
-
+RUN mkdir -p /app/storage/backups && chown -R nexorious:nexorious /app
 USER nexorious
 EXPOSE 8000
 ENTRYPOINT ["/app/nexorious"]
 CMD ["serve"]
+
+# ─── Target: CI release image (prebuilt binary via buildx named context) ─────
+FROM runtime-base AS runtime-ci
+ARG TARGETARCH
+COPY --from=binaries --chown=nexorious:nexorious nexorious-linux-${TARGETARCH} /app/nexorious
+
+# ─── Target: full source build (LAST stage = default target) ─────────────────
+FROM runtime-base AS runtime
+COPY --from=go-build --chown=nexorious:nexorious /out/nexorious /app/nexorious

@@ -45,7 +45,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 - **Rich Game Discovery**: Search and import games from IGDB's extensive database with automatic metadata population
 - **Progress Tracking**: Track play status, personal ratings, time played, and detailed notes
 - **Import & Export**: Export your collection to JSON or CSV; import from Nexorious's own JSON format or a Darkadia CSV export
-- **Single Binary**: Go backend with embedded React SPA — one process serves everything
+- **Easy to self-host**: single Go binary with the React SPA embedded — run the container image, the Helm chart, native `.deb`/`.rpm` packages, or the raw binary
 - **Modern Tech Stack**: Go backend with React + Vite frontend
 
 ## Documentation

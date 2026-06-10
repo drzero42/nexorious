@@ -271,7 +271,7 @@ All commits on `main` must follow [Conventional Commits](https://www.conventiona
 1. Wait until there is a `feat:` or `fix:` on `main` since the last release (otherwise release-please's Release PR will be empty).
 2. Find the open PR titled `chore(main): release X.Y.Z` (opened by `release-please-action`).
 3. Review the proposed `CHANGELOG.md` diff, `Chart.yaml` / `docker-compose.yml` version bumps.
-4. Merge the Release PR. release-please creates the `vX.Y.Z` tag, publishes a GitHub Release, and `build-push.yaml` pushes the image and chart (semver tag + `latest`).
+4. Merge the Release PR. release-please creates the `vX.Y.Z` tag and publishes a GitHub Release; `release-artifacts.yaml` then builds — for amd64 and arm64, from one per-arch binary — the raw binary, `.deb`, `.rpm`, and a multi-arch container image, smoke-tests the packages, uploads the release assets, pushes the image (semver tag + `latest`) and Helm chart, and advances the `release` branch. There is no nightly/dev build flow (`build-push.yaml` was removed); non-release artifacts no longer exist.
 
 ### Overrides
 

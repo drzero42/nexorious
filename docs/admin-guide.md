@@ -23,6 +23,33 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 
 On the first launch the app serves the migration page until you apply the schema (see [First run](#first-run)); you can also run the migration as a one-shot with `docker compose -f deploy/docker/docker-compose.yml run --rm app migrate`. Make sure the volumes backing `STORAGE_PATH` and `BACKUP_PATH` persist.
 
+### Native packages (Debian/Ubuntu, RHEL/Fedora/Rocky)
+
+For Debian/Ubuntu and RHEL/Fedora/Rocky hosts there are native `.deb` and `.rpm` packages on each [GitHub Release](https://github.com/drzero42/nexorious/releases), for `amd64` and `arm64`. They install the binary, a systemd service, a dedicated `nexorious` user, and a managed config file — no hand-wiring.
+
+```bash
+# Pick the file matching your distro and architecture from the Release, then:
+# Verify it against the release checksums (optional but recommended):
+sha256sum -c sha256sums.txt --ignore-missing
+
+# Debian / Ubuntu:
+sudo apt install ./nexorious_X.Y.Z_amd64.deb
+
+# RHEL / Fedora / Rocky:
+sudo dnf install ./nexorious-X.Y.Z.x86_64.rpm
+```
+
+The package depends on the PostgreSQL client tools (`postgresql-client` on Debian/Ubuntu, `postgresql` on RHEL-family), which your package manager pulls in automatically. It installs config to `/etc/nexorious/nexorious.env`, presets `STORAGE_PATH`/`BACKUP_PATH` to `/var/lib/nexorious`, and **auto-generates `DB_ENCRYPTION_KEY` on first install**.
+
+After installing, set your database connection and start the service:
+
+```bash
+sudo nano /etc/nexorious/nexorious.env   # set DATABASE_URL
+sudo systemctl enable --now nexorious
+```
+
+The service is not started automatically on install — it idles on the "database unavailable" page until `DATABASE_URL` is set, so you enable it once you've configured it (see [First run](#first-run)). Logs go to the journal: `journalctl -u nexorious -f`.
+
 ### Kubernetes / Helm
 
 A Helm chart is published to `oci://ghcr.io/drzero42/charts` and built on the [bjw-s common library](https://bjw-s-labs.github.io/helm-charts/):
@@ -97,7 +124,7 @@ With `database.createLocally = true` (the default) PostgreSQL is set up for you 
 
 ### Single binary
 
-You can also build the binary and run it directly next to a PostgreSQL instance — simplest for a plain server or for trying it out. Build it (`make`), set at least the [database connection and `DB_ENCRYPTION_KEY`](#configuration), and start it:
+On Debian/Ubuntu or RHEL/Fedora/Rocky, prefer the [native packages](#native-packages-debianubuntu-rhelfedorarocky) above — they wire up the service, user, and config for you. For other distributions, or just to try it out, you can build and run the binary directly next to a PostgreSQL instance. Build it (`make`), set at least the [database connection and `DB_ENCRYPTION_KEY`](#configuration), and start it:
 
 ```bash
 export DATABASE_URL="postgres://user:password@host:5432/nexorious"
@@ -119,6 +146,7 @@ Nexorious is configured entirely through environment variables. Two things are g
 - **`DB_ENCRYPTION_KEY`** (required) — a random secret used to encrypt sensitive data at rest, above all users' stored sync credentials. Generate one with `openssl rand -base64 32`. **Keep it safe and unchanged:** if you lose it or change it, the data encrypted under it (sync tokens) can no longer be decrypted, and affected users have to reconnect their sync accounts.
 - **`IGDB_CLIENT_ID` / `IGDB_CLIENT_SECRET`** — credentials for IGDB, which powers search, cover art, and all metadata enrichment. The server runs without them, but search, adding games by search, and Darkadia import won't work until they're set. See [Setting up IGDB credentials](#setting-up-igdb-credentials).
 - **`SESSION_COOKIE_SECURE`** — `true` by default, which tells browsers to send the login cookie only over HTTPS. With it on, logging in over plain HTTP on anything other than `localhost` silently fails; set it to `false` only when you deliberately serve over plain HTTP (a trusted LAN, say), and keep it `true` behind HTTPS.
+- **Where config lives.** With the `.deb`/`.rpm` packages, configuration is the env file at `/etc/nexorious/nexorious.env` (read by the systemd service); the package presets `STORAGE_PATH` and `BACKUP_PATH` to `/var/lib/nexorious` and generates `DB_ENCRYPTION_KEY` for you on first install — never change that generated key afterwards. With Docker, Helm, or the raw binary, you supply the same variables your usual way.
 
 ### Full reference
 
@@ -207,6 +235,8 @@ The defaults are fine for most deployments — a typical setup only sets the dat
 
    Until the schema is up to date, the server gates every route other than the migration page.
 
+   For a package install you'll have set `DATABASE_URL` and run `systemctl enable --now nexorious` (see [Native packages](#native-packages-debianubuntu-rhelfedorarocky)); from there migrations work the same as any other deployment — `nexorious migrate` on the host, or the `/migrate` page the running service serves.
+
 2. **Create the first admin.** With no users yet, opening the site prompts you to create the first account, which is automatically an admin. You can also create it from the host with `nexorious setup` — handy for scripted or headless installs.
 
 3. **Configure IGDB.** Set `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET` as part of your configuration, ideally before the first start — see [Setting up IGDB credentials](#setting-up-igdb-credentials) for how to obtain them. The app shows a banner while IGDB is unconfigured or its credentials are rejected, so an instance still runs without them; you just can't search or add games until they're set. IGDB is configured through these environment variables, not in the web interface, and they're read at startup — so if you add or change them on an already-running server, restart it to pick up the change.
@@ -235,6 +265,7 @@ Getting `legendary` in place depends on how you deploy:
 
 - **Official container image** — `legendary` is already bundled in the image, so there's nothing to install. Just set `LEGENDARY_WORK_DIR` to a path on a persistent volume. The provided `deploy/docker/docker-compose.yml` already does this (it sets `LEGENDARY_WORK_DIR` and mounts a volume for it), so Epic sync works out of the box there.
 - **Single binary / from source** — install `legendary` (the legendary-gl package) on the host yourself, so the `legendary` command is on the server's `PATH`, then set `LEGENDARY_WORK_DIR`.
+- **Native package (`.deb`/`.rpm`)** — `legendary` is **not** bundled in the packages (it is a pip tool with no distro package). Install it yourself (`pipx install legendary-gl` or `pip install --user legendary-gl`) so `legendary` is on the service's `PATH`, then set `LEGENDARY_WORK_DIR`. Epic sync degrades gracefully — everything else works — while it is absent.
 
 Either way, point `LEGENDARY_WORK_DIR` at a writable, persistent directory and restart the server. Steam, PlayStation, GOG, and Humble Bundle sync have no such requirement.
 
@@ -310,12 +341,14 @@ The same binary that serves the app is also a command-line tool for tasks you do
 
 ## Monitoring and operations
 
-- **Logs** — Nexorious logs to standard output; set `LOG_LEVEL=debug` when you need more detail. In Docker, Kubernetes, or systemd, collect them however you collect logs from anything else.
+- **Logs** — Nexorious logs to standard output; set `LOG_LEVEL=debug` when you need more detail. With the native packages it runs under systemd, so its output lands in the journal — `journalctl -u nexorious` (add `-f` to follow). In Docker or Kubernetes, collect stdout however you collect logs from anything else.
 - **Version** — `nexorious version` on the host, and the running version is shown in the app's sidebar, so you can confirm what's actually deployed.
 - **Notifications** — Nexorious's notifications are configured per user (in each user's profile), not centrally. As an operator you mainly care that the server can reach whatever channels users configure (for example outbound network access for email or webhooks).
 
 ## Upgrades and versioning
 
 Schema changes ship as migrations, applied as a step separate from the running server. On Helm, the chart's `migrate` initContainer handles this automatically on each deploy. On other deployments you apply them yourself — run `nexorious migrate`, or let the server come up against the new schema and use the `/migrate` page it serves. So a normal upgrade is: take a backup, deploy the new version, make sure migrations are applied (automatic on Helm; `nexorious migrate` or the `/migrate` page otherwise), done.
+
+With the `.deb`/`.rpm` packages, a normal `apt upgrade` / `dnf upgrade` replaces the binary and preserves your `/etc/nexorious/nexorious.env` — the env file is a conffile (`%config(noreplace)` on rpm), so your settings and the generated `DB_ENCRYPTION_KEY` survive the upgrade, and the service is restarted only if it was already running. Removal differs by family: `apt purge` deletes `/var/lib/nexorious` **including backups** and removes the `nexorious` user (a true clean uninstall), while a plain `apt remove` and any `dnf` uninstall leave config, key, and data in place for a later reinstall (rpm keeps a modified env file as `nexorious.env.rpmsave`).
 
 **The one big caveat is the 1.0.0 release.** The first stable release will be a deliberate clean break with **no automatic upgrade path** from the pre-1.0 versions. To move onto 1.0.0 you'll export each user's collection (JSON export from Import / Export), start fresh with an empty database, and import again. Until 1.0.0 lands, keep this in mind and don't treat a pre-1.0 instance as permanent storage — keep exports of anything you'd be sad to re-enter.
