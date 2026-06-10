@@ -9,7 +9,7 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 1. Merge one or more `feat:` or `fix:` PRs to `main`.
 2. release-please opens (or updates) a PR titled `chore: release main` proposing the next version.
 3. Review the `CHANGELOG.md` diff and version bumps in `Chart.yaml`, `docker-compose.yml`, and `flake.nix`.
-4. Merge the Release PR. CI automatically tags the commit, publishes a GitHub Release, pushes the container image and Helm chart, and advances the `release` branch.
+4. Merge the Release PR. CI (`release-artifacts.yaml`) then builds, for both amd64 and arm64, the raw binary, the `.deb`, the `.rpm`, and the multi-arch container image — all from the same per-arch binary — smoke-tests every package, publishes the GitHub Release assets, pushes the image and Helm chart, and advances the `release` branch. There is no nightly or dev build flow; artifacts are produced only when a release is published.
 
 ### Forcing a specific version
 
@@ -245,14 +245,22 @@ The route handlers in `internal/api/` are the source of truth for available API 
 
 The repo ships a multi-stage `Dockerfile` that builds the React SPA, compiles the Go binary, and produces a minimal `alpine:3.23` runtime image containing the `nexorious` binary, `ca-certificates`, `postgresql18-client` (for backup/restore), and `legendary-gl` with its Python runtime (for Epic Games Store sync). No Go or Node toolchain, source, or git is shipped in the final image.
 
-**Build:**
+**Build** (full source build — the default `runtime` target):
 
 ```bash
-docker build \
+make docker   # builds the runtime target, tags nexorious:local
+```
+
+Or directly, e.g. to pass explicit version metadata:
+
+```bash
+docker build --target runtime \
   --build-arg VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
   --build-arg COMMIT="$(git rev-parse --short HEAD)" \
   -t nexorious:local .
 ```
+
+The `Dockerfile` shares a single `runtime-base` stage between `runtime` (the full source build above) and `runtime-ci` (used only by CI, which copies a prebuilt per-arch binary from a buildx named context instead of compiling). Building `runtime-ci` locally requires that named context — see `.github/workflows/release-artifacts.yaml`.
 
 **Run the server:**
 
