@@ -92,8 +92,17 @@ instead of string literals so keys never drift:
 `KeyStatus`, `KeyRoute`, `KeyOutcome`, `KeyCategory`, `KeyErr`.
 
 Attributes that have no constant (e.g. `"item_id"`, `"appid"`, `"backup_id"`,
-`"path"`, `"storefront"`) stay as string literals. Add a constant only when a key is
+`"path"`) stay as string literals. Add a constant only when a key is
 used widely enough to be worth pinning.
+
+`KeySource` carries the **canonical storefront slug** — the same value used as the
+job `source` and the adapter-factory `case` label: `steam`, `playstation-store`,
+`gog`, `epic-games-store`, `humble-bundle`. Use `KeySource` (never a custom
+`"storefront"` key) on every per-source boundary, and never the legacy `"psn"`
+value — `"psn"` may appear only as a human label inside a `msg`, never as a
+`source` value. (A bare `"storefront"` string-literal key remains only where the
+storefront is item metadata unrelated to the sync source, e.g. the import-item
+platform-lookup warn — there it is not the alertable `source`.)
 
 ## Error taxonomy — the `category` field
 
@@ -111,10 +120,28 @@ slog.ErrorContext(ctx, "upsert external_game failed", logging.KeyErr, err, loggi
 | `logging.CategoryValidation`   | bad input / unparseable data |
 | `logging.CategoryAuth`         | credential / token / permission failures |
 | `logging.CategoryConfig`       | misconfiguration (missing/invalid env, bad durations) |
+| `logging.CategoryPanic`        | recovered panics — the Echo recover boundary and the River worker `ErrorHandler` |
 
 Don't force a category where none fits (e.g. plain file/process failures in the
 backup service, or `json.Marshal` of a fixed struct). Never put a category on
 `info`/`debug` lines.
+
+## Recovered panics
+
+A recovered panic is surfaced as a distinct `level=error`, `category=panic` line
+(separate from the resulting HTTP 500 access-log line / River failed-outcome line):
+
+- **HTTP:** `api.PanicLogger()` (registered just outside `middleware.Recover()`)
+  detects the `*middleware.PanicStackError` that Echo v5's recover returns and logs
+  `"http: recovered panic"`, correlated by `request_id`. (Echo v5's `Recover` has no
+  logging hook of its own; it converts the panic into an error and returns it, so we
+  observe it one layer out.)
+- **Workers:** `logging.WorkerErrorHandler` (wired as River's `ErrorHandler`) logs
+  `"worker: recovered panic"` from `HandlePanic` with `job_type` and `river_job_id`.
+  River calls `HandlePanic` above all middleware, so `river_job_id` is set
+  explicitly there — the one place a correlation id is added by hand, because the
+  `ContextHandler` cannot reach that boundary's ctx. (`HandleError` is a no-op:
+  normal job failures are already logged once at `warn` by `WorkerMiddleware`.)
 
 ## External API calls and job outcomes — log once at the boundary
 
