@@ -170,7 +170,7 @@ func (h *AdminUsersHandler) HandleCreate(c *echo.Context) error {
 	}
 
 	if err := notify.SeedDefaultSubscriptions(ctx, h.db, user.ID, user.IsAdmin); err != nil {
-		slog.ErrorContext(c.Request().Context(), "admin create user: seed notification subscriptions", logging.KeyUserID, user.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(c.Request().Context(), "admin create user: seed notification subscriptions", "target_user_id", user.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	return c.JSON(http.StatusCreated, newAdminUserResponse(user))
