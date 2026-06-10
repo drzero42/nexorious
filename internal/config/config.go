@@ -77,6 +77,11 @@ type Config struct {
 	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
 	Debug    bool   `env:"DEBUG"`
 
+	// UpdateCheckEnabled controls the periodic GitHub release check that powers
+	// the "newer version available" sidebar notice and admin notification.
+	// Set false to disable the check entirely (no outbound GitHub requests).
+	UpdateCheckEnabled bool `env:"UPDATE_CHECK_ENABLED" envDefault:"true"`
+
 	// CORSOrigins is only needed in development; production is same-origin.
 	CORSOrigins []string `env:"CORS_ORIGINS" envSeparator:","`
 

@@ -277,7 +277,7 @@ func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*rive
 		interval = 24 * time.Hour
 	}
 
-	return []*river.PeriodicJob{
+	jobs := []*river.PeriodicJob{
 		river.NewPeriodicJob(
 			mustCron("0 3 * * *"),
 			func() (river.JobArgs, *river.InsertOpts) { return CleanupOldJobsArgs{}, nil },
@@ -340,6 +340,19 @@ func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*rive
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 	}
+
+	if cfg.UpdateCheckEnabled {
+		// Unlike the other periodic jobs, RunOnStart is true so the sidebar
+		// notice appears shortly after boot; the per-release dedup key keeps
+		// the admin notification at once per release regardless.
+		jobs = append(jobs, river.NewPeriodicJob(
+			mustCron("0 */6 * * *"),
+			func() (river.JobArgs, *river.InsertOpts) { return CheckForUpdatesArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: true},
+		))
+	}
+
+	return jobs
 }
 
 // ── Standalone worker functions ────────────────────────────────────────────────

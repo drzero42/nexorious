@@ -209,7 +209,7 @@ func newTestEchoWithIGDB(t *testing.T, db *bun.DB) interface {
 	cfg := testCfg() // no IGDB credentials
 	igdbClient := igdb.NewClient(cfg, ratelimit.NewLocal(100, 100))
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, nil, "dev", "unknown")
+	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, nil, "dev", "unknown", nil)
 }
 
 // TestIGDB_NotConfigured verifies every IGDB-backed endpoint returns 503 when
@@ -424,7 +424,7 @@ func newTestEchoWithLiveIGDB(t *testing.T, db *bun.DB, srvURL string) interface 
 	igdbClient := igdb.NewClientWithTokenURL(cfg, srvURL+"/oauth2/token", ratelimit.NewLocal(100, 100))
 	igdbClient.SetAPIURLForTest(srvURL)
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, nil, "dev", "unknown")
+	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, nil, "dev", "unknown", nil)
 }
 
 // insertTestExternalGameForUser inserts a minimal external_game row owned by

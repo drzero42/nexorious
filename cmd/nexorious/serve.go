@@ -32,6 +32,7 @@ import (
 	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
 	"github.com/drzero42/nexorious/internal/services/storelink"
+	"github.com/drzero42/nexorious/internal/services/updatecheck"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -191,6 +192,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	storeLinkDispatchWorker := &tasks.StoreLinkRefreshDispatchWorker{DB: db}
 	storeLinkItemWorker := &tasks.StoreLinkRefreshItemWorker{DB: db, ResolverFor: buildStoreLinkResolverFactory(db, encrypter)}
 
+	updateState := updatecheck.NewState()
+	updateClient := updatecheck.NewClient()
+
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.ExportJSONWorker{DB: db, StoragePath: cfg.StoragePath})
@@ -216,6 +220,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, &scheduler.CheckScheduledBackupWorker{DB: db, BackupSvc: backupSvc})
 	river.AddWorker(workers, &notify.NotifyWorker{DB: db, Encrypter: encrypter, Sender: notify.NewShoutrrrSender()})
 	river.AddWorker(workers, &notify.PruneEventsWorker{DB: db})
+	river.AddWorker(workers, &scheduler.CheckForUpdatesWorker{
+		DB:             db,
+		State:          updateState,
+		Client:         updateClient,
+		RunningVersion: version,
+		Enabled:        cfg.UpdateCheckEnabled,
+	})
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
 		Workers:      workers,
@@ -305,6 +316,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			river.AddWorker(newWorkers, &scheduler.CheckScheduledBackupWorker{DB: newDB, BackupSvc: backupSvc})
 			river.AddWorker(newWorkers, &notify.NotifyWorker{DB: newDB, Encrypter: encrypter, Sender: notify.NewShoutrrrSender()})
 			river.AddWorker(newWorkers, &notify.PruneEventsWorker{DB: newDB})
+			river.AddWorker(newWorkers, &scheduler.CheckForUpdatesWorker{
+				DB:             newDB,
+				State:          updateState,
+				Client:         updateClient,
+				RunningVersion: version,
+				Enabled:        cfg.UpdateCheckEnabled,
+			})
 
 			newClient, err := river.NewClient(riverpgxv5.New(newPgxPool), &river.Config{
 				Workers:      newWorkers,
@@ -348,7 +366,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		RebuildBackupJob: func(_ context.Context, _, _ string, _ int) {},
 	}
 
-	e := api.New(encrypter, cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, version, commit, riverClient)
+	e := api.New(encrypter, cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, version, commit, updateState, riverClient)
 
 	// StartDBProbe — polls every 5s, calls initAppState on recovery.
 	migrator.StartDBProbe(shutdownCtx, db, initAppState)

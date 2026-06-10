@@ -12,11 +12,12 @@ import (
 	"github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/services/updatecheck"
 )
 
 func TestAppStateMiddleware_RedirectsToMigrate(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/some/page", nil)
 	rec := httptest.NewRecorder()
@@ -32,7 +33,7 @@ func TestAppStateMiddleware_RedirectsToMigrate(t *testing.T) {
 
 func TestAppStateMiddleware_ApiReturnsJSON503(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/games", nil)
 	rec := httptest.NewRecorder()
@@ -55,7 +56,7 @@ func TestAppStateMiddleware_ApiReturnsJSON503(t *testing.T) {
 
 func TestDBUnavailable_ApiReturnsJSON503(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateDBUnavailable)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/games", nil)
 	rec := httptest.NewRecorder()
@@ -79,7 +80,7 @@ func TestDBUnavailable_ApiReturnsJSON503(t *testing.T) {
 func TestSetupGate_ApiReturnsJSON503(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	m.SetNeedsSetup(true)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/games", nil)
 	rec := httptest.NewRecorder()
@@ -102,7 +103,7 @@ func TestSetupGate_ApiReturnsJSON503(t *testing.T) {
 
 func TestAppStateMiddleware_BypassMigrationPaths(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/migrate/status", nil)
 	rec := httptest.NewRecorder()
@@ -115,7 +116,7 @@ func TestAppStateMiddleware_BypassMigrationPaths(t *testing.T) {
 
 func TestAppStateMiddleware_ReadyStatePassesThrough(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -131,7 +132,7 @@ func TestAppStateMiddleware_ReadyStatePassesThrough(t *testing.T) {
 
 func TestDBUnavailable_RedirectsToErrorPage(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateDBUnavailable)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/some/page", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -146,7 +147,7 @@ func TestDBUnavailable_RedirectsToErrorPage(t *testing.T) {
 
 func TestDBUnavailable_EncodesFromParam(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateDBUnavailable)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/user-games?page=2&sort=title", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -159,7 +160,7 @@ func TestDBUnavailable_EncodesFromParam(t *testing.T) {
 func TestSetupGate_RedirectsArbitraryRoutes(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	migrator.SetNeedsSetup(true)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/some/page", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -174,7 +175,7 @@ func TestSetupGate_RedirectsArbitraryRoutes(t *testing.T) {
 func TestSetupGate_BypassesHealthEndpoint(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	migrator.SetNeedsSetup(true)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -186,7 +187,7 @@ func TestSetupGate_BypassesHealthEndpoint(t *testing.T) {
 func TestSetupGate_BypassesMigrateRoutes(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	migrator.SetNeedsSetup(true)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/migrate/status", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -210,7 +211,7 @@ func TestMigrationGate_BypassesBrandIconAssets(t *testing.T) {
 	for _, path := range brandIconPaths {
 		t.Run(path, func(t *testing.T) {
 			m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-			e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown")
+			e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
@@ -226,7 +227,7 @@ func TestSetupGate_BypassesBrandIconAssets(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 			migrator.SetNeedsSetup(true)
-			e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
+			e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
@@ -256,7 +257,7 @@ func TestHealth_Status(t *testing.T) {
 			if tt.needsSetup {
 				migrator.SetNeedsSetup(true)
 			}
-			e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown")
+			e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
 			req := httptest.NewRequest(http.MethodGet, "/health", nil)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
@@ -280,7 +281,7 @@ func TestHealth_ReportsIGDBStatusOk(t *testing.T) {
 	cfg.IGDBClientID = "test-id"
 	cfg.IGDBClientSecret = "test-secret"
 	igdbClient := igdb.NewClient(cfg, ratelimit.NewLocal(100, 100))
-	e := api.New(testEncrypter, cfg, migrator, nil, "", igdbClient, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, cfg, migrator, nil, "", igdbClient, nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -301,7 +302,7 @@ func TestHealth_ReportsIGDBStatusOk(t *testing.T) {
 func TestHealth_ReportsIGDBStatusNotConfigured(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	igdbClient := igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", igdbClient, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", igdbClient, nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -322,7 +323,7 @@ func TestHealth_ReportsIGDBStatusNotConfigured(t *testing.T) {
 func TestHealth_ReportsIGDBStatusInvalidCredentials(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	igdbClient := igdb.NewInvalidCredentialsClient(ratelimit.NewLocal(100, 100))
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", igdbClient, nil, nil, "dev", "unknown")
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", igdbClient, nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -342,7 +343,7 @@ func TestHealth_ReportsIGDBStatusInvalidCredentials(t *testing.T) {
 
 func TestVersionEndpoint(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "1.2.3", "abc1234")
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "1.2.3", "abc1234", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
 	rec := httptest.NewRecorder()
@@ -355,7 +356,7 @@ func TestVersionEndpoint(t *testing.T) {
 	if cc != "no-store" {
 		t.Errorf("Cache-Control = %q, want %q", cc, "no-store")
 	}
-	var body map[string]string
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -364,5 +365,110 @@ func TestVersionEndpoint(t *testing.T) {
 	}
 	if body["commit"] != "abc1234" {
 		t.Errorf("commit = %q, want %q", body["commit"], "abc1234")
+	}
+}
+
+func getVersion(t *testing.T, e http.Handler) map[string]any {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/version = %d, want 200", rec.Code)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	return body
+}
+
+func TestVersionEndpoint_UpdateAvailable(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	cfg := testCfg()
+	cfg.UpdateCheckEnabled = true
+	st := updatecheck.NewState()
+	st.Set("9.9.9", "https://github.com/drzero42/nexorious/releases/tag/v9.9.9")
+	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "0.1.0", "abc1234", st)
+
+	body := getVersion(t, e)
+	if body["update_available"] != true {
+		t.Errorf("update_available = %v, want true", body["update_available"])
+	}
+	if body["latest_version"] != "9.9.9" {
+		t.Errorf("latest_version = %v, want 9.9.9", body["latest_version"])
+	}
+	if body["release_url"] != "https://github.com/drzero42/nexorious/releases/tag/v9.9.9" {
+		t.Errorf("release_url = %v", body["release_url"])
+	}
+	if body["update_check_enabled"] != true {
+		t.Errorf("update_check_enabled = %v, want true", body["update_check_enabled"])
+	}
+	if body["version"] != "0.1.0" || body["commit"] != "abc1234" {
+		t.Errorf("version/commit = %v/%v", body["version"], body["commit"])
+	}
+}
+
+func TestVersionEndpoint_DevBuildNeverClaimsUpdate(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	cfg := testCfg()
+	cfg.UpdateCheckEnabled = true
+	st := updatecheck.NewState()
+	st.Set("9.9.9", "https://github.com/drzero42/nexorious/releases/tag/v9.9.9")
+	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "dev", "unknown", st)
+
+	body := getVersion(t, e)
+	if body["update_available"] != false {
+		t.Errorf("update_available = %v, want false for dev build", body["update_available"])
+	}
+	if body["latest_version"] != "" || body["release_url"] != "" {
+		t.Errorf("latest_version/release_url = %v/%v, want empty", body["latest_version"], body["release_url"])
+	}
+}
+
+func TestVersionEndpoint_CheckDisabled(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	cfg := testCfg()
+	cfg.UpdateCheckEnabled = false
+	st := updatecheck.NewState()
+	st.Set("9.9.9", "https://github.com/drzero42/nexorious/releases/tag/v9.9.9")
+	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "0.1.0", "abc1234", st)
+
+	body := getVersion(t, e)
+	if body["update_check_enabled"] != false {
+		t.Errorf("update_check_enabled = %v, want false", body["update_check_enabled"])
+	}
+	if body["update_available"] != false {
+		t.Errorf("update_available = %v, want false when disabled", body["update_available"])
+	}
+	if body["latest_version"] != "" || body["release_url"] != "" {
+		t.Errorf("latest_version/release_url = %v/%v, want empty", body["latest_version"], body["release_url"])
+	}
+}
+
+func TestVersionEndpoint_NilStateIsSafe(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	cfg := testCfg()
+	cfg.UpdateCheckEnabled = true
+	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "0.1.0", "abc1234", nil)
+
+	body := getVersion(t, e)
+	if body["update_available"] != false {
+		t.Errorf("update_available = %v, want false with nil state", body["update_available"])
+	}
+}
+
+func TestVersionEndpoint_EmptyStateNoUpdate(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	cfg := testCfg()
+	cfg.UpdateCheckEnabled = true
+	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "0.1.0", "abc1234", updatecheck.NewState())
+
+	body := getVersion(t, e)
+	if body["update_available"] != false {
+		t.Errorf("update_available = %v, want false with empty state", body["update_available"])
+	}
+	if body["latest_version"] != "" || body["release_url"] != "" {
+		t.Errorf("latest_version/release_url = %v/%v, want empty", body["latest_version"], body["release_url"])
 	}
 }

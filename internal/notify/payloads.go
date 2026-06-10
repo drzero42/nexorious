@@ -93,3 +93,11 @@ type MaintPayload struct {
 	Rescued int    `json:"rescued,omitempty"`
 	Failed  int    `json:"failed,omitempty"`
 }
+
+// VersionAvailablePayload announces that a newer release than the running
+// build is available on GitHub.
+type VersionAvailablePayload struct {
+	CurrentVersion   string `json:"current_version"`
+	AvailableVersion string `json:"available_version"`
+	ReleaseURL       string `json:"release_url"`
+}

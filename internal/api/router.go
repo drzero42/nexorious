@@ -30,6 +30,7 @@ import (
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
+	"github.com/drzero42/nexorious/internal/services/updatecheck"
 	"github.com/drzero42/nexorious/ui"
 )
 
@@ -45,7 +46,7 @@ func appStateJSON(c *echo.Context, appState string) error {
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
+func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, updateState *updatecheck.State, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
 	e := echo.New()
 
 	var rc *river.Client[pgx.Tx]
@@ -144,12 +145,12 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 	}
 
 	mh := migrate.NewHandler(migrator, db)
-	registerRoutes(e, encrypter, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, version, commit, rc)
+	registerRoutes(e, encrypter, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, version, commit, updateState, rc)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, riverClient *river.Client[pgx.Tx]) {
+func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, updateState *updatecheck.State, riverClient *river.Client[pgx.Tx]) {
 	// Migration routes (bypass gate 2 via prefix)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
@@ -177,10 +178,22 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 	// Version — public, not cached (changes on every deploy)
 	e.GET("/api/version", func(c *echo.Context) error {
 		c.Response().Header().Set("Cache-Control", "no-store")
-		return c.JSON(http.StatusOK, map[string]string{
-			"version": version,
-			"commit":  commit,
-		})
+		resp := map[string]any{
+			"version":              version,
+			"commit":               commit,
+			"update_check_enabled": cfg.UpdateCheckEnabled,
+			"update_available":     false,
+			"latest_version":       "",
+			"release_url":          "",
+		}
+		if cfg.UpdateCheckEnabled && updateState != nil {
+			if latest, releaseURL := updateState.Latest(); updatecheck.UpdateAvailable(version, latest) {
+				resp["update_available"] = true
+				resp["latest_version"] = latest
+				resp["release_url"] = releaseURL
+			}
+		}
+		return c.JSON(http.StatusOK, resp)
 	})
 
 	// DB-error route (bypassed by Gate 1)

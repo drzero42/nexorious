@@ -104,7 +104,7 @@ func newTestEchoConfiguredIGDB(t *testing.T, db *bun.DB, cfg *config.Config, igd
 	t.Helper()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	rc := newTestRiverClient(t)
-	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, nil, "dev", "unknown", rc)
+	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, nil, "dev", "unknown", nil, rc)
 }
 
 // canonicalDarkadiaCSV returns a minimal valid Darkadia CSV with the given
