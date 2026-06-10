@@ -179,7 +179,7 @@ All variables, grouped by area. Anything without a default is unset unless you p
 | `DEBUG` | `false` | Extra debug behaviour; leave off in production. |
 | `CORS_ORIGINS` | — | Comma-separated allowed origins. Only needed for split-origin development; production is same-origin and needs nothing here. |
 | `WORKER_COUNT` | `4` | How many background jobs (syncs, imports, metadata refreshes) run at once. |
-| `UPDATE_CHECK_ENABLED` | `true` | Periodically check GitHub for a newer release. When one exists, the sidebar shows an update notice and admins receive a one-time notification per release. The check runs server-side (one request to the GitHub API every 6 hours); set `false` to disable it entirely. |
+| `UPDATE_CHECK_ENABLED` | `true` | Periodically check GitHub for a newer release. When one exists, the sidebar shows an update notice and admins receive a one-time notification per release. The check runs server-side (one request to the GitHub API every 6 hours); set `false` to disable it entirely, which also disables the check performed by the `version` subcommand (one-off skips: `nexorious version --no-check`). |
 
 **Scheduling & retention**
 
