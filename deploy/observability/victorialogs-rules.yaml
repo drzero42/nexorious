@@ -66,7 +66,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Repeated credential/auth failures"
+          summary: "Repeated credential/auth failures for source '{{ index .Labels \"source\" }}'"
           description: "{{ $value }} auth-category failures for source '{{ index .Labels \"source\" }}' in 15m — stored credentials are likely expired or invalid."
 
   - name: nexorious-sync-jobs
@@ -79,7 +79,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Elevated sync / external-API errors"
+          summary: "Elevated sync / external-API errors for source '{{ index .Labels \"source\" }}'"
           description: "{{ $value }} external_api failures for source '{{ index .Labels \"source\" }}' in 15m."
 
       - alert: NexoriousStuckJobs
