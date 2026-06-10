@@ -43,7 +43,7 @@ func (w *NotifyWorker) Work(ctx context.Context, job *river.Job[NotifyArgs]) err
 	for _, userID := range recipients {
 		channels, err := w.loadChannels(ctx, userID)
 		if err != nil {
-			slog.WarnContext(ctx, "notify: load channels", logging.KeyUserID, userID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+			slog.WarnContext(ctx, "notify: load channels", logging.KeyUserID, userID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			continue
 		}
 		for _, ch := range channels {

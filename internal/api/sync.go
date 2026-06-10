@@ -336,7 +336,7 @@ func (h *SyncHandler) loadConnectionStatus(ctx context.Context, userID, sf strin
 	}
 	plain, err := h.encrypter.Decrypt(*row.StorefrontCredentials)
 	if err != nil {
-		slog.WarnContext(ctx, "sync: credentials decrypt failed", "storefront", sf, logging.KeyUserID, userID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.WarnContext(ctx, "sync: credentials decrypt failed", "storefront", sf, logging.KeyUserID, userID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 		return connectionStatus{Connected: true, CredentialsError: true}, nil
 	}
 	return connectionStatus{Connected: true, CredentialsError: row.CredentialsError, Plaintext: plain}, nil

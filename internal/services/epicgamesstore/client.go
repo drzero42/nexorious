@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // Client invokes the Legendary CLI as a subprocess to manage an Epic Games
@@ -104,7 +106,7 @@ func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]E
 		return fmt.Errorf("epic: parse legendary list output: %w", err)
 	}
 
-	slog.InfoContext(ctx, "epic: library parsed", "user_id", userID, "after_dlc_filter", len(entries))
+	slog.InfoContext(ctx, "epic: library parsed", logging.KeyUserID, userID, "after_dlc_filter", len(entries))
 
 	if len(entries) == 0 {
 		return nil

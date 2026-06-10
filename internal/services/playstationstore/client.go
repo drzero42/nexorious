@@ -271,9 +271,11 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body) //nolint:errcheck // body read only to enrich the error log line
+			// Bounded snippet only — never log a full response body (it can be
+			// large and may echo account/PII material).
+			snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 256)) //nolint:errcheck // snippet read only to enrich the error log line
 			slog.WarnContext(ctx, "psn: graphql non-200",
-				logging.KeyStatus, resp.StatusCode, "body", string(body),
+				logging.KeyStatus, resp.StatusCode, "body_snippet", string(snippet),
 				logging.Cat(logging.CategoryExternalAPI))
 			return nil, fmt.Errorf("psn: graphql HTTP %d", resp.StatusCode)
 		}

@@ -63,9 +63,11 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 		LogMethod:    true,
 		LogLatency:   true,
 		LogRoutePath: true,
-		LogRequestID: true,
 		HandleError:  true,
 		LogValuesFunc: func(c *echo.Context, v middleware.RequestLoggerValues) error {
+			// request_id (and user_id on authenticated routes) are injected from
+			// the request context by logging.ContextHandler — do NOT pass them as
+			// explicit attrs here or the JSON line carries the key twice.
 			ctx := c.Request().Context()
 			attrs := []any{
 				"method", v.Method,
@@ -73,10 +75,6 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 				logging.KeyRoute, v.RoutePath,
 				logging.KeyStatus, v.Status,
 				logging.KeyLatency, v.Latency,
-				logging.KeyRequestID, v.RequestID,
-			}
-			if uid := auth.UserIDFromContext(c); uid != "" {
-				attrs = append(attrs, logging.KeyUserID, uid)
 			}
 			if v.Error != nil {
 				slog.ErrorContext(ctx, "request", append(attrs, logging.KeyErr, v.Error)...)
