@@ -27,8 +27,8 @@ func WithUserID(ctx context.Context, id string) context.Context {
 }
 
 func requestID(ctx context.Context) string { s, _ := ctx.Value(requestIDKey).(string); return s }
-func jobID(ctx context.Context) string     { s, _ := ctx.Value(jobIDKey).(string); return s }  //nolint:unused // used in handler.go (Task 3)
-func userID(ctx context.Context) string    { s, _ := ctx.Value(userIDKey).(string); return s } //nolint:unused // used in handler.go (Task 3)
+func jobID(ctx context.Context) string     { s, _ := ctx.Value(jobIDKey).(string); return s }
+func userID(ctx context.Context) string    { s, _ := ctx.Value(userIDKey).(string); return s }
 
 // RequestIDForTest exposes the ctx-carried request id for tests in other packages.
 func RequestIDForTest(ctx context.Context) string { return requestID(ctx) }
