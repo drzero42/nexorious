@@ -302,7 +302,7 @@ func (h *SyncHandler) disconnectStorefront(c *echo.Context, sf string) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	if err := h.clearStorefrontCredentials(context.Background(), userID, sf); err != nil {
-		slog.ErrorContext(c.Request().Context(), "sync: disconnect failed", logging.KeyErr, err, "storefront", sf, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(c.Request().Context(), "sync: disconnect failed", logging.KeyErr, err, logging.KeySource, sf, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect "+sf)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -336,7 +336,7 @@ func (h *SyncHandler) loadConnectionStatus(ctx context.Context, userID, sf strin
 	}
 	plain, err := h.encrypter.Decrypt(*row.StorefrontCredentials)
 	if err != nil {
-		slog.WarnContext(ctx, "sync: credentials decrypt failed", "storefront", sf, logging.KeyUserID, userID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+		slog.WarnContext(ctx, "sync: credentials decrypt failed", logging.KeySource, sf, logging.KeyUserID, userID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 		return connectionStatus{Connected: true, CredentialsError: true}, nil
 	}
 	return connectionStatus{Connected: true, CredentialsError: row.CredentialsError, Plaintext: plain}, nil
@@ -549,7 +549,7 @@ func (h *SyncHandler) HandleTriggerSync(c *echo.Context) error {
 		return e
 	})
 	if txErr != nil {
-		slog.ErrorContext(c.Request().Context(), "sync: create job", logging.KeyErr, txErr, "storefront", sf, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(c.Request().Context(), "sync: create job", logging.KeyErr, txErr, logging.KeySource, sf, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job")
 	}
 	if duplicate {

@@ -55,6 +55,7 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 		rc = riverClient[0]
 	}
 
+	e.Use(PanicLogger())
 	e.Use(middleware.Recover())
 	e.Use(RequestIDMiddleware())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{

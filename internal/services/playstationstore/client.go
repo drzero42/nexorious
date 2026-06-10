@@ -461,6 +461,7 @@ func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize in
 		}
 		if err := psnClient.AuthWithNPSSO(ctx, npssoToken); err != nil {
 			slog.WarnContext(ctx, "psn: auth failed",
+				logging.KeySource, "playstation-store",
 				logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 			return ErrInvalidNPSSOToken
 		}

@@ -12,6 +12,7 @@ const (
 	CategoryValidation  Category = "validation"
 	CategoryAuth        Category = "auth"
 	CategoryConfig      Category = "config"
+	CategoryPanic       Category = "panic"
 )
 
 // Cat returns the slog attribute for an error category.

@@ -242,8 +242,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
 		Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware(quietJobKinds...)},
+		ErrorHandler: &logging.WorkerErrorHandler{},
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "serve: river client init failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return fmt.Errorf("river.NewClient: %w", err)
 	}
 	notify.SetRiverClient(riverClient)
@@ -339,8 +341,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
 				Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware(quietJobKinds...)},
+				ErrorHandler: &logging.WorkerErrorHandler{},
 			})
 			if err != nil {
+				slog.ErrorContext(ctx, "serve: river client init failed (rebuild)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				return fmt.Errorf("RebuildServices: river.NewClient: %w", err)
 			}
 
@@ -483,7 +487,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: steam decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+				slog.Warn("adapter factory: steam decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "steam", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -501,7 +505,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: psn decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+				slog.Warn("adapter factory: psn decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "playstation-store", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -518,7 +522,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: gog decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+				slog.Warn("adapter factory: gog decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "gog", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -552,7 +556,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: epic decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+				slog.Warn("adapter factory: epic decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var snapshot map[string]string
@@ -579,7 +583,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: humble-bundle decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+				slog.Warn("adapter factory: humble-bundle decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {

@@ -313,7 +313,7 @@ func (w *StoreLinkRefreshItemWorker) ProcessItem(ctx context.Context, jobItemID 
 			// Shutdown mid-loop: stop now. The deferred finalizer marks the item
 			// failed; the next incremental refresh re-resolves the rows still null.
 			slog.InfoContext(ctx, "store_link_refresh: interrupted mid-group, remaining rows resolve on next refresh",
-				"storefront", meta.Storefront, "item_id", jobItemID)
+				logging.KeySource, meta.Storefront, "item_id", jobItemID)
 			return nil
 		}
 		var sm map[string]string

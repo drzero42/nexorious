@@ -214,6 +214,7 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 
 	if err := mg.bunMig.Lock(ctx); err != nil {
 		wrapped := fmt.Errorf("migrate: acquire lock: %w", err)
+		slog.ErrorContext(ctx, "migrate: acquire lock failed", logging.KeyErr, wrapped, logging.Cat(logging.CategoryDB))
 		mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", wrapped))
 		mg.TransitionToFailed(wrapped)
 		close(ch)
@@ -224,6 +225,7 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 	group, err := mg.bunMig.Migrate(ctx)
 	if err != nil {
 		wrapped := fmt.Errorf("migrate: bun: %w", err)
+		slog.ErrorContext(ctx, "migrate: bun migration failed", logging.KeyErr, wrapped, logging.Cat(logging.CategoryDB))
 		mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", err))
 		mg.TransitionToFailed(wrapped)
 		close(ch)
@@ -238,6 +240,7 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 	riverMig, err := rivermigrate.New(riverdatabasesql.New(mg.db.DB), nil)
 	if err != nil {
 		wrapped := fmt.Errorf("migrate: River migrator: %w", err)
+		slog.ErrorContext(ctx, "migrate: River migrator setup failed", logging.KeyErr, wrapped, logging.Cat(logging.CategoryDB))
 		mg.sendLog(ch, fmt.Sprintf("River migration setup failed: %v\n", err))
 		mg.TransitionToFailed(wrapped)
 		close(ch)
@@ -246,6 +249,7 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 	riverRes, err := riverMig.Migrate(ctx, rivermigrate.DirectionUp, nil)
 	if err != nil {
 		wrapped := fmt.Errorf("migrate: River: %w", err)
+		slog.ErrorContext(ctx, "migrate: River migration failed", logging.KeyErr, wrapped, logging.Cat(logging.CategoryDB))
 		mg.sendLog(ch, fmt.Sprintf("River migration failed: %v\n", err))
 		mg.TransitionToFailed(wrapped)
 		close(ch)
@@ -346,7 +350,7 @@ func (mg *Migrator) StartDBProbe(ctx context.Context, db *bun.DB, onRecovery fun
 					mg.prevState.Store(mg.state.Load())
 					mg.state.Store(int32(AppStateDBUnavailable))
 					mg.lastUnavailableAt.Store(time.Now())
-					slog.WarnContext(ctx, "database unavailable", logging.KeyErr, err)
+					slog.WarnContext(ctx, "database unavailable", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				}
 			} else {
 				if AppState(mg.state.Load()) == AppStateDBUnavailable {
