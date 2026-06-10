@@ -21,6 +21,7 @@ import (
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/crypto"
+	"github.com/drzero42/nexorious/internal/logging"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	migrate "github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/notify"
@@ -55,17 +56,32 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 	}
 
 	e.Use(middleware.Recover())
+	e.Use(RequestIDMiddleware())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		LogStatus:   true,
-		LogURI:      true,
-		LogMethod:   true,
-		LogLatency:  true,
-		HandleError: true,
+		LogStatus:    true,
+		LogURI:       true,
+		LogMethod:    true,
+		LogLatency:   true,
+		LogRoutePath: true,
+		LogRequestID: true,
+		HandleError:  true,
 		LogValuesFunc: func(c *echo.Context, v middleware.RequestLoggerValues) error {
+			ctx := c.Request().Context()
+			attrs := []any{
+				"method", v.Method,
+				"uri", v.URI,
+				logging.KeyRoute, v.RoutePath,
+				logging.KeyStatus, v.Status,
+				logging.KeyLatency, v.Latency,
+				logging.KeyRequestID, v.RequestID,
+			}
+			if uid := auth.UserIDFromContext(c); uid != "" {
+				attrs = append(attrs, logging.KeyUserID, uid)
+			}
 			if v.Error != nil {
-				slog.Error("request", "method", v.Method, "uri", v.URI, "status", v.Status, "latency", v.Latency, "err", v.Error)
+				slog.ErrorContext(ctx, "request", append(attrs, logging.KeyErr, v.Error)...)
 			} else {
-				slog.Info("request", "method", v.Method, "uri", v.URI, "status", v.Status, "latency", v.Latency)
+				slog.InfoContext(ctx, "request", attrs...)
 			}
 			return nil
 		},
