@@ -190,6 +190,53 @@
     "persistence": {
       "type": "object",
       "additionalProperties": true
+    },
+    "alerts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opt-in log-based alert rules (Loki ruler ConfigMap + VictoriaLogs VMRule). Default off.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Master switch. Must be true for any alert object to render."
+        },
+        "loki": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Loki ruler ConfigMap delivery.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render the Loki ruler ConfigMap (requires alerts.enabled)."
+            },
+            "ruleLabel": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Discovery label the Loki ruler sidecar watches.",
+              "properties": {
+                "key": { "type": "string" },
+                "value": { "type": "string" }
+              }
+            }
+          }
+        },
+        "victoriaLogs": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "VictoriaLogs VMRule delivery (VictoriaMetrics Operator).",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render the VMRule (requires alerts.enabled and the Operator CRDs)."
+            },
+            "ruleLabels": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Extra labels on the VMRule so the target VMAlert's ruleSelector matches it."
+            }
+          }
+        }
+      }
     }
   }
 }
