@@ -202,7 +202,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build image (PR — amd64, no push)
+      - name: Build image (PR — amd64, load for smoke run)
         if: github.event_name != 'release'
         uses: docker/build-push-action@v7
         with:
@@ -211,7 +211,16 @@ jobs:
             binaries=./ci-binaries
           target: runtime-ci
           platforms: linux/amd64
+          load: true
+          tags: nexorious:pr-test
           push: false
+
+      # Regression guard: actually execute the binary in the built image. The
+      # binary arrives via an artifact round-trip that strips the +x bit; if the
+      # Dockerfile fails to restore it (--chmod), this exits 126 instead of 0.
+      - name: Verify the image binary executes (PR)
+        if: github.event_name != 'release'
+        run: docker run --rm nexorious:pr-test version
 
       - name: Build and push image (release — multi-arch)
         if: github.event_name == 'release'
