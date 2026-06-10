@@ -129,6 +129,38 @@ nexorious:
       key: ""
 
 # =============================================================================
+# Alert rules (opt-in) — log-based alerting for Loki and/or VictoriaLogs
+# =============================================================================
+# Wraps the source-of-truth rules in deploy/observability/ into each backend's
+# canonical object. All default OFF so a base install stays clean. See
+# docs/observability.md for setup and an example Alertmanager route.
+alerts:
+  # -- Master switch. Must be true for ANY alert object to render.
+  enabled: false
+
+  loki:
+    # -- Render the Loki ruler ConfigMap (requires alerts.enabled). Your Loki
+    # -- ruler must run a sidecar (e.g. kiwigrid/k8s-sidecar) that discovers
+    # -- rule ConfigMaps by the label below and loads them into its rule dir.
+    enabled: false
+    # -- Discovery label the ruler sidecar watches. Default matches the common
+    # -- self-configured sidecar convention; the bundled grafana/loki v3 chart
+    # -- uses {key: loki.grafana.com/rule, value: "true"} instead — set to match
+    # -- your sidecar's label/labelValue.
+    ruleLabel:
+      key: "loki_rule"
+      value: "1"
+
+  victoriaLogs:
+    # -- Render the VMRule (requires alerts.enabled and the VictoriaMetrics
+    # -- Operator CRDs). The target VMAlert must point its datasource at
+    # -- VictoriaLogs and select this VMRule (ruleSelector or selectAllByDefault).
+    enabled: false
+    # -- Extra labels on the VMRule so the target VMAlert's ruleSelector matches
+    # -- it. Leave empty if the VMAlert uses selectAllByDefault: true.
+    ruleLabels: {}
+
+# =============================================================================
 # Default Pod options (applied to all controllers unless overridden)
 # =============================================================================
 
