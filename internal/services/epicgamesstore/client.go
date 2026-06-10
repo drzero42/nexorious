@@ -104,7 +104,7 @@ func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]E
 		return fmt.Errorf("epic: parse legendary list output: %w", err)
 	}
 
-	slog.Info("epic: library parsed", "user_id", userID, "after_dlc_filter", len(entries))
+	slog.InfoContext(ctx, "epic: library parsed", "user_id", userID, "after_dlc_filter", len(entries))
 
 	if len(entries) == 0 {
 		return nil

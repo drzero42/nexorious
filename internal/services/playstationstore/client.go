@@ -214,7 +214,7 @@ func (c *Client) fetchPlayHistory(ctx context.Context, accessToken string) (map[
 			}
 		}
 
-		slog.Debug("psn: play history page fetched",
+		slog.DebugContext(ctx, "psn: play history page fetched",
 			"offset", offset, "page_count", len(body.Titles), "total", body.TotalItemCount, "running_total", len(result))
 
 		if offset+limit >= body.TotalItemCount {
@@ -272,7 +272,9 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body) //nolint:errcheck // body read only to enrich the error log line
-			slog.Error("psn: graphql non-200", "status", resp.StatusCode, "body", string(body))
+			slog.WarnContext(ctx, "psn: graphql non-200",
+				logging.KeyStatus, resp.StatusCode, "body", string(body),
+				logging.Cat(logging.CategoryExternalAPI))
 			return nil, fmt.Errorf("psn: graphql HTTP %d", resp.StatusCode)
 		}
 
@@ -313,7 +315,7 @@ func (c *Client) fetchPurchasedGames(ctx context.Context, accessToken string) (m
 			}
 		}
 
-		slog.Debug("psn: purchased games page fetched",
+		slog.DebugContext(ctx, "psn: purchased games page fetched",
 			"start", start, "page_count", len(games), "running_total", len(result))
 
 		if len(games) < size {
@@ -456,7 +458,8 @@ func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize in
 			return fmt.Errorf("psn: failed to create client: %w", err)
 		}
 		if err := psnClient.AuthWithNPSSO(ctx, npssoToken); err != nil {
-			slog.Error("psn: auth failed", "err", err)
+			slog.WarnContext(ctx, "psn: auth failed",
+				logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 			return ErrInvalidNPSSOToken
 		}
 		accessToken, _ = psnClient.AccessToken()
@@ -464,25 +467,25 @@ func (c *Client) GetLibrary(ctx context.Context, npssoToken string, batchSize in
 			return fmt.Errorf("psn: access token unavailable after authentication")
 		}
 	}
-	slog.Info("psn: auth succeeded")
+	slog.DebugContext(ctx, "psn: auth succeeded")
 
 	// ── Fetch play history ────────────────────────────────────────────────
 	played, err := c.fetchPlayHistory(ctx, accessToken)
 	if err != nil {
 		return fmt.Errorf("psn: play history: %w", err)
 	}
-	slog.Info("psn: play history fetched", "count", len(played))
+	slog.DebugContext(ctx, "psn: play history fetched", "count", len(played))
 
 	// ── Fetch purchased games ─────────────────────────────────────────────
 	purchased, err := c.fetchPurchasedGames(ctx, accessToken)
 	if err != nil {
 		return err // preserve ErrPSNGraphQLSchemaChanged unwrapped
 	}
-	slog.Info("psn: purchased games fetched", "count", len(purchased))
+	slog.DebugContext(ctx, "psn: purchased games fetched", "count", len(purchased))
 
 	// ── Owned set is authoritative; play history only enriches playtime ───
 	all := applyPlaytimeToOwned(purchased, played)
-	slog.Info("psn: library fetch complete", "total_titles", len(all))
+	slog.DebugContext(ctx, "psn: library fetch complete", "total_titles", len(all))
 
 	// ── Dispatch in batches ───────────────────────────────────────────────
 	for i := 0; i < len(all); i += batchSize {

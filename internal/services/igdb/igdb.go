@@ -243,7 +243,7 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int, platf
 			}
 		}
 		if dropped > 0 {
-			slog.Debug("igdb: post-filter dropped wrong-platform candidates",
+			slog.DebugContext(ctx, "igdb: post-filter dropped wrong-platform candidates",
 				"query", query, "platform_ids", platformIDs, "dropped", dropped, "kept", len(filtered))
 		}
 		candidates = filtered
@@ -263,7 +263,7 @@ func (c *Client) SearchGames(ctx context.Context, query string, limit int, platf
 	// candidates, retry once without the filter. IGDB's platform tagging is
 	// incomplete; legitimate Steam games occasionally lack a PC platform tag.
 	if len(results) == 0 && len(platformIDs) > 0 {
-		slog.Debug("igdb: platform-filtered search returned 0 candidates, retrying unfiltered",
+		slog.DebugContext(ctx, "igdb: platform-filtered search returned 0 candidates, retrying unfiltered",
 			"query", query, "platform_ids", platformIDs)
 		return c.SearchGames(ctx, query, limit, nil)
 	}
