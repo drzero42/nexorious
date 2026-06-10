@@ -212,6 +212,8 @@ func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[Met
 		slog.ErrorContext(ctx, "metadata_refresh_item: load job_item", "id", jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
+	// Correlate every line below (and the IGDB calls it makes) to the parent job.
+	ctx = logging.WithJobID(ctx, item.JobID)
 
 	var sourceMeta metadataRefreshSourceMeta
 	if err := json.Unmarshal(item.SourceMetadata, &sourceMeta); err != nil {

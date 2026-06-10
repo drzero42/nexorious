@@ -266,6 +266,8 @@ func (w *StoreLinkRefreshItemWorker) ProcessItem(ctx context.Context, jobItemID 
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", jobItemID).Scan(ctx); err != nil {
 		return fmt.Errorf("load job_item: %w", err)
 	}
+	// Correlate every line below to the parent job (bookCtx inherits this value).
+	ctx = logging.WithJobID(ctx, item.JobID)
 
 	bookCtx := context.WithoutCancel(ctx)
 	finalized := false

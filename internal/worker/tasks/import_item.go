@@ -102,6 +102,8 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		slog.ErrorContext(ctx, "import_item: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
+	// Correlate every line below to the parent import job.
+	ctx = logging.WithJobID(ctx, item.JobID)
 
 	// Parse game data from source_metadata
 	var wrapper struct {
