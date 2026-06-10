@@ -89,7 +89,7 @@ instead of string literals so keys never drift:
 
 `KeyRequestID`, `KeyJobID`, `KeyRiverJobID`, `KeyJobType`, `KeyUserID`, `KeySource`,
 `KeyOperation`, `KeyExternalGameID`, `KeyDurationMS`, `KeyHost`, `KeyEndpoint`,
-`KeyStatus`, `KeyRoute`, `KeyLatency`, `KeyOutcome`, `KeyCategory`, `KeyErr`.
+`KeyStatus`, `KeyRoute`, `KeyOutcome`, `KeyCategory`, `KeyErr`.
 
 Attributes that have no constant (e.g. `"item_id"`, `"appid"`, `"backup_id"`,
 `"path"`, `"storefront"`) stay as string literals. Add a constant only when a key is
@@ -126,6 +126,30 @@ backup service, or `json.Marshal` of a fixed struct). Never put a category on
   subprocess are not wrapped, so their calls aren't auto-logged.)
 - **River job outcomes** are logged once by `WorkerMiddleware`: `job_type`,
   `outcome` (`completed`/`failed`), `duration_ms`. Don't re-log "job done" yourself.
+  Routine high-frequency kinds (periodic maintenance — see
+  `scheduler.MaintenanceJobKinds()` — plus `prune_events`) are passed to
+  `NewWorkerMiddleware` as *quiet* kinds: their **successful** completion logs at
+  `debug` so it doesn't bury user-initiated job outcomes. Failures always log at
+  `warn`.
+
+## The HTTP access log
+
+One line per request, emitted by the Echo `RequestLogger` (`internal/api/router.go`),
+keyed `method`, `uri`, `route` (the matched pattern, low cardinality), `status`,
+`duration_ms`, plus `request_id`/`user_id` injected from ctx. Its **level is chosen by
+status and route** (`requestLogLevel`, `internal/api/request_log_level.go`):
+
+| Condition                                   | Level   |
+|---------------------------------------------|---------|
+| `status >= 500` (or handler error)          | `error` |
+| `status >= 400`                             | `warn`  |
+| successful asset/SPA/poll route (`isQuietRequestRoute`) | `debug` |
+| everything else (meaningful API traffic)    | `info`  |
+
+Quiet routes are static assets (`/static/*`, `/logos/*`, the SPA shell `/*`,
+`/static/app.css`) and the timer-driven UI poll endpoints
+(`/api/jobs/pending-review-count`, `/api/jobs/status/:job_type`). Add a route here when
+it generates high-volume, no-signal access lines.
 
 ## Secrets and PII
 
@@ -135,8 +159,10 @@ Never log a credential or PII value. Specifically:
   DB encryption key, or `DATABASE_URL` (it contains a password). Log the **error** and
   a non-sensitive identifier (`user_id`, `username`, `storefront`) — never the secret.
 - Never log full request or response bodies, or `Authorization`/`Cookie` headers. The
-  Echo `RequestLogger` emits only `request_id`, `route`, `status`, `latency`, `method`,
-  `uri`, and `user_id` (test-asserted to exclude headers/bodies).
+  Echo `RequestLogger` emits only `request_id`, `route`, `status`, `duration_ms`,
+  `method`, `uri`, and `user_id` (test-asserted to exclude headers/bodies). When a
+  bounded snippet of an upstream error body is genuinely useful, cap it (e.g.
+  `io.LimitReader(body, 256)`) — never log the whole body.
 - The logging `RoundTripper` strips the URL query string before logging — this both
   bounds cardinality and prevents leaking secrets that ride in the query (notably the
   Steam API key, `...?key=...`). This is test-asserted.

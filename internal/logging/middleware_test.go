@@ -67,4 +67,36 @@ func TestWorkerMiddleware_Failure(t *testing.T) {
 	if m[KeyOutcome] != "failed" {
 		t.Errorf("outcome = %v, want failed", m[KeyOutcome])
 	}
+	if m["level"] != "WARN" {
+		t.Errorf("level = %v, want WARN on failure", m["level"])
+	}
+}
+
+func TestWorkerMiddleware_QuietKindLogsDebug(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(NewContextHandler(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))))
+	defer slog.SetDefault(prev)
+
+	mw := NewWorkerMiddleware("cleanup_old_jobs")
+
+	// A quiet kind that succeeds logs its outcome at Debug.
+	err := mw.Work(context.Background(), &rivertype.JobRow{ID: 1, Kind: "cleanup_old_jobs"},
+		func(ctx context.Context) error { return nil })
+	if err != nil {
+		t.Fatalf("Work returned error: %v", err)
+	}
+	if m := decode(t, &buf); m["level"] != "DEBUG" || m[KeyOutcome] != "completed" {
+		t.Errorf("quiet success: level=%v outcome=%v, want DEBUG/completed", m["level"], m[KeyOutcome])
+	}
+
+	// A non-quiet kind still logs success at Info.
+	buf.Reset()
+	if err := mw.Work(context.Background(), &rivertype.JobRow{ID: 2, Kind: "dispatch_sync"},
+		func(ctx context.Context) error { return nil }); err != nil {
+		t.Fatalf("Work returned error: %v", err)
+	}
+	if m := decode(t, &buf); m["level"] != "INFO" {
+		t.Errorf("non-quiet success: level=%v, want INFO", m["level"])
+	}
 }

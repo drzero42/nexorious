@@ -19,7 +19,6 @@ const (
 	KeyEndpoint       = "endpoint"
 	KeyStatus         = "status"
 	KeyRoute          = "route"
-	KeyLatency        = "latency"
 	KeyOutcome        = "outcome"
 	KeyCategory       = "category"
 	KeyErr            = "err"

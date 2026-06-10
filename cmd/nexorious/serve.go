@@ -230,11 +230,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Enabled:        cfg.UpdateCheckEnabled,
 	})
 
+	// Quiet job kinds: routine periodic-maintenance jobs whose successful
+	// completion logs at Debug (failures still Warn) so they don't drown out
+	// user-initiated job outcomes.
+	quietJobKinds := append(scheduler.MaintenanceJobKinds(), notify.PruneEventsArgs{}.Kind())
+
 	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
 		Workers:      workers,
 		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
-		Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware()},
+		Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware(quietJobKinds...)},
 	})
 	if err != nil {
 		return fmt.Errorf("river.NewClient: %w", err)
@@ -331,7 +336,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				Workers:      newWorkers,
 				Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
-				Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware()},
+				Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware(quietJobKinds...)},
 			})
 			if err != nil {
 				return fmt.Errorf("RebuildServices: river.NewClient: %w", err)

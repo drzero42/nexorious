@@ -268,6 +268,24 @@ func mustCron(expr string) cron.Schedule {
 	return s
 }
 
+// MaintenanceJobKinds returns the River job kinds for periodic, system-scheduled
+// maintenance jobs. Their routine successful completions are logged at Debug by
+// logging.WorkerMiddleware so they don't drown out user-initiated job outcomes.
+func MaintenanceJobKinds() []string {
+	return []string{
+		CheckForUpdatesArgs{}.Kind(),
+		CheckScheduledBackupArgs{}.Kind(),
+		CleanupOldJobsArgs{}.Kind(),
+		CleanupExportsArgs{}.Kind(),
+		CleanupUnreferencedGamesArgs{}.Kind(),
+		CleanupExpiredSessionsArgs{}.Kind(),
+		RescueOrphanedPendingItemsArgs{}.Kind(),
+		CleanupStaleJobsArgs{}.Kind(),
+		CheckPendingSyncsArgs{}.Kind(),
+		CleanupSyncChangesArgs{}.Kind(),
+	}
+}
+
 // BuildPeriodicJobs returns the list of River periodic jobs for the scheduler.
 // staleThreshold is passed from config (already parsed).
 func BuildPeriodicJobs(cfg *config.Config, staleThreshold time.Duration) []*river.PeriodicJob {

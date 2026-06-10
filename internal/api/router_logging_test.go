@@ -27,10 +27,10 @@ func buildLoggingEcho(buf *bytes.Buffer) *echo.Echo {
 		LogStatus: true, LogURI: true, LogMethod: true, LogLatency: true,
 		LogRoutePath: true, HandleError: true,
 		LogValuesFunc: func(c *echo.Context, v middleware.RequestLoggerValues) error {
-			slog.InfoContext(c.Request().Context(), "request",
+			slog.Log(c.Request().Context(), requestLogLevel(v.Status, v.RoutePath), "request",
 				"method", v.Method, "uri", v.URI,
 				logging.KeyRoute, v.RoutePath, logging.KeyStatus, v.Status,
-				logging.KeyLatency, v.Latency)
+				logging.KeyDurationMS, v.Latency.Milliseconds())
 			return nil
 		},
 	}))
