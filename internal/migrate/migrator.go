@@ -15,6 +15,7 @@ import (
 	bunmigrate "github.com/uptrace/bun/migrate"
 
 	"github.com/drzero42/nexorious/internal/db/migrations"
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 type AppState int32
@@ -345,13 +346,13 @@ func (mg *Migrator) StartDBProbe(ctx context.Context, db *bun.DB, onRecovery fun
 					mg.prevState.Store(mg.state.Load())
 					mg.state.Store(int32(AppStateDBUnavailable))
 					mg.lastUnavailableAt.Store(time.Now())
-					slog.Warn("database unavailable", "err", err)
+					slog.WarnContext(ctx, "database unavailable", logging.KeyErr, err)
 				}
 			} else {
 				if AppState(mg.state.Load()) == AppStateDBUnavailable {
 					prev := AppState(mg.prevState.Load())
 					if err := mg.recoverFromUnavailable(ctx, db, prev, onRecovery); err != nil {
-						slog.Error("db probe: recovery failed, remaining in DBUnavailable", "err", err)
+						slog.ErrorContext(ctx, "db probe: recovery failed, remaining in DBUnavailable", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 					}
 				}
 			}
@@ -365,13 +366,13 @@ func (mg *Migrator) recoverFromUnavailable(ctx context.Context, db *bun.DB, prev
 		if err := onRecovery(ctx); err != nil {
 			return err
 		}
-		slog.Info("db probe: recovery complete (first init)")
+		slog.InfoContext(ctx, "db probe: recovery complete (first init)")
 
 	case AppStateMigrating:
 		if err := mg.determineState(); err != nil {
 			return err
 		}
-		slog.Info("db probe: recovery complete (re-determined state after migrating)", "state", mg.State())
+		slog.InfoContext(ctx, "db probe: recovery complete (re-determined state after migrating)", "state", mg.State())
 
 	default:
 		mg.lastError.Store("") // clear any failure inherited via DBUnavailable
@@ -387,7 +388,7 @@ func (mg *Migrator) recoverFromUnavailable(ctx context.Context, db *bun.DB, prev
 				return fmt.Errorf("re-check needsSetup: %w", err)
 			}
 		}
-		slog.Info("db probe: recovery complete (re-determined state)", "state", mg.State())
+		slog.InfoContext(ctx, "db probe: recovery complete (re-determined state)", "state", mg.State())
 	}
 	return nil
 }
