@@ -32,3 +32,25 @@ func TestUpdateAvailable(t *testing.T) {
 		})
 	}
 }
+
+func TestIsValidVersion(t *testing.T) {
+	cases := []struct {
+		name string
+		v    string
+		want bool
+	}{
+		{"plain semver", "0.9.0", true},
+		{"v-prefixed", "v0.9.0", true},
+		{"prerelease", "1.2.3-rc1", true},
+		{"dev build", "dev", false},
+		{"empty", "", false},
+		{"garbage", "not-a-version", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsValidVersion(tc.v); got != tc.want {
+				t.Errorf("IsValidVersion(%q) = %v, want %v", tc.v, got, tc.want)
+			}
+		})
+	}
+}

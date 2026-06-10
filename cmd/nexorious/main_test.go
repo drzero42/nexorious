@@ -122,7 +122,7 @@ func TestVersionCmd_PrintsBuildVersion(t *testing.T) {
 	var buf bytes.Buffer
 	root.SetOut(&buf)
 	root.SetErr(&buf)
-	root.SetArgs([]string{"version"})
+	root.SetArgs([]string{"version", "--no-check"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("execute version: %v", err)
