@@ -201,7 +201,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 
 	// Fetch library; upsert external_games + platforms; insert job_items;
 	//    enqueue Stage 2 (IGDBMatch) per batch as each batch completes.
-	slog.InfoContext(ctx, "dispatch_sync: starting library fetch", logging.KeyUserID, p.UserID, "storefront", p.Storefront)
+	slog.InfoContext(ctx, "dispatch_sync: starting library fetch", logging.KeyUserID, p.UserID, logging.KeySource, p.Storefront)
 	totalProcessed := 0
 	if err := adapter.GetLibrary(ctx, 10, func(batch []ExternalGameEntry) error {
 		var batchItemIDs []string
@@ -255,7 +255,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
 			return nil
 		}
-		slog.ErrorContext(ctx, "dispatch_sync: library fetch failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+		slog.ErrorContext(ctx, "dispatch_sync: library fetch failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 		failSyncJob(ctx, w.DB, p.JobID, err.Error())
 		return nil
 	}
@@ -368,7 +368,7 @@ func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, 
 		`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 		p.UserID, p.Storefront,
 	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: flag credentials_error failed", logging.KeyErr, err, logging.KeyUserID, p.UserID, "storefront", p.Storefront, logging.Cat(logging.CategoryDB))
+		slog.WarnContext(ctx, "dispatch_sync: flag credentials_error failed", logging.KeyErr, err, logging.KeyUserID, p.UserID, logging.KeySource, p.Storefront, logging.Cat(logging.CategoryDB))
 	}
 
 	if priorErr {
@@ -468,7 +468,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 	slog.DebugContext(ctx, "igdb_match: processing",
 		"item_id", p.JobItemID,
 		"title", eg.Title,
-		"storefront", eg.Storefront,
+		logging.KeySource, eg.Storefront,
 		logging.KeyExternalGameID, eg.ID,
 		"attempt", job.Attempt,
 	)

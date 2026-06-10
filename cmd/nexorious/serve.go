@@ -487,7 +487,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: steam decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+				slog.Warn("adapter factory: steam decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "steam", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -505,7 +505,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: psn decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+				slog.Warn("adapter factory: psn decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "playstation-store", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -522,7 +522,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: gog decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+				slog.Warn("adapter factory: gog decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "gog", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -556,7 +556,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: epic decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+				slog.Warn("adapter factory: epic decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var snapshot map[string]string
@@ -583,7 +583,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: humble-bundle decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+				slog.Warn("adapter factory: humble-bundle decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
