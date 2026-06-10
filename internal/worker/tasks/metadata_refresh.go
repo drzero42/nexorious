@@ -16,6 +16,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 )
@@ -50,7 +51,7 @@ type MetadataRefreshDispatchWorker struct {
 
 func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job[MetadataRefreshDispatchArgs]) error {
 	if !w.IGDBClient.Configured() {
-		slog.Warn("metadata_refresh_dispatch: IGDB not configured, skipping")
+		slog.WarnContext(ctx, "metadata_refresh_dispatch: IGDB not configured, skipping")
 		return nil
 	}
 
@@ -63,21 +64,21 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 	if handlerOwned {
 		err := w.DB.NewRaw(`SELECT user_id FROM jobs WHERE id = ?`, jobID).Scan(ctx, &ownerID)
 		if errors.Is(err, sql.ErrNoRows) {
-			slog.Warn("metadata_refresh_dispatch: handler job row missing, skipping", "job_id", jobID)
+			slog.WarnContext(ctx, "metadata_refresh_dispatch: handler job row missing, skipping", logging.KeyJobID, jobID)
 			return nil
 		}
 		if err != nil {
-			slog.Error("metadata_refresh_dispatch: load job owner", "err", err)
+			slog.ErrorContext(ctx, "metadata_refresh_dispatch: load job owner", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			return nil
 		}
 	} else {
 		err := w.DB.NewRaw(`SELECT id FROM users WHERE is_admin = true LIMIT 1`).Scan(ctx, &ownerID)
 		if errors.Is(err, sql.ErrNoRows) {
-			slog.Warn("metadata_refresh_dispatch: no admin user found, skipping")
+			slog.WarnContext(ctx, "metadata_refresh_dispatch: no admin user found, skipping")
 			return nil
 		}
 		if err != nil {
-			slog.Error("metadata_refresh_dispatch: query admin user", "err", err)
+			slog.ErrorContext(ctx, "metadata_refresh_dispatch: query admin user", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			return nil
 		}
 
@@ -90,11 +91,11 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 			models.JobTypeMetadataRefresh,
 		).Scan(ctx, &existingJobID)
 		if err == nil {
-			slog.Info("metadata_refresh_dispatch: job already active, skipping", "existing_job_id", existingJobID)
+			slog.InfoContext(ctx, "metadata_refresh_dispatch: job already active, skipping", "existing_job_id", existingJobID)
 			return nil
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
-			slog.Error("metadata_refresh_dispatch: duplicate check", "err", err)
+			slog.ErrorContext(ctx, "metadata_refresh_dispatch: duplicate check", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			return nil
 		}
 
@@ -107,7 +108,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		Title string `bun:"title"`
 	}
 	if err := w.DB.NewRaw(`SELECT id, title FROM games ORDER BY last_updated ASC`).Scan(ctx, &games); err != nil {
-		slog.Error("metadata_refresh_dispatch: query games", "err", err)
+		slog.ErrorContext(ctx, "metadata_refresh_dispatch: query games", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 	if len(games) == 0 {
@@ -150,7 +151,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		return nil
 	})
 	if err != nil {
-		slog.Error("metadata_refresh_dispatch: transaction failed", "err", err)
+		slog.ErrorContext(ctx, "metadata_refresh_dispatch: transaction failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		notify.Emit(ctx, w.DB, notify.EmitParams{
 			Type: notify.TypeAdminMaintFailed, Scope: notify.ScopeAdmin,
 			Payload: notify.MaintPayload{Action: "metadata_refresh_dispatch", Error: err.Error()},
@@ -158,18 +159,18 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		return nil
 	}
 	if skipped {
-		slog.Info("metadata_refresh_dispatch: job already active (in-tx guard), skipping", "job_id", jobID)
+		slog.InfoContext(ctx, "metadata_refresh_dispatch: job already active (in-tx guard), skipping", logging.KeyJobID, jobID)
 		return nil
 	}
 
 	// Enqueue River jobs now that job_items are committed and visible.
 	for _, itemID := range itemIDs {
 		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, MetadataRefreshItemArgs{JobItemID: itemID}); err != nil {
-			slog.Error("metadata_refresh_dispatch: enqueue item failed", "err", err, "job_id", jobID, "item_id", itemID)
+			slog.WarnContext(ctx, "metadata_refresh_dispatch: enqueue item failed", logging.KeyErr, err, logging.KeyJobID, jobID, "item_id", itemID, logging.Cat(logging.CategoryDB))
 		}
 	}
 
-	slog.Info("metadata_refresh_dispatch: job created", "job_id", jobID, "game_count", len(games))
+	slog.InfoContext(ctx, "metadata_refresh_dispatch: job created", logging.KeyJobID, jobID, "game_count", len(games))
 	notify.Emit(ctx, w.DB, notify.EmitParams{
 		Type: notify.TypeAdminMaintCompleted, Scope: notify.ScopeAdmin,
 		Payload: notify.MaintPayload{Action: "metadata_refresh_dispatch", Count: len(games)},
@@ -208,7 +209,7 @@ func (w *MetadataRefreshItemWorker) Work(ctx context.Context, job *river.Job[Met
 
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", jobItemID).Scan(ctx); err != nil {
-		slog.Error("metadata_refresh_item: load job_item", "id", jobItemID, "err", err)
+		slog.ErrorContext(ctx, "metadata_refresh_item: load job_item", "id", jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 
@@ -338,13 +339,13 @@ func fetchAndStoreMetadata(ctx context.Context, db *bun.DB, igdbClient *igdbsvc.
 		if game.CoverArtUrl == nil || *game.CoverArtUrl != expectedURLPath {
 			coverURLPath, err := igdbClient.DownloadCoverArt(ctx, md.CoverImageID, storagePath)
 			if err != nil {
-				slog.Warn("metadata fetch: cover art download failed",
-					"game_id", game.ID, "image_id", md.CoverImageID, "err", err)
+				slog.WarnContext(ctx, "metadata fetch: cover art download failed",
+					"game_id", game.ID, "image_id", md.CoverImageID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 			} else if coverURLPath != "" {
 				if _, err := db.NewRaw(
 					`UPDATE games SET cover_art_url = ? WHERE id = ?`, coverURLPath, game.ID,
 				).Exec(ctx); err != nil {
-					slog.Error("metadata fetch: update cover_art_url failed", "err", err, "game_id", game.ID)
+					slog.WarnContext(ctx, "metadata fetch: update cover_art_url failed", logging.KeyErr, err, "game_id", game.ID, logging.Cat(logging.CategoryDB))
 				}
 			}
 		}

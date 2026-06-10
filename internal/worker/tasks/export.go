@@ -16,6 +16,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 )
 
@@ -40,7 +41,7 @@ type ExportJSONWorker struct {
 func (w *ExportJSONWorker) Work(ctx context.Context, job *river.Job[ExportJSONArgs]) error {
 	j, err := loadAndStartJob(ctx, w.DB, job.Args.JobID)
 	if err != nil {
-		slog.Error("export_json: load job", "job_id", job.Args.JobID, "err", err)
+		slog.ErrorContext(ctx, "export_json: load job", logging.KeyJobID, job.Args.JobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 	userGames, err := loadUserGamesWithRelations(ctx, w.DB, j.UserID)
@@ -78,7 +79,7 @@ type ExportCSVWorker struct {
 func (w *ExportCSVWorker) Work(ctx context.Context, job *river.Job[ExportCSVArgs]) error {
 	j, err := loadAndStartJob(ctx, w.DB, job.Args.JobID)
 	if err != nil {
-		slog.Error("export_csv: load job", "job_id", job.Args.JobID, "err", err)
+		slog.ErrorContext(ctx, "export_csv: load job", logging.KeyJobID, job.Args.JobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 	userGames, err := loadUserGamesWithRelations(ctx, w.DB, j.UserID)
@@ -143,7 +144,7 @@ func markJobFailed(ctx context.Context, db *bun.DB, job *models.Job, errMsg stri
 		Column("status", "error_message", "completed_at").
 		Where("id = ?", job.ID).
 		Exec(ctx); err != nil {
-		slog.Error("export: markJobFailed", "job_id", job.ID, "err", err)
+		slog.ErrorContext(ctx, "export: markJobFailed", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeExportFailed, Scope: notify.ScopeUser, ActorUserID: job.UserID,
@@ -162,7 +163,7 @@ func markJobCompleted(ctx context.Context, db *bun.DB, job *models.Job, filePath
 		Column("status", "file_path", "completed_at").
 		Where("id = ?", job.ID).
 		Exec(ctx); err != nil {
-		slog.Error("export: markJobCompleted", "job_id", job.ID, "err", err)
+		slog.ErrorContext(ctx, "export: markJobCompleted", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeExportCompleted, Scope: notify.ScopeUser, ActorUserID: job.UserID,

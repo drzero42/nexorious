@@ -9,6 +9,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // This file holds the shared job_item helpers used by every River worker that
@@ -29,7 +30,7 @@ func execItemUpdate(ctx context.Context, db *bun.DB, item *models.JobItem, logPr
 		Where("id = ?", item.ID).
 		Exec(ctx)
 	if err != nil {
-		slog.Error(logPrefix, "id", item.ID, "err", err)
+		slog.ErrorContext(ctx, logPrefix, "id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 }
 
@@ -77,7 +78,7 @@ func markItemSkipped(ctx context.Context, db *bun.DB, item *models.JobItem, logP
 func countJobItems(ctx context.Context, db *bun.DB, jobID, predicate, logPrefix string) (count int, ok bool) {
 	query := "SELECT COUNT(*) FROM job_items WHERE job_id = ? AND " + predicate
 	if err := db.NewRaw(query, jobID).Scan(ctx, &count); err != nil {
-		slog.Error(logPrefix, "job_id", jobID, "err", err)
+		slog.ErrorContext(ctx, logPrefix, logging.KeyJobID, jobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return 0, false
 	}
 	return count, true
@@ -98,7 +99,7 @@ func finalizeJobCompleted(ctx context.Context, db *bun.DB, jobID, logPrefix stri
 	}
 	res, err := db.NewRaw(query, now, jobID).Exec(ctx)
 	if err != nil {
-		slog.Error(logPrefix, "job_id", jobID, "err", err)
+		slog.ErrorContext(ctx, logPrefix, logging.KeyJobID, jobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return false
 	}
 	n, _ := res.RowsAffected() //nolint:errcheck // advisory RowsAffected

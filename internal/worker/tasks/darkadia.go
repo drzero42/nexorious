@@ -15,6 +15,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/darkadia"
 	"github.com/drzero42/nexorious/internal/services/igdb"
@@ -43,7 +44,7 @@ type DarkadiaMatchWorker struct {
 func (w *DarkadiaMatchWorker) Work(ctx context.Context, job *river.Job[DarkadiaMatchArgs]) error {
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
-		slog.Error("darkadia_match: load job_item", "id", job.Args.JobItemID, "err", err)
+		slog.ErrorContext(ctx, "darkadia_match: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 
@@ -56,7 +57,7 @@ func (w *DarkadiaMatchWorker) Work(ctx context.Context, job *river.Job[DarkadiaM
 	candidates, err := w.IGDBClient.SearchGames(ctx, item.SourceTitle, 10, nil)
 	if err != nil {
 		if job.Attempt >= job.MaxAttempts {
-			slog.Warn("darkadia_match: IGDB failed on final attempt, pending_review", "item_id", item.ID, "err", err)
+			slog.WarnContext(ctx, "darkadia_match: IGDB failed on final attempt, pending_review", "item_id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 			darkadiaMarkPendingReview(ctx, w.DB, &item, nil, nil)
 			DarkadiaCheckJobCompletion(w.DB, item.JobID)
 			return nil
@@ -75,10 +76,10 @@ func (w *DarkadiaMatchWorker) Work(ctx context.Context, job *river.Job[DarkadiaM
 			`UPDATE job_items SET resolved_igdb_id = ?, match_confidence = ? WHERE id = ?`,
 			decision.ResolvedID, decision.BestScore, item.ID,
 		).Exec(ctx); err != nil {
-			slog.Error("darkadia_match: set resolved id", "err", err, "item_id", item.ID)
+			slog.WarnContext(ctx, "darkadia_match: set resolved id", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
 		}
 		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, item.ID, DarkadiaFinalizeArgs{JobItemID: item.ID}); err != nil {
-			slog.Error("darkadia_match: enqueue finalize", "err", err, "item_id", item.ID)
+			slog.WarnContext(ctx, "darkadia_match: enqueue finalize", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
 			DarkadiaCheckJobCompletion(w.DB, item.JobID)
 		}
 		return nil
@@ -100,7 +101,7 @@ func darkadiaMarkPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 	if _, err := db.NewUpdate().Model(item).
 		Column("status", "igdb_candidates", "match_confidence").
 		Where("id = ?", item.ID).Exec(ctx); err != nil {
-		slog.Error("darkadia_match: mark pending_review", "id", item.ID, "err", err)
+		slog.WarnContext(ctx, "darkadia_match: mark pending_review", "id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 }
 
@@ -126,7 +127,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 	bg := context.Background()
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
-		slog.Error("darkadia_finalize: load job_item", "id", job.Args.JobItemID, "err", err)
+		slog.ErrorContext(ctx, "darkadia_finalize: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 	if item.ResolvedIGDBID == nil {
@@ -222,13 +223,13 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 			ugp.HoursPlayed = payload.HoursPlayed
 		}
 		if _, ierr := w.DB.NewInsert().Model(&ugp).Exec(ctx); ierr != nil {
-			slog.Error("darkadia_finalize: insert platform", "err", ierr)
+			slog.WarnContext(ctx, "darkadia_finalize: insert platform", logging.KeyErr, ierr, logging.Cat(logging.CategoryDB))
 		} else {
 			newPlatforms++
 		}
 	}
 	if err := usergame.ClearWishlistOnAcquire(ctx, w.DB, ug.ID); err != nil {
-		slog.Error("darkadia_finalize: clear wishlist on acquire", "err", err, "user_game_id", ug.ID)
+		slog.WarnContext(ctx, "darkadia_finalize: clear wishlist on acquire", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
 	}
 
 	existingTagIDs := map[string]bool{}
@@ -247,7 +248,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 			// Unlike the JSON importer (which fails the item), a tag error here
 			// is logged and skipped: this is a one-off migration where dropping
 			// one tag link is preferable to failing the whole game import.
-			slog.Error("darkadia_finalize: find/create tag", "err", terr, "name", name)
+			slog.WarnContext(ctx, "darkadia_finalize: find/create tag", logging.KeyErr, terr, "name", name, logging.Cat(logging.CategoryDB))
 			continue
 		}
 		if existingTagIDs[tagID] {
@@ -255,7 +256,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 		}
 		ugt := &models.UserGameTag{ID: uuid.NewString(), UserGameID: ug.ID, TagID: tagID, CreatedAt: now}
 		if _, ierr := w.DB.NewInsert().Model(ugt).Exec(ctx); ierr != nil {
-			slog.Error("darkadia_finalize: insert user_game_tag", "err", ierr)
+			slog.WarnContext(ctx, "darkadia_finalize: insert user_game_tag", logging.KeyErr, ierr, logging.Cat(logging.CategoryDB))
 		} else {
 			newTags++
 		}
@@ -274,7 +275,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 		 VALUES (?, ?, ?, NULL, ?, ?, now())`,
 		uuid.NewString(), item.JobID, item.UserID, changeType, item.SourceTitle,
 	).Exec(ctx); err != nil {
-		slog.Error("darkadia_finalize: insert change", "err", err)
+		slog.WarnContext(ctx, "darkadia_finalize: insert change", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	markItemCompletedWithResult(bg, w.DB, &item, map[string]any{

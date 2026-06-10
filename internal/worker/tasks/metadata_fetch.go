@@ -8,6 +8,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/logging"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 )
 
@@ -44,7 +45,7 @@ func (w *MetadataFetchWorker) Work(ctx context.Context, job *river.Job[MetadataF
 
 	// IGDB guard: nothing to do if not configured. Return nil so River does not retry.
 	if w.IGDBClient == nil || !w.IGDBClient.Configured() {
-		slog.Debug("metadata_fetch: IGDB not configured, skipping", "game_id", gameID)
+		slog.DebugContext(ctx, "metadata_fetch: IGDB not configured, skipping", "game_id", gameID)
 		return nil
 	}
 
@@ -52,13 +53,13 @@ func (w *MetadataFetchWorker) Work(ctx context.Context, job *river.Job[MetadataF
 		// Exhausted retries: log at error and stop (return nil). The periodic
 		// bulk refresh will still pick the game up eventually.
 		if job.Attempt >= job.MaxAttempts {
-			slog.Error("metadata_fetch: exhausted retries", "game_id", gameID, "err", err)
+			slog.ErrorContext(ctx, "metadata_fetch: exhausted retries", "game_id", gameID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 			return nil
 		}
 		// Otherwise return the error so River retries with backoff.
 		return fmt.Errorf("metadata_fetch game %d: %w", gameID, err)
 	}
 
-	slog.Debug("metadata_fetch: completed", "game_id", gameID)
+	slog.DebugContext(ctx, "metadata_fetch: completed", "game_id", gameID)
 	return nil
 }
