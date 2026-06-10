@@ -16,6 +16,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/matching"
@@ -97,7 +98,7 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 		uuid.NewString(), p.UserID, p.Storefront, e.ExternalID, e.Title,
 		e.IsSubscription, e.OwnershipStatus, nullableJSON(sourceMetaJSON),
 	).Scan(ctx, &row); err != nil {
-		slog.Error("dispatch_sync: upsert external_game failed", "err", err, "job_id", p.JobID, "external_id", e.ExternalID)
+		slog.WarnContext(ctx, "dispatch_sync: upsert external_game failed", logging.KeyErr, err, "external_id", e.ExternalID, logging.Cat(logging.CategoryDB))
 		return "", false
 	}
 
@@ -114,7 +115,7 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 				UPDATE external_games SET parent_id = ? WHERE id = ? AND parent_id IS NULL`,
 				parentID, row.ID,
 			).Exec(ctx); err != nil {
-				slog.Error("dispatch_sync: set parent_id failed", "err", err, "external_game_id", row.ID)
+				slog.WarnContext(ctx, "dispatch_sync: set parent_id failed", logging.KeyErr, err, logging.KeyExternalGameID, row.ID, logging.Cat(logging.CategoryDB))
 			}
 		}
 	}
@@ -135,7 +136,7 @@ func upsertPlatforms(ctx context.Context, db *bun.DB, egID string, platforms []s
 				hours_played = GREATEST(EXCLUDED.hours_played, external_game_platforms.hours_played)`,
 			uuid.NewString(), egID, platform, hours,
 		).Exec(ctx); err != nil {
-			slog.Error("dispatch_sync: upsert platform failed", "err", err, "external_game_id", egID, "platform", platform)
+			slog.WarnContext(ctx, "dispatch_sync: upsert platform failed", logging.KeyErr, err, logging.KeyExternalGameID, egID, "platform", platform, logging.Cat(logging.CategoryDB))
 		}
 	}
 }
@@ -153,7 +154,7 @@ func insertJobItem(ctx context.Context, db *bun.DB, egID string, e ExternalGameE
 	).Scan(ctx, &row); err != nil {
 		// sql.ErrNoRows means ON CONFLICT fired — item already exists; skip silently.
 		if !errors.Is(err, sql.ErrNoRows) {
-			slog.Error("dispatch_sync: insert job_item failed", "err", err, "job_id", p.JobID, "external_id", e.ExternalID)
+			slog.ErrorContext(ctx, "dispatch_sync: insert job_item failed", logging.KeyErr, err, "external_id", e.ExternalID, logging.Cat(logging.CategoryDB))
 		}
 		return ""
 	}
@@ -162,6 +163,9 @@ func insertJobItem(ctx context.Context, db *bun.DB, egID string, e ExternalGameE
 
 func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSyncArgs]) error {
 	p := job.Args
+	// Seed the application job id so every in-job log line (and the helpers below
+	// that receive this ctx) is correlated to the user-facing jobs.id.
+	ctx = logging.WithJobID(ctx, p.JobID)
 
 	// Mark job as processing.
 	now := time.Now().UTC()
@@ -169,7 +173,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		`UPDATE jobs SET status = 'processing', started_at = ?, dispatch_complete = false WHERE id = ?`,
 		now, p.JobID,
 	).Exec(ctx); err != nil {
-		slog.Error("dispatch_sync: mark processing failed", "err", err, "job_id", p.JobID)
+		slog.WarnContext(ctx, "dispatch_sync: mark processing failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	// Load sync config.
@@ -197,7 +201,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 
 	// Fetch library; upsert external_games + platforms; insert job_items;
 	//    enqueue Stage 2 (IGDBMatch) per batch as each batch completes.
-	slog.Info("dispatch_sync: starting library fetch", "job_id", p.JobID, "user_id", p.UserID, "storefront", p.Storefront)
+	slog.InfoContext(ctx, "dispatch_sync: starting library fetch", logging.KeyUserID, p.UserID, "storefront", p.Storefront)
 	totalProcessed := 0
 	if err := adapter.GetLibrary(ctx, 10, func(batch []ExternalGameEntry) error {
 		var batchItemIDs []string
@@ -220,14 +224,14 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			upsertPlatforms(ctx, w.DB, egID, platforms, e.PlaytimeHours)
 			if isSkipped {
 				skippedInBatch++
-				slog.Debug("dispatch_sync: game is user-skipped, not enqueuing for matching",
-					"job_id", p.JobID, "external_id", e.ExternalID, "title", e.Title)
+				slog.DebugContext(ctx, "dispatch_sync: game is user-skipped, not enqueuing for matching",
+					"external_id", e.ExternalID, "title", e.Title)
 				if _, err := w.DB.NewRaw(
 					`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 					 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
 					uuid.NewString(), p.JobID, p.UserID, egID, e.Title,
 				).Exec(ctx); err != nil {
-					slog.Error("dispatch_sync: insert sync_change (skipped)", "err", err)
+					slog.WarnContext(ctx, "dispatch_sync: insert sync_change (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				}
 			} else {
 				if itemID := insertJobItem(ctx, w.DB, egID, e, p); itemID != "" {
@@ -236,8 +240,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			}
 		}
 		totalProcessed += len(batch)
-		slog.Debug("dispatch_sync: batch complete",
-			"job_id", p.JobID,
+		slog.DebugContext(ctx, "dispatch_sync: batch complete",
 			"batch_size", len(batch),
 			"enqueued_for_matching", len(batchItemIDs),
 			"skipped_by_user", skippedInBatch,
@@ -252,7 +255,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
 			return nil
 		}
-		slog.Error("dispatch_sync: library fetch failed", "job_id", p.JobID, "err", err)
+		slog.ErrorContext(ctx, "dispatch_sync: library fetch failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 		failSyncJob(ctx, w.DB, p.JobID, err.Error())
 		return nil
 	}
@@ -264,7 +267,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			WHERE external_game_id = ? AND platform NOT IN (?)`,
 			egID, bun.List(platforms),
 		).Exec(ctx); err != nil {
-			slog.Error("dispatch_sync: delete stale platforms failed", "err", err, "external_game_id", egID)
+			slog.WarnContext(ctx, "dispatch_sync: delete stale platforms failed", logging.KeyErr, err, logging.KeyExternalGameID, egID, logging.Cat(logging.CategoryDB))
 		}
 	}
 
@@ -273,7 +276,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	if err := w.DB.NewSelect().Model(&available).
 		Where("user_id = ? AND storefront = ? AND is_available = true", p.UserID, p.Storefront).
 		Scan(ctx); err != nil {
-		slog.Error("dispatch_sync: query available games failed", "err", err, "job_id", p.JobID)
+		slog.WarnContext(ctx, "dispatch_sync: query available games failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 	for _, eg := range available {
 		if _, found := fetchedIDs[eg.ExternalID]; !found {
@@ -281,14 +284,14 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				`UPDATE external_games SET is_available = false, updated_at = now() WHERE id = ?`,
 				eg.ID,
 			).Exec(ctx); err != nil {
-				slog.Error("dispatch_sync: mark game unavailable failed", "err", err, "job_id", p.JobID, "external_game_id", eg.ID)
+				slog.WarnContext(ctx, "dispatch_sync: mark game unavailable failed", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
 			}
 			if _, err := w.DB.NewRaw(
 				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 				 VALUES (?, ?, ?, ?, 'removed', ?, now())`,
 				uuid.NewString(), p.JobID, p.UserID, eg.ID, eg.Title,
 			).Exec(ctx); err != nil {
-				slog.Error("dispatch_sync: insert sync_change (removed) failed", "err", err, "job_id", p.JobID, "external_game_id", eg.ID)
+				slog.WarnContext(ctx, "dispatch_sync: insert sync_change (removed) failed", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
 			}
 		}
 	}
@@ -299,7 +302,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		`UPDATE user_sync_configs SET last_synced_at = ?, credentials_error = false, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 		syncedNow, p.UserID, p.Storefront,
 	).Exec(context.Background()); err != nil {
-		slog.Error("dispatch_sync: update last_synced_at failed", "err", err, "job_id", p.JobID)
+		slog.WarnContext(ctx, "dispatch_sync: update last_synced_at failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	// Dispatch is fully complete — every batch has been streamed and enqueued.
@@ -313,7 +316,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		// check below would be a guaranteed no-op — skip it. The job stays in
 		// 'processing'; the user can cancel the stuck sync (recovery of such
 		// jobs is out of scope for #642).
-		slog.Error("dispatch_sync: mark dispatch_complete failed", "err", err, "job_id", p.JobID)
+		slog.ErrorContext(ctx, "dispatch_sync: mark dispatch_complete failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, p.JobID)
@@ -330,13 +333,13 @@ func markSyncJobFailed(ctx context.Context, db *bun.DB, jobID, msg string) {
 		`UPDATE jobs SET status = 'failed', error_message = ?, completed_at = ? WHERE id = ?`,
 		msg, now, jobID,
 	).Exec(ctx); err != nil {
-		slog.Error("dispatch_sync: fail job update failed", "err", err, "job_id", jobID)
+		slog.WarnContext(ctx, "dispatch_sync: fail job update failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 	if _, err := db.NewRaw(
 		`UPDATE job_items SET status = 'cancelled' WHERE job_id = ? AND status = 'pending'`,
 		jobID,
 	).Exec(ctx); err != nil {
-		slog.Error("dispatch_sync: cancel pending items failed", "err", err, "job_id", jobID)
+		slog.WarnContext(ctx, "dispatch_sync: cancel pending items failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 }
 
@@ -365,7 +368,7 @@ func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, 
 		`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 		p.UserID, p.Storefront,
 	).Exec(ctx); err != nil {
-		slog.Error("dispatch_sync: flag credentials_error failed", "err", err, "user_id", p.UserID, "storefront", p.Storefront)
+		slog.WarnContext(ctx, "dispatch_sync: flag credentials_error failed", logging.KeyErr, err, logging.KeyUserID, p.UserID, "storefront", p.Storefront, logging.Cat(logging.CategoryDB))
 	}
 
 	if priorErr {
@@ -396,7 +399,7 @@ func userSubscribed(ctx context.Context, db *bun.DB, userID, eventType string) b
 		`SELECT EXISTS(SELECT 1 FROM notification_subscriptions WHERE user_id = ? AND event_type = ?)`,
 		userID, eventType,
 	).Scan(ctx, &subscribed); err != nil {
-		slog.Error("dispatch_sync: subscription check failed", "err", err, "user_id", userID, "event_type", eventType)
+		slog.WarnContext(ctx, "dispatch_sync: subscription check failed", logging.KeyErr, err, logging.KeyUserID, userID, "event_type", eventType, logging.Cat(logging.CategoryDB))
 		return false
 	}
 	return subscribed
@@ -443,9 +446,11 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", p.JobItemID).Scan(ctx); err != nil {
-		slog.Error("igdb_match: load job_item", "id", p.JobItemID, "err", err)
+		slog.ErrorContext(ctx, "igdb_match: load job_item", "id", p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return err
 	}
+	// Correlate every line below to the user-facing job once the item is loaded.
+	ctx = logging.WithJobID(ctx, item.JobID)
 
 	if item.ExternalGameID == nil {
 		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
@@ -460,23 +465,23 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		return nil
 	}
 
-	slog.Debug("igdb_match: processing",
+	slog.DebugContext(ctx, "igdb_match: processing",
 		"item_id", p.JobItemID,
 		"title", eg.Title,
 		"storefront", eg.Storefront,
-		"external_game_id", eg.ID,
+		logging.KeyExternalGameID, eg.ID,
 		"attempt", job.Attempt,
 	)
 
 	// Fast-path: skipped games go straight to UserGameWorker.
 	if eg.IsSkipped {
-		slog.Debug("igdb_match: game is skipped, fast-path to user_game_write", "item_id", p.JobItemID, "title", eg.Title)
+		slog.DebugContext(ctx, "igdb_match: game is skipped, fast-path to user_game_write", "item_id", p.JobItemID, "title", eg.Title)
 		return w.enqueueUserGame(ctx, item.ID, item.JobID)
 	}
 
 	// Fast-path: already resolved (manual or prior run).
 	if eg.ResolvedIGDBID != nil {
-		slog.Debug("igdb_match: already resolved, fast-path to user_game_write",
+		slog.DebugContext(ctx, "igdb_match: already resolved, fast-path to user_game_write",
 			"item_id", p.JobItemID, "title", eg.Title, "igdb_id", *eg.ResolvedIGDBID)
 		return w.enqueueUserGame(ctx, item.ID, item.JobID)
 	}
@@ -488,25 +493,25 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			Where("id = ?", *eg.ParentID).
 			Scan(ctx); err == nil && parent.ResolvedIGDBID != nil {
 			igdbID := *parent.ResolvedIGDBID
-			slog.Debug("igdb_match: child inheriting from resolved parent",
+			slog.DebugContext(ctx, "igdb_match: child inheriting from resolved parent",
 				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", igdbID, "parent_id", *eg.ParentID)
 			if _, err := w.DB.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 				igdbID, eg.Title,
 			).Exec(ctx); err != nil {
-				slog.Error("igdb_match: insert game row (child inherit)", "err", err, "igdb_id", igdbID)
+				slog.WarnContext(ctx, "igdb_match: insert game row (child inherit)", logging.KeyErr, err, "igdb_id", igdbID, logging.Cat(logging.CategoryDB))
 			}
 			if _, err := w.DB.NewRaw(
 				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
 				igdbID, eg.ID,
 			).Exec(ctx); err != nil {
-				slog.Error("igdb_match: apply child inherit", "err", err, "external_game_id", eg.ID)
+				slog.WarnContext(ctx, "igdb_match: apply child inherit", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
 			}
 			return w.enqueueUserGame(ctx, item.ID, item.JobID)
 		}
 		// Parent not yet resolved — leave job_item in pending.
 		// Stage 3 of the parent will re-enqueue Stage 2 for this child.
-		slog.Debug("igdb_match: parent unresolved, waiting",
+		slog.DebugContext(ctx, "igdb_match: parent unresolved, waiting",
 			"item_id", p.JobItemID, "parent_id", *eg.ParentID)
 		return nil
 	}
@@ -515,15 +520,15 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 	if w.IGDBClient != nil && w.IGDBClient.Configured() {
 		platformIDs, perErr := platformresolution.IGDBPlatformIDsForExternalGame(ctx, w.DB, eg.ID)
 		if perErr != nil {
-			slog.Debug("igdb_match: platform resolution failed, falling back to unfiltered",
-				"item_id", p.JobItemID, "external_game_id", eg.ID, "err", perErr)
+			slog.DebugContext(ctx, "igdb_match: platform resolution failed, falling back to unfiltered",
+				"item_id", p.JobItemID, logging.KeyExternalGameID, eg.ID, logging.KeyErr, perErr)
 			platformIDs = nil
 		}
 		candidates, err := w.IGDBClient.SearchGames(ctx, eg.Title, 10, platformIDs)
 		if err != nil {
 			if job.Attempt >= job.MaxAttempts {
-				slog.Warn("igdb_match: IGDB failed on final attempt, marking pending_review",
-					"item_id", p.JobItemID, "err", err)
+				slog.WarnContext(ctx, "igdb_match: IGDB failed on final attempt, marking pending_review",
+					"item_id", p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 				syncMarkItemPendingReview(ctx, w.DB, &item)
 				SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 				return nil
@@ -537,7 +542,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		}
 		decision := matching.Decide(eg.Title, cands)
 
-		slog.Debug("igdb_match: search results",
+		slog.DebugContext(ctx, "igdb_match: search results",
 			"item_id", p.JobItemID,
 			"title", eg.Title,
 			"candidate_count", len(candidates),
@@ -548,25 +553,25 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 
 		if decision.Confident {
 			bestID := decision.ResolvedID
-			slog.Debug("igdb_match: auto-resolved",
+			slog.DebugContext(ctx, "igdb_match: auto-resolved",
 				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", bestID, "score", decision.BestScore)
 			if _, err := w.DB.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 				bestID, eg.Title,
 			).Exec(ctx); err != nil {
-				slog.Error("igdb_match: insert game row (auto-resolve)", "err", err, "igdb_id", bestID)
+				slog.WarnContext(ctx, "igdb_match: insert game row (auto-resolve)", logging.KeyErr, err, "igdb_id", bestID, logging.Cat(logging.CategoryDB))
 			}
 			if _, err := w.DB.NewRaw(
 				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
 				bestID, eg.ID,
 			).Exec(ctx); err != nil {
-				slog.Error("igdb_match: auto-resolve external_game", "err", err, "external_game_id", eg.ID)
+				slog.WarnContext(ctx, "igdb_match: auto-resolve external_game", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
 			}
 			return w.enqueueUserGame(ctx, item.ID, item.JobID)
 		}
 
 		// Low confidence or tie — store candidates, mark pending_review.
-		slog.Debug("igdb_match: low confidence, marking pending_review",
+		slog.DebugContext(ctx, "igdb_match: low confidence, marking pending_review",
 			"item_id", p.JobItemID,
 			"title", eg.Title,
 			"best_score", decision.BestScore,
@@ -584,7 +589,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 	}
 
 	// No IGDB client configured — mark pending_review.
-	slog.Debug("igdb_match: no IGDB client configured, marking pending_review", "item_id", p.JobItemID, "title", eg.Title)
+	slog.DebugContext(ctx, "igdb_match: no IGDB client configured, marking pending_review", "item_id", p.JobItemID, "title", eg.Title)
 	syncMarkItemPendingReview(ctx, w.DB, &item)
 	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 	return nil
@@ -592,7 +597,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 
 func (w *IGDBMatchWorker) enqueueUserGame(ctx context.Context, jobItemID, jobID string) error {
 	if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, jobItemID, UserGameArgs{JobItemID: jobItemID}); err != nil {
-		slog.Error("igdb_match: enqueue user_game_write failed", "item_id", jobItemID, "err", err)
+		slog.WarnContext(ctx, "igdb_match: enqueue user_game_write failed", "item_id", jobItemID, logging.KeyErr, err)
 		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, jobID)
 	}
 	return nil
@@ -623,9 +628,11 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", p.JobItemID).Scan(ctx); err != nil {
-		slog.Error("user_game_write: load job_item", "id", p.JobItemID, "err", err)
+		slog.ErrorContext(ctx, "user_game_write: load job_item", "id", p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return err
 	}
+	// Correlate every line below to the user-facing job once the item is loaded.
+	ctx = logging.WithJobID(ctx, item.JobID)
 
 	if item.ExternalGameID == nil {
 		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
@@ -645,14 +652,14 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		if _, err := w.DB.NewRaw(
 			`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
 		).Exec(ctx); err != nil {
-			slog.Error("user_game_write: update external_game updated_at (skipped)", "err", err)
+			slog.WarnContext(ctx, "user_game_write: update external_game updated_at (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 		if _, err := w.DB.NewRaw(
 			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 			 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
 			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
 		).Exec(ctx); err != nil {
-			slog.Error("user_game_write: insert sync_change (skipped)", "err", err)
+			slog.WarnContext(ctx, "user_game_write: insert sync_change (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 		markItemSkipped(ctx, w.DB, &item, "process_sync_item: markItemSkipped")
 		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
@@ -667,13 +674,13 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 			igdbID, eg.Title,
 		).Exec(ctx); err != nil {
-			slog.Error("user_game_write: insert game row (manual resolve)", "err", err, "igdb_id", igdbID)
+			slog.WarnContext(ctx, "user_game_write: insert game row (manual resolve)", logging.KeyErr, err, "igdb_id", igdbID, logging.Cat(logging.CategoryDB))
 		}
 		if _, err := w.DB.NewRaw(
 			`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
 			igdbID, eg.ID,
 		).Exec(ctx); err != nil {
-			slog.Error("user_game_write: apply manual resolution", "err", err, "external_game_id", eg.ID)
+			slog.WarnContext(ctx, "user_game_write: apply manual resolution", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
 		}
 	}
 
@@ -688,7 +695,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 		*eg.ResolvedIGDBID, eg.Title,
 	).Exec(ctx); err != nil {
-		slog.Error("user_game_write: ensure game row", "err", err)
+		slog.WarnContext(ctx, "user_game_write: ensure game row", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	// (xmax = 0) detects new vs. updated row; relies on ON CONFLICT DO UPDATE (not DO NOTHING).
@@ -760,10 +767,10 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 				ugpID, ugID, egp.Platform, storefrontSlug, egp.HoursPlayed, ownership,
 				eg.ID,
 			).Exec(ctx); err != nil {
-				slog.Error("user_game_write: insert user_game_platform", "err", err, "item_id", p.JobItemID)
+				slog.WarnContext(ctx, "user_game_write: insert user_game_platform", logging.KeyErr, err, "item_id", p.JobItemID, logging.Cat(logging.CategoryDB))
 			}
 		case err != nil:
-			slog.Error("user_game_write: select existing ugp", "err", err, "item_id", p.JobItemID)
+			slog.WarnContext(ctx, "user_game_write: select existing ugp", logging.KeyErr, err, "item_id", p.JobItemID, logging.Cat(logging.CategoryDB))
 		default:
 			// Resolve final ownership and hours in Go, then write a single
 			// unconditional UPDATE. This collapses the previous three branches
@@ -789,7 +796,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 					 VALUES (?, ?, ?, ?, ?, 'status_changed', ?, ?, ?, now())`,
 					uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title, existingOwnership, &ownership,
 				).Exec(ctx); err != nil {
-					slog.Error("user_game_write: insert sync_change (status_changed)", "err", err)
+					slog.WarnContext(ctx, "user_game_write: insert sync_change (status_changed)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				}
 				finalOwnership = ownership
 			}
@@ -803,13 +810,13 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 				`UPDATE user_game_platforms SET ownership_status = ?, hours_played = ?, external_game_id = ?, updated_at = now() WHERE id = ?`,
 				finalOwnership, finalHours, eg.ID, existingID,
 			).Exec(ctx); err != nil {
-				slog.Error("user_game_write: update ugp", "err", err, "item_id", p.JobItemID)
+				slog.WarnContext(ctx, "user_game_write: update ugp", logging.KeyErr, err, "item_id", p.JobItemID, logging.Cat(logging.CategoryDB))
 			}
 		}
 	}
 
 	if err := usergame.ClearWishlistOnAcquire(ctx, w.DB, ugID); err != nil {
-		slog.Error("user_game_write: clear wishlist on acquire", "err", err, "user_game_id", ugID)
+		slog.WarnContext(ctx, "user_game_write: clear wishlist on acquire", logging.KeyErr, err, "user_game_id", ugID, logging.Cat(logging.CategoryDB))
 	}
 
 	// Auto-promote not_started → in_progress when the game has any played
@@ -817,13 +824,13 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	// the DB and its play_status = 'not_started' guard covers freshly-upserted
 	// rows (which default to not_started), so no separate isNew check is needed.
 	if err := usergame.PromoteToInProgressIfPlayed(ctx, w.DB, ugID); err != nil {
-		slog.Error("user_game_write: auto-promote play_status", "err", err, "item_id", p.JobItemID)
+		slog.WarnContext(ctx, "user_game_write: auto-promote play_status", logging.KeyErr, err, "item_id", p.JobItemID, logging.Cat(logging.CategoryDB))
 	}
 
 	if _, err := w.DB.NewRaw(
 		`UPDATE external_games SET updated_at = now() WHERE id = ?`, eg.ID,
 	).Exec(ctx); err != nil {
-		slog.Error("user_game_write: update external_game updated_at", "err", err)
+		slog.WarnContext(ctx, "user_game_write: update external_game updated_at", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	// Write changes('added') only after platforms are confirmed written,
@@ -834,7 +841,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			 VALUES (?, ?, ?, ?, ?, 'added', ?, now())`,
 			uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title,
 		).Exec(ctx); err != nil {
-			slog.Error("user_game_write: insert sync_change (added)", "err", err)
+			slog.WarnContext(ctx, "user_game_write: insert sync_change (added)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	} else if !platformUpgraded {
 		if _, err := w.DB.NewRaw(
@@ -842,7 +849,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			 VALUES (?, ?, ?, ?, ?, 'already_in_library', ?, now())`,
 			uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title,
 		).Exec(ctx); err != nil {
-			slog.Error("user_game_write: insert sync_change (already_in_library)", "err", err)
+			slog.WarnContext(ctx, "user_game_write: insert sync_change (already_in_library)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	}
 
@@ -873,8 +880,8 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		).Scan(ctx, &childItems); err == nil {
 			for _, child := range childItems {
 				if _, err := w.RiverClient.Insert(ctx, IGDBMatchArgs{JobItemID: child.JobItemID}, nil); err != nil {
-					slog.Error("user_game_write: enqueue sibling Stage 2",
-						"err", err, "child_eg_id", child.ExternalGameID, "job_item_id", child.JobItemID)
+					slog.WarnContext(ctx, "user_game_write: enqueue sibling Stage 2",
+						logging.KeyErr, err, "child_eg_id", child.ExternalGameID, "job_item_id", child.JobItemID)
 				}
 			}
 		}
@@ -897,8 +904,8 @@ func (w *UserGameWorker) maybeEnqueueImmediateMetadataFetch(ctx context.Context,
 	if err := w.DB.NewRaw(
 		`SELECT description IS NULL FROM games WHERE id = ?`, gameID,
 	).Scan(ctx, &descriptionIsNull); err != nil {
-		slog.Warn("user_game_write: check game description for immediate metadata fetch",
-			"err", err, "game_id", gameID)
+		slog.WarnContext(ctx, "user_game_write: check game description for immediate metadata fetch",
+			logging.KeyErr, err, "game_id", gameID, logging.Cat(logging.CategoryDB))
 		return
 	}
 	if !descriptionIsNull {
@@ -906,13 +913,13 @@ func (w *UserGameWorker) maybeEnqueueImmediateMetadataFetch(ctx context.Context,
 	}
 
 	if w.RiverClient == nil {
-		slog.Warn("user_game_write: river client unavailable, skipping immediate metadata fetch",
+		slog.WarnContext(ctx, "user_game_write: river client unavailable, skipping immediate metadata fetch",
 			"game_id", gameID)
 		return
 	}
 	if _, err := w.RiverClient.Insert(ctx, MetadataFetchArgs{GameID: gameID}, nil); err != nil {
-		slog.Warn("user_game_write: enqueue immediate metadata fetch failed",
-			"err", err, "game_id", gameID)
+		slog.WarnContext(ctx, "user_game_write: enqueue immediate metadata fetch failed",
+			logging.KeyErr, err, "game_id", gameID)
 	}
 }
 
@@ -924,7 +931,7 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 		Where("id = ?", item.ID).
 		Exec(ctx)
 	if err != nil {
-		slog.Error("process_sync_item: syncMarkItemPendingReview", "id", item.ID, "err", err)
+		slog.WarnContext(ctx, "process_sync_item: syncMarkItemPendingReview", "id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 }
 
@@ -946,6 +953,7 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 // completion check below treats dispatch_complete=false as "more work may
 // still arrive" and refuses to finalize.
 func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, riverClient *river.Client[pgx.Tx], jobID string) {
+	ctx = logging.WithJobID(ctx, jobID)
 	activeRemaining, ok := countJobItems(ctx, db, jobID, "status IN ('pending', 'processing')", "sync: SyncCheckJobCompletion count")
 	if !ok || activeRemaining > 0 {
 		return
@@ -999,7 +1007,7 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, riverClient *river.
 		if _, err := riverClient.Insert(ctx, StoreLinkRefreshDispatchArgs{
 			UserID: userID, Storefront: storefront, Force: false,
 		}, nil); err != nil {
-			slog.Error("sync: enqueue store_link_refresh", "err", err, "job_id", jobID)
+			slog.WarnContext(ctx, "sync: enqueue store_link_refresh", logging.KeyErr, err)
 		}
 	}
 }
@@ -1012,7 +1020,7 @@ func syncJobUserAndStorefront(ctx context.Context, db *bun.DB, jobID string) (us
 		Source string `bun:"source"`
 	}
 	if err := db.NewRaw(`SELECT user_id, source FROM jobs WHERE id = ?`, jobID).Scan(ctx, &row); err != nil {
-		slog.Error("sync: lookup job user/storefront", "job_id", jobID, "err", err)
+		slog.WarnContext(ctx, "sync: lookup job user/storefront", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return "", ""
 	}
 	return row.UserID, row.Source
@@ -1029,7 +1037,7 @@ func storefrontDisplayName(ctx context.Context, db *bun.DB, slug string) string 
 	var name string
 	if err := db.NewRaw(`SELECT display_name FROM storefronts WHERE name = ?`, slug).Scan(ctx, &name); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
-			slog.Error("sync: lookup storefront display_name", "slug", slug, "err", err)
+			slog.WarnContext(ctx, "sync: lookup storefront display_name", "slug", slug, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 		return ""
 	}
@@ -1056,7 +1064,7 @@ func emitSyncDiff(ctx context.Context, db *bun.DB, jobID, userID, storefront str
 		  ORDER BY sc.created_at`,
 		jobID,
 	).Scan(ctx, &rows); err != nil {
-		slog.Error("sync: load changes for diff notify", "job_id", jobID, "err", err)
+		slog.WarnContext(ctx, "sync: load changes for diff notify", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return
 	}
 	if len(rows) == 0 {

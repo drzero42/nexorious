@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
 )
 
@@ -92,10 +93,14 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	// Capture updated snapshot regardless of fetch error.
 	newSnapshot, captureErr := a.client.CaptureSnapshot(a.userID)
 	if captureErr != nil {
-		slog.Error("epic: capture snapshot failed", "user_id", a.userID, "err", captureErr)
+		slog.WarnContext(ctx, "epic: capture snapshot failed",
+			logging.KeyUserID, a.userID, logging.KeyErr, captureErr,
+			logging.Cat(logging.CategoryExternalAPI))
 	} else if len(newSnapshot) > 0 && a.onSnapshot != nil {
 		if err := a.onSnapshot(newSnapshot); err != nil {
-			slog.Error("epic: persist updated snapshot failed", "user_id", a.userID, "err", err)
+			slog.ErrorContext(ctx, "epic: persist updated snapshot failed",
+				logging.KeyUserID, a.userID, logging.KeyErr, err,
+				logging.Cat(logging.CategoryDB))
 		}
 	}
 

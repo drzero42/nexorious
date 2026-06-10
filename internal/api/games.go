@@ -20,6 +20,7 @@ import (
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/dbutil"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -240,8 +241,8 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 		if ids, perErr := platformresolution.IGDBPlatformIDsForExternalGame(ctx, h.db, *req.ExternalGameID); perErr == nil {
 			platformIDs = ids
 		} else {
-			slog.Debug("HandleSearchIGDB: platform resolution failed, falling back to unfiltered",
-				"external_game_id", *req.ExternalGameID, "err", perErr)
+			slog.DebugContext(ctx, "HandleSearchIGDB: platform resolution failed, falling back to unfiltered",
+				logging.KeyExternalGameID, *req.ExternalGameID, logging.KeyErr, perErr)
 		}
 	}
 
@@ -257,7 +258,7 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 	if err := h.annotateLibraryMembership(ctx, userID, candidates); err != nil {
 		// Annotation is best-effort enrichment; a failure here should not break
 		// search. Log and return unannotated results.
-		slog.Error("HandleSearchIGDB: library membership annotation failed", "err", err)
+		slog.ErrorContext(ctx, "HandleSearchIGDB: library membership annotation failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 	}
 	return c.JSON(http.StatusOK, IGDBSearchResponse{
 		Games: candidates,
@@ -281,7 +282,7 @@ func (h *GamesHandler) HandleGetIGDBGame(c *echo.Context) error {
 
 	candidates := []IGDBGameCandidate{metadataToCandidate(*md)}
 	if err := h.annotateLibraryMembership(ctx, auth.UserIDFromContext(c), candidates); err != nil {
-		slog.Error("HandleGetIGDBGame: library membership annotation failed", "err", err)
+		slog.ErrorContext(ctx, "HandleGetIGDBGame: library membership annotation failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 	}
 	return c.JSON(http.StatusOK, IGDBSearchResponse{
 		Games: candidates,
@@ -419,15 +420,15 @@ func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 	ctx := c.Request().Context()
 	jobID, created, err := h.startMaintenanceRefresh(ctx, userID, models.JobTypeMetadataRefresh, models.JobSourceSystem)
 	if err != nil {
-		slog.Error("failed to start metadata refresh", "err", err)
+		slog.ErrorContext(ctx, "failed to start metadata refresh", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
 	}
 
 	if created {
 		if _, err := h.riverClient.Insert(ctx, tasks.MetadataRefreshDispatchArgs{JobID: jobID}, nil); err != nil {
-			slog.Error("failed to enqueue metadata refresh dispatch", "err", err)
+			slog.ErrorContext(ctx, "failed to enqueue metadata refresh dispatch", logging.KeyErr, err, logging.KeyJobID, jobID)
 			if _, derr := h.db.NewRaw(`DELETE FROM jobs WHERE id = ?`, jobID).Exec(ctx); derr != nil {
-				slog.Error("failed to roll back metadata refresh job row", "err", derr, "job_id", jobID)
+				slog.ErrorContext(ctx, "failed to roll back metadata refresh job row", logging.KeyErr, derr, logging.KeyJobID, jobID, logging.KeyCategory, logging.CategoryDB)
 			}
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
 		}
@@ -457,15 +458,15 @@ func (h *GamesHandler) HandleStartStoreLinkRefreshJob(c *echo.Context) error {
 	ctx := c.Request().Context()
 	jobID, created, err := h.startMaintenanceRefresh(ctx, userID, models.JobTypeStoreLinkRefresh, models.JobSourceSystem)
 	if err != nil {
-		slog.Error("failed to start store-link refresh", "err", err)
+		slog.ErrorContext(ctx, "failed to start store-link refresh", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue store link refresh")
 	}
 
 	if created {
 		if _, err := h.riverClient.Insert(ctx, tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID}, nil); err != nil {
-			slog.Error("failed to enqueue store-link refresh dispatch", "err", err)
+			slog.ErrorContext(ctx, "failed to enqueue store-link refresh dispatch", logging.KeyErr, err, logging.KeyJobID, jobID)
 			if _, derr := h.db.NewRaw(`DELETE FROM jobs WHERE id = ?`, jobID).Exec(ctx); derr != nil {
-				slog.Error("failed to roll back store-link refresh job row", "err", derr, "job_id", jobID)
+				slog.ErrorContext(ctx, "failed to roll back store-link refresh job row", logging.KeyErr, derr, logging.KeyJobID, jobID, logging.KeyCategory, logging.CategoryDB)
 			}
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue store link refresh")
 		}

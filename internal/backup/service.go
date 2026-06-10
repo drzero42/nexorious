@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // ErrOperationInProgress is returned when a backup or restore operation is already running.
@@ -140,7 +142,7 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 		return "", fmt.Errorf("create archive: %w", err)
 	}
 
-	slog.Info("backup created", "id", id, "type", backupType, "path", archivePath)
+	slog.InfoContext(ctx, "backup created", "id", id, "type", backupType, "path", archivePath)
 	return id, nil
 }
 
@@ -156,7 +158,7 @@ func (s *Service) ListBackups() ([]BackupInfo, error) {
 	for _, archivePath := range matches {
 		manifest, err := readManifestFromArchive(archivePath)
 		if err != nil {
-			slog.Warn("skipping invalid backup archive", "path", archivePath, "err", err)
+			slog.Warn("skipping invalid backup archive", "path", archivePath, logging.KeyErr, err)
 			continue
 		}
 		var sizeBytes int64
@@ -218,7 +220,7 @@ func (s *Service) DeleteBackup(backupID string) error {
 		}
 		return fmt.Errorf("delete backup %s: %w", backupID, err)
 	}
-	slog.Info("backup deleted", "id", backupID)
+	slog.Info("backup deleted", "id", backupID) //nolint:sloglint // no ctx in DeleteBackup signature
 	return nil
 }
 
@@ -292,7 +294,7 @@ func (s *Service) ListAvailableArchives(ctx context.Context, maxMigrationVersion
 	entries, err := os.ReadDir(s.backupPath)
 	if err != nil {
 		// Missing dir / permission error is not fatal — listing is best-effort.
-		slog.Debug("ListAvailableArchives: ReadDir failed", "path", s.backupPath, "err", err)
+		slog.DebugContext(ctx, "ListAvailableArchives: ReadDir failed", "path", s.backupPath, logging.KeyErr, err)
 		return nil, nil
 	}
 
@@ -400,7 +402,7 @@ func (s *Service) ApplyRetention(retentionMode string, retentionValue int) error
 	for _, b := range backups {
 		if b.BackupType == "pre_restore" && now.Sub(b.CreatedAt) > 7*24*time.Hour {
 			if err := s.DeleteBackup(b.ID); err != nil {
-				slog.Warn("retention: failed to delete old pre-restore backup", "id", b.ID, "err", err)
+				slog.Warn("retention: failed to delete old pre-restore backup", "id", b.ID, logging.KeyErr, err)
 			}
 		}
 	}
@@ -416,7 +418,7 @@ func (s *Service) ApplyRetention(retentionMode string, retentionValue int) error
 		for _, b := range backups {
 			if b.BackupType != "pre_restore" && b.CreatedAt.Before(cutoff) {
 				if err := s.DeleteBackup(b.ID); err != nil {
-					slog.Warn("retention: failed to delete old backup", "id", b.ID, "err", err)
+					slog.Warn("retention: failed to delete old backup", "id", b.ID, logging.KeyErr, err)
 				}
 			}
 		}
@@ -429,7 +431,7 @@ func (s *Service) ApplyRetention(retentionMode string, retentionValue int) error
 			nonPreRestore++
 			if nonPreRestore > retentionValue {
 				if err := s.DeleteBackup(b.ID); err != nil {
-					slog.Warn("retention: failed to delete excess backup", "id", b.ID, "err", err)
+					slog.Warn("retention: failed to delete excess backup", "id", b.ID, logging.KeyErr, err)
 				}
 			}
 		}
@@ -781,11 +783,11 @@ func (s *Service) applyRestoreFromDir(extractedDir string, conn DBConnParams, op
 	coverArtSrc := filepath.Join(extractedDir, "cover_art")
 	coverArtDst := filepath.Join(s.storagePath, "cover_art")
 	if err := os.RemoveAll(coverArtDst); err != nil {
-		slog.Warn("restore: failed to remove old cover_art", "err", err)
+		slog.Warn("restore: failed to remove old cover_art", logging.KeyErr, err)
 	}
 	if _, err := os.Stat(coverArtSrc); err == nil {
 		if _, _, err := copyDir(coverArtSrc, coverArtDst); err != nil {
-			slog.Warn("restore: failed to restore cover art (best-effort)", "err", err)
+			slog.Warn("restore: failed to restore cover art (best-effort)", logging.KeyErr, err)
 		}
 	}
 
@@ -796,11 +798,11 @@ func (s *Service) applyRestoreFromDir(extractedDir string, conn DBConnParams, op
 	s.db = newDB
 
 	if err := opts.RebuildServices(newDB); err != nil {
-		slog.Error("restore: rebuild services", "err", err)
+		slog.Error("restore: rebuild services", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	if err := opts.ReinitMigrator(newDB); err != nil {
-		slog.Error("restore: reinit migrator", "err", err)
+		slog.Error("restore: reinit migrator", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	return nil
@@ -827,14 +829,14 @@ func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) erro
 		pid, err := s.CreateBackup("pre_restore")
 		s.mu.Lock()
 		if err != nil {
-			slog.Error("restore: failed to create pre-restore backup", "err", err)
+			slog.Error("restore: failed to create pre-restore backup", logging.KeyErr, err)
 		} else {
 			preRestoreID = pid
 		}
 	}
 
 	if err := opts.CloseDB(); err != nil {
-		slog.Error("restore: close DB", "err", err)
+		slog.Error("restore: close DB", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	tmpDir, err := os.MkdirTemp("", "nexorious-restore-*")
@@ -859,16 +861,16 @@ func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) erro
 
 	opts.SetMaintenance(false)
 
-	slog.Info("restore completed", "backup_id", backupID)
+	slog.Info("restore completed", "backup_id", backupID) //nolint:sloglint // no ctx in doRestore signature
 	return nil
 }
 
 func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, conn DBConnParams, opts RestoreOpts) error {
-	slog.Error("restore failed", "err", originalErr)
+	slog.Error("restore failed", logging.KeyErr, originalErr)
 
 	if preRestoreID == "" {
 		slog.Error("restore failed with no pre-restore backup — database may be inconsistent. Manual intervention required.",
-			"err", originalErr)
+			logging.KeyErr, originalErr)
 		opts.SetAppState("db_unavailable")
 		return originalErr
 	}
@@ -877,20 +879,20 @@ func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, c
 
 	archivePath, err := s.GetBackupPath(preRestoreID)
 	if err != nil {
-		slog.Error("rollback failed: invalid pre-restore backup id", "err", err, "original_err", originalErr)
+		slog.Error("rollback failed: invalid pre-restore backup id", logging.KeyErr, err, "original_err", originalErr)
 		opts.SetAppState("db_unavailable")
 		return fmt.Errorf("restore failed AND rollback failed (invalid pre-restore id). Original: %w. Rollback: %v", originalErr, err)
 	}
 	tmpDir, err := os.MkdirTemp("", "nexorious-rollback-*")
 	if err != nil {
-		slog.Error("rollback failed: create temp dir", "err", err, "original_err", originalErr)
+		slog.Error("rollback failed: create temp dir", logging.KeyErr, err, "original_err", originalErr)
 		opts.SetAppState("db_unavailable")
 		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	if err := ExtractTarGz(archivePath, tmpDir); err != nil {
-		slog.Error("rollback failed: extract archive", "err", err, "original_err", originalErr)
+		slog.Error("rollback failed: extract archive", logging.KeyErr, err, "original_err", originalErr)
 		opts.SetAppState("db_unavailable")
 		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
 	}

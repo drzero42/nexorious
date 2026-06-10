@@ -15,6 +15,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/enum"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/usergame"
@@ -98,9 +99,11 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 	// Load JobItem
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
-		slog.Error("import_item: load job_item", "id", job.Args.JobItemID, "err", err)
+		slog.ErrorContext(ctx, "import_item: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
+	// Correlate every line below to the parent import job.
+	ctx = logging.WithJobID(ctx, item.JobID)
 
 	// Parse game data from source_metadata
 	var wrapper struct {
@@ -167,7 +170,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			r := int32(*gd.PersonalRating) //nolint:gosec // bounded to 1..5 above
 			personalRating = &r
 		} else if gd.PersonalRating != nil {
-			slog.Warn("import_item: personal_rating out of range, treating as unrated", "value", *gd.PersonalRating)
+			slog.WarnContext(ctx, "import_item: personal_rating out of range, treating as unrated", "value", *gd.PersonalRating)
 		}
 
 		playStatus := coercePlayStatus(gd.PlayStatus)
@@ -226,7 +229,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		if err := w.DB.QueryRowContext(ctx,
 			"SELECT name FROM platforms WHERE name = ?", pd.Platform,
 		).Scan(&platformName); err != nil {
-			slog.Warn("import_item: platform not found, skipping (load seed data first)", "platform", pd.Platform)
+			slog.WarnContext(ctx, "import_item: platform not found, skipping (load seed data first)", "platform", pd.Platform)
 			continue
 		}
 
@@ -239,7 +242,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			).Scan(&storefrontName); err == nil {
 				storefrontPtr = &storefrontName
 			} else {
-				slog.Warn("import_item: storefront not found, recording platform without storefront (load seed data first)", "storefront", pd.Storefront)
+				slog.WarnContext(ctx, "import_item: storefront not found, recording platform without storefront (load seed data first)", "storefront", pd.Storefront)
 			}
 		}
 
@@ -255,7 +258,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		ownership := pd.OwnershipStatus
 		if ownership == nil || !enum.OwnershipStatus(*ownership).Valid() {
 			if ownership != nil {
-				slog.Warn("import_item: invalid ownership_status, defaulting to owned", "value", *ownership)
+				slog.WarnContext(ctx, "import_item: invalid ownership_status, defaulting to owned", "value", *ownership)
 			}
 			owned := string(enum.OwnershipOwned)
 			ownership = &owned
@@ -274,13 +277,13 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			UpdatedAt:       now,
 		}
 		if _, err := w.DB.NewInsert().Model(ugp).Exec(ctx); err != nil {
-			slog.Error("import_item: insert user_game_platform", "err", err)
+			slog.WarnContext(ctx, "import_item: insert user_game_platform", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		} else {
 			newPlatformCount++
 		}
 	}
 	if err := usergame.ClearWishlistOnAcquire(ctx, w.DB, ug.ID); err != nil {
-		slog.Error("import_item: clear wishlist on acquire", "err", err, "user_game_id", ug.ID)
+		slog.WarnContext(ctx, "import_item: clear wishlist on acquire", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
 	}
 
 	// Tags
@@ -314,7 +317,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			CreatedAt:  now,
 		}
 		if _, err := w.DB.NewInsert().Model(ugt).Exec(ctx); err != nil {
-			slog.Error("import_item: insert user_game_tag", "err", err)
+			slog.WarnContext(ctx, "import_item: insert user_game_tag", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		} else {
 			newTagCount++
 		}
@@ -335,7 +338,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		 VALUES (?, ?, ?, NULL, ?, ?, ?, now())`,
 		uuid.NewString(), item.JobID, item.UserID, ug.ID, changeType, item.SourceTitle,
 	).Exec(ctx); err != nil {
-		slog.Error("import_item: insert change", "err", err)
+		slog.WarnContext(ctx, "import_item: insert change", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	result := map[string]any{

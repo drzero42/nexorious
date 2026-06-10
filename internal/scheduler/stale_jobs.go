@@ -8,6 +8,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 )
 
@@ -55,13 +56,13 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 		bun.List(maintenanceRefreshJobTypes), int64(threshold.Seconds()),
 	).Exec(ctx)
 	if err != nil {
-		slog.Error("cleanup_stale_jobs: failed", "err", err)
+		slog.ErrorContext(ctx, "cleanup_stale_jobs: failed", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		emitMaint(ctx, db, true, notify.MaintPayload{Action: "stale_jobs_cleanup", Error: err.Error()})
 		return
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if rows > 0 {
-		slog.Info("cleanup_stale_jobs: marked stale jobs failed", "count", rows)
+		slog.InfoContext(ctx, "cleanup_stale_jobs: marked stale jobs failed", "count", rows)
 	}
 
 	syncResult, err := db.NewRaw(
@@ -81,13 +82,13 @@ func CleanupStaleJobs(ctx context.Context, db *bun.DB, threshold time.Duration) 
 		int64(threshold.Seconds()),
 	).Exec(ctx)
 	if err != nil {
-		slog.Error("cleanup_stale_jobs: sync cleanup failed", "err", err)
+		slog.ErrorContext(ctx, "cleanup_stale_jobs: sync cleanup failed", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
 		emitMaint(ctx, db, true, notify.MaintPayload{Action: "stale_jobs_cleanup", Error: err.Error()})
 		return
 	}
 	syncRows, _ := syncResult.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
 	if syncRows > 0 {
-		slog.Info("cleanup_stale_jobs: marked stale sync jobs failed", "count", syncRows)
+		slog.InfoContext(ctx, "cleanup_stale_jobs: marked stale sync jobs failed", "count", syncRows)
 	}
 
 	if rows+syncRows > 0 {

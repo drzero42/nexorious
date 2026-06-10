@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
 )
 
@@ -51,7 +52,8 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 
 	if a.onNewTokens != nil {
 		if err := a.onNewTokens(tok.RefreshToken); err != nil {
-			slog.Error("gog: persist refreshed tokens failed", "err", err)
+			slog.ErrorContext(ctx, "gog: persist refreshed tokens failed",
+				logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	}
 

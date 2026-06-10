@@ -12,6 +12,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // ErrNilRiverClient is returned by EnqueueOrFail when called with a nil River
@@ -94,7 +95,7 @@ func markEnqueueFailed(ctx context.Context, db *bun.DB, jobItemID, msg string) {
 		 WHERE id = ? AND status = ?`,
 		models.JobItemStatusFailed, msg, now, jobItemID, models.JobItemStatusPending,
 	).Exec(ctx); err != nil {
-		slog.Error("EnqueueOrFail: mark item failed",
-			"job_item_id", jobItemID, "msg", msg, "err", err)
+		slog.ErrorContext(ctx, "EnqueueOrFail: mark item failed",
+			"job_item_id", jobItemID, "msg", msg, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 }

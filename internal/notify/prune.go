@@ -6,6 +6,8 @@ import (
 
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // PruneEventsArgs is the River periodic job payload.
@@ -41,7 +43,7 @@ func PruneEvents(ctx context.Context, db *bun.DB, retentionDays int) {
 		retentionDays,
 	).Exec(ctx)
 	if err != nil {
-		slog.Error("notify: prune events", "err", err)
+		slog.ErrorContext(ctx, "notify: prune events", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 		Emit(ctx, db, EmitParams{
 			Type:    TypeAdminMaintFailed,
 			Scope:   ScopeAdmin,
@@ -50,7 +52,7 @@ func PruneEvents(ctx context.Context, db *bun.DB, retentionDays int) {
 		return
 	}
 	rows, _ := res.RowsAffected() //nolint:errcheck // advisory count only
-	slog.Info("notify: pruned events", "count", rows)
+	slog.InfoContext(ctx, "notify: pruned events", "count", rows)
 	Emit(ctx, db, EmitParams{
 		Type:    TypeAdminMaintCompleted,
 		Scope:   ScopeAdmin,

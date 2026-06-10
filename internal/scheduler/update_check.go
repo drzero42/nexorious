@@ -8,6 +8,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/updatecheck"
 )
@@ -38,7 +39,7 @@ func (w *CheckForUpdatesWorker) Work(ctx context.Context, _ *river.Job[CheckForU
 
 	rel, err := w.Client.FetchLatest(ctx)
 	if err != nil {
-		slog.Warn("update check: fetch latest release failed", "err", err)
+		slog.WarnContext(ctx, "update check: fetch latest release failed", logging.Cat(logging.CategoryExternalAPI), logging.KeyErr, err)
 		return nil
 	}
 

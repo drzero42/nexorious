@@ -14,6 +14,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 const sessionCookieName = "session_id"
@@ -154,6 +156,7 @@ func AuthMiddleware(db *bun.DB) echo.MiddlewareFunc {
 			c.Set("is_admin", user.IsAdmin)
 			c.Set("user", &user)
 			c.Set("session_hash", sessionHash)
+			c.SetRequest(c.Request().WithContext(logging.WithUserID(c.Request().Context(), user.ID)))
 
 			if sessionHash != "" {
 				go func() {

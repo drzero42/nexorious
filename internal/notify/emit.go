@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // EmitParams describes one event to emit.
@@ -45,7 +47,7 @@ func Emit(ctx context.Context, db *bun.DB, p EmitParams) {
 	}
 	payloadJSON, err := json.Marshal(p.Payload)
 	if err != nil {
-		slog.Error("notify: marshal payload", "type", p.Type, "err", err)
+		slog.ErrorContext(ctx, "notify: marshal payload", "type", p.Type, logging.KeyErr, err)
 		payloadJSON = []byte("{}")
 	}
 
@@ -71,7 +73,7 @@ func Emit(ctx context.Context, db *bun.DB, p EmitParams) {
 		return
 	}
 	if err != nil {
-		slog.Error("notify: insert event", "type", p.Type, "err", err)
+		slog.ErrorContext(ctx, "notify: insert event", "type", p.Type, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 		return
 	}
 
@@ -83,11 +85,11 @@ func enqueueNotify(ctx context.Context, eventID string) {
 	rc := riverClient
 	rcMu.RUnlock()
 	if rc == nil {
-		slog.Debug("notify: river client unset; event persisted but not enqueued", "event_id", eventID)
+		slog.DebugContext(ctx, "notify: river client unset; event persisted but not enqueued", "event_id", eventID)
 		return
 	}
 	if _, err := rc.Insert(ctx, NotifyArgs{EventID: eventID}, nil); err != nil {
-		slog.Warn("notify: enqueue NotifyWorker", "event_id", eventID, "err", err)
+		slog.WarnContext(ctx, "notify: enqueue NotifyWorker", "event_id", eventID, logging.KeyErr, err)
 	}
 }
 

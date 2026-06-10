@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 const (
@@ -33,7 +35,7 @@ func NewAuthManager(clientID, clientSecret, preConfiguredToken string) *AuthMana
 	am := &AuthManager{
 		clientID:     clientID,
 		clientSecret: clientSecret,
-		httpClient:   &http.Client{Timeout: 10 * time.Second},
+		httpClient:   &http.Client{Timeout: 10 * time.Second, Transport: logging.NewRoundTripper(nil)},
 		tokenURL:     defaultTwitchTokenURL,
 	}
 	if preConfiguredToken != "" {

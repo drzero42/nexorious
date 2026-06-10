@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // Client is an HTTP client for the Steam Web API.
@@ -25,7 +27,7 @@ type Client struct {
 // NewClient creates a new Steam API client.
 func NewClient() *Client {
 	return &Client{
-		http:           &http.Client{},
+		http:           &http.Client{Transport: logging.NewRoundTripper(nil)},
 		limiter:        rate.NewLimiter(rate.Every(200*time.Millisecond), 1),
 		ownedGamesBase: "https://api.steampowered.com",
 		appDetailsBase: "https://store.steampowered.com",
@@ -196,7 +198,7 @@ func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platfor
 			_ = resp.Body.Close()
 			if attempt == 0 {
 				d := steamRetryAfterDelay(resp.Header.Get("Retry-After"))
-				slog.Debug("steam appdetails: 429 rate limited, waiting before retry", "appid", appID, "wait", d)
+				slog.DebugContext(ctx, "steam appdetails: 429 rate limited, waiting before retry", "appid", appID, "wait", d)
 				if sleepErr := steamSleepCtx(ctx, d); sleepErr != nil {
 					return Platforms{}, sleepErr
 				}
@@ -234,7 +236,7 @@ func (c *Client) GetAppDetailsPlatforms(ctx context.Context, appID int) (Platfor
 		if !entry.Success {
 			// Steam has no current store data for this appid (removed/delisted games still
 			// present in the user's library). Caller falls back to a default platform.
-			slog.Debug("steam appdetails: success=false (delisted/removed game)", "appid", appID)
+			slog.DebugContext(ctx, "steam appdetails: success=false (delisted/removed game)", "appid", appID)
 			return Platforms{}, nil
 		}
 		return Platforms{
