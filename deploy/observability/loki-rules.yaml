@@ -1,0 +1,112 @@
+# Nexorious — Grafana Loki ruler alerting rules (LogQL).
+#
+# SINGLE SOURCE OF TRUTH. Two ways to use it:
+#   1. Non-Helm: drop this file into your Loki ruler's per-tenant rule directory
+#      (e.g. /rules/fake/ when auth_enabled: false), then reload the ruler.
+#   2. Helm: set alerts.enabled=true and alerts.loki.enabled=true — the chart
+#      wraps this exact file into a ConfigMap the ruler sidecar discovers.
+#
+# ADJUST the stream selector {app="nexorious"} to match the labels your log
+# collector (promtail / grafana-alloy) attaches to nexorious container logs.
+# Thresholds and windows are conservative starting points — tune to your volume.
+#
+# Fields (nexorious structured logging — see docs/logging-conventions.md):
+#   level    INFO | WARN | ERROR | DEBUG
+#   category db | auth | external_api | validation | config | panic  (warn/error only)
+#   source   steam | playstation-store | gog | epic-games-store | humble-bundle
+#   msg      human message
+groups:
+  - name: nexorious-db-startup
+    interval: 1m
+    rules:
+      - alert: NexoriousDBUnavailable
+        expr: |
+          sum(count_over_time({app="nexorious"} | json | msg="database unavailable" [5m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nexorious lost its database connection"
+          description: "{{ $value }} 'database unavailable' log line(s) in 5m — the app is in the DBUnavailable state and is not serving normally."
+
+      - alert: NexoriousStartupFailure
+        expr: |
+          sum(count_over_time({app="nexorious"} | json | category="db" | level="ERROR" | msg=~"^(migrate:|serve: river client init failed)" [5m])) > 0
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nexorious migration or River startup failure"
+          description: "{{ $value }} migration/startup failure line(s) in 5m — migrations failed or the River client failed to initialize; the app cannot reach Ready."
+
+  - name: nexorious-panics
+    interval: 1m
+    rules:
+      - alert: NexoriousPanicRecovered
+        expr: |
+          sum(count_over_time({app="nexorious"} | json | category="panic" [5m])) > 0
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nexorious recovered a panic"
+          description: "{{ $value }} recovered panic(s) in 5m (category=panic) — an HTTP request or worker job hit an unhandled error."
+
+  - name: nexorious-credentials
+    interval: 1m
+    rules:
+      - alert: NexoriousCredentialFailures
+        expr: |
+          sum by (source) (count_over_time({app="nexorious"} | json | category="auth" [15m])) > 3
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Repeated credential/auth failures for {{ $labels.source }}"
+          description: "{{ $value }} auth-category failures for source '{{ $labels.source }}' in 15m — stored credentials are likely expired or invalid."
+
+  - name: nexorious-sync-jobs
+    interval: 1m
+    rules:
+      - alert: NexoriousSyncErrors
+        expr: |
+          sum by (source) (count_over_time({app="nexorious"} | json | category="external_api" [15m])) > 3
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated sync / external-API errors for {{ $labels.source }}"
+          description: "{{ $value }} external_api failures for source '{{ $labels.source }}' in 15m."
+
+      - alert: NexoriousStuckJobs
+        expr: |
+          sum(count_over_time({app="nexorious"} | json | msg=~"marked stale" [15m])) > 0
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nexorious reaped stuck jobs"
+          description: "{{ $value }} stale-job reaping event(s) in 15m — jobs were stuck and force-marked failed."
+
+      - alert: NexoriousJobDispatchFailures
+        expr: |
+          sum(count_over_time({app="nexorious"} | json | category="db" | level="ERROR" | msg=~"enqueue.*failed" [10m])) > 0
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nexorious job enqueue/dispatch failures"
+          description: "{{ $value }} job enqueue/dispatch failure(s) in 10m — River jobs may not have been scheduled."
+
+  - name: nexorious-generic
+    interval: 1m
+    rules:
+      - alert: NexoriousHighErrorRate
+        expr: |
+          sum(count_over_time({app="nexorious"} | json | level="ERROR" [10m])) > 10
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated nexorious error-log rate"
+          description: "{{ $value }} ERROR-level log lines in 10m across all categories — investigate for a broader fault."

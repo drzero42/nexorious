@@ -1,0 +1,32 @@
+# Example Alertmanager routing for nexorious alerts. NOT applied by the chart —
+# Alertmanager config and receiver secrets are the operator's own infra. Copy the
+# relevant bits into your Alertmanager config and wire your own receivers.
+#
+# Both backends label alerts with severity: critical | warning. Route on that.
+route:
+  receiver: nexorious-default
+  group_by: ['alertname', 'source']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: nexorious-critical
+      group_wait: 0s
+      repeat_interval: 1h
+    - matchers:
+        - severity = "warning"
+      receiver: nexorious-warning
+
+receivers:
+  - name: nexorious-default
+  - name: nexorious-critical
+    # Replace with your real pager/webhook integration, e.g.:
+    # pagerduty_configs:
+    #   - service_key: <key>
+  - name: nexorious-warning
+    # Replace with your real chat integration, e.g.:
+    # slack_configs:
+    #   - api_url: <webhook-url>
+    #     channel: '#alerts'
