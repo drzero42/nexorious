@@ -16,6 +16,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/notify"
 )
@@ -62,7 +63,8 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 	userID := uuid.NewString()
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), auth.BcryptCost)
 	if err != nil {
-		slog.Error("setup admin: bcrypt", "err", err)
+		// Pre-auth: no user_id in ctx yet; log it explicitly.
+		slog.ErrorContext(c.Request().Context(), "setup admin: bcrypt", logging.KeyUserID, userID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryAuth)
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
@@ -77,7 +79,8 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 		if isUserExistsError(err) {
 			return echo.NewHTTPError(http.StatusForbidden, "setup already complete")
 		}
-		slog.Error("setup admin: create user", "err", err)
+		// Pre-auth: no user_id in ctx yet; log it explicitly.
+		slog.ErrorContext(c.Request().Context(), "setup admin: create user", logging.KeyUserID, userID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
@@ -86,7 +89,8 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 
 	// The initial setup user is always an admin.
 	if err := notify.SeedDefaultSubscriptions(context.Background(), h.db, userID, true); err != nil {
-		slog.Error("setup: seed notification subscriptions", "user_id", userID, "err", err)
+		// Pre-auth: no user_id in ctx yet; log it explicitly.
+		slog.ErrorContext(c.Request().Context(), "setup: seed notification subscriptions", logging.KeyUserID, userID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 	}
 
 	sessionID, sessionErr := issueSession(h.db, h.cfg.SessionExpireDays, userID,
@@ -94,7 +98,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 		c.RealIP(),
 	)
 	if sessionErr != nil {
-		slog.Error("setup admin: issue session", "err", sessionErr)
+		slog.ErrorContext(c.Request().Context(), "setup admin: issue session", logging.KeyUserID, userID, logging.KeyErr, sessionErr, logging.KeyCategory, logging.CategoryDB)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "setup succeeded but session could not be created — please log in",
 		})
@@ -103,7 +107,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 
 	resp, loadErr := loadMeResponse(context.Background(), h.db, userID)
 	if loadErr != nil {
-		slog.Error("setup admin: load user", "err", loadErr)
+		slog.ErrorContext(c.Request().Context(), "setup admin: load user", logging.KeyUserID, userID, logging.KeyErr, loadErr, logging.KeyCategory, logging.CategoryDB)
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	return c.JSON(http.StatusCreated, resp)

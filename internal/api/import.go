@@ -19,6 +19,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/darkadia"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -131,6 +132,8 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
 	}
 
+	reqCtx := c.Request().Context()
+
 	// Create one JobItem per game and enqueue a task.
 	var skipCount int
 	for i, raw := range export.Games {
@@ -139,7 +142,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			Title  *string `json:"title"`
 		}
 		if err := json.Unmarshal(raw, &gameFields); err != nil {
-			slog.Warn("import: malformed game record, skipping", "record_index", i, "err", err)
+			slog.WarnContext(reqCtx, "import: malformed game record, skipping", "record_index", i, logging.KeyErr, err, logging.KeyCategory, logging.CategoryValidation)
 			skipCount++
 			continue
 		}
@@ -179,7 +182,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 
 		if h.riverClient != nil {
 			if _, err := h.riverClient.Insert(ctx, tasks.ImportItemArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.Error("import: submit task", "item_id", item.ID, "err", err)
+				slog.ErrorContext(reqCtx, "import: submit task", "item_id", item.ID, logging.KeyErr, err)
 			}
 		}
 	}
@@ -189,7 +192,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			`UPDATE jobs SET total_items = total_items - ? WHERE id = ?`,
 			skipCount, job.ID,
 		).Exec(ctx); err != nil {
-			slog.Error("import: update total_items failed", "err", err, "job_id", job.ID)
+			slog.ErrorContext(reqCtx, "import: update total_items failed", logging.KeyErr, err, logging.KeyJobID, job.ID, logging.KeyCategory, logging.CategoryDB)
 		} else {
 			job.TotalItems -= skipCount
 		}
@@ -278,6 +281,8 @@ func (h *ImportHandler) HandleImportDarkadia(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
 	}
 
+	reqCtx := c.Request().Context()
+
 	for i, g := range games {
 		meta, err := json.Marshal(g)
 		if err != nil {
@@ -299,7 +304,7 @@ func (h *ImportHandler) HandleImportDarkadia(c *echo.Context) error {
 		}
 		if h.riverClient != nil {
 			if _, err := h.riverClient.Insert(ctx, tasks.DarkadiaMatchArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.Error("import: submit darkadia_match", "item_id", item.ID, "err", err)
+				slog.ErrorContext(reqCtx, "import: submit darkadia_match", "item_id", item.ID, logging.KeyErr, err)
 			}
 		}
 	}
@@ -310,7 +315,7 @@ func (h *ImportHandler) HandleImportDarkadia(c *echo.Context) error {
 	// inserted — the completion check refuses to finalize while dispatch is in
 	// flight (dispatch_complete=false), mirroring the sync dispatch worker.
 	if _, err := h.db.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, job.ID).Exec(ctx); err != nil {
-		slog.Error("import: mark dispatch complete", "job_id", job.ID, "err", err)
+		slog.ErrorContext(reqCtx, "import: mark dispatch complete", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 	}
 	tasks.DarkadiaCheckJobCompletion(h.db, job.ID)
 

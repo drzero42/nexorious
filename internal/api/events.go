@@ -15,6 +15,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/dbutil"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 )
 
@@ -155,9 +156,10 @@ func (h *EventsHandler) HandleList(c *echo.Context) error {
 		q = q.Where("(e.occurred_at, e.id) < (?, ?)", ts, id)
 	}
 
+	ctx := c.Request().Context()
 	var rows []eventRow
 	if err := q.Scan(context.Background(), &rows); err != nil {
-		slog.Error("events: list query failed", "err", err)
+		slog.ErrorContext(ctx, "events: list query failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list events")
 	}
 
@@ -174,7 +176,7 @@ func (h *EventsHandler) HandleList(c *echo.Context) error {
 		r := rows[i]
 		title, body, derr := notify.Format(r.Type, r.Payload)
 		if derr != nil {
-			slog.Warn("notify: payload decode failed", "event_id", r.ID, "type", r.Type, "err", derr)
+			slog.WarnContext(ctx, "notify: payload decode failed", "event_id", r.ID, "type", r.Type, logging.KeyErr, derr)
 		}
 		category := ""
 		if m, ok := notify.Meta(r.Type); ok {

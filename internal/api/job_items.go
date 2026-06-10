@@ -14,6 +14,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -146,7 +147,7 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 	}
 
 	if err := tasks.EnqueueOrFail(context.Background(), h.db, h.riverClient, itemID, finalizeArgs); err != nil {
-		slog.Error("resolve_item: enqueue finalize", "item_id", itemID, "err", err)
+		slog.ErrorContext(c.Request().Context(), "resolve_item: enqueue finalize", "item_id", itemID, logging.KeyErr, err)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
