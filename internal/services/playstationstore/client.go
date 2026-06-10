@@ -14,6 +14,8 @@ import (
 
 	psnsdk "github.com/sizovilya/go-psn-api"
 	"golang.org/x/time/rate"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // PSNAccountInfo is the psn-local type — does NOT import the api package.
@@ -30,6 +32,10 @@ var ErrInvalidNPSSOToken = errors.New("invalid npsso token")
 // query hash is no longer valid and requires a code update.
 var ErrPSNGraphQLSchemaChanged = errors.New("psn graphql schema changed")
 
+// profileHTTPClient is a package-level client used by the package-level
+// fetchMyProfile helper, which has no access to a *Client receiver.
+var profileHTTPClient = &http.Client{Transport: logging.NewRoundTripper(nil)}
+
 // Client wraps the go-psn-api library.
 type Client struct {
 	httpClient      *http.Client
@@ -44,7 +50,7 @@ type Client struct {
 // NewClient creates a new PSN client with production defaults.
 func NewClient() *Client {
 	return &Client{
-		httpClient:      http.DefaultClient,
+		httpClient:      &http.Client{Transport: logging.NewRoundTripper(nil)},
 		gamelistURL:     "https://m.np.playstation.com",
 		graphqlURL:      "https://web.np.playstation.com",
 		graphqlPageSize: 200,
@@ -118,7 +124,7 @@ func fetchMyProfile(ctx context.Context, accessToken string) (*struct {
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := profileHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("psn: profile request failed: %w", err)
 	}

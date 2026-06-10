@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/services/matching"
 )
@@ -50,7 +51,7 @@ func NewClient(cfg *config.Config, limiter ratelimit.Limiter) *Client {
 	}
 
 	return &Client{
-		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		httpClient:    &http.Client{Timeout: 30 * time.Second, Transport: logging.NewRoundTripper(nil)},
 		auth:          NewAuthManager(cfg.IGDBClientID, cfg.IGDBClientSecret, cfg.IGDBAccessToken),
 		limiter:       limiter,
 		apiURL:        defaultIGDBAPIURL,
