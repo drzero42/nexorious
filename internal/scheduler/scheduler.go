@@ -216,7 +216,7 @@ func (w *CheckPendingSyncsWorker) Work(ctx context.Context, _ *river.Job[CheckPe
 			UserID:     cfg.UserID,
 			Storefront: cfg.Storefront,
 		}, nil); err != nil {
-			slog.ErrorContext(ctx, "CheckPendingSyncs: enqueue dispatch failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.KeyUserID, cfg.UserID)
+			slog.ErrorContext(ctx, "CheckPendingSyncs: enqueue dispatch failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.KeyUserID, cfg.UserID, logging.Cat(logging.CategoryDB))
 		}
 	}
 	return nil
