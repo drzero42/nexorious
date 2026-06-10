@@ -10,9 +10,11 @@ import (
 	"github.com/riverqueue/river/rivertype"
 )
 
-// WorkerMiddleware binds the River job id into ctx (so every in-job log line is
-// correlated via ContextHandler) and emits exactly one outcome line per job with
-// job_type, outcome, and duration_ms.
+// WorkerMiddleware binds River's internal job id into ctx as river_job_id (so
+// every in-job log line is correlated via ContextHandler) and emits exactly one
+// outcome line per job with job_type, outcome, and duration_ms. The user-facing
+// application job id (jobs.id) is distinct and is seeded by the worker that owns
+// it via WithJobID — River's id is a Postgres sequence, not the jobs UUID.
 type WorkerMiddleware struct {
 	river.MiddlewareDefaults
 }
@@ -22,7 +24,7 @@ func NewWorkerMiddleware() *WorkerMiddleware { return &WorkerMiddleware{} }
 
 func (m *WorkerMiddleware) Work(ctx context.Context, job *rivertype.JobRow, doInner func(context.Context) error) error {
 	id := strconv.FormatInt(job.ID, 10)
-	ctx = WithJobID(ctx, id)
+	ctx = WithRiverJobID(ctx, id)
 
 	start := time.Now()
 	err := doInner(ctx)

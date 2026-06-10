@@ -20,16 +20,16 @@ func TestWorkerMiddleware_Success(t *testing.T) {
 	mw := NewWorkerMiddleware()
 	job := &rivertype.JobRow{ID: 42, Kind: "sync_steam"}
 
-	var sawJobID string
+	var sawRiverJobID string
 	err := mw.Work(context.Background(), job, func(ctx context.Context) error {
-		sawJobID = jobID(ctx)
+		sawRiverJobID = riverJobID(ctx)
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("Work returned error: %v", err)
 	}
-	if sawJobID != "42" {
-		t.Errorf("job_id in ctx = %q, want 42", sawJobID)
+	if sawRiverJobID != "42" {
+		t.Errorf("river_job_id in ctx = %q, want 42", sawRiverJobID)
 	}
 	m := decode(t, &buf)
 	if m[KeyJobType] != "sync_steam" {
@@ -38,8 +38,8 @@ func TestWorkerMiddleware_Success(t *testing.T) {
 	if m[KeyOutcome] != "completed" {
 		t.Errorf("outcome = %v, want completed", m[KeyOutcome])
 	}
-	if m[KeyJobID] != "42" {
-		t.Errorf("job_id = %v, want 42", m[KeyJobID])
+	if m[KeyRiverJobID] != "42" {
+		t.Errorf("river_job_id = %v, want 42", m[KeyRiverJobID])
 	}
 	if _, ok := m[KeyDurationMS]; !ok {
 		t.Errorf("missing duration_ms")

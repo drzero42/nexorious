@@ -30,6 +30,9 @@ func (h *ContextHandler) Handle(ctx context.Context, r slog.Record) error {
 	if v := jobID(ctx); v != "" {
 		r.AddAttrs(slog.String(KeyJobID, v))
 	}
+	if v := riverJobID(ctx); v != "" {
+		r.AddAttrs(slog.String(KeyRiverJobID, v))
+	}
 	if v := userID(ctx); v != "" {
 		r.AddAttrs(slog.String(KeyUserID, v))
 	}

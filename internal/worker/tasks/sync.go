@@ -163,6 +163,9 @@ func insertJobItem(ctx context.Context, db *bun.DB, egID string, e ExternalGameE
 
 func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSyncArgs]) error {
 	p := job.Args
+	// Seed the application job id so every in-job log line (and the helpers below
+	// that receive this ctx) is correlated to the user-facing jobs.id.
+	ctx = logging.WithJobID(ctx, p.JobID)
 
 	// Mark job as processing.
 	now := time.Now().UTC()
@@ -446,6 +449,8 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		slog.ErrorContext(ctx, "igdb_match: load job_item", "id", p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return err
 	}
+	// Correlate every line below to the user-facing job once the item is loaded.
+	ctx = logging.WithJobID(ctx, item.JobID)
 
 	if item.ExternalGameID == nil {
 		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
@@ -626,6 +631,8 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		slog.ErrorContext(ctx, "user_game_write: load job_item", "id", p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return err
 	}
+	// Correlate every line below to the user-facing job once the item is loaded.
+	ctx = logging.WithJobID(ctx, item.JobID)
 
 	if item.ExternalGameID == nil {
 		markItemFailed(ctx, w.DB, &item, "external_game_id not set on job_item", "process_sync_item: markItemFailed")
@@ -946,6 +953,7 @@ func syncMarkItemPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 // completion check below treats dispatch_complete=false as "more work may
 // still arrive" and refuses to finalize.
 func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, riverClient *river.Client[pgx.Tx], jobID string) {
+	ctx = logging.WithJobID(ctx, jobID)
 	activeRemaining, ok := countJobItems(ctx, db, jobID, "status IN ('pending', 'processing')", "sync: SyncCheckJobCompletion count")
 	if !ok || activeRemaining > 0 {
 		return

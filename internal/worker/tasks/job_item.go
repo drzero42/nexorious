@@ -76,9 +76,10 @@ func markItemSkipped(ctx context.Context, db *bun.DB, item *models.JobItem, logP
 // bound as a parameter. On error it logs under logPrefix and returns ok=false so
 // callers can bail without finalizing.
 func countJobItems(ctx context.Context, db *bun.DB, jobID, predicate, logPrefix string) (count int, ok bool) {
+	ctx = logging.WithJobID(ctx, jobID)
 	query := "SELECT COUNT(*) FROM job_items WHERE job_id = ? AND " + predicate
 	if err := db.NewRaw(query, jobID).Scan(ctx, &count); err != nil {
-		slog.ErrorContext(ctx, logPrefix, logging.KeyJobID, jobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(ctx, logPrefix, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return 0, false
 	}
 	return count, true
@@ -92,6 +93,7 @@ func countJobItems(ctx context.Context, db *bun.DB, jobID, predicate, logPrefix 
 // guard. It returns finalized=true only when this call performed the update —
 // callers use that to emit completion notifications exactly once.
 func finalizeJobCompleted(ctx context.Context, db *bun.DB, jobID, logPrefix string, requireDispatchComplete bool) (finalized bool) {
+	ctx = logging.WithJobID(ctx, jobID)
 	now := time.Now().UTC()
 	query := "UPDATE jobs SET status = 'completed', completed_at = ? WHERE id = ? AND status IN ('pending', 'processing')"
 	if requireDispatchComplete {
@@ -99,7 +101,7 @@ func finalizeJobCompleted(ctx context.Context, db *bun.DB, jobID, logPrefix stri
 	}
 	res, err := db.NewRaw(query, now, jobID).Exec(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, logPrefix, logging.KeyJobID, jobID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(ctx, logPrefix, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return false
 	}
 	n, _ := res.RowsAffected() //nolint:errcheck // advisory RowsAffected
