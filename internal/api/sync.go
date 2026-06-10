@@ -22,6 +22,7 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -301,7 +302,7 @@ func (h *SyncHandler) disconnectStorefront(c *echo.Context, sf string) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	if err := h.clearStorefrontCredentials(context.Background(), userID, sf); err != nil {
-		slog.Error("sync: disconnect failed", "err", err, "storefront", sf, "user_id", userID)
+		slog.ErrorContext(c.Request().Context(), "sync: disconnect failed", logging.KeyErr, err, "storefront", sf, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect "+sf)
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -335,7 +336,7 @@ func (h *SyncHandler) loadConnectionStatus(ctx context.Context, userID, sf strin
 	}
 	plain, err := h.encrypter.Decrypt(*row.StorefrontCredentials)
 	if err != nil {
-		slog.Warn("sync: credentials decrypt failed", "storefront", sf, "user_id", userID, "err", err)
+		slog.WarnContext(ctx, "sync: credentials decrypt failed", "storefront", sf, logging.KeyUserID, userID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return connectionStatus{Connected: true, CredentialsError: true}, nil
 	}
 	return connectionStatus{Connected: true, CredentialsError: row.CredentialsError, Plaintext: plain}, nil
@@ -367,7 +368,7 @@ func (h *SyncHandler) serveConnectionStatus(c *echo.Context, sf string, notConne
 	}
 	resp, err := respond(status.Plaintext, status.CredentialsError)
 	if err != nil {
-		slog.Error(sf+": stored credentials are corrupted", "err", err)
+		slog.ErrorContext(c.Request().Context(), sf+": stored credentials are corrupted", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "stored credentials are corrupted")
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -548,7 +549,7 @@ func (h *SyncHandler) HandleTriggerSync(c *echo.Context) error {
 		return e
 	})
 	if txErr != nil {
-		slog.Error("sync: create job", "err", txErr, "storefront", sf)
+		slog.ErrorContext(c.Request().Context(), "sync: create job", logging.KeyErr, txErr, "storefront", sf, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job")
 	}
 	if duplicate {
@@ -559,7 +560,7 @@ func (h *SyncHandler) HandleTriggerSync(c *echo.Context) error {
 		if _, err := h.riverClient.Insert(ctx, tasks.DispatchSyncArgs{
 			JobID: jobID, UserID: userID, Storefront: sf,
 		}, nil); err != nil {
-			slog.Error("sync: enqueue dispatch failed", "err", err, "job_id", jobID)
+			slog.ErrorContext(c.Request().Context(), "sync: enqueue dispatch failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync job")
 		}
 	}
@@ -660,7 +661,7 @@ func (h *SyncHandler) HandleSteamConnect(c *echo.Context) error {
 		"display_name": summary.PersonaName,
 	}
 	if err := h.persistStorefrontCredentials(context.Background(), userID, "steam", creds); err != nil {
-		slog.Error("sync: persist steam credentials failed", "err", err, "user_id", userID)
+		slog.ErrorContext(c.Request().Context(), "sync: persist steam credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Steam connection")
 	}
 
@@ -720,7 +721,7 @@ func (h *SyncHandler) HandlePlaystationStoreConnect(c *echo.Context) error {
 		"online_id":   info.OnlineID,
 	}
 	if err := h.persistStorefrontCredentials(context.Background(), userID, "playstation-store", creds); err != nil {
-		slog.Error("psn: persist storefront credentials failed", "user_id", userID, "err", err)
+		slog.ErrorContext(c.Request().Context(), "psn: persist storefront credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist PSN connection")
 	}
 
@@ -778,13 +779,13 @@ func (h *SyncHandler) HandleHumbleConnect(c *echo.Context) error {
 		if errors.Is(err, ErrInvalidHumbleCookie) {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid_session_cookie")
 		}
-		slog.Error("humble: verify failed", "user_id", userID, "err", err)
+		slog.ErrorContext(c.Request().Context(), "humble: verify failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusBadGateway, "could not reach Humble Bundle")
 	}
 
 	creds := map[string]any{"session_cookie": req.SessionCookie}
 	if err := h.persistStorefrontCredentials(context.Background(), userID, "humble-bundle", creds); err != nil {
-		slog.Error("humble: persist storefront credentials failed", "user_id", userID, "err", err)
+		slog.ErrorContext(c.Request().Context(), "humble: persist storefront credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Humble Bundle connection")
 	}
 
@@ -833,7 +834,7 @@ func (h *SyncHandler) HandleEpicGamesStoreConnect(c *echo.Context) error {
 	}
 
 	if err := h.persistStorefrontCredentials(context.Background(), userID, "epic-games-store", snapshot); err != nil {
-		slog.Error("epic: persist storefront credentials failed", "user_id", userID, "err", err)
+		slog.ErrorContext(c.Request().Context(), "epic: persist storefront credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Epic connection")
 	}
 
@@ -852,12 +853,12 @@ func (h *SyncHandler) HandleEpicGamesStoreDisconnect(c *echo.Context) error {
 	}
 	ctx := context.Background()
 	if err := h.clearStorefrontCredentials(ctx, userID, "epic-games-store"); err != nil {
-		slog.Error("sync: epic disconnect failed", "err", err, "user_id", userID)
+		slog.ErrorContext(c.Request().Context(), "sync: epic disconnect failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect Epic")
 	}
 	if h.epicGamesStoreClient != nil {
 		if err := h.epicGamesStoreClient.Cleanup(ctx, userID); err != nil {
-			slog.Error("sync: epic cleanup failed", "err", err, "user_id", userID)
+			slog.ErrorContext(c.Request().Context(), "sync: epic cleanup failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 		}
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -949,7 +950,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 	if _, err := h.db.NewRaw(
 		`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ?`, id,
 	).Exec(ctx); err != nil {
-		slog.Error("sync: skip game failed", "err", err, "external_game_id", id)
+		slog.ErrorContext(c.Request().Context(), "sync: skip game failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip game")
 	}
 
@@ -962,7 +963,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 			if _, err := h.db.NewRaw(
 				`UPDATE external_games SET is_skipped = true, updated_at = now() WHERE id = ?`, childID,
 			).Exec(ctx); err != nil {
-				slog.Error("sync: skip game: cascade child failed", "err", err, "child_id", childID)
+				slog.ErrorContext(c.Request().Context(), "sync: skip game: cascade child failed", logging.KeyErr, err, "child_id", childID, logging.Cat(logging.CategoryDB))
 				continue
 			}
 			var childItem struct {
@@ -979,7 +980,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 					`UPDATE job_items SET status = 'skipped', processed_at = now() WHERE id = ?`,
 					childItem.ID,
 				).Exec(ctx); err != nil {
-					slog.Error("sync: skip game: cascade child job_item", "err", err, "job_item_id", childItem.ID)
+					slog.ErrorContext(c.Request().Context(), "sync: skip game: cascade child job_item", logging.KeyErr, err, "job_item_id", childItem.ID, logging.Cat(logging.CategoryDB))
 				} else {
 					tasks.SyncCheckJobCompletion(ctx, h.db, h.riverClient, childItem.JobID)
 				}
@@ -1003,14 +1004,14 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 			`UPDATE job_items SET status = 'skipped', processed_at = now() WHERE id = ?`,
 			jobItemRow.ID,
 		).Exec(ctx); err != nil {
-			slog.Error("sync: skip game: mark job_item skipped", "err", err, "job_item_id", jobItemRow.ID)
+			slog.ErrorContext(c.Request().Context(), "sync: skip game: mark job_item skipped", logging.KeyErr, err, "job_item_id", jobItemRow.ID, logging.Cat(logging.CategoryDB))
 		} else {
 			if _, err := h.db.NewRaw(
 				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
 				 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
 				uuid.NewString(), jobItemRow.JobID, userID, id, ownerRow.Title,
 			).Exec(ctx); err != nil {
-				slog.Error("sync: skip game: insert sync_change (skipped)", "err", err)
+				slog.ErrorContext(c.Request().Context(), "sync: skip game: insert sync_change (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			}
 			tasks.SyncCheckJobCompletion(ctx, h.db, h.riverClient, jobItemRow.JobID)
 		}
@@ -1039,7 +1040,7 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 	if _, err := h.db.NewRaw(
 		`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE id = ?`, id,
 	).Exec(ctx); err != nil {
-		slog.Error("sync: unskip game failed", "err", err, "external_game_id", id)
+		slog.ErrorContext(c.Request().Context(), "sync: unskip game failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to unskip game")
 	}
 
@@ -1047,7 +1048,7 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 	if _, err := h.db.NewRaw(
 		`UPDATE external_games SET is_skipped = false, updated_at = now() WHERE parent_id = ?`, id,
 	).Exec(ctx); err != nil {
-		slog.Error("sync: unskip game: cascade children failed", "err", err, "parent_id", id)
+		slog.ErrorContext(c.Request().Context(), "sync: unskip game: cascade children failed", logging.KeyErr, err, "parent_id", id, logging.Cat(logging.CategoryDB))
 	}
 
 	// Enqueue immediate re-processing. Failure here is non-fatal — the game
@@ -1066,12 +1067,12 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 			 VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
 			itemID, jobID, userID, eg.ExternalID, eg.Title, eg.ID,
 		).Exec(ctx); err != nil {
-			slog.Error("sync: insert job_item for unskip failed", "err", err, "external_game_id", eg.ID)
+			slog.ErrorContext(c.Request().Context(), "sync: insert job_item for unskip failed", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
 		if h.riverClient != nil {
 			if _, err := h.riverClient.Insert(ctx, tasks.IGDBMatchArgs{JobItemID: itemID}, nil); err != nil {
-				slog.Error("sync: enqueue igdb_match failed", "err", err, "job_item_id", itemID)
+				slog.ErrorContext(c.Request().Context(), "sync: enqueue igdb_match failed", logging.KeyErr, err, "job_item_id", itemID, logging.Cat(logging.CategoryDB))
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 			}
 		}
@@ -1202,7 +1203,7 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 			`UPDATE jobs SET status = ?, completed_at = now() WHERE id = ?`,
 			models.JobStatusCancelled, activeJob.ID,
 		).Exec(ctx); err != nil {
-			slog.Error("sync: cancel active job failed", "err", err, "job_id", activeJob.ID)
+			slog.ErrorContext(c.Request().Context(), "sync: cancel active job failed", logging.KeyErr, err, logging.KeyJobID, activeJob.ID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel active job")
 		}
 		if _, err := h.db.NewRaw(`
@@ -1212,7 +1213,7 @@ func (h *SyncHandler) HandleResetSyncData(c *echo.Context) error {
 			  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE job_id = ?)`,
 			activeJob.ID,
 		).Exec(ctx); err != nil {
-			slog.Error("sync: cancel river jobs failed", "err", err, "job_id", activeJob.ID)
+			slog.ErrorContext(c.Request().Context(), "sync: cancel river jobs failed", logging.KeyErr, err, logging.KeyJobID, activeJob.ID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel queued tasks")
 		}
 	}
@@ -1288,7 +1289,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 			`SELECT COUNT(*) FROM user_game_platforms WHERE user_game_id = ? AND external_game_id IS DISTINCT FROM ?`,
 			ugID, id,
 		).Scan(ctx, &otherCount); err != nil {
-			slog.Error("sync: count other platforms failed", "err", err, "user_game_id", ugID)
+			slog.ErrorContext(c.Request().Context(), "sync: count other platforms failed", logging.KeyErr, err, "user_game_id", ugID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to check platform count")
 		}
 
@@ -1300,14 +1301,14 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		// Delete all platform links for this external game (a Steam game may have
 		// both Windows and Linux rows, all sharing the same external_game_id).
 		if _, err := h.db.NewRaw(`DELETE FROM user_game_platforms WHERE external_game_id = ?`, id).Exec(ctx); err != nil {
-			slog.Error("sync: delete user_game_platforms failed", "err", err, "external_game_id", id)
+			slog.ErrorContext(c.Request().Context(), "sync: delete user_game_platforms failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to remove platform link")
 		}
 
 		// Apply orphan decision.
 		if otherCount == 0 && body.OrphanAction == "remove" {
 			if _, err := h.db.NewRaw(`DELETE FROM user_games WHERE id = ?`, ugID).Exec(ctx); err != nil {
-				slog.Error("sync: delete user_game failed", "err", err, "user_game_id", ugID)
+				slog.ErrorContext(c.Request().Context(), "sync: delete user_game failed", logging.KeyErr, err, "user_game_id", ugID, logging.Cat(logging.CategoryDB))
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to remove game")
 			}
 		}
@@ -1318,7 +1319,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 		body.IGDBID, eg.Title,
 	).Exec(ctx); err != nil {
-		slog.Error("sync: ensure game row failed", "err", err, "igdb_id", body.IGDBID)
+		slog.ErrorContext(c.Request().Context(), "sync: ensure game row failed", logging.KeyErr, err, "igdb_id", body.IGDBID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve game")
 	}
 
@@ -1327,7 +1328,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		`UPDATE external_games SET resolved_igdb_id = ?, is_skipped = false, updated_at = now() WHERE id = ?`,
 		body.IGDBID, id,
 	).Exec(ctx); err != nil {
-		slog.Error("sync: update external_game resolution failed", "err", err, "external_game_id", id)
+		slog.ErrorContext(c.Request().Context(), "sync: update external_game resolution failed", logging.KeyErr, err, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update external game")
 	}
 
@@ -1351,7 +1352,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 			ORDER BY created_at DESC LIMIT 1`,
 			userID, eg.Storefront,
 		).Scan(ctx, &recentJobID); err2 != nil {
-			slog.Error("sync: rematch — no recent job found", "user_id", userID, "storefront", eg.Storefront, "err", err2)
+			slog.ErrorContext(c.Request().Context(), "sync: rematch — no recent job found", logging.KeySource, eg.Storefront, logging.KeyErr, err2, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "no sync job context found")
 		}
 		jobItemID = uuid.NewString()
@@ -1360,21 +1361,21 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 			VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
 			jobItemID, recentJobID, userID, eg.ExternalID, eg.Title, eg.ID,
 		).Exec(ctx); err3 != nil {
-			slog.Error("sync: rematch: insert job_item failed", "err", err3, "job_id", recentJobID, "item_key", eg.ExternalID, "external_game_id", id)
+			slog.ErrorContext(c.Request().Context(), "sync: rematch: insert job_item failed", logging.KeyErr, err3, logging.KeyJobID, recentJobID, "item_key", eg.ExternalID, logging.KeyExternalGameID, id, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
 	} else {
 		if _, err := h.db.NewRaw(
 			`UPDATE job_items SET status = 'pending' WHERE id = ?`, jobItemID,
 		).Exec(ctx); err != nil {
-			slog.Error("sync: rematch: update job_item status failed", "err", err, "job_item_id", jobItemID)
+			slog.ErrorContext(c.Request().Context(), "sync: rematch: update job_item status failed", logging.KeyErr, err, "job_item_id", jobItemID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update job item")
 		}
 	}
 
 	if h.riverClient != nil {
 		if _, err := h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: jobItemID}, nil); err != nil {
-			slog.Error("sync: enqueue user_game_write failed", "err", err, "job_item_id", jobItemID)
+			slog.ErrorContext(c.Request().Context(), "sync: enqueue user_game_write failed", logging.KeyErr, err, "job_item_id", jobItemID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 		}
 	}
@@ -1394,7 +1395,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 				`UPDATE external_games SET resolved_igdb_id = ?, updated_at = now() WHERE id = ?`,
 				body.IGDBID, sib.ID,
 			).Exec(ctx); err != nil {
-				slog.Error("sync: rematch: resolve sibling", "err", err, "sibling_id", sib.ID)
+				slog.ErrorContext(c.Request().Context(), "sync: rematch: resolve sibling", logging.KeyErr, err, "sibling_id", sib.ID, logging.Cat(logging.CategoryDB))
 				continue
 			}
 			var sibItemID string
@@ -1410,7 +1411,7 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 					ORDER BY created_at DESC LIMIT 1`,
 					userID, eg.Storefront,
 				).Scan(ctx, &recentJobID); err2 != nil {
-					slog.Error("sync: rematch: sibling no recent job", "sibling_id", sib.ID, "err", err2)
+					slog.ErrorContext(c.Request().Context(), "sync: rematch: sibling no recent job", "sibling_id", sib.ID, logging.KeyErr, err2, logging.Cat(logging.CategoryDB))
 					continue
 				}
 				sibItemID = uuid.NewString()
@@ -1419,19 +1420,19 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 					VALUES (?, ?, ?, ?, ?, ?, '{}', 'pending', '{}', '[]', now())`,
 					sibItemID, recentJobID, userID, sib.ExternalID, sib.Title, sib.ID,
 				).Exec(ctx); err3 != nil {
-					slog.Error("sync: rematch: create sibling job_item", "sibling_id", sib.ID, "err", err3)
+					slog.ErrorContext(c.Request().Context(), "sync: rematch: create sibling job_item", "sibling_id", sib.ID, logging.KeyErr, err3, logging.Cat(logging.CategoryDB))
 					continue
 				}
 			} else {
 				if _, err := h.db.NewRaw(
 					`UPDATE job_items SET status = 'pending' WHERE id = ?`, sibItemID,
 				).Exec(ctx); err != nil {
-					slog.Error("sync: rematch: update sibling job_item status", "sibling_id", sib.ID, "err", err)
+					slog.ErrorContext(c.Request().Context(), "sync: rematch: update sibling job_item status", "sibling_id", sib.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				}
 			}
 			if h.riverClient != nil {
 				if _, err := h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: sibItemID}, nil); err != nil {
-					slog.Error("sync: rematch: enqueue sibling Stage 3", "sibling_id", sib.ID, "err", err)
+					slog.ErrorContext(c.Request().Context(), "sync: rematch: enqueue sibling Stage 3", "sibling_id", sib.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				}
 			}
 		}
@@ -1471,12 +1472,12 @@ func (h *SyncHandler) HandleRetryFailedExternalGames(c *echo.Context) error {
 			`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL WHERE id = ?`,
 			item.ID,
 		).Exec(ctx); err != nil {
-			slog.Error("sync: retry-failed: reset item", "id", item.ID, "err", err)
+			slog.ErrorContext(c.Request().Context(), "sync: retry-failed: reset item", "job_item_id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			continue
 		}
 		if h.riverClient != nil {
 			if _, err := h.riverClient.Insert(ctx, tasks.IGDBMatchArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.Error("sync: retry-failed: enqueue", "id", item.ID, "err", err)
+				slog.ErrorContext(c.Request().Context(), "sync: retry-failed: enqueue", "job_item_id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			}
 		}
 	}
@@ -1511,7 +1512,7 @@ func (h *SyncHandler) HandleGOGConnect(c *echo.Context) error {
 		"username":      tok.Username,
 	}
 	if err := h.persistStorefrontCredentials(context.Background(), userID, "gog", creds); err != nil {
-		slog.Error("gog: persist credentials failed", "user_id", userID, "err", err)
+		slog.ErrorContext(c.Request().Context(), "gog: persist credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist GOG connection")
 	}
 
