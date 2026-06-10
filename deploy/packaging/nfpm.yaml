@@ -19,6 +19,8 @@ overrides:
 contents:
   - src: ci-binaries/nexorious-linux-${NFPM_ARCH}
     dst: /usr/bin/nexorious
+    # ${NFPM_ARCH} in src is only expanded when expand is set.
+    expand: true
     file_info:
       mode: 0755
   - src: deploy/packaging/nexorious.service
