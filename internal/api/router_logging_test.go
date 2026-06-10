@@ -14,8 +14,9 @@ import (
 	"github.com/drzero42/nexorious/internal/logging"
 )
 
-// buildLoggingEcho mirrors the request-logging middleware wired in router.New,
-// writing logs into buf for assertions.
+// buildLoggingEcho sets up the request-id + request-logging middleware (as in
+// router.New, minus the user_id branch which is irrelevant here) and writes log
+// output into buf for assertions.
 func buildLoggingEcho(buf *bytes.Buffer) *echo.Echo {
 	slog.SetDefault(slog.New(logging.NewContextHandler(slog.NewJSONHandler(buf, nil))))
 	e := echo.New()
