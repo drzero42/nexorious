@@ -127,7 +127,9 @@ jobs:
           if command -v apt-get >/dev/null; then
             apt-get update && apt-get install -y git ca-certificates curl
           else
-            dnf install -y git ca-certificates curl
+            # --allowerasing: Rocky 9 ships curl-minimal, which conflicts with
+            # the full curl package; let dnf swap it rather than abort.
+            dnf install -y --allowerasing git ca-certificates curl
           fi
 
       - name: Checkout
