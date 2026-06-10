@@ -1,0 +1,24 @@
+[Unit]
+Description=Nexorious game library server
+Documentation=https://github.com/drzero42/nexorious
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=nexorious
+Group=nexorious
+EnvironmentFile=/etc/nexorious/nexorious.env
+ExecStart=/usr/bin/nexorious serve
+WorkingDirectory=/var/lib/nexorious
+StateDirectory=nexorious
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

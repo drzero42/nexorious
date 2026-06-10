@@ -1,0 +1,47 @@
+name: nexorious
+# amd64 | arm64 — nfpm maps to x86_64/aarch64 for rpm
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${NFPM_VERSION}
+maintainer: Anders Bøgh Bruun <anders@boghbruun.dk>
+description: Self-hosted game library manager.
+homepage: https://github.com/drzero42/nexorious
+license: MIT
+
+overrides:
+  deb:
+    # Debian/Ubuntu meta-package → psql/pg_dump
+    depends: [postgresql-client]
+  rpm:
+    # RHEL/Fedora/Rocky client package → psql/pg_dump
+    depends: [postgresql]
+
+contents:
+  - src: ci-binaries/nexorious-linux-${NFPM_ARCH}
+    dst: /usr/bin/nexorious
+    file_info:
+      mode: 0755
+  - src: deploy/packaging/nexorious.service
+    dst: /usr/lib/systemd/system/nexorious.service
+    file_info:
+      mode: 0644
+  - src: deploy/packaging/nexorious.env
+    dst: /etc/nexorious/nexorious.env
+    # deb conffile / rpm %config(noreplace)
+    type: config|noreplace
+    file_info:
+      mode: 0640
+      owner: root
+      group: nexorious
+  - dst: /var/lib/nexorious
+    type: dir
+    file_info:
+      mode: 0750
+      owner: nexorious
+      group: nexorious
+
+scripts:
+  preinstall: deploy/packaging/scripts/preinstall.sh
+  postinstall: deploy/packaging/scripts/postinstall.sh
+  preremove: deploy/packaging/scripts/preremove.sh
+  postremove: deploy/packaging/scripts/postremove.sh
