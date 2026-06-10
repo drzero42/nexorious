@@ -4,6 +4,9 @@ Nexorious runs a set of periodic maintenance workers on cron-style schedules,
 registered in `scheduler.BuildPeriodicJobs()`. This document is a process
 reference — what each task does and why — not an implementation guide.
 
+> For log-based alerting on these maintenance and sync failures, see
+> [observability.md](observability.md).
+
 ## Sync history pruning
 
 Removes `sync_changes` entries older than the configured retention period

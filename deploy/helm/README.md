@@ -287,6 +287,18 @@ ingress:
 The `nexorious` service serves both API routes (`/api/*`) and the embedded
 SPA on port 8000 — no separate frontend service.
 
+## Alerting (opt-in)
+
+| Key | Default | Description |
+|---|---|---|
+| `alerts.enabled` | `false` | Master switch for log-based alert rules. |
+| `alerts.loki.enabled` | `false` | Render the Loki ruler ConfigMap. |
+| `alerts.loki.ruleLabel.key` / `.value` | `loki_rule` / `"1"` | Discovery label the ruler sidecar watches. |
+| `alerts.victoriaLogs.enabled` | `false` | Render the VMRule (VictoriaMetrics Operator). |
+| `alerts.victoriaLogs.ruleLabels` | `{}` | Extra labels so the VMAlert ruleSelector matches the VMRule. |
+
+See [docs/observability.md](../../docs/observability.md) for full setup.
+
 ## Notes
 
 - The `migrate` initContainer always runs before the main container; you do
