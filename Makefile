@@ -27,7 +27,7 @@ build:
 	go build $(LDFLAGS) -o nexorious ./cmd/nexorious
 
 docker:
-	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t nexorious:local .
+	docker build --target runtime --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t nexorious:local .
 
 test: test-backend test-frontend
 
