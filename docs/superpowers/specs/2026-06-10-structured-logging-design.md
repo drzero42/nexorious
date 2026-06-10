@@ -1,7 +1,7 @@
 # Sharpen structured logging — design
 
 **Issue:** #907 — leveling, correlation IDs, consistent keys, error taxonomy
-**Status:** approved (brainstorming)
+**Status:** implemented
 **Date:** 2026-06-10
 **Coordination:** OTel `trace_id`/`span_id` injection is **out of scope** here; tracked in
 #911 (epic #909). This issue builds the `ctx → logger` seam that #911 extends.
