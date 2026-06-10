@@ -64,7 +64,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	encrypter, err := crypto.NewEncrypter(cfg.DBEncryptionKey)
 	if err != nil {
-		slog.Error("invalid DB_ENCRYPTION_KEY", "err", err)
+		slog.Error("invalid DB_ENCRYPTION_KEY", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
 		os.Exit(1)
 	}
 
@@ -123,10 +123,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if pingErr == nil {
 		slog.Info("database connected")
 		if err := initAppState(ctx); err != nil {
-			slog.Error("initAppState failed — starting in DBUnavailable state", "err", err)
+			slog.Error("initAppState failed — starting in DBUnavailable state", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	} else {
-		slog.Warn("database not reachable at startup — starting in DBUnavailable state", "err", pingErr)
+		slog.Warn("database not reachable at startup — starting in DBUnavailable state", logging.KeyErr, pingErr, logging.Cat(logging.CategoryDB))
 	}
 
 	// -------------------------------------------------------------------------
@@ -142,17 +142,17 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	igdbClient := igdb.NewClient(cfg, igdbLimiter)
 
 	if !igdbClient.Configured() {
-		slog.Warn("IGDB credentials not configured — game search, import, and metadata features will be unavailable")
+		slog.Warn("IGDB credentials not configured — game search, import, and metadata features will be unavailable", logging.Cat(logging.CategoryConfig))
 	} else {
 		validateCtx, validateCancel := context.WithTimeout(ctx, 10*time.Second)
 		err := igdbClient.ValidateCredentials(validateCtx)
 		validateCancel()
 		if err != nil {
 			if igdb.IsAuthError(err) {
-				slog.Warn("IGDB credentials are invalid — disabling IGDB features", "err", err)
+				slog.Warn("IGDB credentials are invalid — disabling IGDB features", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 				igdbClient = igdb.NewInvalidCredentialsClient(igdbLimiter)
 			} else {
-				slog.Warn("IGDB credential probe failed (network/transient) — IGDB client kept", "err", err)
+				slog.Warn("IGDB credential probe failed (network/transient) — IGDB client kept", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 			}
 		} else {
 			slog.Info("IGDB credentials validated successfully")
@@ -173,7 +173,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// -------------------------------------------------------------------------
 	staleThreshold, err := time.ParseDuration(cfg.StaleJobThreshold)
 	if err != nil {
-		slog.Warn("invalid STALE_JOB_THRESHOLD, defaulting to 4h", "value", cfg.StaleJobThreshold)
+		slog.Warn("invalid STALE_JOB_THRESHOLD, defaulting to 4h", "value", cfg.StaleJobThreshold, logging.Cat(logging.CategoryConfig))
 		staleThreshold = 4 * time.Hour
 	}
 
@@ -386,7 +386,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			if migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() {
 				reconcileOrphanedDispatchJobs(context.Background(), db)
 				if err := riverClient.Start(ctx); err != nil {
-					slog.Error("failed to start River client", "err", err)
+					slog.Error("failed to start River client", logging.KeyErr, err)
 				}
 				slog.Info("app ready — River client started")
 				return
@@ -405,12 +405,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	slog.Info("nexorious starting", "addr", addr, "version", version, "commit", commit)
 	if err := sc.Start(shutdownCtx, e); err != nil {
-		slog.Info("server stopped", "err", err)
+		slog.Info("server stopped", logging.KeyErr, err)
 	}
 
 	// Graceful shutdown sequence.
 	if err := riverClient.Stop(shutdownCtx); err != nil {
-		slog.Warn("River client stop", "err", err)
+		slog.Warn("River client stop", logging.KeyErr, err)
 	}
 
 	slog.Info("shutdown complete")
@@ -454,7 +454,7 @@ func reconcileOrphanedDispatchJobs(ctx context.Context, db *bun.DB) {
 		   )`,
 	).Exec(ctx)
 	if err != nil {
-		slog.Error("startup: reconcile orphaned dispatch_sync failed", "err", err)
+		slog.Error("startup: reconcile orphaned dispatch_sync failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
@@ -476,7 +476,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: steam decrypt failed", "user_id", cfg.UserID, "err", err)
+				slog.Warn("adapter factory: steam decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -494,7 +494,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: psn decrypt failed", "user_id", cfg.UserID, "err", err)
+				slog.Warn("adapter factory: psn decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -511,7 +511,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: gog decrypt failed", "user_id", cfg.UserID, "err", err)
+				slog.Warn("adapter factory: gog decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -545,7 +545,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: epic decrypt failed", "user_id", cfg.UserID, "err", err)
+				slog.Warn("adapter factory: epic decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var snapshot map[string]string
@@ -572,7 +572,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: humble-bundle decrypt failed", "user_id", cfg.UserID, "err", err)
+				slog.Warn("adapter factory: humble-bundle decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
