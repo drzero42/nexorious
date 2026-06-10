@@ -30,3 +30,10 @@ func normalize(v string) string {
 	}
 	return v
 }
+
+// IsValidVersion reports whether v is valid semver (with or without the
+// leading "v"). Callers use it to skip update checks for non-release builds
+// such as "dev".
+func IsValidVersion(v string) bool {
+	return semver.IsValid(normalize(v))
+}
