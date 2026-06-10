@@ -11,6 +11,7 @@ import (
 var quietRequestRoutes = map[string]bool{
 	"/*":                             true, // SPA shell + embedded assets (logos, favicon, JS/CSS)
 	"/static/app.css":                true,
+	"/health":                        true, // liveness/readiness probes hit this constantly
 	"/api/jobs/pending-review-count": true, // polled on a timer by the UI
 	"/api/jobs/status/:job_type":     true, // polled on a timer by the UI
 }

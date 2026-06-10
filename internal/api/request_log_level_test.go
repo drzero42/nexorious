@@ -22,6 +22,7 @@ func TestRequestLogLevel(t *testing.T) {
 		{"logos prefix", 200, "/logos/storefronts/steam/icon.svg", slog.LevelDebug},
 		{"poll pending-review", 200, "/api/jobs/pending-review-count", slog.LevelDebug},
 		{"poll job status", 200, "/api/jobs/status/:job_type", slog.LevelDebug},
+		{"health probe", 200, "/health", slog.LevelDebug},
 		{"redirect on shell", 302, "/*", slog.LevelDebug},
 		{"meaningful api call", 200, "/api/user-games", slog.LevelInfo},
 		{"meaningful api 201", 201, "/api/user-games", slog.LevelInfo},
