@@ -242,8 +242,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
 		Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware(quietJobKinds...)},
+		ErrorHandler: &logging.WorkerErrorHandler{},
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "serve: river client init failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return fmt.Errorf("river.NewClient: %w", err)
 	}
 	notify.SetRiverClient(riverClient)
@@ -339,8 +341,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
 				Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware(quietJobKinds...)},
+				ErrorHandler: &logging.WorkerErrorHandler{},
 			})
 			if err != nil {
+				slog.ErrorContext(ctx, "serve: river client init failed (rebuild)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				return fmt.Errorf("RebuildServices: river.NewClient: %w", err)
 			}
 
