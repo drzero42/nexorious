@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/drzero42/nexorious/compare/v0.11.0...v0.11.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* make container image binary executable ([#922](https://github.com/drzero42/nexorious/issues/922)) ([1ceff88](https://github.com/drzero42/nexorious/commit/1ceff88b913ca8870c321a6b9f6756880394592d))
+
 ## [0.11.0](https://github.com/drzero42/nexorious/compare/v0.10.1...v0.11.0) (2026-06-10)
 
 
