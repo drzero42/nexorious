@@ -16,6 +16,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
 )
 
@@ -142,13 +143,13 @@ func (h *AdminUsersHandler) HandleCreate(c *echo.Context) error {
 		return errorJSON(c, http.StatusBadRequest, "username already taken")
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		slog.Error("admin create user: uniqueness check", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin create user: uniqueness check", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), auth.BcryptCost)
 	if err != nil {
-		slog.Error("admin create user: bcrypt", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin create user: bcrypt", logging.KeyErr, err)
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
@@ -164,12 +165,12 @@ func (h *AdminUsersHandler) HandleCreate(c *echo.Context) error {
 	}
 
 	if _, err := h.db.NewInsert().Model(user).Exec(ctx); err != nil {
-		slog.Error("admin create user: insert", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin create user: insert", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
 	if err := notify.SeedDefaultSubscriptions(ctx, h.db, user.ID, user.IsAdmin); err != nil {
-		slog.Error("admin create user: seed notification subscriptions", "user_id", user.ID, "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin create user: seed notification subscriptions", logging.KeyUserID, user.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	return c.JSON(http.StatusCreated, newAdminUserResponse(user))
@@ -180,7 +181,7 @@ func (h *AdminUsersHandler) HandleList(c *echo.Context) error {
 	ctx := context.Background()
 	var users []models.User
 	if err := h.db.NewSelect().Model(&users).Order("created_at DESC").Scan(ctx); err != nil {
-		slog.Error("admin list users: scan", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin list users: scan", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 	out := make([]adminUserResponse, 0, len(users))
@@ -198,7 +199,7 @@ func (h *AdminUsersHandler) HandleGet(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return errorJSON(c, http.StatusNotFound, "user not found")
 		}
-		slog.Error("admin get user: scan", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin get user: scan", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 	return c.JSON(http.StatusOK, newAdminUserResponse(user))
@@ -218,7 +219,7 @@ func (h *AdminUsersHandler) HandleUpdate(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return errorJSON(c, http.StatusNotFound, "user not found")
 		}
-		slog.Error("admin update user: load", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin update user: load", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
@@ -251,7 +252,7 @@ func (h *AdminUsersHandler) HandleUpdate(c *echo.Context) error {
 				return errorJSON(c, http.StatusBadRequest, "username already taken")
 			}
 			if !errors.Is(err, sql.ErrNoRows) {
-				slog.Error("admin update user: uniqueness check", "err", err)
+				slog.ErrorContext(c.Request().Context(), "admin update user: uniqueness check", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				return errorJSON(c, http.StatusInternalServerError, "internal server error")
 			}
 			user.Username = newName
@@ -286,7 +287,7 @@ func (h *AdminUsersHandler) HandleUpdate(c *echo.Context) error {
 		return nil
 	})
 	if err != nil {
-		slog.Error("admin update user: tx", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin update user: tx", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
@@ -312,13 +313,13 @@ func (h *AdminUsersHandler) HandleResetPassword(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return errorJSON(c, http.StatusNotFound, "user not found")
 		}
-		slog.Error("admin reset password: load", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin reset password: load", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), auth.BcryptCost)
 	if err != nil {
-		slog.Error("admin reset password: bcrypt", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin reset password: bcrypt", logging.KeyErr, err)
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
@@ -339,7 +340,7 @@ func (h *AdminUsersHandler) HandleResetPassword(c *echo.Context) error {
 		return nil
 	})
 	if err != nil {
-		slog.Error("admin reset password: tx", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin reset password: tx", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
@@ -359,7 +360,7 @@ func (h *AdminUsersHandler) HandleDeletionImpact(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return errorJSON(c, http.StatusNotFound, "user not found")
 		}
-		slog.Error("admin deletion impact: load", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin deletion impact: load", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
@@ -385,7 +386,7 @@ func (h *AdminUsersHandler) HandleDeletionImpact(c *echo.Context) error {
 	}
 	for _, q := range queries {
 		if err := h.db.QueryRowContext(ctx, q.query, q.args...).Scan(q.dest); err != nil {
-			slog.Error("admin deletion impact: count", "err", err, "query", q.query)
+			slog.ErrorContext(c.Request().Context(), "admin deletion impact: count", logging.KeyErr, err, "query", q.query, logging.Cat(logging.CategoryDB))
 			return errorJSON(c, http.StatusInternalServerError, "internal server error")
 		}
 	}
@@ -413,7 +414,7 @@ func (h *AdminUsersHandler) HandleDelete(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return errorJSON(c, http.StatusNotFound, "user not found")
 		}
-		slog.Error("admin delete user: load", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin delete user: load", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 
@@ -422,7 +423,7 @@ func (h *AdminUsersHandler) HandleDelete(c *echo.Context) error {
 	}
 
 	if _, err := h.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id); err != nil {
-		slog.Error("admin delete user: delete", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin delete user: delete", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "internal server error")
 	}
 

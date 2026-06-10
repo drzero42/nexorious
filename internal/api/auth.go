@@ -16,6 +16,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // AuthHandler handles authentication endpoints.
@@ -108,7 +109,7 @@ func (h *AuthHandler) HandleLogin(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusUnauthorized, "incorrect username or password")
 		}
-		slog.Error("login: query user", "err", err)
+		slog.ErrorContext(c.Request().Context(), "login: query user", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
@@ -122,14 +123,14 @@ func (h *AuthHandler) HandleLogin(c *echo.Context) error {
 	sessionID, err := issueSession(h.db, h.cfg.SessionExpireDays,
 		userID, c.Request().Header.Get("User-Agent"), c.RealIP())
 	if err != nil {
-		slog.Error("login: issue session", "err", err)
+		slog.ErrorContext(c.Request().Context(), "login: issue session", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	auth.SetSessionCookie(c, sessionID, h.cfg.SessionExpireDays, h.cfg.SessionCookieSecure)
 
 	resp, err := loadMeResponse(context.Background(), h.db, userID)
 	if err != nil {
-		slog.Error("login: load user", "err", err)
+		slog.ErrorContext(c.Request().Context(), "login: load user", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -143,7 +144,7 @@ func (h *AuthHandler) HandleLogout(c *echo.Context) error {
 		if _, err := h.db.ExecContext(context.Background(),
 			"DELETE FROM user_sessions WHERE session_id_hash = ?", hash,
 		); err != nil {
-			slog.Error("logout: delete session", "err", err)
+			slog.ErrorContext(c.Request().Context(), "logout: delete session", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	}
 	auth.ClearSessionCookie(c, h.cfg.SessionCookieSecure)
@@ -184,7 +185,7 @@ func (h *AuthHandler) HandleChangePassword(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 		}
-		slog.Error("change password: query user", "err", err)
+		slog.ErrorContext(c.Request().Context(), "change password: query user", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(req.CurrentPassword)); err != nil {
@@ -193,14 +194,14 @@ func (h *AuthHandler) HandleChangePassword(c *echo.Context) error {
 
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), auth.BcryptCost)
 	if err != nil {
-		slog.Error("change password: bcrypt", "err", err)
+		slog.ErrorContext(c.Request().Context(), "change password: bcrypt", logging.KeyErr, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	if _, err := h.db.ExecContext(context.Background(),
 		"UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?",
 		string(newHash), userID,
 	); err != nil {
-		slog.Error("change password: update hash", "err", err)
+		slog.ErrorContext(c.Request().Context(), "change password: update hash", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
@@ -209,7 +210,7 @@ func (h *AuthHandler) HandleChangePassword(c *echo.Context) error {
 		"DELETE FROM user_sessions WHERE user_id = ? AND session_id_hash != ?",
 		userID, currentHash,
 	); err != nil {
-		slog.Error("change password: invalidate sessions", "err", err)
+		slog.ErrorContext(c.Request().Context(), "change password: invalidate sessions", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	return c.JSON(http.StatusOK, messageResponse{Message: "Password changed successfully."})
@@ -226,7 +227,7 @@ func (h *AuthHandler) HandleGetMe(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusUnauthorized, "user not found")
 		}
-		slog.Error("get me: query user", "err", err)
+		slog.ErrorContext(c.Request().Context(), "get me: query user", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -249,7 +250,7 @@ func (h *AuthHandler) HandleCheckUsername(c *echo.Context) error {
 	).Scan(&exists)
 	available := errors.Is(err, sql.ErrNoRows)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		slog.Error("check username: query", "err", err)
+		slog.ErrorContext(c.Request().Context(), "check username: query", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	return c.JSON(http.StatusOK, usernameAvailabilityResponse{Available: available, Username: username})
@@ -280,7 +281,7 @@ func (h *AuthHandler) HandleChangeUsername(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 		}
-		slog.Error("change username: query current", "err", err)
+		slog.ErrorContext(c.Request().Context(), "change username: query current", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	if req.NewUsername == currentUsername {
@@ -291,7 +292,7 @@ func (h *AuthHandler) HandleChangeUsername(c *echo.Context) error {
 		"SELECT 1 FROM users WHERE username = ? LIMIT 1", req.NewUsername,
 	).Scan(&usernameExists)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		slog.Error("change username: check availability", "err", err)
+		slog.ErrorContext(c.Request().Context(), "change username: check availability", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	if err == nil {
@@ -301,12 +302,12 @@ func (h *AuthHandler) HandleChangeUsername(c *echo.Context) error {
 		"UPDATE users SET username = ?, updated_at = NOW() WHERE id = ?",
 		req.NewUsername, userID,
 	); err != nil {
-		slog.Error("change username: update", "err", err)
+		slog.ErrorContext(c.Request().Context(), "change username: update", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	resp, err := loadMeResponse(context.Background(), h.db, userID)
 	if err != nil {
-		slog.Error("change username: re-query user", "err", err)
+		slog.ErrorContext(c.Request().Context(), "change username: re-query user", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -334,7 +335,7 @@ func (h *AuthHandler) HandleListSessions(c *echo.Context) error {
 		userID,
 	)
 	if err != nil {
-		slog.Error("list sessions: query", "err", err)
+		slog.ErrorContext(c.Request().Context(), "list sessions: query", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	defer func() { _ = rows.Close() }()
@@ -345,14 +346,14 @@ func (h *AuthHandler) HandleListSessions(c *echo.Context) error {
 		var hash string
 		if err := rows.Scan(&item.ID, &item.UserAgent, &item.IPAddress,
 			&item.CreatedAt, &item.LastUsedAt, &hash); err != nil {
-			slog.Error("list sessions: scan", "err", err)
+			slog.ErrorContext(c.Request().Context(), "list sessions: scan", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 		}
 		item.IsCurrent = hash == currentHash
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		slog.Error("list sessions: rows.Err", "err", err)
+		slog.ErrorContext(c.Request().Context(), "list sessions: rows.Err", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	return c.JSON(http.StatusOK, items)
@@ -372,7 +373,7 @@ func (h *AuthHandler) HandleRevokeSession(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "session not found")
 		}
-		slog.Error("revoke session: query", "err", err)
+		slog.ErrorContext(c.Request().Context(), "revoke session: query", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
@@ -380,7 +381,7 @@ func (h *AuthHandler) HandleRevokeSession(c *echo.Context) error {
 		"DELETE FROM user_sessions WHERE id = ? AND user_id = ?",
 		sessionRowID, userID,
 	); err != nil {
-		slog.Error("revoke session: delete", "err", err)
+		slog.ErrorContext(c.Request().Context(), "revoke session: delete", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
@@ -400,7 +401,7 @@ func (h *AuthHandler) HandleRevokeAllOtherSessions(c *echo.Context) error {
 		"DELETE FROM user_sessions WHERE user_id = ? AND session_id_hash != ?",
 		userID, currentHash,
 	); err != nil {
-		slog.Error("revoke other sessions: delete", "err", err)
+		slog.ErrorContext(c.Request().Context(), "revoke other sessions: delete", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -442,7 +443,7 @@ func (h *AuthHandler) HandleListAPIKeys(c *echo.Context) error {
 		userID,
 	)
 	if err != nil {
-		slog.Error("list api keys: query", "err", err)
+		slog.ErrorContext(c.Request().Context(), "list api keys: query", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	defer func() { _ = rows.Close() }()
@@ -452,13 +453,13 @@ func (h *AuthHandler) HandleListAPIKeys(c *echo.Context) error {
 		var item apiKeyItem
 		if err := rows.Scan(&item.ID, &item.Name, &item.Scopes,
 			&item.LastUsedAt, &item.CreatedAt, &item.ExpiresAt); err != nil {
-			slog.Error("list api keys: scan", "err", err)
+			slog.ErrorContext(c.Request().Context(), "list api keys: scan", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		slog.Error("list api keys: rows.Err", "err", err)
+		slog.ErrorContext(c.Request().Context(), "list api keys: rows.Err", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	return c.JSON(http.StatusOK, items)
@@ -492,7 +493,7 @@ func (h *AuthHandler) HandleCreateAPIKey(c *echo.Context) error {
 
 	rawKey, err := auth.GenerateAPIKey()
 	if err != nil {
-		slog.Error("create api key: generate", "err", err)
+		slog.ErrorContext(c.Request().Context(), "create api key: generate", logging.KeyErr, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
@@ -503,7 +504,7 @@ func (h *AuthHandler) HandleCreateAPIKey(c *echo.Context) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		keyID, userID, req.Name, auth.HashToken(rawKey), scopes, now, expiresAt,
 	); err != nil {
-		slog.Error("create api key: insert", "err", err)
+		slog.ErrorContext(c.Request().Context(), "create api key: insert", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
@@ -527,12 +528,12 @@ func (h *AuthHandler) HandleRevokeAPIKey(c *echo.Context) error {
 		keyID, userID,
 	)
 	if err != nil {
-		slog.Error("revoke api key: update", "err", err)
+		slog.ErrorContext(c.Request().Context(), "revoke api key: update", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		slog.Error("revoke api key: rows affected", "err", err)
+		slog.ErrorContext(c.Request().Context(), "revoke api key: rows affected", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	if affected == 0 {
