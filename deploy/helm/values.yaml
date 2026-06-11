@@ -180,6 +180,25 @@ alerts:
     # -- any sidecar-based discovery you may run.
     ruleLabels: {}
 
+  prometheus:
+    # -- Render a PrometheusRule (requires alerts.enabled) for the
+    # -- Prometheus Operator / kube-prometheus-stack. The rules query the OTel
+    # -- metrics at /metrics (#910). Default off.
+    enabled: false
+    # -- Extra labels on the PrometheusRule so your Prometheus's ruleSelector
+    # -- matches it (e.g. {release: kube-prometheus-stack}). Leave empty if the
+    # -- Prometheus selects all PrometheusRules.
+    ruleLabels: {}
+
+  victoriaMetrics:
+    # -- Render a VMRule (requires alerts.enabled) consumed by the
+    # -- VictoriaMetrics Operator (rendered into vmalert). Same rules as the
+    # -- PrometheusRule above. Default off.
+    enabled: false
+    # -- Extra labels on the VMRule so the target VMAlert's ruleSelector matches
+    # -- it (leave empty if the VMAlert uses selectAllByDefault: true).
+    ruleLabels: {}
+
 # =============================================================================
 # Default Pod options (applied to all controllers unless overridden)
 # =============================================================================
