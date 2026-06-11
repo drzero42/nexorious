@@ -165,7 +165,7 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 > **Always ask questions if you are uncertain about something!**
 
 ### Essential Workflow
-1. **Planning**: Read `docs/superpowers/specs/` for design context
+1. **Planning**: Check `docs/superpowers/{specs,plans}/` (listing only) for a doc covering the task at hand — read it if one exists; don't read docs for unrelated/completed work, the landed code is the authority
 2. **Branching**: Create a feature branch before starting any task
 3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using the naming convention `YYYYMMDD<nnnnnn>_name.up.sql` where `<nnnnnn>` is a zero-padded running number (e.g. `20260503000001_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
 4. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)) — format/lint on every edit, build + typecheck when a turn ends, and the full suites at `git push`. You don't need to re-run the whole suites by hand; do run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.

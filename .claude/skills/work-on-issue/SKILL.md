@@ -34,6 +34,13 @@ Treat each factual or instructional statement in the issue as a hypothesis to co
 
 If a claim is **wrong or outdated**, stop and tell the user what you actually found rather than implementing against a false premise. The right fix is often not the one the issue proposes.
 
+## Step 3.5 — Check for prior design docs and process precedent
+
+List `docs/superpowers/specs/` and `docs/superpowers/plans/` (listing only — do **not** read docs for unrelated or completed work; landed code is the authority, and stale plans mislead).
+
+- If a doc covers **this issue or its epic's still-open design**, read it — that design is settled; don't re-brainstorm it.
+- For a child of an epic, the siblings' trail (spec+plan vs. plan-only vs. neither) is precedent for this child's lane. Follow it unless this child is materially different, and say so if you deviate.
+
 ## Step 4 — Decide whether to brainstorm
 
 Use superpowers:brainstorming **with the user** when the issue involves design choices, unclear intent, multiple plausible approaches, user-facing behavior, or anything creative. Skip it for a mechanical, unambiguous fix where the correct change is obvious and verified.
