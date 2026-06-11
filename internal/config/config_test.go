@@ -158,3 +158,33 @@ func TestLoad_ObservabilityOverrides(t *testing.T) {
 		t.Errorf("PprofAddr = %q; want %q", cfg.PprofAddr, "127.0.0.1:7070")
 	}
 }
+
+func TestLoad_TracingEndpointDefaultEmpty(t *testing.T) {
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
+	t.Setenv("IGDB_CLIENT_ID", "testclientid")
+	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "") // isolate from ambient OTel env
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.OTELExporterOTLPEndpoint != "" {
+		t.Errorf("OTELExporterOTLPEndpoint = %q; want empty (tracing off by default)", cfg.OTELExporterOTLPEndpoint)
+	}
+}
+
+func TestLoad_TracingEndpointOverride(t *testing.T) {
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
+	t.Setenv("IGDB_CLIENT_ID", "testclientid")
+	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.OTELExporterOTLPEndpoint != "http://localhost:4318" {
+		t.Errorf("OTELExporterOTLPEndpoint = %q; want %q", cfg.OTELExporterOTLPEndpoint, "http://localhost:4318")
+	}
+}

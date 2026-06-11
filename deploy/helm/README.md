@@ -305,6 +305,25 @@ ingress:
 The `nexorious` service serves both API routes (`/api/*`) and the embedded
 SPA on port 8000 — no separate frontend service.
 
+## Observability
+
+Metrics are exposed at `/metrics` (on by default — see the admin guide). To
+also export traces, set the OTLP endpoint on the main container via the env
+block:
+
+```yaml
+controllers:
+  nexorious:
+    containers:
+      main:
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: http://collector.monitoring:4318
+```
+
+Tracing is off unless this variable is set. Sampling follows the standard
+`OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` env vars (default: sample
+everything). ServiceMonitor and dashboard delivery are tracked in #912.
+
 ## Alerting (opt-in)
 
 | Key | Default | Description |

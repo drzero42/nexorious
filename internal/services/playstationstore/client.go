@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	psnsdk "github.com/sizovilya/go-psn-api"
 	"golang.org/x/time/rate"
 
 	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/observability"
 )
 
 // PSNAccountInfo is the psn-local type — does NOT import the api package.
@@ -32,9 +34,13 @@ var ErrInvalidNPSSOToken = errors.New("invalid npsso token")
 // query hash is no longer valid and requires a code update.
 var ErrPSNGraphQLSchemaChanged = errors.New("psn graphql schema changed")
 
-// profileHTTPClient is a package-level client used by the package-level
-// fetchMyProfile helper, which has no access to a *Client receiver.
-var profileHTTPClient = &http.Client{Transport: logging.NewRoundTripper(nil)}
+// profileHTTPClient lazily builds the package-level client used by the
+// package-level fetchMyProfile helper, which has no access to a *Client
+// receiver. Lazy (sync.OnceValue) so it picks up the otel transport wired by
+// observability.Init, which runs after package init.
+var profileHTTPClient = sync.OnceValue(func() *http.Client {
+	return &http.Client{Transport: observability.HTTPTransport()}
+})
 
 // Client wraps the go-psn-api library.
 type Client struct {
@@ -50,7 +56,7 @@ type Client struct {
 // NewClient creates a new PSN client with production defaults.
 func NewClient() *Client {
 	return &Client{
-		httpClient:      &http.Client{Transport: logging.NewRoundTripper(nil)},
+		httpClient:      &http.Client{Transport: observability.HTTPTransport()},
 		gamelistURL:     "https://m.np.playstation.com",
 		graphqlURL:      "https://web.np.playstation.com",
 		graphqlPageSize: 200,
@@ -124,7 +130,7 @@ func fetchMyProfile(ctx context.Context, accessToken string) (*struct {
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	resp, err := profileHTTPClient.Do(req)
+	resp, err := profileHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("psn: profile request failed: %w", err)
 	}

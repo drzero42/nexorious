@@ -18,7 +18,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/extra/bunotel"
-	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/backup"
@@ -62,20 +61,26 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	slog.SetDefault(slog.New(logging.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	var appHandler slog.Handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseSlogLevel(cfg.LogLevel),
-	}))))
+	})
+	if cfg.OTELExporterOTLPEndpoint != "" {
+		// Tracing enabled: bind trace_id/span_id from the active span onto
+		// every log line. Chained only when tracing is on so the off path
+		// stays zero-overhead.
+		appHandler = observability.NewTraceContextHandler(appHandler)
+	}
+	slog.SetDefault(slog.New(logging.NewContextHandler(appHandler)))
 
 	// -------------------------------------------------------------------------
-	// Observability (metrics) — must precede DB + River wiring so the bunotel
-	// hook and otelriver middleware can bind to the meter provider.
+	// Observability (metrics + opt-in tracing) — must precede DB + River wiring
+	// so the bunotel hook and otelriver middleware can bind to the providers.
 	// -------------------------------------------------------------------------
 	obs, err := observability.Init(cfg, version)
 	if err != nil {
 		slog.Error("observability init failed", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
 		os.Exit(1)
 	}
-	noopTracer := tracenoop.NewTracerProvider()
 
 	encrypter, err := crypto.NewEncrypter(cfg.DBEncryptionKey)
 	if err != nil {
@@ -92,7 +97,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	db := openBunDB(resolvedDatabaseURL)
 	db.AddQueryHook(bunotel.NewQueryHook(
 		bunotel.WithMeterProvider(obs.MeterProvider),
-		bunotel.WithTracerProvider(noopTracer),
+		bunotel.WithTracerProvider(obs.TracerProvider),
 	))
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
@@ -263,7 +268,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Middleware: []rivertype.Middleware{
 			otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
 				MeterProvider:  obs.MeterProvider,
-				TracerProvider: noopTracer,
+				TracerProvider: obs.TracerProvider,
 				DurationUnit:   "s",
 			}),
 			logging.NewWorkerMiddleware(quietJobKinds...),
@@ -369,7 +374,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				Middleware: []rivertype.Middleware{
 					otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
 						MeterProvider:  obs.MeterProvider,
-						TracerProvider: noopTracer,
+						TracerProvider: obs.TracerProvider,
 						DurationUnit:   "s",
 					}),
 					logging.NewWorkerMiddleware(quietJobKinds...),
@@ -461,8 +466,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		slog.Warn("River client stop", logging.KeyErr, err)
 	}
 
-	// Flush and stop the meter provider last so in-flight job/DB metrics from the
-	// River drain above are exported.
+	// Flush and stop the providers last (tracer first, then meter) so in-flight
+	// spans and job/DB metrics from the River drain above are exported.
 	obsShutdownCtx, obsCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer obsCancel()
 	if err := obs.Shutdown(obsShutdownCtx); err != nil {

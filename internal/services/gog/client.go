@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/observability"
 )
 
 // ErrGOGAuthExpired is returned when GOG rejects the token as expired.
@@ -24,7 +24,7 @@ type Client struct {
 // NewClient creates a Client with production GOG endpoints.
 func NewClient() *Client {
 	return &Client{
-		httpClient: &http.Client{Transport: logging.NewRoundTripper(nil)},
+		httpClient: &http.Client{Transport: observability.HTTPTransport()},
 		authBase:   defaultAuthBase,
 		tokenBase:  defaultTokenBase,
 		embedBase:  defaultEmbedBase,
@@ -35,7 +35,7 @@ func NewClient() *Client {
 // tokenBase replaces https://auth.gog.com; embedBase replaces https://embed.gog.com.
 func NewClientWithURLs(tokenBase, embedBase string) *Client {
 	return &Client{
-		httpClient: &http.Client{Transport: logging.NewRoundTripper(nil)},
+		httpClient: &http.Client{Transport: observability.HTTPTransport()},
 		authBase:   defaultAuthBase,
 		tokenBase:  tokenBase,
 		embedBase:  embedBase,
