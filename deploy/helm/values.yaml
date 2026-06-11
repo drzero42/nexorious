@@ -427,6 +427,12 @@ controllers:
           OTEL_METRICS_ENABLED: "true"
           PPROF_ENABLED: "false"
           PPROF_ADDR: "127.0.0.1:6060"
+          # Opt-in OTLP trace export — uncomment and point at your collector's
+          # OTLP/HTTP endpoint to enable tracing (see the admin guide). Tune
+          # sampling with the standard OTEL_TRACES_SAMPLER(_ARG) vars.
+          # OTEL_EXPORTER_OTLP_ENDPOINT: http://collector.monitoring:4318
+          # OTEL_TRACES_SAMPLER: parentbased_traceidratio
+          # OTEL_TRACES_SAMPLER_ARG: "0.25"
           DB_ENCRYPTION_KEY:
             valueFrom:
               secretKeyRef:
