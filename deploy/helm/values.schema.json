@@ -190,6 +190,58 @@
     "persistence": {
       "type": "object",
       "additionalProperties": true
+    },
+    "alerts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opt-in log-based alert rules (Loki ruler ConfigMap + VictoriaLogs VMRule). Default off.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Master switch. Must be true for any alert object to render."
+        },
+        "loki": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Loki ruler ConfigMap delivery.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render the Loki ruler ConfigMap (requires alerts.enabled)."
+            },
+            "ruleLabel": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Discovery label the Loki ruler sidecar watches.",
+              "properties": {
+                "key": { "type": "string" },
+                "value": { "type": "string" }
+              }
+            }
+          }
+        },
+        "victoriaLogs": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "VictoriaLogs alert-rule delivery.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render VictoriaLogs alert rules (requires alerts.enabled). Form chosen by delivery."
+            },
+            "delivery": {
+              "type": "string",
+              "enum": ["vmrule", "configmap"],
+              "description": "vmrule = VMRule CR (VictoriaMetrics Operator); configmap = plain ConfigMap of the rules file for setups without the operator."
+            },
+            "ruleLabels": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Extra labels on the rendered object (VMRule ruleSelector match, or ConfigMap sidecar-discovery tag)."
+            }
+          }
+        }
+      }
     }
   }
 }

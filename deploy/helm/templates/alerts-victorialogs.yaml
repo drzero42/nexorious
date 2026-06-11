@@ -1,0 +1,16 @@
+{{- if and .Values.alerts.enabled .Values.alerts.victoriaLogs.enabled (eq .Values.alerts.victoriaLogs.delivery "vmrule") }}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ include "nexorious.fullname" . }}-alerts
+  labels:
+    app.kubernetes.io/name: {{ include "nexorious.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "nexorious.chart" . }}
+    {{- with .Values.alerts.victoriaLogs.ruleLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+{{ .Files.Get "files/victorialogs-rules.yaml" | indent 2 }}
+{{- end }}
