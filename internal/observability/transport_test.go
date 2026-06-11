@@ -45,8 +45,10 @@ func TestHTTPTransport_MetricsOnlyWrapsOtelhttp(t *testing.T) {
 
 func TestHTTPTransport_TracingInjectsTraceparent(t *testing.T) {
 	prov, err := observability.Init(&config.Config{
-		OTELServiceName:          "nexorious-test",
-		OTELMetricsEnabled:       true,
+		OTELServiceName:    "nexorious-test",
+		OTELMetricsEnabled: true,
+		// Gate only: the exporter reads OTEL_EXPORTER_OTLP_ENDPOINT from the
+		// env (unset here), so this literal value is never dialed.
 		OTELExporterOTLPEndpoint: "http://127.0.0.1:4318",
 	}, "test")
 	if err != nil {
@@ -58,9 +60,9 @@ func TestHTTPTransport_TracingInjectsTraceparent(t *testing.T) {
 		_ = prov.Shutdown(ctx) // no collector listening; flush error is fine
 	})
 
-	var gotTraceparent string
+	traceparentCh := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotTraceparent = r.Header.Get("traceparent")
+		traceparentCh <- r.Header.Get("traceparent")
 	}))
 	defer srv.Close()
 
@@ -74,7 +76,7 @@ func TestHTTPTransport_TracingInjectsTraceparent(t *testing.T) {
 	// parentbased_always_on (SDK default) samples the root client span, so the
 	// W3C propagator must inject a traceparent header. This verifies the whole
 	// chain: real provider → otelhttp transport → propagator.
-	if gotTraceparent == "" {
+	if got := <-traceparentCh; got == "" {
 		t.Error("traceparent header not injected; otelhttp transport not wired to the real tracer provider")
 	}
 }

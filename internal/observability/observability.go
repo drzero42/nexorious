@@ -106,6 +106,12 @@ func Init(cfg *config.Config, version string) (*Providers, error) {
 	otel.SetMeterProvider(mp)
 	initInstruments(mp)
 
+	// Route OTel-internal errors (async export failures etc.) through slog
+	// instead of the SDK's unstructured stderr default.
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		slog.Warn("otel export error", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+	}))
+
 	// --- Tracing (opt-in: only when an OTLP endpoint is configured) ---
 	var tp trace.TracerProvider
 	var tracerShutdown func(context.Context) error
@@ -129,9 +135,6 @@ func Init(cfg *config.Config, version string) (*Providers, error) {
 		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 			propagation.TraceContext{}, propagation.Baggage{},
 		))
-		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-			slog.Warn("otel export error", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-		}))
 	} else {
 		tp = tracenoop.NewTracerProvider()
 	}

@@ -91,8 +91,10 @@ func TestInit_DisabledIsNoop(t *testing.T) {
 
 func TestInit_TracingEnabledYieldsRealTracerProvider(t *testing.T) {
 	prov, err := observability.Init(&config.Config{
-		OTELServiceName:          "nexorious-test",
-		OTELMetricsEnabled:       true,
+		OTELServiceName:    "nexorious-test",
+		OTELMetricsEnabled: true,
+		// Gate only: the exporter reads OTEL_EXPORTER_OTLP_ENDPOINT from the
+		// env (unset here), so this literal value is never dialed.
 		OTELExporterOTLPEndpoint: "http://127.0.0.1:4318",
 	}, "1.2.3-test")
 	if err != nil {
