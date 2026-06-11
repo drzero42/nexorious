@@ -213,7 +213,7 @@ The listener binds loopback only (`PPROF_ADDR`, default `127.0.0.1:6060`) and is
 
 **Tracing:**
 
-Set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP endpoint and the drop-in span sources start exporting: `otelriver` (one root span per River job), `otelhttp` (outbound API calls — wired via `observability.HTTPTransport()`, which every service client uses), and `bunotel` (DB queries). A sync renders as one waterfall: `river.work` → external API spans → query spans.
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP endpoint and the drop-in span sources start exporting: `otelriver` (one root span per River job), `otelhttp` (outbound API calls — wired via `observability.HTTPTransport()`, which the service clients use (the PSN library's internal auth calls bypass it)), and `bunotel` (DB queries). A sync renders as one waterfall: `river.work` → external API spans → query spans.
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 ./nexorious serve
