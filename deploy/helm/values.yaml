@@ -60,6 +60,16 @@ nexorious:
   tmpDir:
     sizeLimit: 2Gi
 
+  # -- Annotate the nexorious Deployment with `reloader.stakater.com/auto: "true"`
+  # -- so Stakater Reloader (https://github.com/stakater/Reloader), when
+  # -- installed in the cluster, restarts the pod whenever a referenced Secret
+  # -- or ConfigMap changes (e.g. after rotating IGDB credentials in an
+  # -- externally-managed secret). The annotation is inert when Reloader is
+  # -- not installed. Applies only to the nexorious controller — never the
+  # -- in-cluster PostgreSQL. Set to false if you run Reloader but want to
+  # -- control restarts yourself.
+  reloader: true
+
   # -- External secret references (*From pattern)
   # When *From.name and *From.key are both non-empty, the external secret is used
   # and the corresponding inline value is ignored.
@@ -298,6 +308,13 @@ controllers:
   nexorious:
     type: deployment
     replicas: 1
+    # The storage PVC is ReadWriteOnce (node-scoped). The default
+    # RollingUpdate strategy starts the new pod before the old one stops;
+    # if the scheduler places it on a different node the volume cannot
+    # attach and the rollout deadlocks (Multi-Attach error). Recreate
+    # terminates the old pod first, at the cost of a brief downtime
+    # window during upgrades.
+    strategy: Recreate
     initContainers:
       migrate:
         image:
