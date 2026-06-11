@@ -163,11 +163,16 @@ jobs:
 
       - name: Lint Helm chart
         run: |
-          helm lint --strict deploy/helm/ \
-            --set nexorious.dbEncryptionKey=x \
-            --set nexorious.postgresql.password=x \
-            --set nexorious.igdbClientId=x \
-            --set nexorious.igdbClientSecret=x \
-            --set alerts.enabled=true \
-            --set alerts.loki.enabled=true \
-            --set alerts.victoriaLogs.enabled=true
+          # Lint twice to exercise both VictoriaLogs delivery modes (the default
+          # vmrule, and the no-operator configmap variant).
+          for vl_delivery in vmrule configmap; do
+            helm lint --strict deploy/helm/ \
+              --set nexorious.dbEncryptionKey=x \
+              --set nexorious.postgresql.password=x \
+              --set nexorious.igdbClientId=x \
+              --set nexorious.igdbClientSecret=x \
+              --set alerts.enabled=true \
+              --set alerts.loki.enabled=true \
+              --set alerts.victoriaLogs.enabled=true \
+              --set alerts.victoriaLogs.delivery=$vl_delivery
+          done

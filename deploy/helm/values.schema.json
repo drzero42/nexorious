@@ -223,16 +223,21 @@
         "victoriaLogs": {
           "type": "object",
           "additionalProperties": false,
-          "description": "VictoriaLogs VMRule delivery (VictoriaMetrics Operator).",
+          "description": "VictoriaLogs alert-rule delivery.",
           "properties": {
             "enabled": {
               "type": "boolean",
-              "description": "Render the VMRule (requires alerts.enabled and the Operator CRDs)."
+              "description": "Render VictoriaLogs alert rules (requires alerts.enabled). Form chosen by delivery."
+            },
+            "delivery": {
+              "type": "string",
+              "enum": ["vmrule", "configmap"],
+              "description": "vmrule = VMRule CR (VictoriaMetrics Operator); configmap = plain ConfigMap of the rules file for setups without the operator."
             },
             "ruleLabels": {
               "type": "object",
               "additionalProperties": { "type": "string" },
-              "description": "Extra labels on the VMRule so the target VMAlert's ruleSelector matches it."
+              "description": "Extra labels on the rendered object (VMRule ruleSelector match, or ConfigMap sidecar-discovery tag)."
             }
           }
         }

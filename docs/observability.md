@@ -75,6 +75,7 @@ alerts:
     ruleLabel: { key: loki_rule, value: "1" }   # match your ruler sidecar
   victoriaLogs:
     enabled: true
+    delivery: vmrule                            # vmrule | configmap
     ruleLabels: { project: nexorious }          # match your VMAlert ruleSelector
 ```
 
@@ -82,9 +83,32 @@ alerts:
   (e.g. `kiwigrid/k8s-sidecar`) discovers it. The bundled grafana/loki v3 chart's
   built-in sidecar uses `{loki.grafana.com/rule: "true"}` instead — set
   `ruleLabel` to match your sidecar's `label`/`labelValue`.
-- **VictoriaLogs** → a `VMRule` (VictoriaMetrics Operator). The target `VMAlert`
-  must point its datasource at VictoriaLogs and select this `VMRule` (via
-  `ruleSelector` matching `alerts.victoriaLogs.ruleLabels`, or `selectAllByDefault`).
+- **VictoriaLogs** → chosen by `alerts.victoriaLogs.delivery`:
+  - `vmrule` (default) → a `VMRule` (VictoriaMetrics Operator). The target
+    `VMAlert` must point its datasource at VictoriaLogs and select this `VMRule`
+    (via `ruleSelector` matching `alerts.victoriaLogs.ruleLabels`, or
+    `selectAllByDefault`).
+  - `configmap` → a plain `ConfigMap` (key `victorialogs-rules.yaml`) for setups
+    **without** the operator. Unlike Loki's ruler, vmalert has no auto-discovery
+    sidecar convention — mount this ConfigMap into your own vmalert pod and point
+    `-rule` at the mounted file, e.g.:
+
+    ```yaml
+    # vmalert pod spec (excerpt)
+    volumes:
+      - name: nexorious-rules
+        configMap:
+          name: <release>-nexorious-victorialogs-alerts
+    # container:
+    #   args: ["-rule=/etc/vmalert/rules/victorialogs-rules.yaml", ...]
+    #   volumeMounts:
+    #     - name: nexorious-rules
+    #       mountPath: /etc/vmalert/rules
+    ```
+
+    Trigger a reload after the ConfigMap updates via vmalert's `/-/reload`
+    endpoint (commonly driven by a `configmap-reload` sidecar). `ruleLabels` are
+    applied to the ConfigMap so a sidecar-based discovery setup can tag it.
 
 ## Alertmanager routing
 

@@ -294,8 +294,9 @@ SPA on port 8000 — no separate frontend service.
 | `alerts.enabled` | `false` | Master switch for log-based alert rules. |
 | `alerts.loki.enabled` | `false` | Render the Loki ruler ConfigMap. |
 | `alerts.loki.ruleLabel.key` / `.value` | `loki_rule` / `"1"` | Discovery label the ruler sidecar watches. |
-| `alerts.victoriaLogs.enabled` | `false` | Render the VMRule (VictoriaMetrics Operator). |
-| `alerts.victoriaLogs.ruleLabels` | `{}` | Extra labels so the VMAlert ruleSelector matches the VMRule. |
+| `alerts.victoriaLogs.enabled` | `false` | Render VictoriaLogs alert rules. |
+| `alerts.victoriaLogs.delivery` | `vmrule` | `vmrule` = VMRule CR (operator); `configmap` = plain ConfigMap for setups without the operator. |
+| `alerts.victoriaLogs.ruleLabels` | `{}` | Extra labels on the rendered object (VMRule ruleSelector match, or ConfigMap discovery tag). |
 
 See [docs/observability.md](../../docs/observability.md) for full setup.
 

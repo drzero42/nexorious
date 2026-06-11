@@ -152,12 +152,22 @@ alerts:
       value: "1"
 
   victoriaLogs:
-    # -- Render the VMRule (requires alerts.enabled and the VictoriaMetrics
-    # -- Operator CRDs). The target VMAlert must point its datasource at
-    # -- VictoriaLogs and select this VMRule (ruleSelector or selectAllByDefault).
+    # -- Render VictoriaLogs alert rules (requires alerts.enabled). The form is
+    # -- chosen by `delivery` below.
     enabled: false
-    # -- Extra labels on the VMRule so the target VMAlert's ruleSelector matches
-    # -- it. Leave empty if the VMAlert uses selectAllByDefault: true.
+    # -- How to deliver the rules:
+    # --   vmrule    a VMRule CR consumed by the VictoriaMetrics Operator
+    # --             (the operator renders it into vmalert's config).
+    # --   configmap a plain ConfigMap of the rules file, for those NOT running
+    # --             the operator. vmalert has no auto-discovery sidecar like
+    # --             Loki's ruler — mount this ConfigMap into your vmalert pod
+    # --             and point `-rule` at the mounted victorialogs-rules.yaml;
+    # --             trigger reloads via vmalert's /-/reload endpoint.
+    delivery: vmrule
+    # -- Extra labels on the rendered object. For `vmrule` these let the target
+    # -- VMAlert's ruleSelector match it (leave empty if the VMAlert uses
+    # -- selectAllByDefault: true). For `configmap` they tag the ConfigMap for
+    # -- any sidecar-based discovery you may run.
     ruleLabels: {}
 
 # =============================================================================
