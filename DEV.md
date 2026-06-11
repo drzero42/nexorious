@@ -181,7 +181,7 @@ A persistent `--config <file>` flag on the root command loads a `.env`-style fil
 
 ## Observability
 
-Nexorious ships an OpenTelemetry metrics pipeline plus an opt-in pprof endpoint. Tracing is currently a **no-op** — the SDK seams are wired with no-op tracer providers; issue #911 adds the OTLP trace exporter on top.
+Nexorious ships an OpenTelemetry metrics pipeline, opt-in OTLP tracing, and an opt-in pprof endpoint.
 
 **What's instrumented, and where:**
 
@@ -210,6 +210,16 @@ go tool pprof http://127.0.0.1:6060/debug/pprof/goroutine          # goroutine d
 ```
 
 The listener binds loopback only (`PPROF_ADDR`, default `127.0.0.1:6060`) and is off unless `PPROF_ENABLED=true`. In a cluster, reach it with `kubectl port-forward <pod> 6060:6060` first.
+
+**Tracing:**
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP endpoint and the drop-in span sources start exporting: `otelriver` (one root span per River job), `otelhttp` (outbound API calls — wired via `observability.HTTPTransport()`, which every service client uses), and `bunotel` (DB queries). A sync renders as one waterfall: `river.work` → external API spans → query spans.
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 ./nexorious serve
+```
+
+With tracing on, log lines emitted inside a traced job/request carry `trace_id`/`span_id` (added by `observability.NewTraceContextHandler`, chained in `serve.go`). Unset the variable and tracing is fully off — no exporter, noop tracer providers, plain log lines. Sampling and batching follow the standard OTel env vars (`OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_BSP_*`); the default samples everything. Until the local Grafana stack lands (#912), view traces with any OTLP backend — e.g. `docker run --rm -p 3000:3000 -p 4318:4318 grafana/otel-lgtm` and open Grafana at `http://localhost:3000`.
 
 ## Test Coverage
 

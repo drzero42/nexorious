@@ -466,8 +466,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		slog.Warn("River client stop", logging.KeyErr, err)
 	}
 
-	// Flush and stop the meter provider last so in-flight job/DB metrics from the
-	// River drain above are exported.
+	// Flush and stop the providers last (tracer first, then meter) so in-flight
+	// spans and job/DB metrics from the River drain above are exported.
 	obsShutdownCtx, obsCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer obsCancel()
 	if err := obs.Shutdown(obsShutdownCtx); err != nil {
