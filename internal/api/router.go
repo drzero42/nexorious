@@ -25,6 +25,7 @@ import (
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	migrate "github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/notify"
+	"github.com/drzero42/nexorious/internal/observability"
 	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
@@ -86,13 +87,13 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 		},
 	}))
 
-	// Gate 1: DB unavailable — redirect everything except /db-error, /health, and /static/app.css
+	// Gate 1: DB unavailable — redirect everything except /db-error, /health, /metrics, and /static/app.css
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			state := migrator.State()
 			if state == migrate.AppStateDBUnavailable {
 				path := c.Request().URL.Path
-				if path == "/db-error" || path == "/health" || path == "/static/app.css" {
+				if path == "/db-error" || path == "/health" || path == "/metrics" || path == "/static/app.css" {
 					return next(c)
 				}
 				if strings.HasPrefix(path, "/api/") {
@@ -105,14 +106,14 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 		}
 	})
 
-	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health, /static/app.css, brand icon assets
+	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health, /metrics, /static/app.css, brand icon assets
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			state := migrator.State()
 			if state != migrate.AppStateReady && state != migrate.AppStateDBUnavailable {
 				path := c.Request().URL.Path
 				if strings.HasPrefix(path, "/migrate") || strings.HasPrefix(path, "/api/migrate") ||
-					path == "/health" || path == "/static/app.css" ||
+					path == "/health" || path == "/metrics" || path == "/static/app.css" ||
 					path == "/logo.svg" || path == "/favicon.svg" ||
 					path == "/favicon.ico" || path == "/apple-touch-icon.png" {
 					return next(c)
@@ -126,13 +127,13 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 		}
 	})
 
-	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /api/migrate*, /static/app.css, brand icon assets
+	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /metrics, /api/migrate*, /static/app.css, brand icon assets
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			if migrator.NeedsSetup() {
 				path := c.Request().URL.Path
 				if path == "/setup" || strings.HasPrefix(path, "/api/auth/setup") ||
-					path == "/health" || strings.HasPrefix(path, "/api/migrate") ||
+					path == "/health" || path == "/metrics" || strings.HasPrefix(path, "/api/migrate") ||
 					path == "/static/app.css" ||
 					path == "/logo.svg" || path == "/favicon.svg" ||
 					path == "/favicon.ico" || path == "/apple-touch-icon.png" {
@@ -189,6 +190,13 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 			"backup_available": backup.PgDumpAvailable() && backup.PsqlAvailable(),
 		})
 	})
+
+	// Prometheus metrics — unauthenticated and always-on when enabled. Mounted
+	// only if the meter provider produced a handler (OTEL_METRICS_ENABLED=true).
+	// Carries no secrets; labels are bounded (source/status/outcome, never user_id).
+	if h := observability.MetricsHandler(); h != nil {
+		e.GET("/metrics", echo.WrapHandler(h))
+	}
 
 	// Version — public, not cached (changes on every deploy)
 	e.GET("/api/version", func(c *echo.Context) error {

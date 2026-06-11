@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,7 +10,9 @@ import (
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/config"
+	maint "github.com/drzero42/nexorious/internal/middleware"
 	"github.com/drzero42/nexorious/internal/migrate"
+	"github.com/drzero42/nexorious/internal/observability"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/updatecheck"
@@ -471,4 +474,76 @@ func TestVersionEndpoint_EmptyStateNoUpdate(t *testing.T) {
 	if body["latest_version"] != "" || body["release_url"] != "" {
 		t.Errorf("latest_version/release_url = %v/%v, want empty", body["latest_version"], body["release_url"])
 	}
+}
+
+func TestMetricsEndpoint_ServedAndBypassesGates(t *testing.T) {
+	// Init the observability package so MetricsHandler() is non-nil.
+	prov, err := observability.Init(&config.Config{OTELServiceName: "nexorious-test", OTELMetricsEnabled: true}, "test")
+	if err != nil {
+		t.Fatalf("observability.Init: %v", err)
+	}
+	t.Cleanup(func() { _ = prov.Shutdown(context.Background()) })
+
+	tests := []struct {
+		name     string
+		migrator func() *migrate.Migrator
+	}{
+		{
+			name: "db_unavailable gate",
+			migrator: func() *migrate.Migrator {
+				return migrate.NewMigratorForTest(migrate.AppStateDBUnavailable)
+			},
+		},
+		{
+			name: "needs_migration gate",
+			migrator: func() *migrate.Migrator {
+				return migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
+			},
+		},
+		{
+			name: "setup_required gate",
+			migrator: func() *migrate.Migrator {
+				m := migrate.NewMigratorForTest(migrate.AppStateReady)
+				m.SetNeedsSetup(true)
+				return m
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := api.New(testEncrypter, testCfg(), tt.migrator(), nil, "", nil, nil, nil, "dev", "unknown", nil)
+
+			req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Errorf("expected 200 for /metrics, got %d (gate should be bypassed)", rec.Code)
+			}
+			ct := rec.Header().Get("Content-Type")
+			if !strings.HasPrefix(ct, "text/plain") {
+				t.Errorf("expected Content-Type starting with text/plain, got %q", ct)
+			}
+		})
+	}
+
+	// Gate 4: /metrics must also bypass maintenance mode, so a Prometheus scrape
+	// does not flap the target to DOWN during a restore window.
+	t.Run("maintenance_mode", func(t *testing.T) {
+		maint.SetMaintenanceMode(true)
+		t.Cleanup(func() { maint.SetMaintenanceMode(false) })
+
+		e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateReady), nil, "", nil, nil, nil, "dev", "unknown", nil)
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200 for /metrics during maintenance, got %d", rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+			t.Errorf("expected Content-Type starting with text/plain, got %q", ct)
+		}
+	})
 }
