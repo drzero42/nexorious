@@ -439,6 +439,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		}
 	}(shutdownCtx)
 
+	if cfg.PprofEnabled {
+		startPprofServer(cfg.PprofAddr)
+	}
+
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	sc := echo.StartConfig{
 		Address:         addr,
