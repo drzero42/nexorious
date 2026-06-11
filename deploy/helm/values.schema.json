@@ -195,6 +195,21 @@
       "type": "object",
       "additionalProperties": true
     },
+    "dashboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opt-in Grafana dashboard delivery (the committed nexorious dashboard JSON).",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Render the dashboard object." },
+        "mode": { "type": "string", "enum": ["configmap", "crd"], "description": "configmap (sidecar ConfigMap) or crd (GrafanaDashboard)." },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Extra labels on the rendered object." },
+        "instanceSelector": {
+          "type": "object",
+          "description": "grafana-operator instanceSelector (crd mode).",
+          "properties": { "matchLabels": { "type": "object", "additionalProperties": { "type": "string" } } }
+        }
+      }
+    },
     "alerts": {
       "type": "object",
       "additionalProperties": false,

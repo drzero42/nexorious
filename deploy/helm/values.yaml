@@ -224,6 +224,32 @@ serviceMonitor:
         scrapeTimeout: 10s
 
 # =============================================================================
+# Grafana dashboard (opt-in) — the committed nexorious dashboard JSON
+# =============================================================================
+# Renders the single-source-of-truth dashboard (deploy/observability/
+# nexorious-dashboard.json) for in-cluster Grafana. Default OFF.
+dashboard:
+  # -- Master switch for the dashboard object.
+  enabled: false
+  # -- How to deliver the dashboard:
+  # --   configmap  a ConfigMap labeled `grafana_dashboard: "1"` that the
+  # --              Grafana sidecar (kube-prometheus-stack default) auto-discovers.
+  # --   crd        a GrafanaDashboard CR (grafana.integreatly.org/v1beta1) for
+  # --              grafana-operator users. NOTE: requires the CRD installed
+  # --              in-cluster or `helm install/upgrade` fails on the unknown
+  # --              kind (`helm template`/`lint` are unaffected) — hence the
+  # --              configmap default.
+  mode: configmap
+  # -- Extra labels on the rendered object (e.g. to target a specific sidecar
+  # -- or Grafana folder). For configmap mode the grafana_dashboard label is
+  # -- always added regardless of this.
+  labels: {}
+  # -- (crd mode only) instanceSelector matching the grafana-operator Grafana CR.
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+
+# =============================================================================
 # Default Pod options (applied to all controllers unless overridden)
 # =============================================================================
 
