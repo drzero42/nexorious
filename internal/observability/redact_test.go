@@ -2,10 +2,12 @@ package observability
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
@@ -100,4 +102,113 @@ func TestRedactingExporter_NoQueryPassesThrough(t *testing.T) {
 		}
 	}
 	t.Error("url.full attribute not found in recorded span")
+}
+
+// TestRedactingExporter_ScrubsStatusDescription verifies that URL query strings
+// embedded in a span's status description are stripped. Go's *url.Error embeds
+// the full request URL in its message, and otelriver/bunotel copy err.Error()
+// into the status description — so a failed Steam/GOG call would otherwise
+// carry credentials there.
+func TestRedactingExporter_ScrubsStatusDescription(t *testing.T) {
+	rec := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSyncer(newRedactingExporter(rec)),
+	)
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	tracer := tp.Tracer("test")
+	_, span := tracer.Start(context.Background(), "failed-job")
+	span.SetStatus(codes.Error, `Get "https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=SECRET&steamid=123": connection refused`)
+	span.End()
+
+	if err := tp.ForceFlush(context.Background()); err != nil {
+		t.Fatalf("ForceFlush: %v", err)
+	}
+
+	spans := rec.GetSpans()
+	if len(spans) == 0 {
+		t.Fatal("no spans recorded")
+	}
+	got := spans[0].Status.Description
+	want := `Get "https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/": connection refused`
+	if got != want {
+		t.Errorf("status description = %q; want %q", got, want)
+	}
+	if strings.Contains(got, "SECRET") {
+		t.Errorf("status description still contains a secret: %q", got)
+	}
+}
+
+// TestRedactingExporter_ScrubsExceptionEvents verifies that URL query strings in
+// span event attributes (exception.message from span.RecordError) are stripped.
+func TestRedactingExporter_ScrubsExceptionEvents(t *testing.T) {
+	rec := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSyncer(newRedactingExporter(rec)),
+	)
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	tracer := tp.Tracer("test")
+	_, span := tracer.Start(context.Background(), "failed-call")
+	span.RecordError(errors.New(`Get "https://auth.gog.com/token?client_secret=SECRET&refresh_token=SECRET2": EOF`))
+	span.End()
+
+	if err := tp.ForceFlush(context.Background()); err != nil {
+		t.Fatalf("ForceFlush: %v", err)
+	}
+
+	spans := rec.GetSpans()
+	if len(spans) == 0 {
+		t.Fatal("no spans recorded")
+	}
+	if len(spans[0].Events) == 0 {
+		t.Fatal("no events recorded")
+	}
+	found := false
+	for _, ev := range spans[0].Events {
+		for _, kv := range ev.Attributes {
+			v := kv.Value.AsString()
+			if strings.Contains(v, "SECRET") {
+				t.Errorf("event attribute %q still contains a secret: %q", kv.Key, v)
+			}
+			if kv.Key == "exception.message" {
+				found = true
+				if want := `Get "https://auth.gog.com/token": EOF`; v != want {
+					t.Errorf("exception.message = %q; want %q", v, want)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("exception.message attribute not found in recorded events")
+	}
+}
+
+// TestRedactingExporter_PlainErrorTextPassesThrough verifies that error text
+// without an embedded URL is exported unchanged.
+func TestRedactingExporter_PlainErrorTextPassesThrough(t *testing.T) {
+	rec := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSyncer(newRedactingExporter(rec)),
+	)
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	const plain = "dial tcp 10.0.0.1:443: connect: connection refused"
+
+	tracer := tp.Tracer("test")
+	_, span := tracer.Start(context.Background(), "plain-failure")
+	span.SetStatus(codes.Error, plain)
+	span.End()
+
+	if err := tp.ForceFlush(context.Background()); err != nil {
+		t.Fatalf("ForceFlush: %v", err)
+	}
+
+	spans := rec.GetSpans()
+	if len(spans) == 0 {
+		t.Fatal("no spans recorded")
+	}
+	if got := spans[0].Status.Description; got != plain {
+		t.Errorf("status description = %q; want %q (plain text must pass through)", got, plain)
+	}
 }
