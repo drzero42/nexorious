@@ -172,6 +172,18 @@ Validate required values.
   {{- end -}}
 {{- end -}}
 
+{{/* --- replicas vs RWO storage guard --- */}}
+{{/* The storage PVC is shared file state (cover art, uploads, backups).
+     With a ReadWriteOnce access mode, replicas spread across nodes cannot
+     all attach it. Refuse to render rather than deadlock at deploy time. */}}
+{{- $nexReplicas := int (default 1 (dig "nexorious" "replicas" 1 .Values.controllers)) -}}
+{{- $storagePvc := default dict (get .Values.persistence "storage") -}}
+{{- $storageEnabled := dig "enabled" false $storagePvc -}}
+{{- $storageAccessMode := dig "accessMode" "ReadWriteOnce" $storagePvc -}}
+{{- if and (gt $nexReplicas 1) $storageEnabled (hasPrefix "ReadWriteOnce" $storageAccessMode) -}}
+  {{- fail (printf "controllers.nexorious.replicas=%d but persistence.storage.accessMode=%s: the storage volume cannot be attached by multiple pods across nodes. Use ReadWriteMany storage (e.g. NFS) or keep replicas at 1." $nexReplicas $storageAccessMode) }}
+{{- end -}}
+
 {{/* --- postgresql password placeholder check (in-cluster only) --- */}}
 {{/* Empty is fine — resolvePostgresPassword auto-generates and persists via
      lookup. We only reject the legacy literal placeholder in case someone
@@ -478,6 +490,25 @@ so the loader sees the injected values.
   ) -}}
   {{- $_ = set .Values.controllers.nexorious.containers.main.env
       "LEGENDARY_WORK_DIR" .Values.nexorious.legendaryWorkDir -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Annotate the nexorious controller for Stakater Reloader when
+nexorious.reloader is true (the default). Reloader then restarts the pod
+whenever a Secret or ConfigMap referenced by the Deployment changes —
+e.g. after rotating IGDB credentials in an externally-managed secret,
+which a running pod would otherwise never pick up. The annotation is
+inert when Reloader is not installed. Deliberately NOT applied to the
+postgresql controller: auto-bouncing the database on secret change is
+never desirable. Call BEFORE bjw-s.common.loader.all so the loader sees
+the injected annotation.
+*/}}
+{{- define "nexorious.injectReloaderAnnotation" -}}
+{{- if .Values.nexorious.reloader -}}
+  {{- $annotations := default dict (get .Values.controllers.nexorious "annotations") -}}
+  {{- $_ := set $annotations "reloader.stakater.com/auto" "true" -}}
+  {{- $_ = set .Values.controllers.nexorious "annotations" $annotations -}}
 {{- end -}}
 {{- end }}
 

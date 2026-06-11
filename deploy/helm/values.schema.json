@@ -53,6 +53,10 @@
             }
           }
         },
+        "reloader": {
+          "type": "boolean",
+          "description": "Annotate the nexorious Deployment with reloader.stakater.com/auto: \"true\" so Stakater Reloader (if installed) restarts the pod when a referenced Secret or ConfigMap changes. Inert without Reloader. Never applied to the in-cluster PostgreSQL."
+        },
         "postgresql": {
           "type": "object",
           "additionalProperties": false,
