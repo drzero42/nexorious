@@ -106,3 +106,55 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Errorf("RateLimiterBackend = %q; want local", cfg.RateLimiterBackend)
 	}
 }
+
+func TestLoad_ObservabilityDefaults(t *testing.T) {
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
+	t.Setenv("IGDB_CLIENT_ID", "testclientid")
+	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.OTELServiceName != "nexorious" {
+		t.Errorf("OTELServiceName = %q; want %q", cfg.OTELServiceName, "nexorious")
+	}
+	if !cfg.OTELMetricsEnabled {
+		t.Errorf("OTELMetricsEnabled = false; want true (default on)")
+	}
+	if cfg.PprofEnabled {
+		t.Errorf("PprofEnabled = true; want false (default off)")
+	}
+	if cfg.PprofAddr != "127.0.0.1:6060" {
+		t.Errorf("PprofAddr = %q; want %q", cfg.PprofAddr, "127.0.0.1:6060")
+	}
+}
+
+func TestLoad_ObservabilityOverrides(t *testing.T) {
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
+	t.Setenv("IGDB_CLIENT_ID", "testclientid")
+	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
+	t.Setenv("OTEL_SERVICE_NAME", "nexorious-staging")
+	t.Setenv("OTEL_METRICS_ENABLED", "false")
+	t.Setenv("PPROF_ENABLED", "true")
+	t.Setenv("PPROF_ADDR", "127.0.0.1:7070")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.OTELServiceName != "nexorious-staging" {
+		t.Errorf("OTELServiceName = %q; want %q", cfg.OTELServiceName, "nexorious-staging")
+	}
+	if cfg.OTELMetricsEnabled {
+		t.Errorf("OTELMetricsEnabled = true; want false")
+	}
+	if !cfg.PprofEnabled {
+		t.Errorf("PprofEnabled = false; want true")
+	}
+	if cfg.PprofAddr != "127.0.0.1:7070" {
+		t.Errorf("PprofAddr = %q; want %q", cfg.PprofAddr, "127.0.0.1:7070")
+	}
+}

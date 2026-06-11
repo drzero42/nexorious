@@ -403,6 +403,13 @@ controllers:
           LOG_LEVEL: info
           DEBUG: "false"
           RATE_LIMITER_BACKEND: postgres
+          # Observability. Prometheus metrics are exposed at /metrics (on by
+          # default; see the ServiceMonitor work in #912). pprof stays off and
+          # would only ever bind loopback — never expose it via a Service.
+          OTEL_SERVICE_NAME: nexorious
+          OTEL_METRICS_ENABLED: "true"
+          PPROF_ENABLED: "false"
+          PPROF_ADDR: "127.0.0.1:6060"
           DB_ENCRYPTION_KEY:
             valueFrom:
               secretKeyRef:

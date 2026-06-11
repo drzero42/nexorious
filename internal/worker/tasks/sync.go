@@ -18,6 +18,7 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
+	"github.com/drzero42/nexorious/internal/observability"
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/matching"
 	"github.com/drzero42/nexorious/internal/services/platformresolution"
@@ -1001,6 +1002,22 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, riverClient *river.
 	}
 	emitSyncDiff(ctx, db, jobID, userID, storefrontDisplayName(ctx, db, storefront))
 
+	// Sync-outcome metrics (best-effort, bounded cardinality: source + status/outcome).
+	// Skip when storefront is empty (lookup failure) so we never create a polluting
+	// source="" time series.
+	if storefront != "" {
+		outcomeStatus := "completed"
+		if failedCount > 0 {
+			outcomeStatus = "completed_with_errors"
+		}
+		observability.RecordSyncOutcome(ctx, storefront, outcomeStatus)
+		if completed, failed, skipped, ok := syncJobItemStatusCounts(ctx, db, jobID); ok {
+			observability.RecordSyncItems(ctx, storefront, "completed", completed)
+			observability.RecordSyncItems(ctx, storefront, "failed", failed)
+			observability.RecordSyncItems(ctx, storefront, "skipped", skipped)
+		}
+	}
+
 	// Kick off scoped, incremental store-link enrichment for this storefront.
 	// Best-effort: a missing River client (e.g. in tests) simply skips it.
 	if riverClient != nil && userID != "" && storefront != "" {
@@ -1010,6 +1027,34 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, riverClient *river.
 			slog.WarnContext(ctx, "sync: enqueue store_link_refresh", logging.KeyErr, err)
 		}
 	}
+}
+
+// syncJobItemStatusCounts returns the per-status item counts for a finalized job.
+// Used for the nexorious_sync_items_total business metric. Returns ok=false on a
+// query error so callers can skip metrics (best-effort, never blocks the job).
+func syncJobItemStatusCounts(ctx context.Context, db *bun.DB, jobID string) (completed, failed, skipped int64, ok bool) {
+	var rows []struct {
+		Status string `bun:"status"`
+		N      int64  `bun:"n"`
+	}
+	if err := db.NewRaw(
+		`SELECT status, COUNT(*) AS n FROM job_items WHERE job_id = ? GROUP BY status`,
+		jobID,
+	).Scan(ctx, &rows); err != nil {
+		slog.WarnContext(ctx, "sync: count job item statuses for metrics", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return 0, 0, 0, false
+	}
+	for _, r := range rows {
+		switch r.Status {
+		case "completed":
+			completed = r.N
+		case "failed":
+			failed = r.N
+		case "skipped":
+			skipped = r.N
+		}
+	}
+	return completed, failed, skipped, true
 }
 
 // syncJobUserAndStorefront fetches the owning user_id and storefront (source)
