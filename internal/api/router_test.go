@@ -477,7 +477,9 @@ func TestVersionEndpoint_EmptyStateNoUpdate(t *testing.T) {
 }
 
 func TestMetricsEndpoint_ServedAndBypassesGates(t *testing.T) {
-	// Init the observability package so MetricsHandler() is non-nil.
+	// Init the observability package so MetricsHandler() is non-nil. This sets the
+	// process-global meter provider; t.Cleanup restores it via Shutdown so it does
+	// not leak into other tests in this package.
 	prov, err := observability.Init(&config.Config{OTELServiceName: "nexorious-test", OTELMetricsEnabled: true}, "test")
 	if err != nil {
 		t.Fatalf("observability.Init: %v", err)
