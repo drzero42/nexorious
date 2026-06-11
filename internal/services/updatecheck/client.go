@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/observability"
 )
 
 // Release is the subset of the GitHub "latest release" API response we need.
@@ -32,7 +32,7 @@ func NewClient() *Client {
 // NewClientWithBaseURL returns a Client with a custom API base URL (tests).
 func NewClientWithBaseURL(baseURL string) *Client {
 	return &Client{
-		httpClient: &http.Client{Timeout: 30 * time.Second, Transport: logging.NewRoundTripper(nil)},
+		httpClient: &http.Client{Timeout: 30 * time.Second, Transport: observability.HTTPTransport()},
 		baseURL:    baseURL,
 	}
 }

@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/observability"
 )
 
 const (
@@ -35,7 +35,7 @@ type Client struct {
 // NewClient creates a Humble client with production defaults.
 func NewClient() *Client {
 	return &Client{
-		httpClient: &http.Client{Transport: logging.NewRoundTripper(nil)},
+		httpClient: &http.Client{Transport: observability.HTTPTransport()},
 		baseURL:    defaultBaseURL,
 		limiter:    rate.NewLimiter(rate.Every(200*time.Millisecond), 1),
 	}

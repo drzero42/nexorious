@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/observability"
 )
 
 // Client is an HTTP client for the Steam Web API.
@@ -27,7 +27,7 @@ type Client struct {
 // NewClient creates a new Steam API client.
 func NewClient() *Client {
 	return &Client{
-		http:           &http.Client{Transport: logging.NewRoundTripper(nil)},
+		http:           &http.Client{Transport: observability.HTTPTransport()},
 		limiter:        rate.NewLimiter(rate.Every(200*time.Millisecond), 1),
 		ownedGamesBase: "https://api.steampowered.com",
 		appDetailsBase: "https://store.steampowered.com",
