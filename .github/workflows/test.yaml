@@ -174,5 +174,7 @@ jobs:
               --set alerts.enabled=true \
               --set alerts.loki.enabled=true \
               --set alerts.victoriaLogs.enabled=true \
-              --set alerts.victoriaLogs.delivery=$vl_delivery
+              --set alerts.victoriaLogs.delivery=$vl_delivery \
+              --set alerts.prometheus.enabled=true \
+              --set alerts.victoriaMetrics.enabled=true
           done
