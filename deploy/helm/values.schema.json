@@ -244,6 +244,38 @@
               "description": "Extra labels on the rendered object (VMRule ruleSelector match, or ConfigMap sidecar-discovery tag)."
             }
           }
+        },
+        "prometheus": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "PrometheusRule (Prometheus Operator) delivery for metrics-based alerts.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render the PrometheusRule (requires alerts.enabled)."
+            },
+            "ruleLabels": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Extra labels on the PrometheusRule for ruleSelector matching."
+            }
+          }
+        },
+        "victoriaMetrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "VMRule (VictoriaMetrics Operator) delivery for metrics-based alerts.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render the VMRule (requires alerts.enabled)."
+            },
+            "ruleLabels": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Extra labels on the VMRule for VMAlert ruleSelector matching."
+            }
+          }
         }
       }
     }

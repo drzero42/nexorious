@@ -3,6 +3,16 @@
 # relevant bits into your Alertmanager config and wire your own receivers.
 #
 # Both backends label alerts with severity: critical | warning. Route on that.
+#
+# This covers BOTH alert families, which share the same severity convention:
+#   - Log-based rules (#908): deploy/observability/{loki,victorialogs}-rules.yaml
+#   - Metrics-based rules (#913): deploy/observability/prometheus-rules.yaml
+#     (NexoriousSyncErrorRatioHigh, NexoriousSyncItemFailuresHigh,
+#      NexoriousJobErrorRatioHigh, NexoriousJobPanics, NexoriousJobDurationP95High,
+#      NexoriousExternalAPIErrorRatioHigh, NexoriousExternalAPILatencyP95High,
+#      NexoriousDBErrorsHigh, NexoriousDBLatencyP95High, NexoriousTargetDown)
+# Because all rules use severity labels, the severity-based routes below need no
+# change to cover the metrics alerts.
 route:
   receiver: nexorious-default
   group_by: ['alertname', 'source']
