@@ -30,7 +30,13 @@ trace-log correlation via a chained handler, not an accessor.
    enabled gives literally zero overhead when off.
 2. **Outbound HTTP instrumentation via an `observability.HTTPTransport()`
    accessor** returning the full transport stack. No service constructor
-   signatures change.
+   signatures change. *Amended after spec approval (user-approved
+   2026-06-11):* the otelhttp transport wraps whenever metrics **or** tracing
+   is enabled — not only when tracing is on. The otelhttp `Transport` emits
+   client metrics (`http.client.request.duration` etc., per host)
+   independently of spans, and #913's external-API alert rules need those
+   metrics in metrics-only deployments. Spans still appear only when the OTLP
+   endpoint is set (noop tracer provider otherwise).
 3. **OTLP over HTTP/protobuf only** (`otlptracehttp`, default port 4318).
    Matches #912's dev-stack assumption; avoids the `google.golang.org/grpc`
    dependency tree. gRPC can be added later if a real need appears.
@@ -70,11 +76,15 @@ trace-log correlation via a chained handler, not an accessor.
   provider.
 - `HTTPTransport() http.RoundTripper` — package accessor (same pattern as
   `MetricsHandler()`):
-  - tracing on → `otelhttp.NewTransport(logging.NewRoundTripper(nil))` with
-    the real tracer provider. otelhttp is **outermost**, so the per-call log
-    line emitted by the logging round-tripper inherits the HTTP client span's
-    `trace_id`/`span_id`, and `traceparent` is injected into outbound requests.
-  - tracing off → `logging.NewRoundTripper(nil)` (today's behavior).
+  - metrics or tracing enabled → `otelhttp.NewTransport(logging.NewRoundTripper(nil))`
+    with the package's meter + tracer providers (each real or noop per its own
+    gate). otelhttp is **outermost**, so the per-call log line emitted by the
+    logging round-tripper inherits the HTTP client span's `trace_id`/`span_id`,
+    and `traceparent` is injected into outbound requests. With tracing off the
+    spans are noops but the client metrics still flow (feeds #913).
+  - both disabled, or `Init` not yet called → `logging.NewRoundTripper(nil)`
+    (today's behavior; the pre-`Init` fallback keeps service-package unit
+    tests and CLI paths working unchanged).
 - `NewTraceContextHandler(inner slog.Handler) slog.Handler` — adds
   `trace_id`/`span_id` from `trace.SpanContextFromContext(ctx)` when the span
   context is valid; passes through untouched otherwise. Mirrors
@@ -146,8 +156,9 @@ deliberately no HTTP-server span middleware (`otelecho` is echo/v4-only; see
 ## 5. Testing
 
 - `observability_test.go`: with the endpoint set, `Init` yields a non-noop
-  `TracerProvider`; without it, the noop provider and `HTTPTransport()`
-  returns the plain logging round-tripper.
+  `TracerProvider`; without it, the noop provider. `HTTPTransport()` returns
+  the otelhttp transport when metrics or tracing is enabled and the plain
+  logging round-tripper when both are disabled.
 - Trace-handler tests: a record logged with an active span ctx carries
   `trace_id`/`span_id` matching the span; without an active span, neither key
   appears.
