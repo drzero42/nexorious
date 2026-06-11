@@ -13,16 +13,22 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/riverqueue/river"
 	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
+	"github.com/riverqueue/rivercontrib/otelriver"
 	"github.com/spf13/cobra"
 	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/extra/bunotel"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	"github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/notify"
+	"github.com/drzero42/nexorious/internal/observability"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/scheduler"
 	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
@@ -56,13 +62,24 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	slog.SetDefault(slog.New(logging.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseSlogLevel(cfg.LogLevel),
-	})))
+	}))))
+
+	// -------------------------------------------------------------------------
+	// Observability (metrics) — must precede DB + River wiring so the bunotel
+	// hook and otelriver middleware can bind to the meter provider.
+	// -------------------------------------------------------------------------
+	obs, err := observability.Init(cfg, version)
+	if err != nil {
+		slog.Error("observability init failed", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
+		os.Exit(1)
+	}
+	noopTracer := tracenoop.NewTracerProvider()
 
 	encrypter, err := crypto.NewEncrypter(cfg.DBEncryptionKey)
 	if err != nil {
-		slog.Error("invalid DB_ENCRYPTION_KEY", "err", err)
+		slog.Error("invalid DB_ENCRYPTION_KEY", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
 		os.Exit(1)
 	}
 
@@ -73,6 +90,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	resolvedDatabaseURL := cfg.DatabaseURL
 	db := openBunDB(resolvedDatabaseURL)
+	db.AddQueryHook(bunotel.NewQueryHook(
+		bunotel.WithMeterProvider(obs.MeterProvider),
+		bunotel.WithTracerProvider(noopTracer),
+	))
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	defer func() { _ = db.Close() }()
@@ -121,10 +142,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if pingErr == nil {
 		slog.Info("database connected")
 		if err := initAppState(ctx); err != nil {
-			slog.Error("initAppState failed — starting in DBUnavailable state", "err", err)
+			slog.Error("initAppState failed — starting in DBUnavailable state", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	} else {
-		slog.Warn("database not reachable at startup — starting in DBUnavailable state", "err", pingErr)
+		slog.Warn("database not reachable at startup — starting in DBUnavailable state", logging.KeyErr, pingErr, logging.Cat(logging.CategoryDB))
 	}
 
 	// -------------------------------------------------------------------------
@@ -140,17 +161,17 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	igdbClient := igdb.NewClient(cfg, igdbLimiter)
 
 	if !igdbClient.Configured() {
-		slog.Warn("IGDB credentials not configured — game search, import, and metadata features will be unavailable")
+		slog.Warn("IGDB credentials not configured — game search, import, and metadata features will be unavailable", logging.Cat(logging.CategoryConfig))
 	} else {
 		validateCtx, validateCancel := context.WithTimeout(ctx, 10*time.Second)
 		err := igdbClient.ValidateCredentials(validateCtx)
 		validateCancel()
 		if err != nil {
 			if igdb.IsAuthError(err) {
-				slog.Warn("IGDB credentials are invalid — disabling IGDB features", "err", err)
+				slog.Warn("IGDB credentials are invalid — disabling IGDB features", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 				igdbClient = igdb.NewInvalidCredentialsClient(igdbLimiter)
 			} else {
-				slog.Warn("IGDB credential probe failed (network/transient) — IGDB client kept", "err", err)
+				slog.Warn("IGDB credential probe failed (network/transient) — IGDB client kept", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 			}
 		} else {
 			slog.Info("IGDB credentials validated successfully")
@@ -171,7 +192,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// -------------------------------------------------------------------------
 	staleThreshold, err := time.ParseDuration(cfg.StaleJobThreshold)
 	if err != nil {
-		slog.Warn("invalid STALE_JOB_THRESHOLD, defaulting to 4h", "value", cfg.StaleJobThreshold)
+		slog.Warn("invalid STALE_JOB_THRESHOLD, defaulting to 4h", "value", cfg.StaleJobThreshold, logging.Cat(logging.CategoryConfig))
 		staleThreshold = 4 * time.Hour
 	}
 
@@ -228,12 +249,29 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Enabled:        cfg.UpdateCheckEnabled,
 	})
 
+	// Quiet job kinds: routine periodic-maintenance jobs and high-fan-out per-item
+	// workers whose successful completion logs at Debug (failures still Warn) so
+	// they don't drown out user-initiated, top-level job outcomes.
+	quietJobKinds := scheduler.MaintenanceJobKinds()
+	quietJobKinds = append(quietJobKinds, tasks.PerItemJobKinds()...)
+	quietJobKinds = append(quietJobKinds, notify.PruneEventsArgs{}.Kind())
+
 	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
 		Workers:      workers,
 		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
+		Middleware: []rivertype.Middleware{
+			otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
+				MeterProvider:  obs.MeterProvider,
+				TracerProvider: noopTracer,
+				DurationUnit:   "s",
+			}),
+			logging.NewWorkerMiddleware(quietJobKinds...),
+		},
+		ErrorHandler: &logging.WorkerErrorHandler{},
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "serve: river client init failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return fmt.Errorf("river.NewClient: %w", err)
 	}
 	notify.SetRiverClient(riverClient)
@@ -328,8 +366,18 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				Workers:      newWorkers,
 				Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
+				Middleware: []rivertype.Middleware{
+					otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
+						MeterProvider:  obs.MeterProvider,
+						TracerProvider: noopTracer,
+						DurationUnit:   "s",
+					}),
+					logging.NewWorkerMiddleware(quietJobKinds...),
+				},
+				ErrorHandler: &logging.WorkerErrorHandler{},
 			})
 			if err != nil {
+				slog.ErrorContext(ctx, "serve: river client init failed (rebuild)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				return fmt.Errorf("RebuildServices: river.NewClient: %w", err)
 			}
 
@@ -382,7 +430,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			if migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() {
 				reconcileOrphanedDispatchJobs(context.Background(), db)
 				if err := riverClient.Start(ctx); err != nil {
-					slog.Error("failed to start River client", "err", err)
+					slog.Error("failed to start River client", logging.KeyErr, err)
 				}
 				slog.Info("app ready — River client started")
 				return
@@ -390,6 +438,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			time.Sleep(2 * time.Second)
 		}
 	}(shutdownCtx)
+
+	if cfg.PprofEnabled {
+		startPprofServer(cfg.PprofAddr)
+	}
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	sc := echo.StartConfig{
@@ -401,12 +453,20 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	slog.Info("nexorious starting", "addr", addr, "version", version, "commit", commit)
 	if err := sc.Start(shutdownCtx, e); err != nil {
-		slog.Info("server stopped", "err", err)
+		slog.Info("server stopped", logging.KeyErr, err)
 	}
 
 	// Graceful shutdown sequence.
 	if err := riverClient.Stop(shutdownCtx); err != nil {
-		slog.Warn("River client stop", "err", err)
+		slog.Warn("River client stop", logging.KeyErr, err)
+	}
+
+	// Flush and stop the meter provider last so in-flight job/DB metrics from the
+	// River drain above are exported.
+	obsShutdownCtx, obsCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer obsCancel()
+	if err := obs.Shutdown(obsShutdownCtx); err != nil {
+		slog.Warn("observability shutdown", logging.KeyErr, err)
 	}
 
 	slog.Info("shutdown complete")
@@ -450,7 +510,7 @@ func reconcileOrphanedDispatchJobs(ctx context.Context, db *bun.DB) {
 		   )`,
 	).Exec(ctx)
 	if err != nil {
-		slog.Error("startup: reconcile orphaned dispatch_sync failed", "err", err)
+		slog.Error("startup: reconcile orphaned dispatch_sync failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return
 	}
 	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
@@ -472,7 +532,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: steam decrypt failed", "user_id", cfg.UserID, "err", err)
+				slog.Warn("adapter factory: steam decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "steam", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -490,7 +550,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: psn decrypt failed", "user_id", cfg.UserID, "err", err)
+				slog.Warn("adapter factory: psn decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "playstation-store", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -507,7 +567,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: gog decrypt failed", "user_id", cfg.UserID, "err", err)
+				slog.Warn("adapter factory: gog decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "gog", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -541,7 +601,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: epic decrypt failed", "user_id", cfg.UserID, "err", err)
+				slog.Warn("adapter factory: epic decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var snapshot map[string]string
@@ -568,7 +628,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: humble-bundle decrypt failed", "user_id", cfg.UserID, "err", err)
+				slog.Warn("adapter factory: humble-bundle decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {

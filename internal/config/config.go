@@ -124,6 +124,26 @@ type Config struct {
 	// LegendaryWorkDir is the base directory for per-user Legendary config dirs.
 	// When empty, Epic sync is disabled.
 	LegendaryWorkDir string `env:"LEGENDARY_WORK_DIR"`
+
+	// -------------------------------------------------------------------------
+	// Observability
+	// -------------------------------------------------------------------------
+
+	// OTELServiceName is the service.name resource attribute attached to all
+	// metrics (and, once #911 lands, traces).
+	OTELServiceName string `env:"OTEL_SERVICE_NAME" envDefault:"nexorious"`
+
+	// OTELMetricsEnabled controls whether the OTel meter provider and the
+	// always-on Prometheus /metrics endpoint are wired up. Default true.
+	OTELMetricsEnabled bool `env:"OTEL_METRICS_ENABLED" envDefault:"true"`
+
+	// PprofEnabled gates a loopback-only net/http/pprof listener for on-demand
+	// heap/goroutine/CPU profiling. Default off; never exposed publicly.
+	PprofEnabled bool `env:"PPROF_ENABLED" envDefault:"false"`
+
+	// PprofAddr is the bind address for the pprof listener when enabled. Keep it
+	// on loopback (127.0.0.1); reach it via `kubectl port-forward` + go tool pprof.
+	PprofAddr string `env:"PPROF_ADDR" envDefault:"127.0.0.1:6060"`
 }
 
 // Load parses Config from environment variables and assembles DatabaseURL

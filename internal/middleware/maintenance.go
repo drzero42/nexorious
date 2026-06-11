@@ -33,6 +33,7 @@ func MaintenanceMiddleware() echo.MiddlewareFunc {
 			}
 			path := c.Request().URL.Path
 			if path == "/health" ||
+				path == "/metrics" ||
 				strings.HasPrefix(path, "/api/admin/backups") ||
 				path == "/api/auth/me" ||
 				path == "/static/app.css" ||

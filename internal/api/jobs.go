@@ -19,6 +19,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -176,11 +177,12 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 
 	totalPages := int(math.Ceil(float64(total) / float64(perPage)))
 
+	ctx := c.Request().Context()
 	jobDTOs := make([]map[string]any, 0, len(jobs))
 	for i := range jobs {
 		progress, err := h.jobItemCounts(context.Background(), jobs[i].ID)
 		if err != nil {
-			slog.Error("jobs: fetch item counts failed", "err", err, "job_id", jobs[i].ID)
+			slog.ErrorContext(ctx, "jobs: fetch item counts failed", logging.KeyErr, err, logging.KeyJobID, jobs[i].ID, logging.KeyCategory, logging.CategoryDB)
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to load job progress")
 		}
 		jobDTOs = append(jobDTOs, toJobResponse(&jobs[i], progress))
@@ -376,6 +378,8 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		jobs = []models.Job{}
 	}
 
+	reqCtx := c.Request().Context()
+
 	type jobWithChanges struct {
 		models.Job
 		Progress              map[string]any   `json:"progress"`
@@ -391,7 +395,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	for _, j := range jobs {
 		progress, err := h.jobItemCounts(ctx, j.ID)
 		if err != nil {
-			slog.Error("HandleRecentJobs: failed to count job items", "job_id", j.ID, "err", err)
+			slog.ErrorContext(reqCtx, "HandleRecentJobs: failed to count job items", logging.KeyJobID, j.ID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 			progress = map[string]any{
 				"pending": 0, "processing": 0, "completed": 0, "pending_review": 0,
 				"skipped": 0, "failed": 0, "total": 0, "percent": 0,
@@ -412,7 +416,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			ORDER BY created_at`,
 			j.ID,
 		).Scan(ctx, &allChanges); err != nil {
-			slog.Error("HandleRecentJobs: failed to query changes", "job_id", j.ID, "err", err)
+			slog.ErrorContext(reqCtx, "HandleRecentJobs: failed to query changes", logging.KeyJobID, j.ID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 			allChanges = nil
 		}
 
@@ -479,7 +483,7 @@ func (h *JobsHandler) HandleGetJob(c *echo.Context) error {
 
 	progress, err := h.jobItemCounts(ctx, job.ID)
 	if err != nil {
-		slog.Error("jobs: fetch item counts failed", "err", err, "job_id", job.ID)
+		slog.ErrorContext(c.Request().Context(), "jobs: fetch item counts failed", logging.KeyErr, err, logging.KeyJobID, job.ID, logging.KeyCategory, logging.CategoryDB)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load job progress")
 	}
 	return c.JSON(http.StatusOK, toJobResponse(&job, progress))
@@ -617,7 +621,7 @@ func (h *JobsHandler) HandleCancelJob(c *echo.Context) error {
 		  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE job_id = ?)`,
 		jobID,
 	).Exec(context.Background()); err != nil {
-		slog.Error("jobs: cancel river jobs failed", "err", err, "job_id", jobID)
+		slog.ErrorContext(c.Request().Context(), "jobs: cancel river jobs failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.KeyCategory, logging.CategoryDB)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel queued tasks")
 	}
 
@@ -709,7 +713,7 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 		UPDATE jobs SET status = ?, auto_retry_done = false WHERE id = ?`,
 		models.JobStatusProcessing, jobID,
 	).Exec(context.Background()); err != nil {
-		slog.Error("jobs: reset job status failed", "err", err, "job_id", jobID)
+		slog.ErrorContext(c.Request().Context(), "jobs: reset job status failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.KeyCategory, logging.CategoryDB)
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to reset job status")
 	}
 
@@ -732,12 +736,12 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 func retryInsert(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], jobType, source, jobItemID string) {
 	args, err := tasks.ArgsForJobType(jobType, source, jobItemID)
 	if err != nil {
-		slog.Error("retryInsert: unsupported job_type",
-			"job_type", jobType, "source", source, "job_item_id", jobItemID, "err", err)
+		slog.ErrorContext(ctx, "retryInsert: unsupported job_type",
+			"job_type", jobType, logging.KeySource, source, "job_item_id", jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryValidation))
 		return
 	}
 	if err := tasks.EnqueueOrFail(ctx, db, rc, jobItemID, args); err != nil {
-		slog.Error("retryInsert: enqueue failed",
-			"job_type", jobType, "source", source, "job_item_id", jobItemID, "err", err)
+		slog.ErrorContext(ctx, "retryInsert: enqueue failed",
+			"job_type", jobType, logging.KeySource, source, "job_item_id", jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 }

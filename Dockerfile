@@ -46,8 +46,14 @@ CMD ["serve"]
 # ─── Target: CI release image (prebuilt binary via buildx named context) ─────
 FROM runtime-base AS runtime-ci
 ARG TARGETARCH
-COPY --from=binaries --chown=nexorious:nexorious nexorious-linux-${TARGETARCH} /app/nexorious
+# --chmod=0755 is required: the prebuilt binary arrives via a GitHub Actions
+# artifact round-trip, which does NOT preserve the executable bit (it lands as
+# 0644). --chown sets owner only, not mode, so without --chmod the binary ships
+# non-executable and the container fails with "exec: ... permission denied".
+COPY --from=binaries --chown=nexorious:nexorious --chmod=0755 nexorious-linux-${TARGETARCH} /app/nexorious
 
 # ─── Target: full source build (LAST stage = default target) ─────────────────
 FROM runtime-base AS runtime
-COPY --from=go-build --chown=nexorious:nexorious /out/nexorious /app/nexorious
+# --chmod=0755 here is a no-op safety net (the go-build binary is already 0755),
+# kept so both targets guarantee an executable binary unconditionally.
+COPY --from=go-build --chown=nexorious:nexorious --chmod=0755 /out/nexorious /app/nexorious

@@ -96,13 +96,13 @@ jobs:
         run: cd dist && sha256sum nexorious* > sha256sums.txt
 
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
 
       - name: Upload ci-binaries artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ci-binaries
           path: ci-binaries/
@@ -118,9 +118,9 @@ jobs:
       matrix:
         include:
           - {runner: ubuntu-latest,    image: 'debian:13',    pkg: deb, arch: amd64}
-          - {runner: ubuntu-latest,    image: 'rockylinux:9', pkg: rpm, arch: amd64}
+          - {runner: ubuntu-latest,    image: 'rockylinux/rockylinux:10', pkg: rpm, arch: amd64}
           - {runner: ubuntu-24.04-arm, image: 'debian:13',    pkg: deb, arch: arm64}
-          - {runner: ubuntu-24.04-arm, image: 'rockylinux:9', pkg: rpm, arch: arm64}
+          - {runner: ubuntu-24.04-arm, image: 'rockylinux/rockylinux:10', pkg: rpm, arch: arm64}
     steps:
       - name: Install base tools
         run: |
@@ -140,7 +140,7 @@ jobs:
                 && github.event.release.tag_name || github.sha }}
 
       - name: Download dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
@@ -172,7 +172,7 @@ jobs:
                 && github.event.release.tag_name || github.sha }}
 
       - name: Download ci-binaries artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ci-binaries
           path: ci-binaries
@@ -189,7 +189,7 @@ jobs:
 
       - name: Set up QEMU
         if: github.event_name == 'release'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
@@ -202,7 +202,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build image (PR — amd64, no push)
+      - name: Build image (PR — amd64, load for smoke run)
         if: github.event_name != 'release'
         uses: docker/build-push-action@v7
         with:
@@ -211,7 +211,16 @@ jobs:
             binaries=./ci-binaries
           target: runtime-ci
           platforms: linux/amd64
+          load: true
+          tags: nexorious:pr-test
           push: false
+
+      # Regression guard: actually execute the binary in the built image. The
+      # binary arrives via an artifact round-trip that strips the +x bit; if the
+      # Dockerfile fails to restore it (--chmod), this exits 126 instead of 0.
+      - name: Verify the image binary executes (PR)
+        if: github.event_name != 'release'
+        run: docker run --rm nexorious:pr-test version
 
       - name: Build and push image (release — multi-arch)
         if: github.event_name == 'release'
@@ -236,7 +245,7 @@ jobs:
       contents: write
     steps:
       - name: Download dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist

@@ -21,9 +21,11 @@ import (
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/crypto"
+	"github.com/drzero42/nexorious/internal/logging"
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	migrate "github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/notify"
+	"github.com/drzero42/nexorious/internal/observability"
 	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
@@ -54,30 +56,44 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 		rc = riverClient[0]
 	}
 
+	e.Use(PanicLogger())
 	e.Use(middleware.Recover())
+	e.Use(RequestIDMiddleware())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		LogStatus:   true,
-		LogURI:      true,
-		LogMethod:   true,
-		LogLatency:  true,
-		HandleError: true,
+		LogStatus:    true,
+		LogURI:       true,
+		LogMethod:    true,
+		LogLatency:   true,
+		LogRoutePath: true,
+		HandleError:  true,
 		LogValuesFunc: func(c *echo.Context, v middleware.RequestLoggerValues) error {
-			if v.Error != nil {
-				slog.Error("request", "method", v.Method, "uri", v.URI, "status", v.Status, "latency", v.Latency, "err", v.Error)
-			} else {
-				slog.Info("request", "method", v.Method, "uri", v.URI, "status", v.Status, "latency", v.Latency)
+			// request_id (and user_id on authenticated routes) are injected from
+			// the request context by logging.ContextHandler — do NOT pass them as
+			// explicit attrs here or the JSON line carries the key twice. The level
+			// is chosen by status + route so asset/poll noise lands at Debug.
+			ctx := c.Request().Context()
+			attrs := []any{
+				"method", v.Method,
+				"uri", v.URI,
+				logging.KeyRoute, v.RoutePath,
+				logging.KeyStatus, v.Status,
+				logging.KeyDurationMS, v.Latency.Milliseconds(),
 			}
+			if v.Error != nil {
+				attrs = append(attrs, logging.KeyErr, v.Error)
+			}
+			slog.Log(ctx, requestLogLevel(v.Status, v.RoutePath), "request", attrs...)
 			return nil
 		},
 	}))
 
-	// Gate 1: DB unavailable — redirect everything except /db-error, /health, and /static/app.css
+	// Gate 1: DB unavailable — redirect everything except /db-error, /health, /metrics, and /static/app.css
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			state := migrator.State()
 			if state == migrate.AppStateDBUnavailable {
 				path := c.Request().URL.Path
-				if path == "/db-error" || path == "/health" || path == "/static/app.css" {
+				if path == "/db-error" || path == "/health" || path == "/metrics" || path == "/static/app.css" {
 					return next(c)
 				}
 				if strings.HasPrefix(path, "/api/") {
@@ -90,14 +106,14 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 		}
 	})
 
-	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health, /static/app.css, brand icon assets
+	// Gate 2: migrations pending — redirect everything except /migrate*, /api/migrate*, /health, /metrics, /static/app.css, brand icon assets
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			state := migrator.State()
 			if state != migrate.AppStateReady && state != migrate.AppStateDBUnavailable {
 				path := c.Request().URL.Path
 				if strings.HasPrefix(path, "/migrate") || strings.HasPrefix(path, "/api/migrate") ||
-					path == "/health" || path == "/static/app.css" ||
+					path == "/health" || path == "/metrics" || path == "/static/app.css" ||
 					path == "/logo.svg" || path == "/favicon.svg" ||
 					path == "/favicon.ico" || path == "/apple-touch-icon.png" {
 					return next(c)
@@ -111,13 +127,13 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 		}
 	})
 
-	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /api/migrate*, /static/app.css, brand icon assets
+	// Gate 3: setup required — redirect everything except /setup, /api/auth/setup/*, /health, /metrics, /api/migrate*, /static/app.css, brand icon assets
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			if migrator.NeedsSetup() {
 				path := c.Request().URL.Path
 				if path == "/setup" || strings.HasPrefix(path, "/api/auth/setup") ||
-					path == "/health" || strings.HasPrefix(path, "/api/migrate") ||
+					path == "/health" || path == "/metrics" || strings.HasPrefix(path, "/api/migrate") ||
 					path == "/static/app.css" ||
 					path == "/logo.svg" || path == "/favicon.svg" ||
 					path == "/favicon.ico" || path == "/apple-touch-icon.png" {
@@ -174,6 +190,13 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 			"backup_available": backup.PgDumpAvailable() && backup.PsqlAvailable(),
 		})
 	})
+
+	// Prometheus metrics — unauthenticated and always-on when enabled. Mounted
+	// only if the meter provider produced a handler (OTEL_METRICS_ENABLED=true).
+	// Carries no secrets; labels are bounded (source/status/outcome, never user_id).
+	if h := observability.MetricsHandler(); h != nil {
+		e.GET("/metrics", echo.WrapHandler(h))
+	}
 
 	// Version — public, not cached (changes on every deploy)
 	e.GET("/api/version", func(c *echo.Context) error {

@@ -1,0 +1,15 @@
+{{- if and .Values.alerts.enabled .Values.alerts.loki.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nexorious.fullname" . }}-loki-alerts
+  labels:
+    app.kubernetes.io/name: {{ include "nexorious.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "nexorious.chart" . }}
+    {{ .Values.alerts.loki.ruleLabel.key }}: {{ .Values.alerts.loki.ruleLabel.value | quote }}
+data:
+  nexorious-rules.yaml: |
+{{ .Files.Get "files/loki-rules.yaml" | indent 4 }}
+{{- end }}

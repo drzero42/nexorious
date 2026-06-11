@@ -225,6 +225,15 @@ All variables, grouped by area. Anything without a default is unset unless you p
 |---|---|---|
 | `LEGENDARY_WORK_DIR` | — | Base directory for the per-user Legendary configuration that Epic sync relies on. **Epic sync is disabled while this is unset** (see [Epic Games Store sync](#epic-games-store-sync)). |
 
+**Observability**
+
+| Variable | Default | Description |
+|---|---|---|
+| `OTEL_SERVICE_NAME` | `nexorious` | The `service.name` attached to exported metrics. Set a distinct name per environment (e.g. `nexorious-staging`) if you scrape several instances into one Prometheus. |
+| `OTEL_METRICS_ENABLED` | `true` | Expose Prometheus metrics at `/metrics`. Set `false` to remove the endpoint entirely. |
+| `PPROF_ENABLED` | `false` | Start a loopback-only profiling listener for on-demand heap/goroutine/CPU profiles. Off by default; see [Monitoring and operations](#monitoring-and-operations). |
+| `PPROF_ADDR` | `127.0.0.1:6060` | Bind address for the pprof listener when enabled. Keep it on loopback — it is unauthenticated and must never be reachable from outside the host/pod. |
+
 The defaults are fine for most deployments — a typical setup only sets the database connection, `DB_ENCRYPTION_KEY`, the two IGDB variables, and possibly `STORAGE_PATH`/`BACKUP_PATH` and `SESSION_COOKIE_SECURE`.
 
 ## First run
@@ -342,6 +351,8 @@ The same binary that serves the app is also a command-line tool for tasks you do
 ## Monitoring and operations
 
 - **Logs** — Nexorious logs to standard output; set `LOG_LEVEL=debug` when you need more detail. With the native packages it runs under systemd, so its output lands in the journal — `journalctl -u nexorious` (add `-f` to follow). In Docker or Kubernetes, collect stdout however you collect logs from anything else.
+- **Metrics** — Nexorious exposes Prometheus metrics at `/metrics` (on by default; disable with `OTEL_METRICS_ENABLED=false`). The endpoint is unauthenticated and carries no secrets — its labels are bounded (storefront, status, outcome; never per-user). It stays scrapable even while the app is starting up, migrating, or in restore-maintenance mode, so a scrape never flaps the target. Alongside Go SQL/database query metrics you get River job metrics (the `river_work_*` family — job counts and durations) and the sync-outcome business metrics `nexorious_sync_total{source,status}` and `nexorious_sync_items_total{source,outcome}`. The River and `nexorious_sync_*` series are registered lazily, so they appear once the first background job (respectively, the first sync) has run. Point any Prometheus-compatible scraper at `http://<host>:<PORT>/metrics`.
+- **Profiling (pprof)** — for diagnosing memory or goroutine problems (for example an unexplained OOM under a tight memory limit), set `PPROF_ENABLED=true` to start a loopback-only `net/http/pprof` listener on `PPROF_ADDR` (default `127.0.0.1:6060`). It is intentionally **not** exposed publicly and is unauthenticated, so reach it from your workstation by tunnelling in first — e.g. `kubectl port-forward <pod> 6060:6060`, then `go tool pprof http://localhost:6060/debug/pprof/heap` (or `.../goroutine`). Leave it off in normal operation.
 - **Version** — `nexorious version` on the host, and the running version is shown in the app's sidebar, so you can confirm what's actually deployed.
 - **Notifications** — Nexorious's notifications are configured per user (in each user's profile), not centrally. As an operator you mainly care that the server can reach whatever channels users configure (for example outbound network access for email or webhooks).
 

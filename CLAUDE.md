@@ -75,7 +75,7 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 - `internal/middleware/` — Echo middleware (state gate, auth bridge, etc.)
 - `internal/backup/` — backup orchestration (invoked from scheduler)
 - `ui/` — contains `ui/frontend/` (React SPA source + build output), `ui/migrate/` (migration HTML), `ui/db-error/`, `ui/setup/`
-- `docs/` — Markdown guides and reference docs. Only `user-guide.md` and `admin-guide.md` are embedded (`docs/embed.go`, explicit `//go:embed user-guide.md admin-guide.md`) and served in-app by `internal/api/docs.go` at `/api/docs/:slug`, rendered at `/help/:slug` (`admin-guide` is admin-gated). The reference docs (`sync.md`, `maintenance.md`, `import-export-format.md`, `darkadia-import.md`) and the `docs/superpowers/` subtree (specs + plans) stay in the repo for GitHub viewing but are **not** embedded/served. `ui/frontend/src/lib/doc-links.ts` (issue #887) resolves any relative link to a `docs/*.md` sibling into an in-app `/help/:slug` route, and anything outside `docs/` (e.g. `../DEV.md`) into a GitHub source URL — so if you add an in-app link to a reference doc you must also embed it, or it will 404. The two guides currently cross-link only to each other.
+- `docs/` — Markdown guides and reference docs. Only `user-guide.md` and `admin-guide.md` are embedded (`docs/embed.go`, explicit `//go:embed user-guide.md admin-guide.md`) and served in-app by `internal/api/docs.go` at `/api/docs/:slug`, rendered at `/help/:slug` (`admin-guide` is admin-gated). The reference docs (`sync.md`, `maintenance.md`, `import-export-format.md`, `darkadia-import.md`, `logging-conventions.md`) and the `docs/superpowers/` subtree (specs + plans) stay in the repo for GitHub viewing but are **not** embedded/served. `ui/frontend/src/lib/doc-links.ts` (issue #887) resolves any relative link to a `docs/*.md` sibling into an in-app `/help/:slug` route, and anything outside `docs/` (e.g. `../DEV.md`) into a GitHub source URL — so if you add an in-app link to a reference doc you must also embed it, or it will 404. The two guides currently cross-link only to each other.
 
 ## Architecture
 
@@ -208,6 +208,7 @@ When you do need to merge two same-ecosystem PRs (major + group) by hand:
 - Errors returned, not panicked; wrap with `fmt.Errorf("context: %w", err)`
 - Echo handler signature: `func (h *Handler) ListGames(c *echo.Context) error` — note `*echo.Context` (pointer) in v5; middleware is `func(echo.HandlerFunc) echo.HandlerFunc`
 - Use `*bun.DB` for DB access; pass via dependency injection
+- **Logging:** in request/job code use `slog.*Context(ctx, …)` (not bare `slog.*`) and the `internal/logging` `Key*` constants; set `logging.Cat(...)` on error/warn boundaries. Correlation ids (`request_id`/`job_id`/`river_job_id`/`user_id`) are injected automatically from `ctx` — never add them by hand. Never log secrets or bodies. Full conventions: [docs/logging-conventions.md](docs/logging-conventions.md).
 
 **TypeScript (Frontend)**
 - Import order: external → internal (`@/...`) → types

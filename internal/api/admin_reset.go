@@ -7,6 +7,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // AdminResetHandler exposes POST /api/auth/admin/reset.
@@ -69,7 +71,7 @@ func (h *AdminResetHandler) HandleReset(c *echo.Context) error {
 		return nil
 	})
 	if err != nil {
-		slog.Error("admin reset: transaction failed", "err", err)
+		slog.ErrorContext(c.Request().Context(), "admin reset: transaction failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 		return errorJSON(c, http.StatusInternalServerError, "database error")
 	}
 	return c.JSON(http.StatusOK, map[string]any{"deleted": deleted})

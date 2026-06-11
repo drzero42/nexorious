@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.11.1](https://github.com/drzero42/nexorious/compare/v0.11.0...v0.11.1) (2026-06-10)
+
+
+### Bug Fixes
+
+* make container image binary executable ([#922](https://github.com/drzero42/nexorious/issues/922)) ([1ceff88](https://github.com/drzero42/nexorious/commit/1ceff88b913ca8870c321a6b9f6756880394592d))
+
+## [0.11.0](https://github.com/drzero42/nexorious/compare/v0.10.1...v0.11.0) (2026-06-10)
+
+
+### Features
+
+* native .deb/.rpm packages and release-only build pipeline ([#917](https://github.com/drzero42/nexorious/issues/917)) ([afa7179](https://github.com/drzero42/nexorious/commit/afa717946fb694a27c874929ec8a40e45da5c19b)), closes [#901](https://github.com/drzero42/nexorious/issues/901)
+* notify when a newer version is available ([#914](https://github.com/drzero42/nexorious/issues/914)) ([a0c1c47](https://github.com/drzero42/nexorious/commit/a0c1c47b345bf0079e4d42051a3691b5d81880ba)), closes [#899](https://github.com/drzero42/nexorious/issues/899)
+* show available updates in the version subcommand ([#916](https://github.com/drzero42/nexorious/issues/916)) ([307157e](https://github.com/drzero42/nexorious/commit/307157ec415ff22f820661aea940464fdb6ba574))
+
+
+### Bug Fixes
+
+* remove dead tag description field ([#895](https://github.com/drzero42/nexorious/issues/895)) ([#905](https://github.com/drzero42/nexorious/issues/905)) ([2148e8d](https://github.com/drzero42/nexorious/commit/2148e8d3228162c0b26205d08a58cd75e9c16923))
+
 ## [0.10.1](https://github.com/drzero42/nexorious/compare/v0.10.0...v0.10.1) (2026-06-09)
 
 

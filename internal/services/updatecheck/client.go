@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // Release is the subset of the GitHub "latest release" API response we need.
@@ -30,7 +32,7 @@ func NewClient() *Client {
 // NewClientWithBaseURL returns a Client with a custom API base URL (tests).
 func NewClientWithBaseURL(baseURL string) *Client {
 	return &Client{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{Timeout: 30 * time.Second, Transport: logging.NewRoundTripper(nil)},
 		baseURL:    baseURL,
 	}
 }

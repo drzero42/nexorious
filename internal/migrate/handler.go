@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/ui"
 )
 
@@ -85,13 +86,13 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 	go func() {
 		ctx := context.Background()
 		if err := h.migrator.RunMigrations(ctx); err != nil {
-			slog.Error("migrate: run migrations failed", "err", err)
+			slog.ErrorContext(ctx, "migrate: run migrations failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 			// RunMigrations already called TransitionToFailed; nothing else to do.
 			return
 		}
 		if h.db != nil {
 			if err := h.migrator.InitNeedsSetup(ctx, h.db); err != nil {
-				slog.Error("migrate: init needs-setup failed", "err", err)
+				slog.ErrorContext(ctx, "migrate: init needs-setup failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 				h.migrator.TransitionToFailed(err)
 				return
 			}

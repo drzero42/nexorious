@@ -179,6 +179,38 @@ Running `./nexorious` with no subcommand prints the help overview and exits non-
 
 A persistent `--config <file>` flag on the root command loads a `.env`-style file before parsing environment variables.
 
+## Observability
+
+Nexorious ships an OpenTelemetry metrics pipeline plus an opt-in pprof endpoint. Tracing is currently a **no-op** — the SDK seams are wired with no-op tracer providers; issue #911 adds the OTLP trace exporter on top.
+
+**What's instrumented, and where:**
+
+- `internal/observability` owns the OTel meter provider and a dedicated Prometheus registry, and exposes `MetricsHandler()` (mounted at `/metrics`) plus `RecordSyncOutcome` / `RecordSyncItems`.
+- `cmd/nexorious/serve.go` calls `observability.Init(cfg, version)` early, attaches the `bunotel` query hook to the `*bun.DB` (database metrics), and adds the `otelriver` middleware to **both** River clients (job metrics, `river_work_*`).
+- `internal/worker/tasks/sync.go` records the business metrics `nexorious_sync_total{source,status}` and `nexorious_sync_items_total{source,outcome}` at the `SyncCheckJobCompletion` finalization point.
+
+**Scraping metrics in dev:**
+
+```bash
+./nexorious serve                                    # /metrics is on by default
+curl -s localhost:8000/metrics | grep river_work     # River job metrics
+curl -s localhost:8000/metrics | grep nexorious_     # sync business metrics (after a sync runs)
+```
+
+`nexorious_sync_*` series only appear once at least one sync job has completed. Set `OTEL_METRICS_ENABLED=false` to remove the endpoint.
+
+**Adding a new metric:** create the instrument from the package meter in `initInstruments` (`internal/observability/observability.go`), expose a `Record…` helper that guards a nil instrument, and call it from the relevant code path. Keep labels **bounded** — never label by `user_id` or any unbounded/high-cardinality value. The package test asserts no `user_id` label leaks into the scrape; mirror that guard for new labels.
+
+**Profiling with pprof:**
+
+```bash
+PPROF_ENABLED=true ./nexorious serve
+go tool pprof -http=:8080 http://127.0.0.1:6060/debug/pprof/heap   # interactive heap flame graph
+go tool pprof http://127.0.0.1:6060/debug/pprof/goroutine          # goroutine dump
+```
+
+The listener binds loopback only (`PPROF_ADDR`, default `127.0.0.1:6060`) and is off unless `PPROF_ENABLED=true`. In a cluster, reach it with `kubectl port-forward <pod> 6060:6060` first.
+
 ## Test Coverage
 
 Run coverage across all packages:

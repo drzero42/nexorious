@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
 )
 
@@ -81,7 +82,9 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		if err != nil {
 			// A single failing order is logged and skipped so one bad order
 			// doesn't sink the whole sync.
-			slog.Error("humble: skipping order", "gamekey", gk, "err", err)
+			slog.WarnContext(ctx, "humble: skipping order",
+				"gamekey", gk, logging.KeyErr, err,
+				logging.Cat(logging.CategoryExternalAPI))
 			continue
 		}
 		if order == nil {

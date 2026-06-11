@@ -48,7 +48,7 @@ func (c *Client) GetLibrary(ctx context.Context, accessToken string, _ int, onBa
 		if err != nil {
 			return err
 		}
-		slog.Debug("gog: fetched page", "page", page, "numPages", numPages, "entriesOnPage", len(entries))
+		slog.DebugContext(ctx, "gog: fetched page", "page", page, "numPages", numPages, "entriesOnPage", len(entries))
 		totalFetched += len(entries)
 		if len(entries) > 0 {
 			if err := onBatch(entries); err != nil {
@@ -56,7 +56,7 @@ func (c *Client) GetLibrary(ctx context.Context, accessToken string, _ int, onBa
 			}
 		}
 		if page >= numPages {
-			slog.Debug("gog: library fetch complete", "totalFetched", totalFetched, "lastPage", page, "numPages", numPages)
+			slog.DebugContext(ctx, "gog: library fetch complete", "totalFetched", totalFetched, "lastPage", page, "numPages", numPages)
 			break
 		}
 	}
@@ -89,7 +89,7 @@ func (c *Client) fetchPage(ctx context.Context, accessToken string, page int) ([
 		return nil, 0, fmt.Errorf("gog: decode library response: %w", err)
 	}
 
-	slog.Debug("gog: page response metadata",
+	slog.DebugContext(ctx, "gog: page response metadata",
 		"requestedPage", page,
 		"responsePage", body.Page,
 		"totalProducts", body.TotalProducts,

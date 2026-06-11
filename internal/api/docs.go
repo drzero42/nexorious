@@ -11,6 +11,7 @@ import (
 
 	"github.com/drzero42/nexorious/docs"
 	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // slugPattern restricts doc slugs to lowercase letters, digits, and hyphens.
@@ -44,7 +45,7 @@ func (h *DocsHandler) HandleGetDoc(c *echo.Context) error {
 		if errors.Is(err, fs.ErrNotExist) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "doc not found"})
 		}
-		slog.Error("read embedded doc", "slug", slug, "error", err)
+		slog.ErrorContext(c.Request().Context(), "read embedded doc", "slug", slug, logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read doc"})
 	}
 	return c.Blob(http.StatusOK, "text/markdown; charset=utf-8", data)

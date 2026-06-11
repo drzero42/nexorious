@@ -19,6 +19,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // RestoreCallbacks holds the callbacks needed for restore orchestration.
@@ -197,7 +198,7 @@ func (h *BackupHandler) HandleCreateBackup(c *echo.Context) error {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
-		slog.Error("backup creation failed", "err", err)
+		slog.ErrorContext(c.Request().Context(), "backup creation failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("backup failed: %v", err)})
 	}
 
@@ -205,7 +206,7 @@ func (h *BackupHandler) HandleCreateBackup(c *echo.Context) error {
 	var cfg models.BackupConfig
 	if err := h.db.NewSelect().Model(&cfg).Where("id = 1").Scan(c.Request().Context()); err == nil {
 		if retErr := h.svc.ApplyRetention(cfg.RetentionMode, cfg.RetentionValue); retErr != nil {
-			slog.Warn("retention cleanup failed", "err", retErr)
+			slog.WarnContext(c.Request().Context(), "retention cleanup failed", logging.KeyErr, retErr)
 		}
 	}
 
@@ -268,7 +269,7 @@ func (h *BackupHandler) HandleRestore(c *echo.Context) error {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
-		slog.Error("restore failed", "backup_id", id, "err", err)
+		slog.ErrorContext(c.Request().Context(), "restore failed", "backup_id", id, logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
 	}
 
@@ -325,7 +326,7 @@ func (h *BackupHandler) HandleRestoreUpload(c *echo.Context) error {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
-		slog.Error("restore from upload failed", "err", err)
+		slog.ErrorContext(c.Request().Context(), "restore from upload failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
 	}
 
@@ -397,7 +398,7 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
-		slog.Error("setup restore failed", "err", err)
+		slog.ErrorContext(c.Request().Context(), "setup restore failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
 	}
 
@@ -421,7 +422,7 @@ func (h *BackupHandler) HandleSetupListBackups(c *echo.Context) error {
 
 	infos, err := h.svc.ListAvailableArchives(c.Request().Context(), maxMigration)
 	if err != nil {
-		slog.Error("setup list backups failed", "err", err)
+		slog.ErrorContext(c.Request().Context(), "setup list backups failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list backups"})
 	}
 
@@ -524,7 +525,7 @@ func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
 		if errors.Is(err, fs.ErrNotExist) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "backup not found"})
 		}
-		slog.Error("setup restore-from-disk lstat failed", "err", err)
+		slog.ErrorContext(c.Request().Context(), "setup restore-from-disk lstat failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to inspect backup file"})
 	}
 	if fi.Mode()&os.ModeSymlink != 0 || !fi.Mode().IsRegular() {
@@ -536,7 +537,7 @@ func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
-		slog.Error("setup restore-from-disk failed", "err", err)
+		slog.ErrorContext(c.Request().Context(), "setup restore-from-disk failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
 	}
 

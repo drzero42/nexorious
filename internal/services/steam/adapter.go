@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/storefrontadapter"
 )
 
@@ -62,7 +63,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	if err != nil {
 		return fmt.Errorf("steam: fetch owned games: %w", err)
 	}
-	slog.Debug("steam: GetOwnedGames returned", "total_games", len(owned), "steam_id", a.steamID)
+	slog.DebugContext(ctx, "steam: GetOwnedGames returned", "total_games", len(owned), "steamid", a.steamID)
 
 	processedCount := 0
 
@@ -73,7 +74,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		for i, og := range owned[start:end] {
 			gameIdx := start + i + 1
 
-			slog.Debug("steam: fetching appdetails",
+			slog.DebugContext(ctx, "steam: fetching appdetails",
 				"game_index", gameIdx,
 				"total_games", len(owned),
 				"appid", og.AppID,
@@ -96,7 +97,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				platforms = append(platforms, "pc-linux")
 			}
 			if len(platforms) == 0 {
-				slog.Debug("steam: appdetails returned no platforms (delisted/removed), defaulting to pc-windows",
+				slog.DebugContext(ctx, "steam: appdetails returned no platforms (delisted/removed), defaulting to pc-windows",
 					"appid", og.AppID, "title", og.Title, "game_index", gameIdx)
 				platforms = []string{"pc-windows"}
 			}
@@ -111,10 +112,10 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 			})
 			processedCount++
 			if processedCount%50 == 0 {
-				slog.Debug("steam: sync progress",
+				slog.DebugContext(ctx, "steam: sync progress",
 					"processed", processedCount,
 					"total", len(owned),
-					"steam_id", a.steamID,
+					"steamid", a.steamID,
 				)
 			}
 		}
@@ -126,10 +127,10 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		}
 	}
 
-	slog.Debug("steam: library fetch complete",
+	slog.DebugContext(ctx, "steam: library fetch complete",
 		"total_owned", len(owned),
 		"processed", processedCount,
-		"steam_id", a.steamID,
+		"steamid", a.steamID,
 	)
 	return nil
 }
@@ -143,7 +144,7 @@ func (a *Adapter) fetchAppDetailsWithRetry(ctx context.Context, og OwnedGame, ga
 		pl, err := a.client.GetAppDetailsPlatforms(ctx, og.AppID)
 		if err == nil {
 			if attempt > 1 {
-				slog.Debug("steam: appdetails succeeded after retry",
+				slog.DebugContext(ctx, "steam: appdetails succeeded after retry",
 					"appid", og.AppID,
 					"title", og.Title,
 					"game_index", gameIdx,
@@ -160,15 +161,16 @@ func (a *Adapter) fetchAppDetailsWithRetry(ctx context.Context, og OwnedGame, ga
 				gameIdx, totalGames, og.Title, og.AppID, err)
 		}
 		if attempt == 1 {
-			slog.Warn("steam: rate limited, sleeping before retry",
+			slog.WarnContext(ctx, "steam: rate limited, sleeping before retry",
 				"wait", a.retryWait,
 				"appid", og.AppID,
 				"title", og.Title,
 				"game_index", gameIdx,
 				"attempt", attempt,
+				logging.Cat(logging.CategoryExternalAPI),
 			)
 		} else {
-			slog.Debug("steam: rate limited, sleeping before retry",
+			slog.DebugContext(ctx, "steam: rate limited, sleeping before retry",
 				"wait", a.retryWait,
 				"appid", og.AppID,
 				"title", og.Title,

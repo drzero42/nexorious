@@ -9,6 +9,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // NotifyWorker delivers one event to all subscribed recipients' channels.
@@ -24,38 +25,38 @@ type NotifyWorker struct {
 func (w *NotifyWorker) Work(ctx context.Context, job *river.Job[NotifyArgs]) error {
 	var ev models.Event
 	if err := w.DB.NewSelect().Model(&ev).Where("id = ?", job.Args.EventID).Scan(ctx); err != nil {
-		slog.Warn("notify: load event", "event_id", job.Args.EventID, "err", err)
+		slog.WarnContext(ctx, "notify: load event", "event_id", job.Args.EventID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 		return nil
 	}
 
 	recipients, err := w.resolveRecipients(ctx, &ev)
 	if err != nil {
-		slog.Error("notify: resolve recipients", "event_id", ev.ID, "type", ev.Type, "err", err)
+		slog.ErrorContext(ctx, "notify: resolve recipients", "event_id", ev.ID, "type", ev.Type, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
 		return nil
 	}
 
 	title, body, derr := Format(ev.Type, ev.Payload)
 	if derr != nil {
-		slog.Warn("notify: payload decode failed", "event_id", ev.ID, "type", ev.Type, "err", derr)
+		slog.WarnContext(ctx, "notify: payload decode failed", "event_id", ev.ID, "type", ev.Type, logging.KeyErr, derr)
 	}
 
 	for _, userID := range recipients {
 		channels, err := w.loadChannels(ctx, userID)
 		if err != nil {
-			slog.Warn("notify: load channels", "user_id", userID, "err", err)
+			slog.WarnContext(ctx, "notify: load channels", logging.KeyUserID, userID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			continue
 		}
 		for _, ch := range channels {
 			plain, cerr := w.Encrypter.Decrypt(ch.EncryptedURL)
 			if cerr != nil {
-				slog.Warn("notify: decrypt channel url", "channel_id", ch.ID, "err", cerr)
+				slog.WarnContext(ctx, "notify: decrypt channel url", "channel_id", ch.ID, logging.KeyErr, cerr)
 				continue
 			}
 			if serr := w.Sender.Send(ctx, string(plain), title, body); serr != nil {
-				slog.Warn("notify: send", "channel_id", ch.ID, "type", ev.Type, "err", serr)
+				slog.WarnContext(ctx, "notify: send", "channel_id", ch.ID, "type", ev.Type, logging.KeyErr, serr, logging.KeyCategory, logging.CategoryExternalAPI)
 				continue
 			}
-			slog.Debug("notify: sent", "channel_id", ch.ID, "type", ev.Type)
+			slog.DebugContext(ctx, "notify: sent", "channel_id", ch.ID, "type", ev.Type)
 		}
 	}
 	return nil
