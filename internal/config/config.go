@@ -144,6 +144,15 @@ type Config struct {
 	// PprofAddr is the bind address for the pprof listener when enabled. Keep it
 	// on loopback (127.0.0.1); reach it via `kubectl port-forward` + go tool pprof.
 	PprofAddr string `env:"PPROF_ADDR" envDefault:"127.0.0.1:6060"`
+
+	// OTELExporterOTLPEndpoint gates trace export: when set (e.g.
+	// "http://collector:4318"), an OTLP/HTTP trace exporter is initialized and
+	// the drop-in span sources (otelriver, bunotel, otelhttp) start exporting.
+	// Unset = tracing fully off (no-op tracer, zero overhead). The exporter and
+	// SDK also honor the other standard OTel env vars natively
+	// (OTEL_TRACES_SAMPLER, OTEL_TRACES_SAMPLER_ARG, OTEL_BSP_*,
+	// OTEL_EXPORTER_OTLP_HEADERS, ...).
+	OTELExporterOTLPEndpoint string `env:"OTEL_EXPORTER_OTLP_ENDPOINT"`
 }
 
 // Load parses Config from environment variables and assembles DatabaseURL
