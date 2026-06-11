@@ -153,51 +153,26 @@ git commit -m "feat: add observability config (OTel service/metrics, pprof)"
 
 ---
 
-## Task 2: Add dependencies
+## Task 2: Add dependencies — COMPLETED (with an ordering correction)
 
-This task has no unit test of its own; its gate is a clean `go build ./...`. It bumps OTel core 1.41.0 → 1.43.0 (required by otelriver) and adds four direct modules.
+> **EXECUTION NOTE (done):** The original plan ran `go mod tidy` here, but tidy **prunes modules no code imports yet**, so it removed `bunotel`, `otelriver`, `exporters/prometheus`, and `client_golang`. Corrected approach: the four modules were added via `go get` **without** `go mod tidy`, so they persist in `go.mod` (as `// indirect`) and the importing code in Tasks 3–7 builds against them. `go mod tidy` + the nix `vendorHash` refresh are **deferred to a dedicated step after Task 7**, once the imports exist — tidy will then reclassify them to direct and keep them.
+>
+> Resolved versions (committed in `4bef2b79`): OTel core bumped 1.41.0 → **1.44.0**, `otel/sdk` + `otel/sdk/metric` at **1.43.0**, `exporters/prometheus` at **0.65.0** (MVS picked a coherent set consistent with sdk/metric 1.43.0), `bunotel` v1.2.18, `otelriver` v0.10.0, `client_golang` v1.23.2. River stayed at v0.39.0.
 
-**Files:**
-- Modify: `go.mod`, `go.sum`
-- Modify: `nix/package.nix` (`vendorHash`)
+**Files:** `go.mod`, `go.sum` (done). `nix/package.nix` (`vendorHash`) — deferred to post-Task-7 step.
 
-- [ ] **Step 1: Add the modules**
+The deferred tidy + vendorHash step (run after Task 7):
 
 ```bash
-go get github.com/uptrace/bun/extra/bunotel@v1.2.18
-go get go.opentelemetry.io/otel/exporters/prometheus@v0.66.0
-go get go.opentelemetry.io/otel/sdk/metric@v1.43.0
-go get github.com/riverqueue/rivercontrib/otelriver@v0.10.0
 go mod tidy
-```
-
-- [ ] **Step 2: Verify the versions resolved and the tree is consistent**
-
-Run:
-```bash
-go build ./... 2>&1 | head -20
-grep -E "otel|bunotel|otelriver|client_golang" go.mod
-```
-Expected: build succeeds (no code uses the new deps yet, so this just proves the graph resolves). `go.opentelemetry.io/otel` should now read `v1.43.0`; `bunotel`, `exporters/prometheus`, `sdk/metric`, `rivercontrib/otelriver`, and `prometheus/client_golang` should be present (some still `// indirect` until later tasks import them — that is fine).
-
-> If `go get otelriver@v0.10.0` reports it needs a newer River than v0.39.0, STOP and report — do not bump River in this issue. (Verified during planning: otelriver v0.10.0 requires only river v0.29.0, so this should not happen.)
-
-- [ ] **Step 3: Refresh the nix vendorHash**
-
-Per CLAUDE.md → "Nix Flake Maintenance":
-```bash
-# In nix/package.nix set: vendorHash = pkgs.lib.fakeHash;
+go build ./...
+# In nix/package.nix set: vendorHash = pkgs.lib.fakeHash; then:
 nix build .#nexorious 2>&1 | grep "got:"
 # paste the got: hash into nix/package.nix → vendorHash
-```
-If `nix` is unavailable in this shell, leave a clear `TODO(vendorHash)` note in the PR description and flag it — CI's nix workflow auto-patches `vendorHash` on the PR, but verify it lands.
-
-- [ ] **Step 4: Commit**
-
-```bash
 git add go.mod go.sum nix/package.nix
-git commit -m "build: add OTel metrics + bunotel + otelriver dependencies"
+git commit -m "build: tidy go.mod and refresh nix vendorHash for OTel deps"
 ```
+If `nix` is unavailable in this shell, leave a clear note in the PR description — CI's nix workflow auto-patches `vendorHash` on the PR; verify it lands.
 
 ---
 
@@ -918,7 +893,8 @@ git commit -m "feat: record sync-outcome metrics at job finalization"
 
 **Files:**
 - Modify: `.env.example`
-- Modify: `docs/admin-guide.md`
+- Modify: `docs/admin-guide.md` (operator-facing)
+- Modify: `DEV.md` (developer-facing — how to use metrics/pprof while developing)
 
 - [ ] **Step 1: Document the env vars in `.env.example`**
 
@@ -944,15 +920,37 @@ Add an "Observability" section. Inspect the current heading structure first and 
 
 > Do not add an in-app `/help` link to any non-embedded doc. `admin-guide.md` **is** embedded (per CLAUDE.md), so an admin-guide section is fine. Do not cross-link to non-embedded reference docs.
 
-- [ ] **Step 3: Verify the docs build/render path is unaffected**
+- [ ] **Step 3: Add a developer-facing "Observability" section to `DEV.md`**
+
+`DEV.md` is the developer guide (not embedded, GitHub-viewed). It has top-level sections like `## CLI Subcommands`, `## Test Coverage`, `## Project Layout`, `## Tech Stack`. Add a new `## Observability` section (place it after `## CLI Subcommands` and before `## Test Coverage`, or wherever fits the existing flow). Match the file's tone and code-block style. Cover, from a **developer's** perspective:
+
+- **What's instrumented and where**: the `internal/observability` package owns the OTel meter provider + Prometheus registry; `bunotel` query hook (DB metrics) and `otelriver` middleware (River `river.work_*` job metrics) are wired in `cmd/nexorious/serve.go`; business metrics `nexorious_sync_total{source,status}` / `nexorious_sync_items_total{source,outcome}` are recorded in `SyncCheckJobCompletion` (`internal/worker/tasks/sync.go`).
+- **Scraping metrics in dev**:
+  ```bash
+  ./nexorious serve            # /metrics is on by default
+  curl -s localhost:8000/metrics | grep nexorious_   # business metrics (after a sync)
+  curl -s localhost:8000/metrics | grep river_work   # job metrics
+  ```
+  Note `nexorious_sync_*` series only appear after at least one sync job completes. Set `OTEL_METRICS_ENABLED=false` to disable the endpoint.
+- **How to add a new metric**: add an instrument in `internal/observability` (create it from the package meter in `initInstruments`, expose a `Record…` helper that guards nil), then call the helper from the relevant code path. Keep labels bounded — never label by `user_id` or any unbounded/high-cardinality value (the test in `observability_test.go` asserts no `user_id` label).
+- **Profiling with pprof in dev**:
+  ```bash
+  PPROF_ENABLED=true ./nexorious serve
+  go tool pprof -http=:8080 http://127.0.0.1:6060/debug/pprof/heap   # interactive heap flame graph
+  go tool pprof http://127.0.0.1:6060/debug/pprof/goroutine          # goroutine dump
+  ```
+  It binds loopback only (`PPROF_ADDR`, default `127.0.0.1:6060`); in prod reach it via `kubectl port-forward`.
+- **Tracing is a no-op for now** — issue #911 adds the OTLP trace exporter on top of this scaffolding; `bunotel`/`otelriver` are wired with no-op tracer providers today.
+
+- [ ] **Step 4: Verify the docs build/render path is unaffected**
 
 Run: `go build ./...`
-Expected: clean (admin-guide is embedded via `docs/embed.go` — confirm the file still compiles into the binary).
+Expected: clean (admin-guide is embedded via `docs/embed.go` — confirm the file still compiles into the binary; DEV.md and .env.example are not embedded).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add .env.example docs/admin-guide.md
+git add .env.example docs/admin-guide.md DEV.md
 git commit -m "docs: document /metrics, pprof, and observability env vars"
 ```
 
