@@ -1,11 +1,13 @@
-// Package observability bootstraps the OpenTelemetry metrics pipeline: a meter
-// provider backed by a dedicated Prometheus registry, the /metrics HTTP handler,
-// and the nexorious sync-outcome business metrics. Tracing is intentionally a
-// no-op here; issue #911 adds the OTLP trace exporter on top of this scaffolding.
+// Package observability bootstraps the OpenTelemetry pipeline: a meter
+// provider backed by a dedicated Prometheus registry, the /metrics HTTP
+// handler, the nexorious sync-outcome business metrics, and — when an OTLP
+// endpoint is configured (OTEL_EXPORTER_OTLP_ENDPOINT) — an OTLP/HTTP trace
+// exporter feeding the drop-in span sources (otelriver, bunotel, otelhttp).
 package observability
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,11 +16,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	otelmetric "go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/logging"
@@ -34,16 +41,25 @@ var (
 	metricsHandler http.Handler
 	syncTotal      otelmetric.Int64Counter
 	syncItemsTotal otelmetric.Int64Counter
+
+	// Set by Init; read by HTTPTransport (transport.go). instrumentHTTP is
+	// true when metrics or tracing is enabled — otelhttp emits client metrics
+	// even with a noop tracer, so the transport wraps in metrics-only mode too.
+	meterProvider  otelmetric.MeterProvider
+	tracerProvider trace.TracerProvider
+	instrumentHTTP bool
 )
 
-// Providers holds the initialized meter provider and a shutdown hook. It is the
-// seam #911 extends with a tracer provider.
+// Providers holds the initialized meter + tracer providers and a composed
+// shutdown hook.
 type Providers struct {
-	MeterProvider otelmetric.MeterProvider
-	shutdown      func(context.Context) error
+	MeterProvider  otelmetric.MeterProvider
+	TracerProvider trace.TracerProvider
+	shutdown       func(context.Context) error
 }
 
-// Shutdown flushes and stops the meter provider. Safe to call once on exit.
+// Shutdown flushes and stops the tracer provider (when tracing is enabled)
+// and then the meter provider. Safe to call once on exit.
 func (p *Providers) Shutdown(ctx context.Context) error {
 	if p == nil || p.shutdown == nil {
 		return nil
@@ -55,39 +71,87 @@ func (p *Providers) Shutdown(ctx context.Context) error {
 // disabled. The router uses this to decide whether to mount /metrics.
 func MetricsHandler() http.Handler { return metricsHandler }
 
-// Init wires the meter provider. When cfg.OTELMetricsEnabled is false it installs
-// a no-op meter provider and leaves MetricsHandler() nil; the record helpers then
-// no-op safely. version becomes the service.version resource attribute.
+// Init wires the meter provider and, when cfg.OTELExporterOTLPEndpoint is set,
+// an OTLP/HTTP trace exporter + SDK tracer provider. With metrics disabled it
+// installs a no-op meter provider and leaves MetricsHandler() nil; with the
+// endpoint unset it installs a no-op tracer provider (tracing fully off).
+// version becomes the service.version resource attribute.
 func Init(cfg *config.Config, version string) (*Providers, error) {
-	if !cfg.OTELMetricsEnabled {
-		mp := metricnoop.NewMeterProvider()
-		otel.SetMeterProvider(mp)
-		initInstruments(mp)
-		metricsHandler = nil
-		return &Providers{MeterProvider: mp, shutdown: func(context.Context) error { return nil }}, nil
-	}
-
-	reg := prometheus.NewRegistry()
-	exporter, err := otelprom.New(otelprom.WithRegisterer(reg))
-	if err != nil {
-		return nil, fmt.Errorf("observability: prometheus exporter: %w", err)
-	}
-
 	// Resource attributes as plain keys to avoid pinning a semconv version.
 	res := resource.NewSchemaless(
 		attribute.String("service.name", cfg.OTELServiceName),
 		attribute.String("service.version", version),
 	)
 
-	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(exporter),
-		sdkmetric.WithResource(res),
-	)
+	// --- Metrics ---
+	var mp otelmetric.MeterProvider
+	var meterShutdown func(context.Context) error
+	if cfg.OTELMetricsEnabled {
+		reg := prometheus.NewRegistry()
+		exporter, err := otelprom.New(otelprom.WithRegisterer(reg))
+		if err != nil {
+			return nil, fmt.Errorf("observability: prometheus exporter: %w", err)
+		}
+		sdkMP := sdkmetric.NewMeterProvider(
+			sdkmetric.WithReader(exporter),
+			sdkmetric.WithResource(res),
+		)
+		mp = sdkMP
+		meterShutdown = sdkMP.Shutdown
+		metricsHandler = promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
+	} else {
+		mp = metricnoop.NewMeterProvider()
+		metricsHandler = nil
+	}
 	otel.SetMeterProvider(mp)
 	initInstruments(mp)
-	metricsHandler = promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 
-	return &Providers{MeterProvider: mp, shutdown: mp.Shutdown}, nil
+	// --- Tracing (opt-in: only when an OTLP endpoint is configured) ---
+	var tp trace.TracerProvider
+	var tracerShutdown func(context.Context) error
+	if cfg.OTELExporterOTLPEndpoint != "" {
+		// No explicit options: the exporter reads the standard
+		// OTEL_EXPORTER_OTLP_* env vars natively (endpoint, headers, TLS,
+		// timeout, compression) and the provider reads
+		// OTEL_TRACES_SAMPLER(_ARG) and OTEL_BSP_*. Construction does not
+		// dial the collector; export failures surface via the error handler.
+		exporter, err := otlptracehttp.New(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("observability: otlp trace exporter: %w", err)
+		}
+		sdkTP := sdktrace.NewTracerProvider(
+			sdktrace.WithBatcher(exporter),
+			sdktrace.WithResource(res),
+		)
+		tp = sdkTP
+		tracerShutdown = sdkTP.Shutdown
+		otel.SetTracerProvider(sdkTP)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{}, propagation.Baggage{},
+		))
+		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+			slog.Warn("otel export error", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+		}))
+	} else {
+		tp = tracenoop.NewTracerProvider()
+	}
+
+	meterProvider = mp
+	tracerProvider = tp
+	instrumentHTTP = cfg.OTELMetricsEnabled || cfg.OTELExporterOTLPEndpoint != ""
+
+	shutdown := func(ctx context.Context) error {
+		var errs []error
+		// Tracer first so pending spans flush before anything else stops.
+		if tracerShutdown != nil {
+			errs = append(errs, tracerShutdown(ctx))
+		}
+		if meterShutdown != nil {
+			errs = append(errs, meterShutdown(ctx))
+		}
+		return errors.Join(errs...)
+	}
+	return &Providers{MeterProvider: mp, TracerProvider: tp, shutdown: shutdown}, nil
 }
 
 // initInstruments (re)creates the business-metric counters from the given
