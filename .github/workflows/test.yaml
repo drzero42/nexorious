@@ -176,5 +176,6 @@ jobs:
               --set alerts.victoriaLogs.enabled=true \
               --set alerts.victoriaLogs.delivery=$vl_delivery \
               --set alerts.prometheus.enabled=true \
-              --set alerts.victoriaMetrics.enabled=true
+              --set alerts.victoriaMetrics.enabled=true \
+              --set serviceMonitor.main.enabled=true
           done

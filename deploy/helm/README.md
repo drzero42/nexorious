@@ -322,7 +322,26 @@ controllers:
 
 Tracing is off unless this variable is set. Sampling follows the standard
 `OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` env vars (default: sample
-everything). ServiceMonitor and dashboard delivery are tracked in #912.
+everything).
+
+### ServiceMonitor (opt-in)
+
+| Key | Default | Description |
+|---|---|---|
+| `serviceMonitor.main.enabled` | `false` | Render a `ServiceMonitor` CR scraping the nexorious Service `http` port at `/metrics`. Requires the Prometheus Operator (kube-prometheus-stack) CRDs in-cluster. |
+
+To enable:
+
+```yaml
+serviceMonitor:
+  main:
+    enabled: true
+```
+
+The endpoint is unauthenticated and scrapes on a 30 s interval with a 10 s
+timeout. The `service.identifier: nexorious` field names the target Service
+explicitly, because automatic detection only works when a single Service is
+enabled and the default install also ships a PostgreSQL Service.
 
 ## Alerting (opt-in)
 
