@@ -172,6 +172,24 @@ etc. The `pg_isready` probes use `sh -c 'pg_isready -U "$POSTGRES_USER"'`
 so they pick up the value from the env regardless of whether it came
 from the inline value or an external Secret.
 
+## Secret rotation (Stakater Reloader)
+
+Secrets are injected as env vars, so a running pod never picks up a
+rotated value — rotating e.g. the IGDB credentials in an external Secret
+silently leaves the pod on the old ones until something restarts it.
+
+To close that gap, the chart annotates the nexorious Deployment with
+`reloader.stakater.com/auto: "true"` by default. If
+[Stakater Reloader](https://github.com/stakater/Reloader) is installed
+in the cluster, it restarts the pod whenever a Secret or ConfigMap
+referenced by the Deployment changes. Without Reloader the annotation is
+inert. The in-cluster PostgreSQL is never annotated.
+
+```yaml
+nexorious:
+  reloader: false   # opt out, e.g. to control restart timing yourself
+```
+
 ## In-cluster vs external PostgreSQL
 
 The chart ships PostgreSQL in-cluster (`postgresql.enabled: true` by
@@ -287,6 +305,25 @@ ingress:
 The `nexorious` service serves both API routes (`/api/*`) and the embedded
 SPA on port 8000 — no separate frontend service.
 
+## Observability
+
+Metrics are exposed at `/metrics` (on by default — see the admin guide). To
+also export traces, set the OTLP endpoint on the main container via the env
+block:
+
+```yaml
+controllers:
+  nexorious:
+    containers:
+      main:
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: http://collector.monitoring:4318
+```
+
+Tracing is off unless this variable is set. Sampling follows the standard
+`OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` env vars (default: sample
+everything). ServiceMonitor and dashboard delivery are tracked in #912.
+
 ## Alerting (opt-in)
 
 | Key | Default | Description |
@@ -307,5 +344,13 @@ See [docs/observability.md](../../docs/observability.md) for full setup.
 - The scheduler and background workers run inside the same `main`
   container, so the deployment is fixed at 1 replica in the default values
   (raise it only if you have made `internal/scheduler` leader-aware).
+  The chart refuses to render `replicas > 1` while the `storage` PVC is
+  `ReadWriteOnce` — multiple pods across nodes cannot attach the same
+  RWO volume. Switch `persistence.storage` to `ReadWriteMany` storage
+  (e.g. NFS) before scaling.
+- The nexorious Deployment uses the `Recreate` update strategy: the old
+  pod stops before the new one starts, so the RWO `storage` volume can
+  re-attach wherever the new pod is scheduled. Upgrades therefore have a
+  brief downtime window.
 - All storage (cover art, uploads, backups) lives on the `storage` PVC
   mounted at `/app/storage`.

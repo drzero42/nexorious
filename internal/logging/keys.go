@@ -22,4 +22,6 @@ const (
 	KeyOutcome        = "outcome"
 	KeyCategory       = "category"
 	KeyErr            = "err"
+	KeyTraceID        = "trace_id"
+	KeySpanID         = "span_id"
 )

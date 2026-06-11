@@ -9,6 +9,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/observability"
@@ -83,4 +87,46 @@ func TestInit_DisabledIsNoop(t *testing.T) {
 	// guard in RecordSync* only fires if Init were never called.
 	observability.RecordSyncOutcome(context.Background(), "steam", "completed")
 	observability.RecordSyncItems(context.Background(), "steam", "completed", 1)
+}
+
+func TestInit_TracingEnabledYieldsRealTracerProvider(t *testing.T) {
+	prov, err := observability.Init(&config.Config{
+		OTELServiceName:    "nexorious-test",
+		OTELMetricsEnabled: true,
+		// Gate only: the exporter reads OTEL_EXPORTER_OTLP_ENDPOINT from the
+		// env (unset here), so this literal value is never dialed.
+		OTELExporterOTLPEndpoint: "http://127.0.0.1:4318",
+	}, "1.2.3-test")
+	if err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+	t.Cleanup(func() {
+		// No collector is listening; the flush inside Shutdown may time out.
+		// Bound it tightly and ignore the error — we only assert construction.
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		_ = prov.Shutdown(ctx)
+	})
+
+	if prov.TracerProvider == nil {
+		t.Fatal("TracerProvider = nil; want non-nil")
+	}
+	if _, ok := prov.TracerProvider.(*sdktrace.TracerProvider); !ok {
+		t.Errorf("TracerProvider = %T; want *sdktrace.TracerProvider when endpoint set", prov.TracerProvider)
+	}
+}
+
+func TestInit_TracingDisabledYieldsNoopTracerProvider(t *testing.T) {
+	prov, err := observability.Init(&config.Config{
+		OTELServiceName:    "nexorious-test",
+		OTELMetricsEnabled: true,
+	}, "1.2.3-test")
+	if err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+	t.Cleanup(func() { _ = prov.Shutdown(context.Background()) })
+
+	if _, ok := prov.TracerProvider.(tracenoop.TracerProvider); !ok {
+		t.Errorf("TracerProvider = %T; want tracenoop.TracerProvider when endpoint unset", prov.TracerProvider)
+	}
 }

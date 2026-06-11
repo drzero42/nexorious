@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/observability"
 )
 
 // Resolver resolves a single external game's store_link.
@@ -39,7 +39,7 @@ const defaultGOGAPIBase = "https://api.gog.com"
 
 func NewGOGResolver(httpClient *http.Client, apiBase string) Resolver {
 	if httpClient == nil {
-		httpClient = &http.Client{Transport: logging.NewRoundTripper(nil)}
+		httpClient = &http.Client{Transport: observability.HTTPTransport()}
 	}
 	if apiBase == "" {
 		apiBase = defaultGOGAPIBase
@@ -87,7 +87,7 @@ const defaultEpicMappingURL = "https://store-content-ipv4.ak.epicgames.com/api/c
 
 func NewEpicResolver(httpClient *http.Client, mappingURL string) Resolver {
 	if httpClient == nil {
-		httpClient = &http.Client{Transport: logging.NewRoundTripper(nil)}
+		httpClient = &http.Client{Transport: observability.HTTPTransport()}
 	}
 	if mappingURL == "" {
 		mappingURL = defaultEpicMappingURL
