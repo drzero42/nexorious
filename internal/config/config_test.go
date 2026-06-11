@@ -163,6 +163,7 @@ func TestLoad_TracingEndpointDefaultEmpty(t *testing.T) {
 	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	t.Setenv("IGDB_CLIENT_ID", "testclientid")
 	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "") // isolate from ambient OTel env
 
 	cfg, err := config.Load()
 	if err != nil {
