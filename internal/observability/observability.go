@@ -126,7 +126,9 @@ func Init(cfg *config.Config, version string) (*Providers, error) {
 			return nil, fmt.Errorf("observability: otlp trace exporter: %w", err)
 		}
 		sdkTP := sdktrace.NewTracerProvider(
-			sdktrace.WithBatcher(exporter),
+			// The redacting wrapper strips query strings from URL attributes —
+			// Steam/GOG put credentials in query params (see redact.go).
+			sdktrace.WithBatcher(newRedactingExporter(exporter)),
 			sdktrace.WithResource(res),
 		)
 		tp = sdkTP
