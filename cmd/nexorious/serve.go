@@ -14,8 +14,11 @@ import (
 	"github.com/riverqueue/river"
 	riverpgxv5 "github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
+	"github.com/riverqueue/rivercontrib/otelriver"
 	"github.com/spf13/cobra"
 	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/extra/bunotel"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/backup"
@@ -25,6 +28,7 @@ import (
 	maint "github.com/drzero42/nexorious/internal/middleware"
 	"github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/notify"
+	"github.com/drzero42/nexorious/internal/observability"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/scheduler"
 	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
@@ -62,6 +66,17 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Level: parseSlogLevel(cfg.LogLevel),
 	}))))
 
+	// -------------------------------------------------------------------------
+	// Observability (metrics) — must precede DB + River wiring so the bunotel
+	// hook and otelriver middleware can bind to the meter provider.
+	// -------------------------------------------------------------------------
+	obs, err := observability.Init(cfg, version)
+	if err != nil {
+		slog.Error("observability init failed", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
+		os.Exit(1)
+	}
+	noopTracer := tracenoop.NewTracerProvider()
+
 	encrypter, err := crypto.NewEncrypter(cfg.DBEncryptionKey)
 	if err != nil {
 		slog.Error("invalid DB_ENCRYPTION_KEY", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
@@ -75,6 +90,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	resolvedDatabaseURL := cfg.DatabaseURL
 	db := openBunDB(resolvedDatabaseURL)
+	db.AddQueryHook(bunotel.NewQueryHook(
+		bunotel.WithMeterProvider(obs.MeterProvider),
+		bunotel.WithTracerProvider(noopTracer),
+	))
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	defer func() { _ = db.Close() }()
@@ -241,7 +260,14 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Workers:      workers,
 		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
-		Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware(quietJobKinds...)},
+		Middleware: []rivertype.Middleware{
+			otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
+				MeterProvider:  obs.MeterProvider,
+				TracerProvider: noopTracer,
+				DurationUnit:   "s",
+			}),
+			logging.NewWorkerMiddleware(quietJobKinds...),
+		},
 		ErrorHandler: &logging.WorkerErrorHandler{},
 	})
 	if err != nil {
@@ -340,7 +366,14 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				Workers:      newWorkers,
 				Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
-				Middleware:   []rivertype.Middleware{logging.NewWorkerMiddleware(quietJobKinds...)},
+				Middleware: []rivertype.Middleware{
+					otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
+						MeterProvider:  obs.MeterProvider,
+						TracerProvider: noopTracer,
+						DurationUnit:   "s",
+					}),
+					logging.NewWorkerMiddleware(quietJobKinds...),
+				},
 				ErrorHandler: &logging.WorkerErrorHandler{},
 			})
 			if err != nil {
@@ -422,6 +455,14 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// Graceful shutdown sequence.
 	if err := riverClient.Stop(shutdownCtx); err != nil {
 		slog.Warn("River client stop", logging.KeyErr, err)
+	}
+
+	// Flush and stop the meter provider last so in-flight job/DB metrics from the
+	// River drain above are exported.
+	obsShutdownCtx, obsCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer obsCancel()
+	if err := obs.Shutdown(obsShutdownCtx); err != nil {
+		slog.Warn("observability shutdown", logging.KeyErr, err)
 	}
 
 	slog.Info("shutdown complete")
