@@ -99,6 +99,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		bunotel.WithMeterProvider(obs.MeterProvider),
 		bunotel.WithTracerProvider(obs.TracerProvider),
 	))
+	// Counts failed queries into nexorious_db_errors_total — bunotel records
+	// timing but no error signal (#913). No-op when metrics are disabled.
+	db.AddQueryHook(observability.NewDBErrorHook())
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	defer func() { _ = db.Close() }()
