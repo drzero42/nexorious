@@ -1,12 +1,109 @@
-# Observability: log-based alerting
+# Observability
 
-Nexorious emits structured JSON logs (see [logging-conventions.md](logging-conventions.md))
-with stable `level`, `category`, `source`, and `msg` fields. This page covers the
-ready-made **log-based alert rules** for the two supported log backends and how to
-deliver them — raw for non-Helm users, or via the chart's opt-in templates.
+Nexorious exposes both **metrics** (OTel → Prometheus) and **structured logs** (JSON,
+see [logging-conventions.md](logging-conventions.md)). This page covers:
 
-> Metrics-based alerts (OTel metrics) are tracked separately and compose with the
-> same `alerts.*` Helm namespace; this page is logs only.
+- **Metrics deployment** — a local dev stack for development and the Helm opt-ins
+  (ServiceMonitor, Grafana dashboard) for production.
+- **Log-based alerting** — ready-made alert rules for Grafana Loki and VictoriaLogs,
+  delivered raw or via the chart's opt-in templates.
+
+## Local dev stack
+
+The repo ships a Docker Compose file that brings up a self-contained observability
+environment built from your local source tree — no published image required.
+
+**What it starts:**
+
+| Container | Image | Purpose |
+|---|---|---|
+| `db` | postgres:18-alpine | Application database |
+| `migrate` + `app` | built from `Dockerfile` | nexorious (your local checkout) |
+| `otel-lgtm` | grafana/otel-lgtm | Grafana + Tempo + Prometheus + Loki in one container |
+
+**Ports:**
+
+| Service | URL |
+|---|---|
+| App | http://localhost:8000 |
+| Grafana | http://localhost:3000 |
+| OTLP gRPC | localhost:4317 |
+| OTLP HTTP | localhost:4318 |
+
+**Running it** (from the repo root):
+
+```sh
+cp deploy/docker/.env.dev.example deploy/docker/.env.dev
+# set DB_ENCRYPTION_KEY (openssl rand -base64 32); IGDB_* optional
+docker compose -f deploy/docker/docker-compose.dev.yml --env-file deploy/docker/.env.dev up --build
+```
+
+**How telemetry flows:**
+
+- **Traces** are pushed from the app to otel-lgtm via OTLP
+  (`OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-lgtm:4318`).
+- **Metrics** are scraped from the app's `/metrics` endpoint by otel-lgtm's bundled
+  Prometheus, configured at `deploy/docker/dev/prometheus.yaml`.
+
+The Grafana dashboard **"Nexorious — Observability"** is auto-provisioned from
+`deploy/observability/nexorious-dashboard.json` — the same file used in production.
+Sync and job panels only show data once you trigger activity (e.g. run a sync). Open
+Grafana at http://localhost:3000 (anonymous Admin, no login required).
+
+**Teardown** (resets the database):
+
+```sh
+docker compose -f deploy/docker/docker-compose.dev.yml down -v
+```
+
+## Metrics in production (Helm)
+
+Both objects are opt-in (default off) and independent of each other. The dashboard
+panels and alert rules reference the OTel→Prometheus exporter metric names defined in
+[`deploy/observability/prometheus-rules.yaml`](../deploy/observability/prometheus-rules.yaml).
+
+### ServiceMonitor
+
+Enable with one values key:
+
+```yaml
+serviceMonitor:
+  main:
+    enabled: true
+```
+
+This renders the bjw-s common native `ServiceMonitor` — a pure values toggle, no
+custom template. It:
+
+- Requires the **Prometheus Operator** (kube-prometheus-stack) CRDs in-cluster.
+- Scrapes the nexorious Service `http` port (8000) at `/metrics` every 30 s.
+- Sets `jobLabel: app.kubernetes.io/name`, so the generated `job` label is
+  `nexorious` — which is why the metrics alert rule `up{job=~".*nexorious.*"}`
+  matches the scraped target.
+
+### Grafana dashboard
+
+Enable with:
+
+```yaml
+dashboard:
+  enabled: true
+```
+
+One toggle, two delivery modes via `dashboard.mode`:
+
+| Mode | What is rendered | Discovery |
+|---|---|---|
+| `configmap` (default) | ConfigMap labeled `grafana_dashboard: "1"` | Grafana sidecar (kube-prometheus-stack default) auto-discovers it |
+| `crd` | `GrafanaDashboard` CR (`grafana.integreatly.org/v1beta1`) | grafana-operator, selected by `dashboard.instanceSelector` |
+
+Both modes render the **same JSON** — the single source of truth
+`deploy/observability/nexorious-dashboard.json`, which is also what the dev stack
+provisions automatically.
+
+> **crd mode prerequisite:** `dashboard.mode: crd` requires the `GrafanaDashboard`
+> CRD installed in-cluster, or `helm install`/`upgrade` fails on the unknown kind.
+> `helm template`/`lint` are unaffected. This is why `configmap` is the default.
 
 ## Source of truth
 
