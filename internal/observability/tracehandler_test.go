@@ -56,3 +56,25 @@ func TestTraceContextHandler_NoSpanAddsNothing(t *testing.T) {
 		t.Error("span_id present without an active span")
 	}
 }
+
+func TestTraceContextHandler_PreservesWithAttrs(t *testing.T) {
+	tid, _ := trace.TraceIDFromHex("0102030405060708090a0b0c0d0e0f10")
+	sid, _ := trace.SpanIDFromHex("0102030405060708")
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    tid,
+		SpanID:     sid,
+		TraceFlags: trace.FlagsSampled,
+	}))
+
+	var buf bytes.Buffer
+	logger := slog.New(observability.NewTraceContextHandler(slog.NewJSONHandler(&buf, nil))).With("component", "test")
+	logger.InfoContext(ctx, "hello")
+
+	m := logLine(t, &buf)
+	if m["component"] != "test" {
+		t.Errorf("component = %v; want test (WithAttrs lost)", m["component"])
+	}
+	if m["trace_id"] != "0102030405060708090a0b0c0d0e0f10" {
+		t.Errorf("trace_id = %v; want injected on a With()-derived logger", m["trace_id"])
+	}
+}
