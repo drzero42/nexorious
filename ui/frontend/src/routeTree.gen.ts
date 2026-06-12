@@ -20,6 +20,7 @@ import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedImportExportRouteImport } from './routes/_authenticated/import-export'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedSyncIndexRouteImport } from './routes/_authenticated/sync/index'
+import { Route as AuthenticatedPoolsIndexRouteImport } from './routes/_authenticated/pools/index'
 import { Route as AuthenticatedJobsIndexRouteImport } from './routes/_authenticated/jobs/index'
 import { Route as AuthenticatedGamesIndexRouteImport } from './routes/_authenticated/games/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
@@ -91,6 +92,11 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
 const AuthenticatedSyncIndexRoute = AuthenticatedSyncIndexRouteImport.update({
   id: '/sync/',
   path: '/sync/',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedPoolsIndexRoute = AuthenticatedPoolsIndexRouteImport.update({
+  id: '/pools/',
+  path: '/pools/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedJobsIndexRoute = AuthenticatedJobsIndexRouteImport.update({
@@ -214,6 +220,7 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/games/': typeof AuthenticatedGamesIndexRoute
   '/jobs/': typeof AuthenticatedJobsIndexRoute
+  '/pools/': typeof AuthenticatedPoolsIndexRoute
   '/sync/': typeof AuthenticatedSyncIndexRoute
   '/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
   '/admin/users/new': typeof AuthenticatedAdminUsersNewRoute
@@ -241,6 +248,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/games': typeof AuthenticatedGamesIndexRoute
   '/jobs': typeof AuthenticatedJobsIndexRoute
+  '/pools': typeof AuthenticatedPoolsIndexRoute
   '/sync': typeof AuthenticatedSyncIndexRoute
   '/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
   '/admin/users/new': typeof AuthenticatedAdminUsersNewRoute
@@ -273,6 +281,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/games/': typeof AuthenticatedGamesIndexRoute
   '/_authenticated/jobs/': typeof AuthenticatedJobsIndexRoute
+  '/_authenticated/pools/': typeof AuthenticatedPoolsIndexRoute
   '/_authenticated/sync/': typeof AuthenticatedSyncIndexRoute
   '/_authenticated/admin/users/$id': typeof AuthenticatedAdminUsersIdRoute
   '/_authenticated/admin/users/new': typeof AuthenticatedAdminUsersNewRoute
@@ -304,6 +313,7 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/games/'
     | '/jobs/'
+    | '/pools/'
     | '/sync/'
     | '/admin/users/$id'
     | '/admin/users/new'
@@ -331,6 +341,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/games'
     | '/jobs'
+    | '/pools'
     | '/sync'
     | '/admin/users/$id'
     | '/admin/users/new'
@@ -362,6 +373,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/'
     | '/_authenticated/games/'
     | '/_authenticated/jobs/'
+    | '/_authenticated/pools/'
     | '/_authenticated/sync/'
     | '/_authenticated/admin/users/$id'
     | '/_authenticated/admin/users/new'
@@ -456,6 +468,13 @@ declare module '@tanstack/react-router' {
       path: '/sync'
       fullPath: '/sync/'
       preLoaderRoute: typeof AuthenticatedSyncIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/pools/': {
+      id: '/_authenticated/pools/'
+      path: '/pools'
+      fullPath: '/pools/'
+      preLoaderRoute: typeof AuthenticatedPoolsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/jobs/': {
@@ -632,6 +651,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedGamesIndexRoute: typeof AuthenticatedGamesIndexRoute
   AuthenticatedJobsIndexRoute: typeof AuthenticatedJobsIndexRoute
+  AuthenticatedPoolsIndexRoute: typeof AuthenticatedPoolsIndexRoute
   AuthenticatedSyncIndexRoute: typeof AuthenticatedSyncIndexRoute
   AuthenticatedAdminUsersIdRoute: typeof AuthenticatedAdminUsersIdRoute
   AuthenticatedAdminUsersNewRoute: typeof AuthenticatedAdminUsersNewRoute
@@ -656,6 +676,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedGamesIndexRoute: AuthenticatedGamesIndexRoute,
   AuthenticatedJobsIndexRoute: AuthenticatedJobsIndexRoute,
+  AuthenticatedPoolsIndexRoute: AuthenticatedPoolsIndexRoute,
   AuthenticatedSyncIndexRoute: AuthenticatedSyncIndexRoute,
   AuthenticatedAdminUsersIdRoute: AuthenticatedAdminUsersIdRoute,
   AuthenticatedAdminUsersNewRoute: AuthenticatedAdminUsersNewRoute,
