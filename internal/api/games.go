@@ -258,7 +258,7 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 	if err := h.annotateLibraryMembership(ctx, userID, candidates); err != nil {
 		// Annotation is best-effort enrichment; a failure here should not break
 		// search. Log and return unannotated results.
-		slog.ErrorContext(ctx, "HandleSearchIGDB: library membership annotation failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "HandleSearchIGDB: library membership annotation failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 	return c.JSON(http.StatusOK, IGDBSearchResponse{
 		Games: candidates,
@@ -282,7 +282,7 @@ func (h *GamesHandler) HandleGetIGDBGame(c *echo.Context) error {
 
 	candidates := []IGDBGameCandidate{metadataToCandidate(*md)}
 	if err := h.annotateLibraryMembership(ctx, auth.UserIDFromContext(c), candidates); err != nil {
-		slog.ErrorContext(ctx, "HandleGetIGDBGame: library membership annotation failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "HandleGetIGDBGame: library membership annotation failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 	return c.JSON(http.StatusOK, IGDBSearchResponse{
 		Games: candidates,
@@ -420,7 +420,7 @@ func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 	ctx := c.Request().Context()
 	jobID, created, err := h.startMaintenanceRefresh(ctx, userID, models.JobTypeMetadataRefresh, models.JobSourceSystem)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to start metadata refresh", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "failed to start metadata refresh", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
 	}
 
@@ -428,7 +428,7 @@ func (h *GamesHandler) HandleStartMetadataRefreshJob(c *echo.Context) error {
 		if _, err := h.riverClient.Insert(ctx, tasks.MetadataRefreshDispatchArgs{JobID: jobID}, nil); err != nil {
 			slog.ErrorContext(ctx, "failed to enqueue metadata refresh dispatch", logging.KeyErr, err, logging.KeyJobID, jobID)
 			if _, derr := h.db.NewRaw(`DELETE FROM jobs WHERE id = ?`, jobID).Exec(ctx); derr != nil {
-				slog.ErrorContext(ctx, "failed to roll back metadata refresh job row", logging.KeyErr, derr, logging.KeyJobID, jobID, logging.KeyCategory, logging.CategoryDB)
+				slog.ErrorContext(ctx, "failed to roll back metadata refresh job row", logging.KeyErr, derr, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
 			}
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue metadata refresh")
 		}
@@ -458,7 +458,7 @@ func (h *GamesHandler) HandleStartStoreLinkRefreshJob(c *echo.Context) error {
 	ctx := c.Request().Context()
 	jobID, created, err := h.startMaintenanceRefresh(ctx, userID, models.JobTypeStoreLinkRefresh, models.JobSourceSystem)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to start store-link refresh", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "failed to start store-link refresh", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue store link refresh")
 	}
 
@@ -466,7 +466,7 @@ func (h *GamesHandler) HandleStartStoreLinkRefreshJob(c *echo.Context) error {
 		if _, err := h.riverClient.Insert(ctx, tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID}, nil); err != nil {
 			slog.ErrorContext(ctx, "failed to enqueue store-link refresh dispatch", logging.KeyErr, err, logging.KeyJobID, jobID)
 			if _, derr := h.db.NewRaw(`DELETE FROM jobs WHERE id = ?`, jobID).Exec(ctx); derr != nil {
-				slog.ErrorContext(ctx, "failed to roll back store-link refresh job row", logging.KeyErr, derr, logging.KeyJobID, jobID, logging.KeyCategory, logging.CategoryDB)
+				slog.ErrorContext(ctx, "failed to roll back store-link refresh job row", logging.KeyErr, derr, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
 			}
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to queue store link refresh")
 		}

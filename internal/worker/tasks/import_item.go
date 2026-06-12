@@ -85,9 +85,9 @@ type importTagData struct {
 // nil for an invalid (or already-nil) value, so callers leave the column unset
 // and let the user_games.play_status NOT NULL DEFAULT 'not_started' apply. All
 // import paths use this to validate play_status uniformly.
-func coercePlayStatus(s *string) *string {
+func coercePlayStatus(ctx context.Context, s *string) *string {
 	if s != nil && !enum.PlayStatus(*s).Valid() {
-		slog.Warn("import: invalid play_status, treating as unset", "value", *s)
+		slog.WarnContext(ctx, "import: invalid play_status, treating as unset", "value", *s, logging.Cat(logging.CategoryValidation))
 		return nil
 	}
 	return s
@@ -173,7 +173,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			slog.WarnContext(ctx, "import_item: personal_rating out of range, treating as unrated", "value", *gd.PersonalRating)
 		}
 
-		playStatus := coercePlayStatus(gd.PlayStatus)
+		playStatus := coercePlayStatus(ctx, gd.PlayStatus)
 
 		ug = &models.UserGame{
 			ID:             uuid.NewString(),
