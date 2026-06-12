@@ -169,7 +169,7 @@ func initInstruments(mp otelmetric.MeterProvider) {
 	var err error
 	syncTotal, err = m.Int64Counter(
 		"nexorious_sync",
-		otelmetric.WithDescription("Count of completed sync jobs by source and final status."),
+		otelmetric.WithDescription("Count of finished sync jobs by source and final status (completed, completed_with_errors, failed)."),
 	)
 	if err != nil {
 		slog.Error("observability: failed to create nexorious_sync counter", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
@@ -190,9 +190,10 @@ func initInstruments(mp otelmetric.MeterProvider) {
 	}
 }
 
-// RecordSyncOutcome records one completed sync job. source is a storefront slug
-// (e.g. "steam"); status is "completed" or "completed_with_errors". Never label
-// by user_id — cardinality must stay bounded.
+// RecordSyncOutcome records one finished sync job. source is a storefront slug
+// (e.g. "steam"); status is "completed", "completed_with_errors", or "failed"
+// (the hard-failure paths — library fetch / credentials error). Never label by
+// user_id — cardinality must stay bounded.
 func RecordSyncOutcome(ctx context.Context, source, status string) {
 	if syncTotal == nil {
 		return

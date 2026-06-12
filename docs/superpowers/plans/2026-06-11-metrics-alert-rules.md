@@ -16,7 +16,7 @@ The issue's example PromQL is partly wrong. These are the **actual** series the 
 
 | Series | Labels (values) | Source |
 |---|---|---|
-| `nexorious_sync_total` | `source`, `status` ∈ {`completed`, `completed_with_errors`} | `internal/observability/observability.go` `RecordSyncOutcome` |
+| `nexorious_sync_total` | `source`, `status` ∈ {`completed`, `completed_with_errors`, `failed`} | `internal/observability/observability.go` `RecordSyncOutcome` |
 | `nexorious_sync_items_total` | `source`, `outcome` ∈ {`completed`, `failed`, `skipped`} | `RecordSyncItems` |
 | `nexorious_db_errors_total` | `operation` (SELECT/INSERT/…) | **NEW — Task 1** |
 | `river_work_count_total` | `status` ∈ {`ok`, `error`, `panic`} | `otelriver` `river.work_count` |
@@ -27,7 +27,7 @@ The issue's example PromQL is partly wrong. These are the **actual** series the 
 | `up` | `job`, `instance` | Prometheus scrape target health |
 
 Key corrections vs. the issue text:
-- `nexorious_sync_total{status="error"}` does **not** exist → error signal is the `completed_with_errors` ratio + `nexorious_sync_items_total{outcome="failed"}`.
+- `nexorious_sync_total{status="error"}` does **not** exist → error signal is the `completed_with_errors` ratio + `nexorious_sync_items_total{outcome="failed"}`. (Update, issue #944: a `status="failed"` record was later added for the hard-failure paths — library-fetch failure and credentials error — so total-failure syncs are no longer a metrics blind spot; the dashboard success ratio counts them in its denominator.)
 - `river.work_duration` p95 → must use the `_histogram` series; work status is `ok|error|panic`.
 - bunotel emits **no DB error/status metric** → Task 1 adds `nexorious_db_errors_total`.
 

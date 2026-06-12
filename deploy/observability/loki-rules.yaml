@@ -31,7 +31,7 @@ groups:
 
       - alert: NexoriousStartupFailure
         expr: |
-          sum(count_over_time({app="nexorious"} | json | category="db" | level="ERROR" | msg=~"^(migrate:|serve: river client init failed)" [5m])) > 0
+          sum(count_over_time({app="nexorious"} | json | category="db" | level="ERROR" | msg=~".*(migrate:|serve: river client init failed).*" [5m])) > 0
         for: 0s
         labels:
           severity: critical
@@ -80,7 +80,7 @@ groups:
 
       - alert: NexoriousStuckJobs
         expr: |
-          sum(count_over_time({app="nexorious"} | json | msg=~"marked stale" [15m])) > 0
+          sum(count_over_time({app="nexorious"} | json | msg=~".*marked stale.*" [15m])) > 0
         for: 0s
         labels:
           severity: warning
@@ -90,7 +90,7 @@ groups:
 
       - alert: NexoriousJobDispatchFailures
         expr: |
-          sum(count_over_time({app="nexorious"} | json | category="db" | level="ERROR" | msg=~"enqueue" [10m])) > 0
+          sum(count_over_time({app="nexorious"} | json | category="db" | level="ERROR" | msg=~".*enqueue.*" [10m])) > 0
         for: 0s
         labels:
           severity: warning
