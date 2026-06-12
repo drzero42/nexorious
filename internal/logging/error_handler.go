@@ -32,6 +32,7 @@ func (h *WorkerErrorHandler) HandlePanic(ctx context.Context, job *rivertype.Job
 		KeyJobType, job.Kind,
 		KeyRiverJobID, strconv.FormatInt(job.ID, 10),
 		KeyErr, fmt.Sprintf("%v", panicVal),
+		KeyStack, trace,
 		Cat(CategoryPanic),
 	)
 	return nil

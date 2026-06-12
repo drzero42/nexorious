@@ -288,6 +288,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	quietJobKinds = append(quietJobKinds, notify.PruneEventsArgs{}.Kind())
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
+		Logger:       logging.RiverLogger(),
 		Workers:      workers,
 		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
@@ -394,6 +395,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			})
 
 			newClient, err := river.NewClient(riverpgxv5.New(newPgxPool), &river.Config{
+				Logger:       logging.RiverLogger(),
 				Workers:      newWorkers,
 				Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
 				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),

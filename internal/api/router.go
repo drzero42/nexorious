@@ -46,18 +46,21 @@ func appStateJSON(c *echo.Context, appState string) error {
 	return c.JSON(http.StatusServiceUnavailable, map[string]string{"app_state": appState})
 }
 
-// New creates and configures the Echo instance with all middleware and routes.
-// The caller is responsible for configuring the global slog logger before calling New.
-func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, updateState *updatecheck.State, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
-	e := echo.New()
-
-	var rc *river.Client[pgx.Tx]
-	if len(riverClient) > 0 {
-		rc = riverClient[0]
-	}
-
+// registerObservabilityMiddleware wires the panic/request-id/request-logging
+// middleware in the order the JSON logging pipeline depends on. Extracted from
+// New so tests can exercise the exact production ordering (issue #943).
+//
+// Ordering (outermost → innermost): PanicLogger → RequestID → RequestLogger →
+// Recover. RequestLogger sits OUTSIDE Recover so a handler panic — which Recover
+// converts into a *middleware.PanicStackError and returns up the chain — still
+// reaches RequestLogger, which emits the "request" access-log line with a
+// resolved 500 status. PanicLogger, outermost, then sees that same error
+// (RequestLogger returns it) and emits the distinct category=panic line. With
+// Recover outermost (the old order) the panic unwound past RequestLogger before
+// becoming an error, so panicking requests produced no access-log line at all.
+// RequestID stays outside RequestLogger so request_id is in ctx when it logs.
+func registerObservabilityMiddleware(e *echo.Echo) {
 	e.Use(PanicLogger())
-	e.Use(middleware.Recover())
 	e.Use(RequestIDMiddleware())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogStatus:    true,
@@ -86,6 +89,20 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 			return nil
 		},
 	}))
+	e.Use(middleware.Recover())
+}
+
+// New creates and configures the Echo instance with all middleware and routes.
+// The caller is responsible for configuring the global slog logger before calling New.
+func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, updateState *updatecheck.State, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
+	e := echo.New()
+
+	var rc *river.Client[pgx.Tx]
+	if len(riverClient) > 0 {
+		rc = riverClient[0]
+	}
+
+	registerObservabilityMiddleware(e)
 
 	// Gate 1: DB unavailable — redirect everything except /db-error, /health, /metrics, and /static/app.css
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
