@@ -163,10 +163,7 @@ function PoolsIndexPage() {
                     <PoolCard
                       key={pool.id}
                       pool={pool}
-                      onOpen={(id) =>
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        navigate({ to: '/pools/$id', params: { id } } as any)
-                      }
+                      onOpen={(id) => navigate({ to: '/pools/$id', params: { id } })}
                       onEdit={(p) => {
                         setEditing(p);
                         setShowForm(true);

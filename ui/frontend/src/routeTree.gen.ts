@@ -25,6 +25,7 @@ import { Route as AuthenticatedJobsIndexRouteImport } from './routes/_authentica
 import { Route as AuthenticatedGamesIndexRouteImport } from './routes/_authenticated/games/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedSyncStorefrontRouteImport } from './routes/_authenticated/sync/$storefront'
+import { Route as AuthenticatedPoolsIdRouteImport } from './routes/_authenticated/pools/$id'
 import { Route as AuthenticatedJobsIdRouteImport } from './routes/_authenticated/jobs/$id'
 import { Route as AuthenticatedHelpSlugRouteImport } from './routes/_authenticated/help/$slug'
 import { Route as AuthenticatedGamesAddRouteImport } from './routes/_authenticated/games/add'
@@ -120,6 +121,11 @@ const AuthenticatedSyncStorefrontRoute =
     path: '/sync/$storefront',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedPoolsIdRoute = AuthenticatedPoolsIdRouteImport.update({
+  id: '/pools/$id',
+  path: '/pools/$id',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedJobsIdRoute = AuthenticatedJobsIdRouteImport.update({
   id: '/jobs/$id',
   path: '/jobs/$id',
@@ -216,6 +222,7 @@ export interface FileRoutesByFullPath {
   '/games/add': typeof AuthenticatedGamesAddRouteWithChildren
   '/help/$slug': typeof AuthenticatedHelpSlugRoute
   '/jobs/$id': typeof AuthenticatedJobsIdRoute
+  '/pools/$id': typeof AuthenticatedPoolsIdRoute
   '/sync/$storefront': typeof AuthenticatedSyncStorefrontRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/games/': typeof AuthenticatedGamesIndexRoute
@@ -244,6 +251,7 @@ export interface FileRoutesByTo {
   '/admin/maintenance': typeof AuthenticatedAdminMaintenanceRoute
   '/help/$slug': typeof AuthenticatedHelpSlugRoute
   '/jobs/$id': typeof AuthenticatedJobsIdRoute
+  '/pools/$id': typeof AuthenticatedPoolsIdRoute
   '/sync/$storefront': typeof AuthenticatedSyncStorefrontRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/games': typeof AuthenticatedGamesIndexRoute
@@ -277,6 +285,7 @@ export interface FileRoutesById {
   '/_authenticated/games/add': typeof AuthenticatedGamesAddRouteWithChildren
   '/_authenticated/help/$slug': typeof AuthenticatedHelpSlugRoute
   '/_authenticated/jobs/$id': typeof AuthenticatedJobsIdRoute
+  '/_authenticated/pools/$id': typeof AuthenticatedPoolsIdRoute
   '/_authenticated/sync/$storefront': typeof AuthenticatedSyncStorefrontRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/games/': typeof AuthenticatedGamesIndexRoute
@@ -309,6 +318,7 @@ export interface FileRouteTypes {
     | '/games/add'
     | '/help/$slug'
     | '/jobs/$id'
+    | '/pools/$id'
     | '/sync/$storefront'
     | '/admin/'
     | '/games/'
@@ -337,6 +347,7 @@ export interface FileRouteTypes {
     | '/admin/maintenance'
     | '/help/$slug'
     | '/jobs/$id'
+    | '/pools/$id'
     | '/sync/$storefront'
     | '/admin'
     | '/games'
@@ -369,6 +380,7 @@ export interface FileRouteTypes {
     | '/_authenticated/games/add'
     | '/_authenticated/help/$slug'
     | '/_authenticated/jobs/$id'
+    | '/_authenticated/pools/$id'
     | '/_authenticated/sync/$storefront'
     | '/_authenticated/admin/'
     | '/_authenticated/games/'
@@ -503,6 +515,13 @@ declare module '@tanstack/react-router' {
       path: '/sync/$storefront'
       fullPath: '/sync/$storefront'
       preLoaderRoute: typeof AuthenticatedSyncStorefrontRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/pools/$id': {
+      id: '/_authenticated/pools/$id'
+      path: '/pools/$id'
+      fullPath: '/pools/$id'
+      preLoaderRoute: typeof AuthenticatedPoolsIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/jobs/$id': {
@@ -647,6 +666,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedGamesAddRoute: typeof AuthenticatedGamesAddRouteWithChildren
   AuthenticatedHelpSlugRoute: typeof AuthenticatedHelpSlugRoute
   AuthenticatedJobsIdRoute: typeof AuthenticatedJobsIdRoute
+  AuthenticatedPoolsIdRoute: typeof AuthenticatedPoolsIdRoute
   AuthenticatedSyncStorefrontRoute: typeof AuthenticatedSyncStorefrontRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedGamesIndexRoute: typeof AuthenticatedGamesIndexRoute
@@ -672,6 +692,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedGamesAddRoute: AuthenticatedGamesAddRouteWithChildren,
   AuthenticatedHelpSlugRoute: AuthenticatedHelpSlugRoute,
   AuthenticatedJobsIdRoute: AuthenticatedJobsIdRoute,
+  AuthenticatedPoolsIdRoute: AuthenticatedPoolsIdRoute,
   AuthenticatedSyncStorefrontRoute: AuthenticatedSyncStorefrontRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedGamesIndexRoute: AuthenticatedGamesIndexRoute,
