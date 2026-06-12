@@ -86,13 +86,13 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 	go func() {
 		ctx := context.Background()
 		if err := h.migrator.RunMigrations(ctx); err != nil {
-			slog.ErrorContext(ctx, "migrate: run migrations failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+			slog.ErrorContext(ctx, "migrate: run migrations failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			// RunMigrations already called TransitionToFailed; nothing else to do.
 			return
 		}
 		if h.db != nil {
 			if err := h.migrator.InitNeedsSetup(ctx, h.db); err != nil {
-				slog.ErrorContext(ctx, "migrate: init needs-setup failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+				slog.ErrorContext(ctx, "migrate: init needs-setup failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				h.migrator.TransitionToFailed(err)
 				return
 			}

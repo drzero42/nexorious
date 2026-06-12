@@ -8,6 +8,12 @@ import (
 // Redact returns a safe, non-reversible rendering of a sensitive string for
 // logging. Short values (<=4 runes) become asterisks; longer values keep a
 // 4-rune prefix as a weak correlation hint followed by a redaction marker.
+//
+// It is an available helper, not currently wired into any call site: today's
+// secret-handling rule is "log the error and a non-sensitive identifier, never
+// the secret", and the ScrubURLQueries choke point below covers credential-
+// bearing URLs. Reach for Redact if a value *derived* from sensitive material
+// ever genuinely needs to appear in a log line.
 func Redact(s string) string {
 	if s == "" {
 		return ""

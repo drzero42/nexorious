@@ -213,6 +213,14 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 	// Carries no secrets; labels are bounded (source/status/outcome, never user_id).
 	if h := observability.MetricsHandler(); h != nil {
 		e.GET("/metrics", echo.WrapHandler(h))
+	} else {
+		// Metrics disabled: answer 404 explicitly. The state gates allowlist
+		// /metrics unconditionally, so without an own route a scrape would fall
+		// through to the SPA catch-all and get index.html with 200 — masking a
+		// misconfigured scrape target as a healthy one.
+		e.GET("/metrics", func(c *echo.Context) error {
+			return c.NoContent(http.StatusNotFound)
+		})
 	}
 
 	// Version — public, not cached (changes on every deploy)

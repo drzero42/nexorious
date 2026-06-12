@@ -25,13 +25,13 @@ type NotifyWorker struct {
 func (w *NotifyWorker) Work(ctx context.Context, job *river.Job[NotifyArgs]) error {
 	var ev models.Event
 	if err := w.DB.NewSelect().Model(&ev).Where("id = ?", job.Args.EventID).Scan(ctx); err != nil {
-		slog.WarnContext(ctx, "notify: load event", "event_id", job.Args.EventID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.WarnContext(ctx, "notify: load event", "event_id", job.Args.EventID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 
 	recipients, err := w.resolveRecipients(ctx, &ev)
 	if err != nil {
-		slog.ErrorContext(ctx, "notify: resolve recipients", "event_id", ev.ID, "type", ev.Type, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "notify: resolve recipients", "event_id", ev.ID, "type", ev.Type, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 
@@ -53,7 +53,7 @@ func (w *NotifyWorker) Work(ctx context.Context, job *river.Job[NotifyArgs]) err
 				continue
 			}
 			if serr := w.Sender.Send(ctx, string(plain), title, body); serr != nil {
-				slog.WarnContext(ctx, "notify: send", "channel_id", ch.ID, "type", ev.Type, logging.KeyErr, serr, logging.KeyCategory, logging.CategoryExternalAPI)
+				slog.WarnContext(ctx, "notify: send", "channel_id", ch.ID, "type", ev.Type, logging.KeyErr, serr, logging.Cat(logging.CategoryExternalAPI))
 				continue
 			}
 			slog.DebugContext(ctx, "notify: sent", "channel_id", ch.ID, "type", ev.Type)

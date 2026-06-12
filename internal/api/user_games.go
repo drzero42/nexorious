@@ -453,14 +453,14 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 			plats[i] = pl
 		}
 		if _, err := h.db.NewInsert().Model(&plats).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "user_games: failed to insert platforms on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.KeyCategory, logging.CategoryDB)
+			slog.ErrorContext(c.Request().Context(), "user_games: failed to insert platforms on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 		}
 		if err := usergame.ClearWishlistOnAcquire(ctx, h.db, ug.ID); err != nil {
-			slog.ErrorContext(c.Request().Context(), "user_games: clear wishlist on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.KeyCategory, logging.CategoryDB)
+			slog.ErrorContext(c.Request().Context(), "user_games: clear wishlist on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
 		}
 		if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, ug.ID); err != nil {
-			slog.ErrorContext(c.Request().Context(), "user_games: auto-promote play_status on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.KeyCategory, logging.CategoryDB)
+			slog.ErrorContext(c.Request().Context(), "user_games: auto-promote play_status on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
 		}
 	}
 
@@ -1040,17 +1040,17 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
 	if err := usergame.ClearWishlistOnAcquire(ctx, h.db, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: clear wishlist on create platform", logging.KeyErr, err, "user_game_id", userGameID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "user_games: clear wishlist on create platform", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
 	}
 	if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: auto-promote play_status on create platform", logging.KeyErr, err, "user_game_id", userGameID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "user_games: auto-promote play_status on create platform", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
 	}
 	if err := h.db.NewSelect().Model(plat).
 		Where("id = ?", plat.ID).
 		Relation("PlatformRecord").
 		Relation("StorefrontRecord").
 		Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "user_games: load platform relations failed", logging.KeyErr, err, "platform_id", plat.ID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "user_games: load platform relations failed", logging.KeyErr, err, "platform_id", plat.ID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load platform")
 	}
 	return c.JSON(http.StatusCreated, toUserGamePlatformResponse(*plat))
@@ -1147,14 +1147,14 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
 	if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: auto-promote play_status on update platform", logging.KeyErr, err, "user_game_id", userGameID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "user_games: auto-promote play_status on update platform", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
 	}
 	if err := h.db.NewSelect().Model(&plat).
 		Where("id = ?", plat.ID).
 		Relation("PlatformRecord").
 		Relation("StorefrontRecord").
 		Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "user_games: load platform relations failed", logging.KeyErr, err, "platform_id", plat.ID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "user_games: load platform relations failed", logging.KeyErr, err, "platform_id", plat.ID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load platform")
 	}
 	return c.JSON(http.StatusOK, toUserGamePlatformResponse(plat))
@@ -1269,11 +1269,11 @@ func (h *UserGamesHandler) HandleMoveToLibrary(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 	if err := usergame.ClearWishlistOnAcquire(ctx, tx, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: clear wishlist on move-to-library", logging.KeyErr, err, "user_game_id", userGameID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "user_games: clear wishlist on move-to-library", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 	if err := usergame.PromoteToInProgressIfPlayed(ctx, tx, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: auto-promote play_status on move-to-library", logging.KeyErr, err, "user_game_id", userGameID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "user_games: auto-promote play_status on move-to-library", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 	if err := tx.Commit(); err != nil {
@@ -1290,7 +1290,7 @@ func (h *UserGamesHandler) HandleMoveToLibrary(c *echo.Context) error {
 			return q.Relation("Tag")
 		}).
 		Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "user_games: reload after move-to-library", logging.KeyErr, err, "user_game_id", userGameID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "user_games: reload after move-to-library", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))

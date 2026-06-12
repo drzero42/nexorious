@@ -142,7 +142,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			Title  *string `json:"title"`
 		}
 		if err := json.Unmarshal(raw, &gameFields); err != nil {
-			slog.WarnContext(reqCtx, "import: malformed game record, skipping", "record_index", i, logging.KeyErr, err, logging.KeyCategory, logging.CategoryValidation)
+			slog.WarnContext(reqCtx, "import: malformed game record, skipping", "record_index", i, logging.KeyErr, err, logging.Cat(logging.CategoryValidation))
 			skipCount++
 			continue
 		}
@@ -192,7 +192,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			`UPDATE jobs SET total_items = total_items - ? WHERE id = ?`,
 			skipCount, job.ID,
 		).Exec(ctx); err != nil {
-			slog.ErrorContext(reqCtx, "import: update total_items failed", logging.KeyErr, err, logging.KeyJobID, job.ID, logging.KeyCategory, logging.CategoryDB)
+			slog.ErrorContext(reqCtx, "import: update total_items failed", logging.KeyErr, err, logging.KeyJobID, job.ID, logging.Cat(logging.CategoryDB))
 		} else {
 			job.TotalItems -= skipCount
 		}
@@ -315,7 +315,7 @@ func (h *ImportHandler) HandleImportDarkadia(c *echo.Context) error {
 	// inserted — the completion check refuses to finalize while dispatch is in
 	// flight (dispatch_complete=false), mirroring the sync dispatch worker.
 	if _, err := h.db.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, job.ID).Exec(ctx); err != nil {
-		slog.ErrorContext(reqCtx, "import: mark dispatch complete", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(reqCtx, "import: mark dispatch complete", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 	tasks.DarkadiaCheckJobCompletion(h.db, job.ID)
 

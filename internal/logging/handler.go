@@ -18,6 +18,11 @@ import (
 // per-output-channel policy as the trace exporter in internal/observability.
 type ContextHandler struct {
 	inner slog.Handler
+	// groups are the open group names, outermost first. The ContextHandler tracks
+	// them itself instead of delegating WithGroup to inner so the correlation ids
+	// stay flat at the root (request_id, never sync.request_id) while the record's
+	// own attributes remain nested under the groups. See WithGroup.
+	groups []string
 }
 
 // NewContextHandler wraps inner so that ctx-carried correlation ids are added
@@ -32,19 +37,57 @@ func (h *ContextHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 func (h *ContextHandler) Handle(ctx context.Context, r slog.Record) error {
 	r = scrubRecord(r)
+	corr := correlationAttrs(ctx)
+
+	if len(h.groups) == 0 {
+		// Fast path: no open group, so the correlation ids and the record's own
+		// attrs are all at the root.
+		if len(corr) > 0 {
+			r.AddAttrs(corr...)
+		}
+		return h.inner.Handle(ctx, r)
+	}
+
+	// A group is open. The record's attributes belong under it, but the
+	// correlation ids must stay flat — so rebuild the record with the correlation
+	// ids at the root and the record's attrs nested under the group chain, then
+	// hand it to inner (which carries no group of its own).
+	var recAttrs []slog.Attr
+	r.Attrs(func(a slog.Attr) bool {
+		recAttrs = append(recAttrs, a)
+		return true
+	})
+	nr := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	nr.AddAttrs(corr...)
+	nr.AddAttrs(nestUnderGroups(h.groups, recAttrs)...)
+	return h.inner.Handle(ctx, nr)
+}
+
+// correlationAttrs collects the ctx-carried correlation ids present on ctx.
+func correlationAttrs(ctx context.Context) []slog.Attr {
+	var a []slog.Attr
 	if v := requestID(ctx); v != "" {
-		r.AddAttrs(slog.String(KeyRequestID, v))
+		a = append(a, slog.String(KeyRequestID, v))
 	}
 	if v := jobID(ctx); v != "" {
-		r.AddAttrs(slog.String(KeyJobID, v))
+		a = append(a, slog.String(KeyJobID, v))
 	}
 	if v := riverJobID(ctx); v != "" {
-		r.AddAttrs(slog.String(KeyRiverJobID, v))
+		a = append(a, slog.String(KeyRiverJobID, v))
 	}
 	if v := userID(ctx); v != "" {
-		r.AddAttrs(slog.String(KeyUserID, v))
+		a = append(a, slog.String(KeyUserID, v))
 	}
-	return h.inner.Handle(ctx, r)
+	return a
+}
+
+// nestUnderGroups wraps attrs in the group chain (outermost first), so
+// ["a","b"] turns attrs into a single {a: {b: attrs}} group attribute.
+func nestUnderGroups(groups []string, attrs []slog.Attr) []slog.Attr {
+	for i := len(groups) - 1; i >= 0; i-- {
+		attrs = []slog.Attr{{Key: groups[i], Value: slog.GroupValue(attrs...)}}
+	}
+	return attrs
 }
 
 func (h *ContextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
@@ -52,7 +95,12 @@ func (h *ContextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	for i, a := range attrs {
 		out[i], _ = scrubAttr(a)
 	}
-	return &ContextHandler{inner: h.inner.WithAttrs(out)}
+	// With a group open, pre-bound attrs belong under it too. (No call site
+	// chains WithGroup before WithAttrs today, but keep the nesting correct.)
+	if len(h.groups) > 0 {
+		out = nestUnderGroups(h.groups, out)
+	}
+	return &ContextHandler{inner: h.inner.WithAttrs(out), groups: h.groups}
 }
 
 // scrubRecord returns r with URL query strings stripped from its message and
@@ -114,6 +162,15 @@ func scrubAttr(a slog.Attr) (slog.Attr, bool) {
 	return a, false
 }
 
+// WithGroup records the group locally rather than delegating to inner, so that
+// Handle can keep the correlation ids flat at the root while still nesting the
+// record's own attributes under the group chain.
 func (h *ContextHandler) WithGroup(name string) slog.Handler {
-	return &ContextHandler{inner: h.inner.WithGroup(name)}
+	if name == "" {
+		return h
+	}
+	groups := make([]string, len(h.groups)+1)
+	copy(groups, h.groups)
+	groups[len(h.groups)] = name
+	return &ContextHandler{inner: h.inner, groups: groups}
 }
