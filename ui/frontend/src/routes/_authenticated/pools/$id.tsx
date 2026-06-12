@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +32,13 @@ function PoolDetailPage() {
   const [sugOrder, setSugOrder] = useState<SortOrder>('asc');
   const [sugPage, setSugPage] = useState(1);
   const [showFilter, setShowFilter] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && (error || !pool)) {
+      toast.error('Pool not found');
+      void navigate({ to: '/pools' });
+    }
+  }, [isLoading, error, pool, navigate]);
 
   const openGame = (userGameId: string) =>
     navigate({ to: '/games/$id', params: { id: userGameId } });
@@ -83,13 +90,21 @@ function PoolDetailPage() {
   }
 
   if (error || !pool) {
-    // A 404 (deleted in another tab) sends the user back to the index.
-    toast.error('Pool not found');
-    navigate({ to: '/pools' });
     return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <XCircle className="h-12 w-12 text-destructive" />
-        <h2 className="mt-4 text-lg font-semibold">Pool not found</h2>
+      <div className="text-center py-12">
+        <div className="mx-auto max-w-md">
+          <XCircle className="mx-auto h-12 w-12 text-destructive" />
+          <h3 className="mt-4 text-lg font-medium">Pool not found</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            The requested pool could not be found.
+          </p>
+          <div className="mt-6">
+            <Button onClick={() => navigate({ to: '/pools' })}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Pools
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
