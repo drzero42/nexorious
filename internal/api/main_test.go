@@ -109,6 +109,8 @@ func truncateAllTables(t *testing.T) {
 			user_game_platforms,
 			tags,
 			user_game_tags,
+			pools,
+			pool_games,
 			external_games,
 			user_sync_configs,
 			jobs,

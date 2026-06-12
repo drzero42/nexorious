@@ -324,6 +324,19 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		tagsGroup.PUT("/:id", th.HandleUpdateTag)
 		tagsGroup.DELETE("/:id", th.HandleDeleteTag)
 
+		// Pools routes (Play Planning, #955). Static /reorder before /:id.
+		poolsHandler := NewPoolsHandler(db)
+		poolsGroup := e.Group("/api/pools", auth.AuthMiddleware(db))
+		poolsGroup.GET("", poolsHandler.HandleListPools)
+		poolsGroup.POST("", poolsHandler.HandleCreatePool)
+		poolsGroup.POST("/reorder", poolsHandler.HandleReorderPools)
+		poolsGroup.GET("/:id", poolsHandler.HandleGetPool)
+		poolsGroup.PUT("/:id", poolsHandler.HandleUpdatePool)
+		poolsGroup.DELETE("/:id", poolsHandler.HandleDeletePool)
+		poolsGroup.POST("/:id/games", poolsHandler.HandleAddPoolGame)
+		poolsGroup.DELETE("/:id/games/:userGameId", poolsHandler.HandleRemovePoolGame)
+		poolsGroup.PUT("/:id/queue", poolsHandler.HandleSetQueue)
+
 		// Docs routes (auth-protected; admin-guide additionally gated in-handler)
 		dch := NewDocsHandler()
 		docsGroup := e.Group("/api/docs", auth.AuthMiddleware(db))
