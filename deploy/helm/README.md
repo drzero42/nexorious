@@ -322,7 +322,59 @@ controllers:
 
 Tracing is off unless this variable is set. Sampling follows the standard
 `OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` env vars (default: sample
-everything). ServiceMonitor and dashboard delivery are tracked in #912.
+everything).
+
+### ServiceMonitor (opt-in)
+
+| Key | Default | Description |
+|---|---|---|
+| `serviceMonitor.main.enabled` | `false` | Render a `ServiceMonitor` CR scraping the nexorious Service `http` port at `/metrics`. Requires the Prometheus Operator (kube-prometheus-stack) CRDs in-cluster. |
+
+To enable:
+
+```yaml
+serviceMonitor:
+  main:
+    enabled: true
+```
+
+The endpoint is unauthenticated and scrapes on a 30 s interval with a 10 s
+timeout. The `service.identifier: nexorious` field names the target Service
+explicitly, because automatic detection only works when a single Service is
+enabled and the default install also ships a PostgreSQL Service.
+
+### Grafana dashboard (opt-in)
+
+| Key | Default | Description |
+|---|---|---|
+| `dashboard.enabled` | `false` | Render the dashboard object. Default off. |
+| `dashboard.mode` | `configmap` | `configmap` = a ConfigMap labeled `grafana_dashboard: "1"` auto-discovered by the Grafana sidecar (kube-prometheus-stack default); `crd` = a `GrafanaDashboard` CR (`grafana.integreatly.org/v1beta1`) for grafana-operator users. |
+| `dashboard.labels` | `{}` | Extra labels merged onto the rendered object (e.g. to target a specific sidecar or Grafana folder). The `grafana_dashboard: "1"` label is always added in configmap mode regardless. |
+| `dashboard.instanceSelector` | `matchLabels: {dashboards: grafana}` | (crd mode only) `instanceSelector` matching the grafana-operator Grafana CR. |
+
+> **crd mode prerequisite:** `dashboard.mode: crd` requires the
+> `GrafanaDashboard` CRD (`grafana.integreatly.org/v1beta1`) to be installed
+> in-cluster. `helm lint` and `helm template` work without it, but
+> `helm install`/`upgrade` will fail with an "unknown kind" error if the CRD
+> is absent.
+
+To enable configmap delivery (kube-prometheus-stack / standard Grafana sidecar):
+
+```yaml
+dashboard:
+  enabled: true
+```
+
+To enable CRD delivery (grafana-operator):
+
+```yaml
+dashboard:
+  enabled: true
+  mode: crd
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+```
 
 ## Alerting (opt-in)
 

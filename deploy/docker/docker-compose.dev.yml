@@ -1,0 +1,93 @@
+# Local development observability stack.
+#
+# Brings up Postgres, the nexorious app (BUILT FROM THE LOCAL SOURCE TREE so you
+# see your own changes), and grafana/otel-lgtm (Grafana + Tempo + Prometheus +
+# Loki in one container). Traces are pushed to otel-lgtm via OTLP; metrics are
+# scraped from the app's /metrics by otel-lgtm's bundled Prometheus.
+#
+# Usage (from repo root):
+#   cp deploy/docker/.env.dev.example deploy/docker/.env.dev
+#   # edit deploy/docker/.env.dev (set DB_ENCRYPTION_KEY; IGDB_* optional)
+#   docker compose -f deploy/docker/docker-compose.dev.yml --env-file deploy/docker/.env.dev up --build
+#
+# Requires BuildKit (the app Dockerfile uses COPY --chmod). The devenv shell sets
+# DOCKER_BUILDKIT=1 / COMPOSE_DOCKER_CLI_BUILD=1 for you. Outside devenv, if the
+# build fails with "the --chmod option requires BuildKit", prefix the command
+# with DOCKER_BUILDKIT=1.
+#
+# Then open:
+#   App:     http://localhost:8000
+#   Grafana: http://localhost:3000   (dashboard "Nexorious — Observability")
+#
+# Tear down (remove volumes for a clean DB):
+#   docker compose -f deploy/docker/docker-compose.dev.yml down -v
+
+name: nexorious-dev
+
+services:
+  db:
+    image: docker.io/postgres:18-alpine
+    environment:
+      POSTGRES_USER: nexorious
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexorious}
+      POSTGRES_DB: nexorious
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexorious"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://nexorious:${POSTGRES_PASSWORD:-nexorious}@db:5432/nexorious?sslmode=disable
+      DB_ENCRYPTION_KEY: ${DB_ENCRYPTION_KEY:?DB_ENCRYPTION_KEY is required}
+
+  app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["serve"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://nexorious:${POSTGRES_PASSWORD:-nexorious}@db:5432/nexorious?sslmode=disable
+      DB_ENCRYPTION_KEY: ${DB_ENCRYPTION_KEY:?DB_ENCRYPTION_KEY is required}
+      IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:-}
+      IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:-}
+      LEGENDARY_WORK_DIR: /var/lib/legendary
+      # Observability: metrics always-on at /metrics; traces pushed to otel-lgtm.
+      OTEL_SERVICE_NAME: nexorious
+      OTEL_METRICS_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
+      OTEL_TRACES_SAMPLER: always_on
+    volumes:
+      - type: tmpfs
+        target: /var/lib/legendary
+        tmpfs:
+          mode: 0777
+
+  otel-lgtm:
+    image: docker.io/grafana/otel-lgtm:latest
+    ports:
+      - "3000:3000"   # Grafana
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./dev/prometheus.yaml:/otel-lgtm/prometheus.yaml:ro
+      - ./dev/grafana-dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/nexorious.yaml:ro
+      - ../observability/nexorious-dashboard.json:/otel-lgtm/grafana/conf/provisioning/dashboards/nexorious/nexorious-dashboard.json:ro
