@@ -2283,8 +2283,12 @@ import {
 import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { useUpdatePool, useAllPlatforms, useAllStorefronts, useFilterOptions, useAllTags } from '@/hooks';
 import { sanitizeFilter, isValidFilter } from '@/lib/pool-filter';
-import { PLAY_STATUSES, statusLabels } from '@/lib/play-status';
+import { statusLabels } from '@/lib/play-status';
+import { PlayStatus } from '@/types';
 import type { FilterCard, PoolFilter } from '@/types';
+
+// PlayStatus is an enum in types/game.ts; enumerate its values for the select.
+const PLAY_STATUSES = Object.values(PlayStatus);
 
 interface PoolFilterEditorProps {
   poolId: string;
@@ -2522,15 +2526,11 @@ export function PoolFilterEditor({ poolId, open, onOpenChange, initialFilter }: 
 }
 ```
 
-> **Verify before implementing:** confirm `PLAY_STATUSES` and `statusLabels` are
-> exported from `@/lib/play-status`, and that `useAllPlatforms`/`useAllStorefronts`
-> return objects with `name` and `display_name`. Run:
-> ```bash
-> grep -n "PLAY_STATUSES\|statusLabels" ui/frontend/src/lib/play-status.ts
-> grep -n "display_name\|name" ui/frontend/src/types/platform.ts | head
-> ```
-> Adjust the option mapping field names to match the actual `Platform`/`Storefront`
-> types if they differ (e.g. `display_name` vs `name`).
+> Verified during planning: `statusLabels` is exported from `@/lib/play-status`;
+> `PlayStatus` is an enum in `types/game.ts` (iterate `Object.values(PlayStatus)`);
+> `useAllPlatforms`/`useAllStorefronts` return objects with `name` and
+> `display_name` (per `types/platform.ts`). The option mapping above uses those
+> field names.
 
 - [ ] **Step 2: Build + typecheck (also completes Task 18's build)**
 
