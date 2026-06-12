@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -287,6 +288,121 @@ func TestPoolCRUD(t *testing.T) {
 			if list[i].Position != i {
 				t.Fatalf("expected contiguous position %d, got %d", i, list[i].Position)
 			}
+		}
+	})
+}
+
+func TestPoolMembershipAndQueue(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "queue")
+
+	poolRec := postJSONAuth(t, e, "/api/pools", map[string]any{"name": "Queue Pool"}, token)
+	var pool struct {
+		ID string `json:"id"`
+	}
+	mustUnmarshal(t, poolRec, &pool)
+
+	var ugIDs []string
+	for i, title := range []string{"G1", "G2", "G3"} {
+		gid := insertTestGame(t, testDB, title)
+		ugID := fmt.Sprintf("ug-q-%d", i)
+		insertTestUserGame(t, testDB, ugID, userID, int(gid))
+		ugIDs = append(ugIDs, ugID)
+	}
+
+	t.Run("add lands as candidate, idempotent", func(t *testing.T) {
+		for _, ugID := range ugIDs {
+			rec := postJSONAuth(t, e, "/api/pools/"+pool.ID+"/games",
+				map[string]any{"user_game_id": ugID}, token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+		}
+		rec := postJSONAuth(t, e, "/api/pools/"+pool.ID+"/games",
+			map[string]any{"user_game_id": ugIDs[0]}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected idempotent 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		detail := getAuth(t, e, "/api/pools/"+pool.ID, token)
+		var d struct {
+			Queue      []map[string]any `json:"queue"`
+			Candidates []map[string]any `json:"candidates"`
+		}
+		mustUnmarshal(t, detail, &d)
+		if len(d.Candidates) != 3 || len(d.Queue) != 0 {
+			t.Fatalf("expected 3 candidates / 0 queued, got %d / %d", len(d.Candidates), len(d.Queue))
+		}
+	})
+
+	t.Run("add rejects non-existent user_game", func(t *testing.T) {
+		rec := postJSONAuth(t, e, "/api/pools/"+pool.ID+"/games",
+			map[string]any{"user_game_id": "does-not-exist"}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("queue promote, reorder, demote in one PUT", func(t *testing.T) {
+		rec := putJSONAuth(t, e, "/api/pools/"+pool.ID+"/queue",
+			map[string]any{"ids": []string{ugIDs[0], ugIDs[1]}}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		detail := getAuth(t, e, "/api/pools/"+pool.ID, token)
+		var d struct {
+			Queue []struct {
+				ID string `json:"id"`
+			} `json:"queue"`
+			Candidates []struct {
+				ID string `json:"id"`
+			} `json:"candidates"`
+		}
+		mustUnmarshal(t, detail, &d)
+		if len(d.Queue) != 2 || d.Queue[0].ID != ugIDs[0] || d.Queue[1].ID != ugIDs[1] {
+			t.Fatalf("unexpected queue: %+v", d.Queue)
+		}
+		if len(d.Candidates) != 1 || d.Candidates[0].ID != ugIDs[2] {
+			t.Fatalf("unexpected candidates: %+v", d.Candidates)
+		}
+
+		rec2 := putJSONAuth(t, e, "/api/pools/"+pool.ID+"/queue",
+			map[string]any{"ids": []string{ugIDs[1]}}, token)
+		if rec2.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec2.Code, rec2.Body.String())
+		}
+		detail2 := getAuth(t, e, "/api/pools/"+pool.ID, token)
+		var d2 struct {
+			Queue []struct {
+				ID string `json:"id"`
+			} `json:"queue"`
+		}
+		mustUnmarshal(t, detail2, &d2)
+		if len(d2.Queue) != 1 || d2.Queue[0].ID != ugIDs[1] {
+			t.Fatalf("expected only G2 queued, got %+v", d2.Queue)
+		}
+	})
+
+	t.Run("queue rejects a non-member id", func(t *testing.T) {
+		gid := insertTestGame(t, testDB, "Outsider")
+		insertTestUserGame(t, testDB, "ug-outsider", userID, int(gid))
+		rec := putJSONAuth(t, e, "/api/pools/"+pool.ID+"/queue",
+			map[string]any{"ids": []string{"ug-outsider"}}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for non-member, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("remove membership", func(t *testing.T) {
+		rec := deleteAuth(t, e, "/api/pools/"+pool.ID+"/games/"+ugIDs[2], token)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+		}
+		rec2 := deleteAuth(t, e, "/api/pools/"+pool.ID+"/games/"+ugIDs[2], token)
+		if rec2.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec2.Code, rec2.Body.String())
 		}
 	})
 }
