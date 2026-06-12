@@ -246,6 +246,19 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	filter.ApplyPlayerPerspective(fb, c.QueryParams()["player_perspective"])
 	filter.ApplyTag(fb, c.QueryParams()["tag"])
 
+	var ttbMin, ttbMax *float64
+	if str := c.QueryParam("time_to_beat_min"); str != "" {
+		if v, err := strconv.ParseFloat(str, 64); err == nil {
+			ttbMin = &v
+		}
+	}
+	if str := c.QueryParam("time_to_beat_max"); str != "" {
+		if v, err := strconv.ParseFloat(str, 64); err == nil {
+			ttbMax = &v
+		}
+	}
+	filter.ApplyTimeToBeat(fb, ttbMin, ttbMax)
+
 	// If sort field needs games join, add it.
 	if sortBy != "" && sortFieldsRequiringGamesJoin[sortBy] {
 		fb.AddJoin("g", "LEFT JOIN games AS g ON g.id = ug.game_id")
