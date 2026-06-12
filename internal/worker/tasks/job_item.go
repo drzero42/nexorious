@@ -35,7 +35,10 @@ func execItemUpdate(ctx context.Context, db *bun.DB, item *models.JobItem, logPr
 }
 
 // markItemFailed sets a job_item to failed with an error message and processed_at=now.
+// msg is scrubbed of URL query strings before persisting (#937): an external-API
+// error may embed a request URL whose query carries credentials.
 func markItemFailed(ctx context.Context, db *bun.DB, item *models.JobItem, msg, logPrefix string) {
+	msg = logging.ScrubURLQueries(msg)
 	now := time.Now().UTC()
 	item.Status = models.JobItemStatusFailed
 	item.ErrorMessage = &msg
