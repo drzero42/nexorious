@@ -608,8 +608,22 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 	)
 	args = append(args, id, userID)
 
+	_, statusChanged := body["play_status"]
+
 	var ug models.UserGame
-	if err := h.db.NewRaw(query, args...).Scan(ctx, &ug); err != nil {
+	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if scanErr := tx.NewRaw(query, args...).Scan(ctx, &ug); scanErr != nil {
+			return scanErr
+		}
+		if statusChanged {
+			// The UPDATE above is applied within this txn, so the helper's
+			// EXISTS guard sees the new play_status. Removes from every pool
+			// if the new status is finished; no-op otherwise.
+			return usergame.RemoveFromPoolsIfFinished(ctx, tx, ug.ID)
+		}
+		return nil
+	})
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "user game not found")
 		}
@@ -763,7 +777,17 @@ func (h *UserGamesHandler) HandleBulkUpdate(c *echo.Context) error {
 			return err
 		}
 		rowsAffected, err = res.RowsAffected()
-		return err
+		if err != nil {
+			return err
+		}
+		if _, ok := req.Updates["play_status"]; ok {
+			for _, id := range req.IDs {
+				if hookErr := usergame.RemoveFromPoolsIfFinished(ctx, tx, id); hookErr != nil {
+					return hookErr
+				}
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
