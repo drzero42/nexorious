@@ -69,7 +69,15 @@ To remove a game entirely, use the **Remove** button on its page.
 
 Nexorious is as much about working through your backlog as cataloguing it. The main tracking tools are:
 
-- **Play status** — choose from *Not Started*, *In Progress*, *Completed*, *Mastered*, *Dominated*, *Shelved*, *Dropped*, and *Replay*. Use them however makes sense to you; *Completed* through *Dominated* let you distinguish "finished the story" from "did everything."
+- **Play status** — where you are with a game. Use whichever values make sense to you; the eight options mean:
+  - *Not Started* — owned but not yet started.
+  - *In Progress* — currently playing (also where a replay goes once you actually start it).
+  - *Completed* — finished the main story.
+  - *Mastered* — finished the main story **and all side quests**.
+  - *Dominated* — Mastered **and** earned every trophy/achievement (100%).
+  - *Shelved* — on hold, but you intend to return to it later.
+  - *Dropped* — abandoned, no longer playing.
+  - *Replay* — a game you *want* to replay; move it to *In Progress* when you actually start the replay.
 - **Rating** — your own one-to-five-star score, separate from the IGDB community rating shown alongside it.
 - **Hours played** — tracked per platform, and summed for you.
 - **Loved** — a simple favourite flag you can filter on.
