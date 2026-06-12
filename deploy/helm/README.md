@@ -352,6 +352,13 @@ enabled and the default install also ships a PostgreSQL Service.
 | `dashboard.labels` | `{}` | Extra labels merged onto the rendered object (e.g. to target a specific sidecar or Grafana folder). The `grafana_dashboard: "1"` label is always added in configmap mode regardless. |
 | `dashboard.instanceSelector` | `matchLabels: {dashboards: grafana}` | (crd mode only) `instanceSelector` matching the grafana-operator Grafana CR. |
 
+> **configmap mode namespace caveat:** the ConfigMap lands in the release
+> namespace, but the kube-prometheus-stack Grafana sidecar defaults to watching
+> only its own namespace. If nexorious is installed outside the monitoring
+> namespace (the usual case), set `sidecar.dashboards.searchNamespace: ALL` (or
+> name this namespace) on the kube-prometheus-stack release, or the dashboard is
+> never loaded. The `crd` mode and the PrometheusRule are unaffected.
+
 > **crd mode prerequisite:** `dashboard.mode: crd` requires the
 > `GrafanaDashboard` CRD (`grafana.integreatly.org/v1beta1`) to be installed
 > in-cluster. `helm lint` and `helm template` work without it, but
