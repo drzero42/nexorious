@@ -241,3 +241,30 @@ type UserSettings struct {
 	CreatedAt  time.Time `bun:"created_at,notnull"  json:"created_at"`
 	UpdatedAt  time.Time `bun:"updated_at,notnull"  json:"updated_at"`
 }
+
+// Pool is a Play Planning pool — a sibling of Tag with ordering, an optional
+// saved filter, and queue membership via PoolGame (#955).
+type Pool struct {
+	bun.BaseModel `bun:"table:pools"`
+
+	ID        string          `bun:"id,pk"               json:"id"`
+	UserID    string          `bun:"user_id,notnull"     json:"user_id"`
+	Name      string          `bun:"name,notnull"        json:"name"`
+	Color     *string         `bun:"color"               json:"color"`
+	Position  int             `bun:"position,notnull"    json:"position"`
+	Filter    json.RawMessage `bun:"filter,type:jsonb"   json:"filter"`
+	CreatedAt time.Time       `bun:"created_at,notnull"  json:"created_at"`
+	UpdatedAt time.Time       `bun:"updated_at,notnull"  json:"updated_at"`
+}
+
+// PoolGame is a pool membership row. position IS NULL = Candidate;
+// position NOT NULL = queued (Up Next). Unique per (pool_id, user_game_id).
+type PoolGame struct {
+	bun.BaseModel `bun:"table:pool_games"`
+
+	ID         string    `bun:"id,pk"                 json:"id"`
+	PoolID     string    `bun:"pool_id,notnull"       json:"pool_id"`
+	UserGameID string    `bun:"user_game_id,notnull"  json:"user_game_id"`
+	Position   *int      `bun:"position"              json:"position"`
+	CreatedAt  time.Time `bun:"created_at,notnull"    json:"created_at"`
+}
