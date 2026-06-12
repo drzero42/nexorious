@@ -15,9 +15,9 @@ export const statusDescriptions: Record<PlayStatus, string> = {
   [PlayStatus.NOT_STARTED]: 'Games waiting to be played',
   [PlayStatus.IN_PROGRESS]: 'Currently playing',
   [PlayStatus.COMPLETED]: 'Main story finished',
-  [PlayStatus.MASTERED]: 'All major content done',
-  [PlayStatus.DOMINATED]: '100% completion',
+  [PlayStatus.MASTERED]: 'Main story and all side quests finished',
+  [PlayStatus.DOMINATED]: 'Everything done, including all trophies/achievements (100%)',
   [PlayStatus.SHELVED]: 'On hold for later',
   [PlayStatus.DROPPED]: 'No longer playing',
-  [PlayStatus.REPLAY]: 'Playing again',
+  [PlayStatus.REPLAY]: 'Want to replay',
 };
