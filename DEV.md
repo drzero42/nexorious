@@ -219,7 +219,25 @@ Set `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP endpoint and the drop-in span 
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 ./nexorious serve
 ```
 
-With tracing on, log lines emitted inside a traced job/request carry `trace_id`/`span_id` (added by `observability.NewTraceContextHandler`, chained in `serve.go`). Unset the variable and tracing is fully off — no exporter, noop tracer providers, plain log lines. Sampling and batching follow the standard OTel env vars (`OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_BSP_*`); the default samples everything. Until the local Grafana stack lands (#912), view traces with any OTLP backend — e.g. `docker run --rm -p 3000:3000 -p 4318:4318 grafana/otel-lgtm` and open Grafana at `http://localhost:3000`.
+With tracing on, log lines emitted inside a traced job/request carry `trace_id`/`span_id` (added by `observability.NewTraceContextHandler`, chained in `serve.go`). Unset the variable and tracing is fully off — no exporter, noop tracer providers, plain log lines. Sampling and batching follow the standard OTel env vars (`OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG`, `OTEL_BSP_*`); the default samples everything. To see traces (and metrics) wired into Grafana with zero setup, use the local dev stack below.
+
+**Local Grafana dev stack:**
+
+`deploy/docker/docker-compose.dev.yml` brings up a self-contained observability environment — Postgres, the nexorious app **built from your local source tree**, and `grafana/otel-lgtm` (Grafana + Tempo + Prometheus + Loki in one container). Traces are pushed to otel-lgtm via OTLP; metrics are scraped from the app's `/metrics` by its bundled Prometheus; the committed dashboard `deploy/observability/nexorious-dashboard.json` is auto-provisioned.
+
+```bash
+cp deploy/docker/.env.dev.example deploy/docker/.env.dev
+# edit deploy/docker/.env.dev: set DB_ENCRYPTION_KEY (openssl rand -base64 32); IGDB_* optional
+docker compose -f deploy/docker/docker-compose.dev.yml --env-file deploy/docker/.env.dev up --build
+```
+
+| Service | URL |
+|---|---|
+| App | <http://localhost:8000> |
+| Grafana (anonymous Admin) | <http://localhost:3000> → dashboard **"Nexorious — Observability"** |
+| OTLP gRPC / HTTP | `localhost:4317` / `localhost:4318` |
+
+The app waits on a one-shot `migrate` service, so the schema is applied before it serves. Sync/job panels populate once you trigger activity (e.g. run a sync). Tear down with `docker compose -f deploy/docker/docker-compose.dev.yml down -v` (the `-v` resets the database). The same dashboard JSON powers the Helm chart's opt-in `dashboard` object — see [docs/observability.md](docs/observability.md) for the production (ServiceMonitor + dashboard) side.
 
 ## Test Coverage
 
