@@ -15,7 +15,7 @@ metadata:
     {{- end }}
 data:
   nexorious-dashboard.json: |-
-{{ .Files.Get "files/nexorious-dashboard.json" | indent 4 }}
+{{ .Files.Get "files/nexorious-dashboard.json" | required "files/nexorious-dashboard.json is missing from the chart" | indent 4 }}
 {{- else if eq .Values.dashboard.mode "crd" }}
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
@@ -33,7 +33,7 @@ spec:
   instanceSelector:
     {{- toYaml .Values.dashboard.instanceSelector | nindent 4 }}
   json: |-
-{{ .Files.Get "files/nexorious-dashboard.json" | indent 4 }}
+{{ .Files.Get "files/nexorious-dashboard.json" | required "files/nexorious-dashboard.json is missing from the chart" | indent 4 }}
 {{- else }}
 {{- fail (printf "dashboard.mode must be 'configmap' or 'crd', got %q" .Values.dashboard.mode) }}
 {{- end }}

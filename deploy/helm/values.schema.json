@@ -195,6 +195,24 @@
       "type": "object",
       "additionalProperties": true
     },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Prometheus Operator ServiceMonitor(s) scraping the nexorious Service /metrics. Consumed by the bjw-s common library subchart (no nexorious template owns it), so the full shape is bjw-s's and left permissive here — the keys below are documented, not exhaustive.",
+      "properties": {
+        "main": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "The default ServiceMonitor entry shipped in values.yaml.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render a ServiceMonitor scraping the nexorious Service /metrics. Default off."
+            }
+          }
+        }
+      }
+    },
     "dashboard": {
       "type": "object",
       "additionalProperties": false,
@@ -213,7 +231,7 @@
     "alerts": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Opt-in log-based alert rules (Loki ruler ConfigMap + VictoriaLogs VMRule). Default off.",
+      "description": "Opt-in alert rules. Log-based (Loki ruler ConfigMap; VictoriaLogs VMRule or ConfigMap) and metrics-based (PrometheusRule; VictoriaMetrics VMRule). Default off.",
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -233,7 +251,7 @@
               "additionalProperties": false,
               "description": "Discovery label the Loki ruler sidecar watches.",
               "properties": {
-                "key": { "type": "string" },
+                "key": { "type": "string", "minLength": 1, "description": "Label key; must be non-empty or the ConfigMap renders invalid YAML (a bare `: value`)." },
                 "value": { "type": "string" }
               }
             }

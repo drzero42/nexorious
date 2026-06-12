@@ -106,6 +106,15 @@ Both modes render the **same JSON** — the single source of truth
 `deploy/observability/nexorious-dashboard.json`, which is also what the dev stack
 provisions automatically.
 
+> **configmap mode namespace caveat:** the ConfigMap is created in the release
+> namespace, but the kube-prometheus-stack Grafana sidecar defaults to watching
+> only its **own** namespace (`sidecar.dashboards.searchNamespace` unset). If you
+> install nexorious outside the monitoring namespace — the typical case — the
+> dashboard is never picked up until the operator sets
+> `sidecar.dashboards.searchNamespace: ALL` (or names this namespace). The `crd`
+> mode and the PrometheusRule are unaffected (the operator's default selectors
+> match all namespaces).
+
 > **crd mode prerequisite:** `dashboard.mode: crd` requires the `GrafanaDashboard`
 > CRD installed in-cluster, or `helm install`/`upgrade` fails on the unknown kind.
 > `helm template`/`lint` are unaffected. This is why `configmap` is the default.

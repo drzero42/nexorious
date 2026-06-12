@@ -12,5 +12,5 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
-{{ .Files.Get "files/victorialogs-rules.yaml" | indent 2 }}
+{{ .Files.Get "files/victorialogs-rules.yaml" | required "files/victorialogs-rules.yaml is missing from the chart" | indent 2 }}
 {{- end }}
