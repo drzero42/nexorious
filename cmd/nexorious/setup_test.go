@@ -25,6 +25,11 @@ import (
 // truncateAllTables(t) at the start to get a clean slate.
 var testDB *bun.DB
 
+// testDSN is the postgres:// connection string for the shared container.
+// Tests that need a pristine, un-migrated database (e.g. the serve --migrate
+// path) create their own database in the container and swap the dbname.
+var testDSN string
+
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
@@ -49,6 +54,8 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "connection string: %v\n", err)
 		os.Exit(1)
 	}
+
+	testDSN = connStr
 
 	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
 	testDB = bun.NewDB(sqldb, pgdialect.New())
