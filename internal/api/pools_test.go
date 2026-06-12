@@ -406,3 +406,93 @@ func TestPoolMembershipAndQueue(t *testing.T) {
 		}
 	})
 }
+
+func TestPoolSuggestionView(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "suggest")
+
+	rpg1 := insertTestGameWithGenre(t, testDB, "RPG One", "Role-playing (RPG)")
+	rpg2 := insertTestGameWithGenre(t, testDB, "RPG Two", "Role-playing (RPG)")
+	shooter := insertTestGameWithGenre(t, testDB, "Shooter", "Shooter")
+	insertTestUserGame(t, testDB, "ug-rpg1", userID, int(rpg1))
+	insertTestUserGame(t, testDB, "ug-rpg2", userID, int(rpg2))
+	insertTestUserGame(t, testDB, "ug-shooter", userID, int(shooter))
+
+	rpgDone := insertTestGameWithGenre(t, testDB, "RPG Done", "Role-playing (RPG)")
+	insertTestUserGame(t, testDB, "ug-rpgdone", userID, int(rpgDone))
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE user_games SET play_status = 'completed' WHERE id = 'ug-rpgdone'`); err != nil {
+		t.Fatalf("set completed: %v", err)
+	}
+
+	poolRec := postJSONAuth(t, e, "/api/pools", map[string]any{
+		"name": "RPG Pool",
+		"filter": map[string]any{
+			"filters": []any{map[string]any{"genre": []string{"Role-playing (RPG)"}}},
+		},
+	}, token)
+	var pool struct {
+		ID string `json:"id"`
+	}
+	mustUnmarshal(t, poolRec, &pool)
+	postJSONAuth(t, e, "/api/pools/"+pool.ID+"/games", map[string]any{"user_game_id": "ug-rpg1"}, token)
+
+	rec := getAuth(t, e, "/api/user-games?pool="+pool.ID, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		UserGames []struct {
+			ID             string  `json:"id"`
+			PoolMembership *string `json:"pool_membership"`
+			Game           struct {
+				Title string `json:"title"`
+			} `json:"game"`
+		} `json:"user_games"`
+		Total int `json:"total"`
+	}
+	mustUnmarshal(t, rec, &resp)
+
+	got := map[string]*string{}
+	for _, ug := range resp.UserGames {
+		got[ug.ID] = ug.PoolMembership
+	}
+	if _, ok := got["ug-shooter"]; ok {
+		t.Fatalf("shooter should not match RPG pool filter")
+	}
+	if _, ok := got["ug-rpgdone"]; ok {
+		t.Fatalf("finished RPG must be excluded from suggestions")
+	}
+	if v, ok := got["ug-rpg1"]; !ok || v == nil || *v != "candidate" {
+		t.Fatalf("ug-rpg1 should be a candidate member, got %v", got["ug-rpg1"])
+	}
+	if v, ok := got["ug-rpg2"]; !ok || v != nil {
+		t.Fatalf("ug-rpg2 should match with null membership (a suggestion), got %v", got["ug-rpg2"])
+	}
+}
+
+func TestPoolSuggestionNullFilterEmpty(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "nullfilter")
+	gid := insertTestGame(t, testDB, "Lonely")
+	insertTestUserGame(t, testDB, "ug-lonely", userID, int(gid))
+
+	poolRec := postJSONAuth(t, e, "/api/pools", map[string]any{"name": "Manual"}, token)
+	var pool struct {
+		ID string `json:"id"`
+	}
+	mustUnmarshal(t, poolRec, &pool)
+
+	rec := getAuth(t, e, "/api/user-games?pool="+pool.ID, token)
+	var resp struct {
+		Total int `json:"total"`
+	}
+	mustUnmarshal(t, rec, &resp)
+	if resp.Total != 0 {
+		t.Fatalf("expected empty result for NULL-filter pool, got total=%d", resp.Total)
+	}
+}

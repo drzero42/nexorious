@@ -103,8 +103,9 @@ func toUserGamePlatformResponse(ugp models.UserGamePlatform) userGamePlatformRes
 // nested details and exposes a calculated game-level HoursPlayed (sum of platform hours).
 type userGameWithPlatformsResponse struct {
 	models.UserGame
-	HoursPlayed float64                    `json:"hours_played"`
-	Platforms   []userGamePlatformResponse `json:"platforms"`
+	HoursPlayed    float64                    `json:"hours_played"`
+	Platforms      []userGamePlatformResponse `json:"platforms"`
+	PoolMembership *string                    `json:"pool_membership,omitempty"`
 }
 
 func toUserGameWithPlatformsResponse(ug models.UserGame) userGameWithPlatformsResponse {
@@ -213,51 +214,86 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		}
 	}
 
-	// Build filter.
+	// Build filter. With ?pool=:id the pool's saved filter drives the query
+	// (owned + wishlist), AND NOT finished; ad-hoc facet params are not merged
+	// in v1 (sort + pagination are still honoured).
+	poolID := c.QueryParam("pool")
 	fb := filter.NewFilterBuilder()
-	filter.ApplyPlayStatus(fb, c.QueryParam("play_status"))
-	filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
-	filter.ApplySearch(fb, c.QueryParam("q"))
-	filter.ApplyWishlist(fb, c.QueryParam("wishlist") == "true")
 
-	if str := c.QueryParam("is_loved"); str != "" {
-		v := str == "true"
-		filter.ApplyIsLoved(fb, &v)
-	}
-	if str := c.QueryParam("has_notes"); str != "" {
-		v := str == "true"
-		filter.ApplyHasNotes(fb, &v)
-	}
-	if str := c.QueryParam("rating_min"); str != "" {
-		if v, err := strconv.ParseFloat(str, 64); err == nil {
-			filter.ApplyRatingMin(fb, &v)
+	if poolID != "" {
+		// Scan the nullable jsonb column into *string: a NULL filter yields nil
+		// (a pure manual pool); a stored filter yields its JSON text.
+		var rawStr *string
+		err := h.db.NewRaw(
+			`SELECT filter FROM pools WHERE id = ? AND user_id = ?`, poolID, userID,
+		).Scan(context.Background(), &rawStr)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return echo.NewHTTPError(http.StatusNotFound, "pool not found")
+			}
+			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 		}
-	}
-	if str := c.QueryParam("rating_max"); str != "" {
-		if v, err := strconv.ParseFloat(str, 64); err == nil {
-			filter.ApplyRatingMax(fb, &v)
+		if rawStr == nil || *rawStr == "" || *rawStr == "null" {
+			// Pure manual pool — no suggestions.
+			return c.JSON(http.StatusOK, UserGameListResponse{
+				UserGames: []userGameWithPlatformsResponse{},
+				Total:     0, Page: page, PerPage: perPage, Pages: 1,
+			})
 		}
-	}
-	filter.ApplyPlatform(fb, c.QueryParams()["platform"])
-	filter.ApplyStorefront(fb, c.QueryParams()["storefront"])
-	filter.ApplyGenre(fb, c.QueryParams()["genre"])
-	filter.ApplyGameMode(fb, c.QueryParams()["game_mode"])
-	filter.ApplyTheme(fb, c.QueryParams()["theme"])
-	filter.ApplyPlayerPerspective(fb, c.QueryParams()["player_perspective"])
-	filter.ApplyTag(fb, c.QueryParams()["tag"])
+		pf, perr := filter.ParsePoolFilter([]byte(*rawStr))
+		if perr != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "invalid stored filter")
+		}
+		filter.ApplyPoolFilter(fb, pf)
+		// Global finished-status exclusion (NULL stays eligible).
+		fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Where("(ug.play_status IS NULL OR ug.play_status NOT IN (?))",
+				bun.List(enum.FinishedPlayStatusStrings()))
+		})
+	} else {
+		filter.ApplyPlayStatus(fb, c.QueryParam("play_status"))
+		filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
+		filter.ApplySearch(fb, c.QueryParam("q"))
+		filter.ApplyWishlist(fb, c.QueryParam("wishlist") == "true")
 
-	var ttbMin, ttbMax *float64
-	if str := c.QueryParam("time_to_beat_min"); str != "" {
-		if v, err := strconv.ParseFloat(str, 64); err == nil {
-			ttbMin = &v
+		if str := c.QueryParam("is_loved"); str != "" {
+			v := str == "true"
+			filter.ApplyIsLoved(fb, &v)
 		}
-	}
-	if str := c.QueryParam("time_to_beat_max"); str != "" {
-		if v, err := strconv.ParseFloat(str, 64); err == nil {
-			ttbMax = &v
+		if str := c.QueryParam("has_notes"); str != "" {
+			v := str == "true"
+			filter.ApplyHasNotes(fb, &v)
 		}
+		if str := c.QueryParam("rating_min"); str != "" {
+			if v, err := strconv.ParseFloat(str, 64); err == nil {
+				filter.ApplyRatingMin(fb, &v)
+			}
+		}
+		if str := c.QueryParam("rating_max"); str != "" {
+			if v, err := strconv.ParseFloat(str, 64); err == nil {
+				filter.ApplyRatingMax(fb, &v)
+			}
+		}
+		var ttbMin, ttbMax *float64
+		if str := c.QueryParam("time_to_beat_min"); str != "" {
+			if v, err := strconv.ParseFloat(str, 64); err == nil {
+				ttbMin = &v
+			}
+		}
+		if str := c.QueryParam("time_to_beat_max"); str != "" {
+			if v, err := strconv.ParseFloat(str, 64); err == nil {
+				ttbMax = &v
+			}
+		}
+		filter.ApplyTimeToBeat(fb, ttbMin, ttbMax)
+		filter.ApplyPlatform(fb, c.QueryParams()["platform"])
+		filter.ApplyStorefront(fb, c.QueryParams()["storefront"])
+		filter.ApplyGenre(fb, c.QueryParams()["genre"])
+		filter.ApplyGameMode(fb, c.QueryParams()["game_mode"])
+		filter.ApplyTheme(fb, c.QueryParams()["theme"])
+		filter.ApplyPlayerPerspective(fb, c.QueryParams()["player_perspective"])
+		filter.ApplyTag(fb, c.QueryParams()["tag"])
 	}
-	filter.ApplyTimeToBeat(fb, ttbMin, ttbMax)
 
 	// If sort field needs games join, add it.
 	if sortBy != "" && sortFieldsRequiringGamesJoin[sortBy] {
@@ -366,6 +402,35 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	for i, ug := range userGames {
 		dtos[i] = toUserGameWithPlatformsResponse(ug)
 	}
+
+	if poolID != "" && len(dtos) > 0 {
+		pageIDs := make([]string, len(dtos))
+		for i := range dtos {
+			pageIDs[i] = dtos[i].ID
+		}
+		var members []poolMember
+		if err := h.db.NewRaw(
+			`SELECT user_game_id, position FROM pool_games WHERE pool_id = ? AND user_game_id IN (?)`,
+			poolID, bun.List(pageIDs),
+		).Scan(ctx, &members); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		}
+		membership := make(map[string]string, len(members))
+		for _, m := range members {
+			if m.Position != nil {
+				membership[m.UserGameID] = "queued"
+			} else {
+				membership[m.UserGameID] = "candidate"
+			}
+		}
+		for i := range dtos {
+			if state, ok := membership[dtos[i].ID]; ok {
+				s := state
+				dtos[i].PoolMembership = &s
+			}
+		}
+	}
+
 	return c.JSON(http.StatusOK, UserGameListResponse{
 		UserGames: dtos,
 		Total:     total,
