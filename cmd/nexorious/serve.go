@@ -44,12 +44,15 @@ import (
 // newServeCmd returns the `serve` subcommand, the explicit way to start the
 // HTTP server. A bare `./nexorious` prints the help overview instead.
 func newServeCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the HTTP server",
 		Long:  "Start the Echo HTTP server, River worker client, and scheduler.",
 		RunE:  runServe,
 	}
+	cmd.Flags().Bool("migrate", false,
+		"Run pending database migrations before serving; abort startup if they fail")
+	return cmd
 }
 
 // runServe contains the historical main() body. It loads .env, opens the
@@ -142,18 +145,38 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	// -------------------------------------------------------------------------
-	// Single startup ping — no retry (StartDBProbe handles retries).
+	// Startup DB connection.
+	// With --migrate (issue #941): wait for the DB (retrying like the `migrate`
+	// subcommand), apply pending migrations, and abort startup on any failure
+	// rather than serving in a broken state.
+	// Without it: single ping, no retry (StartDBProbe handles retries), and
+	// pending migrations leave the app in NeedsMigration for the /migrate UI.
 	// -------------------------------------------------------------------------
-	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
-	pingErr := db.PingContext(pingCtx)
-	pingCancel()
-	if pingErr == nil {
+	migrateOnStart, _ := cmd.Flags().GetBool("migrate") //nolint:errcheck // "migrate" flag is always registered; cannot error
+	if migrateOnStart {
+		// SIGINT/SIGTERM must be able to cancel the wait/migration phase.
+		migCtx, migStop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+		err := runStartupMigrations(migCtx, db, migrator, 30*time.Second)
+		migStop()
+		if err != nil {
+			return err
+		}
 		slog.Info("database connected")
 		if err := initAppState(ctx); err != nil {
-			slog.Error("initAppState failed — starting in DBUnavailable state", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			return fmt.Errorf("serve --migrate: init app state: %w", err)
 		}
 	} else {
-		slog.Warn("database not reachable at startup — starting in DBUnavailable state", logging.KeyErr, pingErr, logging.Cat(logging.CategoryDB))
+		pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+		pingErr := db.PingContext(pingCtx)
+		pingCancel()
+		if pingErr == nil {
+			slog.Info("database connected")
+			if err := initAppState(ctx); err != nil {
+				slog.Error("initAppState failed — starting in DBUnavailable state", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			}
+		} else {
+			slog.Warn("database not reachable at startup — starting in DBUnavailable state", logging.KeyErr, pingErr, logging.Cat(logging.CategoryDB))
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -478,6 +501,29 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	slog.Info("shutdown complete")
+	return nil
+}
+
+// runStartupMigrations implements the `serve --migrate` startup path: wait for
+// the database (retrying like the `migrate` subcommand), then apply any
+// pending application and River migrations. A non-nil error means startup must
+// abort — serving with pending or half-applied migrations is never safe.
+func runStartupMigrations(ctx context.Context, db *bun.DB, migrator *migrate.Migrator, waitTimeout time.Duration) error {
+	if err := waitForDB(ctx, db, waitTimeout); err != nil {
+		return fmt.Errorf("serve --migrate: %w", err)
+	}
+	if err := migrator.DetermineState(); err != nil {
+		return fmt.Errorf("serve --migrate: determine state: %w", err)
+	}
+	if migrator.State() != migrate.AppStateNeedsMigration {
+		slog.Info("serve --migrate: no pending migrations")
+		return nil
+	}
+	migrator.SetLogWriter(slog.NewLogLogger(slog.Default().Handler(), slog.LevelInfo).Writer())
+	if err := migrator.RunMigrations(ctx); err != nil {
+		return fmt.Errorf("serve --migrate: run migrations: %w", err)
+	}
+	slog.Info("serve --migrate: migrations complete")
 	return nil
 }
 

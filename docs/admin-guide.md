@@ -132,7 +132,7 @@ export DB_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 ./nexorious serve
 ```
 
-On the first start it detects the pending schema and serves the migration page instead of the app; apply the migrations from there, or run `./nexorious migrate` first (see [First run](#first-run)). After that it serves on `PORT` (default 8000). Building from source is covered in the [Development Guide](../DEV.md).
+On the first start it detects the pending schema and serves the migration page instead of the app; apply the migrations from there, run `./nexorious migrate` first, or start with `./nexorious serve --migrate` to do both in one go (see [First run](#first-run)). After that it serves on `PORT` (default 8000). Building from source is covered in the [Development Guide](../DEV.md).
 
 Note that the in-app backup and restore feature shells out to `pg_dump` and `psql`, so install the PostgreSQL client tools on the host if you want it; see [Backups and restore](#backups-and-restore).
 
@@ -239,8 +239,9 @@ The defaults are fine for most deployments — a typical setup only sets the dat
 
 ## First run
 
-1. **Apply migrations.** The database schema is created and updated by migrations. The running server (`serve`) never applies them itself — it's a separate step — but how that step happens depends on how you deploy:
+1. **Apply migrations.** The database schema is created and updated by migrations. By default the running server (`serve`) never applies them itself — it's a separate step — but how that step happens depends on how you deploy:
    - **Helm** runs it for you: the chart's `migrate` initContainer applies anything pending before the server starts, so there's nothing manual to do (see [Kubernetes / Helm](#kubernetes--helm)).
+   - **Single-binary or single-container setups** can opt in with `nexorious serve --migrate`: one command that applies anything pending and then serves, with no extra orchestration. It waits up to 30 seconds for the database to become reachable, and if migrations fail the server refuses to start rather than run against a broken schema. With no pending migrations it's a no-op, so the flag is safe to leave on permanently.
    - **Otherwise**, you run it yourself — either from the command line with `nexorious migrate` (and `nexorious migrate status` to preview what's pending), or through the web UI: when the server comes up against a schema that's behind, it holds back the normal interface and serves a migration page at `/migrate`, where you click to run them and watch live progress.
 
    Until the schema is up to date, the server gates every route other than the migration page.
@@ -340,7 +341,7 @@ The same binary that serves the app is also a command-line tool for tasks you do
 
 | Command | What it does |
 |---|---|
-| `nexorious serve` | Start the HTTP server, background workers, and scheduler. This is the main run command. |
+| `nexorious serve` | Start the HTTP server, background workers, and scheduler. This is the main run command. Add `--migrate` to apply any pending migrations on the way up — startup aborts if they fail, rather than serving against a broken schema. |
 | `nexorious migrate` | Apply any pending database migrations and exit. Useful as an init step in orchestrated deployments. |
 | `nexorious migrate status` | Show how many migrations are pending and the current schema version, without changing anything. |
 | `nexorious setup` | Create the first admin user against a running server — good for headless installs. Supports `--username` and reading the password from stdin (`--password-stdin`), and can store an API key for you with `--login`. |
@@ -360,7 +361,7 @@ The same binary that serves the app is also a command-line tool for tasks you do
 
 ## Upgrades and versioning
 
-Schema changes ship as migrations, applied as a step separate from the running server. On Helm, the chart's `migrate` initContainer handles this automatically on each deploy. On other deployments you apply them yourself — run `nexorious migrate`, or let the server come up against the new schema and use the `/migrate` page it serves. So a normal upgrade is: take a backup, deploy the new version, make sure migrations are applied (automatic on Helm; `nexorious migrate` or the `/migrate` page otherwise), done.
+Schema changes ship as migrations, applied as a step separate from the running server. On Helm, the chart's `migrate` initContainer handles this automatically on each deploy. On other deployments you apply them yourself — run `nexorious migrate`, start the server with `serve --migrate`, or let the server come up against the new schema and use the `/migrate` page it serves. So a normal upgrade is: take a backup, deploy the new version, make sure migrations are applied (automatic on Helm; `nexorious migrate`, `serve --migrate`, or the `/migrate` page otherwise), done.
 
 With the `.deb`/`.rpm` packages, a normal `apt upgrade` / `dnf upgrade` replaces the binary and preserves your `/etc/nexorious/nexorious.env` — the env file is a conffile (`%config(noreplace)` on rpm), so your settings and the generated `DB_ENCRYPTION_KEY` survive the upgrade, and the service is restarted only if it was already running. Removal differs by family: `apt purge` deletes `/var/lib/nexorious` **including backups** and removes the `nexorious` user (a true clean uninstall), while a plain `apt remove` and any `dnf` uninstall leave config, key, and data in place for a later reinstall (rpm keeps a modified env file as `nexorious.env.rpmsave`).
 
