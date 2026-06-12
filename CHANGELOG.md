@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.12.0](https://github.com/drzero42/nexorious/compare/v0.11.1...v0.12.0) (2026-06-12)
+
+
+### Features
+
+* add --migrate flag to serve to run migrations on startup ([#950](https://github.com/drzero42/nexorious/issues/950)) ([36c02c4](https://github.com/drzero42/nexorious/commit/36c02c486743dbf82ba74c70f304db3fd3cf0624)), closes [#941](https://github.com/drzero42/nexorious/issues/941)
+* add Loki + VictoriaLogs alert rules with opt-in Helm delivery ([#930](https://github.com/drzero42/nexorious/issues/930)) ([f75bf3c](https://github.com/drzero42/nexorious/commit/f75bf3c5e315de3d95f2207c932fcbb005219a9e))
+* harden Helm chart for secret rotation and RWO storage ([#933](https://github.com/drzero42/nexorious/issues/933)) ([c10d0a7](https://github.com/drzero42/nexorious/commit/c10d0a7c17eb011de3ca9412f559ee03f5cee6c4))
+* metrics-based alert rules (PrometheusRule + VMRule) ([#913](https://github.com/drzero42/nexorious/issues/913)) ([#938](https://github.com/drzero42/nexorious/issues/938)) ([34d04ef](https://github.com/drzero42/nexorious/commit/34d04efa5d033b8fb3ae6d9a74c13bc2586165eb))
+* observability deployment — local Grafana stack + Helm ServiceMonitor & dashboard ([#940](https://github.com/drzero42/nexorious/issues/940)) ([8105aa8](https://github.com/drzero42/nexorious/commit/8105aa878f758eb8f19a53a3dc603ce4305d310e)), closes [#912](https://github.com/drzero42/nexorious/issues/912)
+* OpenTelemetry metrics foundation + pprof endpoint ([#931](https://github.com/drzero42/nexorious/issues/931)) ([5ac1dcb](https://github.com/drzero42/nexorious/commit/5ac1dcbd2db1088bc8541624dd0bdd4f99ea5f03)), closes [#910](https://github.com/drzero42/nexorious/issues/910)
+* opt-in OTLP tracing for the sync pipeline ([#934](https://github.com/drzero42/nexorious/issues/934)) ([3fd94c9](https://github.com/drzero42/nexorious/commit/3fd94c9ca0cb6036783cf72ec645df4ada2a667b))
+* sharpen structured logging (correlation ids, leveling, taxonomy) ([#924](https://github.com/drzero42/nexorious/issues/924)) ([42546df](https://github.com/drzero42/nexorious/commit/42546dfdf7757cd7a3bef7c9729ec98740d48afb)), closes [#907](https://github.com/drzero42/nexorious/issues/907)
+
+
+### Bug Fixes
+
+* close logging gaps blocking log-based alert rules ([#927](https://github.com/drzero42/nexorious/issues/927)) ([4f2d91c](https://github.com/drzero42/nexorious/commit/4f2d91c0f1cd0eb3c9eaadaeb681762eeb26cbff))
+* drain in-flight River jobs on graceful shutdown ([#959](https://github.com/drzero42/nexorious/issues/959)) ([bbb3faa](https://github.com/drzero42/nexorious/commit/bbb3faa6111823a74854469a63e937c49ca562f6)), closes [#947](https://github.com/drzero42/nexorious/issues/947)
+* harden Helm/deploy observability schema and guards ([#958](https://github.com/drzero42/nexorious/issues/958)) ([06240ae](https://github.com/drzero42/nexorious/commit/06240aea581aa1ac122f658ca103ab1117feda80)), closes [#946](https://github.com/drzero42/nexorious/issues/946)
+* harden HTTP surface and finish structured-logging sweep ([#957](https://github.com/drzero42/nexorious/issues/957)) ([2ec50ab](https://github.com/drzero42/nexorious/commit/2ec50ab338b94df81b2c73bf9b1bfe9a6ecc92cb)), closes [#945](https://github.com/drzero42/nexorious/issues/945)
+* make alert rules fire and record hard-failed syncs in metrics ([#953](https://github.com/drzero42/nexorious/issues/953)) ([716536c](https://github.com/drzero42/nexorious/commit/716536c0e0a58faa3b6ba676345244fc8987c276)), closes [#944](https://github.com/drzero42/nexorious/issues/944)
+* make TestLoad_ObservabilityDefaults hermetic against ambient OTel/pprof env ([#948](https://github.com/drzero42/nexorious/issues/948)) ([8bc997f](https://github.com/drzero42/nexorious/commit/8bc997f6b25896c1fc564db4d8c4e62fc05a40f8)), closes [#936](https://github.com/drzero42/nexorious/issues/936)
+* make the logging pipeline see panic and River boundaries ([#952](https://github.com/drzero42/nexorious/issues/952)) ([adae3a5](https://github.com/drzero42/nexorious/commit/adae3a535ff29094ce434290e6e601eb461ce03d)), closes [#943](https://github.com/drzero42/nexorious/issues/943)
+* scrub credential-bearing URL queries from logs and persisted errors ([#949](https://github.com/drzero42/nexorious/issues/949)) ([2943879](https://github.com/drzero42/nexorious/commit/2943879c4062d26eb54102089972b50985e3351c)), closes [#937](https://github.com/drzero42/nexorious/issues/937)
+* tag retryInsert unsupported job_type log with validation category ([#929](https://github.com/drzero42/nexorious/issues/929)) ([3dbd990](https://github.com/drzero42/nexorious/commit/3dbd99012ae0f88c7959aa8306def99c421c2cf2)), closes [#928](https://github.com/drzero42/nexorious/issues/928)
+
 ## [0.11.1](https://github.com/drzero42/nexorious/compare/v0.11.0...v0.11.1) (2026-06-10)
 
 
