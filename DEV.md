@@ -231,6 +231,11 @@ cp deploy/docker/.env.dev.example deploy/docker/.env.dev
 docker compose -f deploy/docker/docker-compose.dev.yml --env-file deploy/docker/.env.dev up --build
 ```
 
+> **BuildKit required.** The app is built from the repo `Dockerfile`, which uses
+> `COPY --chmod`. Modern Docker enables BuildKit by default; if the build fails
+> with `the --chmod option requires BuildKit`, prefix the command with
+> `DOCKER_BUILDKIT=1` (and `COMPOSE_DOCKER_CLI_BUILD=1` on older Compose).
+
 | Service | URL |
 |---|---|
 | App | <http://localhost:8000> |

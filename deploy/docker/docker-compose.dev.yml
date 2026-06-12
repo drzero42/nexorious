@@ -10,6 +10,11 @@
 #   # edit deploy/docker/.env.dev (set DB_ENCRYPTION_KEY; IGDB_* optional)
 #   docker compose -f deploy/docker/docker-compose.dev.yml --env-file deploy/docker/.env.dev up --build
 #
+# Requires BuildKit (the app Dockerfile uses COPY --chmod). Modern Docker enables
+# it by default; if the build fails with "the --chmod option requires BuildKit",
+# prefix the command with DOCKER_BUILDKIT=1 (and COMPOSE_DOCKER_CLI_BUILD=1 on
+# older Compose).
+#
 # Then open:
 #   App:     http://localhost:8000
 #   Grafana: http://localhost:3000   (dashboard "Nexorious — Observability")

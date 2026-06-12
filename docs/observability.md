@@ -38,6 +38,10 @@ cp deploy/docker/.env.dev.example deploy/docker/.env.dev
 docker compose -f deploy/docker/docker-compose.dev.yml --env-file deploy/docker/.env.dev up --build
 ```
 
+The app is built from the repo `Dockerfile`, which uses `COPY --chmod` and so
+requires BuildKit. Modern Docker enables it by default; if the build fails with
+`the --chmod option requires BuildKit`, prefix the command with `DOCKER_BUILDKIT=1`.
+
 **How telemetry flows:**
 
 - **Traces** are pushed from the app to otel-lgtm via OTLP
