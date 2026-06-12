@@ -37,6 +37,9 @@ func TestWorkerErrorHandler_HandlePanic_EmitsPanicLine(t *testing.T) {
 	if m[KeyErr] != "nil map write" {
 		t.Errorf("err = %v, want \"nil map write\"", m[KeyErr])
 	}
+	if m[KeyStack] != "goroutine 1 [running]:" {
+		t.Errorf("stack = %v, want the recovered trace", m[KeyStack])
+	}
 	if m["level"] != "ERROR" {
 		t.Errorf("level = %v, want ERROR", m["level"])
 	}
