@@ -232,9 +232,10 @@ docker compose -f deploy/docker/docker-compose.dev.yml --env-file deploy/docker/
 ```
 
 > **BuildKit required.** The app is built from the repo `Dockerfile`, which uses
-> `COPY --chmod`. Modern Docker enables BuildKit by default; if the build fails
-> with `the --chmod option requires BuildKit`, prefix the command with
-> `DOCKER_BUILDKIT=1` (and `COMPOSE_DOCKER_CLI_BUILD=1` on older Compose).
+> `COPY --chmod`. The devenv shell exports `DOCKER_BUILDKIT=1` /
+> `COMPOSE_DOCKER_CLI_BUILD=1` (see `devenv.nix`), so this just works inside it.
+> Running outside devenv on a Docker that doesn't default to BuildKit? Prefix the
+> command with `DOCKER_BUILDKIT=1` to avoid `the --chmod option requires BuildKit`.
 
 | Service | URL |
 |---|---|

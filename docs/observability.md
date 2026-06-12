@@ -39,8 +39,9 @@ docker compose -f deploy/docker/docker-compose.dev.yml --env-file deploy/docker/
 ```
 
 The app is built from the repo `Dockerfile`, which uses `COPY --chmod` and so
-requires BuildKit. Modern Docker enables it by default; if the build fails with
-`the --chmod option requires BuildKit`, prefix the command with `DOCKER_BUILDKIT=1`.
+requires BuildKit. The devenv shell sets `DOCKER_BUILDKIT=1` for you; outside it,
+if the build fails with `the --chmod option requires BuildKit`, prefix the command
+with `DOCKER_BUILDKIT=1`.
 
 **How telemetry flows:**
 
