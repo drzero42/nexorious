@@ -3,20 +3,34 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PlatformIconList } from '@/components/ui/platform-icon';
 import type { UserGame } from '@/types';
+import type { ReactNode } from 'react';
 import { Timer, Gamepad2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatTtb, formatIgdbRating, formatHoursPlayed, getCoverUrl } from '@/lib/game-utils';
 import { statusColors, statusLabels } from '@/lib/play-status';
+import { isBuyFirst } from '@/lib/game-flags';
 
 export interface GameCardProps {
   game: UserGame;
   selected?: boolean;
   onSelect?: (id: string) => void;
   onClick?: () => void;
+  /** Optional overlay rendered top-right (e.g. a drag handle or per-card menu). */
+  topRightSlot?: ReactNode;
+  /** Optional action row rendered below the card body (e.g. "+ add" / "promote"). */
+  actionsSlot?: ReactNode;
 }
 
-export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
+export function GameCard({
+  game,
+  selected,
+  onSelect,
+  onClick,
+  topRightSlot,
+  actionsSlot,
+}: GameCardProps) {
   const coverUrl = getCoverUrl(game);
+  const buyFirst = isBuyFirst(game);
 
   return (
     <Card
@@ -85,6 +99,22 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
             </span>
           </div>
         )}
+
+        {/* Buy-first badge */}
+        {buyFirst && (
+          <div className="absolute top-2 right-10">
+            <Badge variant="secondary" className="text-xs">
+              Buy first
+            </Badge>
+          </div>
+        )}
+
+        {/* Top-right slot (e.g. drag handle) */}
+        {topRightSlot && (
+          <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
+            {topRightSlot}
+          </div>
+        )}
       </div>
 
       <CardContent className="p-3">
@@ -129,6 +159,13 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
               {formatTtb(game.game?.howlongtobeat_extra)} /{' '}
               {formatTtb(game.game?.howlongtobeat_completionist)}
             </span>
+          </div>
+        )}
+
+        {/* Actions slot (e.g. promote / remove buttons) */}
+        {actionsSlot && (
+          <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+            {actionsSlot}
           </div>
         )}
       </CardContent>
