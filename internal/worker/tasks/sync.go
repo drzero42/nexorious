@@ -354,6 +354,13 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 	msg = logging.ScrubURLQueries(msg) // never leak URL query credentials into the event payload
 	markSyncJobFailed(ctx, db, jobID, msg)
 	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
+	// Record the hard failure so it surfaces in nexorious_sync_total alongside
+	// completed / completed_with_errors; without this a storefront that always
+	// hard-fails produces zero metric signal. Guard empty storefront (lookup
+	// failure) to avoid a polluting source="" series, matching finalizeJobCompleted.
+	if storefront != "" {
+		observability.RecordSyncOutcome(ctx, storefront, "failed")
+	}
 	notify.Emit(ctx, db, notify.EmitParams{
 		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: userID,
 		Payload:  notify.SyncFailedPayload{Storefront: storefront, Error: msg, JobID: jobID},
@@ -369,6 +376,11 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 // notification is sent, so repeated scheduled syncs do not nag.
 func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, priorErr bool) {
 	markSyncJobFailed(ctx, db, p.JobID, "credentials error")
+	// A credentials failure is a hard sync failure; record it so it is visible
+	// in nexorious_sync_total rather than silently absent (see failSyncJob).
+	if p.Storefront != "" {
+		observability.RecordSyncOutcome(ctx, p.Storefront, "failed")
+	}
 	if _, err := db.NewRaw(
 		`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
 		p.UserID, p.Storefront,
