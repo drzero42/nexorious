@@ -41,6 +41,12 @@ import (
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
+// riverDrainTimeout bounds how long graceful shutdown waits for in-flight River
+// jobs to finish their current unit of work before escalating to a hard cancel.
+// Sized to stay within the Kubernetes default terminationGracePeriodSeconds (30s)
+// alongside the HTTP server's own graceful timeout and the hard-cancel fallback.
+const riverDrainTimeout = 20 * time.Second
+
 // newServeCmd returns the `serve` subcommand, the explicit way to start the
 // HTTP server. A bare `./nexorious` prints the help overview instead.
 func newServeCmd() *cobra.Command {
@@ -324,6 +330,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	shutdownCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// River runs on a context independent of the OS signal. If River were started
+	// on shutdownCtx, SIGTERM would hard-cancel in-flight jobs immediately (River
+	// cancels running-job contexts when the Start context is cancelled). Instead we
+	// keep River's lifecycle separate and drain it explicitly at the shutdown site.
+	riverCtx, riverCancel := context.WithCancel(context.Background())
+	defer riverCancel()
+
 	restoreCallbacks := &api.RestoreCallbacks{
 		SetMaintenance: maint.SetMaintenanceMode,
 		ShutdownPool:   func() {},
@@ -423,7 +436,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newUserGame.RiverClient = newClient
 			newDarkadiaMatch.RiverClient = newClient
 
-			if err := newClient.Start(shutdownCtx); err != nil {
+			if err := newClient.Start(riverCtx); err != nil {
 				return fmt.Errorf("RebuildServices: River start: %w", err)
 			}
 
@@ -452,17 +465,19 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// StartDBProbe — polls every 5s, calls initAppState on recovery.
 	migrator.StartDBProbe(shutdownCtx, db, initAppState)
 
-	// River start gate — waits for Ready && !NeedsSetup.
-	go func(ctx context.Context) {
+	// River start gate — waits for Ready && !NeedsSetup. The gate watches
+	// shutdownCtx so it stops polling if the process is shutting down, but starts
+	// River on riverCtx so SIGTERM doesn't hard-cancel jobs the moment they begin.
+	go func(watchCtx, riverCtx context.Context) {
 		for {
 			select {
-			case <-ctx.Done():
+			case <-watchCtx.Done():
 				return
 			default:
 			}
 			if migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() {
 				reconcileOrphanedDispatchJobs(context.Background(), db)
-				if err := riverClient.Start(ctx); err != nil {
+				if err := riverClient.Start(riverCtx); err != nil {
 					slog.Error("failed to start River client", logging.KeyErr, err)
 				}
 				slog.Info("app ready — River client started")
@@ -470,7 +485,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			}
 			time.Sleep(2 * time.Second)
 		}
-	}(shutdownCtx)
+	}(shutdownCtx, riverCtx)
 
 	if cfg.PprofEnabled {
 		startPprofServer(cfg.PprofAddr)
@@ -489,9 +504,20 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		slog.Info("server stopped", logging.KeyErr, err)
 	}
 
-	// Graceful shutdown sequence.
-	if err := riverClient.Stop(shutdownCtx); err != nil {
-		slog.Warn("River client stop", logging.KeyErr, err)
+	// Graceful shutdown: drain in-flight River jobs. River was started on riverCtx
+	// (independent of the OS signal), so SIGTERM has not cancelled running jobs —
+	// Stop lets each in-flight job finish its current unit of work, bounded by
+	// riverDrainTimeout. If the drain budget is exceeded, escalate to StopAndCancel
+	// so a stuck job can't hold shutdown past the Kubernetes grace period.
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), riverDrainTimeout)
+	defer drainCancel()
+	if err := riverClient.Stop(drainCtx); err != nil {
+		slog.Warn("River graceful drain exceeded budget — cancelling in-flight jobs", logging.KeyErr, err)
+		hardCtx, hardCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer hardCancel()
+		if err := riverClient.StopAndCancel(hardCtx); err != nil {
+			slog.Warn("River hard stop", logging.KeyErr, err)
+		}
 	}
 
 	// Flush and stop the providers last (tracer first, then meter) so in-flight
