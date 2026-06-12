@@ -77,6 +77,7 @@ interface UserGameApiResponse {
   personal_notes?: string;
   platforms: UserGamePlatformApiResponse[];
   tags?: Tag[];
+  pool_membership?: 'queued' | 'candidate';
   created_at: string;
   updated_at: string;
 }
@@ -631,5 +632,37 @@ export async function getFilterOptions(): Promise<FilterOptions> {
     gameModes: response.game_modes,
     themes: response.themes,
     playerPerspectives: response.player_perspectives,
+  };
+}
+
+export interface PoolSuggestionsParams {
+  poolId: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  page?: number;
+  perPage?: number;
+}
+
+/**
+ * Suggestions for a pool: owned+wishlist games matching the pool's OR-of-cards
+ * filter (finished statuses excluded), each annotated with pool_membership.
+ * Served by GET /api/games?pool=:id (same envelope as /user-games).
+ */
+export async function getPoolSuggestions(
+  params: PoolSuggestionsParams,
+): Promise<UserGamesListResponse> {
+  const searchParams = new URLSearchParams();
+  searchParams.append('pool', params.poolId);
+  appendParam(searchParams, 'sort_by', params.sortBy);
+  appendParam(searchParams, 'sort_order', params.sortOrder);
+  appendParam(searchParams, 'page', params.page);
+  appendParam(searchParams, 'per_page', params.perPage);
+  const response = await api.get<UserGameListApiResponse>(`/games?${searchParams.toString()}`);
+  return {
+    items: response.user_games.map(transformUserGame),
+    total: response.total,
+    page: response.page,
+    perPage: response.per_page,
+    pages: response.pages,
   };
 }
