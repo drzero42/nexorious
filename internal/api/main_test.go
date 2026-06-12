@@ -16,7 +16,9 @@ import (
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
 	bunmigrate "github.com/uptrace/bun/migrate"
+	"golang.org/x/crypto/bcrypt"
 
+	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/migrations"
 )
@@ -33,6 +35,11 @@ var testEncrypter *crypto.Encrypter
 var testConnStr string
 
 func TestMain(m *testing.M) {
+	// Password hashing at the production cost (12) dominates this package's
+	// runtime — the suite creates and logs in hundreds of users. Tests don't
+	// exercise the cost factor itself, so drop it to the cheapest setting.
+	auth.BcryptCost = bcrypt.MinCost
+
 	ctx := context.Background()
 
 	ctr, err := tcpostgres.Run(ctx,
