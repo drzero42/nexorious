@@ -111,6 +111,11 @@ func TestLoad_ObservabilityDefaults(t *testing.T) {
 	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
 	t.Setenv("IGDB_CLIENT_ID", "testclientid")
 	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
+	// Isolate from ambient OTel/pprof env; empty values fall back to envDefault.
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	t.Setenv("OTEL_METRICS_ENABLED", "")
+	t.Setenv("PPROF_ENABLED", "")
+	t.Setenv("PPROF_ADDR", "")
 
 	cfg, err := config.Load()
 	if err != nil {
