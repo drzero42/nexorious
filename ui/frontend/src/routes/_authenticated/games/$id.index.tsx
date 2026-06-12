@@ -27,6 +27,7 @@ import {
 import {
   ArrowLeft,
   Edit,
+  ListPlus,
   Trash2,
   Heart,
   Clock,
@@ -34,6 +35,7 @@ import {
   Gamepad2,
   Library,
 } from 'lucide-react';
+import { AddToPoolDialog } from '@/components/pools/add-to-pool-dialog';
 import { StarRating } from '@/components/ui/star-rating';
 import { StorefrontLabel } from '@/components/storefront-link';
 import {
@@ -223,6 +225,7 @@ export function GameDetailPage() {
   const { id: gameId } = Route.useParams();
   const navigate = useNavigate();
   const [moveDialogOpen, setMoveDialogOpen] = React.useState(false);
+  const [showPoolDialog, setShowPoolDialog] = React.useState(false);
 
   const { data: game, isLoading, error } = useUserGame(gameId);
   const deleteGame = useDeleteUserGame();
@@ -267,6 +270,10 @@ export function GameDetailPage() {
           Back to Games
         </Button>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setShowPoolDialog(true)}>
+            <ListPlus className="mr-2 h-4 w-4" />
+            Add to pool
+          </Button>
           <Button
             variant="outline"
             onClick={() => navigate({ to: '/games/$id/edit', params: { id: gameId } })}
@@ -297,6 +304,11 @@ export function GameDetailPage() {
           </AlertDialog>
         </div>
       </div>
+      <AddToPoolDialog
+        userGameId={game.id}
+        open={showPoolDialog}
+        onOpenChange={setShowPoolDialog}
+      />
 
       {/* Main Content */}
       <Card>

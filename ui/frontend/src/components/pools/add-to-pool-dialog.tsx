@@ -30,6 +30,7 @@ export interface MembershipRow {
  * Merge the full pool list with this game's memberships into checkbox rows.
  * `memberships` undefined (e.g. #971 read failed) degrades to all-unchecked.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- co-located pure helper, unit-tested
 export function mergeMembership(
   pools: PoolListItem[],
   memberships: PoolMembership[] | undefined,
