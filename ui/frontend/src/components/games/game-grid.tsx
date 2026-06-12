@@ -2,6 +2,8 @@ import { GameCard } from './game-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { UserGame } from '@/types';
 
+const gridClasses = 'grid grid-cols-[repeat(auto-fill,minmax(min(180px,45%),1fr))] gap-4';
+
 export interface GameGridProps {
   games: UserGame[];
   isLoading?: boolean;
@@ -29,7 +31,7 @@ export function GameGrid({
 }: GameGridProps) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+      <div className={gridClasses}>
         {Array.from({ length: 12 }).map((_, i) => (
           <GameCardSkeleton key={i} />
         ))}
@@ -47,7 +49,7 @@ export function GameGrid({
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+    <div className={gridClasses}>
       {games.map((game) => (
         <GameCard
           key={game.id}
