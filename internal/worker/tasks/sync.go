@@ -328,7 +328,10 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 // markSyncJobFailed marks a job as failed with the given error message and
 // cancels any pending job_items for that job so they are not left orphaned. It
 // performs no notification — callers decide which event (if any) to emit.
+// msg is scrubbed of URL query strings before persisting: a fetch failure's
+// *url.Error embeds the full request URL, query-string credentials included.
 func markSyncJobFailed(ctx context.Context, db *bun.DB, jobID, msg string) {
+	msg = logging.ScrubURLQueries(msg)
 	now := time.Now().UTC()
 	if _, err := db.NewRaw(
 		`UPDATE jobs SET status = 'failed', error_message = ?, completed_at = ? WHERE id = ?`,
@@ -348,6 +351,7 @@ func markSyncJobFailed(ctx context.Context, db *bun.DB, jobID, msg string) {
 // generic sync.failed notification. Used for all non-credential failures;
 // credential failures go through handleCredentialError instead.
 func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
+	msg = logging.ScrubURLQueries(msg) // never leak URL query credentials into the event payload
 	markSyncJobFailed(ctx, db, jobID, msg)
 	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
 	notify.Emit(ctx, db, notify.EmitParams{

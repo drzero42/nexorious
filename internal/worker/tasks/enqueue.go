@@ -89,6 +89,7 @@ func FinalizeArgsForSource(source, jobItemID string) (river.JobArgs, error) {
 }
 
 func markEnqueueFailed(ctx context.Context, db *bun.DB, jobItemID, msg string) {
+	msg = logging.ScrubURLQueries(msg) // never persist URL query credentials (#937)
 	now := time.Now().UTC()
 	if _, err := db.NewRaw(
 		`UPDATE job_items SET status = ?, error_message = ?, processed_at = ?

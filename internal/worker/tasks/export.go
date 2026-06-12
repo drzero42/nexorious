@@ -134,8 +134,10 @@ func loadUserGamesWithRelations(ctx context.Context, db *bun.DB, userID string) 
 	return ugs, nil
 }
 
-// markJobFailed sets the job status to failed with an error message.
+// markJobFailed sets the job status to failed with an error message. errMsg is
+// scrubbed of URL query strings before persisting (#937).
 func markJobFailed(ctx context.Context, db *bun.DB, job *models.Job, errMsg string) {
+	errMsg = logging.ScrubURLQueries(errMsg)
 	now := time.Now().UTC()
 	job.Status = models.JobStatusFailed
 	job.ErrorMessage = &errMsg
