@@ -496,3 +496,95 @@ func TestPoolSuggestionNullFilterEmpty(t *testing.T) {
 		t.Fatalf("expected empty result for NULL-filter pool, got total=%d", resp.Total)
 	}
 }
+
+// poolMembershipItem mirrors the GET /api/pools/memberships response element.
+type poolMembershipItem struct {
+	PoolID   string `json:"pool_id"`
+	Position *int   `json:"position"`
+}
+
+func TestPoolMembershipsForGame(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "memberships")
+
+	gid := insertTestGame(t, testDB, "Mem Game")
+	insertTestUserGame(t, testDB, "ug-mem", userID, int(gid))
+
+	t.Run("game in no pools returns empty array", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/pools/memberships?user_game_id=ug-mem", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var got []poolMembershipItem
+		mustUnmarshal(t, rec, &got)
+		if got == nil {
+			t.Fatal("expected non-nil empty array, got null")
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected 0 memberships, got %d: %+v", len(got), got)
+		}
+	})
+
+	t.Run("game in N pools reports pool_id + position", func(t *testing.T) {
+		insertPool(t, testDB, "pool-queued", userID, "Queued Pool", 0)
+		insertPool(t, testDB, "pool-cand", userID, "Candidate Pool", 1)
+		insertPool(t, testDB, "pool-empty", userID, "Unrelated Pool", 2)
+		pos := 0
+		insertPoolGame(t, testDB, "pool-queued", "ug-mem", &pos) // queued at position 0
+		insertPoolGame(t, testDB, "pool-cand", "ug-mem", nil)    // candidate
+
+		rec := getAuth(t, e, "/api/pools/memberships?user_game_id=ug-mem", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var got []poolMembershipItem
+		mustUnmarshal(t, rec, &got)
+		if len(got) != 2 {
+			t.Fatalf("expected 2 memberships, got %d: %+v", len(got), got)
+		}
+		byPool := make(map[string]*int, len(got))
+		for _, m := range got {
+			byPool[m.PoolID] = m.Position
+		}
+		queuedPos, ok := byPool["pool-queued"]
+		if !ok || queuedPos == nil || *queuedPos != 0 {
+			t.Fatalf("expected pool-queued at position 0, got %+v", byPool["pool-queued"])
+		}
+		candPos, ok := byPool["pool-cand"]
+		if !ok || candPos != nil {
+			t.Fatalf("expected pool-cand as candidate (null position), got %+v", candPos)
+		}
+		if _, ok := byPool["pool-empty"]; ok {
+			t.Fatal("unrelated pool should not appear in memberships")
+		}
+	})
+
+	t.Run("another user's game returns 404", func(t *testing.T) {
+		otherID, _ := setupUserGamesUser(t, testDB, e, "memberships-other")
+		ogid := insertTestGame(t, testDB, "Other Mem Game")
+		insertTestUserGame(t, testDB, "ug-other-mem", otherID, int(ogid))
+
+		rec := getAuth(t, e, "/api/pools/memberships?user_game_id=ug-other-mem", token)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for another user's game, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("missing user_game_id is a 400", func(t *testing.T) {
+		rec := getAuth(t, e, "/api/pools/memberships", token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("unauthorized without a session", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/pools/memberships?user_game_id=ug-mem", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}

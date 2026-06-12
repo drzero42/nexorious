@@ -404,6 +404,53 @@ func (h *PoolsHandler) loadUserGameCards(ctx context.Context, ids []string) (map
 	return out, nil
 }
 
+// poolMembershipResponse is one element of GET /api/pools/memberships — a pool
+// the given user_game belongs to, with its queue position (NULL = candidate).
+type poolMembershipResponse struct {
+	PoolID   string `json:"pool_id" bun:"pool_id"`
+	Position *int   `json:"position" bun:"position"`
+}
+
+// HandleListGameMemberships handles GET /api/pools/memberships?user_game_id=:id —
+// the pools a given user_game belongs to, for the Add-to-pool toggle (#971).
+// Returns an empty array when the game is in no pools; 404 if the user_game does
+// not exist or is not the caller's.
+func (h *PoolsHandler) HandleListGameMemberships(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	userGameID := c.QueryParam("user_game_id")
+	if userGameID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "user_game_id is required")
+	}
+	ctx := context.Background()
+
+	// user_game must exist and belong to the caller.
+	ugOK, err := h.db.NewSelect().Table("user_games").
+		Where("id = ? AND user_id = ?", userGameID, userID).Exists(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if !ugOK {
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+
+	memberships := []poolMembershipResponse{}
+	err = h.db.NewRaw(`
+		SELECT pg.pool_id, pg.position
+		FROM pool_games pg
+		JOIN pools p ON p.id = pg.pool_id
+		WHERE p.user_id = ? AND pg.user_game_id = ?
+		ORDER BY p.position`,
+		userID, userGameID,
+	).Scan(ctx, &memberships)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	return c.JSON(http.StatusOK, memberships)
+}
+
 // addPoolGameRequest is the body for POST /api/pools/:id/games.
 type addPoolGameRequest struct {
 	UserGameID string `json:"user_game_id"`
