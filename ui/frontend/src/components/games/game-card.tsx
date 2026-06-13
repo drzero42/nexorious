@@ -82,37 +82,34 @@ export function GameCard({
           </div>
         )}
 
-        {/* Status badge — hidden for wishlisted entries */}
-        {!game.is_wishlisted && (
+        {/* Bottom-left badge: play status, or "Buy first" for wishlisted-unowned
+            entries (which carry the badge instead of a play affordance). */}
+        {buyFirst ? (
           <div className="absolute bottom-2 left-2">
-            <Badge className={cn('text-white border-0', statusColors[game.play_status])}>
-              {statusLabels[game.play_status]}
-            </Badge>
-          </div>
-        )}
-
-        {/* Loved indicator */}
-        {game.is_loved && (
-          <div className="absolute top-2 right-2">
-            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 text-sm">
-              &#9829;
-            </span>
-          </div>
-        )}
-
-        {/* Buy-first badge */}
-        {buyFirst && (
-          <div className="absolute top-2 right-10">
             <Badge variant="secondary" className="text-xs">
               Buy first
             </Badge>
           </div>
+        ) : (
+          !game.is_wishlisted && (
+            <div className="absolute bottom-2 left-2">
+              <Badge className={cn('text-white border-0', statusColors[game.play_status])}>
+                {statusLabels[game.play_status]}
+              </Badge>
+            </div>
+          )
         )}
 
-        {/* Top-right slot (e.g. drag handle) */}
-        {topRightSlot && (
-          <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
-            {topRightSlot}
+        {/* Top-right row: loved heart and an optional context slot (e.g. drag
+            handle) sit side by side so they never overlap. */}
+        {(game.is_loved || topRightSlot) && (
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+            {game.is_loved && (
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 text-sm">
+                &#9829;
+              </span>
+            )}
+            {topRightSlot && <div onClick={(e) => e.stopPropagation()}>{topRightSlot}</div>}
           </div>
         )}
       </div>
