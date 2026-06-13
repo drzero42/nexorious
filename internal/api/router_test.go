@@ -549,3 +549,27 @@ func TestMetricsEndpoint_ServedAndBypassesGates(t *testing.T) {
 		}
 	})
 }
+
+// TestMetricsEndpoint_404WhenDisabled guards against the route falling through to
+// the SPA catch-all when metrics are off: a scrape must get a clean 404, not
+// index.html with 200. Init with metrics disabled deterministically sets
+// MetricsHandler() nil regardless of test order.
+func TestMetricsEndpoint_404WhenDisabled(t *testing.T) {
+	prov, err := observability.Init(&config.Config{OTELServiceName: "nexorious-test", OTELMetricsEnabled: false}, "test")
+	if err != nil {
+		t.Fatalf("observability.Init: %v", err)
+	}
+	t.Cleanup(func() { _ = prov.Shutdown(context.Background()) })
+
+	e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateReady), nil, "", nil, nil, nil, "dev", "unknown", nil)
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for /metrics when metrics disabled, got %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); strings.Contains(ct, "html") {
+		t.Errorf("/metrics returned HTML (SPA fall-through), content-type %q", ct)
+	}
+}

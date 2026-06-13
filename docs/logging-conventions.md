@@ -87,9 +87,9 @@ The governing rule: **if the surrounding code handles the condition and continue
 `internal/logging/keys.go` is the single source of truth. Use the `Key*` constants
 instead of string literals so keys never drift:
 
-`KeyRequestID`, `KeyJobID`, `KeyRiverJobID`, `KeyJobType`, `KeyUserID`, `KeySource`,
-`KeyOperation`, `KeyExternalGameID`, `KeyDurationMS`, `KeyHost`, `KeyEndpoint`,
-`KeyStatus`, `KeyRoute`, `KeyOutcome`, `KeyCategory`, `KeyErr`.
+`KeyRequestID`, `KeyJobID`, `KeyRiverJobID`, `KeyTraceID`, `KeySpanID`, `KeyJobType`,
+`KeyUserID`, `KeySource`, `KeyOperation`, `KeyExternalGameID`, `KeyDurationMS`,
+`KeyHost`, `KeyEndpoint`, `KeyStatus`, `KeyRoute`, `KeyOutcome`, `KeyCategory`, `KeyErr`.
 
 Attributes that have no constant (e.g. `"item_id"`, `"appid"`, `"backup_id"`,
 `"path"`) stay as string literals. Add a constant only when a key is
@@ -174,9 +174,10 @@ status and route** (`requestLogLevel`, `internal/api/request_log_level.go`):
 | everything else (meaningful API traffic)    | `info`  |
 
 Quiet routes are static assets (`/static/*`, `/logos/*`, the SPA shell `/*`,
-`/static/app.css`) and the timer-driven UI poll endpoints
-(`/api/jobs/pending-review-count`, `/api/jobs/status/:job_type`). Add a route here when
-it generates high-volume, no-signal access lines.
+`/static/app.css`), the probe and scrape endpoints (`/health`, `/metrics`), and the
+timer-driven UI poll endpoints (`/api/jobs/pending-review-count`,
+`/api/jobs/status/:job_type`). Add a route here when it generates high-volume,
+no-signal access lines.
 
 ## Secrets and PII
 
@@ -193,8 +194,10 @@ Never log a credential or PII value. Specifically:
 - The logging `RoundTripper` strips the URL query string before logging — this both
   bounds cardinality and prevents leaking secrets that ride in the query (notably the
   Steam API key, `...?key=...`). This is test-asserted.
-- For the rare case where a value derived from sensitive material must be logged, use
-  `logging.Redact(v)`, which returns a non-reversible masked string.
+- For the rare case where a value derived from sensitive material must be logged, an
+  available helper `logging.Redact(v)` returns a non-reversible masked string. It has
+  no call sites today — the rule above (log the error, never the secret) plus the
+  URL-query scrubber cover the current code — so reach for it only if such a case arises.
 
 A grep audit (issue #907) confirmed no slog call passes the encryption key,
 `DATABASE_URL`, decrypted credentials, tokens, or session values. Re-run it when

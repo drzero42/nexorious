@@ -195,10 +195,43 @@
       "type": "object",
       "additionalProperties": true
     },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Prometheus Operator ServiceMonitor(s) scraping the nexorious Service /metrics. Consumed by the bjw-s common library subchart (no nexorious template owns it), so the full shape is bjw-s's and left permissive here — the keys below are documented, not exhaustive.",
+      "properties": {
+        "main": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "The default ServiceMonitor entry shipped in values.yaml.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render a ServiceMonitor scraping the nexorious Service /metrics. Default off."
+            }
+          }
+        }
+      }
+    },
+    "dashboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opt-in Grafana dashboard delivery (the committed nexorious dashboard JSON).",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Render the dashboard object." },
+        "mode": { "type": "string", "enum": ["configmap", "crd"], "description": "configmap (sidecar ConfigMap) or crd (GrafanaDashboard)." },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Extra labels on the rendered object." },
+        "instanceSelector": {
+          "type": "object",
+          "description": "grafana-operator instanceSelector (crd mode).",
+          "properties": { "matchLabels": { "type": "object", "additionalProperties": { "type": "string" } } }
+        }
+      }
+    },
     "alerts": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Opt-in log-based alert rules (Loki ruler ConfigMap + VictoriaLogs VMRule). Default off.",
+      "description": "Opt-in alert rules. Log-based (Loki ruler ConfigMap; VictoriaLogs VMRule or ConfigMap) and metrics-based (PrometheusRule; VictoriaMetrics VMRule). Default off.",
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -218,7 +251,7 @@
               "additionalProperties": false,
               "description": "Discovery label the Loki ruler sidecar watches.",
               "properties": {
-                "key": { "type": "string" },
+                "key": { "type": "string", "minLength": 1, "description": "Label key; must be non-empty or the ConfigMap renders invalid YAML (a bare `: value`)." },
                 "value": { "type": "string" }
               }
             }
@@ -242,6 +275,38 @@
               "type": "object",
               "additionalProperties": { "type": "string" },
               "description": "Extra labels on the rendered object (VMRule ruleSelector match, or ConfigMap sidecar-discovery tag)."
+            }
+          }
+        },
+        "prometheus": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "PrometheusRule (Prometheus Operator) delivery for metrics-based alerts.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render the PrometheusRule (requires alerts.enabled)."
+            },
+            "ruleLabels": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Extra labels on the PrometheusRule for ruleSelector matching."
+            }
+          }
+        },
+        "victoriaMetrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "VMRule (VictoriaMetrics Operator) delivery for metrics-based alerts.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render the VMRule (requires alerts.enabled)."
+            },
+            "ruleLabels": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Extra labels on the VMRule for VMAlert ruleSelector matching."
             }
           }
         }

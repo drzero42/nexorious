@@ -220,7 +220,7 @@ func (s *Service) DeleteBackup(backupID string) error {
 		}
 		return fmt.Errorf("delete backup %s: %w", backupID, err)
 	}
-	slog.Info("backup deleted", "id", backupID) //nolint:sloglint // no ctx in DeleteBackup signature
+	slog.Info("backup deleted", "id", backupID)
 	return nil
 }
 
@@ -861,7 +861,7 @@ func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) erro
 
 	opts.SetMaintenance(false)
 
-	slog.Info("restore completed", "backup_id", backupID) //nolint:sloglint // no ctx in doRestore signature
+	slog.Info("restore completed", "backup_id", backupID)
 	return nil
 }
 

@@ -24,6 +24,13 @@ vi.mock('@/hooks', () => ({
   useSettings: vi.fn(),
   useMoveToLibrary: vi.fn(),
   useAllPlatforms: vi.fn(),
+  // Pool hooks consumed by the always-mounted AddToPoolDialog. Inline default
+  // implementations (survive vi.clearAllMocks, which only clears call history).
+  usePools: vi.fn(() => ({ data: [] })),
+  useGamePoolMemberships: vi.fn(() => ({ data: [] })),
+  useAddPoolGame: vi.fn(() => ({ mutate: vi.fn() })),
+  useRemovePoolGame: vi.fn(() => ({ mutate: vi.fn() })),
+  useCreatePool: vi.fn(() => ({ mutateAsync: vi.fn() })),
 }));
 
 // Minimal mock game — only the fields the component null-checks against

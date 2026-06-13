@@ -46,18 +46,21 @@ func appStateJSON(c *echo.Context, appState string) error {
 	return c.JSON(http.StatusServiceUnavailable, map[string]string{"app_state": appState})
 }
 
-// New creates and configures the Echo instance with all middleware and routes.
-// The caller is responsible for configuring the global slog logger before calling New.
-func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, updateState *updatecheck.State, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
-	e := echo.New()
-
-	var rc *river.Client[pgx.Tx]
-	if len(riverClient) > 0 {
-		rc = riverClient[0]
-	}
-
+// registerObservabilityMiddleware wires the panic/request-id/request-logging
+// middleware in the order the JSON logging pipeline depends on. Extracted from
+// New so tests can exercise the exact production ordering (issue #943).
+//
+// Ordering (outermost → innermost): PanicLogger → RequestID → RequestLogger →
+// Recover. RequestLogger sits OUTSIDE Recover so a handler panic — which Recover
+// converts into a *middleware.PanicStackError and returns up the chain — still
+// reaches RequestLogger, which emits the "request" access-log line with a
+// resolved 500 status. PanicLogger, outermost, then sees that same error
+// (RequestLogger returns it) and emits the distinct category=panic line. With
+// Recover outermost (the old order) the panic unwound past RequestLogger before
+// becoming an error, so panicking requests produced no access-log line at all.
+// RequestID stays outside RequestLogger so request_id is in ctx when it logs.
+func registerObservabilityMiddleware(e *echo.Echo) {
 	e.Use(PanicLogger())
-	e.Use(middleware.Recover())
 	e.Use(RequestIDMiddleware())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogStatus:    true,
@@ -86,6 +89,20 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 			return nil
 		},
 	}))
+	e.Use(middleware.Recover())
+}
+
+// New creates and configures the Echo instance with all middleware and routes.
+// The caller is responsible for configuring the global slog logger before calling New.
+func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, updateState *updatecheck.State, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
+	e := echo.New()
+
+	var rc *river.Client[pgx.Tx]
+	if len(riverClient) > 0 {
+		rc = riverClient[0]
+	}
+
+	registerObservabilityMiddleware(e)
 
 	// Gate 1: DB unavailable — redirect everything except /db-error, /health, /metrics, and /static/app.css
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -196,6 +213,14 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 	// Carries no secrets; labels are bounded (source/status/outcome, never user_id).
 	if h := observability.MetricsHandler(); h != nil {
 		e.GET("/metrics", echo.WrapHandler(h))
+	} else {
+		// Metrics disabled: answer 404 explicitly. The state gates allowlist
+		// /metrics unconditionally, so without an own route a scrape would fall
+		// through to the SPA catch-all and get index.html with 200 — masking a
+		// misconfigured scrape target as a healthy one.
+		e.GET("/metrics", func(c *echo.Context) error {
+			return c.NoContent(http.StatusNotFound)
+		})
 	}
 
 	// Version — public, not cached (changes on every deploy)
@@ -298,6 +323,20 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		tagsGroup.POST("", th.HandleCreateTag)
 		tagsGroup.PUT("/:id", th.HandleUpdateTag)
 		tagsGroup.DELETE("/:id", th.HandleDeleteTag)
+
+		// Pools routes (Play Planning, #955). Static /reorder + /memberships before /:id.
+		poolsHandler := NewPoolsHandler(db)
+		poolsGroup := e.Group("/api/pools", auth.AuthMiddleware(db))
+		poolsGroup.GET("", poolsHandler.HandleListPools)
+		poolsGroup.POST("", poolsHandler.HandleCreatePool)
+		poolsGroup.POST("/reorder", poolsHandler.HandleReorderPools)
+		poolsGroup.GET("/memberships", poolsHandler.HandleListGameMemberships)
+		poolsGroup.GET("/:id", poolsHandler.HandleGetPool)
+		poolsGroup.PUT("/:id", poolsHandler.HandleUpdatePool)
+		poolsGroup.DELETE("/:id", poolsHandler.HandleDeletePool)
+		poolsGroup.POST("/:id/games", poolsHandler.HandleAddPoolGame)
+		poolsGroup.DELETE("/:id/games/:userGameId", poolsHandler.HandleRemovePoolGame)
+		poolsGroup.PUT("/:id/queue", poolsHandler.HandleSetQueue)
 
 		// Docs routes (auth-protected; admin-guide additionally gated in-handler)
 		dch := NewDocsHandler()

@@ -16,7 +16,9 @@ import (
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
 	bunmigrate "github.com/uptrace/bun/migrate"
+	"golang.org/x/crypto/bcrypt"
 
+	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/migrations"
 )
 
@@ -25,7 +27,16 @@ import (
 // truncateAllTables(t) at the start to get a clean slate.
 var testDB *bun.DB
 
+// testDSN is the postgres:// connection string for the shared container.
+// Tests that need a pristine, un-migrated database (e.g. the serve --migrate
+// path) create their own database in the container and swap the dbname.
+var testDSN string
+
 func TestMain(m *testing.M) {
+	// The reset-password command and its fixtures hash at the production cost
+	// (12); drop it to the cheapest setting so the suite isn't bcrypt-bound.
+	auth.BcryptCost = bcrypt.MinCost
+
 	ctx := context.Background()
 
 	ctr, err := tcpostgres.Run(ctx,
@@ -49,6 +60,8 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "connection string: %v\n", err)
 		os.Exit(1)
 	}
+
+	testDSN = connStr
 
 	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
 	testDB = bun.NewDB(sqldb, pgdialect.New())

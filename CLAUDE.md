@@ -174,6 +174,8 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 ### Out-of-Scope Findings
 When working with code, if you identify a problem, bug, or inconsistency that you judge to be out-of-scope for the current task, do **not** silently fix it or ignore it — surface it and **offer to file a follow-up GitHub issue** (`gh issue create`) to track the fix. Only create the issue once the user agrees.
 
+When you do create an issue, **label it** at creation (`gh issue create --label ...`). Run `gh label list` to pick from the repo's defined set (e.g. `documentation`, `enhancement`, `bug`, `tech-debt`, `security`, `observability`) — a docs feature request is `documentation` + `enhancement`.
+
 ### Branch Workflow (MANDATORY)
 - ✅ Always create a branch before starting task work
 - ✅ Use `--squash --delete-branch` when merging PRs

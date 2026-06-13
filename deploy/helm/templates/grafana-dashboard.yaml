@@ -1,0 +1,40 @@
+{{- if .Values.dashboard.enabled }}
+{{- if eq .Values.dashboard.mode "configmap" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nexorious.fullname" . }}-dashboard
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: {{ include "nexorious.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "nexorious.chart" . }}
+    {{- with .Values.dashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  nexorious-dashboard.json: |-
+{{ .Files.Get "files/nexorious-dashboard.json" | required "files/nexorious-dashboard.json is missing from the chart" | indent 4 }}
+{{- else if eq .Values.dashboard.mode "crd" }}
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: {{ include "nexorious.fullname" . }}-dashboard
+  labels:
+    app.kubernetes.io/name: {{ include "nexorious.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "nexorious.chart" . }}
+    {{- with .Values.dashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  instanceSelector:
+    {{- toYaml .Values.dashboard.instanceSelector | nindent 4 }}
+  json: |-
+{{ .Files.Get "files/nexorious-dashboard.json" | required "files/nexorious-dashboard.json is missing from the chart" | indent 4 }}
+{{- else }}
+{{- fail (printf "dashboard.mode must be 'configmap' or 'crd', got %q" .Values.dashboard.mode) }}
+{{- end }}
+{{- end }}

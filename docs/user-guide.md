@@ -6,6 +6,19 @@ It assumes someone has already set up and is running a Nexorious server, and tha
 
 > Nexorious is under active development. Pages and details described here may change between versions, and you should expect the occasional rough edge.
 
+## Getting Started
+
+Nexorious is built around a simple idea: a **library** of the games you own and a **wishlist** of the ones you want. You fill both either by hand, a game at a time, or in bulk by **syncing** a storefront account — and whatever you add is enriched automatically with cover art and details from IGDB, so you rarely type more than a title.
+
+If you've just got an account, here's your first ten minutes:
+
+1. **Sign in** with your username and password.
+2. **Choose how to fill your library.** If your collection already lives on Steam, GOG, Epic, PlayStation, or Humble Bundle, go to **Sync** and connect an account — for most people that's the quickest way to get going, since it pulls your whole purchase history in at once. If you only want to track a handful of titles, use **Add Game** to search for them instead. You can do both, and add more anytime.
+3. **Review any sync matches.** A sync brings most games in automatically; the few Nexorious isn't sure about wait in a **Needs Review** list for you to confirm. Clearing it once leaves your library tidy.
+4. **Explore your Library.** Browse, search, and filter your collection, and start tracking where you are with each game using its **play status**.
+
+The rest of this guide is reference detail — read the parts you need when you need them.
+
 ## Signing in and getting around
 
 Open your Nexorious server in a browser and sign in with the username and password you were given (or that you created when first setting up the server). Sessions last a while, so you usually won't have to sign in again every visit.
@@ -69,7 +82,15 @@ To remove a game entirely, use the **Remove** button on its page.
 
 Nexorious is as much about working through your backlog as cataloguing it. The main tracking tools are:
 
-- **Play status** — choose from *Not Started*, *In Progress*, *Completed*, *Mastered*, *Dominated*, *Shelved*, *Dropped*, and *Replay*. Use them however makes sense to you; *Completed* through *Dominated* let you distinguish "finished the story" from "did everything."
+- **Play status** — where you are with a game. Use whichever values make sense to you; the eight options mean:
+  - *Not Started* — owned but not yet started.
+  - *In Progress* — currently playing (also where a replay goes once you actually start it).
+  - *Completed* — finished the main story.
+  - *Mastered* — finished the main story **and all side quests**.
+  - *Dominated* — Mastered **and** earned every trophy/achievement (100%).
+  - *Shelved* — on hold, but you intend to return to it later.
+  - *Dropped* — abandoned, no longer playing.
+  - *Replay* — a game you *want* to replay; move it to *In Progress* when you actually start the replay.
 - **Rating** — your own one-to-five-star score, separate from the IGDB community rating shown alongside it.
 - **Hours played** — tracked per platform, and summed for you.
 - **Loved** — a simple favourite flag you can filter on.

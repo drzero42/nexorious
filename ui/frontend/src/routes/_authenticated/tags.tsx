@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
+import { ColorPicker, COLOR_PALETTE } from '@/components/ui/color-picker';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,59 +48,6 @@ export const Route = createFileRoute('/_authenticated/tags')({
 
 type SortField = 'name' | 'usage' | 'created';
 type SortOrder = 'asc' | 'desc';
-
-// Predefined color palette for tags
-const COLOR_PALETTE = [
-  '#EF4444', // red
-  '#F97316', // orange
-  '#F59E0B', // amber
-  '#EAB308', // yellow
-  '#84CC16', // lime
-  '#22C55E', // green
-  '#10B981', // emerald
-  '#14B8A6', // teal
-  '#06B6D4', // cyan
-  '#0EA5E9', // sky
-  '#3B82F6', // blue
-  '#6366F1', // indigo
-  '#8B5CF6', // violet
-  '#A855F7', // purple
-  '#D946EF', // fuchsia
-  '#EC4899', // pink
-  '#F43F5E', // rose
-  '#6B7280', // gray
-];
-
-function ColorPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <div className="h-8 w-8 rounded-md border" style={{ backgroundColor: value }} />
-        <Input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-28 font-mono text-sm"
-          placeholder="#000000"
-        />
-      </div>
-      <div className="grid grid-cols-9 gap-1">
-        {COLOR_PALETTE.map((color) => (
-          <button
-            key={color}
-            type="button"
-            className={`h-6 w-6 rounded-md border-2 transition-transform hover:scale-110 ${
-              value === color ? 'border-foreground' : 'border-transparent'
-            }`}
-            style={{ backgroundColor: color }}
-            onClick={() => onChange(color)}
-            aria-label={`Select color ${color}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function TagsPageSkeleton() {
   return (

@@ -64,7 +64,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), auth.BcryptCost)
 	if err != nil {
 		// Pre-auth: no user_id in ctx yet; log it explicitly.
-		slog.ErrorContext(c.Request().Context(), "setup admin: bcrypt", logging.KeyUserID, userID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryAuth)
+		slog.ErrorContext(c.Request().Context(), "setup admin: bcrypt", logging.KeyUserID, userID, logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
@@ -80,7 +80,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusForbidden, "setup already complete")
 		}
 		// Pre-auth: no user_id in ctx yet; log it explicitly.
-		slog.ErrorContext(c.Request().Context(), "setup admin: create user", logging.KeyUserID, userID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(c.Request().Context(), "setup admin: create user", logging.KeyUserID, userID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
@@ -90,7 +90,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 	// The initial setup user is always an admin.
 	if err := notify.SeedDefaultSubscriptions(context.Background(), h.db, userID, true); err != nil {
 		// Pre-auth: no user_id in ctx yet; log it explicitly.
-		slog.ErrorContext(c.Request().Context(), "setup: seed notification subscriptions", logging.KeyUserID, userID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(c.Request().Context(), "setup: seed notification subscriptions", logging.KeyUserID, userID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	sessionID, sessionErr := issueSession(h.db, h.cfg.SessionExpireDays, userID,
@@ -98,7 +98,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 		c.RealIP(),
 	)
 	if sessionErr != nil {
-		slog.ErrorContext(c.Request().Context(), "setup admin: issue session", logging.KeyUserID, userID, logging.KeyErr, sessionErr, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(c.Request().Context(), "setup admin: issue session", logging.KeyUserID, userID, logging.KeyErr, sessionErr, logging.Cat(logging.CategoryDB))
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "setup succeeded but session could not be created — please log in",
 		})
@@ -107,7 +107,7 @@ func (h *SetupHandler) HandleSetupAdmin(c *echo.Context) error {
 
 	resp, loadErr := loadMeResponse(context.Background(), h.db, userID)
 	if loadErr != nil {
-		slog.ErrorContext(c.Request().Context(), "setup admin: load user", logging.KeyUserID, userID, logging.KeyErr, loadErr, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(c.Request().Context(), "setup admin: load user", logging.KeyUserID, userID, logging.KeyErr, loadErr, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 	return c.JSON(http.StatusCreated, resp)

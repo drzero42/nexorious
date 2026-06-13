@@ -164,7 +164,7 @@ func AuthMiddleware(db *bun.DB) echo.MiddlewareFunc {
 						"UPDATE user_sessions SET last_used_at = now() WHERE session_id_hash = ?",
 						sessionHash,
 					); err != nil {
-						slog.Error("auth: update session last_used_at", "err", err)
+						slog.WarnContext(context.Background(), "auth: update session last_used_at", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 					}
 				}()
 			}
@@ -227,7 +227,7 @@ func tryAPIKey(c *echo.Context, db *bun.DB) (string, error) {
 			"UPDATE api_keys SET last_used_at = now() WHERE key_hash = ?",
 			hash,
 		); err != nil {
-			slog.Error("auth: update api key last_used_at", "err", err)
+			slog.WarnContext(context.Background(), "auth: update api key last_used_at", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	}()
 	return userID, nil

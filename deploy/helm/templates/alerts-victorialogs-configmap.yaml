@@ -13,5 +13,5 @@ metadata:
     {{- end }}
 data:
   victorialogs-rules.yaml: |
-{{ .Files.Get "files/victorialogs-rules.yaml" | indent 4 }}
+{{ .Files.Get "files/victorialogs-rules.yaml" | required "files/victorialogs-rules.yaml is missing from the chart" | indent 4 }}
 {{- end }}

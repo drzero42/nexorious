@@ -30,6 +30,26 @@ func (s PlayStatus) Valid() bool {
 	return validPlayStatuses[s]
 }
 
+// FinishedPlayStatuses are the play statuses that remove a game from every pool
+// and exclude it from pool suggestions (#955). dropped is included deliberately:
+// it is the strongest "not next" signal, so it leaves the plan like a completion.
+var FinishedPlayStatuses = []PlayStatus{
+	PlayStatusCompleted,
+	PlayStatusMastered,
+	PlayStatusDominated,
+	PlayStatusDropped,
+}
+
+// FinishedPlayStatusStrings returns the finished set as plain strings, for use
+// in SQL `IN (?)` clauses via bun.List.
+func FinishedPlayStatusStrings() []string {
+	out := make([]string, len(FinishedPlayStatuses))
+	for i, s := range FinishedPlayStatuses {
+		out[i] = string(s)
+	}
+	return out
+}
+
 // OwnershipStatus represents valid ownership_status values for user_game_platforms.
 type OwnershipStatus string
 

@@ -180,6 +180,75 @@ alerts:
     # -- any sidecar-based discovery you may run.
     ruleLabels: {}
 
+  prometheus:
+    # -- Render a PrometheusRule (requires alerts.enabled) for the
+    # -- Prometheus Operator / kube-prometheus-stack. The rules query the OTel
+    # -- metrics at /metrics (#910). Default off.
+    enabled: false
+    # -- Extra labels on the PrometheusRule so your Prometheus's ruleSelector
+    # -- matches it (e.g. {release: kube-prometheus-stack}). Leave empty if the
+    # -- Prometheus selects all PrometheusRules.
+    ruleLabels: {}
+
+  victoriaMetrics:
+    # -- Render a VMRule (requires alerts.enabled) consumed by the
+    # -- VictoriaMetrics Operator (rendered into vmalert). Same rules as the
+    # -- PrometheusRule above. Default off.
+    enabled: false
+    # -- Extra labels on the VMRule so the target VMAlert's ruleSelector matches
+    # -- it (leave empty if the VMAlert uses selectAllByDefault: true).
+    ruleLabels: {}
+
+# =============================================================================
+# ServiceMonitor (opt-in) — Prometheus Operator scrape of /metrics
+# =============================================================================
+# Native bjw-s common ServiceMonitor (no custom template). Requires the
+# Prometheus Operator (kube-prometheus-stack) CRDs in-cluster. Default OFF.
+# The default install ships two Services (nexorious + postgresql); automatic
+# Service detection only works with exactly one, so the target is named
+# explicitly via service.identifier (a harmless no-op if you disable postgresql).
+serviceMonitor:
+  main:
+    # -- Render a ServiceMonitor scraping the nexorious Service /metrics. Default off.
+    enabled: false
+    # -- Target the nexorious Service explicitly (not the bundled postgresql one).
+    service:
+      identifier: nexorious
+    # -- Scrape endpoints. The nexorious Service exposes the app on the `http`
+    # -- port (8000); metrics are served unauthenticated at /metrics.
+    endpoints:
+      - port: http
+        scheme: http
+        path: /metrics
+        interval: 30s
+        scrapeTimeout: 10s
+
+# =============================================================================
+# Grafana dashboard (opt-in) — the committed nexorious dashboard JSON
+# =============================================================================
+# Renders the single-source-of-truth dashboard (deploy/observability/
+# nexorious-dashboard.json) for in-cluster Grafana. Default OFF.
+dashboard:
+  # -- Master switch for the dashboard object.
+  enabled: false
+  # -- How to deliver the dashboard:
+  # --   configmap  a ConfigMap labeled `grafana_dashboard: "1"` that the
+  # --              Grafana sidecar (kube-prometheus-stack default) auto-discovers.
+  # --   crd        a GrafanaDashboard CR (grafana.integreatly.org/v1beta1) for
+  # --              grafana-operator users. NOTE: requires the CRD installed
+  # --              in-cluster or `helm install/upgrade` fails on the unknown
+  # --              kind (`helm template`/`lint` are unaffected) — hence the
+  # --              configmap default.
+  mode: configmap
+  # -- Extra labels on the rendered object (e.g. to target a specific sidecar
+  # -- or Grafana folder). For configmap mode the grafana_dashboard label is
+  # -- always added regardless of this.
+  labels: {}
+  # -- (crd mode only) instanceSelector matching the grafana-operator Grafana CR.
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+
 # =============================================================================
 # Default Pod options (applied to all controllers unless overridden)
 # =============================================================================

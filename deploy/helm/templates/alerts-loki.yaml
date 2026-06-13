@@ -11,5 +11,5 @@ metadata:
     {{ .Values.alerts.loki.ruleLabel.key }}: {{ .Values.alerts.loki.ruleLabel.value | quote }}
 data:
   nexorious-rules.yaml: |
-{{ .Files.Get "files/loki-rules.yaml" | indent 4 }}
+{{ .Files.Get "files/loki-rules.yaml" | required "files/loki-rules.yaml is missing from the chart" | indent 4 }}
 {{- end }}

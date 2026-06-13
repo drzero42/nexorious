@@ -22,31 +22,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { useState } from 'react';
-
-type SortField =
-  | 'title'
-  | 'created_at'
-  | 'howlongtobeat_main'
-  | 'personal_rating'
-  | 'release_date'
-  | 'hours_played'
-  | 'rating_average';
-type SortOrder = 'asc' | 'desc';
-
-interface SortOption {
-  value: SortField;
-  label: string;
-}
-
-const sortOptions: SortOption[] = [
-  { value: 'title', label: 'Title' },
-  { value: 'created_at', label: 'Date Added' },
-  { value: 'howlongtobeat_main', label: 'Time to Beat' },
-  { value: 'personal_rating', label: 'My Rating' },
-  { value: 'release_date', label: 'Release Date' },
-  { value: 'hours_played', label: 'Hours Played' },
-  { value: 'rating_average', label: 'IGDB Rating' },
-];
+import { sortOptions, type SortField, type SortOrder } from '@/lib/sort-options';
 
 export interface GameFiltersProps {
   filters: {
