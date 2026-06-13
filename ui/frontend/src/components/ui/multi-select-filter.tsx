@@ -60,7 +60,7 @@ export function MultiSelectFilter({
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="max-h-[--radix-popover-content-available-height] w-56 overflow-y-auto p-2"
+          className="max-h-[var(--radix-popover-content-available-height)] w-56 overflow-y-auto p-2"
           align="start"
         >
           {options.length === 0 ? (
