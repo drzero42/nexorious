@@ -238,7 +238,7 @@ describe('GameFilters', () => {
           {...defaultProps}
           filters={{
             search: '',
-            status: PlayStatus.COMPLETED,
+            status: [PlayStatus.COMPLETED],
             platformId: 'platform-1',
           }}
           onFiltersChange={onFiltersChange}
@@ -250,56 +250,73 @@ describe('GameFilters', () => {
 
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: 'T',
-        status: PlayStatus.COMPLETED,
+        status: [PlayStatus.COMPLETED],
         platformId: 'platform-1',
       });
     });
   });
 
-  describe('status filter', () => {
-    it('calls onFiltersChange when status changes to specific status', async () => {
+  describe('status filter (multi-select)', () => {
+    it('calls onFiltersChange when a status is selected', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
       render(<GameFilters {...defaultProps} onFiltersChange={onFiltersChange} />);
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const statusSelect = comboboxes[1]; // Second combobox is status (first is sort)
-      await user.click(statusSelect);
+      const statusButton = screen.getByText('Play Status').closest('button')!;
+      await user.click(statusButton);
 
-      // Select "Completed"
-      const completedOption = screen.getByRole('option', { name: 'Completed' });
-      await user.click(completedOption);
+      const completedLabel = screen.getByText('Completed');
+      await user.click(completedLabel);
 
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: '',
-        status: PlayStatus.COMPLETED,
+        status: [PlayStatus.COMPLETED],
       });
     });
 
-    it('calls onFiltersChange with undefined status when "All Statuses" is selected', async () => {
+    it('adds a second status (OR-within-facet)', async () => {
       const user = userEvent.setup();
       const onFiltersChange = vi.fn();
       render(
         <GameFilters
           {...defaultProps}
-          filters={{
-            search: '',
-            status: PlayStatus.COMPLETED,
-          }}
+          filters={{ search: '', status: [PlayStatus.NOT_STARTED] }}
           onFiltersChange={onFiltersChange}
         />,
       );
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const statusSelect = comboboxes[1]; // Second combobox is status (first is sort)
-      await user.click(statusSelect);
+      const statusButton = screen.getByText('Play Status (1)').closest('button')!;
+      await user.click(statusButton);
 
-      const allStatusesOption = screen.getByRole('option', { name: 'All Statuses' });
-      await user.click(allStatusesOption);
+      const shelvedLabel = screen.getByText('Shelved');
+      await user.click(shelvedLabel);
 
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: '',
-        status: undefined,
+        status: [PlayStatus.NOT_STARTED, PlayStatus.SHELVED],
+      });
+    });
+
+    it('deselecting the last status clears the facet to an empty array', async () => {
+      const user = userEvent.setup();
+      const onFiltersChange = vi.fn();
+      render(
+        <GameFilters
+          {...defaultProps}
+          filters={{ search: '', status: [PlayStatus.COMPLETED] }}
+          onFiltersChange={onFiltersChange}
+        />,
+      );
+
+      const statusButton = screen.getByText('Play Status (1)').closest('button')!;
+      await user.click(statusButton);
+
+      const completedLabel = screen.getByText('Completed');
+      await user.click(completedLabel);
+
+      expect(onFiltersChange).toHaveBeenCalledWith({
+        search: '',
+        status: [],
       });
     });
 
@@ -307,20 +324,17 @@ describe('GameFilters', () => {
       const user = userEvent.setup();
       render(<GameFilters {...defaultProps} />);
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const statusSelect = comboboxes[1]; // Second combobox is status (first is sort)
-      await user.click(statusSelect);
+      const statusButton = screen.getByText('Play Status').closest('button')!;
+      await user.click(statusButton);
 
-      // Check all status options are present
-      expect(screen.getByRole('option', { name: 'All Statuses' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Not Started' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'In Progress' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Completed' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Mastered' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Dominated' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Shelved' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Dropped' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Replay' })).toBeInTheDocument();
+      expect(screen.getByText('Not Started')).toBeInTheDocument();
+      expect(screen.getByText('In Progress')).toBeInTheDocument();
+      expect(screen.getByText('Completed')).toBeInTheDocument();
+      expect(screen.getByText('Mastered')).toBeInTheDocument();
+      expect(screen.getByText('Dominated')).toBeInTheDocument();
+      expect(screen.getByText('Shelved')).toBeInTheDocument();
+      expect(screen.getByText('Dropped')).toBeInTheDocument();
+      expect(screen.getByText('Replay')).toBeInTheDocument();
     });
 
     it('preserves other filters when status changes', async () => {
@@ -337,17 +351,16 @@ describe('GameFilters', () => {
         />,
       );
 
-      const comboboxes = screen.getAllByRole('combobox');
-      const statusSelect = comboboxes[1]; // Second combobox is status (first is sort)
-      await user.click(statusSelect);
+      const statusButton = screen.getByText('Play Status').closest('button')!;
+      await user.click(statusButton);
 
-      const completedOption = screen.getByRole('option', { name: 'Completed' });
-      await user.click(completedOption);
+      const completedLabel = screen.getByText('Completed');
+      await user.click(completedLabel);
 
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: 'Test',
         platformId: 'platform-1',
-        status: PlayStatus.COMPLETED,
+        status: [PlayStatus.COMPLETED],
       });
     });
   });
@@ -463,7 +476,7 @@ describe('GameFilters', () => {
           {...defaultProps}
           filters={{
             search: 'Test',
-            status: PlayStatus.IN_PROGRESS,
+            status: [PlayStatus.IN_PROGRESS],
           }}
           onFiltersChange={onFiltersChange}
         />,
@@ -477,7 +490,7 @@ describe('GameFilters', () => {
 
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: 'Test',
-        status: PlayStatus.IN_PROGRESS,
+        status: [PlayStatus.IN_PROGRESS],
         platforms: ['pc'],
       });
     });
@@ -704,7 +717,7 @@ describe('GameFilters', () => {
 
     it.each<{ name: string; filters: GameFiltersProps['filters'] }>([
       { name: 'search', filters: { search: 'Test' } },
-      { name: 'status', filters: { search: '', status: PlayStatus.COMPLETED } },
+      { name: 'status', filters: { search: '', status: [PlayStatus.COMPLETED] } },
       { name: 'platform (legacy platformId)', filters: { search: '', platformId: 'platform-1' } },
       { name: 'platforms multi-select', filters: { search: '', platforms: ['pc'] } },
       { name: 'storefronts', filters: { search: '', storefronts: ['steam'] } },
@@ -714,7 +727,7 @@ describe('GameFilters', () => {
         name: 'multiple filters',
         filters: {
           search: 'Test',
-          status: PlayStatus.IN_PROGRESS,
+          status: [PlayStatus.IN_PROGRESS],
           platforms: ['pc'],
           storefronts: ['steam'],
         },
@@ -733,7 +746,7 @@ describe('GameFilters', () => {
           {...defaultProps}
           filters={{
             search: 'Test',
-            status: PlayStatus.COMPLETED,
+            status: [PlayStatus.COMPLETED],
             platforms: ['pc'],
             storefronts: ['steam'],
             genres: ['RPG'],
@@ -751,7 +764,7 @@ describe('GameFilters', () => {
 
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: '',
-        status: undefined,
+        status: [],
         platformId: undefined,
         platforms: [],
         storefronts: [],
@@ -833,22 +846,22 @@ describe('GameFilters', () => {
         />,
       );
 
-      // Change status - click on the button showing "All Statuses"
+      // Change status (now multi-select)
       vi.clearAllMocks();
-      const statusSelect = screen.getByText('All Statuses').closest('button')!;
-      await user.click(statusSelect);
-      const completedOption = screen.getByRole('option', { name: 'Completed' });
-      await user.click(completedOption);
+      const statusButton = screen.getByText('Play Status').closest('button')!;
+      await user.click(statusButton);
+      const completedLabel = screen.getByText('Completed');
+      await user.click(completedLabel);
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: 'T',
-        status: PlayStatus.COMPLETED,
+        status: [PlayStatus.COMPLETED],
       });
 
       // Rerender with updated filters
       rerender(
         <GameFilters
           {...defaultProps}
-          filters={{ search: 'T', status: PlayStatus.COMPLETED }}
+          filters={{ search: 'T', status: [PlayStatus.COMPLETED] }}
           onFiltersChange={onFiltersChange}
         />,
       );
@@ -861,7 +874,7 @@ describe('GameFilters', () => {
       await user.click(pcLabel);
       expect(onFiltersChange).toHaveBeenCalledWith({
         search: 'T',
-        status: PlayStatus.COMPLETED,
+        status: [PlayStatus.COMPLETED],
         platforms: ['pc'],
       });
     });

@@ -18,20 +18,43 @@ type PoolFilter struct {
 // FilterCard mirrors the library list params. Each facet ANDs with the others
 // within a card; multiple values within a single facet OR together.
 type FilterCard struct {
-	PlayStatus        *string  `json:"play_status,omitempty"`
-	Genre             []string `json:"genre,omitempty"`
-	Theme             []string `json:"theme,omitempty"`
-	Tag               []string `json:"tag,omitempty"`
-	Platform          []string `json:"platform,omitempty"`
-	Storefront        []string `json:"storefront,omitempty"`
-	RatingMin         *float64 `json:"rating_min,omitempty"`
-	RatingMax         *float64 `json:"rating_max,omitempty"`
-	IsLoved           *bool    `json:"is_loved,omitempty"`
-	GameMode          []string `json:"game_mode,omitempty"`
-	PlayerPerspective []string `json:"player_perspective,omitempty"`
-	Q                 *string  `json:"q,omitempty"`
-	TimeToBeatMin     *float64 `json:"time_to_beat_min,omitempty"`
-	TimeToBeatMax     *float64 `json:"time_to_beat_max,omitempty"`
+	PlayStatus        PlayStatusFilter `json:"play_status,omitempty"`
+	Genre             []string         `json:"genre,omitempty"`
+	Theme             []string         `json:"theme,omitempty"`
+	Tag               []string         `json:"tag,omitempty"`
+	Platform          []string         `json:"platform,omitempty"`
+	Storefront        []string         `json:"storefront,omitempty"`
+	RatingMin         *float64         `json:"rating_min,omitempty"`
+	RatingMax         *float64         `json:"rating_max,omitempty"`
+	IsLoved           *bool            `json:"is_loved,omitempty"`
+	GameMode          []string         `json:"game_mode,omitempty"`
+	PlayerPerspective []string         `json:"player_perspective,omitempty"`
+	Q                 *string          `json:"q,omitempty"`
+	TimeToBeatMin     *float64         `json:"time_to_beat_min,omitempty"`
+	TimeToBeatMax     *float64         `json:"time_to_beat_max,omitempty"`
+}
+
+// PlayStatusFilter holds the play_status facet's selected values. Play status
+// is multi-value (OR-within-facet) like the other enum facets, but filters
+// saved before #976 persisted a single JSON string. UnmarshalJSON accepts both
+// shapes — a bare string normalises to a one-element slice — so legacy stored
+// filters parse without a migration. It always marshals as a JSON array.
+type PlayStatusFilter []string
+
+func (p *PlayStatusFilter) UnmarshalJSON(data []byte) error {
+	// Current shape: a JSON array of strings.
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		*p = arr
+		return nil
+	}
+	// Legacy shape: a single JSON string.
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	*p = []string{s}
+	return nil
 }
 
 // ParsePoolFilter unmarshals a saved filter with unknown keys rejected
@@ -50,7 +73,7 @@ func ParsePoolFilter(raw []byte) (PoolFilter, error) {
 // HasFacets reports whether the card constrains at least one facet. An empty
 // card (no facets) is rejected at pool create/update time.
 func (c FilterCard) HasFacets() bool {
-	return c.PlayStatus != nil ||
+	return len(c.PlayStatus) > 0 ||
 		len(c.Genre) > 0 ||
 		len(c.Theme) > 0 ||
 		len(c.Tag) > 0 ||
@@ -108,9 +131,7 @@ func ApplyPoolFilter(fb *FilterBuilder, pf PoolFilter) {
 // facets OR their values inside an AND-attached group, mirroring the standalone
 // Apply* helpers in criteria.go.
 func applyCardPredicates(q *bun.SelectQuery, c FilterCard) *bun.SelectQuery {
-	if c.PlayStatus != nil {
-		q = q.Where("ug.play_status = ?", *c.PlayStatus)
-	}
+	q = orIn(q, "ug.play_status", c.PlayStatus)
 	if c.IsLoved != nil {
 		q = q.Where("ug.is_loved = ?", *c.IsLoved)
 	}

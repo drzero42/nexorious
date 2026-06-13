@@ -132,9 +132,10 @@ type PoolFilter struct {
 }
 
 // FilterCard mirrors the existing library list params:
-//   play_status, genre[], theme[], tag[], platform[], storefront[],
+//   play_status[], genre[], theme[], tag[], platform[], storefront[],
 //   rating_min/max, is_loved, game_mode[], player_perspective[], q,
 //   time_to_beat_min/max
+// (play_status became multi-value in #976; legacy single-string filters still parse.)
 type FilterCard struct { /* … */ }
 ```
 

@@ -536,6 +536,43 @@ func TestListUserGames(t *testing.T) {
 		}
 	})
 
+	t.Run("multi-value play_status filters OR-within-facet", func(t *testing.T) {
+		if _, err := testDB.ExecContext(context.Background(),
+			`UPDATE user_games SET play_status = 'not_started' WHERE id = 'ug-list-1';
+			 UPDATE user_games SET play_status = 'shelved'     WHERE id = 'ug-list-2';
+			 UPDATE user_games SET play_status = 'completed'   WHERE id = 'ug-list-3'`); err != nil {
+			t.Fatalf("set statuses: %v", err)
+		}
+
+		// Two statuses → a game matches if it is in the selected set.
+		rec := getAuth(t, e, "/api/user-games?play_status=not_started&play_status=shelved", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if total := int(resp["total"].(float64)); total != 2 {
+			t.Fatalf("expected total=2 for two statuses, got %d", total)
+		}
+
+		// A single value still works (back-compat with single-select URLs).
+		rec = getAuth(t, e, "/api/user-games?play_status=completed", token)
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if total := int(resp["total"].(float64)); total != 1 {
+			t.Fatalf("expected total=1 for single status, got %d", total)
+		}
+
+		// Unknown values are dropped, not 400; here it leaves no constraint.
+		rec = getAuth(t, e, "/api/user-games?play_status=bogus", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 for unknown status, got %d", rec.Code)
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if total := int(resp["total"].(float64)); total != 3 {
+			t.Fatalf("expected total=3 (unknown status dropped), got %d", total)
+		}
+	})
+
 	t.Run("user scoped", func(t *testing.T) {
 		_, token2 := setupUserGamesUser(t, testDB, e, "list-other")
 		rec := getAuth(t, e, "/api/user-games", token2)
