@@ -50,6 +50,15 @@ export async function addPoolGame(poolId: string, userGameId: string): Promise<v
   await api.post(`/pools/${poolId}/games`, { user_game_id: userGameId });
 }
 
+export async function bulkAddPoolGames(
+  poolId: string,
+  userGameIds: string[],
+): Promise<{ added: number }> {
+  return api.post<{ added: number }>(`/pools/${poolId}/games/bulk`, {
+    user_game_ids: userGameIds,
+  });
+}
+
 export async function removePoolGame(poolId: string, userGameId: string): Promise<void> {
   await api.delete(`/pools/${poolId}/games/${userGameId}`);
 }
