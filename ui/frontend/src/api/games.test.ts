@@ -173,7 +173,7 @@ describe('games.ts', () => {
       );
 
       await getUserGames({
-        status: PlayStatus.IN_PROGRESS,
+        status: [PlayStatus.IN_PROGRESS],
         ownershipStatus: OwnershipStatus.OWNED,
         platform: 'pc',
         search: 'test',
@@ -237,6 +237,30 @@ describe('games.ts', () => {
       expect(result).toBeDefined();
     });
 
+    it('appends multiple play_status values as repeated params', async () => {
+      server.use(
+        http.get(`${API_URL}/user-games`, ({ request }) => {
+          const url = new URL(request.url);
+          expect(url.searchParams.getAll('play_status')).toEqual([
+            PlayStatus.NOT_STARTED,
+            PlayStatus.SHELVED,
+          ]);
+          return HttpResponse.json({
+            user_games: [],
+            total: 0,
+            page: 1,
+            per_page: 20,
+            pages: 0,
+          });
+        }),
+      );
+
+      const result = await getUserGames({
+        status: [PlayStatus.NOT_STARTED, PlayStatus.SHELVED],
+      });
+      expect(result).toBeDefined();
+    });
+
     it('handles mixed array and single value params', async () => {
       server.use(
         http.get(`${API_URL}/user-games`, ({ request }) => {
@@ -261,7 +285,7 @@ describe('games.ts', () => {
       const result = await getUserGames({
         platform: ['windows', 'ps5'],
         genre: ['RPG'],
-        status: PlayStatus.IN_PROGRESS,
+        status: [PlayStatus.IN_PROGRESS],
         search: 'zelda',
       });
       expect(result).toBeDefined();

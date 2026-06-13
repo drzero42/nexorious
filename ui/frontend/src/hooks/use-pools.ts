@@ -106,6 +106,23 @@ export function useAddPoolGame() {
   });
 }
 
+// Bulk add many games as candidates in one round-trip (library selection
+// toolbar). Invalidates every per-game membership query in one pass rather than
+// per id, since the selection can be the whole library.
+export function useBulkAddPoolGames() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ poolId, userGameIds }: { poolId: string; userGameIds: string[] }) =>
+      poolsApi.bulkAddPoolGames(poolId, userGameIds),
+    onSuccess: (_r, { poolId }) => {
+      qc.invalidateQueries({ queryKey: poolKeys.detail(poolId) });
+      qc.invalidateQueries({ queryKey: poolKeys.suggestions(poolId) });
+      qc.invalidateQueries({ queryKey: [...poolKeys.all, 'memberships'] });
+      qc.invalidateQueries({ queryKey: poolKeys.lists() });
+    },
+  });
+}
+
 export function useRemovePoolGame() {
   const qc = useQueryClient();
   return useMutation({

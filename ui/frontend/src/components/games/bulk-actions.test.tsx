@@ -11,7 +11,7 @@ vi.mock('@/hooks', () => ({
   // Pool hooks for the bulk "Add to pool" control. Empty pool list → the
   // control doesn't render, so existing toolbar tests are unaffected.
   usePools: vi.fn(() => ({ data: [] })),
-  useAddPoolGame: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useBulkAddPoolGames: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
 // Mock lucide-react icons
@@ -646,7 +646,7 @@ describe('BulkActions', () => {
     it('adds every selected game to the chosen pool', async () => {
       const user = userEvent.setup();
       const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
-      const { usePools, useAddPoolGame } = vi.mocked(await import('@/hooks'));
+      const { usePools, useBulkAddPoolGames } = vi.mocked(await import('@/hooks'));
       usePools.mockReturnValue({
         data: [
           {
@@ -660,10 +660,10 @@ describe('BulkActions', () => {
           },
         ],
       } as unknown as ReturnType<typeof usePools>);
-      useAddPoolGame.mockReturnValue({
+      useBulkAddPoolGames.mockReturnValue({
         mutateAsync: mockMutateAsync,
         isPending: false,
-      } as unknown as ReturnType<typeof useAddPoolGame>);
+      } as unknown as ReturnType<typeof useBulkAddPoolGames>);
 
       const props = createDefaultProps({ selectedIds: new Set(['game-1', 'game-2']) });
       render(<BulkActions {...props} />);
@@ -674,10 +674,12 @@ describe('BulkActions', () => {
       await user.click(comboboxes[1]);
       await user.click(screen.getByRole('option', { name: 'Weekend' }));
 
-      // One idempotent add per selected game, all targeting the chosen pool.
-      expect(mockMutateAsync).toHaveBeenCalledTimes(2);
-      expect(mockMutateAsync).toHaveBeenCalledWith({ poolId: 'pool-1', userGameId: 'game-1' });
-      expect(mockMutateAsync).toHaveBeenCalledWith({ poolId: 'pool-1', userGameId: 'game-2' });
+      // A single bulk call carries every selected game to the chosen pool.
+      expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        poolId: 'pool-1',
+        userGameIds: ['game-1', 'game-2'],
+      });
       expect(props.onClearSelection).toHaveBeenCalled();
     });
   });

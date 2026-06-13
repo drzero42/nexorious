@@ -116,7 +116,7 @@ interface IGDBSearchApiResponse {
 // ============================================================================
 
 export interface GetUserGamesParams {
-  status?: PlayStatus;
+  status?: string[];
   ownershipStatus?: OwnershipStatus;
   platform?: string | string[];
   storefront?: string | string[];

@@ -407,6 +407,115 @@ func TestPoolMembershipAndQueue(t *testing.T) {
 	})
 }
 
+func TestPoolBulkAddGames(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "bulkadd")
+
+	poolRec := postJSONAuth(t, e, "/api/pools", map[string]any{"name": "Bulk Pool"}, token)
+	var pool struct {
+		ID string `json:"id"`
+	}
+	mustUnmarshal(t, poolRec, &pool)
+
+	var ugIDs []string
+	for i, title := range []string{"B1", "B2", "B3"} {
+		gid := insertTestGame(t, testDB, title)
+		ugID := fmt.Sprintf("ug-b-%d", i)
+		insertTestUserGame(t, testDB, ugID, userID, int(gid))
+		ugIDs = append(ugIDs, ugID)
+	}
+
+	bulkURL := "/api/pools/" + pool.ID + "/games/bulk"
+	added := func(rec *httptest.ResponseRecorder) int {
+		var r struct {
+			Added int `json:"added"`
+		}
+		mustUnmarshal(t, rec, &r)
+		return r.Added
+	}
+
+	t.Run("empty set is a 0-added no-op", func(t *testing.T) {
+		rec := postJSONAuth(t, e, bulkURL, map[string]any{"user_game_ids": []string{}}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := added(rec); got != 0 {
+			t.Fatalf("expected added=0, got %d", got)
+		}
+	})
+
+	t.Run("adds all as candidates", func(t *testing.T) {
+		rec := postJSONAuth(t, e, bulkURL, map[string]any{"user_game_ids": ugIDs}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := added(rec); got != 3 {
+			t.Fatalf("expected added=3, got %d", got)
+		}
+		detail := getAuth(t, e, "/api/pools/"+pool.ID, token)
+		var d struct {
+			Queue      []map[string]any `json:"queue"`
+			Candidates []map[string]any `json:"candidates"`
+		}
+		mustUnmarshal(t, detail, &d)
+		if len(d.Candidates) != 3 || len(d.Queue) != 0 {
+			t.Fatalf("expected 3 candidates / 0 queued, got %d / %d", len(d.Candidates), len(d.Queue))
+		}
+	})
+
+	t.Run("mix of existing and new is idempotent", func(t *testing.T) {
+		gid := insertTestGame(t, testDB, "B4")
+		insertTestUserGame(t, testDB, "ug-b-3", userID, int(gid))
+		// ugIDs[0..2] already members; only ug-b-3 is new.
+		rec := postJSONAuth(t, e, bulkURL,
+			map[string]any{"user_game_ids": append(append([]string{}, ugIDs...), "ug-b-3")}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := added(rec); got != 1 {
+			t.Fatalf("expected added=1 (only new row), got %d", got)
+		}
+	})
+
+	t.Run("foreign user_game ids are silently skipped", func(t *testing.T) {
+		otherID, _ := setupUserGamesUser(t, testDB, e, "bulkadd-other")
+		gid := insertTestGame(t, testDB, "Foreign")
+		insertTestUserGame(t, testDB, "ug-foreign", otherID, int(gid))
+
+		gid2 := insertTestGame(t, testDB, "Mine New")
+		insertTestUserGame(t, testDB, "ug-mine-new", userID, int(gid2))
+
+		rec := postJSONAuth(t, e, bulkURL,
+			map[string]any{"user_game_ids": []string{"ug-foreign", "ug-mine-new", "does-not-exist"}}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if got := added(rec); got != 1 {
+			t.Fatalf("expected added=1 (only the owned new id), got %d", got)
+		}
+		if poolGameCount(t, testDB, "ug-foreign") != 0 {
+			t.Fatalf("foreign user_game must not be added to the pool")
+		}
+	})
+
+	t.Run("another user's pool is 404", func(t *testing.T) {
+		_, otherToken := setupUserGamesUser(t, testDB, e, "bulkadd-other2")
+		rec := postJSONAuth(t, e, bulkURL, map[string]any{"user_game_ids": ugIDs}, otherToken)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("unauthenticated is 401", func(t *testing.T) {
+		rec := postJSON(t, e, bulkURL, map[string]any{"user_game_ids": ugIDs})
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
 func TestPoolSuggestionView(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
@@ -470,6 +579,99 @@ func TestPoolSuggestionView(t *testing.T) {
 	}
 	if v, ok := got["ug-rpg2"]; !ok || v != nil {
 		t.Fatalf("ug-rpg2 should match with null membership (a suggestion), got %v", got["ug-rpg2"])
+	}
+}
+
+func TestPoolSuggestionMultiPlayStatus(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "multistatus")
+
+	g1 := insertTestGame(t, testDB, "Backlog Game")
+	g2 := insertTestGame(t, testDB, "Shelved Game")
+	g3 := insertTestGame(t, testDB, "In-Progress Game")
+	insertTestUserGame(t, testDB, "ug-ms-1", userID, int(g1))
+	insertTestUserGame(t, testDB, "ug-ms-2", userID, int(g2))
+	insertTestUserGame(t, testDB, "ug-ms-3", userID, int(g3))
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE user_games SET play_status = 'not_started' WHERE id = 'ug-ms-1';
+		 UPDATE user_games SET play_status = 'shelved'     WHERE id = 'ug-ms-2';
+		 UPDATE user_games SET play_status = 'in_progress' WHERE id = 'ug-ms-3'`); err != nil {
+		t.Fatalf("set statuses: %v", err)
+	}
+
+	poolRec := postJSONAuth(t, e, "/api/pools", map[string]any{
+		"name": "Backlog or Shelved",
+		"filter": map[string]any{
+			"filters": []any{map[string]any{"play_status": []string{"not_started", "shelved"}}},
+		},
+	}, token)
+	var pool struct {
+		ID string `json:"id"`
+	}
+	mustUnmarshal(t, poolRec, &pool)
+
+	rec := getAuth(t, e, "/api/user-games?pool="+pool.ID, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		UserGames []struct {
+			ID string `json:"id"`
+		} `json:"user_games"`
+		Total int `json:"total"`
+	}
+	mustUnmarshal(t, rec, &resp)
+
+	got := map[string]bool{}
+	for _, ug := range resp.UserGames {
+		got[ug.ID] = true
+	}
+	if !got["ug-ms-1"] || !got["ug-ms-2"] {
+		t.Fatalf("both not_started and shelved games should match, got %v", got)
+	}
+	if got["ug-ms-3"] {
+		t.Fatalf("in_progress game must not match a backlog-or-shelved card")
+	}
+}
+
+func TestPoolSuggestionLegacyStringPlayStatus(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "legacystatus")
+
+	g1 := insertTestGame(t, testDB, "Shelved Game")
+	g2 := insertTestGame(t, testDB, "Backlog Game")
+	insertTestUserGame(t, testDB, "ug-legacy-1", userID, int(g1))
+	insertTestUserGame(t, testDB, "ug-legacy-2", userID, int(g2))
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE user_games SET play_status = 'shelved'     WHERE id = 'ug-legacy-1';
+		 UPDATE user_games SET play_status = 'not_started' WHERE id = 'ug-legacy-2'`); err != nil {
+		t.Fatalf("set statuses: %v", err)
+	}
+
+	// Simulate a pool saved before #976: play_status persisted as a JSON string.
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO pools (id, user_id, name, position, filter)
+		 VALUES ('pool-legacy', ?, 'Legacy', 0, '{"filters":[{"play_status":"shelved"}]}'::jsonb)`,
+		userID); err != nil {
+		t.Fatalf("insert legacy pool: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/user-games?pool=pool-legacy", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		UserGames []struct {
+			ID string `json:"id"`
+		} `json:"user_games"`
+	}
+	mustUnmarshal(t, rec, &resp)
+	if len(resp.UserGames) != 1 || resp.UserGames[0].ID != "ug-legacy-1" {
+		t.Fatalf("legacy string play_status should match only the shelved game, got %v", resp.UserGames)
 	}
 }
 

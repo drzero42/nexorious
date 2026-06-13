@@ -3,7 +3,7 @@ import type { FilterCard, PoolFilter } from '@/types';
 /** True if the card constrains at least one facet (mirrors FilterCard.HasFacets in Go). */
 export function cardHasFacets(c: FilterCard): boolean {
   return (
-    (c.play_status != null && c.play_status !== '') ||
+    (c.play_status?.length ?? 0) > 0 ||
     (c.genre?.length ?? 0) > 0 ||
     (c.theme?.length ?? 0) > 0 ||
     (c.tag?.length ?? 0) > 0 ||
@@ -23,7 +23,7 @@ export function cardHasFacets(c: FilterCard): boolean {
 /** Drop empty arrays / blank scalars from a card, returning a minimal card. */
 function cleanCard(c: FilterCard): FilterCard {
   const out: FilterCard = {};
-  if (c.play_status) out.play_status = c.play_status;
+  if (c.play_status?.length) out.play_status = c.play_status;
   if (c.genre?.length) out.genre = c.genre;
   if (c.theme?.length) out.theme = c.theme;
   if (c.tag?.length) out.tag = c.tag;

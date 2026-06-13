@@ -508,6 +508,64 @@ func (h *PoolsHandler) HandleAddPoolGame(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// bulkAddPoolGamesRequest is the body for POST /api/pools/:id/games/bulk.
+type bulkAddPoolGamesRequest struct {
+	UserGameIDs []string `json:"user_game_ids"`
+}
+
+// HandleBulkAddPoolGames handles POST /api/pools/:id/games/bulk — add many games
+// as Candidates in a single statement. Mirrors HandleAddPoolGame: pool must
+// belong to the caller (404 otherwise); only the caller's own user_games are
+// inserted (foreign ids are silently skipped). Idempotent on
+// (pool_id, user_game_id). Returns {"added": <newly-inserted count>}.
+func (h *PoolsHandler) HandleBulkAddPoolGames(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	poolID := c.Param("id")
+
+	var req bulkAddPoolGamesRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	ctx := context.Background()
+
+	// Pool must exist and belong to the user.
+	poolOK, err := h.db.NewSelect().Table("pools").
+		Where("id = ? AND user_id = ?", poolID, userID).Exists(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	if !poolOK {
+		return echo.NewHTTPError(http.StatusNotFound, "not found")
+	}
+
+	// Empty set is a no-op success (idempotent semantics).
+	if len(req.UserGameIDs) == 0 {
+		return c.JSON(http.StatusOK, map[string]int64{"added": 0})
+	}
+
+	// Insert each owned game as a Candidate in one statement. The user_games
+	// scope skips foreign ids; ON CONFLICT makes it idempotent.
+	res, err := h.db.NewRaw(`
+		INSERT INTO pool_games (id, pool_id, user_game_id, position, created_at)
+		SELECT gen_random_uuid()::text, ?, ug.id, NULL, now()
+		FROM user_games ug
+		WHERE ug.user_id = ? AND ug.id IN (?)
+		ON CONFLICT (pool_id, user_game_id) DO NOTHING`,
+		poolID, userID, bun.List(req.UserGameIDs),
+	).Exec(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	added, err := res.RowsAffected()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+	return c.JSON(http.StatusOK, map[string]int64{"added": added})
+}
+
 // HandleRemovePoolGame handles DELETE /api/pools/:id/games/:userGameId.
 func (h *PoolsHandler) HandleRemovePoolGame(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)

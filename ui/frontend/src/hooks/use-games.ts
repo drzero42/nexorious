@@ -8,14 +8,7 @@ import type {
   BulkUpdateData,
   FilterOptions,
 } from '@/api/games';
-import type {
-  UserGame,
-  IGDBGameCandidate,
-  Game,
-  GameId,
-  UserGamePlatform,
-  PlayStatus,
-} from '@/types';
+import type { UserGame, IGDBGameCandidate, Game, GameId, UserGamePlatform } from '@/types';
 
 // Query Keys
 
@@ -179,17 +172,18 @@ export function useFilterOptions() {
 }
 
 /**
- * Used for the "Currently Playing" dashboard section.
- * Makes two parallel API calls since backend only supports single status filter.
+ * Used for the "Currently Playing" dashboard section. Fetches in-progress and
+ * replay games as two parallel calls and merges them (each keeps its own
+ * perPage cap). Could collapse into one multi-status call now that the filter
+ * accepts an array (#976), but the two-call shape is left as-is here.
  */
 export function useActiveGames() {
   return useQuery<UserGamesListResponse, Error>({
     queryKey: ['user-games', 'active'],
     queryFn: async () => {
-      // Fetch both statuses in parallel
       const [inProgressData, replayData] = await Promise.all([
-        gamesApi.getUserGames({ status: 'in_progress' as PlayStatus, perPage: 50 }),
-        gamesApi.getUserGames({ status: 'replay' as PlayStatus, perPage: 50 }),
+        gamesApi.getUserGames({ status: ['in_progress'], perPage: 50 }),
+        gamesApi.getUserGames({ status: ['replay'], perPage: 50 }),
       ]);
 
       // Merge results

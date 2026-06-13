@@ -20,7 +20,12 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { useBulkUpdateUserGames, useBulkDeleteUserGames, usePools, useAddPoolGame } from '@/hooks';
+import {
+  useBulkUpdateUserGames,
+  useBulkDeleteUserGames,
+  usePools,
+  useBulkAddPoolGames,
+} from '@/hooks';
 import { PlayStatus, SelectionMode } from '@/types';
 import { ListPlus, Trash2, X } from 'lucide-react';
 
@@ -58,9 +63,8 @@ export function BulkActions({
   const bulkUpdate = useBulkUpdateUserGames();
   const bulkDelete = useBulkDeleteUserGames();
   const { data: pools } = usePools();
-  const addPoolGame = useAddPoolGame();
+  const bulkAddPoolGames = useBulkAddPoolGames();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isAddingToPool, setIsAddingToPool] = useState(false);
 
   // Don't render if no games exist
   if (totalCount === 0) {
@@ -93,11 +97,8 @@ export function BulkActions({
 
   const handleAddToPool = async (poolId: string) => {
     const ids = Array.from(selectedIds);
-    setIsAddingToPool(true);
     try {
-      // No bulk pool-add endpoint exists yet; add each member individually
-      // (idempotent). Tracked as a follow-up for a bulk endpoint.
-      await Promise.all(ids.map((id) => addPoolGame.mutateAsync({ poolId, userGameId: id })));
+      await bulkAddPoolGames.mutateAsync({ poolId, userGameIds: ids });
       const pool = pools?.find((p) => p.id === poolId);
       toast.success(
         `Added ${ids.length} game${ids.length !== 1 ? 's' : ''} to ${pool?.name ?? 'pool'}`,
@@ -106,12 +107,10 @@ export function BulkActions({
       onSuccess?.();
     } catch {
       toast.error('Failed to add games to pool');
-    } finally {
-      setIsAddingToPool(false);
     }
   };
 
-  const isLoading = bulkUpdate.isPending || bulkDelete.isPending || isAddingToPool;
+  const isLoading = bulkUpdate.isPending || bulkDelete.isPending || bulkAddPoolGames.isPending;
   const selectedCount = selectedIds.size;
   const hasSelection = selectedCount > 0;
 

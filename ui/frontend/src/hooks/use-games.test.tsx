@@ -179,7 +179,7 @@ describe('use-games hooks', () => {
       const { result } = renderHook(
         () =>
           useUserGames({
-            status: 'in_progress' as PlayStatus,
+            status: ['in_progress'],
             ownershipStatus: 'owned' as OwnershipStatus,
             search: 'zelda',
             page: 2,
@@ -1177,27 +1177,21 @@ describe('use-games hooks', () => {
 
       const queryClient = createTestQueryClient();
 
-      const { result: result1 } = renderHook(
-        () => useUserGames({ status: 'completed' as PlayStatus }),
-        {
-          wrapper: ({ children }) => (
-            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-          ),
-        },
-      );
+      const { result: result1 } = renderHook(() => useUserGames({ status: ['completed'] }), {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      });
 
       await waitFor(() => {
         expect(result1.current.isSuccess).toBe(true);
       });
 
-      const { result: result2 } = renderHook(
-        () => useUserGames({ status: 'in_progress' as PlayStatus }),
-        {
-          wrapper: ({ children }) => (
-            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-          ),
-        },
-      );
+      const { result: result2 } = renderHook(() => useUserGames({ status: ['in_progress'] }), {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      });
 
       await waitFor(() => {
         expect(result2.current.isSuccess).toBe(true);

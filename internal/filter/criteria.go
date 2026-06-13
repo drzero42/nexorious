@@ -11,13 +11,15 @@ const (
 	joinGames             = "LEFT JOIN games AS g ON g.id = ug.game_id"
 )
 
-// ApplyPlayStatus filters by user_games.play_status.
-func ApplyPlayStatus(fb *FilterBuilder, status string) {
-	if status == "" {
+// ApplyPlayStatus filters by user_games.play_status. Multiple statuses OR
+// together (a game matches if its status is in the selected set), mirroring the
+// other multi-value enum facets.
+func ApplyPlayStatus(fb *FilterBuilder, statuses []string) {
+	if len(statuses) == 0 {
 		return
 	}
 	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
-		return q.Where("ug.play_status = ?", status)
+		return q.Where("ug.play_status IN (?)", bun.List(statuses))
 	})
 }
 

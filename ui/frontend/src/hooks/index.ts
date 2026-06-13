@@ -137,6 +137,7 @@ export {
   useDeletePool,
   useReorderPools,
   useAddPoolGame,
+  useBulkAddPoolGames,
   useRemovePoolGame,
   useSetQueue,
 } from './use-pools';

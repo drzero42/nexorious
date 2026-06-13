@@ -13,7 +13,8 @@ describe('pool-filter', () => {
 
   it('cardHasFacets is true when any facet is set', () => {
     expect(cardHasFacets({ genre: ['RPG'] })).toBe(true);
-    expect(cardHasFacets({ play_status: 'backlog' })).toBe(true);
+    expect(cardHasFacets({ play_status: ['backlog'] })).toBe(true);
+    expect(cardHasFacets({ play_status: [] })).toBe(false);
     expect(cardHasFacets({ is_loved: true })).toBe(true);
     expect(cardHasFacets({ rating_min: 7 })).toBe(true);
     expect(cardHasFacets({ q: 'witcher' })).toBe(true);
