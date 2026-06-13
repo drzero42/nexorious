@@ -47,7 +47,7 @@ function QueueItem({
     >
       {onDeck && (
         <Badge className="mb-1 w-full justify-center" variant="default">
-          On deck
+          Play Next
         </Badge>
       )}
       <GameCard
