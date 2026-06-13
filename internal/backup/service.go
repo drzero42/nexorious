@@ -497,6 +497,30 @@ func copyDir(src, dst string) (fileCount int, totalSize int64, err error) {
 	return fileCount, totalSize, err
 }
 
+// writeTarFile writes the regular file at srcPath into tw under the given
+// archive name (tarName).
+func writeTarFile(tw *tar.Writer, srcPath, tarName string) error {
+	info, err := os.Stat(srcPath)
+	if err != nil {
+		return err
+	}
+	header, err := tar.FileInfoHeader(info, "")
+	if err != nil {
+		return err
+	}
+	header.Name = tarName
+	if err := tw.WriteHeader(header); err != nil {
+		return err
+	}
+	file, err := os.Open(srcPath) //nolint:gosec // srcPath is an internally-derived staged backup file, not user input
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	_, err = io.Copy(tw, file)
+	return err
+}
+
 func createTarGz(archivePath, baseDir, dirName string) error {
 	f, err := os.Create(archivePath) //nolint:gosec // archivePath is an internally-derived backup destination under s.backupPath, not user input
 	if err != nil {
@@ -508,9 +532,22 @@ func createTarGz(archivePath, baseDir, dirName string) error {
 	tw := tar.NewWriter(gw)
 
 	srcDir := filepath.Join(baseDir, dirName)
+
+	// Write manifest.json first so it is the leading entry in the (non-seekable)
+	// gzip stream. readManifestFromArchive stops at the first manifest.json, so
+	// listing a backup then decompresses only the tiny manifest instead of
+	// advancing past the entire database.sql + cover art. See #983.
+	manifestPath := filepath.Join(srcDir, "manifest.json")
+	if err := writeTarFile(tw, manifestPath, filepath.Join(dirName, "manifest.json")); err != nil {
+		return err
+	}
+
 	if err := filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if path == manifestPath {
+			return nil // already written first; don't duplicate it
 		}
 		relPath, _ := filepath.Rel(baseDir, path) //nolint:errcheck // path is always under baseDir; cannot fail here
 		info, err := d.Info()
