@@ -8,6 +8,10 @@ import { PlayStatus } from '@/types';
 vi.mock('@/hooks', () => ({
   useBulkUpdateUserGames: vi.fn(),
   useBulkDeleteUserGames: vi.fn(),
+  // Pool hooks for the bulk "Add to pool" control. Empty pool list → the
+  // control doesn't render, so existing toolbar tests are unaffected.
+  usePools: vi.fn(() => ({ data: [] })),
+  useAddPoolGame: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
 // Mock lucide-react icons
@@ -35,6 +39,11 @@ vi.mock('lucide-react', () => ({
   Check: ({ className }: { className?: string }) => (
     <div data-testid="check-icon" className={className}>
       ✓
+    </div>
+  ),
+  ListPlus: ({ className }: { className?: string }) => (
+    <div data-testid="list-plus-icon" className={className}>
+      ListPlus
     </div>
   ),
 }));
@@ -624,6 +633,52 @@ describe('BulkActions', () => {
       await user.click(confirmButton);
 
       expect(mockMutateAsync).toHaveBeenCalledWith(['game-a', 'game-b', 'game-c']);
+    });
+  });
+
+  describe('Bulk add to pool', () => {
+    it('does not render the add-to-pool control when the user has no pools', () => {
+      // Default mock returns { data: [] } → only the status combobox renders.
+      render(<BulkActions {...createDefaultProps()} />);
+      expect(screen.getAllByRole('combobox')).toHaveLength(1);
+    });
+
+    it('adds every selected game to the chosen pool', async () => {
+      const user = userEvent.setup();
+      const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
+      const { usePools, useAddPoolGame } = vi.mocked(await import('@/hooks'));
+      usePools.mockReturnValue({
+        data: [
+          {
+            id: 'pool-1',
+            name: 'Weekend',
+            color: null,
+            position: 0,
+            has_filter: false,
+            queue_count: 0,
+            candidate_count: 0,
+          },
+        ],
+      } as unknown as ReturnType<typeof usePools>);
+      useAddPoolGame.mockReturnValue({
+        mutateAsync: mockMutateAsync,
+        isPending: false,
+      } as unknown as ReturnType<typeof useAddPoolGame>);
+
+      const props = createDefaultProps({ selectedIds: new Set(['game-1', 'game-2']) });
+      render(<BulkActions {...props} />);
+
+      // Status combobox renders first, the add-to-pool combobox second.
+      const comboboxes = screen.getAllByRole('combobox');
+      expect(comboboxes).toHaveLength(2);
+      await user.click(comboboxes[1]);
+      await user.click(screen.getByRole('option', { name: 'Weekend' }));
+
+      // One idempotent add per selected game, all targeting the chosen pool.
+      expect(mockMutateAsync).toHaveBeenCalledTimes(2);
+      expect(mockMutateAsync).toHaveBeenCalledWith({ poolId: 'pool-1', userGameId: 'game-1' });
+      expect(mockMutateAsync).toHaveBeenCalledWith({ poolId: 'pool-1', userGameId: 'game-2' });
+      expect(props.onClearSelection).toHaveBeenCalled();
     });
   });
 });
