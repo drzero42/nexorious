@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   DndContext,
@@ -25,6 +26,7 @@ import {
   useSetQueue,
   useAddPoolGame,
   useRemovePoolGame,
+  poolKeys,
 } from '@/hooks';
 import { UpNextQueue } from '@/components/pools/up-next-queue';
 import { CandidatesGrid } from '@/components/pools/candidates-grid';
@@ -33,7 +35,16 @@ import { PoolSortControl } from '@/components/pools/pool-sort-control';
 import { PoolFilterEditor } from '@/components/pools/pool-filter-editor';
 import { promoteToQueue, reorderQueue } from '@/lib/pool-queue';
 import { resolveZone, planTransition, type PoolZone } from '@/lib/pool-dnd';
+import {
+  applyQueueOrder,
+  removeMember,
+  addCandidate,
+  addToQueue,
+  removeSuggestion,
+} from '@/lib/pool-cache';
 import type { SortField, SortOrder } from '@/lib/sort-options';
+import type { PoolDetail } from '@/types';
+import type { UserGamesListResponse } from '@/api/games';
 
 export const Route = createFileRoute('/_authenticated/pools/$id')({
   component: PoolDetailPage,
@@ -64,6 +75,7 @@ function PoolDetailPage() {
   const addGame = useAddPoolGame();
   const removeGame = useRemovePoolGame();
   const sensors = useDragSensors();
+  const qc = useQueryClient();
 
   const [candSort, setCandSort] = useState<SortField>('title');
   const [candOrder, setCandOrder] = useState<SortOrder>('asc');
@@ -113,11 +125,44 @@ function PoolDetailPage() {
   const openGame = (userGameId: string) =>
     navigate({ to: '/games/$id', params: { id: userGameId } });
 
+  // --- Optimistic cache helpers -------------------------------------------
+  // Each handler edits the React Query cache immediately so a drag/button feels
+  // instant, then rolls back on error. The mutation's own onSuccess invalidation
+  // reconciles against the server. Suggestions live across paginated query keys,
+  // so we snapshot/patch all of them under the pool's suggestions prefix.
+
+  const detailKey = (poolId: string) => poolKeys.detail(poolId);
+  const suggestionsKey = (poolId: string) => poolKeys.suggestions(poolId);
+
+  /** Find a game in any cached suggestions page (needed to build optimistic moves). */
+  const findSuggestion = (poolId: string, userGameId: string) => {
+    for (const [, data] of qc.getQueriesData<UserGamesListResponse>({
+      queryKey: suggestionsKey(poolId),
+    })) {
+      const found = data?.items.find((g) => g.id === userGameId);
+      if (found) return found;
+    }
+    return undefined;
+  };
+
+  const patchDetail = (poolId: string, fn: (d: PoolDetail) => PoolDetail) => {
+    const key = detailKey(poolId);
+    const prev = qc.getQueryData<PoolDetail>(key);
+    if (prev) qc.setQueryData(key, fn(prev));
+    return prev;
+  };
+
   const handleSetQueue = (ids: string[]) => {
     if (!pool) return;
+    const prev = patchDetail(pool.id, (d) => applyQueueOrder(d, ids));
     setQueue.mutate(
       { poolId: pool.id, ids },
-      { onError: () => toast.error('Failed to update queue') },
+      {
+        onError: () => {
+          if (prev) qc.setQueryData(detailKey(pool.id), prev);
+          toast.error('Failed to update queue');
+        },
+      },
     );
   };
 
@@ -131,35 +176,67 @@ function PoolDetailPage() {
     );
   };
 
-  const handleAdd = (userGameId: string) => {
+  const handleRemove = (userGameId: string) => {
     if (!pool) return;
-    addGame.mutate(
+    const prev = patchDetail(pool.id, (d) => removeMember(d, userGameId));
+    removeGame.mutate(
       { poolId: pool.id, userGameId },
       {
-        onSuccess: () => toast.success('Added to pool'),
-        onError: () => toast.error('Failed to add to pool'),
+        onError: () => {
+          if (prev) qc.setQueryData(detailKey(pool.id), prev);
+          toast.error('Failed to remove from pool');
+        },
       },
     );
   };
 
-  const handleRemove = (userGameId: string) => {
+  const handleAdd = (userGameId: string) => {
     if (!pool) return;
-    removeGame.mutate(
+    const game = findSuggestion(pool.id, userGameId);
+    const prevDetail = game ? patchDetail(pool.id, (d) => addCandidate(d, game)) : undefined;
+    const prevSug = game
+      ? qc.getQueriesData<UserGamesListResponse>({ queryKey: suggestionsKey(pool.id) })
+      : [];
+    if (game) {
+      qc.setQueriesData<UserGamesListResponse>({ queryKey: suggestionsKey(pool.id) }, (old) =>
+        old ? removeSuggestion(old, userGameId) : old,
+      );
+    }
+    addGame.mutate(
       { poolId: pool.id, userGameId },
-      { onError: () => toast.error('Failed to remove from pool') },
+      {
+        onSuccess: () => toast.success('Added to pool'),
+        onError: () => {
+          if (prevDetail) qc.setQueryData(detailKey(pool.id), prevDetail);
+          prevSug.forEach(([k, d]) => qc.setQueryData(k, d));
+          toast.error('Failed to add to pool');
+        },
+      },
     );
   };
 
-  // Add a suggestion as a member, then promote it into the queue.
+  // Add a suggestion as a member, then promote it into the queue (suggestion → up-next).
   const addThenQueue = async (userGameId: string, queueIds: string[]) => {
     if (!pool) return;
+    const game = findSuggestion(pool.id, userGameId);
+    const prevDetail = game ? patchDetail(pool.id, (d) => addToQueue(d, game)) : undefined;
+    const prevSug = game
+      ? qc.getQueriesData<UserGamesListResponse>({ queryKey: suggestionsKey(pool.id) })
+      : [];
+    if (game) {
+      qc.setQueriesData<UserGamesListResponse>({ queryKey: suggestionsKey(pool.id) }, (old) =>
+        old ? removeSuggestion(old, userGameId) : old,
+      );
+    }
     try {
       await addGame.mutateAsync({ poolId: pool.id, userGameId });
       setQueue.mutate(
         { poolId: pool.id, ids: [...queueIds, userGameId] },
-        { onError: () => toast.error('Failed to queue game') },
+        { onError: () => void qc.invalidateQueries({ queryKey: detailKey(pool.id) }) },
       );
     } catch {
+      if (prevDetail) qc.setQueryData(detailKey(pool.id), prevDetail);
+      prevSug.forEach(([k, d]) => qc.setQueryData(k, d));
       toast.error('Failed to add to pool');
     }
   };
