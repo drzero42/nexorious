@@ -335,6 +335,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		poolsGroup.PUT("/:id", poolsHandler.HandleUpdatePool)
 		poolsGroup.DELETE("/:id", poolsHandler.HandleDeletePool)
 		poolsGroup.POST("/:id/games", poolsHandler.HandleAddPoolGame)
+		poolsGroup.POST("/:id/games/bulk", poolsHandler.HandleBulkAddPoolGames)
 		poolsGroup.DELETE("/:id/games/:userGameId", poolsHandler.HandleRemovePoolGame)
 		poolsGroup.PUT("/:id/queue", poolsHandler.HandleSetQueue)
 
