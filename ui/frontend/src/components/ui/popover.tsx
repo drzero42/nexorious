@@ -9,9 +9,18 @@ const PopoverTrigger = PopoverPrimitive.Trigger;
 
 const PopoverContent = React.forwardRef<
   React.ComponentRef<typeof PopoverPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
->(({ className, align = 'center', sideOffset = 4, ...props }, ref) => (
-  <PopoverPrimitive.Portal>
+  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content> & {
+    /**
+     * Render inside a Portal (default). Set false when the popover lives inside
+     * a modal Dialog and needs wheel/trackpad scrolling: react-remove-scroll
+     * (Radix's modal scroll-lock) blocks wheel events on portaled content
+     * outside the dialog's DOM tree. Radix Popper positions with strategy:fixed,
+     * so an un-portaled popover still floats free of ancestor overflow.
+     */
+    portalled?: boolean;
+  }
+>(({ className, align = 'center', sideOffset = 4, portalled = true, ...props }, ref) => {
+  const content = (
     <PopoverPrimitive.Content
       ref={ref}
       align={align}
@@ -22,8 +31,9 @@ const PopoverContent = React.forwardRef<
       )}
       {...props}
     />
-  </PopoverPrimitive.Portal>
-));
+  );
+  return portalled ? <PopoverPrimitive.Portal>{content}</PopoverPrimitive.Portal> : content;
+});
 PopoverContent.displayName = PopoverPrimitive.Content.displayName;
 
 export { Popover, PopoverTrigger, PopoverContent };

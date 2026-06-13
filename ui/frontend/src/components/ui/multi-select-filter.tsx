@@ -60,6 +60,11 @@ export function MultiSelectFilter({
           </Button>
         </PopoverTrigger>
         <PopoverContent
+          // Not portalled: keeps the popover inside the DOM tree of any modal
+          // Dialog (e.g. the pool filter editor) so react-remove-scroll allows
+          // wheel/trackpad scrolling. Radix Popper uses strategy:fixed, so it
+          // still floats free of ancestor overflow in non-dialog usage too.
+          portalled={false}
           className="max-h-[var(--radix-popover-content-available-height)] w-56 overflow-y-auto p-2"
           align="start"
         >
