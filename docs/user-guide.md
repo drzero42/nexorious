@@ -114,6 +114,40 @@ A wishlisted game's page shows price-and-deal links (for PC and for console) bas
 
 **Tags** are your own labels — "co-op night," "to finish in 2026," whatever suits you. On the Tags page you create them with a name and a colour, and you can see how many games use each one. Edit or delete a tag at any time; deleting it just removes the label, not the games. You attach tags to a game from its edit page.
 
+## Planning
+
+A library tells you what you *have*; the **Planning** page helps you decide what to play *next*. It's built around **pools** — named collections of games you're planning to play, that you can put in whatever order you like.
+
+How you organise them is up to you. Keep one running "up next" list, or split your plans into as many pools as suit you — one per play partner ("co-op with Sam"), one per mood or genre ("RPGs," "quick shooters"), whatever fits how you decide. The same game can sit in several pools at once, and a pool can hold games you don't own yet alongside ones you do, so a pool is as much a plan for what to buy and play as for what to play next.
+
+Create a pool from the Planning page — give it a name and, if you like, a colour — and drag your pools there to set the order they're listed in.
+
+### A pool, and its queue
+
+Open a pool and you get three stacked sections:
+
+- **Up Next** — the ordered queue. Drag cards to reorder them; the game at the top is marked **Play Next**, your on-deck pick. A pool you never reorder is just a flat list; a pool you do reorder is a proper queue. Either way it's the same thing — a queue is only a pool with an order you care about.
+- **Candidates** — games you've earmarked for the pool but haven't placed in the queue yet. Promote a candidate into **Up Next** when you're ready to commit to an order, or demote one back out if you change your mind.
+- **Suggestions** — games from your library and wishlist that match the pool's filter but aren't in the pool yet, each with an **Add** button. This is the "matches this pool — add?" list.
+
+### Filling a pool
+
+You can add a game to a pool from three places: the **Add** button in a pool's Suggestions list, the **Add to pool** action on a game's own page, and the bulk **Add to pool** control on the [Library](#finding-games-in-your-library) page once you've selected several games at once. The first is for working through what a pool's filter turns up; the other two are for dropping in a specific game wherever you happen to be looking.
+
+### The pool filter
+
+Each pool can have one saved filter — **Add filter** (or **Edit filter**) at the top of the pool. It drives the Suggestions list: owned and wishlisted games matching it, minus whatever's already in the pool. The filter speaks the same facets as library search — play status, genre, theme, platform, storefront, tags, rating, game mode, perspective, and time-to-beat — and you can stack several filter cards, where a game counts if it matches *any* of them.
+
+Suggestions are simply this filter applied to your collection — nothing more. There's no hidden ranking or "for you" guesswork: a game shows up because it matches the filter you set, so the suggestions are entirely yours to shape. One thing worth knowing is that a game with no genre or theme recorded can't match a filter built on those, so the more complete your metadata, the more useful the suggestions. Finished games are left out automatically (see below), so you're never pointed at something you've already played.
+
+### Wishlist games in a pool
+
+A pool can include games you don't own yet, not just ones you do. A game you've [wishlisted](#wishlist) shows a **Buy first** badge instead of the usual play controls, so you can tell at a glance which games you'd need to buy before playing. When you get one — either by [moving it to your library](#wishlist) yourself or through a storefront sync — it turns into a normal owned game and keeps its place in the pool and queue, so you don't have to add it again.
+
+### When you finish a game
+
+When you set a game's [play status](#tracking-your-progress) to **Completed**, **Mastered**, **Dominated**, or **Dropped**, it's automatically removed from every pool and queue it belongs to, and the queue moves on to the next game. This keeps your pools focused on what's still ahead of you, rather than games you're already done with. If you want to play one again later, just add it back.
+
 ## Syncing your storefront libraries
 
 Sync is what makes Nexorious worth running if your games are spread across several stores: connect an account once and your purchases there show up in your library automatically, enriched with IGDB metadata. Each person connects their own accounts — your credentials are yours and are stored encrypted on the server.
