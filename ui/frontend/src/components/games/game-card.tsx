@@ -15,10 +15,10 @@ export interface GameCardProps {
   selected?: boolean;
   onSelect?: (id: string) => void;
   onClick?: () => void;
-  /** Optional overlay rendered top-right (e.g. a drag handle or per-card menu). */
-  topRightSlot?: ReactNode;
   /** Optional action row rendered below the card body (e.g. "+ add" / "promote"). */
   actionsSlot?: ReactNode;
+  /** Extra classes merged onto the card root (e.g. a grab cursor for drag zones). */
+  className?: string;
 }
 
 export function GameCard({
@@ -26,8 +26,8 @@ export function GameCard({
   selected,
   onSelect,
   onClick,
-  topRightSlot,
   actionsSlot,
+  className,
 }: GameCardProps) {
   const coverUrl = getCoverUrl(game);
   const buyFirst = isBuyFirst(game);
@@ -37,6 +37,7 @@ export function GameCard({
       className={cn(
         'overflow-hidden cursor-pointer transition-all hover:shadow-lg group',
         selected && 'ring-2 ring-primary',
+        className,
       )}
       onClick={onClick}
     >
@@ -100,16 +101,12 @@ export function GameCard({
           )
         )}
 
-        {/* Top-right row: loved heart and an optional context slot (e.g. drag
-            handle) sit side by side so they never overlap. */}
-        {(game.is_loved || topRightSlot) && (
-          <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-            {game.is_loved && (
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 text-sm">
-                &#9829;
-              </span>
-            )}
-            {topRightSlot && <div onClick={(e) => e.stopPropagation()}>{topRightSlot}</div>}
+        {/* Loved indicator */}
+        {game.is_loved && (
+          <div className="absolute top-2 right-2 z-10">
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 text-sm">
+              &#9829;
+            </span>
           </div>
         )}
       </div>

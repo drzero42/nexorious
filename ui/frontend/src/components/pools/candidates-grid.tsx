@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
+import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { Button } from '@/components/ui/button';
 import { ArrowUpToLine, X } from 'lucide-react';
-import { GameCard } from '@/components/games/game-card';
+import { SortablePoolCard, ZoneDroppable } from './pool-dnd';
+import { ZONE_DROPPABLE_ID } from '@/lib/pool-dnd';
 import type { UserGame } from '@/types';
 import type { SortField, SortOrder } from '@/lib/sort-options';
 
@@ -54,43 +56,45 @@ export function CandidatesGrid({
     return arr;
   }, [candidates, sortBy, sortOrder]);
 
-  if (candidates.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm text-muted-foreground">
-        No candidates yet — add games from Suggestions or the library.
-      </p>
-    );
-  }
-
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-      {sorted.map((game) => (
-        <GameCard
-          key={game.id}
-          game={game}
-          onClick={() => onOpen(game.id)}
-          actionsSlot={
-            <div className="flex items-center justify-between">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onPromote(game.id)}
-                aria-label="Promote to queue"
-              >
-                <ArrowUpToLine className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onRemove(game.id)}
-                aria-label="Remove from pool"
-              >
-                <X className="h-4 w-4 text-destructive" />
-              </Button>
-            </div>
-          }
-        />
-      ))}
-    </div>
+    <ZoneDroppable id={ZONE_DROPPABLE_ID.candidates} className="min-h-24 p-1">
+      {candidates.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          No candidates yet — drag games here from Suggestions or the library.
+        </p>
+      ) : (
+        <SortableContext items={sorted.map((g) => g.id)} strategy={rectSortingStrategy}>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {sorted.map((game) => (
+              <SortablePoolCard
+                key={game.id}
+                game={game}
+                onOpen={onOpen}
+                actions={
+                  <div className="flex items-center justify-between">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onPromote(game.id)}
+                      aria-label="Promote to queue"
+                    >
+                      <ArrowUpToLine className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onRemove(game.id)}
+                      aria-label="Remove from pool"
+                    >
+                      <X className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                }
+              />
+            ))}
+          </div>
+        </SortableContext>
+      )}
+    </ZoneDroppable>
   );
 }

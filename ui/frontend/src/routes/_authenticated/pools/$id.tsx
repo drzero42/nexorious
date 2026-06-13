@@ -1,22 +1,60 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
 import { toast } from 'sonner';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  pointerWithin,
+  closestCorners,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Filter, XCircle } from 'lucide-react';
-import { usePool, useSetQueue, useAddPoolGame, useRemovePoolGame } from '@/hooks';
+import { GameCard } from '@/components/games/game-card';
+import {
+  usePool,
+  usePoolSuggestions,
+  useSetQueue,
+  useAddPoolGame,
+  useRemovePoolGame,
+} from '@/hooks';
 import { UpNextQueue } from '@/components/pools/up-next-queue';
 import { CandidatesGrid } from '@/components/pools/candidates-grid';
 import { SuggestionsGrid } from '@/components/pools/suggestions-grid';
 import { PoolSortControl } from '@/components/pools/pool-sort-control';
 import { PoolFilterEditor } from '@/components/pools/pool-filter-editor';
-import { promoteToQueue } from '@/lib/pool-queue';
+import { promoteToQueue, reorderQueue } from '@/lib/pool-queue';
+import { resolveZone, planTransition, type PoolZone } from '@/lib/pool-dnd';
 import type { SortField, SortOrder } from '@/lib/sort-options';
 
 export const Route = createFileRoute('/_authenticated/pools/$id')({
   component: PoolDetailPage,
 });
+
+const SUGGESTIONS_PER_PAGE = 24;
+
+// Pointer needs a small move to start a drag (so clicks still open the game);
+// touch needs a brief press-and-hold (so a quick swipe still scrolls the page).
+const useDragSensors = () =>
+  useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  );
+
+// Prefer the droppable directly under the pointer; fall back to nearest corners
+// when the pointer is outside every zone (e.g. mid-flight between zones).
+const collisionDetection: CollisionDetection = (args) => {
+  const pointer = pointerWithin(args);
+  return pointer.length > 0 ? pointer : closestCorners(args);
+};
 
 function PoolDetailPage() {
   const { id } = useParams({ from: '/_authenticated/pools/$id' });
@@ -25,6 +63,7 @@ function PoolDetailPage() {
   const setQueue = useSetQueue();
   const addGame = useAddPoolGame();
   const removeGame = useRemovePoolGame();
+  const sensors = useDragSensors();
 
   const [candSort, setCandSort] = useState<SortField>('title');
   const [candOrder, setCandOrder] = useState<SortOrder>('asc');
@@ -32,6 +71,37 @@ function PoolDetailPage() {
   const [sugOrder, setSugOrder] = useState<SortOrder>('asc');
   const [sugPage, setSugPage] = useState(1);
   const [showFilter, setShowFilter] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const { data: sugData, isLoading: sugLoading } = usePoolSuggestions({
+    poolId: id,
+    sortBy: sugSort,
+    sortOrder: sugOrder,
+    page: sugPage,
+    perPage: SUGGESTIONS_PER_PAGE,
+  });
+  // Suggestions = filter matches NOT already in the pool.
+  const suggestionItems = useMemo(
+    () => (sugData?.items ?? []).filter((g) => g.pool_membership == null),
+    [sugData],
+  );
+
+  // Card id → zone, for resolving drag targets. The three zones are disjoint
+  // (queued/candidate are members; suggestions are non-members).
+  const cardZone = useMemo(() => {
+    const map: Record<string, PoolZone> = {};
+    pool?.queue.forEach((g) => (map[g.id] = 'queue'));
+    pool?.candidates.forEach((g) => (map[g.id] = 'candidates'));
+    suggestionItems.forEach((g) => (map[g.id] = 'suggestions'));
+    return map;
+  }, [pool, suggestionItems]);
+
+  const activeGame = useMemo(() => {
+    if (!activeId || !pool) return null;
+    return (
+      [...pool.queue, ...pool.candidates, ...suggestionItems].find((g) => g.id === activeId) ?? null
+    );
+  }, [activeId, pool, suggestionItems]);
 
   useEffect(() => {
     if (!isLoading && (error || !pool)) {
@@ -51,13 +121,14 @@ function PoolDetailPage() {
     );
   };
 
-  const handlePromote = async (userGameId: string) => {
+  const handlePromote = (userGameId: string) => {
     if (!pool) return;
-    const ids = promoteToQueue(
-      pool.queue.map((g) => g.id),
-      userGameId,
+    handleSetQueue(
+      promoteToQueue(
+        pool.queue.map((g) => g.id),
+        userGameId,
+      ),
     );
-    handleSetQueue(ids);
   };
 
   const handleAdd = (userGameId: string) => {
@@ -77,6 +148,60 @@ function PoolDetailPage() {
       { poolId: pool.id, userGameId },
       { onError: () => toast.error('Failed to remove from pool') },
     );
+  };
+
+  // Add a suggestion as a member, then promote it into the queue.
+  const addThenQueue = async (userGameId: string, queueIds: string[]) => {
+    if (!pool) return;
+    try {
+      await addGame.mutateAsync({ poolId: pool.id, userGameId });
+      setQueue.mutate(
+        { poolId: pool.id, ids: [...queueIds, userGameId] },
+        { onError: () => toast.error('Failed to queue game') },
+      );
+    } catch {
+      toast.error('Failed to add to pool');
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = event;
+    if (!pool || !over) return;
+    const draggedId = String(active.id);
+    const source = cardZone[draggedId];
+    const target = resolveZone(String(over.id), cardZone);
+    if (!source || !target) return;
+
+    const queueIds: string[] = pool.queue.map((g) => g.id);
+    switch (planTransition(source, target)) {
+      case 'reorder': {
+        const from = queueIds.indexOf(draggedId);
+        // Dropped on a queue card → take its slot; dropped on the zone → end.
+        let to = queueIds.indexOf(String(over.id));
+        if (to < 0) to = queueIds.length - 1;
+        if (from < 0 || from === to) return;
+        handleSetQueue(reorderQueue(queueIds, from, to));
+        break;
+      }
+      case 'promote':
+        handleSetQueue([...queueIds, draggedId]);
+        break;
+      case 'add-candidate':
+        handleAdd(draggedId);
+        break;
+      case 'add-and-queue':
+        void addThenQueue(draggedId, queueIds);
+        break;
+      case 'demote':
+        handleSetQueue(queueIds.filter((qid) => qid !== draggedId));
+        break;
+      case 'remove':
+        handleRemove(draggedId);
+        break;
+      case 'noop':
+        break;
+    }
   };
 
   if (isLoading) {
@@ -132,66 +257,89 @@ function PoolDetailPage() {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Up Next</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <UpNextQueue queue={pool.queue} onSetQueue={handleSetQueue} onRemove={handleRemove} />
-        </CardContent>
-      </Card>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))}
+        onDragCancel={() => setActiveId(null)}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Up Next</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <UpNextQueue
+                queue={pool.queue}
+                onSetQueue={handleSetQueue}
+                onRemove={handleRemove}
+                onOpen={openGame}
+              />
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Candidates ({pool.candidates.length})</CardTitle>
-          <PoolSortControl
-            sortBy={candSort}
-            sortOrder={candOrder}
-            onSortByChange={setCandSort}
-            onSortOrderChange={setCandOrder}
-          />
-        </CardHeader>
-        <CardContent>
-          <CandidatesGrid
-            candidates={pool.candidates}
-            sortBy={candSort}
-            sortOrder={candOrder}
-            onPromote={handlePromote}
-            onRemove={handleRemove}
-            onOpen={openGame}
-          />
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Candidates ({pool.candidates.length})</CardTitle>
+              <PoolSortControl
+                sortBy={candSort}
+                sortOrder={candOrder}
+                onSortByChange={setCandSort}
+                onSortOrderChange={setCandOrder}
+              />
+            </CardHeader>
+            <CardContent>
+              <CandidatesGrid
+                candidates={pool.candidates}
+                sortBy={candSort}
+                sortOrder={candOrder}
+                onPromote={handlePromote}
+                onRemove={handleRemove}
+                onOpen={openGame}
+              />
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Suggestions</CardTitle>
-          <PoolSortControl
-            sortBy={sugSort}
-            sortOrder={sugOrder}
-            onSortByChange={(f) => {
-              setSugSort(f);
-              setSugPage(1);
-            }}
-            onSortOrderChange={(o) => {
-              setSugOrder(o);
-              setSugPage(1);
-            }}
-          />
-        </CardHeader>
-        <CardContent>
-          <SuggestionsGrid
-            poolId={pool.id}
-            hasFilter={pool.has_filter}
-            sortBy={sugSort}
-            sortOrder={sugOrder}
-            page={sugPage}
-            onPageChange={setSugPage}
-            onAdd={handleAdd}
-            onOpen={openGame}
-          />
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Suggestions</CardTitle>
+              <PoolSortControl
+                sortBy={sugSort}
+                sortOrder={sugOrder}
+                onSortByChange={(f) => {
+                  setSugSort(f);
+                  setSugPage(1);
+                }}
+                onSortOrderChange={(o) => {
+                  setSugOrder(o);
+                  setSugPage(1);
+                }}
+              />
+            </CardHeader>
+            <CardContent>
+              <SuggestionsGrid
+                items={suggestionItems}
+                isLoading={sugLoading}
+                hasFilter={pool.has_filter}
+                page={sugPage}
+                pages={sugData?.pages ?? 1}
+                onPageChange={setSugPage}
+                onAdd={handleAdd}
+                onOpen={openGame}
+              />
+            </CardContent>
+          </Card>
+        </div>
+
+        <DragOverlay dropAnimation={null}>
+          {activeGame ? (
+            <div className="w-40">
+              <GameCard game={activeGame} />
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       <PoolFilterEditor
         poolId={pool.id}
