@@ -19,9 +19,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { useBulkUpdateUserGames, useBulkDeleteUserGames } from '@/hooks';
+import { toast } from 'sonner';
+import { useBulkUpdateUserGames, useBulkDeleteUserGames, usePools, useAddPoolGame } from '@/hooks';
 import { PlayStatus, SelectionMode } from '@/types';
-import { Trash2, X } from 'lucide-react';
+import { ListPlus, Trash2, X } from 'lucide-react';
 
 export interface BulkActionsProps {
   selectedIds: Set<string>;
@@ -56,7 +57,10 @@ export function BulkActions({
 }: BulkActionsProps) {
   const bulkUpdate = useBulkUpdateUserGames();
   const bulkDelete = useBulkDeleteUserGames();
+  const { data: pools } = usePools();
+  const addPoolGame = useAddPoolGame();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isAddingToPool, setIsAddingToPool] = useState(false);
 
   // Don't render if no games exist
   if (totalCount === 0) {
@@ -87,7 +91,27 @@ export function BulkActions({
     }
   };
 
-  const isLoading = bulkUpdate.isPending || bulkDelete.isPending;
+  const handleAddToPool = async (poolId: string) => {
+    const ids = Array.from(selectedIds);
+    setIsAddingToPool(true);
+    try {
+      // No bulk pool-add endpoint exists yet; add each member individually
+      // (idempotent). Tracked as a follow-up for a bulk endpoint.
+      await Promise.all(ids.map((id) => addPoolGame.mutateAsync({ poolId, userGameId: id })));
+      const pool = pools?.find((p) => p.id === poolId);
+      toast.success(
+        `Added ${ids.length} game${ids.length !== 1 ? 's' : ''} to ${pool?.name ?? 'pool'}`,
+      );
+      onClearSelection();
+      onSuccess?.();
+    } catch {
+      toast.error('Failed to add games to pool');
+    } finally {
+      setIsAddingToPool(false);
+    }
+  };
+
+  const isLoading = bulkUpdate.isPending || bulkDelete.isPending || isAddingToPool;
   const selectedCount = selectedIds.size;
   const hasSelection = selectedCount > 0;
 
@@ -155,6 +179,23 @@ export function BulkActions({
               ))}
             </SelectContent>
           </Select>
+
+          {/* Bulk add to pool (only when the user has pools) */}
+          {pools && pools.length > 0 && (
+            <Select onValueChange={handleAddToPool} disabled={isLoading}>
+              <SelectTrigger className="w-40">
+                <ListPlus className="h-4 w-4" />
+                <SelectValue placeholder="Add to pool" />
+              </SelectTrigger>
+              <SelectContent>
+                {pools.map((pool) => (
+                  <SelectItem key={pool.id} value={pool.id}>
+                    {pool.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           {/* Delete button with confirmation */}
           <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

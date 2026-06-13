@@ -62,6 +62,26 @@ func ApplyRatingMax(fb *FilterBuilder, max *float64) {
 	})
 }
 
+// ApplyTimeToBeat filters by games.howlongtobeat_main within [min, max].
+// A NULL howlongtobeat_main never matches a range (NULL comparisons are false).
+// Requires the games JOIN, like the genre/theme facets.
+func ApplyTimeToBeat(fb *FilterBuilder, min, max *float64) {
+	if min == nil && max == nil {
+		return
+	}
+	fb.AddJoin("g", joinGames)
+	if min != nil {
+		fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Where("g.howlongtobeat_main >= ?", *min)
+		})
+	}
+	if max != nil {
+		fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Where("g.howlongtobeat_main <= ?", *max)
+		})
+	}
+}
+
 // ApplyHasNotes filters by whether personal_notes is present.
 func ApplyHasNotes(fb *FilterBuilder, v *bool) {
 	if v == nil {

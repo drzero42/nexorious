@@ -159,7 +159,7 @@ func (h *EventsHandler) HandleList(c *echo.Context) error {
 	ctx := c.Request().Context()
 	var rows []eventRow
 	if err := q.Scan(context.Background(), &rows); err != nil {
-		slog.ErrorContext(ctx, "events: list query failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "events: list query failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list events")
 	}
 

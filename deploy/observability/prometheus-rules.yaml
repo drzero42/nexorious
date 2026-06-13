@@ -1,0 +1,155 @@
+# Nexorious — Prometheus / VictoriaMetrics alerting rules (PromQL / MetricsQL).
+#
+# SINGLE SOURCE OF TRUTH. Three ways to use it:
+#   1. Non-Helm Prometheus: reference this file from prometheus.yml
+#        rule_files: [ /etc/prometheus/rules/prometheus-rules.yaml ]
+#      then reload (POST /-/reload or SIGHUP).
+#   2. Non-Helm vmalert: vmalert -rule=/etc/vmalert/prometheus-rules.yaml
+#      (groups are prometheus-type — the vmalert default).
+#   3. Helm: set alerts.enabled=true and alerts.prometheus.enabled=true (renders
+#      a PrometheusRule) and/or alerts.victoriaMetrics.enabled=true (a VMRule).
+#      Both templates wrap THIS exact file via .Files.Get.
+#
+# METRIC NAMES come from the OTel→Prometheus exporter (#910): monotonic counters
+# carry _total; histogram seconds carry _seconds_bucket/_count/_sum. If you run
+# multiple apps in one Prometheus, scope each expr by the job/namespace label
+# your scrape config adds. Thresholds/windows are conservative starting points —
+# tune to your traffic. A couple of names (go_sql_query_timing_*,
+# db_client_connections_*) depend on the exporter's unit rendering — confirm
+# against your live /metrics and adjust if your build labels them differently.
+#
+# Known coverage gap (by design, see #909): there are NO HTTP-server request
+# metrics (we skip a custom echo v5 middleware), so server-side 5xx/latency
+# alerts are out of scope — coverage is sync / jobs / external APIs / DB /
+# target-up.
+groups:
+  - name: nexorious-sync
+    rules:
+      - alert: NexoriousSyncErrorRatioHigh
+        # Share of completed sync jobs that finished with item errors, per source.
+        expr: |
+          sum by (source) (rate(nexorious_sync_total{status="completed_with_errors"}[15m]))
+            /
+          sum by (source) (rate(nexorious_sync_total[15m]))
+            > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High sync error ratio for {{ $labels.source }}"
+          description: "Over 50% of {{ $labels.source }} sync jobs in the last 15m finished with errors ({{ $value | humanizePercentage }})."
+
+      - alert: NexoriousSyncItemFailuresHigh
+        # Share of synced items that failed, per source.
+        expr: |
+          sum by (source) (rate(nexorious_sync_items_total{outcome="failed"}[30m]))
+            /
+          sum by (source) (rate(nexorious_sync_items_total[30m]))
+            > 0.2
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High per-item sync failure rate for {{ $labels.source }}"
+          description: "Over 20% of {{ $labels.source }} synced items failed in the last 30m ({{ $value | humanizePercentage }})."
+
+  - name: nexorious-jobs
+    rules:
+      - alert: NexoriousJobErrorRatioHigh
+        # River worker error+panic share across all job kinds.
+        expr: |
+          sum (rate(river_work_count_total{status=~"error|panic"}[10m]))
+            /
+          sum (rate(river_work_count_total[10m]))
+            > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated River job failure rate"
+          description: "Over 10% of River jobs failed or panicked in the last 10m ({{ $value | humanizePercentage }})."
+
+      - alert: NexoriousJobPanics
+        expr: increase(river_work_count_total{status="panic"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "River worker panic"
+          description: "{{ $value }} River job panic(s) in the last 10m — a worker hit an unrecovered panic."
+
+      - alert: NexoriousJobDurationP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(river_work_duration_histogram_seconds_bucket[10m]))
+          ) > 300
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "River job p95 duration over 5m"
+          description: "p95 job work duration has exceeded 300s for 15m — workers may be slow or stuck."
+
+  - name: nexorious-external-api
+    rules:
+      - alert: NexoriousExternalAPIErrorRatioHigh
+        # 5xx share of outbound HTTP client calls, per upstream host.
+        expr: |
+          sum by (server_address) (rate(http_client_request_duration_seconds_count{http_response_status_code=~"5.."}[10m]))
+            /
+          sum by (server_address) (rate(http_client_request_duration_seconds_count[10m]))
+            > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High 5xx rate calling {{ $labels.server_address }}"
+          description: "Over 20% of outbound requests to {{ $labels.server_address }} returned 5xx in the last 10m ({{ $value | humanizePercentage }})."
+
+      - alert: NexoriousExternalAPILatencyP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, server_address) (rate(http_client_request_duration_seconds_bucket[10m]))
+          ) > 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "External API p95 latency high for {{ $labels.server_address }}"
+          description: "p95 request duration to {{ $labels.server_address }} has exceeded 10s for 15m."
+
+  - name: nexorious-database
+    rules:
+      - alert: NexoriousDBErrorsHigh
+        expr: sum (rate(nexorious_db_errors_total[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated database error rate"
+          description: "Database queries are failing at {{ $value | printf \"%.2f\" }}/s (excluding not-found) over the last 10m."
+
+      - alert: NexoriousDBLatencyP95High
+        # bunotel records query timing in milliseconds; threshold is 500ms.
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(go_sql_query_timing_milliseconds_bucket[10m]))
+          ) > 500
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database query p95 latency over 500ms"
+          description: "p95 query timing has exceeded 500ms for 15m — the database or connection pool may be saturated."
+
+  - name: nexorious-target
+    rules:
+      - alert: NexoriousTargetDown
+        # Adjust the job matcher to your ServiceMonitor's generated job label.
+        expr: up{job=~".*nexorious.*"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nexorious scrape target down"
+          description: "Prometheus has failed to scrape the nexorious /metrics endpoint for 5m — the instance may be down or unreachable."

@@ -3,26 +3,41 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PlatformIconList } from '@/components/ui/platform-icon';
 import type { UserGame } from '@/types';
+import type { ReactNode } from 'react';
 import { Timer, Gamepad2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatTtb, formatIgdbRating, formatHoursPlayed, getCoverUrl } from '@/lib/game-utils';
 import { statusColors, statusLabels } from '@/lib/play-status';
+import { isBuyFirst } from '@/lib/game-flags';
 
 export interface GameCardProps {
   game: UserGame;
   selected?: boolean;
   onSelect?: (id: string) => void;
   onClick?: () => void;
+  /** Optional action row rendered below the card body (e.g. "+ add" / "promote"). */
+  actionsSlot?: ReactNode;
+  /** Extra classes merged onto the card root (e.g. a grab cursor for drag zones). */
+  className?: string;
 }
 
-export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
+export function GameCard({
+  game,
+  selected,
+  onSelect,
+  onClick,
+  actionsSlot,
+  className,
+}: GameCardProps) {
   const coverUrl = getCoverUrl(game);
+  const buyFirst = isBuyFirst(game);
 
   return (
     <Card
       className={cn(
         'overflow-hidden cursor-pointer transition-all hover:shadow-lg group',
         selected && 'ring-2 ring-primary',
+        className,
       )}
       onClick={onClick}
     >
@@ -68,18 +83,27 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
           </div>
         )}
 
-        {/* Status badge — hidden for wishlisted entries */}
-        {!game.is_wishlisted && (
+        {/* Bottom-left badge: play status, or "Buy first" for wishlisted-unowned
+            entries (which carry the badge instead of a play affordance). */}
+        {buyFirst ? (
           <div className="absolute bottom-2 left-2">
-            <Badge className={cn('text-white border-0', statusColors[game.play_status])}>
-              {statusLabels[game.play_status]}
+            <Badge variant="secondary" className="text-xs">
+              Buy first
             </Badge>
           </div>
+        ) : (
+          !game.is_wishlisted && (
+            <div className="absolute bottom-2 left-2">
+              <Badge className={cn('text-white border-0', statusColors[game.play_status])}>
+                {statusLabels[game.play_status]}
+              </Badge>
+            </div>
+          )
         )}
 
         {/* Loved indicator */}
         {game.is_loved && (
-          <div className="absolute top-2 right-2">
+          <div className="absolute top-2 right-2 z-10">
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 text-sm">
               &#9829;
             </span>
@@ -129,6 +153,13 @@ export function GameCard({ game, selected, onSelect, onClick }: GameCardProps) {
               {formatTtb(game.game?.howlongtobeat_extra)} /{' '}
               {formatTtb(game.game?.howlongtobeat_completionist)}
             </span>
+          </div>
+        )}
+
+        {/* Actions slot (e.g. promote / remove buttons) */}
+        {actionsSlot && (
+          <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+            {actionsSlot}
           </div>
         )}
       </CardContent>

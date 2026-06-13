@@ -356,7 +356,7 @@ func (mg *Migrator) StartDBProbe(ctx context.Context, db *bun.DB, onRecovery fun
 				if AppState(mg.state.Load()) == AppStateDBUnavailable {
 					prev := AppState(mg.prevState.Load())
 					if err := mg.recoverFromUnavailable(ctx, db, prev, onRecovery); err != nil {
-						slog.ErrorContext(ctx, "db probe: recovery failed, remaining in DBUnavailable", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+						slog.ErrorContext(ctx, "db probe: recovery failed, remaining in DBUnavailable", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 					}
 				}
 			}

@@ -41,6 +41,7 @@ var (
 	metricsHandler http.Handler
 	syncTotal      otelmetric.Int64Counter
 	syncItemsTotal otelmetric.Int64Counter
+	dbErrors       otelmetric.Int64Counter
 
 	// Set by Init; read by HTTPTransport (transport.go). instrumentHTTP is
 	// true when metrics or tracing is enabled — otelhttp emits client metrics
@@ -168,7 +169,7 @@ func initInstruments(mp otelmetric.MeterProvider) {
 	var err error
 	syncTotal, err = m.Int64Counter(
 		"nexorious_sync",
-		otelmetric.WithDescription("Count of completed sync jobs by source and final status."),
+		otelmetric.WithDescription("Count of finished sync jobs by source and final status (completed, completed_with_errors, failed)."),
 	)
 	if err != nil {
 		slog.Error("observability: failed to create nexorious_sync counter", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
@@ -180,11 +181,19 @@ func initInstruments(mp otelmetric.MeterProvider) {
 	if err != nil {
 		slog.Error("observability: failed to create nexorious_sync_items counter", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
 	}
+	dbErrors, err = m.Int64Counter(
+		"nexorious_db_errors",
+		otelmetric.WithDescription("Count of failed database queries by SQL operation (excludes ErrNoRows / context cancellation)."),
+	)
+	if err != nil {
+		slog.Error("observability: failed to create nexorious_db_errors counter", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
+	}
 }
 
-// RecordSyncOutcome records one completed sync job. source is a storefront slug
-// (e.g. "steam"); status is "completed" or "completed_with_errors". Never label
-// by user_id — cardinality must stay bounded.
+// RecordSyncOutcome records one finished sync job. source is a storefront slug
+// (e.g. "steam"); status is "completed", "completed_with_errors", or "failed"
+// (the hard-failure paths — library fetch / credentials error). Never label by
+// user_id — cardinality must stay bounded.
 func RecordSyncOutcome(ctx context.Context, source, status string) {
 	if syncTotal == nil {
 		return
@@ -205,5 +214,17 @@ func RecordSyncItems(ctx context.Context, source, outcome string, n int64) {
 	syncItemsTotal.Add(ctx, n, otelmetric.WithAttributes(
 		attribute.String("source", source),
 		attribute.String("outcome", outcome),
+	))
+}
+
+// RecordDBError records one failed database query, labeled by SQL operation
+// (SELECT/INSERT/…). Operation cardinality is bounded; never label by table or
+// full query text. A nil instrument (metrics disabled) is a no-op.
+func RecordDBError(ctx context.Context, operation string) {
+	if dbErrors == nil {
+		return
+	}
+	dbErrors.Add(ctx, 1, otelmetric.WithAttributes(
+		attribute.String("operation", operation),
 	))
 }

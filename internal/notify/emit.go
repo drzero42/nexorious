@@ -73,7 +73,7 @@ func Emit(ctx context.Context, db *bun.DB, p EmitParams) {
 		return
 	}
 	if err != nil {
-		slog.ErrorContext(ctx, "notify: insert event", "type", p.Type, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "notify: insert event", "type", p.Type, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return
 	}
 

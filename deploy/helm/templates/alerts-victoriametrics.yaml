@@ -1,0 +1,16 @@
+{{- if and .Values.alerts.enabled .Values.alerts.victoriaMetrics.enabled }}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: {{ include "nexorious.fullname" . }}-metrics-alerts
+  labels:
+    app.kubernetes.io/name: {{ include "nexorious.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "nexorious.chart" . }}
+    {{- with .Values.alerts.victoriaMetrics.ruleLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+{{ .Files.Get "files/prometheus-rules.yaml" | required "files/prometheus-rules.yaml is missing from the chart" | indent 2 }}
+{{- end }}

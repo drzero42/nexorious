@@ -47,6 +47,8 @@ func (w *DarkadiaMatchWorker) Work(ctx context.Context, job *river.Job[DarkadiaM
 		slog.ErrorContext(ctx, "darkadia_match: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
+	// Correlate every line below to the parent import job.
+	ctx = logging.WithJobID(ctx, item.JobID)
 
 	if w.IGDBClient == nil || !w.IGDBClient.Configured() {
 		darkadiaMarkPendingReview(ctx, w.DB, &item, nil, nil)
@@ -130,6 +132,8 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 		slog.ErrorContext(ctx, "darkadia_finalize: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
+	// Correlate every line below to the parent import job.
+	ctx = logging.WithJobID(ctx, item.JobID)
 	if item.ResolvedIGDBID == nil {
 		markItemFailed(bg, w.DB, &item, "no resolved IGDB id", "darkadia_finalize: markItemFailed")
 		DarkadiaCheckJobCompletion(w.DB, item.JobID)
@@ -166,7 +170,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 				created = t.UTC()
 			}
 		}
-		ps := coercePlayStatus(&payload.PlayStatus)
+		ps := coercePlayStatus(ctx, &payload.PlayStatus)
 		ug = models.UserGame{
 			ID: uuid.NewString(), UserID: item.UserID, GameID: igdbID,
 			PlayStatus: ps, PersonalRating: payload.PersonalRating, IsLoved: payload.IsLoved,

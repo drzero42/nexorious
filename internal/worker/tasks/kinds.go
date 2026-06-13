@@ -13,5 +13,7 @@ func PerItemJobKinds() []string {
 		StoreLinkRefreshItemArgs{}.Kind(),
 		ImportItemArgs{}.Kind(),
 		MetadataFetchArgs{}.Kind(),
+		DarkadiaMatchArgs{}.Kind(),
+		DarkadiaFinalizeArgs{}.Kind(),
 	}
 }

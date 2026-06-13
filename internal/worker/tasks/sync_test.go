@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -3036,6 +3038,66 @@ func TestFailSyncJobEmitsFailed(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected 1 sync.failed event, got %d", count)
+	}
+}
+
+// A fetch failure whose error chain embeds a credential-bearing URL (Go's
+// *url.Error includes the full request URL — Steam carries the web_api_key in
+// the query string) must not leak the query into jobs.error_message or the
+// sync.failed event payload (#937).
+func TestFailSyncJobScrubsCredentialURLQuery(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	notify.SetRiverClient(nil)
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	jobID := uuid.NewString()
+
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'processing', 'low', 0)`,
+		jobID, userID,
+	); err != nil {
+		t.Fatalf("insert job: %v", err)
+	}
+	if _, err := testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx); err != nil {
+		t.Fatalf("insert user_sync_config: %v", err)
+	}
+
+	fetchErr := fmt.Errorf("get owned games: %w", &url.Error{
+		Op:  "Get",
+		URL: "https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=SECRET&steamid=123",
+		Err: errors.New("connection refused"),
+	})
+	w := &tasks.DispatchSyncWorker{
+		DB:          testDB,
+		Adapter:     fetchErrFactory(fetchErr),
+		RiverClient: nil,
+	}
+	_ = w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+	})
+
+	var errMsg string
+	if err := testDB.NewRaw(`SELECT error_message FROM jobs WHERE id = ?`, jobID).Scan(ctx, &errMsg); err != nil {
+		t.Fatalf("read jobs.error_message: %v", err)
+	}
+	if strings.Contains(errMsg, "key=SECRET") {
+		t.Errorf("jobs.error_message still contains credential query: %q", errMsg)
+	}
+	if !strings.Contains(errMsg, "api.steampowered.com/IPlayerService/GetOwnedGames/v0001/") {
+		t.Errorf("jobs.error_message lost the URL host/path: %q", errMsg)
+	}
+
+	var payload string
+	if err := testDB.NewRaw(`SELECT payload::text FROM events WHERE dedup_key = ?`, jobID+":sync.failed").Scan(ctx, &payload); err != nil {
+		t.Fatalf("read sync.failed payload: %v", err)
+	}
+	if strings.Contains(payload, "key=SECRET") {
+		t.Errorf("sync.failed payload still contains credential query: %q", payload)
 	}
 }
 

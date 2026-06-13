@@ -71,7 +71,7 @@ func (h *AdminResetHandler) HandleReset(c *echo.Context) error {
 		return nil
 	})
 	if err != nil {
-		slog.ErrorContext(c.Request().Context(), "admin reset: transaction failed", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(c.Request().Context(), "admin reset: transaction failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return errorJSON(c, http.StatusInternalServerError, "database error")
 	}
 	return c.JSON(http.StatusOK, map[string]any{"deleted": deleted})

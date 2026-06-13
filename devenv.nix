@@ -6,6 +6,11 @@
     ENABLE_LSP_TOOL = 0; # Disable LSP for Claude Code
     CGO_ENABLED = 0;
     DB_ENCRYPTION_KEY = "dev-only-insecure-db-key-do-not-use-in-production";
+    # The app Dockerfile uses COPY --chmod (BuildKit-only). Enable BuildKit by
+    # default so `docker compose -f deploy/docker/docker-compose.dev.yml up
+    # --build` works without a per-command DOCKER_BUILDKIT=1 prefix.
+    DOCKER_BUILDKIT = 1;
+    COMPOSE_DOCKER_CLI_BUILD = 1;
   };
 
   # https://devenv.sh/packages/

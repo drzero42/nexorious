@@ -31,11 +31,18 @@ jobs:
       - name: Install PostgreSQL 18 client
         run: |
           set -euo pipefail
-          sudo apt-get install -y curl ca-certificates
+          # curl and ca-certificates are preinstalled on ubuntu-latest, so we
+          # skip an apt install for them.
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
           sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-          sudo apt-get update
+          # Refresh only the PGDG source list, not every Ubuntu mirror — the
+          # base package lists already present on the runner image satisfy the
+          # transitive dependencies. A full `apt-get update` here costs ~10s.
+          sudo apt-get update \
+            -o Dir::Etc::sourcelist="sources.list.d/pgdg.list" \
+            -o Dir::Etc::sourceparts="-" \
+            -o APT::Get::List-Cleanup="0"
           # Use a workspace-local archive dir so actions/cache can persist the
           # downloaded .deb files (and their dependencies) between runs.
           ARCHIVES="$GITHUB_WORKSPACE/apt-archives"
@@ -174,5 +181,9 @@ jobs:
               --set alerts.enabled=true \
               --set alerts.loki.enabled=true \
               --set alerts.victoriaLogs.enabled=true \
-              --set alerts.victoriaLogs.delivery=$vl_delivery
+              --set alerts.victoriaLogs.delivery=$vl_delivery \
+              --set alerts.prometheus.enabled=true \
+              --set alerts.victoriaMetrics.enabled=true \
+              --set serviceMonitor.main.enabled=true \
+              --set dashboard.enabled=true
           done

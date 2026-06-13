@@ -43,7 +43,7 @@ func PruneEvents(ctx context.Context, db *bun.DB, retentionDays int) {
 		retentionDays,
 	).Exec(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "notify: prune events", logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(ctx, "notify: prune events", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		Emit(ctx, db, EmitParams{
 			Type:    TypeAdminMaintFailed,
 			Scope:   ScopeAdmin,

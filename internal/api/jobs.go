@@ -182,7 +182,7 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 	for i := range jobs {
 		progress, err := h.jobItemCounts(context.Background(), jobs[i].ID)
 		if err != nil {
-			slog.ErrorContext(ctx, "jobs: fetch item counts failed", logging.KeyErr, err, logging.KeyJobID, jobs[i].ID, logging.KeyCategory, logging.CategoryDB)
+			slog.ErrorContext(ctx, "jobs: fetch item counts failed", logging.KeyErr, err, logging.KeyJobID, jobs[i].ID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to load job progress")
 		}
 		jobDTOs = append(jobDTOs, toJobResponse(&jobs[i], progress))
@@ -395,7 +395,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 	for _, j := range jobs {
 		progress, err := h.jobItemCounts(ctx, j.ID)
 		if err != nil {
-			slog.ErrorContext(reqCtx, "HandleRecentJobs: failed to count job items", logging.KeyJobID, j.ID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+			slog.ErrorContext(reqCtx, "HandleRecentJobs: failed to count job items", logging.KeyJobID, j.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			progress = map[string]any{
 				"pending": 0, "processing": 0, "completed": 0, "pending_review": 0,
 				"skipped": 0, "failed": 0, "total": 0, "percent": 0,
@@ -416,7 +416,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			ORDER BY created_at`,
 			j.ID,
 		).Scan(ctx, &allChanges); err != nil {
-			slog.ErrorContext(reqCtx, "HandleRecentJobs: failed to query changes", logging.KeyJobID, j.ID, logging.KeyErr, err, logging.KeyCategory, logging.CategoryDB)
+			slog.ErrorContext(reqCtx, "HandleRecentJobs: failed to query changes", logging.KeyJobID, j.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			allChanges = nil
 		}
 
@@ -483,7 +483,7 @@ func (h *JobsHandler) HandleGetJob(c *echo.Context) error {
 
 	progress, err := h.jobItemCounts(ctx, job.ID)
 	if err != nil {
-		slog.ErrorContext(c.Request().Context(), "jobs: fetch item counts failed", logging.KeyErr, err, logging.KeyJobID, job.ID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(c.Request().Context(), "jobs: fetch item counts failed", logging.KeyErr, err, logging.KeyJobID, job.ID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load job progress")
 	}
 	return c.JSON(http.StatusOK, toJobResponse(&job, progress))
@@ -621,7 +621,7 @@ func (h *JobsHandler) HandleCancelJob(c *echo.Context) error {
 		  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE job_id = ?)`,
 		jobID,
 	).Exec(context.Background()); err != nil {
-		slog.ErrorContext(c.Request().Context(), "jobs: cancel river jobs failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(c.Request().Context(), "jobs: cancel river jobs failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel queued tasks")
 	}
 
@@ -713,7 +713,7 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 		UPDATE jobs SET status = ?, auto_retry_done = false WHERE id = ?`,
 		models.JobStatusProcessing, jobID,
 	).Exec(context.Background()); err != nil {
-		slog.ErrorContext(c.Request().Context(), "jobs: reset job status failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.KeyCategory, logging.CategoryDB)
+		slog.ErrorContext(c.Request().Context(), "jobs: reset job status failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to reset job status")
 	}
 

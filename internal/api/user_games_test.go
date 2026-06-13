@@ -2275,3 +2275,83 @@ func TestMoveToLibrary(t *testing.T) {
 		}
 	})
 }
+
+func floatPtr(f float64) *float64 { return &f }
+
+func insertTestGameWithHLTB(t *testing.T, db *bun.DB, title string, hltbMain *float64) int32 {
+	t.Helper()
+	id := insertTestGame(t, db, title)
+	_, err := db.ExecContext(context.Background(),
+		`UPDATE games SET howlongtobeat_main = ? WHERE id = ?`, hltbMain, id)
+	if err != nil {
+		t.Fatalf("insertTestGameWithHLTB: %v", err)
+	}
+	return id
+}
+
+func TestListUserGamesTimeToBeatFilter(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "ttb")
+
+	// Three games with distinct howlongtobeat_main, plus one with NULL.
+	shortID := insertTestGameWithHLTB(t, testDB, "Short Game", floatPtr(5))
+	midID := insertTestGameWithHLTB(t, testDB, "Mid Game", floatPtr(20))
+	longID := insertTestGameWithHLTB(t, testDB, "Long Game", floatPtr(80))
+	nullID := insertTestGameWithHLTB(t, testDB, "Unknown Game", nil)
+
+	insertTestUserGame(t, testDB, "ug-ttb-short", userID, int(shortID))
+	insertTestUserGame(t, testDB, "ug-ttb-mid", userID, int(midID))
+	insertTestUserGame(t, testDB, "ug-ttb-long", userID, int(longID))
+	insertTestUserGame(t, testDB, "ug-ttb-null", userID, int(nullID))
+
+	titlesFor := func(query string) map[string]bool {
+		rec := getAuth(t, e, "/api/user-games?"+query, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			UserGames []struct {
+				Game struct {
+					Title string `json:"title"`
+				} `json:"game"`
+			} `json:"user_games"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		got := map[string]bool{}
+		for _, ug := range resp.UserGames {
+			got[ug.Game.Title] = true
+		}
+		return got
+	}
+
+	t.Run("max only excludes longer and NULL", func(t *testing.T) {
+		got := titlesFor("time_to_beat_max=25")
+		if !got["Short Game"] || !got["Mid Game"] {
+			t.Fatalf("expected Short+Mid, got %v", got)
+		}
+		if got["Long Game"] || got["Unknown Game"] {
+			t.Fatalf("did not expect Long/Unknown, got %v", got)
+		}
+	})
+
+	t.Run("min only excludes shorter and NULL", func(t *testing.T) {
+		got := titlesFor("time_to_beat_min=10")
+		if !got["Mid Game"] || !got["Long Game"] {
+			t.Fatalf("expected Mid+Long, got %v", got)
+		}
+		if got["Short Game"] || got["Unknown Game"] {
+			t.Fatalf("did not expect Short/Unknown, got %v", got)
+		}
+	})
+
+	t.Run("range", func(t *testing.T) {
+		got := titlesFor("time_to_beat_min=10&time_to_beat_max=25")
+		if !got["Mid Game"] || len(got) != 1 {
+			t.Fatalf("expected only Mid Game, got %v", got)
+		}
+	})
+}

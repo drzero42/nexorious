@@ -92,6 +92,31 @@ func loadEnvAndConfig(cmd *cobra.Command) (*config.Config, error) {
 	return cfg, nil
 }
 
+// waitForDB pings the database, retrying every 2s until it responds or the
+// timeout elapses. Shared by the `migrate` subcommand and `serve --migrate`,
+// where the database may still be starting up (e.g. alongside the app in a
+// compose stack or as a Kubernetes initContainer).
+func waitForDB(ctx context.Context, db *bun.DB, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		err := db.PingContext(pingCtx)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("database unreachable after %s: %w", timeout, err)
+		}
+		slog.Warn("waiting for database", "err", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
 // runMigrate runs all pending migrations, then exits. Mirrors the previous
 // `--migrate-only` behaviour: retries the initial DB ping for up to 30s, then
 // fails hard if the database is still unreachable.
@@ -109,24 +134,9 @@ func runMigrate(cmd *cobra.Command, _ []string) error {
 
 	// Retry the initial connection — useful when running as a Kubernetes
 	// initContainer where the database pod may still be starting up.
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		err := db.PingContext(pingCtx)
-		cancel()
-		if err == nil {
-			break
-		}
-		slog.Warn("migrate: waiting for database", "err", err)
-		time.Sleep(2 * time.Second)
+	if err := waitForDB(ctx, db, 30*time.Second); err != nil {
+		return err
 	}
-
-	pingCtx, pingCancel := context.WithTimeout(ctx, 2*time.Second)
-	if err := db.PingContext(pingCtx); err != nil {
-		pingCancel()
-		return fmt.Errorf("database unreachable after 30s: %w", err)
-	}
-	pingCancel()
 
 	migrator := migrate.NewMigrator(db)
 	if err := migrator.DetermineState(); err != nil {

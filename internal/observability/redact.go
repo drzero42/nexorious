@@ -2,11 +2,12 @@ package observability
 
 import (
 	"context"
-	"regexp"
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
+	"github.com/drzero42/nexorious/internal/logging"
 )
 
 // urlAttrKeys are the span attribute keys that carry a full request URL.
@@ -17,16 +18,15 @@ var urlAttrKeys = map[attribute.Key]struct{}{
 	"http.url": {},
 }
 
-// urlQueryRe matches an http(s) URL up to its query string. Used to scrub
-// queries from free-text span fields (status descriptions, exception-event
-// messages): Go's *url.Error embeds the full request URL in its message, and
-// otelriver/bunotel copy err.Error() into the span status, so a failed
-// storefront call would otherwise carry its query-string credentials there.
-var urlQueryRe = regexp.MustCompile(`(https?://[^?\s"']+)\?[^\s"']*`)
-
-// scrubText strips the query string from any URL embedded in free text.
+// scrubText strips the query string from any URL embedded in free text. Used
+// to scrub queries from free-text span fields (status descriptions,
+// exception-event messages): Go's *url.Error embeds the full request URL in
+// its message, and otelriver/bunotel copy err.Error() into the span status, so
+// a failed storefront call would otherwise carry its query-string credentials
+// there. The policy lives in logging.ScrubURLQueries so the log, DB, and trace
+// channels share one definition (#937).
 func scrubText(s string) string {
-	return urlQueryRe.ReplaceAllString(s, "$1")
+	return logging.ScrubURLQueries(s)
 }
 
 // redactingExporter wraps a SpanExporter and strips query strings from URL
