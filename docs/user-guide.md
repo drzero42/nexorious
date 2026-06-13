@@ -116,9 +116,11 @@ A wishlisted game's page shows price-and-deal links (for PC and for console) bas
 
 ## Planning
 
-The **Planning** page is where you decide what to play *next*, rather than just tracking what you own. It's built around **pools** — named collections of games you mean to get to. A pool is a sibling of your [tags](#tags): like a tag it's your own label with a name and an optional colour, but it adds *ordering*, a page of its own, and the sense that these are games you actually intend to play. A game can sit in several pools at once, and a pool can mix games you own with ones you've only [wishlisted](#wishlist).
+A library tells you what you *have*; the **Planning** page helps you decide what to play *next*. It's built around **pools** — named collections of games you're planning to play, that you can put in whatever order you like.
 
-How you slice them is up to you — one pool per play partner ("co-op with Sam"), one per mood or genre ("RPGs," "quick shooters"), or a single running "up next" list. Create a pool from the Planning page with a name and an optional colour, and drag the pools there to set the order they're listed in.
+How you organise them is up to you. Keep one running "up next" list, or split your plans into as many pools as suit you — one per play partner ("co-op with Sam"), one per mood or genre ("RPGs," "quick shooters"), whatever fits how you decide. The same game can sit in several pools at once, and a pool can hold games you don't own yet alongside ones you do, so a pool is as much a plan for what to buy and play as for what to play next.
+
+Create a pool from the Planning page — give it a name and, if you like, a colour — and drag your pools there to set the order they're listed in.
 
 ### A pool, and its queue
 
@@ -136,15 +138,15 @@ You can add a game to a pool from three places: the **Add** button in a pool's S
 
 Each pool can have one saved filter — **Add filter** (or **Edit filter**) at the top of the pool. It drives the Suggestions list: owned and wishlisted games matching it, minus whatever's already in the pool. The filter speaks the same facets as library search — play status, genre, theme, platform, storefront, tags, rating, game mode, perspective, and time-to-beat — and you can stack several filter cards, where a game counts if it matches *any* of them.
 
-That filter is the entirety of the "suggestion" idea, and it's deliberately plain: it's your own filter run against your own data. There's no taste prediction, no hidden score, no outside data, no AI guessing what you'll enjoy. One consequence worth knowing: a game with no genre or theme metadata can't match a filter built on those, so how useful the suggestions are tracks how complete your metadata is. Finished games are kept out of suggestions automatically (see below), so you're never nudged toward something you've already put down.
+Suggestions are simply this filter applied to your collection — nothing more. There's no hidden ranking or "for you" guesswork: a game shows up because it matches the filter you set, so the suggestions are entirely yours to shape. One thing worth knowing is that a game with no genre or theme recorded can't match a filter built on those, so the more complete your metadata, the more useful the suggestions. Finished games are left out automatically (see below), so you're never pointed at something you've already played.
 
 ### Wishlist games in a pool
 
-A pool can hold a game you don't own yet — a play *desire* you're tracking before you buy. These show a **Buy first** badge in place of a play affordance, so it's clear the next step is to acquire it. When you do get it — whether you [move it to your library](#wishlist) by hand or a storefront sync turns it up — it becomes a normal, ready-to-play game and keeps its exact place in the pool and its queue. There's nothing to redo.
+A pool can include games you don't own yet, not just ones you do. A game you've [wishlisted](#wishlist) shows a **Buy first** badge instead of the usual play controls, so you can tell at a glance which games you'd need to buy before playing. When you get one — either by [moving it to your library](#wishlist) yourself or through a storefront sync — it turns into a normal owned game and keeps its place in the pool and queue, so you don't have to add it again.
 
 ### When you finish a game
 
-Planning a game *out* is as much a part of the loop as planning it in. When you set a game's [play status](#tracking-your-progress) to **Completed**, **Mastered**, **Dominated**, or **Dropped**, it's quietly removed from every pool and queue it was in — no prompt — and any queue it was on simply advances to the next game. Together with finished games being kept out of suggestions, this keeps your pools showing only what's genuinely still ahead of you. If you decide to replay something later, just add it back.
+When you set a game's [play status](#tracking-your-progress) to **Completed**, **Mastered**, **Dominated**, or **Dropped**, it's automatically removed from every pool and queue it belongs to, and the queue moves on to the next game. This keeps your pools focused on what's still ahead of you, rather than games you're already done with. If you want to play one again later, just add it back.
 
 ## Syncing your storefront libraries
 
