@@ -38,7 +38,7 @@ Verified against `internal/api/pools.go`, `internal/api/user_games.go`,
 | `POST /api/pools/:id/games` | Add member | `{user_game_id}` → **always lands as Candidate** (position NULL). Idempotent (200 no-op if already a member). |
 | `DELETE /api/pools/:id/games/:userGameId` | Remove member | 204. Removes from pool entirely (queue or candidate). |
 | `PUT /api/pools/:id/queue` | Set queue | `{ids:[…ordered]}` — **declarative**: listed ids become the queue in order (`position = index`); every other member demotes to Candidate. Every listed id must already be a member (else 400). |
-| `GET /api/games?pool=:id` | Suggestions / filtered library | Owned+wishlist games matching the pool's OR-of-cards filter, **finished statuses excluded**, each annotated `pool_membership: "queued" \| "candidate" \| <absent>`. Honors `sort_by`/`sort_order` + pagination. A pool with a NULL filter returns an empty list. Ad-hoc facet params are **not** merged when `pool=` is set. |
+| `GET /api/user-games?pool=:id` | Suggestions / filtered library | Owned+wishlist games matching the pool's OR-of-cards filter, **finished statuses excluded**, each annotated `pool_membership: "queued" \| "candidate" \| <absent>`. Honors `sort_by`/`sort_order` + pagination. A pool with a NULL filter returns an empty list. Ad-hoc facet params are **not** merged when `pool=` is set. |
 
 **Key consequence:** "reorder", "promote a candidate", "demote", and "set on
 deck" are all the *same* call — `PUT /api/pools/:id/queue` with a different
@@ -148,7 +148,7 @@ Under `src/components/pools/` unless noted:
 - **`candidates-grid.tsx`** — sortable (client-side) grid; per-card "promote to
   queue" and "remove".
 - **`suggestions-grid.tsx`** — server-sorted, paginated grid from
-  `GET /api/games?pool=:id`; per-card "+ add" (→ `addPoolGame`). Filtered to
+  `GET /api/user-games?pool=:id`; per-card "+ add" (→ `addPoolGame`). Filtered to
   `pool_membership` absent (suggestions only).
 - **`pool-sort-control.tsx`** — shared field/direction control; reuse the library
   `sortOptions` (extract the list so both consume one source). Drives Candidates

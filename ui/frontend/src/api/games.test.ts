@@ -19,6 +19,7 @@ import {
   addPlatformToUserGame,
   updatePlatformAssociation,
   removePlatformFromUserGame,
+  getPoolSuggestions,
 } from './games';
 
 const API_URL = '/api';
@@ -991,6 +992,44 @@ describe('games.ts', () => {
       const result = await getUserGame('ug-1');
 
       expect(result.platforms[0].platform_details?.igdb_platform_id).toBe(6);
+    });
+  });
+
+  describe('getPoolSuggestions', () => {
+    it('requests /user-games with the pool + sort/page params and surfaces pool_membership', async () => {
+      // Handler registered on /user-games (HandleListUserGames owns ?pool=).
+      // If the implementation hit /games instead, this request goes unhandled
+      // and the call rejects — guarding the endpoint regression.
+      server.use(
+        http.get(`${API_URL}/user-games`, ({ request }) => {
+          const url = new URL(request.url);
+          expect(url.searchParams.get('pool')).toBe('pool-1');
+          expect(url.searchParams.get('sort_by')).toBe('title');
+          expect(url.searchParams.get('sort_order')).toBe('asc');
+          expect(url.searchParams.get('page')).toBe('2');
+          expect(url.searchParams.get('per_page')).toBe('24');
+
+          return HttpResponse.json({
+            user_games: [{ ...mockUserGameApi, pool_membership: 'candidate' }],
+            total: 1,
+            page: 2,
+            per_page: 24,
+            pages: 1,
+          });
+        }),
+      );
+
+      const result = await getPoolSuggestions({
+        poolId: 'pool-1',
+        sortBy: 'title',
+        sortOrder: 'asc',
+        page: 2,
+        perPage: 24,
+      });
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].pool_membership).toBe('candidate');
+      expect(result.total).toBe(1);
     });
   });
 });

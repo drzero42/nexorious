@@ -22,7 +22,7 @@
 | `POST /api/pools/:id/games` | Add member | `{user_game_id}` → `{status:"ok"}` (200). Always Candidate. Idempotent. |
 | `DELETE /api/pools/:id/games/:userGameId` | Remove member | 204. |
 | `PUT /api/pools/:id/queue` | Set queue | `{ids:[…ordered]}` → `{status:"ok"}`. Declarative: listed ids become queue in order; others demote to Candidate. Every id must already be a member (else 400). |
-| `GET /api/games?pool=:id` | Suggestions | Same envelope as `/user-games` (`{user_games,total,page,per_page,pages}`); each item carries `pool_membership: "queued"\|"candidate"\|<absent>`. Honors `sort_by`/`sort_order`/`page`/`per_page`. NULL-filter pool → empty list. |
+| `GET /api/user-games?pool=:id` | Suggestions | Same envelope as `/user-games` (`{user_games,total,page,per_page,pages}`); each item carries `pool_membership: "queued"\|"candidate"\|<absent>`. Honors `sort_by`/`sort_order`/`page`/`per_page`. NULL-filter pool → empty list. |
 
 **Key consequence:** reorder, promote, demote, and set-on-deck are all the *same* call — `PUT /api/pools/:id/queue` with a different ordered `ids`. On-deck = `queue[0]`.
 
@@ -188,7 +188,7 @@ export * from './pool';
 
 In `ui/frontend/src/types/game.ts`, inside `export interface UserGame { … }` (after `tags?: Tag[];`):
 ```ts
-  /** Present only on GET /api/games?pool=:id responses. */
+  /** Present only on GET /api/user-games?pool=:id responses. */
   pool_membership?: 'queued' | 'candidate';
 ```
 
@@ -308,7 +308,7 @@ export interface PoolSuggestionsParams {
 /**
  * Suggestions for a pool: owned+wishlist games matching the pool's OR-of-cards
  * filter (finished statuses excluded), each annotated with pool_membership.
- * Served by GET /api/games?pool=:id (same envelope as /user-games).
+ * Served by GET /api/user-games?pool=:id (same envelope as /user-games).
  */
 export async function getPoolSuggestions(
   params: PoolSuggestionsParams,

@@ -108,7 +108,7 @@ export interface UserGame {
   personal_notes?: string;
   platforms: UserGamePlatform[];
   tags?: Tag[];
-  /** Present only on GET /api/games?pool=:id responses. */
+  /** Present only on GET /api/user-games?pool=:id responses. */
   pool_membership?: 'queued' | 'candidate';
   created_at: string;
   updated_at: string;

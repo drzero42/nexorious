@@ -9,8 +9,14 @@ export const poolKeys = {
   lists: () => [...poolKeys.all, 'list'] as const,
   details: () => [...poolKeys.all, 'detail'] as const,
   detail: (id: string) => [...poolKeys.details(), id] as const,
+  // Omit the params element when absent so the broad-invalidation key
+  // (`['pools','suggestions',id]`) is a true prefix of the active query key
+  // (`[...,id,{sort,page}]`). A trailing `undefined` would NOT partial-match,
+  // leaving the suggestions grid stale after add/remove/queue mutations.
   suggestions: (id: string, params?: Omit<PoolSuggestionsParams, 'poolId'>) =>
-    [...poolKeys.all, 'suggestions', id, params] as const,
+    params === undefined
+      ? ([...poolKeys.all, 'suggestions', id] as const)
+      : ([...poolKeys.all, 'suggestions', id, params] as const),
   memberships: (userGameId: string) => [...poolKeys.all, 'memberships', userGameId] as const,
 };
 

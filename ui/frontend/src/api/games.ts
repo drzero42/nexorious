@@ -646,7 +646,8 @@ export interface PoolSuggestionsParams {
 /**
  * Suggestions for a pool: owned+wishlist games matching the pool's OR-of-cards
  * filter (finished statuses excluded), each annotated with pool_membership.
- * Served by GET /api/games?pool=:id (same envelope as /user-games).
+ * Served by GET /api/user-games?pool=:id (HandleListUserGames adds the pool
+ * filter + pool_membership annotation; /api/games ignores the pool param).
  */
 export async function getPoolSuggestions(
   params: PoolSuggestionsParams,
@@ -657,7 +658,7 @@ export async function getPoolSuggestions(
   appendParam(searchParams, 'sort_order', params.sortOrder);
   appendParam(searchParams, 'page', params.page);
   appendParam(searchParams, 'per_page', params.perPage);
-  const response = await api.get<UserGameListApiResponse>(`/games?${searchParams.toString()}`);
+  const response = await api.get<UserGameListApiResponse>(`/user-games?${searchParams.toString()}`);
   return {
     items: response.user_games.map(transformUserGame),
     total: response.total,
