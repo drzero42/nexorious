@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, Filter, XCircle } from 'lucide-react';
 import { GameCard } from '@/components/games/game-card';
+import * as poolsApi from '@/api/pools';
 import {
   usePool,
   usePoolSuggestions,
@@ -228,16 +229,31 @@ function PoolDetailPage() {
         old ? removeSuggestion(old, userGameId) : old,
       );
     }
+    // Call the raw API (not the add/setQueue hooks) so neither leg fires its own
+    // onSuccess invalidation. The add hook's invalidation would refetch the pool
+    // detail between the two calls, briefly returning the game as a candidate (the
+    // queue PUT hasn't landed yet) and flickering the card through Candidates. We
+    // invalidate once, after both calls settle, so the only reconcile sees the
+    // final queued state.
     try {
-      await addGame.mutateAsync({ poolId: pool.id, userGameId });
-      setQueue.mutate(
-        { poolId: pool.id, ids: [...queueIds, userGameId] },
-        { onError: () => void qc.invalidateQueries({ queryKey: detailKey(pool.id) }) },
-      );
+      await poolsApi.addPoolGame(pool.id, userGameId);
     } catch {
       if (prevDetail) qc.setQueryData(detailKey(pool.id), prevDetail);
       prevSug.forEach(([k, d]) => qc.setQueryData(k, d));
       toast.error('Failed to add to pool');
+      return;
+    }
+    try {
+      // Add landed; queue PUT failure just falls through to reconcile (the game
+      // stays a candidate server-side, which the final invalidation reflects).
+      await poolsApi.setQueue(pool.id, [...queueIds, userGameId]);
+    } catch {
+      // ignore — reconciled by the invalidation below
+    } finally {
+      qc.invalidateQueries({ queryKey: detailKey(pool.id) });
+      qc.invalidateQueries({ queryKey: suggestionsKey(pool.id) });
+      qc.invalidateQueries({ queryKey: poolKeys.memberships(userGameId) });
+      qc.invalidateQueries({ queryKey: poolKeys.lists() });
     }
   };
 
