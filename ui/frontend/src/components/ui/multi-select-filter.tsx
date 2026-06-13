@@ -59,7 +59,10 @@ export function MultiSelectFilter({
             />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-56 p-2" align="start">
+        <PopoverContent
+          className="max-h-[--radix-popover-content-available-height] w-56 overflow-y-auto p-2"
+          align="start"
+        >
           {options.length === 0 ? (
             <div className="py-2 text-center text-sm text-muted-foreground">
               No options available
