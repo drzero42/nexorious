@@ -582,6 +582,99 @@ func TestPoolSuggestionView(t *testing.T) {
 	}
 }
 
+func TestPoolSuggestionMultiPlayStatus(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "multistatus")
+
+	g1 := insertTestGame(t, testDB, "Backlog Game")
+	g2 := insertTestGame(t, testDB, "Shelved Game")
+	g3 := insertTestGame(t, testDB, "In-Progress Game")
+	insertTestUserGame(t, testDB, "ug-ms-1", userID, int(g1))
+	insertTestUserGame(t, testDB, "ug-ms-2", userID, int(g2))
+	insertTestUserGame(t, testDB, "ug-ms-3", userID, int(g3))
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE user_games SET play_status = 'not_started' WHERE id = 'ug-ms-1';
+		 UPDATE user_games SET play_status = 'shelved'     WHERE id = 'ug-ms-2';
+		 UPDATE user_games SET play_status = 'in_progress' WHERE id = 'ug-ms-3'`); err != nil {
+		t.Fatalf("set statuses: %v", err)
+	}
+
+	poolRec := postJSONAuth(t, e, "/api/pools", map[string]any{
+		"name": "Backlog or Shelved",
+		"filter": map[string]any{
+			"filters": []any{map[string]any{"play_status": []string{"not_started", "shelved"}}},
+		},
+	}, token)
+	var pool struct {
+		ID string `json:"id"`
+	}
+	mustUnmarshal(t, poolRec, &pool)
+
+	rec := getAuth(t, e, "/api/user-games?pool="+pool.ID, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		UserGames []struct {
+			ID string `json:"id"`
+		} `json:"user_games"`
+		Total int `json:"total"`
+	}
+	mustUnmarshal(t, rec, &resp)
+
+	got := map[string]bool{}
+	for _, ug := range resp.UserGames {
+		got[ug.ID] = true
+	}
+	if !got["ug-ms-1"] || !got["ug-ms-2"] {
+		t.Fatalf("both not_started and shelved games should match, got %v", got)
+	}
+	if got["ug-ms-3"] {
+		t.Fatalf("in_progress game must not match a backlog-or-shelved card")
+	}
+}
+
+func TestPoolSuggestionLegacyStringPlayStatus(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "legacystatus")
+
+	g1 := insertTestGame(t, testDB, "Shelved Game")
+	g2 := insertTestGame(t, testDB, "Backlog Game")
+	insertTestUserGame(t, testDB, "ug-legacy-1", userID, int(g1))
+	insertTestUserGame(t, testDB, "ug-legacy-2", userID, int(g2))
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE user_games SET play_status = 'shelved'     WHERE id = 'ug-legacy-1';
+		 UPDATE user_games SET play_status = 'not_started' WHERE id = 'ug-legacy-2'`); err != nil {
+		t.Fatalf("set statuses: %v", err)
+	}
+
+	// Simulate a pool saved before #976: play_status persisted as a JSON string.
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO pools (id, user_id, name, position, filter)
+		 VALUES ('pool-legacy', ?, 'Legacy', 0, '{"filters":[{"play_status":"shelved"}]}'::jsonb)`,
+		userID); err != nil {
+		t.Fatalf("insert legacy pool: %v", err)
+	}
+
+	rec := getAuth(t, e, "/api/user-games?pool=pool-legacy", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		UserGames []struct {
+			ID string `json:"id"`
+		} `json:"user_games"`
+	}
+	mustUnmarshal(t, rec, &resp)
+	if len(resp.UserGames) != 1 || resp.UserGames[0].ID != "ug-legacy-1" {
+		t.Fatalf("legacy string play_status should match only the shelved game, got %v", resp.UserGames)
+	}
+}
+
 func TestPoolSuggestionNullFilterEmpty(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()

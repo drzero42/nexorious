@@ -251,7 +251,7 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 				bun.List(enum.FinishedPlayStatusStrings()))
 		})
 	} else {
-		filter.ApplyPlayStatus(fb, c.QueryParam("play_status"))
+		filter.ApplyPlayStatus(fb, validPlayStatusParams(c))
 		filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
 		filter.ApplySearch(fb, c.QueryParam("q"))
 		filter.ApplyWishlist(fb, c.QueryParam("wishlist") == "true")
@@ -1516,6 +1516,19 @@ func sortedKeys(m map[string]bool) []string {
 	return out
 }
 
+// validPlayStatusParams reads the repeatable play_status query param, keeping
+// only recognised statuses. Unknown values are dropped rather than rejected,
+// mirroring the other lenient multi-value facet params.
+func validPlayStatusParams(c *echo.Context) []string {
+	var out []string
+	for _, s := range c.QueryParams()["play_status"] {
+		if enum.PlayStatus(s).Valid() {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // ── Utility endpoint handlers ───────────────────────────────────────────
 
 // HandleListUserGameIDs handles GET /api/user-games/ids.
@@ -1526,7 +1539,7 @@ func (h *UserGamesHandler) HandleListUserGameIDs(c *echo.Context) error {
 	}
 
 	fb := filter.NewFilterBuilder()
-	filter.ApplyPlayStatus(fb, c.QueryParam("play_status"))
+	filter.ApplyPlayStatus(fb, validPlayStatusParams(c))
 	filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
 	filter.ApplySearch(fb, c.QueryParam("q"))
 	filter.ApplyWishlist(fb, c.QueryParam("wishlist") == "true")

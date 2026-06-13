@@ -12,7 +12,7 @@ import {
 } from '@/components/games';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import type { PlayStatus, OwnershipStatus, UserGame, SelectionMode } from '@/types';
+import type { OwnershipStatus, UserGame, SelectionMode } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/games/')({
   head: () => ({ meta: [{ title: 'Library | Nexorious' }] }),
@@ -74,10 +74,10 @@ function GamesPageContent() {
       if (!val) return [];
       return Array.isArray(val) ? val : [val];
     };
-    const statusParam = getOne('status');
     const ownershipParam = getOne('ownership');
-    // Handle "null" string or empty string as undefined
-    const status = statusParam && statusParam !== 'null' ? (statusParam as PlayStatus) : undefined;
+    // Multi-value play status: repeated ?status= params (back-compat with a
+    // single ?status=foo, which getAll returns as a one-element array).
+    const status = getAll('status');
     const ownershipStatus =
       ownershipParam && ownershipParam !== 'null' ? (ownershipParam as OwnershipStatus) : undefined;
     const lovedParam = getOne('loved');
@@ -128,7 +128,7 @@ function GamesPageContent() {
   const filterFields = useMemo(
     () => ({
       search: filters.search || undefined,
-      status: filters.status,
+      status: filters.status.length > 0 ? filters.status : undefined,
       ownershipStatus: filters.ownershipStatus,
       isLoved: filters.isLoved,
       platform: filters.platforms.length > 0 ? filters.platforms : undefined,

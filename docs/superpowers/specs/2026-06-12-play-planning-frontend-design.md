@@ -123,7 +123,7 @@ Extend the existing user-games hook/api to pass `pool` and any `sort_by`/
 interface PoolListItem { id; name; color: string | null; position; has_filter; queue_count; candidate_count }
 interface Pool { id; user_id; name; color: string | null; position; filter: PoolFilter | null; has_filter; created_at; updated_at }
 interface PoolDetail extends Pool { queue: UserGame[]; candidates: UserGame[] }
-interface FilterCard { play_status?; genre?; theme?; tag?; platform?; storefront?; rating_min?; rating_max?; is_loved?; game_mode?; player_perspective?; q?; time_to_beat_min?; time_to_beat_max? }
+interface FilterCard { play_status?: string[]; genre?; theme?; tag?; platform?; storefront?; rating_min?; rating_max?; is_loved?; game_mode?; player_perspective?; q?; time_to_beat_min?; time_to_beat_max? }  // play_status multi-value since #976
 interface PoolFilter { filters: FilterCard[] }
 interface PoolMembership { pool_id: string; position: number | null } // #971
 ```
@@ -156,7 +156,8 @@ Under `src/components/pools/` unless noted:
 - **`pool-filter-editor.tsx`** — modal; ordered list of cards (add/remove),
   each card a facet set assembled from `MultiSelectFilter` + the existing option
   hooks (`useAllPlatforms`, `useAllStorefronts`, `useFilterOptions`,
-  `useAllTags`), plus selects for play_status/loved and number inputs for rating
+  `useAllTags`) — play_status uses `MultiSelectFilter` too (multi-value since
+  #976) — plus a loved checkbox and number inputs for rating
   and time-to-beat ranges. "Matches ANY card" helper text. Serializes to
   `PoolFilter`; an empty card is invalid (backend rejects facet-less cards). Save
   → `updatePool({filter})`.

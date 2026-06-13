@@ -13,7 +13,7 @@ export interface PoolListItem {
 
 /** A single faceted filter card. Mirrors internal/filter/pool.go FilterCard. */
 export interface FilterCard {
-  play_status?: string;
+  play_status?: string[];
   genre?: string[];
   theme?: string[];
   tag?: string[];

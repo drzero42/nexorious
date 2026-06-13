@@ -27,7 +27,7 @@ import { sortOptions, type SortField, type SortOrder } from '@/lib/sort-options'
 export interface GameFiltersProps {
   filters: {
     search: string;
-    status?: PlayStatus;
+    status?: string[]; // Multi-select play statuses (OR-within-facet)
     ownershipStatus?: OwnershipStatus; // Filter by ownership status (matches if ANY platform has this status)
     isLoved?: boolean; // Filter by whether the game is marked as loved
     platformId?: string; // Keep for backwards compat (but will migrate to platforms)
@@ -116,7 +116,7 @@ export function GameFilters({
 
   const hasActiveFilters =
     filters.search ||
-    filters.status ||
+    (filters.status && filters.status.length > 0) ||
     filters.ownershipStatus ||
     filters.isLoved !== undefined ||
     filters.platformId ||
@@ -131,7 +131,7 @@ export function GameFilters({
   const clearFilters = () => {
     onFiltersChange({
       search: '',
-      status: undefined,
+      status: [],
       ownershipStatus: undefined,
       isLoved: undefined,
       platformId: undefined,
@@ -220,28 +220,13 @@ export function GameFilters({
           className="w-full sm:w-64"
         />
 
-        {/* Play Status filter */}
-        <Select
-          value={filters.status ?? 'all'}
-          onValueChange={(value) =>
-            onFiltersChange({
-              ...filters,
-              status: value === 'all' ? undefined : (value as PlayStatus),
-            })
-          }
-        >
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Play Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            {statusOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Play Status filter (multi-select) */}
+        <MultiSelectFilter
+          label="Play Status"
+          options={statusOptions}
+          selected={filters.status ?? []}
+          onChange={(selected) => onFiltersChange({ ...filters, status: selected })}
+        />
 
         {/* Ownership Status filter */}
         <Select

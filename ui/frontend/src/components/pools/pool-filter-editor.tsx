@@ -13,13 +13,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
 import {
   useUpdatePool,
@@ -33,8 +26,11 @@ import { statusLabels } from '@/lib/play-status';
 import { PlayStatus } from '@/types';
 import type { FilterCard, PoolFilter } from '@/types';
 
-// PlayStatus is an enum in types/game.ts; enumerate its values for the select.
-const PLAY_STATUSES = Object.values(PlayStatus);
+// PlayStatus is an enum in types/game.ts; enumerate its values (multi-select).
+const playStatusOpts = Object.values(PlayStatus).map((s) => ({
+  value: s,
+  label: statusLabels[s],
+}));
 
 interface PoolFilterEditorProps {
   poolId: string;
@@ -177,21 +173,12 @@ function PoolFilterBody({ poolId, initialFilter, onOpenChange }: PoolFilterBodyP
                 selected={card.tag ?? []}
                 onChange={(v) => updateCard(idx, { tag: v })}
               />
-              <Select
-                value={card.play_status ?? ''}
-                onValueChange={(v) => updateCard(idx, { play_status: v || undefined })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Play status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PLAY_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {statusLabels[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MultiSelectFilter
+                label="Play status"
+                options={playStatusOpts}
+                selected={card.play_status ?? []}
+                onChange={(v) => updateCard(idx, { play_status: v })}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
