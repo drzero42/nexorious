@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.13.0](https://github.com/drzero42/nexorious/compare/v0.12.0...v0.13.0) (2026-06-13)
+
+
+### Features
+
+* bulk pool-membership add endpoint ([#978](https://github.com/drzero42/nexorious/issues/978)) ([5bd4eef](https://github.com/drzero42/nexorious/commit/5bd4eefbe6c45eccc22c7c3b28c8d07919581348)), closes [#975](https://github.com/drzero42/nexorious/issues/975)
+* multi-select play status filtering (library + pools) ([#980](https://github.com/drzero42/nexorious/issues/980)) ([a6df879](https://github.com/drzero42/nexorious/commit/a6df87942f8f55ae2df084d833dd3e4a6ee0ff78)), closes [#976](https://github.com/drzero42/nexorious/issues/976)
+* per-game pool membership endpoint for Add-to-pool toggle ([#973](https://github.com/drzero42/nexorious/issues/973)) ([f42afef](https://github.com/drzero42/nexorious/commit/f42afefb187d571ae405242a1db8660fd027e9fa)), closes [#971](https://github.com/drzero42/nexorious/issues/971)
+* Play Planning backend — pools data model, API, filter primitive, completion hook ([#968](https://github.com/drzero42/nexorious/issues/968)) ([1ed4dfd](https://github.com/drzero42/nexorious/commit/1ed4dfdcebc3bddbc1c5d1e2d750f33d02098fe3)), closes [#955](https://github.com/drzero42/nexorious/issues/955)
+* Play Planning frontend — pools page, nav, add-to-pool ([#974](https://github.com/drzero42/nexorious/issues/974)) ([c5a255c](https://github.com/drzero42/nexorious/commit/c5a255cb582a2fe443dca2ff3c274b7db344e2d6)), closes [#956](https://github.com/drzero42/nexorious/issues/956)
+
+
+### Bug Fixes
+
+* smooth suggestion → Up Next optimistic move ([#979](https://github.com/drzero42/nexorious/issues/979)) ([effb587](https://github.com/drzero42/nexorious/commit/effb587fc2d76a5e6d83d4930378be9e2b471d8e)), closes [#977](https://github.com/drzero42/nexorious/issues/977)
+
 ## [0.12.0](https://github.com/drzero42/nexorious/compare/v0.11.1...v0.12.0) (2026-06-12)
 
 
