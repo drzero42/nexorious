@@ -5,6 +5,7 @@ import {
   Heart,
   RefreshCw,
   Tag,
+  ListChecks,
   ArrowLeftRight,
   Users,
   Shield,
@@ -58,6 +59,11 @@ export function useNavItems() {
       href: '/tags',
       label: 'Tags',
       icon: <Tag className="h-4 w-4" />,
+    },
+    {
+      href: '/pools',
+      label: 'Planning',
+      icon: <ListChecks className="h-4 w-4" />,
     },
     {
       href: '/import-export',

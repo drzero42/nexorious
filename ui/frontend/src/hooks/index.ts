@@ -124,3 +124,19 @@ export { useSettings, useUpdateSettings } from './use-settings';
 
 // Docs hooks
 export { docKeys, useDoc } from './use-docs';
+
+// Pool hooks
+export {
+  poolKeys,
+  usePools,
+  usePool,
+  usePoolSuggestions,
+  useGamePoolMemberships,
+  useCreatePool,
+  useUpdatePool,
+  useDeletePool,
+  useReorderPools,
+  useAddPoolGame,
+  useRemovePoolGame,
+  useSetQueue,
+} from './use-pools';
