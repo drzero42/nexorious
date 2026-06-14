@@ -51,3 +51,66 @@ func TestParse_HeaderCaseAndWhitespaceInsensitive(t *testing.T) {
 // guard against an unused import until later tasks reference these.
 var _ = errors.Is
 var _ = importmodel.ErrInvalidSignature
+
+func TestParse_RequiresTitle(t *testing.T) {
+	_, err := Parse([]byte("A\nx\n"), Config{})
+	if err == nil {
+		t.Fatal("want error when Columns.Title is empty")
+	}
+	if errors.Is(err, importmodel.ErrInvalidSignature) {
+		t.Fatal("title error must not be ErrInvalidSignature")
+	}
+}
+
+func TestParse_RejectsAdvancedSlots(t *testing.T) {
+	base := func() Config { return Config{Columns: ColumnMap{Title: "Name"}} }
+	cases := map[string]Config{
+		"status flags": func() Config { c := base(); c.Status.Flags = &StatusFlags{}; return c }(),
+		"platform tables": func() Config {
+			c := base()
+			c.Platform.Tables = &PlatformTables{}
+			return c
+		}(),
+		"notes assembly": func() Config { c := base(); c.Notes.Assembly = &NoteAssembly{}; return c }(),
+		"copy rows": func() Config {
+			c := base()
+			c.Grouping.CopyRows = &CopyRowGrouping{}
+			return c
+		}(),
+		"h:mm duration": func() Config {
+			c := base()
+			c.Duration = &DurationConfig{Format: "h:mm"}
+			return c
+		}(),
+	}
+	for name, cfg := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse([]byte("Name\nx\n"), cfg)
+			if err == nil {
+				t.Fatalf("want error for advanced slot %q", name)
+			}
+			if errors.Is(err, importmodel.ErrInvalidSignature) {
+				t.Fatalf("advanced-slot error must not be ErrInvalidSignature (%q)", name)
+			}
+		})
+	}
+}
+
+func TestParse_RejectsConflictingStatusVariants(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "Name"},
+		Status:  StatusConfig{Column: &StatusColumn{Column: "S"}, Flags: &StatusFlags{}},
+	}
+	_, err := Parse([]byte("Name\nx\n"), cfg)
+	if err == nil {
+		t.Fatal("want error when both Status.Column and Status.Flags are set")
+	}
+}
+
+func TestParse_RejectsBadRatingScale(t *testing.T) {
+	cfg := Config{Columns: ColumnMap{Title: "Name"}, Rating: &RatingConfig{Scale: 7}}
+	_, err := Parse([]byte("Name\nx\n"), cfg)
+	if err == nil {
+		t.Fatal("want error for Rating.Scale not in {5,10,100}")
+	}
+}
