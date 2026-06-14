@@ -24,6 +24,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 - **Own your data.** Self-hosted, single binary, no third-party cloud, MIT-licensed.
 - **Automatic library sync** from Steam, PlayStation Network, GOG, and Epic Games Store today, with more sources on the way.
 - **Migrating from Darkadia?** Darkadia (RIP) is gone, but your collection doesn't have to be. Export your Darkadia library to CSV and import it straight into Nexorious — games, platforms, ratings, notes, and the date you added each game all come across.
+- **You want to know how bad your pile of shame is.** Nexorious counts the games you own but have never played, so you can confront — and maybe finally shrink — your backlog.
 
 ## Reasons not to use Nexorious
 
@@ -31,6 +32,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 - **You only use a single storefront.** If everything you own is on Steam (or only PlayStation, or only Xbox), that storefront already shows you your whole library — cross-platform consolidation will not buy you much.
 - **You want zero-ops or a hosted service.** There is no SaaS. You run the server and a PostgreSQL database yourself.
 - **You're uncomfortable with AI-assisted code.** Nexorious is built extensively with it — see [AI-Assisted Development](#ai-assisted-development).
+- **You do not want to be confronted by your pile of shame.** Seeing every unplayed game you own tallied up in one place can be sobering — if blissful ignorance suits you better, look away.
 
 ## Alternatives
 
