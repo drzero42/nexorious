@@ -87,6 +87,25 @@ func notImplemented(feature string) error {
 	return fmt.Errorf("csvmap: %s is not implemented yet (advanced feature, see #1016)", feature)
 }
 
+// MatchesSignature reports whether every name in cfg.Signature is present in
+// headers (compared normalized). A nil/empty Signature always matches — the
+// generic mapping path accepts any non-empty CSV.
+func MatchesSignature(headers []string, cfg Config) bool {
+	if len(cfg.Signature) == 0 {
+		return true
+	}
+	present := make(map[string]bool, len(headers))
+	for _, h := range headers {
+		present[normKey(h)] = true
+	}
+	for _, name := range cfg.Signature {
+		if !present[normKey(name)] {
+			return false
+		}
+	}
+	return true
+}
+
 // Parse maps a CSV export into canonical games per cfg. On a wrong-shape file
 // (failed Signature) it returns an error wrapping importmodel.ErrInvalidSignature.
 func Parse(raw []byte, cfg Config) ([]importmodel.Game, error) {
@@ -99,6 +118,9 @@ func Parse(raw []byte, cfg Config) ([]importmodel.Game, error) {
 	header, err := r.Read()
 	if err != nil {
 		return nil, err
+	}
+	if !MatchesSignature(header, cfg) {
+		return nil, fmt.Errorf("csv does not match the expected format: %w", importmodel.ErrInvalidSignature)
 	}
 	idx := buildIndex(header)
 

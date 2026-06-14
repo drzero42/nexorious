@@ -114,3 +114,27 @@ func TestParse_RejectsBadRatingScale(t *testing.T) {
 		t.Fatal("want error for Rating.Scale not in {5,10,100}")
 	}
 }
+
+func TestMatchesSignature(t *testing.T) {
+	headers := []string{"Name", "Status", "Rating"}
+	if !MatchesSignature(headers, Config{Signature: []string{"name", "rating"}}) {
+		t.Fatal("expected match (case-insensitive, subset)")
+	}
+	if MatchesSignature(headers, Config{Signature: []string{"Name", "Missing"}}) {
+		t.Fatal("expected no match when a signature column is absent")
+	}
+	if !MatchesSignature(headers, Config{}) {
+		t.Fatal("nil signature must always match")
+	}
+}
+
+func TestParse_SignatureMismatchIsInvalidSignature(t *testing.T) {
+	cfg := Config{Columns: ColumnMap{Title: "Name"}, Signature: []string{"Name", "Shelves"}}
+	_, err := Parse([]byte("Name,Rating\nHalf-Life,5\n"), cfg)
+	if err == nil {
+		t.Fatal("want error on signature mismatch")
+	}
+	if !errors.Is(err, importmodel.ErrInvalidSignature) {
+		t.Fatalf("want ErrInvalidSignature, got %v", err)
+	}
+}
