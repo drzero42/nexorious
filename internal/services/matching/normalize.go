@@ -19,10 +19,6 @@ var (
 	reYearInParens    = regexp.MustCompile(`\(\d{4}\)`)
 	reClassic         = regexp.MustCompile(`(?i)\(classic(?:,\s*\d{4})?\)`)
 	reMultiWhitespace = regexp.MustCompile(`\s+`)
-
-	// diacriticFolder folds unicode diacritics to ASCII base characters
-	// (ō→o, û→u, é→e) so titles like "ABZÛ" and "Ōkami HD" match correctly.
-	diacriticFolder = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 )
 
 // NormalizeTitle applies transformations for comparison purposes only.
@@ -43,7 +39,12 @@ func NormalizeTitle(s string) string {
 	// Strip leading "the " so "The X" and "X" compare equally.
 	s = strings.TrimPrefix(s, "the ")
 	// Fold diacritics to ASCII so "ABZÛ"→"abzu" and "Ōkami"→"okami" match.
-	if folded, _, err := transform.String(diacriticFolder, s); err == nil {
+	// The transformer is stateful and not safe for concurrent use, and
+	// NormalizeTitle runs across concurrent workers (import_match, igdb_match),
+	// so build a fresh one per call rather than sharing a package-level instance.
+	// The allocation is negligible next to the IGDB lookups this feeds.
+	folder := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	if folded, _, err := transform.String(folder, s); err == nil {
 		s = folded
 	}
 	return s
