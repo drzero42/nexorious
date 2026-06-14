@@ -281,3 +281,65 @@ func TestParse_DurationIgnoredWhenConfigNil(t *testing.T) {
 		t.Fatalf("hours must be nil when Config.Duration is nil, got %v", games[0].HoursPlayed)
 	}
 }
+
+func TestParse_PlatformPassthrough(t *testing.T) {
+	cfg := Config{
+		Columns:  ColumnMap{Title: "Name"},
+		Platform: PlatformConfig{Simple: &PlatformSimple{PlatformColumn: "Plat"}},
+	}
+	games, _ := Parse([]byte("Name,Plat\nA,SomePlatform\nB,\n"), cfg)
+	if len(games[0].Platforms) != 1 || games[0].Platforms[0].Platform != "SomePlatform" {
+		t.Fatalf("A: want passthrough platform, got %+v", games[0].Platforms)
+	}
+	if games[0].Platforms[0].Storefront != nil {
+		t.Fatal("A: storefront should be nil")
+	}
+	if len(games[1].Platforms) != 0 {
+		t.Fatalf("B: empty platform cell -> no entry, got %+v", games[1].Platforms)
+	}
+}
+
+func TestParse_PlatformWithMapsStorefrontAndDate(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "Name"},
+		Platform: PlatformConfig{Simple: &PlatformSimple{
+			PlatformColumn:     "Plat",
+			StorefrontColumn:   "Store",
+			AcquiredDateColumn: "Bought",
+			PlatformMap:        map[string]string{"pc": "pc-windows"},
+			StorefrontMap:      map[string]string{"steam": "steam"},
+		}},
+	}
+	games, _ := Parse([]byte("Name,Plat,Store,Bought\nA,PC,Steam,2020-01-02\n"), cfg)
+	p := games[0].Platforms[0]
+	if p.Platform != "pc-windows" {
+		t.Fatalf("want mapped slug pc-windows, got %q", p.Platform)
+	}
+	if p.Storefront == nil || *p.Storefront != "steam" {
+		t.Fatalf("want mapped storefront steam, got %v", p.Storefront)
+	}
+	if p.AcquiredDate != "2020-01-02" {
+		t.Fatalf("want acquired date 2020-01-02, got %q", p.AcquiredDate)
+	}
+}
+
+func TestParse_PlatformUnmappedPassesThrough(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "Name"},
+		Platform: PlatformConfig{Simple: &PlatformSimple{
+			PlatformColumn: "Plat",
+			PlatformMap:    map[string]string{"pc": "pc-windows"},
+		}},
+	}
+	games, _ := Parse([]byte("Name,Plat\nA,Dreamcast\n"), cfg)
+	if games[0].Platforms[0].Platform != "Dreamcast" {
+		t.Fatalf("unmapped value should pass through, got %q", games[0].Platforms[0].Platform)
+	}
+}
+
+func TestParse_NoPlatformConfigYieldsNoEntries(t *testing.T) {
+	games, _ := Parse([]byte("Name\nA\n"), Config{Columns: ColumnMap{Title: "Name"}})
+	if len(games[0].Platforms) != 0 {
+		t.Fatalf("want no platform entries, got %+v", games[0].Platforms)
+	}
+}

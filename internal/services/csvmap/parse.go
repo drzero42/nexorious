@@ -278,6 +278,38 @@ func extractHours(rec []string, idx map[string]int, cfg Config) *float64 {
 	return &f
 }
 
+// extractPlatforms builds the simple-variant ownership entry (at most one) from
+// the configured platform/storefront/acquired-date columns. An empty platform
+// cell or no PlatformSimple config yields no entries. Map miss = passthrough.
+func extractPlatforms(rec []string, idx map[string]int, cfg Config) []importmodel.Platform {
+	ps := cfg.Platform.Simple
+	if ps == nil {
+		return nil
+	}
+	pv := cell(rec, idx, ps.PlatformColumn)
+	if pv == "" {
+		return nil
+	}
+	slug := pv
+	if ps.PlatformMap != nil {
+		if mapped, ok := ps.PlatformMap[normKey(pv)]; ok {
+			slug = mapped
+		}
+	}
+	var sf *string
+	if sv := cell(rec, idx, ps.StorefrontColumn); sv != "" {
+		s := sv
+		if ps.StorefrontMap != nil {
+			if mapped, ok := ps.StorefrontMap[normKey(sv)]; ok {
+				s = mapped
+			}
+		}
+		sf = &s
+	}
+	date := extractDate(cell(rec, idx, ps.AcquiredDateColumn), cfg)
+	return []importmodel.Platform{{Platform: slug, Storefront: sf, AcquiredDate: date}}
+}
+
 // extractGame builds one Game from a row, or (zero, false) if the title is empty.
 func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game, bool) {
 	title := cell(rec, idx, cfg.Columns.Title)
@@ -300,5 +332,6 @@ func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game
 	if n := cell(rec, idx, cfg.Notes.Column); n != "" {
 		g.PersonalNotes = &n
 	}
+	g.Platforms = extractPlatforms(rec, idx, cfg)
 	return g, true
 }
