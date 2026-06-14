@@ -16,8 +16,8 @@ function DashboardSkeleton() {
   return (
     <div className="space-y-6">
       {/* Overview Stats Skeleton */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
           <Card key={i}>
             <CardContent className="p-4">
               <Skeleton className="mb-2 h-4 w-24" />
@@ -107,8 +107,6 @@ function PersonalStats({
     averageRating: number | null;
     totalGames: number;
     totalHoursPlayed: number;
-    pileOfShame: number;
-    completionRate: number;
     completionStats: Record<PlayStatus, number>;
   };
 }) {
@@ -119,57 +117,31 @@ function PersonalStats({
     (stats.completionStats[PlayStatus.DOMINATED] || 0);
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>Personal Stats</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Average Rating</span>
-            <span className="text-sm text-muted-foreground">
-              {stats.averageRating != null && stats.averageRating > 0
-                ? `${stats.averageRating.toFixed(1)}/5`
-                : 'N/A'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Average Hours per Game</span>
-            <span className="text-sm text-muted-foreground">
-              {stats.totalGames > 0 ? (stats.totalHoursPlayed / stats.totalGames).toFixed(1) : 0}h
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Games Finished</span>
-            <span className="text-sm text-muted-foreground">{completedGames}</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Game Insights</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Pile of Shame</span>
-            <span className="text-sm text-muted-foreground">{stats.pileOfShame} games</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Completion Rate</span>
-            <span className="text-sm text-muted-foreground">
-              {stats.completionRate.toFixed(1)}%
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">In Progress</span>
-            <span className="text-sm text-muted-foreground">
-              {stats.completionStats[PlayStatus.IN_PROGRESS] || 0} games
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Personal Stats</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">Average Rating</span>
+          <span className="text-sm text-muted-foreground">
+            {stats.averageRating != null && stats.averageRating > 0
+              ? `${stats.averageRating.toFixed(1)}/5`
+              : 'N/A'}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">Average Hours per Game</span>
+          <span className="text-sm text-muted-foreground">
+            {stats.totalGames > 0 ? (stats.totalHoursPlayed / stats.totalGames).toFixed(1) : 0}h
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">Games Finished</span>
+          <span className="text-sm text-muted-foreground">{completedGames}</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -69,6 +69,13 @@ describe('ProgressStatistics', () => {
       // 15 in_progress + 2 replay = 17
       expect(screen.getByText('17')).toBeInTheDocument();
     });
+
+    it('displays pile of shame as a prominent overview stat', () => {
+      render(<ProgressStatistics stats={createMockStats({ pileOfShame: 42 })} />);
+
+      expect(screen.getByText('Pile of Shame')).toBeInTheDocument();
+      expect(screen.getByText('42')).toBeInTheDocument();
+    });
   });
 
   describe('Progress Breakdown', () => {

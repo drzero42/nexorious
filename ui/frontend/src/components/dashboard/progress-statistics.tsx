@@ -69,6 +69,8 @@ const journeyDescriptions: Record<PlayStatus, string> = {
 export function ProgressStatistics({ stats, className }: ProgressStatisticsProps) {
   const { totalGames, completionStats, completionRate, totalHoursPlayed } = stats;
 
+  const { pileOfShame } = stats;
+
   // Calculate active games (in progress + replay)
   const activeGames =
     (completionStats[PlayStatus.IN_PROGRESS] || 0) + (completionStats[PlayStatus.REPLAY] || 0);
@@ -89,7 +91,7 @@ export function ProgressStatistics({ stats, className }: ProgressStatisticsProps
   return (
     <div className={className}>
       {/* Overview Stats */}
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Card>
           <CardContent className="p-4">
             <div className="text-sm font-medium text-muted-foreground">Total Games</div>
@@ -116,6 +118,12 @@ export function ProgressStatistics({ stats, className }: ProgressStatisticsProps
           <CardContent className="p-4">
             <div className="text-sm font-medium text-muted-foreground">Active Games</div>
             <div className="mt-1 text-2xl font-bold text-purple-600">{activeGames}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-sm font-medium text-muted-foreground">Pile of Shame</div>
+            <div className="mt-1 text-2xl font-bold text-amber-600">{pileOfShame}</div>
           </CardContent>
         </Card>
       </div>

@@ -33,8 +33,9 @@ export function CurrentlyPlayingSection() {
     <section className="space-y-4">
       <h2 className="text-2xl font-semibold">Currently Playing</h2>
 
-      {/* Horizontal scroll container */}
-      <div className="flex gap-4 overflow-x-auto scroll-smooth pb-4 -mx-4 px-4 scrollbar-hide">
+      {/* Horizontal scroll container: stays within the viewport width and shows
+          a horizontal scrollbar when there are more games than fit on screen. */}
+      <div className="flex gap-4 overflow-x-auto scroll-smooth pb-4 -mx-4 px-4">
         {data.items.map((game) => {
           const coverUrl = getCoverUrl(game);
           const { firstPlatform, additionalCount } = getPlatformDisplay(game);
