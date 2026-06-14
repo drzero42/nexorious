@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
 
 // ErrInvalidHeader signals the file is not a Darkadia export. The upload handler
@@ -61,27 +63,6 @@ const (
 	colCopyNotes       = 33
 )
 
-// Game is the consolidated, Nexorious-shaped payload for one Darkadia game. It
-// is marshalled verbatim into job_item.source_metadata.
-type Game struct {
-	Title          string     `json:"title"`
-	PlayStatus     string     `json:"play_status"`
-	IsLoved        bool       `json:"is_loved"`
-	PersonalRating *int32     `json:"personal_rating,omitempty"`
-	PersonalNotes  *string    `json:"personal_notes,omitempty"`
-	CreatedAt      string     `json:"created_at,omitempty"` // "2006-01-02" or ""
-	Platforms      []Platform `json:"platforms"`
-	Tags           []string   `json:"tags,omitempty"`
-	HoursPlayed    *float64   `json:"hours_played,omitempty"`
-}
-
-// Platform is one consolidated (platform, storefront, acquired_date) ownership entry.
-type Platform struct {
-	Platform     string  `json:"platform"`                // Nexorious slug
-	Storefront   *string `json:"storefront,omitempty"`    // slug or nil
-	AcquiredDate string  `json:"acquired_date,omitempty"` // "2006-01-02" or ""
-}
-
 // rawGame is one game grouped from the CSV: the named row plus its copy rows.
 type rawGame struct {
 	named  []string
@@ -89,7 +70,7 @@ type rawGame struct {
 }
 
 // Parse reads a Darkadia CSV and returns one consolidated Game per title.
-func Parse(raw []byte) ([]Game, error) {
+func Parse(raw []byte) ([]importmodel.Game, error) {
 	r := csv.NewReader(bytes.NewReader(raw))
 	r.FieldsPerRecord = -1 // tolerate ragged rows (missing trailing columns)
 
@@ -124,7 +105,7 @@ func Parse(raw []byte) ([]Game, error) {
 		last.copies = append(last.copies, row)
 	}
 
-	games := make([]Game, 0, len(raws))
+	games := make([]importmodel.Game, 0, len(raws))
 	for _, rg := range raws {
 		games = append(games, consolidate(rg))
 	}
@@ -324,9 +305,9 @@ func appendUnique(xs []string, s string) []string {
 	return append(xs, s)
 }
 
-func consolidate(rg rawGame) Game {
+func consolidate(rg rawGame) importmodel.Game {
 	n := rg.named
-	g := Game{
+	g := importmodel.Game{
 		Title:      n[colName],
 		PlayStatus: resolvePlayStatus(n),
 		IsLoved:    n[colLoved] == "1",
@@ -403,7 +384,7 @@ func consolidate(rg rawGame) Game {
 			return
 		}
 		seen[k] = len(g.Platforms)
-		g.Platforms = append(g.Platforms, Platform{Platform: slug, Storefront: sf, AcquiredDate: date})
+		g.Platforms = append(g.Platforms, importmodel.Platform{Platform: slug, Storefront: sf, AcquiredDate: date})
 	}
 
 	slugHasCopy := map[string]bool{}

@@ -17,8 +17,8 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/notify"
-	"github.com/drzero42/nexorious/internal/services/darkadia"
 	"github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/services/importmodel"
 	"github.com/drzero42/nexorious/internal/services/matching"
 	"github.com/drzero42/nexorious/internal/usergame"
 )
@@ -141,7 +141,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 	}
 	igdbID := int32(*item.ResolvedIGDBID) //nolint:gosec // resolved id fits int32
 
-	var payload darkadia.Game
+	var payload importmodel.Game
 	if err := json.Unmarshal(item.SourceMetadata, &payload); err != nil {
 		markItemFailed(bg, w.DB, &item, fmt.Sprintf("parse payload: %v", err), "darkadia_finalize: markItemFailed")
 		DarkadiaCheckJobCompletion(w.DB, item.JobID)
