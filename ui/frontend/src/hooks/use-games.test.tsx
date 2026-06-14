@@ -1063,7 +1063,7 @@ describe('use-games hooks', () => {
   });
 
   describe('useActiveGames', () => {
-    it('fetches and merges IN_PROGRESS and REPLAY games', async () => {
+    it('fetches IN_PROGRESS and REPLAY games in a single multi-status call', async () => {
       const inProgressGame = {
         ...mockUserGameApi,
         id: 'ug-1',
@@ -1076,42 +1076,21 @@ describe('use-games hooks', () => {
         play_status: 'replay' as PlayStatus,
       };
 
-      let inProgressCalled = false;
-      let replayCalled = false;
+      let requestCount = 0;
+      let playStatusValues: string[] = [];
 
       server.use(
         http.get(`${API_URL}/user-games`, ({ request }) => {
+          requestCount++;
           const url = new URL(request.url);
-          const playStatus = url.searchParams.get('play_status');
-
-          if (playStatus === 'in_progress') {
-            inProgressCalled = true;
-            return HttpResponse.json({
-              user_games: [inProgressGame],
-              total: 1,
-              page: 1,
-              per_page: 50,
-              pages: 1,
-            });
-          }
-
-          if (playStatus === 'replay') {
-            replayCalled = true;
-            return HttpResponse.json({
-              user_games: [replayGame],
-              total: 1,
-              page: 1,
-              per_page: 50,
-              pages: 1,
-            });
-          }
+          playStatusValues = url.searchParams.getAll('play_status');
 
           return HttpResponse.json({
-            user_games: [],
-            total: 0,
+            user_games: [inProgressGame, replayGame],
+            total: 2,
             page: 1,
-            per_page: 50,
-            pages: 0,
+            per_page: 100,
+            pages: 1,
           });
         }),
       );
@@ -1124,8 +1103,8 @@ describe('use-games hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(inProgressCalled).toBe(true);
-      expect(replayCalled).toBe(true);
+      expect(requestCount).toBe(1);
+      expect(playStatusValues).toEqual(['in_progress', 'replay']);
       expect(result.current.data?.items).toHaveLength(2);
       expect(result.current.data?.total).toBe(2);
       expect(result.current.data?.items[0].play_status).toBe('in_progress');
