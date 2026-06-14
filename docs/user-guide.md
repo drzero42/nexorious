@@ -192,6 +192,12 @@ The **Import / Export** page moves whole collections in and out.
 
 Both imports run in the background, so you can watch their progress and see recent runs listed on the page.
 
+## Why sync and import take a while
+
+Bringing in a large library isn't instant, and that's by design rather than a sign something's wrong. Every game Nexorious pulls in — from a storefront sync or an import alike — is looked up in IGDB to attach its cover art, description, release date, and the rest of its metadata. IGDB and the stores themselves each accept only a handful of requests per second, so Nexorious paces its work to stay comfortably within those limits and be a well-behaved guest. Pushing harder would risk being throttled or temporarily blocked, which would make everything slower in the end.
+
+So a first sync or import of hundreds of games can take a while to finish, and there's nothing on your side to fix. It all runs in the background — carry on using your library and watch the progress on the **Sync** or **Import / Export** page. Later syncs are usually much quicker, since only new purchases need looking up.
+
 ## Notifications
 
 Nexorious can let you know when something needs your attention — a sync's credentials have expired, a job finished, and so on. You set this up under **Notifications** on your profile in two parts:
