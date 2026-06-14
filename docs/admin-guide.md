@@ -281,6 +281,12 @@ Getting `legendary` in place depends on how you deploy:
 
 Either way, point `LEGENDARY_WORK_DIR` at a writable, persistent directory and restart the server. Steam, PlayStation, GOG, and Humble Bundle sync have no such requirement.
 
+## Why sync and import take a while
+
+Syncs and imports are paced deliberately, so a first run over a large library isn't instant. Every game brought in is looked up in IGDB for its metadata, and both IGDB and the storefront APIs cap how many requests they accept per second. Nexorious throttles its outbound calls to stay within those published limits — exceeding them risks HTTP 429s and temporary blocks that would only slow things down further. This is expected behaviour, not a misconfiguration, and it's the answer when a user asks why a large sync is taking a while.
+
+The defaults already match the providers' limits, so there's normally nothing to change. The rates and burst allowances are tunable if you have a reason — see `IGDB_REQUESTS_PER_SECOND`, `IGDB_BURST_CAPACITY`, `STEAM_REQUESTS_PER_SECOND`, and `STEAM_BURST_CAPACITY` in the [configuration reference](#full-reference). Lower them only if asked to; raising them past what a provider allows is counterproductive.
+
 ## The admin section
 
 Accounts with the admin role get an extra section in the sidebar. It's where you manage users and look after the instance.
