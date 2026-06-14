@@ -82,7 +82,8 @@ export {
 export {
   importExportKeys,
   useImportNexorious,
-  useImportDarkadia,
+  useImportSources,
+  useImportSource,
   useExportCollection,
   useDownloadExport,
 } from './use-import-export';

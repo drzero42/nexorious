@@ -177,7 +177,7 @@ func (h *JobItemsHandler) HandleSkipItem(c *echo.Context) error {
 	).Exec(context.Background()); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip item")
 	}
-	tasks.DarkadiaCheckJobCompletion(h.db, job.ID)
+	tasks.ImportCheckJobCompletion(h.db, job.ID)
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 

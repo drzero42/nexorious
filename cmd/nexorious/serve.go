@@ -246,7 +246,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
 	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, IGDBClient: igdbClient}
 	userGameWorker := &tasks.UserGameWorker{DB: db, IGDBClient: igdbClient}
-	darkadiaMatchWorker := &tasks.DarkadiaMatchWorker{DB: db, IGDBClient: igdbClient}
+	importMatchWorker := &tasks.ImportMatchWorker{DB: db, IGDBClient: igdbClient}
 	storeLinkDispatchWorker := &tasks.StoreLinkRefreshDispatchWorker{DB: db}
 	storeLinkItemWorker := &tasks.StoreLinkRefreshItemWorker{DB: db, ResolverFor: buildStoreLinkResolverFactory(db, encrypter)}
 
@@ -260,8 +260,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, dispatchSyncWorker)
 	river.AddWorker(workers, igdbMatchWorker)
 	river.AddWorker(workers, userGameWorker)
-	river.AddWorker(workers, darkadiaMatchWorker)
-	river.AddWorker(workers, &tasks.DarkadiaFinalizeWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, importMatchWorker)
+	river.AddWorker(workers, &tasks.ImportFinalizeWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, metaDispatchWorker)
 	river.AddWorker(workers, storeLinkDispatchWorker)
 	river.AddWorker(workers, storeLinkItemWorker)
@@ -322,7 +322,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	rescueOrphanedWorker.RiverClient = riverClient
 	igdbMatchWorker.RiverClient = riverClient
 	userGameWorker.RiverClient = riverClient
-	darkadiaMatchWorker.RiverClient = riverClient
+	importMatchWorker.RiverClient = riverClient
 
 	// -------------------------------------------------------------------------
 	// HTTP server
@@ -370,7 +370,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newRescueOrphaned := &scheduler.RescueOrphanedPendingItemsWorker{DB: newDB}
 			newIGDBMatch := &tasks.IGDBMatchWorker{DB: newDB, IGDBClient: igdbClient}
 			newUserGame := &tasks.UserGameWorker{DB: newDB, IGDBClient: igdbClient}
-			newDarkadiaMatch := &tasks.DarkadiaMatchWorker{DB: newDB, IGDBClient: igdbClient}
+			newImportMatch := &tasks.ImportMatchWorker{DB: newDB, IGDBClient: igdbClient}
 			newStoreLinkDispatch := &tasks.StoreLinkRefreshDispatchWorker{DB: newDB}
 			newStoreLinkItem := &tasks.StoreLinkRefreshItemWorker{DB: newDB, ResolverFor: buildStoreLinkResolverFactory(newDB, encrypter)}
 
@@ -381,8 +381,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			river.AddWorker(newWorkers, newDispatchSync)
 			river.AddWorker(newWorkers, newIGDBMatch)
 			river.AddWorker(newWorkers, newUserGame)
-			river.AddWorker(newWorkers, newDarkadiaMatch)
-			river.AddWorker(newWorkers, &tasks.DarkadiaFinalizeWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+			river.AddWorker(newWorkers, newImportMatch)
+			river.AddWorker(newWorkers, &tasks.ImportFinalizeWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 			river.AddWorker(newWorkers, newMetaDispatch)
 			river.AddWorker(newWorkers, newStoreLinkDispatch)
 			river.AddWorker(newWorkers, newStoreLinkItem)
@@ -434,7 +434,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newRescueOrphaned.RiverClient = newClient
 			newIGDBMatch.RiverClient = newClient
 			newUserGame.RiverClient = newClient
-			newDarkadiaMatch.RiverClient = newClient
+			newImportMatch.RiverClient = newClient
 
 			if err := newClient.Start(riverCtx); err != nil {
 				return fmt.Errorf("RebuildServices: River start: %w", err)

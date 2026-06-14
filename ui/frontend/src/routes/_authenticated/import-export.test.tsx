@@ -24,7 +24,18 @@ vi.mock('@/components/jobs', () => ({
 
 vi.mock('@/hooks', () => ({
   useImportNexorious: () => ({ mutateAsync: vi.fn() }),
-  useImportDarkadia: () => ({ mutateAsync: vi.fn() }),
+  useImportSource: () => ({ mutateAsync: vi.fn() }),
+  useImportSources: () => ({
+    data: [
+      {
+        slug: 'darkadia',
+        display_name: 'Darkadia',
+        description: 'desc',
+        features: [],
+        accept: ['.csv'],
+      },
+    ],
+  }),
   useExportCollection: () => ({ mutateAsync: vi.fn() }),
   useJob: (id?: string) => ({ data: id === 'job1' ? h.job : undefined }),
   useJobTypeStatus: (type: JobType) => ({

@@ -15,9 +15,9 @@ import (
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
-// insertDarkadiaItem inserts a darkadia job + one job_item with the given payload
+// insertImportItem inserts a darkadia job + one job_item with the given payload
 // as source_metadata. Returns (jobID, itemID).
-func insertDarkadiaItem(t *testing.T, userID string, payload map[string]any) (string, string) {
+func insertImportItem(t *testing.T, userID string, payload map[string]any) (string, string) {
 	t.Helper()
 	ctx := context.Background()
 	jobID := uuid.NewString()
@@ -42,16 +42,16 @@ func insertDarkadiaItem(t *testing.T, userID string, payload map[string]any) (st
 	return jobID, itemID
 }
 
-func TestDarkadiaMatch_NoIGDBClientMarksPendingReview(t *testing.T) {
+func TestImportMatch_NoIGDBClientMarksPendingReview(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := "u-dk-match"
 	insertTestUser(t, testDB, userID)
 	payload := map[string]any{"title": "Whatever", "play_status": "not_started", "platforms": []map[string]any{}}
-	_, itemID := insertDarkadiaItem(t, userID, payload)
+	_, itemID := insertImportItem(t, userID, payload)
 
-	w := &tasks.DarkadiaMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.DarkadiaMatchArgs]{Args: tasks.DarkadiaMatchArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.ImportMatchArgs]{Args: tasks.ImportMatchArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("match: %v", err)
 	}
 	var status string
@@ -63,7 +63,7 @@ func TestDarkadiaMatch_NoIGDBClientMarksPendingReview(t *testing.T) {
 	}
 }
 
-func TestDarkadiaFinalize_WritesUserGameAndPlatforms(t *testing.T) {
+func TestImportFinalize_WritesUserGameAndPlatforms(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := "u-dk-fin1"
@@ -79,13 +79,13 @@ func TestDarkadiaFinalize_WritesUserGameAndPlatforms(t *testing.T) {
 			{"platform": "mac"},
 		},
 	}
-	jobID, itemID := insertDarkadiaItem(t, userID, payload)
+	jobID, itemID := insertImportItem(t, userID, payload)
 	if _, err := testDB.NewRaw(`UPDATE job_items SET resolved_igdb_id = 42 WHERE id = ?`, itemID).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	w := &tasks.DarkadiaFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.DarkadiaFinalizeArgs]{Args: tasks.DarkadiaFinalizeArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestDarkadiaFinalize_WritesUserGameAndPlatforms(t *testing.T) {
 // (nil), mirroring the nexorious import worker. user_games.play_status is NOT
 // NULL DEFAULT 'not_started', so the DB applies the default; the invalid value
 // is never stored verbatim.
-func TestDarkadiaFinalize_InvalidPlayStatusCoercedToNull(t *testing.T) {
+func TestImportFinalize_InvalidPlayStatusCoercedToNull(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := "u-dk-badstatus"
@@ -128,13 +128,13 @@ func TestDarkadiaFinalize_InvalidPlayStatusCoercedToNull(t *testing.T) {
 		"title": "Bad Status", "play_status": "not_a_real_status",
 		"platforms": []map[string]any{},
 	}
-	_, itemID := insertDarkadiaItem(t, userID, payload)
+	_, itemID := insertImportItem(t, userID, payload)
 	if _, err := testDB.NewRaw(`UPDATE job_items SET resolved_igdb_id = 42 WHERE id = ?`, itemID).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	w := &tasks.DarkadiaFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.DarkadiaFinalizeArgs]{Args: tasks.DarkadiaFinalizeArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 
@@ -150,7 +150,7 @@ func TestDarkadiaFinalize_InvalidPlayStatusCoercedToNull(t *testing.T) {
 // Two items in one import that resolve to the SAME game (duplicate titles) must
 // not fail on the user_games (user_id, game_id) unique index; the loser of the
 // race re-selects the existing row and merges its platforms in.
-func TestDarkadiaFinalize_ConcurrentDuplicateGameNoFailure(t *testing.T) {
+func TestImportFinalize_ConcurrentDuplicateGameNoFailure(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := "u-dk-dup"
@@ -176,13 +176,13 @@ func TestDarkadiaFinalize_ConcurrentDuplicateGameNoFailure(t *testing.T) {
 		}
 	}
 
-	w := &tasks.DarkadiaFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
 	var wg sync.WaitGroup
 	for _, id := range itemIDs {
 		wg.Add(1)
 		go func(itemID string) {
 			defer wg.Done()
-			_ = w.Work(ctx, &river.Job[tasks.DarkadiaFinalizeArgs]{Args: tasks.DarkadiaFinalizeArgs{JobItemID: itemID}})
+			_ = w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}})
 		}(id)
 	}
 	wg.Wait()
@@ -206,7 +206,7 @@ func TestDarkadiaFinalize_ConcurrentDuplicateGameNoFailure(t *testing.T) {
 // A finalized item must NOT complete the job while dispatch is still in flight
 // (dispatch_complete=false) — this is the guard against the upload handler
 // finalizing the job before it has inserted every item.
-func TestDarkadiaCheckJobCompletion_BlockedUntilDispatchComplete(t *testing.T) {
+func TestImportCheckJobCompletion_BlockedUntilDispatchComplete(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := "u-dk-dispatch"
@@ -230,8 +230,8 @@ func TestDarkadiaCheckJobCompletion_BlockedUntilDispatchComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := &tasks.DarkadiaFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.DarkadiaFinalizeArgs]{Args: tasks.DarkadiaFinalizeArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
 		t.Fatal(err)
 	}
 	var status string
@@ -246,7 +246,7 @@ func TestDarkadiaCheckJobCompletion_BlockedUntilDispatchComplete(t *testing.T) {
 	if _, err := testDB.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, jobID).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
-	tasks.DarkadiaCheckJobCompletion(testDB, jobID)
+	tasks.ImportCheckJobCompletion(testDB, jobID)
 	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
 		t.Fatal(err)
 	}
@@ -260,8 +260,8 @@ func TestFinalizeArgsForSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("darkadia: unexpected error %v", err)
 	}
-	if _, ok := args.(tasks.DarkadiaFinalizeArgs); !ok {
-		t.Fatalf("darkadia: got %T, want DarkadiaFinalizeArgs", args)
+	if _, ok := args.(tasks.ImportFinalizeArgs); !ok {
+		t.Fatalf("darkadia: got %T, want ImportFinalizeArgs", args)
 	}
 	if _, err := tasks.FinalizeArgsForSource(models.JobSourceNexorious, "item-1"); err == nil {
 		t.Error("nexorious: expected error (no interactive finalize stage)")
@@ -271,7 +271,7 @@ func TestFinalizeArgsForSource(t *testing.T) {
 	}
 }
 
-func TestDarkadiaFinalize_AdditiveMergeDoesNotOverwrite(t *testing.T) {
+func TestImportFinalize_AdditiveMergeDoesNotOverwrite(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := "u-dk-fin2"
@@ -289,13 +289,13 @@ func TestDarkadiaFinalize_AdditiveMergeDoesNotOverwrite(t *testing.T) {
 		"personal_rating": 2, "personal_notes": "imported",
 		"platforms": []map[string]any{{"platform": "mac"}},
 	}
-	_, itemID := insertDarkadiaItem(t, userID, payload)
+	_, itemID := insertImportItem(t, userID, payload)
 	if _, err := testDB.NewRaw(`UPDATE job_items SET resolved_igdb_id = 42 WHERE id = ?`, itemID).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	w := &tasks.DarkadiaFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.DarkadiaFinalizeArgs]{Args: tasks.DarkadiaFinalizeArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 
@@ -315,7 +315,7 @@ func TestDarkadiaFinalize_AdditiveMergeDoesNotOverwrite(t *testing.T) {
 	}
 }
 
-func TestDarkadiaFinalize_TagsAndPlaytimeOnFirstPlatform(t *testing.T) {
+func TestImportFinalize_TagsAndPlaytimeOnFirstPlatform(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := "u-dk-tags"
@@ -332,13 +332,13 @@ func TestDarkadiaFinalize_TagsAndPlaytimeOnFirstPlatform(t *testing.T) {
 			{"platform": "mac"},
 		},
 	}
-	_, itemID := insertDarkadiaItem(t, userID, payload)
+	_, itemID := insertImportItem(t, userID, payload)
 	if _, err := testDB.NewRaw(`UPDATE job_items SET resolved_igdb_id = 77 WHERE id = ?`, itemID).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	w := &tasks.DarkadiaFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.DarkadiaFinalizeArgs]{Args: tasks.DarkadiaFinalizeArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 
