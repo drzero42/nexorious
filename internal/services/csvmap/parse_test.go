@@ -343,3 +343,58 @@ func TestParse_NoPlatformConfigYieldsNoEntries(t *testing.T) {
 		t.Fatalf("want no platform entries, got %+v", games[0].Platforms)
 	}
 }
+
+func mergeCfg() Config {
+	return Config{
+		Columns:  ColumnMap{Title: "Name", Rating: "R"},
+		Rating:   &RatingConfig{Scale: 5},
+		Status:   StatusConfig{Column: &StatusColumn{Column: "S", ValueMap: map[string]string{"playing": "in_progress", "done": "completed"}, Default: "not_started"}},
+		Platform: PlatformConfig{Simple: &PlatformSimple{PlatformColumn: "Plat", StorefrontColumn: "Store"}},
+		Grouping: GroupingConfig{MergeByTitle: true},
+	}
+}
+
+func TestParse_MergeByTitle_UnionsPlatformsFirstWinsScalars(t *testing.T) {
+	csv := "Name,S,R,Plat,Store\n" +
+		"Hades,playing,5,pc-windows,steam\n" +
+		"Hades,done,3,nintendo-switch,nintendo-eshop\n"
+	games, err := Parse([]byte(csv), mergeCfg())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("want 1 merged game, got %d", len(games))
+	}
+	g := games[0]
+	if g.PlayStatus != "in_progress" {
+		t.Fatalf("first-wins status want in_progress, got %q", g.PlayStatus)
+	}
+	if g.PersonalRating == nil || *g.PersonalRating != 5 {
+		t.Fatalf("first-wins rating want 5, got %v", g.PersonalRating)
+	}
+	if len(g.Platforms) != 2 {
+		t.Fatalf("want 2 union platforms, got %+v", g.Platforms)
+	}
+}
+
+func TestParse_MergeByTitle_DedupesIdenticalPlatform(t *testing.T) {
+	csv := "Name,S,R,Plat,Store\n" +
+		"Hades,playing,5,pc-windows,steam\n" +
+		"Hades,playing,5,pc-windows,steam\n"
+	games, _ := Parse([]byte(csv), mergeCfg())
+	if len(games) != 1 || len(games[0].Platforms) != 1 {
+		t.Fatalf("want 1 game with 1 deduped platform, got %d games / %+v", len(games), games[0].Platforms)
+	}
+}
+
+func TestParse_OneRow_DoesNotMerge(t *testing.T) {
+	cfg := mergeCfg()
+	cfg.Grouping.MergeByTitle = false
+	csv := "Name,S,R,Plat,Store\n" +
+		"Hades,playing,5,pc-windows,steam\n" +
+		"Hades,done,3,nintendo-switch,nintendo-eshop\n"
+	games, _ := Parse([]byte(csv), cfg)
+	if len(games) != 2 {
+		t.Fatalf("one-row grouping want 2 games, got %d", len(games))
+	}
+}

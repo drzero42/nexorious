@@ -139,14 +139,72 @@ func Parse(raw []byte, cfg Config) ([]importmodel.Game, error) {
 		rows = append(rows, rec)
 	}
 
+	return buildGames(rows, idx, cfg), nil
+}
+
+// buildGames dispatches between one-row and merge-by-title grouping.
+func buildGames(rows [][]string, idx map[string]int, cfg Config) []importmodel.Game {
+	if cfg.Grouping.MergeByTitle {
+		return buildMerged(rows, idx, cfg)
+	}
 	games := make([]importmodel.Game, 0, len(rows))
 	for _, rec := range rows {
-		g, ok := extractGame(rec, idx, cfg)
-		if ok {
+		if g, ok := extractGame(rec, idx, cfg); ok {
 			games = append(games, g)
 		}
 	}
-	return games, nil
+	return games
+}
+
+// platKey is the (platform, storefront) dedupe key for an ownership entry.
+func platKey(p importmodel.Platform) string {
+	sf := ""
+	if p.Storefront != nil {
+		sf = *p.Storefront
+	}
+	return p.Platform + "\x00" + sf
+}
+
+// buildMerged collapses rows sharing a normalized title into one game: the first
+// row establishes all scalar fields; every row contributes platform entries,
+// union-deduped on (platform, storefront). Output order is first-seen order.
+func buildMerged(rows [][]string, idx map[string]int, cfg Config) []importmodel.Game {
+	type entry struct {
+		game importmodel.Game
+		seen map[string]bool
+	}
+	var order []string
+	byTitle := map[string]*entry{}
+	for _, rec := range rows {
+		g, ok := extractGame(rec, idx, cfg)
+		if !ok {
+			continue
+		}
+		key := normKey(g.Title)
+		e, exists := byTitle[key]
+		if !exists {
+			e = &entry{game: g, seen: map[string]bool{}}
+			for _, p := range g.Platforms {
+				e.seen[platKey(p)] = true
+			}
+			byTitle[key] = e
+			order = append(order, key)
+			continue
+		}
+		for _, p := range g.Platforms {
+			k := platKey(p)
+			if e.seen[k] {
+				continue
+			}
+			e.seen[k] = true
+			e.game.Platforms = append(e.game.Platforms, p)
+		}
+	}
+	out := make([]importmodel.Game, 0, len(order))
+	for _, key := range order {
+		out = append(out, byTitle[key].game)
+	}
+	return out
 }
 
 // extractStatus resolves play_status from the simple status column, or
