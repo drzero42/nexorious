@@ -221,35 +221,20 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	fb := filter.NewFilterBuilder()
 
 	if poolID != "" {
-		// Scan the nullable jsonb column into *string: a NULL filter yields nil
-		// (a pure manual pool); a stored filter yields its JSON text.
-		var rawStr *string
-		err := h.db.NewRaw(
-			`SELECT filter FROM pools WHERE id = ? AND user_id = ?`, poolID, userID,
-		).Scan(context.Background(), &rawStr)
+		isManual, err := h.applyPoolFilter(context.Background(), fb, poolID, userID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return echo.NewHTTPError(http.StatusNotFound, "pool not found")
 			}
 			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 		}
-		if rawStr == nil || *rawStr == "" || *rawStr == "null" {
+		if isManual {
 			// Pure manual pool — no suggestions.
 			return c.JSON(http.StatusOK, UserGameListResponse{
 				UserGames: []userGameWithPlatformsResponse{},
 				Total:     0, Page: page, PerPage: perPage, Pages: 1,
 			})
 		}
-		pf, perr := filter.ParsePoolFilter([]byte(*rawStr))
-		if perr != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "invalid stored filter")
-		}
-		filter.ApplyPoolFilter(fb, pf)
-		// Global finished-status exclusion (NULL stays eligible).
-		fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Where("(ug.play_status IS NULL OR ug.play_status NOT IN (?))",
-				bun.List(enum.FinishedPlayStatusStrings()))
-		})
 	} else {
 		applyUserGameFacetFilters(fb, c)
 	}
@@ -1538,6 +1523,40 @@ func applyUserGameFacetFilters(fb *filter.FilterBuilder, c *echo.Context) {
 	filter.ApplyTag(fb, c.QueryParams()["tag"])
 }
 
+// applyPoolFilter loads pool poolID's saved filter (owned by userID) and applies
+// it — plus the global finished-status exclusion (NULL stays eligible) — to fb.
+// It is the single source of truth for the ?pool= branch, shared by
+// HandleListUserGames and HandleListUserGameIDs so the pool list view and "select
+// all matching filter" can never drift on the pool dimension (issue #997).
+//
+// isManual=true means the pool has no stored filter (a pure manual pool); callers
+// should return an empty result set rather than every game. A missing pool returns
+// sql.ErrNoRows (caller maps to 404); a malformed stored filter returns a non-nil
+// err (caller maps to 500).
+func (h *UserGamesHandler) applyPoolFilter(ctx context.Context, fb *filter.FilterBuilder, poolID, userID string) (isManual bool, err error) {
+	// Scan the nullable jsonb column into *string: a NULL filter yields nil
+	// (a pure manual pool); a stored filter yields its JSON text.
+	var rawStr *string
+	if err := h.db.NewRaw(
+		`SELECT filter FROM pools WHERE id = ? AND user_id = ?`, poolID, userID,
+	).Scan(ctx, &rawStr); err != nil {
+		return false, err
+	}
+	if rawStr == nil || *rawStr == "" || *rawStr == "null" {
+		return true, nil
+	}
+	pf, err := filter.ParsePoolFilter([]byte(*rawStr))
+	if err != nil {
+		return false, err
+	}
+	filter.ApplyPoolFilter(fb, pf)
+	fb.AddWhere(func(q *bun.SelectQuery) *bun.SelectQuery {
+		return q.Where("(ug.play_status IS NULL OR ug.play_status NOT IN (?))",
+			bun.List(enum.FinishedPlayStatusStrings()))
+	})
+	return false, nil
+}
+
 // ── Utility endpoint handlers ───────────────────────────────────────────
 
 // HandleListUserGameIDs handles GET /api/user-games/ids.
@@ -1547,10 +1566,26 @@ func (h *UserGamesHandler) HandleListUserGameIDs(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 
-	fb := filter.NewFilterBuilder()
-	applyUserGameFacetFilters(fb, c)
-
 	ctx := context.Background()
+
+	// With ?pool=:id the pool's saved filter drives the id set, mirroring
+	// HandleListUserGames; otherwise apply the ad-hoc facet params.
+	fb := filter.NewFilterBuilder()
+	if poolID := c.QueryParam("pool"); poolID != "" {
+		isManual, err := h.applyPoolFilter(ctx, fb, poolID, userID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return echo.NewHTTPError(http.StatusNotFound, "pool not found")
+			}
+			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		}
+		if isManual {
+			// Pure manual pool — the list view returns no suggestions.
+			return c.JSON(http.StatusOK, UserGameIDsResponse{IDs: []string{}})
+		}
+	} else {
+		applyUserGameFacetFilters(fb, c)
+	}
 
 	q := h.db.NewSelect().
 		TableExpr("user_games AS ug").

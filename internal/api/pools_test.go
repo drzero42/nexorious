@@ -582,6 +582,123 @@ func TestPoolSuggestionView(t *testing.T) {
 	}
 }
 
+// idsForPool returns the id set from GET /api/user-games/ids?pool=.
+func idsForPool(t *testing.T, e interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, poolID, token string) map[string]bool {
+	t.Helper()
+	rec := getAuth(t, e, "/api/user-games/ids?pool="+poolID, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ids: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		IDs []string `json:"ids"`
+	}
+	mustUnmarshal(t, rec, &resp)
+	out := map[string]bool{}
+	for _, id := range resp.IDs {
+		out[id] = true
+	}
+	return out
+}
+
+// listIDsForPool returns the id set from GET /api/user-games?pool= (the list view).
+func listIDsForPool(t *testing.T, e interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, poolID, token string) map[string]bool {
+	t.Helper()
+	rec := getAuth(t, e, "/api/user-games?pool="+poolID, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		UserGames []struct {
+			ID string `json:"id"`
+		} `json:"user_games"`
+	}
+	mustUnmarshal(t, rec, &resp)
+	out := map[string]bool{}
+	for _, ug := range resp.UserGames {
+		out[ug.ID] = true
+	}
+	return out
+}
+
+// Regression for #997: the /ids endpoint ("select all matching filter") must
+// honour the pool's saved filter exactly like the pool list view, for both a
+// filter-backed pool and a pure-manual pool — otherwise "select all" inside a
+// pool grabs an unfiltered (and for a manual pool, wrong) set.
+func TestPoolIDsMatchesListView(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "poolids")
+
+	rpg1 := insertTestGameWithGenre(t, testDB, "RPG One", "Role-playing (RPG)")
+	rpg2 := insertTestGameWithGenre(t, testDB, "RPG Two", "Role-playing (RPG)")
+	shooter := insertTestGameWithGenre(t, testDB, "Shooter", "Shooter")
+	insertTestUserGame(t, testDB, "ug-rpg1", userID, int(rpg1))
+	insertTestUserGame(t, testDB, "ug-rpg2", userID, int(rpg2))
+	insertTestUserGame(t, testDB, "ug-shooter", userID, int(shooter))
+
+	rpgDone := insertTestGameWithGenre(t, testDB, "RPG Done", "Role-playing (RPG)")
+	insertTestUserGame(t, testDB, "ug-rpgdone", userID, int(rpgDone))
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE user_games SET play_status = 'completed' WHERE id = 'ug-rpgdone'`); err != nil {
+		t.Fatalf("set completed: %v", err)
+	}
+
+	t.Run("filter-backed pool", func(t *testing.T) {
+		poolRec := postJSONAuth(t, e, "/api/pools", map[string]any{
+			"name": "RPG Pool",
+			"filter": map[string]any{
+				"filters": []any{map[string]any{"genre": []string{"Role-playing (RPG)"}}},
+			},
+		}, token)
+		var pool struct {
+			ID string `json:"id"`
+		}
+		mustUnmarshal(t, poolRec, &pool)
+
+		want := listIDsForPool(t, e, pool.ID, token)
+		got := idsForPool(t, e, pool.ID, token)
+
+		// Sanity: the filtered set is the two non-finished RPGs, no shooter/finished.
+		if !want["ug-rpg1"] || !want["ug-rpg2"] || want["ug-shooter"] || want["ug-rpgdone"] {
+			t.Fatalf("unexpected list set: %v", want)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("ids set %v does not match list set %v", got, want)
+		}
+		for id := range want {
+			if !got[id] {
+				t.Fatalf("ids set missing %s; got %v want %v", id, got, want)
+			}
+		}
+	})
+
+	t.Run("pure manual pool returns empty", func(t *testing.T) {
+		poolRec := postJSONAuth(t, e, "/api/pools", map[string]any{
+			"name": "Manual Pool",
+		}, token)
+		var pool struct {
+			ID string `json:"id"`
+		}
+		mustUnmarshal(t, poolRec, &pool)
+		// A manual pool with a member still yields no suggestions in the list view.
+		postJSONAuth(t, e, "/api/pools/"+pool.ID+"/games", map[string]any{"user_game_id": "ug-rpg1"}, token)
+
+		want := listIDsForPool(t, e, pool.ID, token)
+		if len(want) != 0 {
+			t.Fatalf("pure manual pool list view should be empty, got %v", want)
+		}
+		got := idsForPool(t, e, pool.ID, token)
+		if len(got) != 0 {
+			t.Fatalf("pure manual pool ids should be empty, got %v", got)
+		}
+	})
+}
+
 func TestPoolSuggestionMultiPlayStatus(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
