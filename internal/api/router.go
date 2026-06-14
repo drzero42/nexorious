@@ -405,6 +405,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		// Import routes (all auth-protected)
 		imh := NewImportHandler(db, riverClient, igdbClient)
 		importGroup := e.Group("/api/import", auth.AuthMiddleware(db))
+		importGroup.GET("/sources", imh.HandleListImportSources)
 		importGroup.POST("/nexorious", imh.HandleImportNexorious)
 		for _, src := range importsource.All() {
 			importGroup.POST("/"+src.Slug, imh.handleImportSource(src))
