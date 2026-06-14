@@ -179,8 +179,10 @@ When you do create an issue, **label it** at creation (`gh issue create --label 
 ### Branch Workflow (MANDATORY)
 - ✅ Always create a branch before starting task work
 - ✅ Use `--squash --delete-branch` when merging PRs
-- ❌ Never commit directly to main unless instructed to
+- ❌ **`main` is protected — every change lands through a PR, no exceptions.** A direct `git push origin main` is rejected by a GitHub ruleset ("Protect main": require PR, squash-only, no bypass) with `GH013: Changes must be made through a pull request`. There is no admin override; this applies to docs, CI workflows, and one-line fixes alike. Open a branch + PR for everything.
 - ❌ Never merge a PR on your own initiative — only when the user explicitly instructs
+
+**Required check `CI Gate`:** the ruleset requires exactly one status check, the `CI Gate` job in `.github/workflows/test.yaml`. That job aggregates the path-gated suites (Go/frontend/Helm) and passes when each either succeeded or was skipped. When editing `test.yaml`, keep `CI Gate` green and reporting — renaming or removing it, or breaking its `needs:`/`if: always()` wiring, will block every PR from merging.
 
 **`gh pr merge` handles everything locally:** when you run `gh pr merge --squash --delete-branch` while checked out on the PR's branch, `gh` switches your local checkout to `main`, deletes the local feature branch, **and pulls `main`** so it is already up to date with the new squash commit. Do **not** run `git checkout main`, `git branch -D`, `git pull`, or `git reset --hard origin/main` afterward — `gh` has already done it. Just confirm with `git status` (expect `## main...origin/main`, no divergence).
 
@@ -278,14 +280,7 @@ All commits on `main` must follow [Conventional Commits](https://www.conventiona
 
 ### Overrides
 
-To force the next release to a specific version, add a `Release-As: X.Y.Z` line to the **PR description** before squash-merging. The repo is configured with `squash_merge_commit_message=PR_BODY`, so GitHub uses the PR description as the commit body — release-please will find the trailer there.
-
-Alternatively, push an empty commit directly to `main`:
-
-```bash
-git commit --allow-empty -m "chore: release X.Y.Z" -m "Release-As: X.Y.Z"
-git push origin main
-```
+To force the next release to a specific version, add a `Release-As: X.Y.Z` line to the **PR description** before squash-merging. The repo is configured with `squash_merge_commit_message=PR_BODY`, so GitHub uses the PR description as the commit body — release-please will find the trailer there. (The old "push an empty commit directly to `main`" shortcut no longer works — `main` is protected; route a `Release-As:` trailer through any PR instead.)
 
 To skip a release after an unwanted `feat:` / `fix:` lands: close the Release PR; release-please reopens it on the next push to main, so a true skip requires absorbing the change into the next legitimate release.
 
