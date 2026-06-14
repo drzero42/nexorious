@@ -2391,4 +2391,56 @@ func TestListUserGamesTimeToBeatFilter(t *testing.T) {
 			t.Fatalf("expected only Mid Game, got %v", got)
 		}
 	})
+
+	// Regression for #969: the /ids endpoint ("select all matching filter")
+	// must honour the same time-to-beat constraint as the list endpoint, or a
+	// bulk selection would grab more games than the filtered list shows.
+	t.Run("ids endpoint matches list under filter", func(t *testing.T) {
+		query := "time_to_beat_min=10&time_to_beat_max=25"
+
+		// Expected set of ids from the list endpoint.
+		listRec := getAuth(t, e, "/api/user-games?"+query, token)
+		if listRec.Code != http.StatusOK {
+			t.Fatalf("list: expected 200, got %d: %s", listRec.Code, listRec.Body.String())
+		}
+		var listResp struct {
+			UserGames []struct {
+				ID string `json:"id"`
+			} `json:"user_games"`
+		}
+		if err := json.Unmarshal(listRec.Body.Bytes(), &listResp); err != nil {
+			t.Fatalf("unmarshal list: %v", err)
+		}
+		wantIDs := map[string]bool{}
+		for _, ug := range listResp.UserGames {
+			wantIDs[ug.ID] = true
+		}
+
+		idsRec := getAuth(t, e, "/api/user-games/ids?"+query, token)
+		if idsRec.Code != http.StatusOK {
+			t.Fatalf("ids: expected 200, got %d: %s", idsRec.Code, idsRec.Body.String())
+		}
+		var idsResp struct {
+			IDs []string `json:"ids"`
+		}
+		if err := json.Unmarshal(idsRec.Body.Bytes(), &idsResp); err != nil {
+			t.Fatalf("unmarshal ids: %v", err)
+		}
+		gotIDs := map[string]bool{}
+		for _, id := range idsResp.IDs {
+			gotIDs[id] = true
+		}
+
+		if len(gotIDs) != 1 {
+			t.Fatalf("expected exactly 1 id under filter, got %d: %v", len(gotIDs), idsResp.IDs)
+		}
+		if len(gotIDs) != len(wantIDs) {
+			t.Fatalf("ids set size %d does not match list set size %d", len(gotIDs), len(wantIDs))
+		}
+		for id := range wantIDs {
+			if !gotIDs[id] {
+				t.Fatalf("ids set %v is missing %s present in list set %v", gotIDs, id, wantIDs)
+			}
+		}
+	})
 }

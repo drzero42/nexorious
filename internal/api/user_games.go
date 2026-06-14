@@ -251,48 +251,7 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 				bun.List(enum.FinishedPlayStatusStrings()))
 		})
 	} else {
-		filter.ApplyPlayStatus(fb, validPlayStatusParams(c))
-		filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
-		filter.ApplySearch(fb, c.QueryParam("q"))
-		filter.ApplyWishlist(fb, c.QueryParam("wishlist") == "true")
-
-		if str := c.QueryParam("is_loved"); str != "" {
-			v := str == "true"
-			filter.ApplyIsLoved(fb, &v)
-		}
-		if str := c.QueryParam("has_notes"); str != "" {
-			v := str == "true"
-			filter.ApplyHasNotes(fb, &v)
-		}
-		if str := c.QueryParam("rating_min"); str != "" {
-			if v, err := strconv.ParseFloat(str, 64); err == nil {
-				filter.ApplyRatingMin(fb, &v)
-			}
-		}
-		if str := c.QueryParam("rating_max"); str != "" {
-			if v, err := strconv.ParseFloat(str, 64); err == nil {
-				filter.ApplyRatingMax(fb, &v)
-			}
-		}
-		var ttbMin, ttbMax *float64
-		if str := c.QueryParam("time_to_beat_min"); str != "" {
-			if v, err := strconv.ParseFloat(str, 64); err == nil {
-				ttbMin = &v
-			}
-		}
-		if str := c.QueryParam("time_to_beat_max"); str != "" {
-			if v, err := strconv.ParseFloat(str, 64); err == nil {
-				ttbMax = &v
-			}
-		}
-		filter.ApplyTimeToBeat(fb, ttbMin, ttbMax)
-		filter.ApplyPlatform(fb, c.QueryParams()["platform"])
-		filter.ApplyStorefront(fb, c.QueryParams()["storefront"])
-		filter.ApplyGenre(fb, c.QueryParams()["genre"])
-		filter.ApplyGameMode(fb, c.QueryParams()["game_mode"])
-		filter.ApplyTheme(fb, c.QueryParams()["theme"])
-		filter.ApplyPlayerPerspective(fb, c.QueryParams()["player_perspective"])
-		filter.ApplyTag(fb, c.QueryParams()["tag"])
+		applyUserGameFacetFilters(fb, c)
 	}
 
 	// If sort field needs games join, add it.
@@ -1529,16 +1488,12 @@ func validPlayStatusParams(c *echo.Context) []string {
 	return out
 }
 
-// ── Utility endpoint handlers ───────────────────────────────────────────
-
-// HandleListUserGameIDs handles GET /api/user-games/ids.
-func (h *UserGamesHandler) HandleListUserGameIDs(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
-	fb := filter.NewFilterBuilder()
+// applyUserGameFacetFilters applies every ad-hoc facet query param from the
+// request onto fb. It is the single source of truth for the user-game list
+// facets, shared by HandleListUserGames (non-pool branch) and
+// HandleListUserGameIDs so the list view and "select all matching filter"
+// can never drift on a facet again (issue #969).
+func applyUserGameFacetFilters(fb *filter.FilterBuilder, c *echo.Context) {
 	filter.ApplyPlayStatus(fb, validPlayStatusParams(c))
 	filter.ApplyOwnershipStatus(fb, c.QueryParam("ownership_status"))
 	filter.ApplySearch(fb, c.QueryParam("q"))
@@ -1562,6 +1517,18 @@ func (h *UserGamesHandler) HandleListUserGameIDs(c *echo.Context) error {
 			filter.ApplyRatingMax(fb, &v)
 		}
 	}
+	var ttbMin, ttbMax *float64
+	if str := c.QueryParam("time_to_beat_min"); str != "" {
+		if v, err := strconv.ParseFloat(str, 64); err == nil {
+			ttbMin = &v
+		}
+	}
+	if str := c.QueryParam("time_to_beat_max"); str != "" {
+		if v, err := strconv.ParseFloat(str, 64); err == nil {
+			ttbMax = &v
+		}
+	}
+	filter.ApplyTimeToBeat(fb, ttbMin, ttbMax)
 	filter.ApplyPlatform(fb, c.QueryParams()["platform"])
 	filter.ApplyStorefront(fb, c.QueryParams()["storefront"])
 	filter.ApplyGenre(fb, c.QueryParams()["genre"])
@@ -1569,6 +1536,19 @@ func (h *UserGamesHandler) HandleListUserGameIDs(c *echo.Context) error {
 	filter.ApplyTheme(fb, c.QueryParams()["theme"])
 	filter.ApplyPlayerPerspective(fb, c.QueryParams()["player_perspective"])
 	filter.ApplyTag(fb, c.QueryParams()["tag"])
+}
+
+// ── Utility endpoint handlers ───────────────────────────────────────────
+
+// HandleListUserGameIDs handles GET /api/user-games/ids.
+func (h *UserGamesHandler) HandleListUserGameIDs(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+
+	fb := filter.NewFilterBuilder()
+	applyUserGameFacetFilters(fb, c)
 
 	ctx := context.Background()
 
