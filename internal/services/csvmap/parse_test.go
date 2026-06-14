@@ -170,3 +170,48 @@ func TestParse_StatusAbsentDefaultsNotStarted(t *testing.T) {
 		t.Fatalf("want not_started when no status column, got %q", games[0].PlayStatus)
 	}
 }
+
+func ratingOf(t *testing.T, cfg Config, cell string) *int32 {
+	t.Helper()
+	games, err := Parse([]byte("Name,R\nA,"+cell+"\n"), cfg)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	return games[0].PersonalRating
+}
+
+func TestParse_Rating(t *testing.T) {
+	round5 := Config{Columns: ColumnMap{Title: "Name", Rating: "R"}, Rating: &RatingConfig{Scale: 5}}
+	trunc5 := Config{Columns: ColumnMap{Title: "Name", Rating: "R"}, Rating: &RatingConfig{Scale: 5, Truncate: true}}
+	scale10 := Config{Columns: ColumnMap{Title: "Name", Rating: "R"}, Rating: &RatingConfig{Scale: 10}}
+	scale100 := Config{Columns: ColumnMap{Title: "Name", Rating: "R"}, Rating: &RatingConfig{Scale: 100}}
+
+	if got := ratingOf(t, trunc5, "4.5"); got == nil || *got != 4 {
+		t.Fatalf("truncate 4.5/5 want 4, got %v", got)
+	}
+	if got := ratingOf(t, round5, "4.5"); got == nil || *got != 5 {
+		t.Fatalf("round 4.5/5 want 5, got %v", got)
+	}
+	if got := ratingOf(t, scale10, "7"); got == nil || *got != 4 {
+		t.Fatalf("round 7/10 want 4 (3.5 -> 4), got %v", got)
+	}
+	if got := ratingOf(t, scale100, "100"); got == nil || *got != 5 {
+		t.Fatalf("100/100 want 5, got %v", got)
+	}
+	if got := ratingOf(t, round5, "0"); got != nil {
+		t.Fatalf("0 want nil, got %v", got)
+	}
+	if got := ratingOf(t, round5, ""); got != nil {
+		t.Fatalf("empty want nil, got %v", got)
+	}
+	if got := ratingOf(t, round5, "garbage"); got != nil {
+		t.Fatalf("invalid want nil, got %v", got)
+	}
+}
+
+func TestParse_RatingIgnoredWhenConfigNil(t *testing.T) {
+	cfg := Config{Columns: ColumnMap{Title: "Name", Rating: "R"}}
+	if got := ratingOf(t, cfg, "5"); got != nil {
+		t.Fatalf("rating must be nil when Config.Rating is nil, got %v", got)
+	}
+}

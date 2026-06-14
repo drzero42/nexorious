@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/drzero42/nexorious/internal/services/importmodel"
@@ -167,6 +169,33 @@ func extractStatus(rec []string, idx map[string]int, cfg Config) string {
 	return def
 }
 
+// extractRating normalizes a raw rating to whole 1-5 stars per cfg.Rating.
+// Returns nil when ratings are disabled, the cell is empty/invalid, or the
+// result is <= 0.
+func extractRating(raw string, cfg Config) *int32 {
+	if cfg.Rating == nil || raw == "" {
+		return nil
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil
+	}
+	stars := f / float64(cfg.Rating.Scale) * 5.0
+	var v int32
+	if cfg.Rating.Truncate {
+		v = int32(math.Trunc(stars))
+	} else {
+		v = int32(math.Round(stars))
+	}
+	if v <= 0 {
+		return nil
+	}
+	if v > 5 {
+		v = 5
+	}
+	return &v
+}
+
 // extractGame builds one Game from a row, or (zero, false) if the title is empty.
 func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game, bool) {
 	title := cell(rec, idx, cfg.Columns.Title)
@@ -176,6 +205,9 @@ func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game
 	g := importmodel.Game{
 		Title:      title,
 		PlayStatus: extractStatus(rec, idx, cfg),
+	}
+	if r := extractRating(cell(rec, idx, cfg.Columns.Rating), cfg); r != nil {
+		g.PersonalRating = r
 	}
 	return g, true
 }
