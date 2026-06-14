@@ -48,7 +48,10 @@ services:
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:?IGDB_CLIENT_ID is required}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:?IGDB_CLIENT_SECRET is required}
       LEGENDARY_WORK_DIR: /var/lib/legendary
+      STORAGE_PATH: /app/storage
+      BACKUP_PATH: /app/storage/backups
     volumes:
+      - nexorious_storage:/app/storage
       - type: tmpfs
         target: /var/lib/legendary
         tmpfs:
@@ -56,9 +59,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128m
+          memory: 256m
         reservations:
-          memory: 128m
+          memory: 256m
 
 volumes:
   postgres_data:
+  nexorious_storage:
