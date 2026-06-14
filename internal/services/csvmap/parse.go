@@ -146,11 +146,36 @@ func Parse(raw []byte, cfg Config) ([]importmodel.Game, error) {
 	return games, nil
 }
 
+// extractStatus resolves play_status from the simple status column, or
+// "not_started" when no status column is configured.
+func extractStatus(rec []string, idx map[string]int, cfg Config) string {
+	if cfg.Status.Column == nil {
+		return "not_started"
+	}
+	sc := cfg.Status.Column
+	def := sc.Default
+	if def == "" {
+		def = "not_started"
+	}
+	v := normKey(cell(rec, idx, sc.Column))
+	if v == "" {
+		return def
+	}
+	if status, ok := sc.ValueMap[v]; ok {
+		return status
+	}
+	return def
+}
+
 // extractGame builds one Game from a row, or (zero, false) if the title is empty.
 func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game, bool) {
 	title := cell(rec, idx, cfg.Columns.Title)
 	if title == "" {
 		return importmodel.Game{}, false
 	}
-	return importmodel.Game{Title: title}, true
+	g := importmodel.Game{
+		Title:      title,
+		PlayStatus: extractStatus(rec, idx, cfg),
+	}
+	return g, true
 }

@@ -138,3 +138,35 @@ func TestParse_SignatureMismatchIsInvalidSignature(t *testing.T) {
 		t.Fatalf("want ErrInvalidSignature, got %v", err)
 	}
 }
+
+func TestParse_Status(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "Name"},
+		Status: StatusConfig{Column: &StatusColumn{
+			Column:   "Shelf",
+			ValueMap: map[string]string{"playing": "in_progress", "beaten": "completed"},
+			Default:  "not_started",
+		}},
+	}
+	csv := "Name,Shelf\nA,Playing\nB,Beaten\nC,Wishlist\nD,\n"
+	games, err := Parse([]byte(csv), cfg)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := []string{"in_progress", "completed", "not_started", "not_started"}
+	for i, w := range want {
+		if games[i].PlayStatus != w {
+			t.Fatalf("game %d: want status %q, got %q", i, w, games[i].PlayStatus)
+		}
+	}
+}
+
+func TestParse_StatusAbsentDefaultsNotStarted(t *testing.T) {
+	games, err := Parse([]byte("Name\nA\n"), Config{Columns: ColumnMap{Title: "Name"}})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if games[0].PlayStatus != "not_started" {
+		t.Fatalf("want not_started when no status column, got %q", games[0].PlayStatus)
+	}
+}
