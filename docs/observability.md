@@ -170,9 +170,18 @@ vmalert -datasource.url=http://victorialogs:9428 \
 
 - Point `-datasource.url` at the VictoriaLogs **base** URL (vmalert appends the
   LogsQL stats path). Use a vmalert instance dedicated to VictoriaLogs.
-- **Scoping:** VictoriaLogs has no per-app field in the JSON. If multiple apps
-  ship to the same VictoriaLogs, prepend an app-scoping filter (e.g.
-  `app:="nexorious"`) to every expr, or the rules will count other apps' logs.
+- **Ingestion:** every expr runs `| unpack_json` to parse nexorious's JSON line
+  into the `level`/`category`/`source`/`msg` fields it filters on, so the rules
+  fire whether your shipper parsed the JSON into discrete fields **or** shipped
+  the raw line into `_msg` (e.g. Fluent Bit with `_msg_field=log` and no JSON
+  parser). `unpack_json` reads `_msg` by default and is a no-op on a non-JSON
+  `_msg`, so an already-parsed setup is unaffected. Stats use `count(*)` (the
+  portable form; bare `count()` parse-errors on some VictoriaLogs versions).
+- **Scoping:** VictoriaLogs has no per-app field inside nexorious's JSON. If
+  multiple apps ship to the same VictoriaLogs, prepend a top-level app-scoping
+  filter (e.g. `app:="nexorious" _time:5m | unpack_json | ...`, a field your
+  collector adds — it filters before `unpack_json`) to every expr, or the rules
+  will count other apps' logs.
 
 ## Helm delivery (opt-in)
 
