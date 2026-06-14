@@ -1,0 +1,46 @@
+---
+# Guards against a release-please footgun: its strict conventional-commit parser
+# throws on some legal free-form commit bodies (e.g. attached nested call-syntax
+# like `foo(bar(baz))`) and then silently drops the commit from the changelog
+# while its own run stays green (see #985 / v0.14.0, upstream
+# googleapis/release-please#2564). Since squash_merge_commit_message=PR_BODY, the
+# squash message is the PR title + body — so we parse the prospective message
+# here and fail the PR if release-please could not.
+#
+# Runs on `edited` too, so editing the PR title/body re-validates (a new commit
+# is not required). Kept out of test.yaml to avoid re-running the heavy suites on
+# every description tweak.
+name: PR Commit Message
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  parse:
+    name: Parse squash commit message
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Validate squash commit message parses
+        env:
+          # Pass via env (never inline ${{ }}) to avoid script injection.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Pin the exact parser release-please depends on (^0.4.1; latest 0.4.1).
+          npm install --no-save --no-audit --no-fund @conventional-commits/parser@0.4.1
+          node .github/scripts/check-pr-commit-message.mjs
