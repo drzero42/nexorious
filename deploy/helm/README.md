@@ -351,6 +351,7 @@ enabled and the default install also ships a PostgreSQL Service.
 | `dashboard.mode` | `configmap` | `configmap` = a ConfigMap labeled `grafana_dashboard: "1"` auto-discovered by the Grafana sidecar (kube-prometheus-stack default); `crd` = a `GrafanaDashboard` CR (`grafana.integreatly.org/v1beta1`) for grafana-operator users. |
 | `dashboard.labels` | `{}` | Extra labels merged onto the rendered object (e.g. to target a specific sidecar or Grafana folder). The `grafana_dashboard: "1"` label is always added in configmap mode regardless. |
 | `dashboard.instanceSelector` | `matchLabels: {dashboards: grafana}` | (crd mode only) `instanceSelector` matching the grafana-operator Grafana CR. |
+| `dashboard.allowCrossNamespaceImport` | `false` | (crd mode only) allow grafana-operator to import the dashboard when the `Grafana` CR is in a different namespace than the release. Required for the common split-namespace case (see caveat below). |
 
 > **configmap mode namespace caveat:** the ConfigMap lands in the release
 > namespace, but the kube-prometheus-stack Grafana sidecar defaults to watching
@@ -364,6 +365,14 @@ enabled and the default install also ships a PostgreSQL Service.
 > in-cluster. `helm lint` and `helm template` work without it, but
 > `helm install`/`upgrade` will fail with an "unknown kind" error if the CRD
 > is absent.
+
+> **crd mode namespace caveat:** the `GrafanaDashboard` is rendered into the
+> release namespace, but grafana-operator only imports a dashboard from a
+> namespace other than its `Grafana` CR when the dashboard sets
+> `spec.allowCrossNamespaceImport: true`. If nexorious and Grafana live in
+> different namespaces (the usual case), set
+> `dashboard.allowCrossNamespaceImport: true` — otherwise the operator silently
+> skips it (`NoMatchingInstances` / `EmptyAPIReply`).
 
 To enable configmap delivery (kube-prometheus-stack / standard Grafana sidecar):
 
@@ -381,6 +390,8 @@ dashboard:
   instanceSelector:
     matchLabels:
       dashboards: grafana
+  # set when Grafana runs in a different namespace than nexorious
+  allowCrossNamespaceImport: true
 ```
 
 ## Alerting (opt-in)

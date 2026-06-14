@@ -248,6 +248,11 @@ dashboard:
   instanceSelector:
     matchLabels:
       dashboards: grafana
+  # -- (crd mode only) allow grafana-operator to import this dashboard when the
+  # -- Grafana CR lives in a different namespace than the release. Required for
+  # -- the common case (app and Grafana in separate namespaces); otherwise the
+  # -- operator silently skips it (NoMatchingInstances / EmptyAPIReply).
+  allowCrossNamespaceImport: false
 
 # =============================================================================
 # Default Pod options (applied to all controllers unless overridden)

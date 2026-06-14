@@ -30,6 +30,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
+  allowCrossNamespaceImport: {{ .Values.dashboard.allowCrossNamespaceImport }}
   instanceSelector:
     {{- toYaml .Values.dashboard.instanceSelector | nindent 4 }}
   json: |-
