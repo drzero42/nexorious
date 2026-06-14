@@ -173,28 +173,14 @@ export function useFilterOptions() {
 
 /**
  * Used for the "Currently Playing" dashboard section. Fetches in-progress and
- * replay games as two parallel calls and merges them (each keeps its own
- * perPage cap). Could collapse into one multi-status call now that the filter
- * accepts an array (#976), but the two-call shape is left as-is here.
+ * replay games in a single multi-status call (the play-status filter accepts an
+ * array since #976). perPage is 100 to preserve the combined cap of the former
+ * two-call shape (50 in-progress + 50 replay).
  */
 export function useActiveGames() {
   return useQuery<UserGamesListResponse, Error>({
     queryKey: ['user-games', 'active'],
-    queryFn: async () => {
-      const [inProgressData, replayData] = await Promise.all([
-        gamesApi.getUserGames({ status: ['in_progress'], perPage: 50 }),
-        gamesApi.getUserGames({ status: ['replay'], perPage: 50 }),
-      ]);
-
-      // Merge results
-      return {
-        items: [...inProgressData.items, ...replayData.items],
-        total: inProgressData.total + replayData.total,
-        page: 1,
-        perPage: 50,
-        pages: 1,
-      };
-    },
+    queryFn: () => gamesApi.getUserGames({ status: ['in_progress', 'replay'], perPage: 100 }),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
