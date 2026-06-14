@@ -56,3 +56,35 @@ func TestDarkadiaMapper_RejectsWrongFile(t *testing.T) {
 		t.Errorf("err = %v, want wrapping ErrInvalidSignature", err)
 	}
 }
+
+func TestLookup_Vglist(t *testing.T) {
+	src, ok := importsource.Lookup(models.JobSourceVglist)
+	if !ok {
+		t.Fatal("vglist not registered")
+	}
+	if src.DisplayName != "vglist" {
+		t.Errorf("DisplayName = %q, want vglist", src.DisplayName)
+	}
+	if src.Mapper == nil {
+		t.Error("Mapper is nil")
+	}
+}
+
+func TestVglistMapper_RejectsWrongFile(t *testing.T) {
+	src, _ := importsource.Lookup(models.JobSourceVglist)
+	_, err := src.Mapper.Parse([]byte("Name,Added\nGame,2020\n"))
+	if !errors.Is(err, importmodel.ErrInvalidSignature) {
+		t.Errorf("err = %v, want wrapping ErrInvalidSignature", err)
+	}
+}
+
+func TestVglistMapper_ParsesMinimalExport(t *testing.T) {
+	src, _ := importsource.Lookup(models.JobSourceVglist)
+	games, err := src.Mapper.Parse([]byte(`[{"game":{"name":"Celeste"},"platforms":[],"stores":[]}]`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(games) != 1 || games[0].Title != "Celeste" {
+		t.Fatalf("games = %+v, want one Celeste", games)
+	}
+}

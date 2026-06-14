@@ -15,6 +15,7 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/services/importsource"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -96,10 +97,12 @@ func (h *JobItemsHandler) HandleRetryItem(c *echo.Context) error {
 }
 
 // isImportSource reports whether a job source uses the generic job-item
-// resolve/skip path. Sync sources resolve through the external_games rematch
-// endpoints instead and must be rejected here so that flow is untouched.
+// resolve/skip path. Every mapper-based migration source (darkadia, vglist, …)
+// plus the nexorious round-trip import resolve through here. Sync sources
+// resolve through the external_games rematch endpoints instead and must be
+// rejected here so that flow is untouched.
 func isImportSource(source string) bool {
-	return source == models.JobSourceDarkadia || source == models.JobSourceNexorious
+	return importsource.IsRegistered(source) || source == models.JobSourceNexorious
 }
 
 type resolveItemRequest struct {

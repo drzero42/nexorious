@@ -23,6 +23,7 @@ export enum JobSource {
   HUMBLE_BUNDLE = 'humble-bundle',
   MANUAL = 'manual',
   DARKADIA = 'darkadia',
+  VGLIST = 'vglist',
   NEXORIOUS = 'nexorious',
   CSV = 'csv',
   SYSTEM = 'system',
@@ -232,6 +233,7 @@ export function getJobTypeLabel(type: JobType): string {
 export const NON_STOREFRONT_JOB_SOURCE_LABELS: Partial<Record<JobSource, string>> = {
   [JobSource.MANUAL]: 'Manual',
   [JobSource.DARKADIA]: 'Darkadia',
+  [JobSource.VGLIST]: 'vglist',
   [JobSource.NEXORIOUS]: 'Nexorious',
   [JobSource.CSV]: 'CSV',
   [JobSource.SYSTEM]: 'System',

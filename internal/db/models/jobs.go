@@ -28,6 +28,7 @@ const (
 	JobSourceManual           = "manual"
 	JobSourceNexorious        = "nexorious"
 	JobSourceDarkadia         = "darkadia"
+	JobSourceVglist           = "vglist"
 	JobSourceCSV              = "csv"
 	JobSourceSystem           = "system"
 )
