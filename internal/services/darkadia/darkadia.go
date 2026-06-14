@@ -3,7 +3,6 @@ package darkadia
 import (
 	"bytes"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -13,9 +12,10 @@ import (
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
 
-// ErrInvalidHeader signals the file is not a Darkadia export. The upload handler
-// turns this into a 400 "not a Darkadia export".
-var ErrInvalidHeader = errors.New("not a Darkadia export (header mismatch)")
+// ErrInvalidHeader signals the file is not a Darkadia export. It wraps the
+// shared importmodel.ErrInvalidSignature so the generic upload handler can
+// detect a wrong-file upload without knowing the per-source sentinel.
+var ErrInvalidHeader = fmt.Errorf("not a Darkadia export (header mismatch): %w", importmodel.ErrInvalidSignature)
 
 // header is the canonical internal column layout: the 29-column required
 // signature (0–28) followed by 5 optional feature-toggle columns (29–33) that
