@@ -2,9 +2,12 @@
  * Types for import/export functionality.
  */
 
-export enum ImportSource {
-  NEXORIOUS = 'nexorious',
-  DARKADIA = 'darkadia',
+export interface ImportSourceInfo {
+  slug: string;
+  display_name: string;
+  description: string;
+  features: string[];
+  accept: string[];
 }
 
 export enum ExportFormat {
@@ -25,52 +28,6 @@ export interface ExportJobCreatedResponse {
   status: string;
   message: string;
   estimated_items: number;
-}
-
-// Helper to get import source display info
-export function getImportSourceDisplayInfo(source: ImportSource): {
-  title: string;
-  description: string;
-  icon: string;
-  features: string[];
-  color: 'indigo' | 'purple';
-} {
-  const info: Record<
-    ImportSource,
-    {
-      title: string;
-      description: string;
-      icon: string;
-      features: string[];
-      color: 'indigo' | 'purple';
-    }
-  > = {
-    [ImportSource.NEXORIOUS]: {
-      title: 'Nexorious JSON',
-      description:
-        'Restore a previous Nexorious export with all metadata, ratings, play status, and notes intact.',
-      icon: '📦',
-      features: [
-        'Full metadata restoration',
-        'Preserves ratings and notes',
-        'Non-interactive import',
-      ],
-      color: 'indigo',
-    },
-    [ImportSource.DARKADIA]: {
-      title: 'Darkadia CSV',
-      description:
-        'Migrate a Darkadia collection export. Games are matched to IGDB; ambiguous matches go to review. Requires IGDB to be configured.',
-      icon: '🗄️',
-      features: [
-        'Preserves ratings, notes & added date',
-        'Matches games to IGDB',
-        'Interactive review',
-      ],
-      color: 'purple',
-    },
-  };
-  return info[source];
 }
 
 // Helper to get export format display info

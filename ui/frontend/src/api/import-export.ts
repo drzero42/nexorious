@@ -1,5 +1,5 @@
 import { api, apiUploadFile, apiDownloadFile } from './client';
-import type { ImportJobCreatedResponse, ExportJobCreatedResponse } from '@/types';
+import type { ImportJobCreatedResponse, ExportJobCreatedResponse, ImportSourceInfo } from '@/types';
 
 // ============================================================================
 // Import API Functions
@@ -14,13 +14,17 @@ export async function importNexoriousJson(file: File): Promise<ImportJobCreatedR
   return response;
 }
 
-/**
- * Import a Darkadia CSV export. Parsing/consolidation happens server-side; the
- * returned job drives IGDB matching and the interactive pending-review flow.
- */
-export async function importDarkadiaCsv(file: File): Promise<ImportJobCreatedResponse> {
-  const response = await apiUploadFile<ImportJobCreatedResponse>('/import/darkadia', file);
-  return response;
+/** List the registered mapper-based import sources (drives the picker). */
+export async function fetchImportSources(): Promise<ImportSourceInfo[]> {
+  return api.get<ImportSourceInfo[]>('/import/sources');
+}
+
+/** Upload a file to a registered import source by slug. */
+export async function importFromSource(
+  slug: string,
+  file: File,
+): Promise<ImportJobCreatedResponse> {
+  return apiUploadFile<ImportJobCreatedResponse>(`/import/${slug}`, file);
 }
 
 // ============================================================================

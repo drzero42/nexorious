@@ -1,10 +1,11 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as importExportApi from '@/api/import-export';
 import { JobType } from '@/types';
 import type {
   ImportJobCreatedResponse,
   ExportJobCreatedResponse,
   ExportFormat,
+  ImportSourceInfo,
   JobTypeStatus,
 } from '@/types';
 import { jobsKeys } from './use-jobs';
@@ -47,14 +48,20 @@ export function useImportNexorious() {
   });
 }
 
-/**
- * One-off Darkadia CSV migration. Matches each game to IGDB; ambiguous matches
- * land in the pending-review flow.
- */
-export function useImportDarkadia() {
+/** Fetch the registry of mapper-based import sources. */
+export function useImportSources() {
+  return useQuery<ImportSourceInfo[]>({
+    queryKey: [...importExportKeys.all, 'sources'],
+    queryFn: () => importExportApi.fetchImportSources(),
+    staleTime: Infinity,
+  });
+}
+
+/** Generic import upload for a registered source slug. */
+export function useImportSource() {
   const queryClient = useQueryClient();
-  return useMutation<ImportJobCreatedResponse, Error, File>({
-    mutationFn: (file) => importExportApi.importDarkadiaCsv(file),
+  return useMutation<ImportJobCreatedResponse, Error, { slug: string; file: File }>({
+    mutationFn: ({ slug, file }) => importExportApi.importFromSource(slug, file),
     onSuccess: (result) => {
       markJobTypeActive(queryClient, JobType.IMPORT, result.job_id);
     },

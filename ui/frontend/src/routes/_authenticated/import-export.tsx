@@ -4,7 +4,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   useImportNexorious,
-  useImportDarkadia,
+  useImportSource,
+  useImportSources,
   useExportCollection,
   useJob,
   useJobTypeStatus,
@@ -14,15 +15,8 @@ import {
   useRetryFailedItems,
   jobsKeys,
 } from '@/hooks';
-import {
-  ImportSource,
-  ExportFormat,
-  JobType,
-  JobStatus,
-  JobSource,
-  getImportSourceDisplayInfo,
-  getExportFormatDisplayInfo,
-} from '@/types';
+import { ExportFormat, JobType, JobStatus, getExportFormatDisplayInfo } from '@/types';
+import type { ImportSourceInfo } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -44,15 +38,25 @@ export const Route = createFileRoute('/_authenticated/import-export')({
 });
 
 interface ImportCardProps {
-  source: ImportSource;
-  onFileSelect: (file: File) => void;
+  title: string;
+  description: string;
+  features: string[];
+  accept: string;
   isUploading: boolean;
   disabled?: boolean;
+  onFileSelect: (file: File) => void;
 }
 
-function ImportCard({ source, onFileSelect, isUploading, disabled }: ImportCardProps) {
+function ImportCard({
+  title,
+  description,
+  features,
+  accept,
+  isUploading,
+  disabled,
+  onFileSelect,
+}: ImportCardProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const info = getImportSourceDisplayInfo(source);
 
   const handleButtonClick = () => {
     fileInputRef.current?.click();
@@ -67,45 +71,21 @@ function ImportCard({ source, onFileSelect, isUploading, disabled }: ImportCardP
     }
   };
 
-  const acceptTypes =
-    source === ImportSource.NEXORIOUS ? '.json,application/json' : '.csv,text/csv';
-
-  const colorClasses = {
-    indigo: {
-      bg: 'bg-indigo-50 dark:bg-indigo-900/20',
-      border: 'border-indigo-200 dark:border-indigo-800',
-      hover: 'hover:border-indigo-400 dark:hover:border-indigo-600',
-      icon: 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400',
-      button: 'bg-indigo-600 hover:bg-indigo-700',
-    },
-    purple: {
-      bg: 'bg-purple-50 dark:bg-purple-900/20',
-      border: 'border-purple-200 dark:border-purple-800',
-      hover: 'hover:border-purple-400 dark:hover:border-purple-600',
-      icon: 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400',
-      button: 'bg-purple-600 hover:bg-purple-700',
-    },
-  };
-
-  const colors = colorClasses[info.color];
   const isDisabled = disabled || isUploading;
 
   return (
     <Card
-      className={`${colors.bg} ${colors.border} border-2 transition-all ${!isDisabled ? colors.hover : 'opacity-60'}`}
+      className={`bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 border-2 transition-all ${!isDisabled ? 'hover:border-indigo-400 dark:hover:border-indigo-600' : 'opacity-60'}`}
     >
       <CardContent className="pb-2 pt-6">
         <div className="flex items-center gap-3 mb-2">
-          <div className={`${colors.icon} rounded-lg p-3`}>
-            <span className="text-2xl">{info.icon}</span>
-          </div>
-          <h3 className="text-lg font-semibold">{info.title}</h3>
+          <h3 className="text-lg font-semibold">{title}</h3>
         </div>
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">{info.description}</p>
+          <p className="text-sm text-muted-foreground">{description}</p>
 
           <ul className="space-y-2">
-            {info.features.map((feature) => (
+            {features.map((feature) => (
               <li key={feature} className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
                 {feature}
@@ -116,7 +96,7 @@ function ImportCard({ source, onFileSelect, isUploading, disabled }: ImportCardP
           <input
             ref={fileInputRef}
             type="file"
-            accept={acceptTypes}
+            accept={accept}
             onChange={handleFileChange}
             className="hidden"
             disabled={isDisabled}
@@ -125,7 +105,7 @@ function ImportCard({ source, onFileSelect, isUploading, disabled }: ImportCardP
           <Button
             onClick={handleButtonClick}
             disabled={isDisabled}
-            className={`w-full ${colors.button}`}
+            className="w-full bg-indigo-600 hover:bg-indigo-700"
           >
             {isUploading ? (
               <>
@@ -204,14 +184,15 @@ function ExportCard({ format, onExport, isExporting, disabled }: ExportCardProps
 }
 
 export function ImportExportPage() {
-  const [uploadingSource, setUploadingSource] = useState<ImportSource | null>(null);
+  const [uploadingSlug, setUploadingSlug] = useState<string | null>(null);
   const [exportingCollectionFormat, setExportingCollectionFormat] = useState<ExportFormat | null>(
     null,
   );
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
 
   const { mutateAsync: importNexorious } = useImportNexorious();
-  const { mutateAsync: importDarkadia } = useImportDarkadia();
+  const { mutateAsync: importFromSource } = useImportSource();
+  const { data: importSources = [] } = useImportSources();
   const { mutateAsync: exportCollection } = useExportCollection();
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
   const { mutate: downloadExport, isPending: isDownloading } = useDownloadExport();
@@ -307,20 +288,20 @@ export function ImportExportPage() {
     activeJob?.status === JobStatus.COMPLETED &&
     activeJob?.jobType === JobType.EXPORT;
 
-  const handleImportFile = async (file: File, source: ImportSource) => {
-    setUploadingSource(source);
+  // Set of source slugs that produce pending_review items (registry-backed sources)
+  const importSourceSlugs = new Set(importSources.map((s: ImportSourceInfo) => s.slug));
 
+  const handleImportFile = async (slug: string, file: File) => {
+    setUploadingSlug(slug);
     try {
       const result =
-        source === ImportSource.DARKADIA ? await importDarkadia(file) : await importNexorious(file);
+        slug === 'nexorious' ? await importNexorious(file) : await importFromSource({ slug, file });
       toast.success(`Import started: ${result.message}`);
-      // Reset dismissed job; the mutation optimistically marks the job active.
       setDismissedJobId(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Import failed';
-      toast.error(message);
+      toast.error(error instanceof Error ? error.message : 'Import failed');
     } finally {
-      setUploadingSource(null);
+      setUploadingSlug(null);
     }
   };
 
@@ -407,13 +388,13 @@ export function ImportExportPage() {
         <section className="mb-8 space-y-4">
           <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
 
-          {/* In-progress Darkadia imports surface the per-item review actions
+          {/* Registry-backed imports surface the per-item review actions
               (Find Match / Skip) here: pending_review keeps the job in
               'processing', and RecentActivity only covers terminal jobs, so this
               is the only place the manual-matching box can appear. */}
           {!activeJob.isTerminal &&
             activeJob.jobType === JobType.IMPORT &&
-            activeJob.source === JobSource.DARKADIA && (
+            importSourceSlugs.has(activeJob.source) && (
               <JobItemsDetails
                 jobId={activeJob.id}
                 progress={activeJob.progress}
@@ -477,18 +458,32 @@ export function ImportExportPage() {
         <section className="mb-8">
           <h2 className="mb-4 text-lg font-semibold">Import Games</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* Nexorious JSON — separate, non-registry path */}
             <ImportCard
-              source={ImportSource.NEXORIOUS}
-              onFileSelect={(file) => handleImportFile(file, ImportSource.NEXORIOUS)}
-              isUploading={uploadingSource === ImportSource.NEXORIOUS}
+              title="Nexorious JSON"
+              description="Restore a previous Nexorious export with all metadata, ratings, play status, and notes intact."
+              features={[
+                'Full metadata restoration',
+                'Preserves ratings and notes',
+                'Non-interactive import',
+              ]}
+              accept=".json,application/json"
+              isUploading={uploadingSlug === 'nexorious'}
               disabled={hasActiveJob}
+              onFileSelect={(file) => handleImportFile('nexorious', file)}
             />
-            <ImportCard
-              source={ImportSource.DARKADIA}
-              onFileSelect={(file) => handleImportFile(file, ImportSource.DARKADIA)}
-              isUploading={uploadingSource === ImportSource.DARKADIA}
-              disabled={hasActiveJob}
-            />
+            {importSources.map((src: ImportSourceInfo) => (
+              <ImportCard
+                key={src.slug}
+                title={src.display_name}
+                description={src.description}
+                features={src.features}
+                accept={src.accept.join(',')}
+                isUploading={uploadingSlug === src.slug}
+                disabled={hasActiveJob}
+                onFileSelect={(file) => handleImportFile(src.slug, file)}
+              />
+            ))}
           </div>
         </section>
       )}
