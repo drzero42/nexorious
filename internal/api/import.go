@@ -303,8 +303,8 @@ func (h *ImportHandler) HandleImportDarkadia(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
 		if h.riverClient != nil {
-			if _, err := h.riverClient.Insert(ctx, tasks.DarkadiaMatchArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.ErrorContext(reqCtx, "import: submit darkadia_match", "item_id", item.ID, logging.KeyErr, err)
+			if _, err := h.riverClient.Insert(ctx, tasks.ImportMatchArgs{JobItemID: item.ID}, nil); err != nil {
+				slog.ErrorContext(reqCtx, "import: submit import_match", "item_id", item.ID, logging.KeyErr, err)
 			}
 		}
 	}
@@ -317,7 +317,7 @@ func (h *ImportHandler) HandleImportDarkadia(c *echo.Context) error {
 	if _, err := h.db.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, job.ID).Exec(ctx); err != nil {
 		slog.ErrorContext(reqCtx, "import: mark dispatch complete", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
-	tasks.DarkadiaCheckJobCompletion(h.db, job.ID)
+	tasks.ImportCheckJobCompletion(h.db, job.ID)
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"job_id":      job.ID,

@@ -25,46 +25,46 @@ import (
 
 // ── Stage 1: match ───────────────────────────────────────────────────────────
 
-type DarkadiaMatchArgs struct {
+type ImportMatchArgs struct {
 	JobItemID string `json:"job_item_id"`
 }
 
-func (DarkadiaMatchArgs) Kind() string { return "darkadia_match" }
-func (DarkadiaMatchArgs) InsertOpts() river.InsertOpts {
+func (ImportMatchArgs) Kind() string { return "import_match" }
+func (ImportMatchArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{MaxAttempts: 3, Priority: 3}
 }
 
-type DarkadiaMatchWorker struct {
-	river.WorkerDefaults[DarkadiaMatchArgs]
+type ImportMatchWorker struct {
+	river.WorkerDefaults[ImportMatchArgs]
 	DB          *bun.DB
 	IGDBClient  *igdb.Client
 	RiverClient *river.Client[pgx.Tx]
 }
 
-func (w *DarkadiaMatchWorker) Work(ctx context.Context, job *river.Job[DarkadiaMatchArgs]) error {
+func (w *ImportMatchWorker) Work(ctx context.Context, job *river.Job[ImportMatchArgs]) error {
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "darkadia_match: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(ctx, "import_match: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 	// Correlate every line below to the parent import job.
 	ctx = logging.WithJobID(ctx, item.JobID)
 
 	if w.IGDBClient == nil || !w.IGDBClient.Configured() {
-		darkadiaMarkPendingReview(ctx, w.DB, &item, nil, nil)
-		DarkadiaCheckJobCompletion(w.DB, item.JobID)
+		importMarkPendingReview(ctx, w.DB, &item, nil, nil)
+		ImportCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 
 	candidates, err := w.IGDBClient.SearchGames(ctx, item.SourceTitle, 10, nil)
 	if err != nil {
 		if job.Attempt >= job.MaxAttempts {
-			slog.WarnContext(ctx, "darkadia_match: IGDB failed on final attempt, pending_review", "item_id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-			darkadiaMarkPendingReview(ctx, w.DB, &item, nil, nil)
-			DarkadiaCheckJobCompletion(w.DB, item.JobID)
+			slog.WarnContext(ctx, "import_match: IGDB failed on final attempt, pending_review", "item_id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+			importMarkPendingReview(ctx, w.DB, &item, nil, nil)
+			ImportCheckJobCompletion(w.DB, item.JobID)
 			return nil
 		}
-		return fmt.Errorf("darkadia_match: search failed (will retry): %w", err)
+		return fmt.Errorf("import_match: search failed (will retry): %w", err)
 	}
 
 	cands := make([]matching.Candidate, len(candidates))
@@ -78,23 +78,23 @@ func (w *DarkadiaMatchWorker) Work(ctx context.Context, job *river.Job[DarkadiaM
 			`UPDATE job_items SET resolved_igdb_id = ?, match_confidence = ? WHERE id = ?`,
 			decision.ResolvedID, decision.BestScore, item.ID,
 		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "darkadia_match: set resolved id", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "import_match: set resolved id", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
 		}
-		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, item.ID, DarkadiaFinalizeArgs{JobItemID: item.ID}); err != nil {
-			slog.WarnContext(ctx, "darkadia_match: enqueue finalize", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
-			DarkadiaCheckJobCompletion(w.DB, item.JobID)
+		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, item.ID, ImportFinalizeArgs{JobItemID: item.ID}); err != nil {
+			slog.WarnContext(ctx, "import_match: enqueue finalize", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
+			ImportCheckJobCompletion(w.DB, item.JobID)
 		}
 		return nil
 	}
 
 	candJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling candidates cannot fail
 	bs := decision.BestScore
-	darkadiaMarkPendingReview(ctx, w.DB, &item, candJSON, &bs)
-	DarkadiaCheckJobCompletion(w.DB, item.JobID)
+	importMarkPendingReview(ctx, w.DB, &item, candJSON, &bs)
+	ImportCheckJobCompletion(w.DB, item.JobID)
 	return nil
 }
 
-func darkadiaMarkPendingReview(ctx context.Context, db *bun.DB, item *models.JobItem, candidates json.RawMessage, confidence *float64) {
+func importMarkPendingReview(ctx context.Context, db *bun.DB, item *models.JobItem, candidates json.RawMessage, confidence *float64) {
 	item.Status = models.JobItemStatusPendingReview
 	if candidates != nil {
 		item.IGDBCandidates = candidates
@@ -103,54 +103,54 @@ func darkadiaMarkPendingReview(ctx context.Context, db *bun.DB, item *models.Job
 	if _, err := db.NewUpdate().Model(item).
 		Column("status", "igdb_candidates", "match_confidence").
 		Where("id = ?", item.ID).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "darkadia_match: mark pending_review", "id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.WarnContext(ctx, "import_match: mark pending_review", "id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 }
 
 // ── Stage 2: finalize ────────────────────────────────────────────────────────
 
-type DarkadiaFinalizeArgs struct {
+type ImportFinalizeArgs struct {
 	JobItemID string `json:"job_item_id"`
 }
 
-func (DarkadiaFinalizeArgs) Kind() string { return "darkadia_finalize" }
-func (DarkadiaFinalizeArgs) InsertOpts() river.InsertOpts {
+func (ImportFinalizeArgs) Kind() string { return "import_finalize" }
+func (ImportFinalizeArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{MaxAttempts: 1, Priority: 3}
 }
 
-type DarkadiaFinalizeWorker struct {
-	river.WorkerDefaults[DarkadiaFinalizeArgs]
+type ImportFinalizeWorker struct {
+	river.WorkerDefaults[ImportFinalizeArgs]
 	DB          *bun.DB
 	IGDBClient  *igdb.Client
 	StoragePath string
 }
 
-func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[DarkadiaFinalizeArgs]) error {
+func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFinalizeArgs]) error {
 	bg := context.Background()
 	var item models.JobItem
 	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "darkadia_finalize: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(ctx, "import_finalize: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
 	// Correlate every line below to the parent import job.
 	ctx = logging.WithJobID(ctx, item.JobID)
 	if item.ResolvedIGDBID == nil {
-		markItemFailed(bg, w.DB, &item, "no resolved IGDB id", "darkadia_finalize: markItemFailed")
-		DarkadiaCheckJobCompletion(w.DB, item.JobID)
+		markItemFailed(bg, w.DB, &item, "no resolved IGDB id", "import_finalize: markItemFailed")
+		ImportCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 	igdbID := int32(*item.ResolvedIGDBID) //nolint:gosec // resolved id fits int32
 
 	var payload importmodel.Game
 	if err := json.Unmarshal(item.SourceMetadata, &payload); err != nil {
-		markItemFailed(bg, w.DB, &item, fmt.Sprintf("parse payload: %v", err), "darkadia_finalize: markItemFailed")
-		DarkadiaCheckJobCompletion(w.DB, item.JobID)
+		markItemFailed(bg, w.DB, &item, fmt.Sprintf("parse payload: %v", err), "import_finalize: markItemFailed")
+		ImportCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 
 	if err := ensureGameRow(ctx, w.DB, w.IGDBClient, w.StoragePath, igdbID, payload.Title); err != nil {
-		markItemFailed(bg, w.DB, &item, fmt.Sprintf("ensure game: %v", err), "darkadia_finalize: markItemFailed")
-		DarkadiaCheckJobCompletion(w.DB, item.JobID)
+		markItemFailed(bg, w.DB, &item, fmt.Sprintf("ensure game: %v", err), "import_finalize: markItemFailed")
+		ImportCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 
@@ -158,8 +158,8 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 	err := w.DB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", item.UserID, igdbID).Scan(ctx)
 	alreadyExists := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		markItemFailed(bg, w.DB, &item, fmt.Sprintf("load user_game: %v", err), "darkadia_finalize: markItemFailed")
-		DarkadiaCheckJobCompletion(w.DB, item.JobID)
+		markItemFailed(bg, w.DB, &item, fmt.Sprintf("load user_game: %v", err), "import_finalize: markItemFailed")
+		ImportCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
 	now := time.Now().UTC()
@@ -182,15 +182,15 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 		// rather than failing on the user_games (user_id, game_id) unique index.
 		res, ierr := w.DB.NewInsert().Model(&ug).On("CONFLICT (user_id, game_id) DO NOTHING").Exec(ctx)
 		if ierr != nil {
-			markItemFailed(bg, w.DB, &item, fmt.Sprintf("insert user_game: %v", ierr), "darkadia_finalize: markItemFailed")
-			DarkadiaCheckJobCompletion(w.DB, item.JobID)
+			markItemFailed(bg, w.DB, &item, fmt.Sprintf("insert user_game: %v", ierr), "import_finalize: markItemFailed")
+			ImportCheckJobCompletion(w.DB, item.JobID)
 			return nil
 		}
 		if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // advisory RowsAffected
 			if serr := w.DB.NewSelect().Model(&ug).
 				Where("user_id = ? AND game_id = ?", item.UserID, igdbID).Scan(ctx); serr != nil {
-				markItemFailed(bg, w.DB, &item, fmt.Sprintf("load conflicting user_game: %v", serr), "darkadia_finalize: markItemFailed")
-				DarkadiaCheckJobCompletion(w.DB, item.JobID)
+				markItemFailed(bg, w.DB, &item, fmt.Sprintf("load conflicting user_game: %v", serr), "import_finalize: markItemFailed")
+				ImportCheckJobCompletion(w.DB, item.JobID)
 				return nil
 			}
 			alreadyExists = true
@@ -227,13 +227,13 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 			ugp.HoursPlayed = payload.HoursPlayed
 		}
 		if _, ierr := w.DB.NewInsert().Model(&ugp).Exec(ctx); ierr != nil {
-			slog.WarnContext(ctx, "darkadia_finalize: insert platform", logging.KeyErr, ierr, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "import_finalize: insert platform", logging.KeyErr, ierr, logging.Cat(logging.CategoryDB))
 		} else {
 			newPlatforms++
 		}
 	}
 	if err := usergame.ClearWishlistOnAcquire(ctx, w.DB, ug.ID); err != nil {
-		slog.WarnContext(ctx, "darkadia_finalize: clear wishlist on acquire", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
+		slog.WarnContext(ctx, "import_finalize: clear wishlist on acquire", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
 	}
 
 	existingTagIDs := map[string]bool{}
@@ -252,7 +252,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 			// Unlike the JSON importer (which fails the item), a tag error here
 			// is logged and skipped: this is a one-off migration where dropping
 			// one tag link is preferable to failing the whole game import.
-			slog.WarnContext(ctx, "darkadia_finalize: find/create tag", logging.KeyErr, terr, "name", name, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "import_finalize: find/create tag", logging.KeyErr, terr, "name", name, logging.Cat(logging.CategoryDB))
 			continue
 		}
 		if existingTagIDs[tagID] {
@@ -260,7 +260,7 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 		}
 		ugt := &models.UserGameTag{ID: uuid.NewString(), UserGameID: ug.ID, TagID: tagID, CreatedAt: now}
 		if _, ierr := w.DB.NewInsert().Model(ugt).Exec(ctx); ierr != nil {
-			slog.WarnContext(ctx, "darkadia_finalize: insert user_game_tag", logging.KeyErr, ierr, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "import_finalize: insert user_game_tag", logging.KeyErr, ierr, logging.Cat(logging.CategoryDB))
 		} else {
 			newTags++
 		}
@@ -279,13 +279,13 @@ func (w *DarkadiaFinalizeWorker) Work(ctx context.Context, job *river.Job[Darkad
 		 VALUES (?, ?, ?, NULL, ?, ?, now())`,
 		uuid.NewString(), item.JobID, item.UserID, changeType, item.SourceTitle,
 	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "darkadia_finalize: insert change", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.WarnContext(ctx, "import_finalize: insert change", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	markItemCompletedWithResult(bg, w.DB, &item, map[string]any{
 		"game_id": igdbID, "user_game_id": ug.ID, "is_new_addition": !alreadyExists,
-	}, "darkadia_finalize: markItemCompleted")
-	DarkadiaCheckJobCompletion(w.DB, item.JobID)
+	}, "import_finalize: markItemCompleted")
+	ImportCheckJobCompletion(w.DB, item.JobID)
 	return nil
 }
 
@@ -334,24 +334,24 @@ func ensureGameRow(ctx context.Context, db *bun.DB, client *igdb.Client, storage
 	return err
 }
 
-// DarkadiaCheckJobCompletion finalizes a Darkadia import job once no active or
+// ImportCheckJobCompletion finalizes an import job once no active or
 // pending_review items remain. pending_review blocks termination (the job stays
 // processing until the user resolves/skips every such item).
-func DarkadiaCheckJobCompletion(db *bun.DB, jobID string) {
+func ImportCheckJobCompletion(db *bun.DB, jobID string) {
 	ctx := context.Background()
-	active, ok := countJobItems(ctx, db, jobID, "status IN ('pending', 'processing')", "darkadia: count active")
+	active, ok := countJobItems(ctx, db, jobID, "status IN ('pending', 'processing')", "import: count active")
 	if !ok || active > 0 {
 		return
 	}
-	review, ok := countJobItems(ctx, db, jobID, "status = 'pending_review'", "darkadia: count pending_review")
+	review, ok := countJobItems(ctx, db, jobID, "status = 'pending_review'", "import: count pending_review")
 	if !ok || review > 0 {
 		return
 	}
-	if !finalizeJobCompleted(ctx, db, jobID, "darkadia: finalize job", true) {
+	if !finalizeJobCompleted(ctx, db, jobID, "import: finalize job", true) {
 		return
 	}
 	uid, _ := syncJobUserAndStorefront(ctx, db, jobID)
-	failed, ok := countJobItems(ctx, db, jobID, "status = 'failed'", "darkadia: count failed")
+	failed, ok := countJobItems(ctx, db, jobID, "status = 'failed'", "import: count failed")
 	if !ok {
 		return
 	}

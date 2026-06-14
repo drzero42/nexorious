@@ -60,7 +60,7 @@ func ArgsForJobType(jobType, source, jobItemID string) (river.JobArgs, error) {
 	// Darkadia imports run a bespoke match→finalize chain; a retried item
 	// re-enters at the match stage regardless of the (shared) "import" job_type.
 	if source == models.JobSourceDarkadia {
-		return DarkadiaMatchArgs{JobItemID: jobItemID}, nil
+		return ImportMatchArgs{JobItemID: jobItemID}, nil
 	}
 	switch jobType {
 	case models.JobTypeSync:
@@ -82,7 +82,7 @@ func ArgsForJobType(jobType, source, jobItemID string) (river.JobArgs, error) {
 func FinalizeArgsForSource(source, jobItemID string) (river.JobArgs, error) {
 	switch source {
 	case models.JobSourceDarkadia:
-		return DarkadiaFinalizeArgs{JobItemID: jobItemID}, nil
+		return ImportFinalizeArgs{JobItemID: jobItemID}, nil
 	default:
 		return nil, fmt.Errorf("source %q has no interactive finalize stage", source)
 	}
