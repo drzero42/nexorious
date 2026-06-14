@@ -69,8 +69,8 @@ type PlatformSimple struct {
 	PlatformColumn     string
 	StorefrontColumn   string            // optional
 	AcquiredDateColumn string            // optional; attaches to the platform entry
-	PlatformMap        map[string]string // optional value->slug; nil/miss = passthrough as-is
-	StorefrontMap      map[string]string // optional value->slug
+	PlatformMap        map[string]string // optional value (normalized) -> slug; nil/miss = passthrough as-is
+	StorefrontMap      map[string]string // optional value (normalized) -> slug
 }
 
 // PlatformTables is the Darkadia table+precedence model. Behaviour lands in #1016.

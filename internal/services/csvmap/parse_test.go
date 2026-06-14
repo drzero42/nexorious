@@ -48,10 +48,6 @@ func TestParse_HeaderCaseAndWhitespaceInsensitive(t *testing.T) {
 	}
 }
 
-// guard against an unused import until later tasks reference these.
-var _ = errors.Is
-var _ = importmodel.ErrInvalidSignature
-
 func TestParse_RequiresTitle(t *testing.T) {
 	_, err := Parse([]byte("A\nx\n"), Config{})
 	if err == nil {
@@ -396,5 +392,28 @@ func TestParse_OneRow_DoesNotMerge(t *testing.T) {
 	games, _ := Parse([]byte(csv), cfg)
 	if len(games) != 2 {
 		t.Fatalf("one-row grouping want 2 games, got %d", len(games))
+	}
+}
+
+func TestParse_RatingClampsAboveFive(t *testing.T) {
+	round5 := Config{Columns: ColumnMap{Title: "Name", Rating: "R"}, Rating: &RatingConfig{Scale: 5}}
+	if got := ratingOf(t, round5, "6"); got == nil || *got != 5 {
+		t.Fatalf("over-scale 6/5 want clamped 5, got %v", got)
+	}
+}
+
+func TestParse_RaggedRowFillsMissingColumnsAsEmpty(t *testing.T) {
+	// Header has 3 columns; the data row supplies only 1. Missing trailing
+	// columns must resolve to empty (their default), not panic.
+	cfg := Config{
+		Columns: ColumnMap{Title: "Name", Tags: "T"},
+		Status:  StatusConfig{Column: &StatusColumn{Column: "S", Default: "not_started"}},
+	}
+	games, err := Parse([]byte("Name,S,T\nHalf-Life\n"), cfg)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(games) != 1 || games[0].PlayStatus != "not_started" || games[0].Tags != nil {
+		t.Fatalf("ragged row failed: %+v", games)
 	}
 }
