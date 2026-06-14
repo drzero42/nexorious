@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.0](https://github.com/drzero42/nexorious/compare/v0.13.0...v0.14.0) (2026-06-14)
+
+
+### Features
+
+* add dashboard.allowCrossNamespaceImport for crd mode ([#990](https://github.com/drzero42/nexorious/issues/990)) ([9ef0976](https://github.com/drzero42/nexorious/commit/9ef0976f217496583d38ca05c0de99b39e0c2581)), closes [#965](https://github.com/drzero42/nexorious/issues/965)
+
+
+### Bug Fixes
+
+* persist docker-compose storage volume and align memory with Helm ([#988](https://github.com/drzero42/nexorious/issues/988)) ([63de1ac](https://github.com/drzero42/nexorious/commit/63de1ac7365ec56c9233ac7dcdb30e3cdcb30e57)), closes [#964](https://github.com/drzero42/nexorious/issues/964)
+
 ## [0.13.0](https://github.com/drzero42/nexorious/compare/v0.12.0...v0.13.0) (2026-06-13)
 
 
