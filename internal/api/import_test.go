@@ -441,3 +441,32 @@ func TestImportDarkadia_CreatesJobAndItems(t *testing.T) {
 		t.Errorf("job_items count = %d, want 2", itemCount)
 	}
 }
+
+// An unregistered source slug has no route — only registry slugs are wired in
+// router.go via importsource.All() — so the upload never reaches the generic
+// handler. Echo returns 405 (not 404) for an unmatched leaf under a group that
+// has sibling routes; either status proves the source was not routed/imported.
+func TestImportSource_UnregisteredSlugNotRouted(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+
+	_, token := setupTagUser(t, testDB, e, "import-unknown")
+
+	rec := postMultipartFile(t, e, "/api/import/grouvee", "x.csv", []byte("a,b\n1,2\n"), token)
+
+	if rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 404/405 for unregistered source; body: %s", rec.Code, rec.Body)
+	}
+
+	// And no import job was created for the bogus source.
+	var jobCount int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM jobs WHERE source = 'grouvee'`,
+	).Scan(context.Background(), &jobCount); err != nil {
+		t.Fatalf("count jobs: %v", err)
+	}
+	if jobCount != 0 {
+		t.Errorf("jobs for unregistered source = %d, want 0", jobCount)
+	}
+}

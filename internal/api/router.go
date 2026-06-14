@@ -30,6 +30,7 @@ import (
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
 	"github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/services/importsource"
 	playstationstoresvc "github.com/drzero42/nexorious/internal/services/playstationstore"
 	steamsvc "github.com/drzero42/nexorious/internal/services/steam"
 	"github.com/drzero42/nexorious/internal/services/updatecheck"
@@ -405,7 +406,9 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		imh := NewImportHandler(db, riverClient, igdbClient)
 		importGroup := e.Group("/api/import", auth.AuthMiddleware(db))
 		importGroup.POST("/nexorious", imh.HandleImportNexorious)
-		importGroup.POST("/darkadia", imh.HandleImportDarkadia)
+		for _, src := range importsource.All() {
+			importGroup.POST("/"+src.Slug, imh.handleImportSource(src))
+		}
 
 		// Export routes (all auth-protected)
 		exh := NewExportHandler(db, riverClient, cfg)

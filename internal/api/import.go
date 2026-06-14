@@ -20,8 +20,9 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/logging"
-	"github.com/drzero42/nexorious/internal/services/darkadia"
 	"github.com/drzero42/nexorious/internal/services/igdb"
+	"github.com/drzero42/nexorious/internal/services/importmodel"
+	"github.com/drzero42/nexorious/internal/services/importsource"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -208,122 +209,124 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	})
 }
 
-// HandleImportDarkadia handles POST /api/import/darkadia.
-func (h *ImportHandler) HandleImportDarkadia(c *echo.Context) error {
-	userID := auth.UserIDFromContext(c)
-	if userID == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
-	}
-
-	// Prerequisite: IGDB must be configured, else every game lands unmatched.
-	if h.igdbClient == nil || !h.igdbClient.Configured() {
-		return echo.NewHTTPError(http.StatusBadRequest, "IGDB must be configured to import a Darkadia collection")
-	}
-
-	if err := c.Request().ParseMultipartForm(maxImportBodyBytes); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse multipart form")
-	}
-	file, _, err := c.Request().FormFile("file")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "missing file field")
-	}
-	defer func() { _ = file.Close() }()
-
-	lr := io.LimitReader(file, maxImportBodyBytes+1)
-	body, err := io.ReadAll(lr)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read file")
-	}
-	if len(body) > maxImportBodyBytes {
-		return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "file exceeds 50 MB limit")
-	}
-
-	games, err := darkadia.Parse(body)
-	if err != nil {
-		if errors.Is(err, darkadia.ErrInvalidHeader) {
-			return echo.NewHTTPError(http.StatusBadRequest, "not a Darkadia export")
+// handleImportSource returns an Echo handler for a registered import source.
+// It validates IGDB is configured, parses the upload via the source's mapper,
+// creates the job + one job_item per game, and enqueues the match stage. One
+// active import per (user, source) is allowed at a time.
+func (h *ImportHandler) handleImportSource(src importsource.Source) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		userID := auth.UserIDFromContext(c)
+		if userID == "" {
+			return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 		}
-		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
-	}
-	if len(games) == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "no games found in CSV")
-	}
+		if h.igdbClient == nil || !h.igdbClient.Configured() {
+			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("IGDB must be configured to import a %s collection", src.DisplayName))
+		}
 
-	ctx := context.Background()
-
-	var existing models.Job
-	err = h.db.NewSelect().Model(&existing).
-		Where("user_id = ?", userID).
-		Where("job_type = ?", models.JobTypeImport).
-		Where("source = ?", models.JobSourceDarkadia).
-		Where("status IN (?)", bun.List([]string{models.JobStatusPending, models.JobStatusProcessing})).
-		Limit(1).Scan(ctx)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to check active import")
-	}
-	if err == nil {
-		return echo.NewHTTPError(http.StatusConflict, "an active Darkadia import is already in progress")
-	}
-
-	now := time.Now().UTC()
-	job := &models.Job{
-		ID:               uuid.NewString(),
-		UserID:           userID,
-		JobType:          models.JobTypeImport,
-		Source:           models.JobSourceDarkadia,
-		Status:           models.JobStatusProcessing,
-		Priority:         models.JobPriorityHigh,
-		TotalItems:       len(games),
-		DispatchComplete: false, // flipped true after every item is enqueued (below)
-		CreatedAt:        now,
-	}
-	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
-	}
-
-	reqCtx := c.Request().Context()
-
-	for i, g := range games {
-		meta, err := json.Marshal(g)
+		if err := c.Request().ParseMultipartForm(maxImportBodyBytes); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "failed to parse multipart form")
+		}
+		file, _, err := c.Request().FormFile("file")
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to marshal game payload")
+			return echo.NewHTTPError(http.StatusBadRequest, "missing file field")
 		}
-		item := &models.JobItem{
-			ID:             uuid.NewString(),
-			JobID:          job.ID,
-			UserID:         userID,
-			ItemKey:        fmt.Sprintf("game_%d", i),
-			SourceTitle:    g.Title,
-			SourceMetadata: meta,
-			Status:         models.JobItemStatusPending,
-			Result:         json.RawMessage(`{}`),
-			IGDBCandidates: json.RawMessage(`[]`),
+		defer func() { _ = file.Close() }()
+
+		lr := io.LimitReader(file, maxImportBodyBytes+1)
+		body, err := io.ReadAll(lr)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to read file")
 		}
-		if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
+		if len(body) > maxImportBodyBytes {
+			return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "file exceeds 50 MB limit")
 		}
-		if h.riverClient != nil {
-			if _, err := h.riverClient.Insert(ctx, tasks.ImportMatchArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.ErrorContext(reqCtx, "import: submit import_match", "item_id", item.ID, logging.KeyErr, err)
+
+		games, err := src.Mapper.Parse(body)
+		if err != nil {
+			if errors.Is(err, importmodel.ErrInvalidSignature) {
+				return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("not a %s export", src.DisplayName))
+			}
+			return echo.NewHTTPError(http.StatusBadRequest, "failed to parse file: "+err.Error())
+		}
+		if len(games) == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "no games found in file")
+		}
+
+		ctx := context.Background()
+
+		var existing models.Job
+		err = h.db.NewSelect().Model(&existing).
+			Where("user_id = ?", userID).
+			Where("job_type = ?", models.JobTypeImport).
+			Where("source = ?", src.Slug).
+			Where("status IN (?)", bun.List([]string{models.JobStatusPending, models.JobStatusProcessing})).
+			Limit(1).Scan(ctx)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to check active import")
+		}
+		if err == nil {
+			return echo.NewHTTPError(http.StatusConflict, fmt.Sprintf("an active %s import is already in progress", src.DisplayName))
+		}
+
+		now := time.Now().UTC()
+		job := &models.Job{
+			ID:               uuid.NewString(),
+			UserID:           userID,
+			JobType:          models.JobTypeImport,
+			Source:           src.Slug,
+			Status:           models.JobStatusProcessing,
+			Priority:         models.JobPriorityHigh,
+			TotalItems:       len(games),
+			DispatchComplete: false,
+			CreatedAt:        now,
+		}
+		if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
+		}
+
+		reqCtx := c.Request().Context()
+		for i, g := range games {
+			meta, err := json.Marshal(g)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to marshal game payload")
+			}
+			item := &models.JobItem{
+				ID:             uuid.NewString(),
+				JobID:          job.ID,
+				UserID:         userID,
+				ItemKey:        fmt.Sprintf("game_%d", i),
+				SourceTitle:    g.Title,
+				SourceMetadata: meta,
+				Status:         models.JobItemStatusPending,
+				Result:         json.RawMessage(`{}`),
+				IGDBCandidates: json.RawMessage(`[]`),
+			}
+			if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
+			}
+			if h.riverClient != nil {
+				if _, err := h.riverClient.Insert(ctx, tasks.ImportMatchArgs{JobItemID: item.ID}, nil); err != nil {
+					slog.ErrorContext(reqCtx, "import: submit import_match", "item_id", item.ID, logging.KeyErr, err)
+				}
 			}
 		}
-	}
 
-	// Dispatch is complete only now that every item exists and is enqueued.
-	// Flipping the flag (and re-checking completion) here closes the window where
-	// an early item could finish and finalize the job before later items were
-	// inserted — the completion check refuses to finalize while dispatch is in
-	// flight (dispatch_complete=false), mirroring the sync dispatch worker.
-	if _, err := h.db.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, job.ID).Exec(ctx); err != nil {
-		slog.ErrorContext(reqCtx, "import: mark dispatch complete", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-	tasks.ImportCheckJobCompletion(h.db, job.ID)
+		// Dispatch is complete only now that every item exists and is enqueued.
+		// Flipping the flag (and re-checking completion) here closes the window where
+		// an early item could finish and finalize the job before later items were
+		// inserted — the completion check refuses to finalize while dispatch is in
+		// flight (dispatch_complete=false), mirroring the sync dispatch worker.
+		if _, err := h.db.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, job.ID).Exec(ctx); err != nil {
+			slog.ErrorContext(reqCtx, "import: mark dispatch complete", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		}
+		tasks.ImportCheckJobCompletion(h.db, job.ID)
 
-	return c.JSON(http.StatusOK, map[string]any{
-		"job_id":      job.ID,
-		"source":      job.Source,
-		"status":      job.Status,
-		"message":     fmt.Sprintf("Darkadia import job created. Matching %d games.", len(games)),
-		"total_items": len(games),
-	})
+		return c.JSON(http.StatusOK, map[string]any{
+			"job_id":      job.ID,
+			"source":      job.Source,
+			"status":      job.Status,
+			"message":     fmt.Sprintf("%s import job created. Matching %d games.", src.DisplayName, len(games)),
+			"total_items": len(games),
+		})
+	}
 }

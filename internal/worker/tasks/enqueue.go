@@ -13,6 +13,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/services/importsource"
 )
 
 // ErrNilRiverClient is returned by EnqueueOrFail when called with a nil River
@@ -55,11 +56,12 @@ func EnqueueOrFail(
 // ArgsForJobType returns the appropriate River JobArgs for the given job_type,
 // source, and job_item_id. Used by callers (the HTTP retry handlers, the orphan
 // rescuer) that switch on job_type at runtime. The source disambiguates imports
-// that share the "import" job_type but need a different task chain (Darkadia).
+// that share the "import" job_type but need a different task chain (registry
+// sources use the match→finalize chain).
 func ArgsForJobType(jobType, source, jobItemID string) (river.JobArgs, error) {
-	// Darkadia imports run a bespoke match→finalize chain; a retried item
+	// Registry-based imports run a bespoke match→finalize chain; a retried item
 	// re-enters at the match stage regardless of the (shared) "import" job_type.
-	if source == models.JobSourceDarkadia {
+	if importsource.IsRegistered(source) {
 		return ImportMatchArgs{JobItemID: jobItemID}, nil
 	}
 	switch jobType {
@@ -76,16 +78,14 @@ func ArgsForJobType(jobType, source, jobItemID string) (river.JobArgs, error) {
 
 // FinalizeArgsForSource returns the finalize-stage River args for an import
 // source whose job_items are resolved interactively (the manual-match flow).
-// Only sources with a match→finalize chain are supported — currently Darkadia.
+// Only sources registered in the importsource registry are supported.
 // Used by the generic job-item resolve endpoint so the finalize task is routed
 // by source rather than hard-coded.
 func FinalizeArgsForSource(source, jobItemID string) (river.JobArgs, error) {
-	switch source {
-	case models.JobSourceDarkadia:
+	if importsource.IsRegistered(source) {
 		return ImportFinalizeArgs{JobItemID: jobItemID}, nil
-	default:
-		return nil, fmt.Errorf("source %q has no interactive finalize stage", source)
 	}
+	return nil, fmt.Errorf("source %q has no interactive finalize stage", source)
 }
 
 func markEnqueueFailed(ctx context.Context, db *bun.DB, jobItemID, msg string) {
