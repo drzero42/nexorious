@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.15.0](https://github.com/drzero42/nexorious/compare/v0.14.0...v0.15.0) (2026-06-14)
+
+
+### Features
+
+* make Pile of Shame a prominent dashboard stat ([#994](https://github.com/drzero42/nexorious/issues/994)) ([bcdb524](https://github.com/drzero42/nexorious/commit/bcdb5242bd007050d69342a1cb180e4323d710e7)), closes [#967](https://github.com/drzero42/nexorious/issues/967)
+
+
+### Bug Fixes
+
+* apply ?pool= filter in /api/user-games/ids ([#997](https://github.com/drzero42/nexorious/issues/997)) ([#999](https://github.com/drzero42/nexorious/issues/999)) ([22c86d3](https://github.com/drzero42/nexorious/commit/22c86d3884ca42230277e6fe398d8e4b20210b20))
+* apply time_to_beat filter in /api/user-games/ids ([#996](https://github.com/drzero42/nexorious/issues/996)) ([879e7b9](https://github.com/drzero42/nexorious/commit/879e7b966f82828176d351a5d702c6c06565bb89)), closes [#969](https://github.com/drzero42/nexorious/issues/969)
+* parse JSON and use count(*) in VictoriaLogs alert rules ([#992](https://github.com/drzero42/nexorious/issues/992)) ([9348c6d](https://github.com/drzero42/nexorious/commit/9348c6df842a56c931951fda65eb512a108ff8c0)), closes [#966](https://github.com/drzero42/nexorious/issues/966)
+
 ## [0.14.0](https://github.com/drzero42/nexorious/compare/v0.13.0...v0.14.0) (2026-06-14)
 
 
