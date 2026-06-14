@@ -185,12 +185,13 @@ The **Import / Export** page moves whole collections in and out.
 
 **Exporting** gives you two formats. JSON is the complete picture — every game with its platforms, tags, notes, and ratings — and is the one to use for a backup or to move to another Nexorious instance. CSV is a flatter, spreadsheet-friendly summary. Both download as a dated file.
 
-**Importing** also comes in two flavours:
+**Importing** also comes in a few flavours:
 
 - **Nexorious JSON** — restore or merge a collection from a Nexorious export. It merges into what you already have rather than wiping it.
 - **Darkadia CSV** — a one-off migration path for anyone coming from Darkadia. Export your collection from Darkadia to CSV and import it here. Because games are matched to IGDB, some may need your review afterwards, just like a storefront sync; you'll find those on the Import / Export page. Importing from Darkadia needs IGDB configured on the server.
+- **vglist JSON** — a one-off migration path for anyone coming from [vglist](https://vglist.co). In vglist, go to **Settings → Export Library** to download your library as a JSON file, then import that file here. Your ratings, play status, playtime, and which stores you own each game on are brought across; the storefront and platform are matched up as closely as vglist's data allows, with anything that doesn't map cleanly kept as a note on the game. As with Darkadia, games are matched to IGDB so some may need your review afterwards, and IGDB must be configured on the server.
 
-Both imports run in the background, so you can watch their progress and see recent runs listed on the page.
+These migration imports are one-off — they bring a collection in once, and don't keep syncing afterwards. All imports run in the background, so you can watch their progress and see recent runs listed on the page.
 
 ## Why sync and import take a while
 

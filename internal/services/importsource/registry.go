@@ -8,6 +8,7 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/services/darkadia"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
+	"github.com/drzero42/nexorious/internal/services/vglist"
 )
 
 // Mapper parses a source export file into canonical games. On a wrong-shape
@@ -45,6 +46,18 @@ var registry = []Source{
 		},
 		Accept: []string{".csv", "text/csv"},
 		Mapper: mapperFunc(darkadia.Parse),
+	},
+	{
+		Slug:        models.JobSourceVglist,
+		DisplayName: "vglist",
+		Description: "Migrate a vglist library export (Settings → Export Library, JSON). Games are matched to IGDB by title; ambiguous matches go to review. Requires IGDB to be configured.",
+		Features: []string{
+			"Preserves rating, status, playtime & store provenance",
+			"Matches games to IGDB",
+			"Interactive review",
+		},
+		Accept: []string{".json", "application/json"},
+		Mapper: mapperFunc(vglist.Parse),
 	},
 }
 
