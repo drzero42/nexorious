@@ -215,3 +215,69 @@ func TestParse_RatingIgnoredWhenConfigNil(t *testing.T) {
 		t.Fatalf("rating must be nil when Config.Rating is nil, got %v", got)
 	}
 }
+
+func TestParse_Loved(t *testing.T) {
+	cfg := Config{Columns: ColumnMap{Title: "Name", Loved: "Fav"}} // default truthy {"1","true","yes"}
+	games, _ := Parse([]byte("Name,Fav\nA,Yes\nB,0\nC,\n"), cfg)
+	if !games[0].IsLoved {
+		t.Fatal("A: Yes should be loved")
+	}
+	if games[1].IsLoved || games[2].IsLoved {
+		t.Fatal("B/C should not be loved")
+	}
+}
+
+func TestParse_LovedCustomTruthy(t *testing.T) {
+	cfg := Config{Columns: ColumnMap{Title: "Name", Loved: "Fav"}, TruthyValues: []string{"★"}}
+	games, _ := Parse([]byte("Name,Fav\nA,★\nB,yes\n"), cfg)
+	if !games[0].IsLoved || games[1].IsLoved {
+		t.Fatalf("custom truthy failed: %+v", games)
+	}
+}
+
+func TestParse_Tags(t *testing.T) {
+	cfg := Config{Columns: ColumnMap{Title: "Name", Tags: "T"}}
+	games, _ := Parse([]byte("Name,T\nA,\"rpg, indie , rpg,\"\n"), cfg)
+	want := []string{"rpg", "indie"}
+	if len(games[0].Tags) != 2 || games[0].Tags[0] != want[0] || games[0].Tags[1] != want[1] {
+		t.Fatalf("tags split/trim/dedupe failed: %#v", games[0].Tags)
+	}
+}
+
+func TestParse_CreatedAtPassthrough(t *testing.T) {
+	cfg := Config{Columns: ColumnMap{Title: "Name", CreatedAt: "Added"}}
+	games, _ := Parse([]byte("Name,Added\nA,2021-05-03\nB,not-a-date\n"), cfg)
+	if games[0].CreatedAt != "2021-05-03" {
+		t.Fatalf("want passthrough date, got %q", games[0].CreatedAt)
+	}
+	if games[1].CreatedAt != "" {
+		t.Fatalf("invalid date should yield empty, got %q", games[1].CreatedAt)
+	}
+}
+
+func TestParse_CreatedAtCustomLayout(t *testing.T) {
+	cfg := Config{Columns: ColumnMap{Title: "Name", CreatedAt: "Added"}, DateLayout: "01/02/2006"}
+	games, _ := Parse([]byte("Name,Added\nA,05/03/2021\n"), cfg)
+	if games[0].CreatedAt != "2021-05-03" {
+		t.Fatalf("want reformatted date 2021-05-03, got %q", games[0].CreatedAt)
+	}
+}
+
+func TestParse_DurationDecimal(t *testing.T) {
+	cfg := Config{Columns: ColumnMap{Title: "Name", HoursPlayed: "H"}, Duration: &DurationConfig{Format: "decimal"}}
+	games, _ := Parse([]byte("Name,H\nA,12.5\nB,0\nC,\n"), cfg)
+	if games[0].HoursPlayed == nil || *games[0].HoursPlayed != 12.5 {
+		t.Fatalf("A: want 12.5, got %v", games[0].HoursPlayed)
+	}
+	if games[1].HoursPlayed != nil || games[2].HoursPlayed != nil {
+		t.Fatal("B/C: want nil hours")
+	}
+}
+
+func TestParse_DurationIgnoredWhenConfigNil(t *testing.T) {
+	cfg := Config{Columns: ColumnMap{Title: "Name", HoursPlayed: "H"}}
+	games, _ := Parse([]byte("Name,H\nA,12.5\n"), cfg)
+	if games[0].HoursPlayed != nil {
+		t.Fatalf("hours must be nil when Config.Duration is nil, got %v", games[0].HoursPlayed)
+	}
+}

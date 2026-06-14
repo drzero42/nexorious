@@ -9,6 +9,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
@@ -196,6 +197,87 @@ func extractRating(raw string, cfg Config) *int32 {
 	return &v
 }
 
+var defaultTruthy = []string{"1", "true", "yes"}
+
+// extractLoved reports whether the loved cell matches a truthy value.
+func extractLoved(rec []string, idx map[string]int, cfg Config) bool {
+	if cfg.Columns.Loved == "" {
+		return false
+	}
+	v := normKey(cell(rec, idx, cfg.Columns.Loved))
+	if v == "" {
+		return false
+	}
+	truthy := cfg.TruthyValues
+	if truthy == nil {
+		truthy = defaultTruthy
+	}
+	for _, t := range truthy {
+		if normKey(t) == v {
+			return true
+		}
+	}
+	return false
+}
+
+// extractTags splits, trims, drops empties, and order-preserving dedupes the tag cell.
+func extractTags(rec []string, idx map[string]int, cfg Config) []string {
+	raw := cell(rec, idx, cfg.Columns.Tags)
+	if raw == "" {
+		return nil
+	}
+	sep := cfg.TagSeparator
+	if sep == "" {
+		sep = ","
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, p := range strings.Split(raw, sep) {
+		tag := strings.TrimSpace(p)
+		if tag == "" || seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		out = append(out, tag)
+	}
+	return out
+}
+
+// extractDate normalizes a date cell to "2006-01-02". With no DateLayout (or the
+// ISO layout) it accepts already-ISO input and rejects anything else. Invalid
+// input yields "".
+func extractDate(raw string, cfg Config) string {
+	if raw == "" {
+		return ""
+	}
+	layout := cfg.DateLayout
+	if layout == "" {
+		layout = "2006-01-02"
+	}
+	tm, err := time.Parse(layout, raw)
+	if err != nil {
+		return ""
+	}
+	return tm.Format("2006-01-02")
+}
+
+// extractHours parses decimal hours. h:mm is rejected at validation, so only the
+// decimal branch is needed here.
+func extractHours(rec []string, idx map[string]int, cfg Config) *float64 {
+	if cfg.Duration == nil {
+		return nil
+	}
+	raw := cell(rec, idx, cfg.Columns.HoursPlayed)
+	if raw == "" {
+		return nil
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil || f <= 0 {
+		return nil
+	}
+	return &f
+}
+
 // extractGame builds one Game from a row, or (zero, false) if the title is empty.
 func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game, bool) {
 	title := cell(rec, idx, cfg.Columns.Title)
@@ -208,6 +290,15 @@ func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game
 	}
 	if r := extractRating(cell(rec, idx, cfg.Columns.Rating), cfg); r != nil {
 		g.PersonalRating = r
+	}
+	g.IsLoved = extractLoved(rec, idx, cfg)
+	g.CreatedAt = extractDate(cell(rec, idx, cfg.Columns.CreatedAt), cfg)
+	g.Tags = extractTags(rec, idx, cfg)
+	if h := extractHours(rec, idx, cfg); h != nil {
+		g.HoursPlayed = h
+	}
+	if n := cell(rec, idx, cfg.Notes.Column); n != "" {
+		g.PersonalNotes = &n
 	}
 	return g, true
 }
