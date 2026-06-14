@@ -479,9 +479,9 @@ controllers:
         resources:
           requests:
             cpu: 100m
-            memory: 128Mi
+            memory: 256Mi
           limits:
-            memory: 128Mi
+            memory: 256Mi
         env:
           PORT: "8000"
           STORAGE_PATH: /app/storage

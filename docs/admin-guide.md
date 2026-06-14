@@ -17,11 +17,12 @@ Pick the option that fits your environment.
 The quickest route to a production-like setup uses the published container image and a database, wired together:
 
 ```bash
+cd deploy/docker
 cp .env.example .env   # fill in DB_ENCRYPTION_KEY, IGDB_CLIENT_ID, IGDB_CLIENT_SECRET, POSTGRES_PASSWORD
-docker compose -f deploy/docker/docker-compose.yml up -d
+docker compose up -d
 ```
 
-On the first launch the app serves the migration page until you apply the schema (see [First run](#first-run)); you can also run the migration as a one-shot with `docker compose -f deploy/docker/docker-compose.yml run --rm app migrate`. Make sure the volumes backing `STORAGE_PATH` and `BACKUP_PATH` persist.
+On the first launch the app serves the migration page until you apply the schema (see [First run](#first-run)); you can also run the migration as a one-shot with `docker compose run --rm app migrate`. The compose file provisions a `nexorious_storage` volume at `/app/storage` (with backups under `/app/storage/backups`), so uploads and backups survive a `docker compose down` and recreate; only `docker compose down -v` removes it.
 
 ### Native packages (Debian/Ubuntu, RHEL/Fedora/Rocky)
 
