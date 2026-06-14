@@ -10,10 +10,20 @@
 #   2. Helm: set alerts.enabled=true and alerts.victoriaLogs.enabled=true — the
 #      chart wraps these groups into a VMRule (VictoriaMetrics Operator).
 #
-# SCOPING: VictoriaLogs has no per-app field in the JSON. If multiple apps ship
-# logs to the same VictoriaLogs, PREPEND an app-scoping filter to every expr
-# (e.g. `app:="nexorious"` if your collector adds an `app` field), or these rules
-# will count other apps' logs too. Thresholds/windows are conservative — tune.
+# INGESTION: every expr runs `| unpack_json` to parse nexorious's JSON log line
+# into the level/category/source/msg fields it filters on. This works whether your
+# shipper parsed the JSON into discrete fields OR shipped the raw line into `_msg`
+# (e.g. Fluent Bit with `_msg_field=log` and no JSON parser): unpack_json reads
+# `_msg` by default and is a no-op on a non-JSON `_msg`, so an already-parsed setup
+# is unaffected. Without it the field filters match zero rows. `count(*)` (not bare
+# `count()`) is the portable stats form across VictoriaLogs versions.
+#
+# SCOPING: VictoriaLogs has no per-app field inside nexorious's JSON. If multiple
+# apps ship to the same VictoriaLogs, PREPEND an app-scoping filter to every expr —
+# e.g. `app:="nexorious" _time:5m | unpack_json | ...` if your collector adds a
+# top-level `app` field (it filters before unpack_json, so it must be a field the
+# collector set, not one inside the app's JSON) — or these rules will count other
+# apps' logs too. Thresholds/windows are conservative — tune.
 #
 # Each group sets interval: 1m (eval cadence); the window is the explicit _time:
 # filter at the start of each expr (it replaces vmalert's auto-injected _time).
@@ -26,7 +36,7 @@ groups:
     interval: 1m
     rules:
       - alert: NexoriousDBUnavailable
-        expr: '_time:5m msg:="database unavailable" | stats count() as logs | filter logs:>0'
+        expr: '_time:5m | unpack_json | filter msg:="database unavailable" | stats count(*) as logs | filter logs:>0'
         for: 2m
         labels:
           severity: critical
@@ -35,7 +45,7 @@ groups:
           description: "{{ $value }} 'database unavailable' log line(s) in 5m — the app is in the DBUnavailable state and is not serving normally."
 
       - alert: NexoriousStartupFailure
-        expr: '_time:5m category:="db" level:="ERROR" (msg:"migrate:" OR msg:"river client init failed") | stats count() as logs | filter logs:>0'
+        expr: '_time:5m | unpack_json | filter category:="db" level:="ERROR" (msg:"migrate:" OR msg:"river client init failed") | stats count(*) as logs | filter logs:>0'
         for: 0s
         labels:
           severity: critical
@@ -48,7 +58,7 @@ groups:
     interval: 1m
     rules:
       - alert: NexoriousPanicRecovered
-        expr: '_time:5m category:="panic" | stats count() as logs | filter logs:>0'
+        expr: '_time:5m | unpack_json | filter category:="panic" | stats count(*) as logs | filter logs:>0'
         for: 0s
         labels:
           severity: critical
@@ -61,7 +71,7 @@ groups:
     interval: 1m
     rules:
       - alert: NexoriousCredentialFailures
-        expr: '_time:15m category:="auth" | stats by (source) count() as logs | filter logs:>3'
+        expr: '_time:15m | unpack_json | filter category:="auth" | stats by (source) count(*) as logs | filter logs:>3'
         for: 0s
         labels:
           severity: warning
@@ -74,7 +84,7 @@ groups:
     interval: 1m
     rules:
       - alert: NexoriousSyncErrors
-        expr: '_time:15m category:="external_api" | stats by (source) count() as logs | filter logs:>3'
+        expr: '_time:15m | unpack_json | filter category:="external_api" | stats by (source) count(*) as logs | filter logs:>3'
         for: 0s
         labels:
           severity: warning
@@ -83,7 +93,7 @@ groups:
           description: "{{ $value }} external_api failures for source '{{ index .Labels \"source\" }}' in 15m."
 
       - alert: NexoriousStuckJobs
-        expr: '_time:15m msg:"marked stale" | stats count() as logs | filter logs:>0'
+        expr: '_time:15m | unpack_json | filter msg:"marked stale" | stats count(*) as logs | filter logs:>0'
         for: 0s
         labels:
           severity: warning
@@ -92,7 +102,7 @@ groups:
           description: "{{ $value }} stale-job reaping event(s) in 15m — jobs were stuck and force-marked failed."
 
       - alert: NexoriousJobDispatchFailures
-        expr: '_time:10m category:="db" level:="ERROR" msg:"enqueue" | stats count() as logs | filter logs:>0'
+        expr: '_time:10m | unpack_json | filter category:="db" level:="ERROR" msg:"enqueue" | stats count(*) as logs | filter logs:>0'
         for: 0s
         labels:
           severity: warning
@@ -105,7 +115,7 @@ groups:
     interval: 1m
     rules:
       - alert: NexoriousHighErrorRate
-        expr: '_time:10m level:="ERROR" | stats count() as logs | filter logs:>10'
+        expr: '_time:10m | unpack_json | filter level:="ERROR" | stats count(*) as logs | filter logs:>10'
         for: 0s
         labels:
           severity: warning
