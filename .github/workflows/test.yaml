@@ -9,8 +9,64 @@ on:
   workflow_call:
 
 jobs:
+  # Detect which areas a pull request touches so the heavy suites below only
+  # run when relevant. On push-to-main, workflow_call (release) or any non-PR
+  # event we validate everything. The `CI Gate` job aggregates the results and
+  # is the single required status check — individual suites report "skipped"
+  # for untouched areas, which the gate treats as a pass.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      helm: ${{ steps.filter.outputs.helm }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          # Full history so the PR base commit is present for the diff below.
+          fetch-depth: 0
+
+      - name: Determine changed areas
+        id: filter
+        run: |
+          set -euo pipefail
+          go=false
+          frontend=false
+          helm=false
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            # push to main, workflow_call (release) or manual run — validate all.
+            go=true
+            frontend=true
+            helm=true
+          else
+            BASE='${{ github.event.pull_request.base.sha }}'
+            CHANGED="$(git diff --name-only "$BASE" HEAD)"
+            echo "Changed files:"
+            echo "$CHANGED"
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              case "$f" in
+                # CI / build infra changes re-validate everything.
+                .github/*) go=true; frontend=true; helm=true ;;
+                *.go|go.mod|go.sum|.golangci.yml|internal/db/migrations/*) go=true ;;
+                ui/frontend/*) frontend=true ;;
+                deploy/helm/*) helm=true ;;
+              esac
+            done <<< "$CHANGED"
+          fi
+          echo "Resolved areas: go=$go frontend=$frontend helm=$helm"
+          {
+            echo "go=$go"
+            echo "frontend=$frontend"
+            echo "helm=$helm"
+          } >> "$GITHUB_OUTPUT"
+
   go-tests:
     name: Go Tests
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -82,6 +138,8 @@ jobs:
 
   go-lint:
     name: Go Lint
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -100,6 +158,8 @@ jobs:
 
   frontend-tests:
     name: Frontend Tests
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -121,6 +181,8 @@ jobs:
 
   frontend-checks:
     name: Frontend Checks
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -145,6 +207,8 @@ jobs:
 
   helm-lint:
     name: Helm Lint
+    needs: changes
+    if: needs.changes.outputs.helm == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -187,3 +251,32 @@ jobs:
               --set serviceMonitor.main.enabled=true \
               --set dashboard.enabled=true
           done
+
+  # Single required status check. Passes when every suite either succeeded or
+  # was skipped (area untouched); fails if any suite failed or was cancelled.
+  # Branch protection requires only this job, so path-skipped suites never
+  # block a merge.
+  ci-gate:
+    name: CI Gate
+    needs:
+      - changes
+      - go-tests
+      - go-lint
+      - frontend-tests
+      - frontend-checks
+      - helm-lint
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify no required job failed
+        run: |
+          set -euo pipefail
+          results='${{ join(needs.*.result, ' ') }}'
+          echo "Upstream job results: $results"
+          for r in $results; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::A required job did not pass (result: $r)."
+              exit 1
+            fi
+          done
+          echo "All required jobs passed or were skipped."
