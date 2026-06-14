@@ -225,7 +225,8 @@
           "type": "object",
           "description": "grafana-operator instanceSelector (crd mode).",
           "properties": { "matchLabels": { "type": "object", "additionalProperties": { "type": "string" } } }
-        }
+        },
+        "allowCrossNamespaceImport": { "type": "boolean", "description": "Allow grafana-operator to import the dashboard across namespaces (crd mode)." }
       }
     },
     "alerts": {
