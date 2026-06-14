@@ -115,6 +115,7 @@ function BackupPage() {
   const { user: currentUser } = useAuth();
   const [config, setConfig] = useState<BackupConfig | null>(null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
+  const [backupsLoading, setBackupsLoading] = useState(true);
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
@@ -136,15 +137,12 @@ function BackupPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadConfirmed, setUploadConfirmed] = useState(false);
 
-  const loadData = useCallback(async () => {
+  // Load config independently so the page shell, schedule, and actions cards can
+  // render without waiting on the (potentially slow) backup listing.
+  const loadConfig = useCallback(async () => {
     try {
-      const [configData, backupsData] = await Promise.all([
-        backupApi.getBackupConfig(),
-        backupApi.listBackups(),
-      ]);
+      const configData = await backupApi.getBackupConfig();
       setConfig(configData);
-      setBackups(backupsData);
-
       // Initialize form with config values
       setSchedule(configData.schedule);
       setScheduleTime(configData.scheduleTime);
@@ -152,8 +150,22 @@ function BackupPage() {
       setRetentionMode(configData.retentionMode);
       setRetentionValue(configData.retentionValue);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load backup data';
+      const message = err instanceof Error ? err.message : 'Failed to load backup configuration';
       toast.error(message);
+    }
+  }, []);
+
+  // Load the backup list independently; only the Available Backups card waits on it.
+  const loadBackups = useCallback(async () => {
+    setBackupsLoading(true);
+    try {
+      const backupsData = await backupApi.listBackups();
+      setBackups(backupsData);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load backups';
+      toast.error(message);
+    } finally {
+      setBackupsLoading(false);
     }
   }, []);
 
@@ -164,29 +176,15 @@ function BackupPage() {
     }
   }, [currentUser, navigate]);
 
-  // Initial data load — inline async IIFE so setState runs after await, not synchronously
+  // Initial data load — fire both fetches concurrently but let them resolve
+  // independently so config (fast) doesn't block on the backup list (slow).
   const initialLoadDoneRef = useRef(false);
   useEffect(() => {
     if (!currentUser?.isAdmin || initialLoadDoneRef.current) return;
     initialLoadDoneRef.current = true;
-    void (async () => {
-      try {
-        const [configData, backupsData] = await Promise.all([
-          backupApi.getBackupConfig(),
-          backupApi.listBackups(),
-        ]);
-        setConfig(configData);
-        setBackups(backupsData);
-        setSchedule(configData.schedule);
-        setScheduleTime(configData.scheduleTime);
-        setScheduleDay(configData.scheduleDay ?? 0);
-        setRetentionMode(configData.retentionMode);
-        setRetentionValue(configData.retentionValue);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to load backup data');
-      }
-    })();
-  }, [currentUser?.isAdmin]);
+    void loadConfig();
+    void loadBackups();
+  }, [currentUser?.isAdmin, loadConfig, loadBackups]);
 
   const handleSaveConfig = async () => {
     try {
@@ -213,8 +211,8 @@ function BackupPage() {
       setIsCreatingBackup(true);
       const result = await backupApi.createBackup();
       toast.success(result.message);
-      // Reload backups list after a short delay
-      setTimeout(() => loadData(), 2000);
+      // Reload backups list after a short delay (config is unaffected by create)
+      setTimeout(() => void loadBackups(), 2000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create backup';
       toast.error(message);
@@ -263,7 +261,8 @@ function BackupPage() {
         setTimeout(() => navigate({ to: '/login' }), 2000);
       } else {
         toast.success(result.message);
-        loadData();
+        void loadConfig();
+        void loadBackups();
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to restore backup';
@@ -285,7 +284,8 @@ function BackupPage() {
         setTimeout(() => navigate({ to: '/login' }), 2000);
       } else {
         toast.success(result.message);
-        loadData();
+        void loadConfig();
+        void loadBackups();
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to restore from upload';
@@ -492,11 +492,19 @@ function BackupPage() {
             Available Backups
           </CardTitle>
           <CardDescription>
-            {backups.length} backup{backups.length !== 1 ? 's' : ''} available
+            {backupsLoading
+              ? 'Loading backups…'
+              : `${backups.length} backup${backups.length !== 1 ? 's' : ''} available`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {backups.length === 0 ? (
+          {backupsLoading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : backups.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
               <DatabaseBackup className="mb-4 h-12 w-12 opacity-50" />
               <p>No backups yet</p>
