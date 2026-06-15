@@ -247,17 +247,23 @@ acquired_date, hours)` is fully re-linked to the destination instance's
 storefront records on the next sync, without carrying any instance-local
 identifiers in the file. See [`sync.md`](./sync.md) § "Manually added games".
 
-## CSV export (separate convenience format)
+## CSV export and import
 
-Alongside the JSON interchange format, Nexorious can export a **CSV** file. CSV
-is a **human-oriented, export-only convenience format**: it is *not* governed by
-this specification, has **no import counterpart**, and is therefore **not
-round-trippable**. Its columns (`title`, `igdb_id`, `play_status`,
-`personal_rating`, `is_loved`, `hours_played`, `personal_notes`, `platforms`,
-`tags`, `created_at`, `updated_at`) flatten per-platform data into
-semicolon-joined cells and a game-level `hours_played` total for readability. The
-`release_year` column was removed (release info is IGDB-sourced). Use the JSON
-format for moving a library between instances.
+Alongside the JSON interchange format, Nexorious can export a **CSV** file and
+import a user-mapped CSV. CSV is a **human-oriented convenience format**: it is
+*not* governed by this specification and flattens per-platform data into
+semicolon-joined cells with a game-level `hours_played` total for readability.
+Its columns are `title`, `igdb_id`, `play_status`, `personal_rating`,
+`is_loved`, `hours_played`, `personal_notes`, `platforms`, `tags`, `created_at`,
+and `updated_at` (the `release_year` column was removed — release info is
+IGDB-sourced).
+
+CSV re-import is **partial, not lossless**: per-platform detail and storefront
+links are flattened on export and cannot be fully reconstructed. The one piece
+that does round-trip cleanly is game identity — mapping the exported `igdb_id`
+column on import hydrates each game directly from IGDB and skips title matching.
+For moving a full library between instances, use the JSON format, which
+round-trips losslessly.
 
 ## Versioning
 
