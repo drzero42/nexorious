@@ -7,6 +7,7 @@ describe('csv-mapping helpers', () => {
     const m = emptyCsvMapping();
     expect(m.columns).toEqual({
       title: '',
+      igdb_id: '',
       platform: '',
       storefront: '',
       rating: '',
@@ -62,5 +63,9 @@ describe('csv-mapping helpers', () => {
     // Clear platform -> 'System' returns to the pool immediately.
     m.columns.platform = '';
     expect(availableHeaders(headers, m, '')).toEqual(['System']);
+  });
+
+  it('emptyCsvMapping includes an igdb_id column slot', () => {
+    expect(emptyCsvMapping().columns.igdb_id).toBe('');
   });
 });

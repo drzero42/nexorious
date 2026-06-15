@@ -67,6 +67,7 @@ describe('CsvMappingDialog', () => {
     expect(onImport).toHaveBeenCalledWith({
       columns: {
         title: 'Name',
+        igdb_id: '',
         platform: '',
         storefront: '',
         rating: '',
@@ -88,6 +89,7 @@ describe('CsvMappingDialog', () => {
       suggested_mapping: {
         columns: {
           title: 'Name',
+          igdb_id: '',
           platform: '',
           storefront: '',
           rating: '',

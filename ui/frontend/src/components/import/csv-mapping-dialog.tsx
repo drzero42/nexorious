@@ -27,6 +27,7 @@ import { emptyCsvMapping, initStatusValueMap, availableHeaders } from './csv-map
 const NONE = '__none__';
 
 const OPTIONAL_FIELDS = [
+  { key: 'igdb_id', label: 'IGDB ID' },
   { key: 'platform', label: 'Platform' },
   { key: 'storefront', label: 'Storefront' },
   { key: 'rating', label: 'Rating' },
