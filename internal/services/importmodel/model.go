@@ -15,6 +15,7 @@ var ErrInvalidSignature = errors.New("file does not match the expected source fo
 // is marshalled verbatim into job_item.source_metadata.
 type Game struct {
 	Title          string     `json:"title"`
+	IGDBID         *int32     `json:"igdb_id,omitempty"` // when set (>0), import hydrates directly and skips title matching
 	PlayStatus     string     `json:"play_status"`
 	IsLoved        bool       `json:"is_loved"`
 	PersonalRating *int32     `json:"personal_rating,omitempty"`
