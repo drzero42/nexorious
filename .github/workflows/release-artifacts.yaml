@@ -181,6 +181,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -241,6 +243,7 @@ jobs:
         run: docker run --rm nexorious:pr-test version
 
       - name: Build and push image (release — multi-arch)
+        id: build
         if: github.event_name == 'release'
         uses: docker/build-push-action@v7
         with:
@@ -253,6 +256,32 @@ jobs:
           tags: |
             ghcr.io/drzero42/nexorious:${{ steps.v.outputs.value }}
             ghcr.io/drzero42/nexorious:latest
+
+      - name: Attest image provenance
+        if: github.event_name == 'release'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/drzero42/nexorious
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate image SBOM
+        if: github.event_name == 'release'
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: ghcr.io/drzero42/nexorious@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: image-sbom.spdx.json
+          upload-artifact: false
+
+      - name: Attest image SBOM
+        if: github.event_name == 'release'
+        uses: actions/attest-sbom@v4
+        with:
+          subject-name: ghcr.io/drzero42/nexorious
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: image-sbom.spdx.json
+          push-to-registry: true
 
   upload:
     name: Upload release assets
