@@ -420,9 +420,9 @@ func TestParse_IGDBIDExtracted(t *testing.T) {
 }
 
 func TestParse_IGDBIDInvalidLeftNil(t *testing.T) {
-	// blank, non-numeric, zero, and negative all yield a nil IGDBID -> the row
-	// falls back to title matching downstream.
-	cases := []string{"", "abc", "0", "-3"}
+	// blank, non-numeric, zero, negative, and out-of-int32-range all yield a nil
+	// IGDBID -> the row falls back to title matching downstream.
+	cases := []string{"", "abc", "0", "-3", "5000000000"}
 	for _, v := range cases {
 		raw := []byte("title,igdb_id\nAnodyne," + v + "\n")
 		cfg := Config{Columns: ColumnMap{Title: "title", IGDBID: "igdb_id"}}

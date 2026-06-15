@@ -288,18 +288,19 @@ func extractHours(rec []string, idx map[string]int, cfg Config) *float64 {
 }
 
 // extractIGDBID parses the configured IGDB-id cell into a positive int32. A
-// missing/unconfigured column, blank, non-numeric, zero, or negative value
-// yields nil — such a row falls back to title matching downstream.
+// missing/unconfigured column, blank, non-numeric, zero, negative, or
+// out-of-int32-range value yields nil — such a row falls back to title matching
+// downstream.
 func extractIGDBID(rec []string, idx map[string]int, cfg Config) *int32 {
 	raw := cell(rec, idx, cfg.Columns.IGDBID)
 	if raw == "" {
 		return nil
 	}
 	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
+	if err != nil || n <= 0 || n > math.MaxInt32 {
 		return nil
 	}
-	v := int32(n) //nolint:gosec // IGDB ids are positive and fit int32
+	v := int32(n) //nolint:gosec // guarded above: 0 < n <= MaxInt32
 	return &v
 }
 
