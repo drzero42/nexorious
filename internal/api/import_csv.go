@@ -23,6 +23,7 @@ import (
 type csvMapping struct {
 	Columns struct {
 		Title        string `json:"title"`
+		IGDBID       string `json:"igdb_id"`
 		Platform     string `json:"platform"`
 		Storefront   string `json:"storefront"`
 		Rating       string `json:"rating"`
@@ -50,9 +51,10 @@ func buildCSVConfig(m csvMapping) (csvmap.Config, error) {
 
 	cfg := csvmap.Config{
 		Columns: csvmap.ColumnMap{
-			Title: m.Columns.Title,
-			Tags:  m.Columns.Tags,
-			Loved: m.Columns.Loved,
+			Title:  m.Columns.Title,
+			IGDBID: m.Columns.IGDBID,
+			Tags:   m.Columns.Tags,
+			Loved:  m.Columns.Loved,
 		},
 		Grouping: csvmap.GroupingConfig{MergeByTitle: m.MergeByTitle},
 	}
