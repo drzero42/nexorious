@@ -99,6 +99,14 @@ func TestGuessStatusValueMap_Empty(t *testing.T) {
 	}
 }
 
+func TestGuessColumns_IGDBID(t *testing.T) {
+	// The Nexorious CSV export header is literally "igdb_id".
+	m := GuessColumns([]string{"title", "igdb_id", "play_status"})
+	if m.Columns.IGDBID != "igdb_id" {
+		t.Errorf("IGDBID guess = %q, want %q", m.Columns.IGDBID, "igdb_id")
+	}
+}
+
 func TestGuessColumns_ContainsPassMultipleFields(t *testing.T) {
 	// Headers chosen so their normalized forms only match via substring-contains,
 	// not exact-normalized, and don't collide with any higher-priority field's aliases.

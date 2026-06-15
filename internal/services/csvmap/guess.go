@@ -12,6 +12,7 @@ import (
 type SuggestedMapping struct {
 	Columns struct {
 		Title        string `json:"title"`
+		IGDBID       string `json:"igdb_id"`
 		Platform     string `json:"platform"`
 		Storefront   string `json:"storefront"`
 		Rating       string `json:"rating"`
@@ -50,6 +51,7 @@ var fieldAliases = []struct {
 	aliases []string
 }{
 	{func(m *SuggestedMapping, v string) { m.Columns.Title = v }, []string{"name", "title", "game", "gamename", "gametitle"}},
+	{func(m *SuggestedMapping, v string) { m.Columns.IGDBID = v }, []string{"igdbid", "igdb"}},
 	{func(m *SuggestedMapping, v string) { m.Status.Column = v }, []string{"status", "playstatus", "state", "progress", "completionstatus"}},
 	{func(m *SuggestedMapping, v string) { m.Columns.Platform = v }, []string{"platform", "system", "console", "device"}},
 	{func(m *SuggestedMapping, v string) { m.Columns.Storefront = v }, []string{"storefront", "store", "source", "launcher", "service"}},
