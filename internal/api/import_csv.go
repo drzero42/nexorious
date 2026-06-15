@@ -1,9 +1,16 @@
 package api
 
 import (
+	"bytes"
+	"encoding/csv"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
+	"github.com/labstack/echo/v5"
+
+	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/services/csvmap"
 )
 
@@ -85,4 +92,112 @@ func buildCSVConfig(m csvMapping) (csvmap.Config, error) {
 	}
 
 	return cfg, nil
+}
+
+const csvDistinctCap = 50
+
+// csvColumnInfo is one column's name plus a capped set of its distinct non-empty
+// values, used to drive the mapping dialog's status-value rows.
+type csvColumnInfo struct {
+	Name              string   `json:"name"`
+	DistinctValues    []string `json:"distinct_values"`
+	DistinctTruncated bool     `json:"distinct_truncated"`
+}
+
+type csvInspectResponse struct {
+	Headers  []string        `json:"headers"`
+	RowCount int             `json:"row_count"`
+	Columns  []csvColumnInfo `json:"columns"`
+}
+
+// readUploadFile parses the multipart form and reads the "file" field, enforcing
+// the 50 MB limit. Returns the bytes or an *echo.HTTPError.
+func (h *ImportHandler) readUploadFile(c *echo.Context) ([]byte, error) {
+	if err := c.Request().ParseMultipartForm(maxImportBodyBytes); err != nil {
+		return nil, echo.NewHTTPError(http.StatusBadRequest, "failed to parse multipart form")
+	}
+	file, _, err := c.Request().FormFile("file")
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusBadRequest, "missing file field")
+	}
+	defer func() { _ = file.Close() }()
+	lr := io.LimitReader(file, maxImportBodyBytes+1)
+	body, err := io.ReadAll(lr)
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to read file")
+	}
+	if len(body) > maxImportBodyBytes {
+		return nil, echo.NewHTTPError(http.StatusRequestEntityTooLarge, "file exceeds 50 MB limit")
+	}
+	return body, nil
+}
+
+// csvIGDBGuard returns a 400 *echo.HTTPError when IGDB is not configured.
+func (h *ImportHandler) csvIGDBGuard() error {
+	if h.igdbClient == nil || !h.igdbClient.Configured() {
+		return echo.NewHTTPError(http.StatusBadRequest, "IGDB must be configured to import a CSV collection")
+	}
+	return nil
+}
+
+// HandleImportCSVInspect handles POST /api/import/csv/inspect. It parses the
+// uploaded CSV and returns headers, data-row count, and per-column distinct
+// values (capped) to drive the mapping dialog.
+func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	if err := h.csvIGDBGuard(); err != nil {
+		return err
+	}
+	body, herr := h.readUploadFile(c)
+	if herr != nil {
+		return herr
+	}
+
+	r := csv.NewReader(bytes.NewReader(body))
+	r.FieldsPerRecord = -1
+	header, err := r.Read()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "could not read CSV header")
+	}
+
+	cols := make([]csvColumnInfo, len(header))
+	seen := make([]map[string]bool, len(header))
+	for i, name := range header {
+		cols[i] = csvColumnInfo{Name: name, DistinctValues: []string{}}
+		seen[i] = map[string]bool{}
+	}
+
+	rowCount := 0
+	for {
+		rec, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
+		}
+		rowCount++
+		for i := range header {
+			if i >= len(rec) {
+				continue
+			}
+			v := strings.TrimSpace(rec[i])
+			if v == "" || cols[i].DistinctTruncated || seen[i][v] {
+				continue
+			}
+			if len(cols[i].DistinctValues) < csvDistinctCap {
+				seen[i][v] = true
+				cols[i].DistinctValues = append(cols[i].DistinctValues, v)
+			} else {
+				// A distinct value beyond the cap: flag truncation and stop
+				// tracking this column so `seen` stays bounded to the cap.
+				cols[i].DistinctTruncated = true
+			}
+		}
+	}
+
+	return c.JSON(http.StatusOK, csvInspectResponse{Headers: header, RowCount: rowCount, Columns: cols})
 }
