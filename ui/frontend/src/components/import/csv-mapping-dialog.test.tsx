@@ -117,5 +117,12 @@ describe('CsvMappingDialog', () => {
     expect(screen.getByRole('combobox', { name: 'Title column' })).toHaveTextContent('Name');
     // Status column guessed -> the status-value section is already shown.
     expect(screen.getByText('2 · Map status values')).toBeInTheDocument();
+    // Seeded status value_map is reflected (not reset to Not Started on mount).
+    expect(screen.getByRole('combobox', { name: 'Status for Beaten' })).toHaveTextContent(
+      'Completed',
+    );
+    expect(screen.getByRole('combobox', { name: 'Status for Playing' })).toHaveTextContent(
+      'In Progress',
+    );
   });
 });
