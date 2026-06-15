@@ -142,3 +142,19 @@ Per the project test policy these cover security-irrelevant but genuinely non-ob
 
 - **Platform / `Format` vocabulary is fixture-derived.** Only the values present in a real export are verified; the maps are extensible, and any unseen value falls back gracefully (platform dropped with a warning, or storefront omitted). `docs/completionator-import.md` records this.
 - **`Now Playing` / `Backlogged` flags are not honoured** for play-status (see decision 1) — a deliberate simple-subset trade-off, revisitable if/when `StatusFlags` lands in #1016.
+
+## Addendum (2026-06-15): manual format selection rolled in
+
+The original scope left the preset reachable only in theory — nothing referenced `Completionator()`, so a user had no way to say "this is a Completionator CSV." The manual column-mapping dialog (#1004) parses the file post-fix but **cannot apply the preset's platform/storefront value→slug maps** (the flat `csvMapping` DTO has no value-map field), so platforms import unmapped. We therefore roll a **manual format selector** into this PR. (Auto-detection by signature remains #1015; this is the manual escape hatch and the registry #1015 builds on.)
+
+**UX:** a **Format** dropdown at the top of the existing CSV mapping dialog — `Generic CSV` (default) plus each registered preset (`Completionator`). Choosing `Generic CSV` shows today's mapping form unchanged. Choosing a preset **collapses the mapping form** (there is nothing to map) and shows a short note; Import then sends the preset slug.
+
+**Crux:** a preset import uses the **server-side `Config`**, never a client-reconstructed mapping — otherwise the slug maps are lost. So the request carries `format=<slug>` instead of `mapping`, and the handler runs `csvmap.Parse(body, preset)`.
+
+**Components:**
+- `csvmap` preset registry: `Preset{Slug, DisplayName, Config}`, `Presets() []Preset`, `PresetBySlug(slug) (Config, bool)`. Completionator registered. (#1015 reuses this for auto-detect.)
+- `POST /api/import/csv`: optional `format` field. Known slug → registry `Config` (ignore `mapping`); empty/`generic` → existing `buildCSVConfig(mapping)`. Unknown slug → 400. A preset whose header **signature** fails → 400 "this file does not match the selected format" (the manual choice is validated against the file, preventing silent mis-mapping).
+- `POST /api/import/csv/inspect`: response gains `presets: [{slug, name}]` (from the registry) so the dropdown is server-driven.
+- Frontend: `Format` select in `csv-mapping-dialog.tsx`; conditional rendering; `CsvInspectResponse.presets`; `importCsv(file, format, mapping)` + hook; route `handleCsvImport` wiring.
+
+**Decision — signature is enforced for a manual pick.** Picking "Completionator" then uploading a non-Completionator file is rejected rather than mis-mapped. Reliable for Completionator's 5-column signature; revisit if a real export legitimately fails it.

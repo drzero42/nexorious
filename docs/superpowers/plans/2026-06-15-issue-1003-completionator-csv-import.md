@@ -769,3 +769,565 @@ Expected: no output, exit 0.
 - **Type consistency:** `ReadRecords([]byte) ([][]string, error)` is used identically in `parse.go` and `import_csv.go`; `Completionator() Config` matches the `Config` shape in `config.go` (simple subset only — passes `validate`).
 - Task 4's test asserts positionally (`games[0..2]`) — `Parse` preserves first-seen order, and the three fixture titles are distinct so `MergeByTitle` produces exactly three games in fixture order.
 ```
+
+---
+
+# Added scope: manual format selection (Tasks 6–9)
+
+**Goal:** Let a user pick a known CSV format (`Generic CSV` / `Completionator`) in the import dialog, so the Completionator preset is actually reachable. A preset import uses the **server-side `Config`** (preserving the platform/storefront slug maps), not a client-rebuilt mapping. Auto-detection stays #1015; this adds the manual selector + the shared registry #1015 will reuse.
+
+**Spec:** the "Addendum (2026-06-15): manual format selection rolled in" section of the spec.
+
+### Added file structure
+- Create `internal/services/csvmap/presets.go` (+ `presets_test.go`) — the preset registry.
+- Modify `internal/api/import_csv.go` (+ `import_csv_test.go`) — `format` field on import, presets on inspect.
+- Modify `ui/frontend/src/types/import-export.ts` — `CsvInspectResponse.presets`.
+- Modify `ui/frontend/src/api/import-export.ts` — `importCsv(file, format, mapping)`.
+- Modify `ui/frontend/src/hooks/use-import-export.ts` — `useImportCsv` carries `format`.
+- Modify `ui/frontend/src/components/import/csv-mapping-dialog.tsx` (+ `.test.tsx`) — the Format selector + conditional form.
+- Modify `ui/frontend/src/routes/_authenticated/import-export.tsx` — `handleCsvImport` wiring.
+
+---
+
+## Task 6: Backend preset registry
+
+**Files:**
+- Create: `internal/services/csvmap/presets.go`
+- Test: `internal/services/csvmap/presets_test.go`
+
+- [ ] **Step 1: Write the failing test** — Create `internal/services/csvmap/presets_test.go`:
+
+```go
+package csvmap
+
+import "testing"
+
+func TestPresets_IncludesCompletionator(t *testing.T) {
+	var found *Preset
+	for i := range presetList {
+		if presetList[i].Slug == "completionator" {
+			found = &presetList[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a 'completionator' preset in the registry")
+	}
+	if found.DisplayName != "Completionator" {
+		t.Errorf("display name = %q, want Completionator", found.DisplayName)
+	}
+	if found.Config.Columns.Title != "Name" {
+		t.Errorf("preset Config not wired to Completionator() (title col = %q)", found.Config.Columns.Title)
+	}
+}
+
+func TestPresetBySlug(t *testing.T) {
+	cfg, ok := PresetBySlug("completionator")
+	if !ok {
+		t.Fatal("PresetBySlug(completionator) ok = false, want true")
+	}
+	if cfg.Columns.Title != "Name" {
+		t.Errorf("returned Config is not Completionator (title col = %q)", cfg.Columns.Title)
+	}
+	if _, ok := PresetBySlug("nope"); ok {
+		t.Error("PresetBySlug(nope) ok = true, want false")
+	}
+	if _, ok := PresetBySlug(""); ok {
+		t.Error("PresetBySlug(empty) ok = true, want false")
+	}
+}
+
+func TestPresets_ReturnsCopy(t *testing.T) {
+	got := Presets()
+	if len(got) != len(presetList) {
+		t.Fatalf("Presets() len = %d, want %d", len(got), len(presetList))
+	}
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails** — `go test ./internal/services/csvmap/ -run 'TestPreset' -v` (expect: undefined `presetList`/`PresetBySlug`/`Presets`).
+
+- [ ] **Step 3: Write the implementation** — Create `internal/services/csvmap/presets.go`:
+
+```go
+package csvmap
+
+// Preset is a named CSV source whose mapping is baked in as a Config plus a
+// header signature. Manual format selection (this issue) lists these; auto-detect
+// (#1015) will match an upload's header against each Config's Signature.
+type Preset struct {
+	Slug        string // stable id used on the wire (e.g. "completionator")
+	DisplayName string // shown in the import dialog
+	Config      Config
+}
+
+// presetList is the registry of known CSV source presets.
+var presetList = []Preset{
+	{Slug: "completionator", DisplayName: "Completionator", Config: Completionator()},
+}
+
+// Presets returns the registered presets (a copy; callers must not mutate the registry).
+func Presets() []Preset {
+	out := make([]Preset, len(presetList))
+	copy(out, presetList)
+	return out
+}
+
+// PresetBySlug returns the Config for a preset slug. ok is false for an unknown
+// or empty slug.
+func PresetBySlug(slug string) (Config, bool) {
+	for i := range presetList {
+		if presetList[i].Slug == slug {
+			return presetList[i].Config, true
+		}
+	}
+	return Config{}, false
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes** — `go test ./internal/services/csvmap/ -run 'TestPreset' -v` (expect PASS).
+
+- [ ] **Step 5: Commit:**
+
+```bash
+git add internal/services/csvmap/presets.go internal/services/csvmap/presets_test.go
+git commit -m "feat: csvmap preset registry (Completionator)"
+```
+
+---
+
+## Task 7: Backend — `format` on import, presets on inspect
+
+**Files:**
+- Modify: `internal/api/import_csv.go`
+- Test: `internal/api/import_csv_test.go`
+
+- [ ] **Step 1: Write the failing tests** — append to `internal/api/import_csv_test.go`. The `completionatorCSV` fixture is a small valid Completionator export (24 columns, fully quote-wrapped):
+
+```go
+const completionatorCSV = `"Name","Edition","Platform","Format","Region","Now Playing","Backlogged","Ownership Status","Progress Status","Est. Value","Amt. Paid","Tags","Box/Case","Cart/Disc","Manual","Extras","Acquisition Type","Acquisition Source","Acquisition Date","Rating","Initial Release Date","Item Release Date","Added On","Genre"
+"A Hat in Time","","PC / Windows","Digital (Steam)","EU","No","Yes","Owned","Incomplete","","","","","","","","Purchase","","","10","10/5/2017","","1/17/2022","Platformer"
+`
+
+func TestImportCSVInspect_ReturnsPresets(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-presets")
+
+	rec := postMultipartFile(t, e, "/api/import/csv/inspect", "x.csv", []byte("Name,Status\nA,Beaten\n"), token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var resp struct {
+		Presets []struct {
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		} `json:"presets"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	found := false
+	for _, p := range resp.Presets {
+		if p.Slug == "completionator" && p.Name == "Completionator" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("presets = %+v, want one {completionator, Completionator}", resp.Presets)
+	}
+}
+
+func TestImportCSV_PresetFormat_UsesServerConfig(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-preset-import")
+
+	// Post the file with format=completionator and NO mapping field.
+	rec := postCSVImportFormat(t, e, "completionator.csv", []byte(completionatorCSV), "completionator", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var resp ImportJobCreatedFields
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.JobID == "" {
+		t.Error("expected a job_id")
+	}
+}
+
+func TestImportCSV_UnknownFormat_400(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-bad-format")
+
+	rec := postCSVImportFormat(t, e, "x.csv", []byte(completionatorCSV), "bogus", token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestImportCSV_PresetFormat_SignatureMismatch_400(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-sig-mismatch")
+
+	// A non-Completionator header with format=completionator must be rejected.
+	rec := postCSVImportFormat(t, e, "x.csv", []byte("Title,Console\nCeleste,PC\n"), "completionator", token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+	}
+}
+```
+
+Add this multipart helper (mirrors `postCSVImport` but sends a `format` field instead of `mapping`) near the existing `postCSVImport` helper in the test file:
+
+```go
+// postCSVImportFormat posts a CSV with a "format" form field (preset path), no mapping.
+func postCSVImportFormat(t *testing.T, e interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, filename string, fileContent []byte, format, sessionID string) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatalf("createFormFile: %v", err)
+	}
+	if _, err := fw.Write(fileContent); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := mw.WriteField("format", format); err != nil {
+		t.Fatalf("write format: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("close multipart: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/import/csv", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if sessionID != "" {
+		req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
+	}
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec
+}
+
+// ImportJobCreatedFields is the subset of the import response the preset test asserts.
+type ImportJobCreatedFields struct {
+	JobID string `json:"job_id"`
+}
+```
+
+(If `bytes` / `mime/multipart` / `net/http/httptest` are not yet imported in the test file, add them — the existing `postCSVImport` helper already uses them, so they should be present.)
+
+- [ ] **Step 2: Run tests to verify they fail** — `go test ./internal/api/ -run 'TestImportCSV_PresetFormat|TestImportCSV_UnknownFormat|TestImportCSVInspect_ReturnsPresets' -v` (expect FAIL: inspect has no `presets`; the handler ignores `format`).
+
+- [ ] **Step 3a: Add presets to the inspect response.** In `internal/api/import_csv.go`, add a preset DTO and field. Add near `csvInspectResponse`:
+
+```go
+// csvPresetInfo is one selectable known CSV format for the import dialog dropdown.
+type csvPresetInfo struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+```
+
+Add `Presets []csvPresetInfo `json:"presets"`` to the `csvInspectResponse` struct. Then, in `HandleImportCSVInspect`, build the list and include it in the returned `csvInspectResponse`. Just before the final `return c.JSON(http.StatusOK, csvInspectResponse{...})`, add:
+
+```go
+	presets := make([]csvPresetInfo, 0)
+	for _, p := range csvmap.Presets() {
+		presets = append(presets, csvPresetInfo{Slug: p.Slug, Name: p.DisplayName})
+	}
+```
+
+and add `Presets: presets,` to the `csvInspectResponse{...}` literal.
+
+- [ ] **Step 3b: Handle `format` on import.** In `HandleImportCSV` (in the same file), replace the block that currently reads the `mapping` field and builds `cfg` (from `mappingJSON := c.Request().FormValue("mapping")` through the `cfg, err := buildCSVConfig(mapping)` / its error check) with:
+
+```go
+	format := strings.TrimSpace(c.Request().FormValue("format"))
+	var cfg csvmap.Config
+	if format != "" && format != "generic" {
+		preset, ok := csvmap.PresetBySlug(format)
+		if !ok {
+			return echo.NewHTTPError(http.StatusBadRequest, "unknown CSV format: "+format)
+		}
+		cfg = preset
+	} else {
+		mappingJSON := c.Request().FormValue("mapping")
+		if mappingJSON == "" {
+			return echo.NewHTTPError(http.StatusBadRequest, "missing mapping field")
+		}
+		var mapping csvMapping
+		if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid mapping JSON")
+		}
+		built, err := buildCSVConfig(mapping)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		cfg = built
+	}
+```
+
+Then, where the handler currently calls `csvmap.Parse(body, cfg)` and checks the error, make the signature-mismatch case a clear message. Replace the existing parse-error check:
+
+```go
+	games, err := csvmap.Parse(body, cfg)
+	if err != nil {
+		if errors.Is(err, importmodel.ErrInvalidSignature) {
+			return echo.NewHTTPError(http.StatusBadRequest, "this file does not match the selected format")
+		}
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
+	}
+```
+
+Add imports to `internal/api/import_csv.go`: `"errors"` and `"github.com/drzero42/nexorious/internal/services/importmodel"` (keep the existing imports; `strings`, `json`, `csvmap` are already imported).
+
+- [ ] **Step 4: Run the tests** — `go test ./internal/api/ -run 'TestImportCSV' -v` (expect PASS: the new four + all existing CSV import/inspect tests). Requires the testcontainer.
+
+- [ ] **Step 5: Commit:**
+
+```bash
+git add internal/api/import_csv.go internal/api/import_csv_test.go
+git commit -m "feat: format selection on CSV import + presets on inspect"
+```
+
+---
+
+## Task 8: Frontend data layer (types, api, hook)
+
+**Files:**
+- Modify: `ui/frontend/src/types/import-export.ts`
+- Modify: `ui/frontend/src/api/import-export.ts`
+- Modify: `ui/frontend/src/hooks/use-import-export.ts`
+
+- [ ] **Step 1: Extend the inspect type.** In `ui/frontend/src/types/import-export.ts`, add a preset type and field. Add above `CsvInspectResponse`:
+
+```ts
+export interface CsvPresetInfo {
+  slug: string;
+  name: string;
+}
+```
+
+Add `presets?: CsvPresetInfo[];` to the `CsvInspectResponse` interface (after `suggested_mapping?`).
+
+- [ ] **Step 2: Update the import API fn.** In `ui/frontend/src/api/import-export.ts`, replace the `importCsv` function with:
+
+```ts
+/**
+ * Import a CSV. For the generic path, `format` is 'generic' and the user-built
+ * `mapping` is sent. For a preset (e.g. 'completionator'), the slug is sent and
+ * the server applies the preset Config (the mapping is ignored).
+ */
+export async function importCsv(
+  file: File,
+  format: string,
+  mapping: CsvMapping,
+): Promise<ImportJobCreatedResponse> {
+  const extraFields =
+    format === 'generic'
+      ? { mapping: JSON.stringify(mapping) }
+      : { format };
+  return apiUploadFile<ImportJobCreatedResponse>('/import/csv', file, 'file', extraFields);
+}
+```
+
+- [ ] **Step 3: Update the hook.** In `ui/frontend/src/hooks/use-import-export.ts`, replace `useImportCsv` with:
+
+```ts
+/** Import a CSV with a chosen format ('generic' + a user mapping, or a preset slug). */
+export function useImportCsv() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    ImportJobCreatedResponse,
+    Error,
+    { file: File; format: string; mapping: CsvMapping }
+  >({
+    mutationFn: ({ file, format, mapping }) => importExportApi.importCsv(file, format, mapping),
+    onSuccess: (result) => {
+      markJobTypeActive(queryClient, JobType.IMPORT, result.job_id);
+    },
+  });
+}
+```
+
+- [ ] **Step 4: Typecheck** — from `ui/frontend/`: `npm run check` (TypeScript will flag the now-stale `importCsv` call in `import-export.tsx` and the dialog `onImport` shape — those are fixed in Task 9; for now just confirm the three files in this task themselves compile by reading the errors, which should all point at `routes/_authenticated/import-export.tsx` and the dialog, not at the three files edited here). Do **not** commit yet if `npm run check` errors only in the Task 9 files — proceed to Task 9, then commit Tasks 8+9 together. If it errors inside the three files edited here, fix them.
+
+- [ ] **Step 5:** Defer the commit to Task 9 (these layers don't typecheck until the dialog/route are updated). No commit in Task 8.
+
+---
+
+## Task 9: Frontend UI (dialog selector + route wiring + tests)
+
+**Files:**
+- Modify: `ui/frontend/src/components/import/csv-mapping-dialog.tsx`
+- Modify: `ui/frontend/src/components/import/csv-mapping-dialog.test.tsx`
+- Modify: `ui/frontend/src/routes/_authenticated/import-export.tsx`
+
+- [ ] **Step 1: Update the dialog.** In `csv-mapping-dialog.tsx`:
+
+(a) Change the `onImport` prop type on BOTH `CsvMappingDialogProps` and `CsvMappingFormProps` from `(mapping: CsvMapping) => void` to:
+
+```ts
+  onImport: (result: { format: string; mapping: CsvMapping }) => void;
+```
+
+(b) In `CsvMappingForm`, add format state at the top (after the existing `const [mapping, setMapping] = ...`):
+
+```tsx
+  const [format, setFormat] = useState('generic');
+  const isPreset = format !== 'generic';
+  const presets = inspect.presets ?? [];
+```
+
+(c) Add the Format selector as the first child inside the `<div className="space-y-5">`, before the `1 · Map columns` section:
+
+```tsx
+        <div className="grid grid-cols-2 items-center gap-2">
+          <Label htmlFor="csv-format">Format</Label>
+          <Select value={format} onValueChange={setFormat}>
+            <SelectTrigger id="csv-format" aria-label="Format">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="generic">Generic CSV</SelectItem>
+              {presets.map((p) => (
+                <SelectItem key={p.slug} value={p.slug}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {isPreset && (
+          <p className="text-sm text-muted-foreground">
+            Columns, play-status, platforms, ratings and dates are mapped automatically by the{' '}
+            {presets.find((p) => p.slug === format)?.name ?? format} preset.
+          </p>
+        )}
+```
+
+(d) Wrap the existing `1 · Map columns` section AND the `2 · Map status values` section so they render only for the generic path: change the `<section ...>` for "1 · Map columns" to `{!isPreset && (<section ...>...</section>)}`, and the existing `{mapping.status.column && ...}` status-values block to also require `!isPreset` (i.e. `{!isPreset && mapping.status.column && (...)}`).
+
+(e) Update the Import button: it currently has `onClick={() => onImport(mapping)}` and `disabled={!mapping.columns.title || isImporting}`. Change to:
+
+```tsx
+        <Button
+          onClick={() => onImport({ format, mapping })}
+          disabled={(!isPreset && !mapping.columns.title) || isImporting}
+        >
+```
+
+(f) Change the `DialogTitle` from `Import CSV — map your columns` to `Import CSV` (the mapping is now conditional).
+
+- [ ] **Step 2: Update the route wiring.** In `ui/frontend/src/routes/_authenticated/import-export.tsx`, change `handleCsvImport` (around line 329) from taking `mapping: CsvMapping` to:
+
+```tsx
+  const handleCsvImport = async (result: { format: string; mapping: CsvMapping }) => {
+    if (!csvFile) return;
+    try {
+      const created = await importCsv({ file: csvFile, format: result.format, mapping: result.mapping });
+      toast.success(`Import started: ${created.message}`);
+      setCsvDialogOpen(false);
+      setDismissedJobId(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Import failed');
+    }
+  };
+```
+
+(The local variable was named `result` before for the response; it is renamed to `created` here to avoid shadowing the new `result` param.)
+
+- [ ] **Step 3: Update the existing dialog test + add a preset test.** In `csv-mapping-dialog.test.tsx`:
+
+(a) The existing `'imports with the assembled mapping...'` test asserts `onImport` was called with the bare mapping object. Update that assertion to the new shape — wrap the existing expected object as `mapping` under `{ format: 'generic', mapping: {...} }`:
+
+```ts
+    expect(onImport).toHaveBeenCalledWith({
+      format: 'generic',
+      mapping: {
+        columns: {
+          title: 'Name',
+          igdb_id: '',
+          platform: '',
+          storefront: '',
+          rating: '',
+          notes: '',
+          acquired_date: '',
+          hours_played: '',
+          tags: '',
+          loved: '',
+        },
+        status: { column: 'Status', value_map: { Beaten: 'not_started', Playing: 'not_started' } },
+        rating_scale: 5,
+        merge_by_title: true,
+      },
+    });
+```
+
+(b) Add a new test for the preset path. It needs an inspect fixture carrying a preset:
+
+```ts
+  it('hides the mapping form and imports with the preset slug when a format is chosen', async () => {
+    const user = userEvent.setup();
+    const onImport = vi.fn();
+    render(
+      <CsvMappingDialog
+        open
+        onOpenChange={vi.fn()}
+        inspect={{ ...inspect, presets: [{ slug: 'completionator', name: 'Completionator' }] }}
+        isImporting={false}
+        onImport={onImport}
+      />,
+    );
+
+    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    await user.click(screen.getByRole('option', { name: 'Completionator' }));
+
+    // The manual mapping section is gone; Import is enabled without a title.
+    expect(screen.queryByText('1 · Map columns')).not.toBeInTheDocument();
+    const importBtn = screen.getByRole('button', { name: /import 3 games/i });
+    expect(importBtn).toBeEnabled();
+    await user.click(importBtn);
+
+    expect(onImport).toHaveBeenCalledTimes(1);
+    expect(onImport.mock.calls[0][0].format).toBe('completionator');
+  });
+```
+
+- [ ] **Step 4: Verify** — from `ui/frontend/`:
+  - `npm run check` (typecheck + lint) — expect clean.
+  - `npm run test csv-mapping-dialog` — expect all dialog tests pass (updated + new).
+  - `npm run knip` — expect no new findings (the `CsvPresetInfo` type is used by the dialog/types).
+
+- [ ] **Step 5: Build to regenerate any route artifacts and confirm** — from `ui/frontend/`: `npm run build` (no route files were added, so `routeTree.gen.ts` should not change; if it does, include it).
+
+- [ ] **Step 6: Commit Tasks 8 + 9 together** (the frontend only typechecks as a unit):
+
+```bash
+git add ui/frontend/src/types/import-export.ts ui/frontend/src/api/import-export.ts ui/frontend/src/hooks/use-import-export.ts ui/frontend/src/components/import/csv-mapping-dialog.tsx ui/frontend/src/components/import/csv-mapping-dialog.test.tsx ui/frontend/src/routes/_authenticated/import-export.tsx
+git commit -m "feat: choose CSV format (Generic/Completionator) in the import dialog"
+```
+
+---
+
+## Added-scope final verification
+
+- [ ] `go test ./internal/services/csvmap/ ./internal/api/` — PASS.
+- [ ] From `ui/frontend/`: `npm run check && npm run knip && npm run test` — PASS.
+- [ ] Manual sanity (optional): the Format dropdown shows `Generic CSV` + `Completionator`; choosing Completionator collapses the mapping form.
+
+## Added-scope self-review notes
+- **Crux honored:** a preset import sends `format=<slug>` and the server runs `csvmap.Parse(body, PresetBySlug(slug))` — the slug maps are applied server-side; the flat DTO is never used for a preset.
+- **Signature enforced for manual picks:** `Parse` rejects a non-matching header (`ErrInvalidSignature` → 400 "this file does not match the selected format").
+- **Registry is the #1015 seam:** `csvmap.Presets()` / `PresetBySlug` are exactly what auto-detect will consume.
+- **Type consistency:** `onImport({format, mapping})` is the shape across the dialog prop, the route handler, and `useImportCsv`'s `{file, format, mapping}`.
