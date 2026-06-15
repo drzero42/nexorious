@@ -349,3 +349,115 @@ func TestImportCSVInspect_SuggestsMapping(t *testing.T) {
 		t.Errorf("merge_by_title should default true")
 	}
 }
+
+const completionatorCSV = `"Name","Edition","Platform","Format","Region","Now Playing","Backlogged","Ownership Status","Progress Status","Est. Value","Amt. Paid","Tags","Box/Case","Cart/Disc","Manual","Extras","Acquisition Type","Acquisition Source","Acquisition Date","Rating","Initial Release Date","Item Release Date","Added On","Genre"
+"A Hat in Time","","PC / Windows","Digital (Steam)","EU","No","Yes","Owned","Incomplete","","","","","","","","Purchase","","","10","10/5/2017","","1/17/2022","Platformer"
+`
+
+func TestImportCSVInspect_ReturnsPresets(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-presets")
+
+	rec := postMultipartFile(t, e, "/api/import/csv/inspect", "x.csv", []byte("Name,Status\nA,Beaten\n"), token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var resp struct {
+		Presets []struct {
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		} `json:"presets"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	found := false
+	for _, p := range resp.Presets {
+		if p.Slug == "completionator" && p.Name == "Completionator" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("presets = %+v, want one {completionator, Completionator}", resp.Presets)
+	}
+}
+
+func TestImportCSV_PresetFormat_UsesServerConfig(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-preset-import")
+
+	rec := postCSVImportFormat(t, e, "completionator.csv", []byte(completionatorCSV), "completionator", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var resp ImportJobCreatedFields
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.JobID == "" {
+		t.Error("expected a job_id")
+	}
+}
+
+func TestImportCSV_UnknownFormat_400(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-bad-format")
+
+	rec := postCSVImportFormat(t, e, "x.csv", []byte(completionatorCSV), "bogus", token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestImportCSV_PresetFormat_SignatureMismatch_400(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-sig-mismatch")
+
+	rec := postCSVImportFormat(t, e, "x.csv", []byte("Title,Console\nCeleste,PC\n"), "completionator", token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+	}
+}
+
+// postCSVImportFormat posts a CSV with a "format" form field (preset path), no mapping.
+func postCSVImportFormat(t *testing.T, e interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, filename string, fileContent []byte, format, sessionID string) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatalf("createFormFile: %v", err)
+	}
+	if _, err := fw.Write(fileContent); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := mw.WriteField("format", format); err != nil {
+		t.Fatalf("write format: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("close multipart: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/import/csv", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if sessionID != "" {
+		req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
+	}
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec
+}
+
+// ImportJobCreatedFields is the subset of the import response the preset test asserts.
+type ImportJobCreatedFields struct {
+	JobID string `json:"job_id"`
+}
