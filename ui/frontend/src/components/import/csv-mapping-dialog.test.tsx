@@ -38,7 +38,7 @@ describe('CsvMappingDialog', () => {
 
     expect(screen.queryByText('2 · Map status values')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('combobox', { name: 'Status column' }));
+    await user.click(screen.getByRole('combobox', { name: 'Play status column' }));
     await user.click(screen.getByRole('option', { name: 'Status' }));
 
     await waitFor(() => {
@@ -55,7 +55,7 @@ describe('CsvMappingDialog', () => {
     await user.click(screen.getByRole('combobox', { name: 'Title column' }));
     await user.click(screen.getByRole('option', { name: 'Name' }));
 
-    await user.click(screen.getByRole('combobox', { name: 'Status column' }));
+    await user.click(screen.getByRole('combobox', { name: 'Play status column' }));
     await user.click(screen.getByRole('option', { name: 'Status' }));
     await waitFor(() => screen.getByRole('combobox', { name: 'Status for Beaten' }));
 

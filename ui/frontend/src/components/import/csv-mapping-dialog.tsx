@@ -146,8 +146,8 @@ function CsvMappingForm({ inspect, isImporting, onImport, onCancel }: CsvMapping
           </div>
 
           <div className="grid grid-cols-2 items-center gap-2">
-            <Label htmlFor="csv-status">Status</Label>
-            {columnSelect('csv-status', 'Status', mapping.status.column, handleStatusColumn)}
+            <Label htmlFor="csv-status">Play status</Label>
+            {columnSelect('csv-status', 'Play status', mapping.status.column, handleStatusColumn)}
           </div>
 
           {OPTIONAL_FIELDS.map((f) => (
