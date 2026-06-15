@@ -17,6 +17,10 @@ jobs:
   build:
     name: Build binaries and packages
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -92,8 +96,22 @@ jobs:
             NFPM_ARCH="$arch" nfpm package -f deploy/packaging/nfpm.yaml -p rpm -t dist/
           done
 
+      - name: Generate source SBOM (Go + npm)
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: "dist/nexorious_${{ steps.versions.outputs.pkg_version }}_sbom.source.spdx.json"
+          upload-artifact: false
+
       - name: Checksums over all artifacts
         run: cd dist && sha256sum nexorious* > sha256sums.txt
+
+      - name: Attest build provenance (binaries, packages, source SBOM)
+        if: github.event_name == 'release'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: 'dist/nexorious*'
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
