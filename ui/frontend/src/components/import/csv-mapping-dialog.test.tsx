@@ -81,4 +81,41 @@ describe('CsvMappingDialog', () => {
       merge_by_title: true,
     });
   });
+
+  it('pre-fills the form from inspect.suggested_mapping', () => {
+    const seeded: CsvInspectResponse = {
+      ...inspect,
+      suggested_mapping: {
+        columns: {
+          title: 'Name',
+          platform: '',
+          storefront: '',
+          rating: '',
+          notes: '',
+          acquired_date: '',
+          hours_played: '',
+          tags: '',
+          loved: '',
+        },
+        status: { column: 'Status', value_map: { Beaten: 'completed', Playing: 'in_progress' } },
+        rating_scale: 5,
+        merge_by_title: true,
+      },
+    };
+    render(
+      <CsvMappingDialog
+        open
+        onOpenChange={vi.fn()}
+        inspect={seeded}
+        isImporting={false}
+        onImport={vi.fn()}
+      />,
+    );
+    // Title pre-filled -> Import button is enabled.
+    expect(screen.getByRole('button', { name: /import 3 games/i })).toBeEnabled();
+    // Title select shows the guessed header.
+    expect(screen.getByRole('combobox', { name: 'Title column' })).toHaveTextContent('Name');
+    // Status column guessed -> the status-value section is already shown.
+    expect(screen.getByText('2 · Map status values')).toBeInTheDocument();
+  });
 });

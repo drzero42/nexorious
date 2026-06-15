@@ -21,7 +21,7 @@ import { Loader2, Upload } from 'lucide-react';
 import { PlayStatus } from '@/types';
 import type { CsvInspectResponse, CsvMapping } from '@/types';
 import { statusLabels } from '@/lib/play-status';
-import { emptyCsvMapping, initStatusValueMap } from './csv-mapping';
+import { emptyCsvMapping, initStatusValueMap, availableHeaders } from './csv-mapping';
 
 // shadcn Select cannot hold an empty-string value, so "no column" uses a sentinel.
 const NONE = '__none__';
@@ -82,7 +82,9 @@ interface CsvMappingFormProps {
 }
 
 function CsvMappingForm({ inspect, isImporting, onImport, onCancel }: CsvMappingFormProps) {
-  const [mapping, setMapping] = useState<CsvMapping>(emptyCsvMapping);
+  const [mapping, setMapping] = useState<CsvMapping>(
+    () => inspect.suggested_mapping ?? emptyCsvMapping(),
+  );
 
   const setColumn = (key: 'title' | OptionalKey, raw: string) => {
     const value = raw === NONE ? '' : raw;
@@ -114,7 +116,7 @@ function CsvMappingForm({ inspect, isImporting, onImport, onCancel }: CsvMapping
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={NONE}>— none —</SelectItem>
-        {inspect.headers.map((h) => (
+        {availableHeaders(inspect.headers, mapping, value).map((h) => (
           <SelectItem key={h} value={h}>
             {h}
           </SelectItem>
