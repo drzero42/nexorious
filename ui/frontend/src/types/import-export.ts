@@ -46,6 +46,7 @@ export interface CsvInspectResponse {
 export interface CsvMapping {
   columns: {
     title: string;
+    igdb_id: string;
     platform: string;
     storefront: string;
     rating: string;

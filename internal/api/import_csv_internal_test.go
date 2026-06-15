@@ -92,3 +92,30 @@ func TestBuildCSVConfig_BadRatingScale(t *testing.T) {
 		t.Fatal("expected an error for an invalid rating scale")
 	}
 }
+
+func TestBuildCSVConfig_IGDBIDColumn(t *testing.T) {
+	var m csvMapping
+	m.Columns.Title = "title"
+	m.Columns.IGDBID = "igdb_id"
+
+	cfg, err := buildCSVConfig(m)
+	if err != nil {
+		t.Fatalf("buildCSVConfig: %v", err)
+	}
+	if cfg.Columns.IGDBID != "igdb_id" {
+		t.Errorf("cfg.Columns.IGDBID = %q, want %q", cfg.Columns.IGDBID, "igdb_id")
+	}
+}
+
+func TestBuildCSVConfig_IGDBIDOmittedWhenUnmapped(t *testing.T) {
+	var m csvMapping
+	m.Columns.Title = "title"
+
+	cfg, err := buildCSVConfig(m)
+	if err != nil {
+		t.Fatalf("buildCSVConfig: %v", err)
+	}
+	if cfg.Columns.IGDBID != "" {
+		t.Errorf("cfg.Columns.IGDBID = %q, want empty", cfg.Columns.IGDBID)
+	}
+}

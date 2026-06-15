@@ -63,6 +63,65 @@ func TestImportMatch_NoIGDBClientMarksPendingReview(t *testing.T) {
 	}
 }
 
+func TestImportMatch_IGDBIDShortCircuits(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := "u-match-igdbid"
+	insertTestUser(t, testDB, userID)
+	payload := map[string]any{
+		"title":       "Anodyne",
+		"igdb_id":     42,
+		"play_status": "not_started",
+		"platforms":   []map[string]any{},
+	}
+	_, itemID := insertImportItem(t, userID, payload)
+
+	// Nil IGDB client: without the short-circuit this item would go
+	// pending_review. With it, the id is trusted and resolved directly.
+	w := &tasks.ImportMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.ImportMatchArgs]{Args: tasks.ImportMatchArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("match: %v", err)
+	}
+
+	var resolved sql.NullInt64
+	if err := testDB.NewRaw(`SELECT resolved_igdb_id FROM job_items WHERE id = ?`, itemID).Scan(ctx, &resolved); err != nil {
+		t.Fatal(err)
+	}
+	if !resolved.Valid || resolved.Int64 != 42 {
+		t.Fatalf("resolved_igdb_id = %v, want 42", resolved)
+	}
+
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status == "pending_review" {
+		t.Errorf("status = pending_review; short-circuit should have skipped matching")
+	}
+}
+
+func TestImportMatch_NoIGDBIDStillPendingReview(t *testing.T) {
+	// A payload with no igdb_id and a nil client keeps the existing behaviour.
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := "u-match-noid"
+	insertTestUser(t, testDB, userID)
+	payload := map[string]any{"title": "Whatever", "play_status": "not_started", "platforms": []map[string]any{}}
+	_, itemID := insertImportItem(t, userID, payload)
+
+	w := &tasks.ImportMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.ImportMatchArgs]{Args: tasks.ImportMatchArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("match: %v", err)
+	}
+	var status string
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending_review" {
+		t.Errorf("status = %q, want pending_review", status)
+	}
+}
+
 func TestImportFinalize_WritesUserGameAndPlatforms(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()

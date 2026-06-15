@@ -25,6 +25,7 @@ type Config struct {
 // ColumnMap maps each plain scalar canonical field to its source header name.
 type ColumnMap struct {
 	Title       string // required
+	IGDBID      string // optional; when a row's value parses to a positive int, import hydrates directly and skips title matching
 	Rating      string
 	CreatedAt   string // game "added"/created date
 	HoursPlayed string

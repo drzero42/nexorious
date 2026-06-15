@@ -287,6 +287,23 @@ func extractHours(rec []string, idx map[string]int, cfg Config) *float64 {
 	return &f
 }
 
+// extractIGDBID parses the configured IGDB-id cell into a positive int32. A
+// missing/unconfigured column, blank, non-numeric, zero, negative, or
+// out-of-int32-range value yields nil — such a row falls back to title matching
+// downstream.
+func extractIGDBID(rec []string, idx map[string]int, cfg Config) *int32 {
+	raw := cell(rec, idx, cfg.Columns.IGDBID)
+	if raw == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 || n > math.MaxInt32 {
+		return nil
+	}
+	v := int32(n) //nolint:gosec // guarded above: 0 < n <= MaxInt32
+	return &v
+}
+
 // extractPlatforms builds the simple-variant ownership entry (at most one) from
 // the configured platform/storefront/acquired-date columns. An empty platform
 // cell or no PlatformSimple config yields no entries. Map miss = passthrough.
@@ -329,6 +346,7 @@ func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game
 		Title:      title,
 		PlayStatus: extractStatus(rec, idx, cfg),
 	}
+	g.IGDBID = extractIGDBID(rec, idx, cfg)
 	if r := extractRating(cell(rec, idx, cfg.Columns.Rating), cfg); r != nil {
 		g.PersonalRating = r
 	}

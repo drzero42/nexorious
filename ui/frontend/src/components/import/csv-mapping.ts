@@ -6,6 +6,7 @@ export function emptyCsvMapping(): CsvMapping {
   return {
     columns: {
       title: '',
+      igdb_id: '',
       platform: '',
       storefront: '',
       rating: '',
