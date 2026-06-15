@@ -57,6 +57,9 @@ func TestCompletionator_MapsRealFixture(t *testing.T) {
 
 	// Game 3: Finished -> completed, rating 3/10 -> 2 stars, playstation-5 / gog.
 	g = games[2]
+	if g.Title != "Batman: Arkham Asylum - Game of the Year Edition" {
+		t.Fatalf("g2 title = %q", g.Title)
+	}
 	if g.PlayStatus != "completed" {
 		t.Errorf("g2 status = %q, want completed", g.PlayStatus)
 	}
