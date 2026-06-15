@@ -485,3 +485,21 @@ func TestParse_RaggedRowFillsMissingColumnsAsEmpty(t *testing.T) {
 		t.Fatalf("ragged row failed: %+v", games)
 	}
 }
+
+func TestParse_MalformedQuotes_Recovered(t *testing.T) {
+	// A bare-quoted title that strict encoding/csv rejects; Parse must recover
+	// it via ReadRecords' fallback.
+	csv := "\"Name\",\"Other\"\n" +
+		"\"Episode 1: \"Done Running\"\",\"x\"\n" +
+		"\"Portal\",\"y\"\n"
+	games, err := Parse([]byte(csv), titleOnlyConfig())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(games) != 2 {
+		t.Fatalf("want 2 games, got %d", len(games))
+	}
+	if games[0].Title != `Episode 1: "Done Running"` {
+		t.Fatalf("title = %q, want `Episode 1: \"Done Running\"`", games[0].Title)
+	}
+}
