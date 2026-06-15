@@ -30,7 +30,7 @@ export interface ExportJobCreatedResponse {
   estimated_items: number;
 }
 
-export interface CsvColumnInfo {
+interface CsvColumnInfo {
   name: string;
   distinct_values: string[];
   distinct_truncated: boolean;
