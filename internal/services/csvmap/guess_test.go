@@ -98,3 +98,22 @@ func TestGuessStatusValueMap_Empty(t *testing.T) {
 		t.Errorf("expected empty map, got %v", got)
 	}
 }
+
+func TestGuessColumns_ContainsPassMultipleFields(t *testing.T) {
+	// Headers chosen so their normalized forms only match via substring-contains,
+	// not exact-normalized, and don't collide with any higher-priority field's aliases.
+	// "User Rating"  → "userrating"   (contains "rating"; no title/status/platform/storefront alias)
+	// "My Store"     → "mystore"      (contains "store"; no title/status/platform alias)
+	// "Total Play Time" → "totalplaytime" (contains "playtime"; no title/status/platform/storefront alias)
+	header := []string{"User Rating", "My Store", "Total Play Time"}
+	m := GuessColumns(header)
+	if m.Columns.Rating != "User Rating" {
+		t.Errorf("rating = %q, want \"User Rating\"", m.Columns.Rating)
+	}
+	if m.Columns.Storefront != "My Store" {
+		t.Errorf("storefront = %q, want \"My Store\"", m.Columns.Storefront)
+	}
+	if m.Columns.HoursPlayed != "Total Play Time" {
+		t.Errorf("hours_played = %q, want \"Total Play Time\"", m.Columns.HoursPlayed)
+	}
+}

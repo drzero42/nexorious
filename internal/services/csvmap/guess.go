@@ -50,7 +50,7 @@ var fieldAliases = []struct {
 	aliases []string
 }{
 	{func(m *SuggestedMapping, v string) { m.Columns.Title = v }, []string{"name", "title", "game", "gamename", "gametitle"}},
-	{func(m *SuggestedMapping, v string) { m.Status.Column = v }, []string{"status", "playstatus", "state", "progress", "completion", "completionstatus"}},
+	{func(m *SuggestedMapping, v string) { m.Status.Column = v }, []string{"status", "playstatus", "state", "progress", "completionstatus"}},
 	{func(m *SuggestedMapping, v string) { m.Columns.Platform = v }, []string{"platform", "system", "console", "device"}},
 	{func(m *SuggestedMapping, v string) { m.Columns.Storefront = v }, []string{"storefront", "store", "source", "launcher", "service"}},
 	{func(m *SuggestedMapping, v string) { m.Columns.HoursPlayed = v }, []string{"hoursplayed", "playtimehours", "playtime", "timeplayed", "hours", "hrs"}},
@@ -136,7 +136,7 @@ var statusSynonyms = map[string]string{
 	"inprogress": "in_progress", "playing": "in_progress", "started": "in_progress",
 	"current": "in_progress", "ongoing": "in_progress",
 	"notstarted": "not_started", "backlog": "not_started", "unplayed": "not_started",
-	"neverplayed": "not_started", "tobeplayed": "not_started", "tbp": "not_started", "wishlist": "not_started",
+	"neverplayed": "not_started", "tobeplayed": "not_started", "tbp": "not_started", "wishlist": "not_started", // wishlisted = unplayed here; is_wishlisted flag handled separately
 	"dropped": "dropped", "abandoned": "dropped", "quit": "dropped", "gaveup": "dropped",
 	"shelved": "shelved", "onhold": "shelved", "hold": "shelved", "paused": "shelved", "suspended": "shelved",
 	"mastered": "mastered", "platinum": "mastered", "perfected": "mastered",
