@@ -326,11 +326,15 @@ export function ImportExportPage() {
     }
   };
 
-  const handleCsvImport = async (mapping: CsvMapping) => {
+  const handleCsvImport = async (result: { format: string; mapping: CsvMapping }) => {
     if (!csvFile) return;
     try {
-      const result = await importCsv({ file: csvFile, mapping });
-      toast.success(`Import started: ${result.message}`);
+      const created = await importCsv({
+        file: csvFile,
+        format: result.format,
+        mapping: result.mapping,
+      });
+      toast.success(`Import started: ${created.message}`);
       setCsvDialogOpen(false);
       setDismissedJobId(null);
     } catch (error) {

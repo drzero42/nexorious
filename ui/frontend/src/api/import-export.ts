@@ -38,14 +38,19 @@ export async function inspectCsv(file: File): Promise<CsvInspectResponse> {
   return apiUploadFile<CsvInspectResponse>('/import/csv/inspect', file);
 }
 
-/** Import a CSV with a user-built column/status mapping. */
+/**
+ * Import a CSV. For the generic path, `format` is 'generic' and the user-built
+ * `mapping` is sent. For a preset (e.g. 'completionator'), the slug is sent and
+ * the server applies the preset Config (the mapping is ignored).
+ */
 export async function importCsv(
   file: File,
+  format: string,
   mapping: CsvMapping,
 ): Promise<ImportJobCreatedResponse> {
-  return apiUploadFile<ImportJobCreatedResponse>('/import/csv', file, 'file', {
-    mapping: JSON.stringify(mapping),
-  });
+  const extraFields: Record<string, string> =
+    format === 'generic' ? { mapping: JSON.stringify(mapping) } : { format };
+  return apiUploadFile<ImportJobCreatedResponse>('/import/csv', file, 'file', extraFields);
 }
 
 // ============================================================================
