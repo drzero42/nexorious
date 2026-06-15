@@ -125,6 +125,12 @@ describe('ImportExportPage review surface', () => {
     render(<ImportExportPage />);
     expect(screen.queryByTestId('import-review')).not.toBeInTheDocument();
   });
+
+  it('renders the per-item review surface for an active CSV import', () => {
+    h.job = makeJob(JobSource.CSV);
+    render(<ImportExportPage />);
+    expect(screen.getByTestId('import-review')).toBeInTheDocument();
+  });
 });
 
 describe('ImportExportPage CSV import card', () => {
