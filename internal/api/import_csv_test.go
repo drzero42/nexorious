@@ -394,7 +394,9 @@ func TestImportCSV_PresetFormat_UsesServerConfig(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
 	}
-	var resp ImportJobCreatedFields
+	var resp struct {
+		JobID string `json:"job_id"`
+	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -455,9 +457,4 @@ func postCSVImportFormat(t *testing.T, e interface {
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	return rec
-}
-
-// ImportJobCreatedFields is the subset of the import response the preset test asserts.
-type ImportJobCreatedFields struct {
-	JobID string `json:"job_id"`
 }

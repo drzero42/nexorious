@@ -272,6 +272,10 @@ func (h *ImportHandler) HandleImportCSV(c *echo.Context) error {
 
 	format := strings.TrimSpace(c.Request().FormValue("format"))
 	var cfg csvmap.Config
+	// "generic" (and empty) selects the manual user-mapping path; any other value
+	// must be a registered preset slug. "generic" is therefore reserved and must
+	// never be added to csvmap.presetList. When a preset is chosen its server-side
+	// Config wins and the "mapping" field, if any, is ignored.
 	if format != "" && format != "generic" {
 		preset, ok := csvmap.PresetBySlug(format)
 		if !ok {
