@@ -460,7 +460,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          BIN=$(ls dist/nexorious_*_linux_amd64)
+          set -- dist/nexorious_*_linux_amd64
+          BIN=$1
           gh attestation verify "$BIN" --repo "${{ github.repository }}"
 
       - name: Verify chart provenance
