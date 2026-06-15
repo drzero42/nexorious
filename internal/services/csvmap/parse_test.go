@@ -2,6 +2,7 @@ package csvmap
 
 import (
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/services/importmodel"
@@ -501,5 +502,15 @@ func TestParse_MalformedQuotes_Recovered(t *testing.T) {
 	}
 	if games[0].Title != `Episode 1: "Done Running"` {
 		t.Fatalf("title = %q, want `Episode 1: \"Done Running\"`", games[0].Title)
+	}
+	if games[1].Title != "Portal" {
+		t.Fatalf("games[1].Title = %q, want \"Portal\"", games[1].Title)
+	}
+}
+
+func TestParse_EmptyFile_ReturnsEOF(t *testing.T) {
+	_, err := Parse([]byte{}, titleOnlyConfig())
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("want io.EOF on empty input, got %v", err)
 	}
 }
