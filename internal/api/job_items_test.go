@@ -177,6 +177,57 @@ func TestSkipItem_ImportScoped(t *testing.T) {
 	}
 }
 
+// CSV import is a generic-pipeline source that is deliberately NOT in the
+// importsource mapper registry; its pending_review items must still resolve and
+// skip through the import-scoped endpoints (regression for the resolve 400).
+func TestResolveItem_AcceptsCSVImport(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "ji-resolve-csv")
+
+	insertJob(t, testDB, "job-rc", userID, "import", "csv", "processing")
+	insertJobItem(t, testDB, "rc-1", "job-rc", userID, "k", "CSV Game", "pending_review")
+
+	rec := postJSONAuth(t, e, "/api/job-items/rc-1/resolve", map[string]any{"igdb_id": 7}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resolved int
+	var status string
+	if err := testDB.QueryRowContext(context.Background(),
+		"SELECT resolved_igdb_id, status FROM job_items WHERE id = 'rc-1'").Scan(&resolved, &status); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if resolved != 7 {
+		t.Fatalf("expected resolved_igdb_id=7, got %d", resolved)
+	}
+	if status == "pending_review" {
+		t.Fatalf("expected item moved out of pending_review, got %s", status)
+	}
+}
+
+func TestSkipItem_AcceptsCSVImport(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "ji-skip-csv")
+
+	insertJob(t, testDB, "job-sc", userID, "import", "csv", "processing")
+	insertJobItem(t, testDB, "sc-1", "job-sc", userID, "k", "Skip CSV Game", "pending_review")
+
+	rec := postJSONAuth(t, e, "/api/job-items/sc-1/skip", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var status string
+	if err := testDB.QueryRowContext(context.Background(),
+		"SELECT status FROM job_items WHERE id = 'sc-1'").Scan(&status); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if status != "skipped" {
+		t.Fatalf("expected status=skipped, got %s", status)
+	}
+}
+
 func TestSkipItem_RejectsSyncJob(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEchoWithPool(t, testDB)
