@@ -419,3 +419,55 @@ jobs:
           NEW_COMMIT_SHA=$(echo "${NEW_COMMIT}" | jq -r .sha)
           gh api "repos/${{ github.repository }}/git/refs/heads/release" \
             -X PATCH --field sha="${NEW_COMMIT_SHA}" --field force=true
+
+  verify-attestations:
+    name: Verify attestations
+    needs: [image, upload, chart]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Compute version
+        id: v
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "value=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+
+      - name: Verify image provenance and SBOM
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          REF="oci://ghcr.io/drzero42/nexorious:${{ steps.v.outputs.value }}"
+          gh attestation verify "$REF" --repo "${{ github.repository }}"
+          gh attestation verify "$REF" --repo "${{ github.repository }}" \
+            --predicate-type https://spdx.dev/Document
+
+      - name: Verify a release binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BIN=$(ls dist/nexorious_*_linux_amd64)
+          gh attestation verify "$BIN" --repo "${{ github.repository }}"
+
+      - name: Verify chart provenance
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh attestation verify \
+            "oci://ghcr.io/drzero42/charts/nexorious:${{ steps.v.outputs.value }}" \
+            --repo "${{ github.repository }}"
