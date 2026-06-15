@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v5"
@@ -107,9 +108,10 @@ type csvColumnInfo struct {
 }
 
 type csvInspectResponse struct {
-	Headers  []string        `json:"headers"`
-	RowCount int             `json:"row_count"`
-	Columns  []csvColumnInfo `json:"columns"`
+	Headers          []string                `json:"headers"`
+	RowCount         int                     `json:"row_count"`
+	Columns          []csvColumnInfo         `json:"columns"`
+	SuggestedMapping csvmap.SuggestedMapping `json:"suggested_mapping"`
 }
 
 // readUploadFile parses the multipart form and reads the "file" field, enforcing
@@ -165,6 +167,17 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "could not read CSV header")
 	}
 
+	// Guess the column->field mapping from the headers alone so we know which
+	// column is the rating column (to track its numeric max below).
+	suggested := csvmap.GuessColumns(header)
+	ratingIdx := -1
+	for i, name := range header {
+		if name == suggested.Columns.Rating {
+			ratingIdx = i
+			break
+		}
+	}
+
 	cols := make([]csvColumnInfo, len(header))
 	seen := make([]map[string]bool, len(header))
 	for i, name := range header {
@@ -173,6 +186,7 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 	}
 
 	rowCount := 0
+	var ratingMax float64
 	for {
 		rec, err := r.Read()
 		if err == io.EOF {
@@ -187,6 +201,11 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 				continue
 			}
 			v := strings.TrimSpace(rec[i])
+			if i == ratingIdx && v != "" {
+				if f, perr := strconv.ParseFloat(v, 64); perr == nil && f > ratingMax {
+					ratingMax = f
+				}
+			}
 			if v == "" || cols[i].DistinctTruncated || seen[i][v] {
 				continue
 			}
@@ -201,7 +220,26 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 		}
 	}
 
-	return c.JSON(http.StatusOK, csvInspectResponse{Headers: header, RowCount: rowCount, Columns: cols})
+	// Refine the suggestion from the data: rating scale from the observed max,
+	// and per-value status guesses from the status column's distinct values.
+	if suggested.Columns.Rating != "" {
+		suggested.RatingScale = csvmap.GuessRatingScale(ratingMax)
+	}
+	if suggested.Status.Column != "" {
+		for _, col := range cols {
+			if col.Name == suggested.Status.Column {
+				suggested.Status.ValueMap = csvmap.GuessStatusValueMap(col.DistinctValues)
+				break
+			}
+		}
+	}
+
+	return c.JSON(http.StatusOK, csvInspectResponse{
+		Headers:          header,
+		RowCount:         rowCount,
+		Columns:          cols,
+		SuggestedMapping: suggested,
+	})
 }
 
 // HandleImportCSV handles POST /api/import/csv. It parses the uploaded CSV with

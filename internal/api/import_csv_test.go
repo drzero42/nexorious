@@ -256,3 +256,51 @@ func TestImportCSV_NoDataRows(t *testing.T) {
 		t.Fatalf("status = %d, want 400 (no games)", rec.Code)
 	}
 }
+
+func TestImportCSVInspect_SuggestsMapping(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-suggest")
+
+	csvData := []byte("Name,Platform,Status,Score\nCeleste,Switch,Beaten,9\nHades,PC,Playing,8\n")
+	rec := postMultipartFile(t, e, "/api/import/csv/inspect", "lib.csv", csvData, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+
+	var resp struct {
+		SuggestedMapping struct {
+			Columns struct {
+				Title    string `json:"title"`
+				Platform string `json:"platform"`
+				Rating   string `json:"rating"`
+			} `json:"columns"`
+			Status struct {
+				Column   string            `json:"column"`
+				ValueMap map[string]string `json:"value_map"`
+			} `json:"status"`
+			RatingScale  int  `json:"rating_scale"`
+			MergeByTitle bool `json:"merge_by_title"`
+		} `json:"suggested_mapping"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	sm := resp.SuggestedMapping
+	if sm.Columns.Title != "Name" || sm.Columns.Platform != "Platform" || sm.Columns.Rating != "Score" {
+		t.Errorf("columns guess wrong: %+v", sm.Columns)
+	}
+	if sm.Status.Column != "Status" {
+		t.Errorf("status column = %q, want Status", sm.Status.Column)
+	}
+	if sm.Status.ValueMap["Beaten"] != "completed" || sm.Status.ValueMap["Playing"] != "in_progress" {
+		t.Errorf("status value_map wrong: %+v", sm.Status.ValueMap)
+	}
+	if sm.RatingScale != 10 {
+		t.Errorf("rating_scale = %d, want 10", sm.RatingScale)
+	}
+	if !sm.MergeByTitle {
+		t.Errorf("merge_by_title should default true")
+	}
+}
