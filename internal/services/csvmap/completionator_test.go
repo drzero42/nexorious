@@ -1,6 +1,10 @@
 package csvmap
 
-import "testing"
+import (
+	"testing"
+
+	"golang.org/x/text/encoding/charmap"
+)
 
 // completionatorFixture is a fully quote-wrapped 24-column Completionator export
 // (the real malformed-quote shape) with three games: a rated/Incomplete PC
@@ -71,6 +75,30 @@ func TestCompletionator_MapsRealFixture(t *testing.T) {
 	}
 	if g.Platforms[0].Storefront == nil || *g.Platforms[0].Storefront != "gog" {
 		t.Errorf("g2 storefront = %v, want gog", g.Platforms[0].Storefront)
+	}
+}
+
+func TestCompletionator_Windows1252AccentedTitle(t *testing.T) {
+	// A Windows-1252 export (not UTF-8) with an accented title, plus a
+	// bare-quoted title that forces the de-quote fallback — proving transcode
+	// and fallback compose correctly end-to-end through the preset.
+	utf8Fixture := `"Name","Edition","Platform","Format","Region","Now Playing","Backlogged","Ownership Status","Progress Status","Est. Value","Amt. Paid","Tags","Box/Case","Cart/Disc","Manual","Extras","Acquisition Type","Acquisition Source","Acquisition Date","Rating","Initial Release Date","Item Release Date","Added On","Genre"
+"Pokémon Legends","","PC / Windows","Digital (Steam)","EU","No","Yes","Owned","Incomplete","","","","","","","","Purchase","","","","","","1/17/2022",""
+"Episode 1: "Done Running"","","PC / Windows","Digital (Steam)","EU","No","Yes","Owned","Incomplete","","","","","","","","Purchase","","","","","","1/17/2022",""
+`
+	raw, err := charmap.Windows1252.NewEncoder().Bytes([]byte(utf8Fixture))
+	if err != nil {
+		t.Fatalf("encode fixture to Windows-1252: %v", err)
+	}
+	games, err := Parse(raw, Completionator())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(games) != 2 {
+		t.Fatalf("want 2 games, got %d", len(games))
+	}
+	if games[0].Title != "Pokémon Legends" {
+		t.Fatalf("title = %q, want %q", games[0].Title, "Pokémon Legends")
 	}
 }
 
