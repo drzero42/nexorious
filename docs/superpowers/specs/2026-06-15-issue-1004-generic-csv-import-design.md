@@ -94,7 +94,7 @@ Multipart `file` + `mapping` (a JSON string form field). Guards: auth; IGDB conf
     "rating": "Score", "notes": "", "acquired_date": "",
     "hours_played": "", "tags": "", "loved": ""
   },
-  "status": { "column": "Status", "value_map": { "beaten": "completed", "playing": "playing" } },
+  "status": { "column": "Status", "value_map": { "beaten": "completed", "playing": "in_progress" } },
   "rating_scale": 10,
   "merge_by_title": true
 }
