@@ -162,9 +162,15 @@ export async function apiUploadFile<T>(
   path: string,
   file: File,
   fieldName: string = 'file',
+  extraFields?: Record<string, string>,
 ): Promise<T> {
   const formData = new FormData();
   formData.append(fieldName, file);
+  if (extraFields) {
+    for (const [key, value] of Object.entries(extraFields)) {
+      formData.append(key, value);
+    }
+  }
   const url = buildUrl(path);
   const response = await fetch(url, {
     method: 'POST',
