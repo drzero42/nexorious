@@ -265,6 +265,12 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
+      # syft resolves the multi-arch index digest to the host-native (amd64)
+      # image, so this SBOM describes the linux/amd64 variant. It is
+      # representative of linux/arm64 too: the Go module graph is identical
+      # across arches and the Alpine package set/versions match — only the
+      # compiled bytes differ. Revisit per-arch SBOMs only if the arches ever
+      # diverge in their dependency set.
       - name: Generate image SBOM
         if: github.event_name == 'release'
         uses: anchore/sbom-action@v0.24.0
