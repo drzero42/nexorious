@@ -312,6 +312,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -348,7 +350,24 @@ jobs:
               --password-stdin
 
       - name: Push Helm chart
-        run: helm push "${{ steps.pkg.outputs.path }}" oci://ghcr.io/drzero42/charts
+        id: push
+        run: |
+          set -euo pipefail
+          OUT=$(helm push "${{ steps.pkg.outputs.path }}" oci://ghcr.io/drzero42/charts 2>&1)
+          echo "$OUT"
+          DIGEST=$(echo "$OUT" | awk '/^Digest:/ {print $2}')
+          if [[ -z "$DIGEST" ]]; then
+            echo "::error::could not parse chart digest from helm push output"
+            exit 1
+          fi
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Attest chart provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/drzero42/charts/nexorious
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
   release-branch:
     name: Advance release branch
