@@ -50,6 +50,27 @@ func (w *ImportMatchWorker) Work(ctx context.Context, job *river.Job[ImportMatch
 	// Correlate every line below to the parent import job.
 	ctx = logging.WithJobID(ctx, item.JobID)
 
+	// Short-circuit: a row that already carries a real IGDB id (e.g. a
+	// re-imported Nexorious CSV export) needs no title matching. Trust it and
+	// hand straight to finalize, which hydrates via ensureGameRow (falling back
+	// to a title-only stub if IGDB doesn't recognize the id). Inert for sources
+	// that never set IGDBID. A nil/<=0 id falls through to title matching below.
+	var payload importmodel.Game
+	if err := json.Unmarshal(item.SourceMetadata, &payload); err == nil &&
+		payload.IGDBID != nil && *payload.IGDBID > 0 {
+		if _, err := w.DB.NewRaw(
+			`UPDATE job_items SET resolved_igdb_id = ?, match_confidence = 1 WHERE id = ?`,
+			*payload.IGDBID, item.ID,
+		).Exec(ctx); err != nil {
+			slog.WarnContext(ctx, "import_match: set resolved id from payload", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
+		}
+		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, item.ID, ImportFinalizeArgs{JobItemID: item.ID}); err != nil {
+			slog.WarnContext(ctx, "import_match: enqueue finalize (igdb-id short-circuit)", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
+			ImportCheckJobCompletion(w.DB, item.JobID)
+		}
+		return nil
+	}
+
 	if w.IGDBClient == nil || !w.IGDBClient.Configured() {
 		importMarkPendingReview(ctx, w.DB, &item, nil, nil)
 		ImportCheckJobCompletion(w.DB, item.JobID)
