@@ -257,6 +257,51 @@ func TestImportCSV_NoDataRows(t *testing.T) {
 	}
 }
 
+func TestImportCSVInspect_MalformedCompletionatorQuotes(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-inspect-malformed")
+
+	// Fully quote-wrapped, with a bare-quoted title strict encoding/csv rejects.
+	csvData := []byte("\"Name\",\"Platform\"\n" +
+		"\"A Hat in Time\",\"PC / Windows\"\n" +
+		"\"Episode 1: \"Done Running\"\",\"PC / Windows\"\n")
+	rec := postMultipartFile(t, e, "/api/import/csv/inspect", "completionator.csv", csvData, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+
+	var resp struct {
+		RowCount int `json:"row_count"`
+		Columns  []struct {
+			Name           string   `json:"name"`
+			DistinctValues []string `json:"distinct_values"`
+		} `json:"columns"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.RowCount != 2 {
+		t.Fatalf("row_count = %d, want 2", resp.RowCount)
+	}
+	var names []string
+	for _, c := range resp.Columns {
+		if c.Name == "Name" {
+			names = c.DistinctValues
+		}
+	}
+	found := false
+	for _, n := range names {
+		if n == `Episode 1: "Done Running"` {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("recovered Name values = %v, want one to be `Episode 1: \"Done Running\"`", names)
+	}
+}
+
 func TestImportCSVInspect_SuggestsMapping(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()

@@ -1,8 +1,6 @@
 package api
 
 import (
-	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -162,12 +160,11 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 		return herr
 	}
 
-	r := csv.NewReader(bytes.NewReader(body))
-	r.FieldsPerRecord = -1
-	header, err := r.Read()
-	if err != nil {
+	records, err := csvmap.ReadRecords(body)
+	if err != nil || len(records) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "could not read CSV header")
 	}
+	header := records[0]
 
 	// Guess the column->field mapping from the headers alone so we know which
 	// column is the rating column (to track its numeric max below).
@@ -191,14 +188,7 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 
 	rowCount := 0
 	var ratingMax float64
-	for {
-		rec, err := r.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
-		}
+	for _, rec := range records[1:] {
 		rowCount++
 		for i := range header {
 			if i >= len(rec) {
@@ -217,8 +207,6 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 				seen[i][v] = true
 				cols[i].DistinctValues = append(cols[i].DistinctValues, v)
 			} else {
-				// A distinct value beyond the cap: flag truncation and stop
-				// tracking this column so `seen` stays bounded to the cap.
 				cols[i].DistinctTruncated = true
 			}
 		}
