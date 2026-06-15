@@ -53,15 +53,29 @@ func EnqueueOrFail(
 	return nil
 }
 
+// UsesGenericImportPipeline reports whether a job source runs the shared
+// ImportMatch → pending_review → ImportFinalize chain. Registry mapper sources
+// qualify, and so does the CSV source: it runs the same pipeline via the
+// import handler's enqueueImportJob without being a registry Mapper (it has no
+// Parse(raw); it is the dialog-driven import card). Sync sources and the legacy
+// single-stage nexorious import do NOT use this chain.
+//
+// This is the single source of truth for "is this source on the generic import
+// pipeline?" — every match/finalize/resolve routing decision must consult it so
+// a new pipeline source cannot silently miss one site.
+func UsesGenericImportPipeline(source string) bool {
+	return importsource.IsRegistered(source) || source == models.JobSourceCSV
+}
+
 // ArgsForJobType returns the appropriate River JobArgs for the given job_type,
 // source, and job_item_id. Used by callers (the HTTP retry handlers, the orphan
 // rescuer) that switch on job_type at runtime. The source disambiguates imports
 // that share the "import" job_type but need a different task chain (registry
 // sources use the match→finalize chain).
 func ArgsForJobType(jobType, source, jobItemID string) (river.JobArgs, error) {
-	// Registry-based imports run a bespoke match→finalize chain; a retried item
+	// Generic-pipeline imports run a match→finalize chain; a retried item
 	// re-enters at the match stage regardless of the (shared) "import" job_type.
-	if importsource.IsRegistered(source) {
+	if UsesGenericImportPipeline(source) {
 		return ImportMatchArgs{JobItemID: jobItemID}, nil
 	}
 	switch jobType {
@@ -78,11 +92,11 @@ func ArgsForJobType(jobType, source, jobItemID string) (river.JobArgs, error) {
 
 // FinalizeArgsForSource returns the finalize-stage River args for an import
 // source whose job_items are resolved interactively (the manual-match flow).
-// Only sources registered in the importsource registry are supported.
+// Only generic-pipeline sources (registry mappers + CSV) are supported.
 // Used by the generic job-item resolve endpoint so the finalize task is routed
 // by source rather than hard-coded.
 func FinalizeArgsForSource(source, jobItemID string) (river.JobArgs, error) {
-	if importsource.IsRegistered(source) {
+	if UsesGenericImportPipeline(source) {
 		return ImportFinalizeArgs{JobItemID: jobItemID}, nil
 	}
 	return nil, fmt.Errorf("source %q has no interactive finalize stage", source)
