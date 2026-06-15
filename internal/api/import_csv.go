@@ -171,10 +171,12 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 	// column is the rating column (to track its numeric max below).
 	suggested := csvmap.GuessColumns(header)
 	ratingIdx := -1
-	for i, name := range header {
-		if name == suggested.Columns.Rating {
-			ratingIdx = i
-			break
+	if suggested.Columns.Rating != "" {
+		for i, name := range header {
+			if name == suggested.Columns.Rating {
+				ratingIdx = i
+				break
+			}
 		}
 	}
 
