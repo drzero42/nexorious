@@ -2,7 +2,8 @@ package csvmap
 
 import "testing"
 
-// wrapped is a fully quote-wrapped 3-field header+rows helper for fallback tests.
+// malformedQuoted is a fully quote-wrapped 3-field CSV whose third data row has
+// bare inner quotes, triggering the dequoteSplit fallback.
 const malformedQuoted = `"Name","Edition","Note"
 "A Hat in Time","","ok"
 "Episode 1: "Done Running"","","raw quotes"
@@ -67,5 +68,17 @@ func TestReadRecords_RaggedDequote_ReturnsError(t *testing.T) {
 	raw := []byte("\"a\",\"b\"x\"\n\"c\",\"d\",\"e\"\n")
 	if _, err := ReadRecords(raw); err == nil {
 		t.Fatal("want error for ragged de-quote, got nil")
+	}
+}
+
+func TestReadRecords_MalformedQuotes_CRLF_FallbackRecovers(t *testing.T) {
+	// Same malformed shape but with Windows CRLF line endings.
+	raw := []byte("\"Name\",\"Note\"\r\n\"Episode: \"Oops\"\",\"ok\"\r\n")
+	recs, err := ReadRecords(raw)
+	if err != nil {
+		t.Fatalf("ReadRecords: %v", err)
+	}
+	if len(recs) != 2 || recs[1][0] != `Episode: "Oops"` {
+		t.Fatalf("got %v", recs)
 	}
 }
