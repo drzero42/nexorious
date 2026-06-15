@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { emptyCsvMapping, initStatusValueMap } from './csv-mapping';
+import { emptyCsvMapping, initStatusValueMap, usedColumns, availableHeaders } from './csv-mapping';
 import { PlayStatus } from '@/types';
 
 describe('csv-mapping helpers', () => {
@@ -31,5 +31,36 @@ describe('csv-mapping helpers', () => {
 
   it('initStatusValueMap returns an empty map for no values', () => {
     expect(initStatusValueMap([])).toEqual({});
+  });
+
+  it('usedColumns collects every non-empty column + status column', () => {
+    const m = emptyCsvMapping();
+    m.columns.title = 'Name';
+    m.columns.platform = 'System';
+    m.status.column = 'Status';
+    expect(usedColumns(m)).toEqual(new Set(['Name', 'System', 'Status']));
+  });
+
+  it('availableHeaders hides headers used by other fields but keeps own value', () => {
+    const headers = ['Name', 'System', 'Status'];
+    const m = emptyCsvMapping();
+    m.columns.title = 'Name';
+    m.columns.platform = 'System';
+    // For the title field (own value 'Name'): 'System' is used elsewhere and hidden.
+    expect(availableHeaders(headers, m, 'Name')).toEqual(['Name', 'Status']);
+    // For an unset field: both used headers hidden.
+    expect(availableHeaders(headers, m, '')).toEqual(['Status']);
+  });
+
+  it('availableHeaders frees a column once its field is cleared', () => {
+    const headers = ['Name', 'System'];
+    const m = emptyCsvMapping();
+    m.columns.title = 'Name';
+    m.columns.platform = 'System';
+    // Platform still set -> hidden for the unset rating field.
+    expect(availableHeaders(headers, m, '')).toEqual([]);
+    // Clear platform -> 'System' returns to the pool immediately.
+    m.columns.platform = '';
+    expect(availableHeaders(headers, m, '')).toEqual(['System']);
   });
 });

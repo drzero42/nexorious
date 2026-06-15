@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
@@ -97,5 +98,44 @@ func TestEnqueueOrFail_NilClient_OnlyTouchesPendingRows(t *testing.T) {
 	_ = testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &status)
 	if status != "completed" {
 		t.Errorf("EnqueueOrFail clobbered a non-pending row: status=%q, want completed", status)
+	}
+}
+
+// TestUsesGenericImportPipeline locks in which sources run the shared
+// ImportMatch→pending_review→ImportFinalize chain. CSV qualifies despite not
+// being a registry Mapper; nexorious (legacy single-stage) and sync do not.
+func TestUsesGenericImportPipeline(t *testing.T) {
+	if !tasks.UsesGenericImportPipeline(models.JobSourceCSV) {
+		t.Errorf("csv should use the generic import pipeline")
+	}
+	if tasks.UsesGenericImportPipeline(models.JobSourceNexorious) {
+		t.Errorf("nexorious uses the legacy single-stage import, not the generic pipeline")
+	}
+	if tasks.UsesGenericImportPipeline("steam") {
+		t.Errorf("sync source steam should not use the import pipeline")
+	}
+}
+
+// TestFinalizeArgsForSource_CSV: a resolved CSV pending_review item must finalize
+// through the generic ImportFinalize worker.
+func TestFinalizeArgsForSource_CSV(t *testing.T) {
+	args, err := tasks.FinalizeArgsForSource(models.JobSourceCSV, "item-1")
+	if err != nil {
+		t.Fatalf("FinalizeArgsForSource(csv): %v", err)
+	}
+	if _, ok := args.(tasks.ImportFinalizeArgs); !ok {
+		t.Errorf("expected ImportFinalizeArgs, got %T", args)
+	}
+}
+
+// TestArgsForJobType_CSVImportUsesMatch: retrying a failed CSV item must re-enter
+// at the generic match stage, not the legacy single-stage import worker.
+func TestArgsForJobType_CSVImportUsesMatch(t *testing.T) {
+	args, err := tasks.ArgsForJobType(models.JobTypeImport, models.JobSourceCSV, "item-1")
+	if err != nil {
+		t.Fatalf("ArgsForJobType: %v", err)
+	}
+	if _, ok := args.(tasks.ImportMatchArgs); !ok {
+		t.Errorf("expected ImportMatchArgs for csv retry, got %T", args)
 	}
 }

@@ -40,6 +40,7 @@ export interface CsvInspectResponse {
   headers: string[];
   row_count: number;
   columns: CsvColumnInfo[];
+  suggested_mapping?: CsvMapping;
 }
 
 export interface CsvMapping {
