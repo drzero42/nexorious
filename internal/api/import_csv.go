@@ -161,7 +161,10 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 	}
 
 	records, err := csvmap.ReadRecords(body)
-	if err != nil || len(records) == 0 {
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
+	}
+	if len(records) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "could not read CSV header")
 	}
 	header := records[0]
@@ -207,6 +210,8 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 				seen[i][v] = true
 				cols[i].DistinctValues = append(cols[i].DistinctValues, v)
 			} else {
+				// A distinct value beyond the cap: flag truncation and stop
+				// tracking this column so `seen` stays bounded to the cap.
 				cols[i].DistinctTruncated = true
 			}
 		}
