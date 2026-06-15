@@ -1,5 +1,11 @@
 import { api, apiUploadFile, apiDownloadFile } from './client';
-import type { ImportJobCreatedResponse, ExportJobCreatedResponse, ImportSourceInfo } from '@/types';
+import type {
+  ImportJobCreatedResponse,
+  ExportJobCreatedResponse,
+  ImportSourceInfo,
+  CsvInspectResponse,
+  CsvMapping,
+} from '@/types';
 
 // ============================================================================
 // Import API Functions
@@ -25,6 +31,21 @@ export async function importFromSource(
   file: File,
 ): Promise<ImportJobCreatedResponse> {
   return apiUploadFile<ImportJobCreatedResponse>(`/import/${slug}`, file);
+}
+
+/** Inspect a CSV file: headers, row count, and per-column distinct values. */
+export async function inspectCsv(file: File): Promise<CsvInspectResponse> {
+  return apiUploadFile<CsvInspectResponse>('/import/csv/inspect', file);
+}
+
+/** Import a CSV with a user-built column/status mapping. */
+export async function importCsv(
+  file: File,
+  mapping: CsvMapping,
+): Promise<ImportJobCreatedResponse> {
+  return apiUploadFile<ImportJobCreatedResponse>('/import/csv', file, 'file', {
+    mapping: JSON.stringify(mapping),
+  });
 }
 
 // ============================================================================

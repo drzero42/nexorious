@@ -30,6 +30,38 @@ export interface ExportJobCreatedResponse {
   estimated_items: number;
 }
 
+interface CsvColumnInfo {
+  name: string;
+  distinct_values: string[];
+  distinct_truncated: boolean;
+}
+
+export interface CsvInspectResponse {
+  headers: string[];
+  row_count: number;
+  columns: CsvColumnInfo[];
+}
+
+export interface CsvMapping {
+  columns: {
+    title: string;
+    platform: string;
+    storefront: string;
+    rating: string;
+    notes: string;
+    acquired_date: string;
+    hours_played: string;
+    tags: string;
+    loved: string;
+  };
+  status: {
+    column: string;
+    value_map: Record<string, string>;
+  };
+  rating_scale: number;
+  merge_by_title: boolean;
+}
+
 // Helper to get export format display info
 export function getExportFormatDisplayInfo(format: ExportFormat): {
   title: string;

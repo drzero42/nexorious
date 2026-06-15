@@ -14,9 +14,12 @@ import {
   useDownloadExport,
   useRetryFailedItems,
   jobsKeys,
+  useInspectCsv,
+  useImportCsv,
 } from '@/hooks';
 import { ExportFormat, JobType, JobStatus, getExportFormatDisplayInfo } from '@/types';
-import type { ImportSourceInfo } from '@/types';
+import type { ImportSourceInfo, CsvInspectResponse, CsvMapping } from '@/types';
+import { CsvMappingDialog } from '@/components/import/csv-mapping-dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -189,9 +192,14 @@ export function ImportExportPage() {
     null,
   );
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvInspect, setCsvInspect] = useState<CsvInspectResponse | null>(null);
+  const [csvDialogOpen, setCsvDialogOpen] = useState(false);
 
   const { mutateAsync: importNexorious } = useImportNexorious();
   const { mutateAsync: importFromSource } = useImportSource();
+  const { mutateAsync: inspectCsv, isPending: isInspecting } = useInspectCsv();
+  const { mutateAsync: importCsv, isPending: isCsvImporting } = useImportCsv();
   const { data: importSources = [] } = useImportSources();
   const { mutateAsync: exportCollection } = useExportCollection();
   const { mutate: cancelJob, isPending: isCancelling } = useCancelJob();
@@ -288,8 +296,10 @@ export function ImportExportPage() {
     activeJob?.status === JobStatus.COMPLETED &&
     activeJob?.jobType === JobType.EXPORT;
 
-  // Set of source slugs that produce pending_review items (registry-backed sources)
-  const importSourceSlugs = new Set(importSources.map((s: ImportSourceInfo) => s.slug));
+  // Set of source slugs that produce pending_review items (registry-backed sources +
+  // CSV which is hand-rendered rather than registry-driven).
+  const importSourceSlugs = new Set<string>(importSources.map((s: ImportSourceInfo) => s.slug));
+  importSourceSlugs.add('csv');
 
   const handleImportFile = async (slug: string, file: File) => {
     setUploadingSlug(slug);
@@ -302,6 +312,29 @@ export function ImportExportPage() {
       toast.error(error instanceof Error ? error.message : 'Import failed');
     } finally {
       setUploadingSlug(null);
+    }
+  };
+
+  const handleCsvSelect = async (file: File) => {
+    try {
+      const result = await inspectCsv(file);
+      setCsvFile(file);
+      setCsvInspect(result);
+      setCsvDialogOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to read CSV');
+    }
+  };
+
+  const handleCsvImport = async (mapping: CsvMapping) => {
+    if (!csvFile) return;
+    try {
+      const result = await importCsv({ file: csvFile, mapping });
+      toast.success(`Import started: ${result.message}`);
+      setCsvDialogOpen(false);
+      setDismissedJobId(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Import failed');
     }
   };
 
@@ -388,7 +421,7 @@ export function ImportExportPage() {
         <section className="mb-8 space-y-4">
           <JobProgressCard job={activeJob} onCancel={handleCancelJob} isCancelling={isCancelling} />
 
-          {/* Registry-backed imports surface the per-item review actions
+          {/* Registry-backed imports and CSV surface the per-item review actions
               (Find Match / Skip) here: pending_review keeps the job in
               'processing', and RecentActivity only covers terminal jobs, so this
               is the only place the manual-matching box can appear. */}
@@ -472,6 +505,16 @@ export function ImportExportPage() {
               disabled={hasActiveJob}
               onFileSelect={(file) => handleImportFile('nexorious', file)}
             />
+            {/* CSV — separate, non-registry path with two-step inspect+map flow */}
+            <ImportCard
+              title="CSV"
+              description="Import a library from any tracker's CSV export. You'll map its columns to Nexorious fields in the next step. Requires IGDB to be configured."
+              features={['Map any CSV layout', 'Matches games to IGDB', 'Interactive review']}
+              accept=".csv,text/csv"
+              isUploading={isInspecting}
+              disabled={hasActiveJob}
+              onFileSelect={handleCsvSelect}
+            />
             {importSources.map((src: ImportSourceInfo) => (
               <ImportCard
                 key={src.slug}
@@ -530,6 +573,16 @@ export function ImportExportPage() {
       <section className="mb-6">
         <RecentActivity jobTypes={[JobType.IMPORT, JobType.EXPORT]} excludeJobIds={excludeJobIds} />
       </section>
+
+      {csvInspect && (
+        <CsvMappingDialog
+          open={csvDialogOpen}
+          onOpenChange={setCsvDialogOpen}
+          inspect={csvInspect}
+          isImporting={isCsvImporting}
+          onImport={handleCsvImport}
+        />
+      )}
     </div>
   );
 }

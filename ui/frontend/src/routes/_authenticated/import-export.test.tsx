@@ -15,6 +15,11 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn(), setQueryData: vi.fn() }),
 }));
 
+// Stub the CSV mapping dialog; its internals are tested separately.
+vi.mock('@/components/import/csv-mapping-dialog', () => ({
+  CsvMappingDialog: () => null,
+}));
+
 // Stub the heavy job components; the review surface is a marker we assert on.
 vi.mock('@/components/jobs', () => ({
   JobProgressCard: () => <div data-testid="job-progress-card" />,
@@ -25,6 +30,8 @@ vi.mock('@/components/jobs', () => ({
 vi.mock('@/hooks', () => ({
   useImportNexorious: () => ({ mutateAsync: vi.fn() }),
   useImportSource: () => ({ mutateAsync: vi.fn() }),
+  useInspectCsv: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useImportCsv: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useImportSources: () => ({
     data: [
       {
@@ -117,6 +124,24 @@ describe('ImportExportPage review surface', () => {
     h.job = makeJob(JobSource.NEXORIOUS);
     render(<ImportExportPage />);
     expect(screen.queryByTestId('import-review')).not.toBeInTheDocument();
+  });
+
+  it('renders the per-item review surface for an active CSV import', () => {
+    h.job = makeJob(JobSource.CSV);
+    render(<ImportExportPage />);
+    expect(screen.getByTestId('import-review')).toBeInTheDocument();
+  });
+});
+
+describe('ImportExportPage CSV import card', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders the CSV import card', async () => {
+    h.job = undefined;
+    render(<ImportExportPage />);
+    expect(await screen.findByRole('heading', { name: 'CSV' })).toBeInTheDocument();
   });
 });
 

@@ -209,6 +209,83 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	})
 }
 
+// enqueueImportJob runs the shared post-mapping import tail: it refuses a second
+// active import for (user, source), inserts the processing job, creates one
+// job_item per game with an ImportMatch task, marks dispatch complete, and
+// triggers the completion check. It returns the job id and item count, or an
+// *echo.HTTPError the caller can return directly.
+func (h *ImportHandler) enqueueImportJob(reqCtx context.Context, userID, source, displayName string, games []importmodel.Game) (string, int, error) {
+	ctx := context.Background()
+
+	var existing models.Job
+	err := h.db.NewSelect().Model(&existing).
+		Where("user_id = ?", userID).
+		Where("job_type = ?", models.JobTypeImport).
+		Where("source = ?", source).
+		Where("status IN (?)", bun.List([]string{models.JobStatusPending, models.JobStatusProcessing})).
+		Limit(1).Scan(ctx)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to check active import")
+	}
+	if err == nil {
+		return "", 0, echo.NewHTTPError(http.StatusConflict, fmt.Sprintf("an active %s import is already in progress", displayName))
+	}
+
+	now := time.Now().UTC()
+	job := &models.Job{
+		ID:               uuid.NewString(),
+		UserID:           userID,
+		JobType:          models.JobTypeImport,
+		Source:           source,
+		Status:           models.JobStatusProcessing,
+		Priority:         models.JobPriorityHigh,
+		TotalItems:       len(games),
+		DispatchComplete: false,
+		CreatedAt:        now,
+	}
+	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
+		return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
+	}
+
+	for i, g := range games {
+		meta, err := json.Marshal(g)
+		if err != nil {
+			return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to marshal game payload")
+		}
+		item := &models.JobItem{
+			ID:             uuid.NewString(),
+			JobID:          job.ID,
+			UserID:         userID,
+			ItemKey:        fmt.Sprintf("game_%d", i),
+			SourceTitle:    g.Title,
+			SourceMetadata: meta,
+			Status:         models.JobItemStatusPending,
+			Result:         json.RawMessage(`{}`),
+			IGDBCandidates: json.RawMessage(`[]`),
+		}
+		if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
+			return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
+		}
+		if h.riverClient != nil {
+			if _, err := h.riverClient.Insert(ctx, tasks.ImportMatchArgs{JobItemID: item.ID}, nil); err != nil {
+				slog.ErrorContext(reqCtx, "import: submit import_match", "item_id", item.ID, logging.KeyErr, err)
+			}
+		}
+	}
+
+	// Dispatch is complete only now that every item exists and is enqueued.
+	// Flipping the flag (and re-checking completion) here closes the window where
+	// an early item could finish and finalize the job before later items were
+	// inserted — the completion check refuses to finalize while dispatch is in
+	// flight (dispatch_complete=false), mirroring the sync dispatch worker.
+	if _, err := h.db.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, job.ID).Exec(ctx); err != nil {
+		slog.ErrorContext(reqCtx, "import: mark dispatch complete", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	}
+	tasks.ImportCheckJobCompletion(h.db, job.ID)
+
+	return job.ID, len(games), nil
+}
+
 // handleImportSource returns an Echo handler for a registered import source.
 // It validates IGDB is configured, parses the upload via the source's mapper,
 // creates the job + one job_item per game, and enqueues the match stage. One
@@ -252,81 +329,16 @@ func (h *ImportHandler) handleImportSource(src importsource.Source) echo.Handler
 			return echo.NewHTTPError(http.StatusBadRequest, "no games found in file")
 		}
 
-		ctx := context.Background()
-
-		var existing models.Job
-		err = h.db.NewSelect().Model(&existing).
-			Where("user_id = ?", userID).
-			Where("job_type = ?", models.JobTypeImport).
-			Where("source = ?", src.Slug).
-			Where("status IN (?)", bun.List([]string{models.JobStatusPending, models.JobStatusProcessing})).
-			Limit(1).Scan(ctx)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to check active import")
+		jobID, total, err := h.enqueueImportJob(c.Request().Context(), userID, src.Slug, src.DisplayName, games)
+		if err != nil {
+			return err
 		}
-		if err == nil {
-			return echo.NewHTTPError(http.StatusConflict, fmt.Sprintf("an active %s import is already in progress", src.DisplayName))
-		}
-
-		now := time.Now().UTC()
-		job := &models.Job{
-			ID:               uuid.NewString(),
-			UserID:           userID,
-			JobType:          models.JobTypeImport,
-			Source:           src.Slug,
-			Status:           models.JobStatusProcessing,
-			Priority:         models.JobPriorityHigh,
-			TotalItems:       len(games),
-			DispatchComplete: false,
-			CreatedAt:        now,
-		}
-		if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
-		}
-
-		reqCtx := c.Request().Context()
-		for i, g := range games {
-			meta, err := json.Marshal(g)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to marshal game payload")
-			}
-			item := &models.JobItem{
-				ID:             uuid.NewString(),
-				JobID:          job.ID,
-				UserID:         userID,
-				ItemKey:        fmt.Sprintf("game_%d", i),
-				SourceTitle:    g.Title,
-				SourceMetadata: meta,
-				Status:         models.JobItemStatusPending,
-				Result:         json.RawMessage(`{}`),
-				IGDBCandidates: json.RawMessage(`[]`),
-			}
-			if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
-			}
-			if h.riverClient != nil {
-				if _, err := h.riverClient.Insert(ctx, tasks.ImportMatchArgs{JobItemID: item.ID}, nil); err != nil {
-					slog.ErrorContext(reqCtx, "import: submit import_match", "item_id", item.ID, logging.KeyErr, err)
-				}
-			}
-		}
-
-		// Dispatch is complete only now that every item exists and is enqueued.
-		// Flipping the flag (and re-checking completion) here closes the window where
-		// an early item could finish and finalize the job before later items were
-		// inserted — the completion check refuses to finalize while dispatch is in
-		// flight (dispatch_complete=false), mirroring the sync dispatch worker.
-		if _, err := h.db.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, job.ID).Exec(ctx); err != nil {
-			slog.ErrorContext(reqCtx, "import: mark dispatch complete", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		}
-		tasks.ImportCheckJobCompletion(h.db, job.ID)
-
 		return c.JSON(http.StatusOK, map[string]any{
-			"job_id":      job.ID,
-			"source":      job.Source,
-			"status":      job.Status,
-			"message":     fmt.Sprintf("%s import job created. Matching %d games.", src.DisplayName, len(games)),
-			"total_items": len(games),
+			"job_id":      jobID,
+			"source":      src.Slug,
+			"status":      models.JobStatusProcessing,
+			"message":     fmt.Sprintf("%s import job created. Matching %d games.", src.DisplayName, total),
+			"total_items": total,
 		})
 	}
 }
