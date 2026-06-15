@@ -7,6 +7,8 @@ import type {
   ExportFormat,
   ImportSourceInfo,
   JobTypeStatus,
+  CsvInspectResponse,
+  CsvMapping,
 } from '@/types';
 import { jobsKeys } from './use-jobs';
 
@@ -62,6 +64,24 @@ export function useImportSource() {
   const queryClient = useQueryClient();
   return useMutation<ImportJobCreatedResponse, Error, { slug: string; file: File }>({
     mutationFn: ({ slug, file }) => importExportApi.importFromSource(slug, file),
+    onSuccess: (result) => {
+      markJobTypeActive(queryClient, JobType.IMPORT, result.job_id);
+    },
+  });
+}
+
+/** Inspect a CSV file to drive the mapping dialog. */
+export function useInspectCsv() {
+  return useMutation<CsvInspectResponse, Error, File>({
+    mutationFn: (file) => importExportApi.inspectCsv(file),
+  });
+}
+
+/** Import a CSV with a user-built mapping. */
+export function useImportCsv() {
+  const queryClient = useQueryClient();
+  return useMutation<ImportJobCreatedResponse, Error, { file: File; mapping: CsvMapping }>({
+    mutationFn: ({ file, mapping }) => importExportApi.importCsv(file, mapping),
     onSuccess: (result) => {
       markJobTypeActive(queryClient, JobType.IMPORT, result.job_id);
     },
