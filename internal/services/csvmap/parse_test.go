@@ -402,6 +402,74 @@ func TestParse_RatingClampsAboveFive(t *testing.T) {
 	}
 }
 
+func TestParse_IGDBIDExtracted(t *testing.T) {
+	raw := []byte("title,igdb_id\nAnodyne,42\n")
+	cfg := Config{
+		Columns: ColumnMap{Title: "title", IGDBID: "igdb_id"},
+	}
+	games, err := Parse(raw, cfg)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("got %d games, want 1", len(games))
+	}
+	if games[0].IGDBID == nil || *games[0].IGDBID != 42 {
+		t.Fatalf("IGDBID = %v, want 42", games[0].IGDBID)
+	}
+}
+
+func TestParse_IGDBIDInvalidLeftNil(t *testing.T) {
+	// blank, non-numeric, zero, and negative all yield a nil IGDBID -> the row
+	// falls back to title matching downstream.
+	cases := []string{"", "abc", "0", "-3"}
+	for _, v := range cases {
+		raw := []byte("title,igdb_id\nAnodyne," + v + "\n")
+		cfg := Config{Columns: ColumnMap{Title: "title", IGDBID: "igdb_id"}}
+		games, err := Parse(raw, cfg)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", v, err)
+		}
+		if len(games) != 1 {
+			t.Fatalf("Parse(%q): got %d games, want 1", v, len(games))
+		}
+		if games[0].IGDBID != nil {
+			t.Errorf("Parse(%q): IGDBID = %v, want nil", v, *games[0].IGDBID)
+		}
+	}
+}
+
+func TestParse_IGDBIDUnconfiguredLeftNil(t *testing.T) {
+	raw := []byte("title,igdb_id\nAnodyne,42\n")
+	cfg := Config{Columns: ColumnMap{Title: "title"}} // IGDBID column not mapped
+	games, err := Parse(raw, cfg)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if games[0].IGDBID != nil {
+		t.Errorf("IGDBID = %v, want nil", *games[0].IGDBID)
+	}
+}
+
+func TestParse_IGDBIDMergeFirstWins(t *testing.T) {
+	// Two rows, same title, different ids; merge keeps the first row's id.
+	raw := []byte("title,igdb_id\nAnodyne,42\nAnodyne,99\n")
+	cfg := Config{
+		Columns:  ColumnMap{Title: "title", IGDBID: "igdb_id"},
+		Grouping: GroupingConfig{MergeByTitle: true},
+	}
+	games, err := Parse(raw, cfg)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("got %d games, want 1 (merged)", len(games))
+	}
+	if games[0].IGDBID == nil || *games[0].IGDBID != 42 {
+		t.Fatalf("IGDBID = %v, want 42 (first wins)", games[0].IGDBID)
+	}
+}
+
 func TestParse_RaggedRowFillsMissingColumnsAsEmpty(t *testing.T) {
 	// Header has 3 columns; the data row supplies only 1. Missing trailing
 	// columns must resolve to empty (their default), not panic.
