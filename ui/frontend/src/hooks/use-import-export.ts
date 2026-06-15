@@ -77,11 +77,15 @@ export function useInspectCsv() {
   });
 }
 
-/** Import a CSV with a user-built mapping. */
+/** Import a CSV with a chosen format ('generic' + a user mapping, or a preset slug). */
 export function useImportCsv() {
   const queryClient = useQueryClient();
-  return useMutation<ImportJobCreatedResponse, Error, { file: File; mapping: CsvMapping }>({
-    mutationFn: ({ file, mapping }) => importExportApi.importCsv(file, mapping),
+  return useMutation<
+    ImportJobCreatedResponse,
+    Error,
+    { file: File; format: string; mapping: CsvMapping }
+  >({
+    mutationFn: ({ file, format, mapping }) => importExportApi.importCsv(file, format, mapping),
     onSuccess: (result) => {
       markJobTypeActive(queryClient, JobType.IMPORT, result.job_id);
     },

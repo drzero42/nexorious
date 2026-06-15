@@ -65,22 +65,77 @@ describe('CsvMappingDialog', () => {
 
     expect(onImport).toHaveBeenCalledTimes(1);
     expect(onImport).toHaveBeenCalledWith({
-      columns: {
-        title: 'Name',
-        igdb_id: '',
-        platform: '',
-        storefront: '',
-        rating: '',
-        notes: '',
-        acquired_date: '',
-        hours_played: '',
-        tags: '',
-        loved: '',
+      format: 'generic',
+      mapping: {
+        columns: {
+          title: 'Name',
+          igdb_id: '',
+          platform: '',
+          storefront: '',
+          rating: '',
+          notes: '',
+          acquired_date: '',
+          hours_played: '',
+          tags: '',
+          loved: '',
+        },
+        status: { column: 'Status', value_map: { Beaten: 'not_started', Playing: 'not_started' } },
+        rating_scale: 5,
+        merge_by_title: true,
       },
-      status: { column: 'Status', value_map: { Beaten: 'not_started', Playing: 'not_started' } },
-      rating_scale: 5,
-      merge_by_title: true,
     });
+  });
+
+  it('hides the mapping form and imports with the preset slug when a format is chosen', async () => {
+    const user = userEvent.setup();
+    const onImport = vi.fn();
+    render(
+      <CsvMappingDialog
+        open
+        onOpenChange={vi.fn()}
+        inspect={{ ...inspect, presets: [{ slug: 'completionator', name: 'Completionator' }] }}
+        isImporting={false}
+        onImport={onImport}
+      />,
+    );
+
+    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    await user.click(screen.getByRole('option', { name: 'Completionator' }));
+
+    expect(screen.queryByText('1 · Map columns')).not.toBeInTheDocument();
+    const importBtn = screen.getByRole('button', { name: /import 3 games/i });
+    expect(importBtn).toBeEnabled();
+    await user.click(importBtn);
+
+    expect(onImport).toHaveBeenCalledTimes(1);
+    expect(onImport.mock.calls[0][0].format).toBe('completionator');
+  });
+
+  it('restores the mapping form when switching the format back to Generic CSV', async () => {
+    const user = userEvent.setup();
+    render(
+      <CsvMappingDialog
+        open
+        onOpenChange={vi.fn()}
+        inspect={{ ...inspect, presets: [{ slug: 'completionator', name: 'Completionator' }] }}
+        isImporting={false}
+        onImport={vi.fn()}
+      />,
+    );
+
+    // Pick the preset -> mapping form hidden.
+    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    await user.click(screen.getByRole('option', { name: 'Completionator' }));
+    expect(screen.queryByText('1 · Map columns')).not.toBeInTheDocument();
+
+    // Switch back to Generic -> mapping form returns, Import disabled (no title yet).
+    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    await user.click(screen.getByRole('option', { name: 'Generic CSV' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('1 · Map columns')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /import 3 games/i })).toBeDisabled();
   });
 
   it('pre-fills the form from inspect.suggested_mapping', () => {

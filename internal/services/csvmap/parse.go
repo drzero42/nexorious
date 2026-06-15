@@ -1,8 +1,6 @@
 package csvmap
 
 import (
-	"bytes"
-	"encoding/csv"
 	"fmt"
 	"io"
 	"math"
@@ -66,31 +64,21 @@ func Parse(raw []byte, cfg Config) ([]importmodel.Game, error) {
 	if err := validate(cfg); err != nil {
 		return nil, err
 	}
-	r := csv.NewReader(bytes.NewReader(raw))
-	r.FieldsPerRecord = -1 // tolerate ragged rows (missing trailing columns)
-
-	header, err := r.Read()
+	records, err := ReadRecords(raw)
 	if err != nil {
 		return nil, err
 	}
+	if len(records) == 0 {
+		return nil, io.EOF
+	}
+
+	header := records[0]
 	if !MatchesSignature(header, cfg) {
 		return nil, fmt.Errorf("csv does not match the expected format: %w", importmodel.ErrInvalidSignature)
 	}
 	idx := buildIndex(header)
 
-	var rows [][]string
-	for {
-		rec, err := r.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		rows = append(rows, rec)
-	}
-
-	return buildGames(rows, idx, cfg), nil
+	return buildGames(records[1:], idx, cfg), nil
 }
 
 // buildGames dispatches between one-row and merge-by-title grouping.

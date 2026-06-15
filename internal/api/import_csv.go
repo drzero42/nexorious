@@ -1,9 +1,8 @@
 package api
 
 import (
-	"bytes"
-	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/services/csvmap"
+	"github.com/drzero42/nexorious/internal/services/importmodel"
 )
 
 // csvMapping is the flat, frontend-shaped request body the mapping dialog POSTs
@@ -109,11 +109,18 @@ type csvColumnInfo struct {
 	DistinctTruncated bool     `json:"distinct_truncated"`
 }
 
+// csvPresetInfo is one selectable known CSV format for the import dialog dropdown.
+type csvPresetInfo struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
 type csvInspectResponse struct {
 	Headers          []string                `json:"headers"`
 	RowCount         int                     `json:"row_count"`
 	Columns          []csvColumnInfo         `json:"columns"`
 	SuggestedMapping csvmap.SuggestedMapping `json:"suggested_mapping"`
+	Presets          []csvPresetInfo         `json:"presets"`
 }
 
 // readUploadFile parses the multipart form and reads the "file" field, enforcing
@@ -162,12 +169,14 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 		return herr
 	}
 
-	r := csv.NewReader(bytes.NewReader(body))
-	r.FieldsPerRecord = -1
-	header, err := r.Read()
+	records, err := csvmap.ReadRecords(body)
 	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
+	}
+	if len(records) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "could not read CSV header")
 	}
+	header := records[0]
 
 	// Guess the column->field mapping from the headers alone so we know which
 	// column is the rating column (to track its numeric max below).
@@ -191,14 +200,7 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 
 	rowCount := 0
 	var ratingMax float64
-	for {
-		rec, err := r.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
-		}
+	for _, rec := range records[1:] {
 		rowCount++
 		for i := range header {
 			if i >= len(rec) {
@@ -238,11 +240,17 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 		}
 	}
 
+	presets := make([]csvPresetInfo, 0)
+	for _, p := range csvmap.Presets() {
+		presets = append(presets, csvPresetInfo{Slug: p.Slug, Name: p.DisplayName})
+	}
+
 	return c.JSON(http.StatusOK, csvInspectResponse{
 		Headers:          header,
 		RowCount:         rowCount,
 		Columns:          cols,
 		SuggestedMapping: suggested,
+		Presets:          presets,
 	})
 }
 
@@ -262,21 +270,39 @@ func (h *ImportHandler) HandleImportCSV(c *echo.Context) error {
 		return herr
 	}
 
-	mappingJSON := c.Request().FormValue("mapping")
-	if mappingJSON == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "missing mapping field")
-	}
-	var mapping csvMapping
-	if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid mapping JSON")
-	}
-	cfg, err := buildCSVConfig(mapping)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	format := strings.TrimSpace(c.Request().FormValue("format"))
+	var cfg csvmap.Config
+	// "generic" (and empty) selects the manual user-mapping path; any other value
+	// must be a registered preset slug. "generic" is therefore reserved and must
+	// never be added to csvmap.presetList. When a preset is chosen its server-side
+	// Config wins and the "mapping" field, if any, is ignored.
+	if format != "" && format != "generic" {
+		preset, ok := csvmap.PresetBySlug(format)
+		if !ok {
+			return echo.NewHTTPError(http.StatusBadRequest, "unknown CSV format: "+format)
+		}
+		cfg = preset
+	} else {
+		mappingJSON := c.Request().FormValue("mapping")
+		if mappingJSON == "" {
+			return echo.NewHTTPError(http.StatusBadRequest, "missing mapping field")
+		}
+		var mapping csvMapping
+		if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid mapping JSON")
+		}
+		built, err := buildCSVConfig(mapping)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		cfg = built
 	}
 
 	games, err := csvmap.Parse(body, cfg)
 	if err != nil {
+		if errors.Is(err, importmodel.ErrInvalidSignature) {
+			return echo.NewHTTPError(http.StatusBadRequest, "this file does not match the selected format")
+		}
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
 	}
 	if len(games) == 0 {

@@ -36,11 +36,17 @@ interface CsvColumnInfo {
   distinct_truncated: boolean;
 }
 
+export interface CsvPresetInfo {
+  slug: string;
+  name: string;
+}
+
 export interface CsvInspectResponse {
   headers: string[];
   row_count: number;
   columns: CsvColumnInfo[];
   suggested_mapping?: CsvMapping;
+  presets?: CsvPresetInfo[];
 }
 
 export interface CsvMapping {

@@ -2,6 +2,7 @@ package csvmap
 
 import (
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/services/importmodel"
@@ -483,5 +484,33 @@ func TestParse_RaggedRowFillsMissingColumnsAsEmpty(t *testing.T) {
 	}
 	if len(games) != 1 || games[0].PlayStatus != "not_started" || games[0].Tags != nil {
 		t.Fatalf("ragged row failed: %+v", games)
+	}
+}
+
+func TestParse_MalformedQuotes_Recovered(t *testing.T) {
+	// A bare-quoted title that strict encoding/csv rejects; Parse must recover
+	// it via ReadRecords' fallback.
+	csv := "\"Name\",\"Other\"\n" +
+		"\"Episode 1: \"Done Running\"\",\"x\"\n" +
+		"\"Portal\",\"y\"\n"
+	games, err := Parse([]byte(csv), titleOnlyConfig())
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(games) != 2 {
+		t.Fatalf("want 2 games, got %d", len(games))
+	}
+	if games[0].Title != `Episode 1: "Done Running"` {
+		t.Fatalf("title = %q, want `Episode 1: \"Done Running\"`", games[0].Title)
+	}
+	if games[1].Title != "Portal" {
+		t.Fatalf("games[1].Title = %q, want \"Portal\"", games[1].Title)
+	}
+}
+
+func TestParse_EmptyFile_ReturnsEOF(t *testing.T) {
+	_, err := Parse([]byte{}, titleOnlyConfig())
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("want io.EOF on empty input, got %v", err)
 	}
 }

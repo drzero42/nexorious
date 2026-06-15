@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Loader2, Upload } from 'lucide-react';
 import { PlayStatus } from '@/types';
-import type { CsvInspectResponse, CsvMapping } from '@/types';
+import type { CsvInspectResponse, CsvMapping, CsvPresetInfo } from '@/types';
 import { statusLabels } from '@/lib/play-status';
 import { emptyCsvMapping, initStatusValueMap, availableHeaders } from './csv-mapping';
 
@@ -45,7 +45,7 @@ interface CsvMappingDialogProps {
   onOpenChange: (open: boolean) => void;
   inspect: CsvInspectResponse;
   isImporting: boolean;
-  onImport: (mapping: CsvMapping) => void;
+  onImport: (result: { format: string; mapping: CsvMapping }) => void;
 }
 
 // CsvMappingDialog is the Dialog shell. The form body is mounted only while open
@@ -78,7 +78,7 @@ export function CsvMappingDialog({
 interface CsvMappingFormProps {
   inspect: CsvInspectResponse;
   isImporting: boolean;
-  onImport: (mapping: CsvMapping) => void;
+  onImport: (result: { format: string; mapping: CsvMapping }) => void;
   onCancel: () => void;
 }
 
@@ -86,6 +86,9 @@ function CsvMappingForm({ inspect, isImporting, onImport, onCancel }: CsvMapping
   const [mapping, setMapping] = useState<CsvMapping>(
     () => inspect.suggested_mapping ?? emptyCsvMapping(),
   );
+  const [format, setFormat] = useState('generic');
+  const isPreset = format !== 'generic';
+  const presets: CsvPresetInfo[] = inspect.presets ?? [];
 
   const setColumn = (key: 'title' | OptionalKey, raw: string) => {
     const value = raw === NONE ? '' : raw;
@@ -129,111 +132,144 @@ function CsvMappingForm({ inspect, isImporting, onImport, onCancel }: CsvMapping
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Import CSV — map your columns</DialogTitle>
+        <DialogTitle>Import CSV</DialogTitle>
         <DialogDescription>
           {inspect.row_count} rows detected. Map your CSV columns to Nexorious fields.
         </DialogDescription>
       </DialogHeader>
 
       <div className="space-y-5">
-        <section className="space-y-3">
-          <h4 className="text-sm font-semibold">1 · Map columns</h4>
+        <div className="grid grid-cols-2 items-center gap-2">
+          <Label htmlFor="csv-format">Format</Label>
+          <Select value={format} onValueChange={setFormat}>
+            <SelectTrigger id="csv-format" aria-label="Format">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="generic">Generic CSV</SelectItem>
+              {presets.map((p) => (
+                <SelectItem key={p.slug} value={p.slug}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-          <div className="grid grid-cols-2 items-center gap-2">
-            <Label htmlFor="csv-title">
-              Title <span className="text-red-500">*</span>
-            </Label>
-            {columnSelect('csv-title', 'Title', mapping.columns.title, (raw) =>
-              setColumn('title', raw),
-            )}
-          </div>
+        {isPreset && (
+          <p className="text-sm text-muted-foreground">
+            Columns, play-status, platforms, ratings and dates are mapped automatically by the{' '}
+            {presets.find((p) => p.slug === format)?.name ?? format} preset.
+          </p>
+        )}
 
-          <div className="grid grid-cols-2 items-center gap-2">
-            <Label htmlFor="csv-status">Play status</Label>
-            {columnSelect('csv-status', 'Play status', mapping.status.column, handleStatusColumn)}
-          </div>
+        {!isPreset && (
+          <section className="space-y-3">
+            <h4 className="text-sm font-semibold">1 · Map columns</h4>
 
-          {OPTIONAL_FIELDS.map((f) => (
-            <div key={f.key} className="grid grid-cols-2 items-center gap-2">
-              <Label htmlFor={`csv-${f.key}`}>{f.label}</Label>
-              <div className="flex items-center gap-2">
-                {columnSelect(`csv-${f.key}`, f.label, mapping.columns[f.key], (raw) =>
-                  setColumn(f.key, raw),
-                )}
-                {f.key === 'rating' && mapping.columns.rating && (
+            <div className="grid grid-cols-2 items-center gap-2">
+              <Label htmlFor="csv-title">
+                Title <span className="text-red-500">*</span>
+              </Label>
+              {columnSelect('csv-title', 'Title', mapping.columns.title, (raw) =>
+                setColumn('title', raw),
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 items-center gap-2">
+              <Label htmlFor="csv-status">Play status</Label>
+              {columnSelect('csv-status', 'Play status', mapping.status.column, handleStatusColumn)}
+            </div>
+
+            {OPTIONAL_FIELDS.map((f) => (
+              <div key={f.key} className="grid grid-cols-2 items-center gap-2">
+                <Label htmlFor={`csv-${f.key}`}>{f.label}</Label>
+                <div className="flex items-center gap-2">
+                  {columnSelect(`csv-${f.key}`, f.label, mapping.columns[f.key], (raw) =>
+                    setColumn(f.key, raw),
+                  )}
+                  {f.key === 'rating' && mapping.columns.rating && (
+                    <Select
+                      value={String(mapping.rating_scale)}
+                      onValueChange={(v) => setMapping((m) => ({ ...m, rating_scale: Number(v) }))}
+                    >
+                      <SelectTrigger aria-label="Rating scale" className="w-28">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">out of 5</SelectItem>
+                        <SelectItem value="10">out of 10</SelectItem>
+                        <SelectItem value="100">out of 100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            <div className="flex items-center gap-2 pt-1">
+              <Switch
+                id="csv-merge"
+                checked={mapping.merge_by_title}
+                onCheckedChange={(checked) =>
+                  setMapping((m) => ({ ...m, merge_by_title: checked }))
+                }
+              />
+              <Label htmlFor="csv-merge">Merge rows with the same title</Label>
+            </div>
+          </section>
+        )}
+
+        {!isPreset &&
+          mapping.status.column &&
+          (statusColumnInfo?.distinct_values.length ?? 0) > 0 && (
+            <section className="space-y-3">
+              <h4 className="text-sm font-semibold">2 · Map status values</h4>
+              {statusColumnInfo?.distinct_truncated && (
+                <p className="text-xs text-muted-foreground">
+                  Showing the first {statusColumnInfo.distinct_values.length} values; any others
+                  import as Not Started.
+                </p>
+              )}
+              {statusColumnInfo?.distinct_values.map((value) => (
+                <div key={value} className="grid grid-cols-2 items-center gap-2">
+                  <Label htmlFor={`csv-sv-${value}`} className="truncate">
+                    "{value}"
+                  </Label>
                   <Select
-                    value={String(mapping.rating_scale)}
-                    onValueChange={(v) => setMapping((m) => ({ ...m, rating_scale: Number(v) }))}
+                    value={mapping.status.value_map[value] ?? PlayStatus.NOT_STARTED}
+                    onValueChange={(v) =>
+                      setMapping((m) => ({
+                        ...m,
+                        status: { ...m.status, value_map: { ...m.status.value_map, [value]: v } },
+                      }))
+                    }
                   >
-                    <SelectTrigger aria-label="Rating scale" className="w-28">
+                    <SelectTrigger id={`csv-sv-${value}`} aria-label={`Status for ${value}`}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="5">out of 5</SelectItem>
-                      <SelectItem value="10">out of 10</SelectItem>
-                      <SelectItem value="100">out of 100</SelectItem>
+                      {Object.values(PlayStatus).map((ps) => (
+                        <SelectItem key={ps} value={ps}>
+                          {statusLabels[ps]}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                )}
-              </div>
-            </div>
-          ))}
-
-          <div className="flex items-center gap-2 pt-1">
-            <Switch
-              id="csv-merge"
-              checked={mapping.merge_by_title}
-              onCheckedChange={(checked) => setMapping((m) => ({ ...m, merge_by_title: checked }))}
-            />
-            <Label htmlFor="csv-merge">Merge rows with the same title</Label>
-          </div>
-        </section>
-
-        {mapping.status.column && (statusColumnInfo?.distinct_values.length ?? 0) > 0 && (
-          <section className="space-y-3">
-            <h4 className="text-sm font-semibold">2 · Map status values</h4>
-            {statusColumnInfo?.distinct_truncated && (
-              <p className="text-xs text-muted-foreground">
-                Showing the first {statusColumnInfo.distinct_values.length} values; any others
-                import as Not Started.
-              </p>
-            )}
-            {statusColumnInfo?.distinct_values.map((value) => (
-              <div key={value} className="grid grid-cols-2 items-center gap-2">
-                <Label htmlFor={`csv-sv-${value}`} className="truncate">
-                  "{value}"
-                </Label>
-                <Select
-                  value={mapping.status.value_map[value] ?? PlayStatus.NOT_STARTED}
-                  onValueChange={(v) =>
-                    setMapping((m) => ({
-                      ...m,
-                      status: { ...m.status, value_map: { ...m.status.value_map, [value]: v } },
-                    }))
-                  }
-                >
-                  <SelectTrigger id={`csv-sv-${value}`} aria-label={`Status for ${value}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.values(PlayStatus).map((ps) => (
-                      <SelectItem key={ps} value={ps}>
-                        {statusLabels[ps]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ))}
-          </section>
-        )}
+                </div>
+              ))}
+            </section>
+          )}
       </div>
 
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} disabled={isImporting}>
           Cancel
         </Button>
-        <Button onClick={() => onImport(mapping)} disabled={!mapping.columns.title || isImporting}>
+        <Button
+          onClick={() => onImport({ format, mapping })}
+          disabled={(!isPreset && !mapping.columns.title) || isImporting}
+        >
           {isImporting ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
