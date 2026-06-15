@@ -408,6 +408,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		importGroup.GET("/sources", imh.HandleListImportSources)
 		importGroup.POST("/nexorious", imh.HandleImportNexorious)
 		importGroup.POST("/csv/inspect", imh.HandleImportCSVInspect)
+		importGroup.POST("/csv", imh.HandleImportCSV)
 		for _, src := range importsource.All() {
 			importGroup.POST("/"+src.Slug, imh.handleImportSource(src))
 		}

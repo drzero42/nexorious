@@ -14,8 +14,6 @@ import (
 
 // postCSVImport posts a multipart request with a "file" field and, when mapping
 // is non-empty, a "mapping" form field. Used by the /api/import/csv tests.
-//
-//nolint:unused // used in Task 4 (HandleImportCSV); kept here to avoid a cross-task split
 func postCSVImport(t *testing.T, handler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }, path, filename string, fileContent []byte, mapping, sessionID string) *httptest.ResponseRecorder {
@@ -148,4 +146,113 @@ func TestImportCSVInspect_HeaderlessEmpty(t *testing.T) {
 	}
 }
 
-var _ = context.Background // placeholder; removed in Task 4 when context is used by real tests
+// validMapping returns a mapping JSON wiring Name→title and Status→status with
+// the given value map.
+func validMapping(t *testing.T, valueMap map[string]string) string {
+	t.Helper()
+	m := map[string]any{
+		"columns": map[string]string{
+			"title": "Name", "platform": "", "storefront": "", "rating": "",
+			"notes": "", "acquired_date": "", "hours_played": "", "tags": "", "loved": "",
+		},
+		"status":         map[string]any{"column": "Status", "value_map": valueMap},
+		"rating_scale":   5,
+		"merge_by_title": true,
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal mapping: %v", err)
+	}
+	return string(b)
+}
+
+func TestImportCSV_CreatesJobAndItems(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-success")
+
+	csvData := []byte("Name,Status\nCeleste,Beaten\nHades,Playing\n")
+	mapping := validMapping(t, map[string]string{"Beaten": "completed", "Playing": "in_progress"})
+	rec := postCSVImport(t, e, "/api/import/csv", "lib.csv", csvData, mapping, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	jobID, _ := resp["job_id"].(string)
+	if jobID == "" {
+		t.Fatalf("empty job_id")
+	}
+	if resp["source"] != "csv" {
+		t.Errorf("source = %v, want csv", resp["source"])
+	}
+	if tot, _ := resp["total_items"].(float64); int(tot) != 2 {
+		t.Errorf("total_items = %v, want 2", resp["total_items"])
+	}
+
+	ctx := context.Background()
+	var itemCount int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID).Scan(ctx, &itemCount); err != nil {
+		t.Fatalf("count job_items: %v", err)
+	}
+	if itemCount != 2 {
+		t.Errorf("job_items = %d, want 2", itemCount)
+	}
+}
+
+func TestImportCSV_Conflict(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-conflict")
+
+	csvData := []byte("Name,Status\nCeleste,Beaten\n")
+	mapping := validMapping(t, map[string]string{"Beaten": "completed"})
+	if rec := postCSVImport(t, e, "/api/import/csv", "lib.csv", csvData, mapping, token); rec.Code != http.StatusOK {
+		t.Fatalf("first import status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	rec := postCSVImport(t, e, "/api/import/csv", "lib.csv", csvData, mapping, token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("second import status = %d, want 409", rec.Code)
+	}
+}
+
+func TestImportCSV_RefusesWhenIGDBNotConfigured(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(false))
+	_, token := setupTagUser(t, testDB, e, "csv-imp-noigdb")
+
+	rec := postCSVImport(t, e, "/api/import/csv", "lib.csv", []byte("Name\nCeleste\n"), validMapping(t, nil), token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestImportCSV_MissingTitleMapping(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-notitle")
+
+	mapping := `{"columns":{"title":""},"status":{"column":"","value_map":{}},"rating_scale":5,"merge_by_title":true}`
+	rec := postCSVImport(t, e, "/api/import/csv", "lib.csv", []byte("Name\nCeleste\n"), mapping, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestImportCSV_NoDataRows(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-norows")
+
+	rec := postCSVImport(t, e, "/api/import/csv", "lib.csv", []byte("Name,Status\n"), validMapping(t, nil), token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (no games)", rec.Code)
+	}
+}

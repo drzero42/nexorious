@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/services/csvmap"
 )
 
@@ -200,4 +202,54 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, csvInspectResponse{Headers: header, RowCount: rowCount, Columns: cols})
+}
+
+// HandleImportCSV handles POST /api/import/csv. It parses the uploaded CSV with
+// a csvmap.Config built from the "mapping" form field, then hands off to the
+// shared import pipeline (enqueueImportJob).
+func (h *ImportHandler) HandleImportCSV(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	if err := h.csvIGDBGuard(); err != nil {
+		return err
+	}
+	body, herr := h.readUploadFile(c)
+	if herr != nil {
+		return herr
+	}
+
+	mappingJSON := c.Request().FormValue("mapping")
+	if mappingJSON == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "missing mapping field")
+	}
+	var mapping csvMapping
+	if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid mapping JSON")
+	}
+	cfg, err := buildCSVConfig(mapping)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	games, err := csvmap.Parse(body, cfg)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
+	}
+	if len(games) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "no games found in file")
+	}
+
+	jobID, total, err := h.enqueueImportJob(c.Request().Context(), userID, models.JobSourceCSV, "CSV", games)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"job_id":      jobID,
+		"source":      models.JobSourceCSV,
+		"status":      models.JobStatusProcessing,
+		"message":     fmt.Sprintf("CSV import job created. Matching %d games.", total),
+		"total_items": total,
+	})
 }
