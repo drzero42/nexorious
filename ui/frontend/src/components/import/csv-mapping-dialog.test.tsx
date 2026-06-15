@@ -111,6 +111,33 @@ describe('CsvMappingDialog', () => {
     expect(onImport.mock.calls[0][0].format).toBe('completionator');
   });
 
+  it('restores the mapping form when switching the format back to Generic CSV', async () => {
+    const user = userEvent.setup();
+    render(
+      <CsvMappingDialog
+        open
+        onOpenChange={vi.fn()}
+        inspect={{ ...inspect, presets: [{ slug: 'completionator', name: 'Completionator' }] }}
+        isImporting={false}
+        onImport={vi.fn()}
+      />,
+    );
+
+    // Pick the preset -> mapping form hidden.
+    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    await user.click(screen.getByRole('option', { name: 'Completionator' }));
+    expect(screen.queryByText('1 · Map columns')).not.toBeInTheDocument();
+
+    // Switch back to Generic -> mapping form returns, Import disabled (no title yet).
+    await user.click(screen.getByRole('combobox', { name: 'Format' }));
+    await user.click(screen.getByRole('option', { name: 'Generic CSV' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('1 · Map columns')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /import 3 games/i })).toBeDisabled();
+  });
+
   it('pre-fills the form from inspect.suggested_mapping', () => {
     const seeded: CsvInspectResponse = {
       ...inspect,
