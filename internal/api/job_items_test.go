@@ -134,8 +134,8 @@ func TestResolveItem_SetsResolvedAndMovesOutOfReview(t *testing.T) {
 	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "ji-resolve-dk")
 
-	insertJob(t, testDB, "job-rd", userID, "import", "darkadia", "processing")
-	insertJobItem(t, testDB, "rd-1", "job-rd", userID, "k", "Darkadia Game", "pending_review")
+	insertJob(t, testDB, "job-rd", userID, "import", "csv", "processing")
+	insertJobItem(t, testDB, "rd-1", "job-rd", userID, "k", "CSV Game", "pending_review")
 
 	rec := postJSONAuth(t, e, "/api/job-items/rd-1/resolve", map[string]any{"igdb_id": 42}, token)
 	if rec.Code != http.StatusOK {
@@ -160,7 +160,7 @@ func TestSkipItem_ImportScoped(t *testing.T) {
 	e := newTestEchoWithPool(t, testDB)
 	userID, token := setupTagUser(t, testDB, e, "ji-skip-dk")
 
-	insertJob(t, testDB, "job-sd", userID, "import", "darkadia", "processing")
+	insertJob(t, testDB, "job-sd", userID, "import", "csv", "processing")
 	insertJobItem(t, testDB, "sd-1", "job-sd", userID, "k", "Skip Game", "pending_review")
 
 	rec := postJSONAuth(t, e, "/api/job-items/sd-1/skip", nil, token)

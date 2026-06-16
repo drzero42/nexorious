@@ -1,9 +1,9 @@
 // Package csvmap is a config-driven engine that maps any CSV export into the
 // canonical importmodel.Game shape. A CSV "source" is a Config value (plus an
-// optional header Signature), not a hand-written mapper. This package implements
-// the simple subset of the Config feature range; the advanced (Darkadia-era)
-// sub-structs are declared but rejected by Parse until issue #1016 implements
-// their behaviour. See docs/superpowers/specs/2026-06-14-issue-1014-csvmap-engine-design.md.
+// optional header Signature), not a hand-written mapper. The engine implements
+// the full Config feature range — the simple per-row mappings and the advanced
+// (Darkadia-era) status-flag / platform-table / note-assembly / copy-row-grouping
+// behaviour. See docs/superpowers/specs/2026-06-14-issue-1014-csvmap-engine-design.md.
 package csvmap
 
 // ColumnFormat selects how a configured column's cell is read.
@@ -44,8 +44,8 @@ type ColumnMap struct {
 
 // StatusConfig selects how play_status is derived. At most one of Column / Flags.
 type StatusConfig struct {
-	Column *StatusColumn // SIMPLE (implemented)
-	Flags  *StatusFlags  // ADVANCED #1016 (Parse rejects)
+	Column *StatusColumn // derive from a single value column
+	Flags  *StatusFlags  // derive from ordered boolean-flag columns (Darkadia)
 }
 
 // StatusColumn derives play_status from a single column (scalar or JSON-keys).
@@ -76,8 +76,8 @@ type FlagRule struct {
 
 // PlatformConfig selects how ownership entries are derived. At most one of Simple / Tables.
 type PlatformConfig struct {
-	Simple *PlatformSimple // SIMPLE (implemented)
-	Tables *PlatformTables // ADVANCED #1016 (Parse rejects)
+	Simple *PlatformSimple // single (platform, storefront, date) from columns
+	Tables *PlatformTables // table-driven consolidation (Darkadia)
 }
 
 // PlatformSimple derives a single (platform, storefront, acquired-date) entry from columns.
@@ -90,7 +90,9 @@ type PlatformSimple struct {
 	StorefrontMap      map[string]string // optional value (normalized) -> slug
 }
 
-// PlatformTables is the Darkadia table+precedence model. Behaviour lands in #1016.
+// PlatformTables is the Darkadia table+precedence consolidation model: an
+// aggregate owned-platform list plus per-copy rows, resolved against a platform
+// table and a storefront table with physical/inferred fallbacks.
 type PlatformTables struct {
 	AggregateColumn    string                     // comma-separated owned list ("Platforms")
 	PlatformColumn     string                     // per-copy ("Copy platform")
@@ -110,14 +112,15 @@ type PlatformMapping struct {
 	InferredStorefront *string
 }
 
-// NotesConfig is a verbatim notes column plus optional advanced assembly.
+// NotesConfig is a verbatim notes column plus optional assembled note lines.
 type NotesConfig struct {
-	Column      string        // SIMPLE: verbatim notes / body column
+	Column      string        // verbatim notes / body column
 	TitleColumn string        // optional heading; non-empty -> prepended as "**title**\n\n"
-	Assembly    *NoteAssembly // ADVANCED #1016 (Parse rejects)
+	Assembly    *NoteAssembly // extra column-sourced note lines (Darkadia)
 }
 
-// NoteAssembly describes extra column-sourced note inputs (Darkadia). Behaviour lands in #1016.
+// NoteAssembly describes extra column-sourced note inputs (Darkadia): a review
+// (with optional subject) and per-copy notes, appended after the verbatim body.
 type NoteAssembly struct {
 	ReviewSubjectColumn string
 	ReviewColumn        string
@@ -127,10 +130,11 @@ type NoteAssembly struct {
 // GroupingConfig selects how multiple CSV rows collapse into one game.
 type GroupingConfig struct {
 	MergeByTitle bool             // false = one-row; true = merge rows sharing a title
-	CopyRows     *CopyRowGrouping // ADVANCED #1016 (Parse rejects)
+	CopyRows     *CopyRowGrouping // blank-name continuation grouping (Darkadia)
 }
 
-// CopyRowGrouping is Darkadia's blank-name continuation grouping. Behaviour lands in #1016.
+// CopyRowGrouping is Darkadia's blank-name continuation grouping: a row with a
+// blank ContinuationColumn continues the previous game as an additional copy.
 type CopyRowGrouping struct {
 	ContinuationColumn string // blank here => row continues the previous game as a copy
 }
@@ -143,7 +147,7 @@ type RatingConfig struct {
 
 // DurationConfig describes the hours_played format.
 type DurationConfig struct {
-	Format string // "decimal" (SIMPLE) | "h:mm" (ADVANCED #1016, rejected)
+	Format string // "decimal" (strconv float) | "h:mm" (H:MM clock, Darkadia)
 }
 
 // PlayLogConfig reads playtime and a completion tier from a JSON-array column of

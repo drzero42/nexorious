@@ -96,8 +96,8 @@ func (h *JobItemsHandler) HandleRetryItem(c *echo.Context) error {
 }
 
 // isImportSource reports whether a job source uses the generic job-item
-// resolve/skip path. Every generic-pipeline migration source (darkadia, vglist,
-// csv, …) plus the nexorious round-trip import resolve through here. Sync
+// resolve/skip path. Every generic-pipeline migration source (vglist, csv, …)
+// plus the nexorious round-trip import resolve through here. Sync
 // sources resolve through the external_games rematch endpoints instead and must
 // be rejected here so that flow is untouched.
 func isImportSource(source string) bool {
@@ -110,7 +110,7 @@ type resolveItemRequest struct {
 
 // HandleResolveItem handles POST /api/job-items/:id/resolve. It records the
 // user's chosen IGDB id on a pending_review import item and enqueues the
-// Darkadia finalize worker. Scoped to import sources.
+// import finalize worker. Scoped to import sources.
 func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {

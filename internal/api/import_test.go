@@ -96,7 +96,7 @@ func testIGDBClient(configured bool) *igdb.Client {
 }
 
 // newTestEchoConfiguredIGDB returns an Echo instance wired with the provided
-// igdb.Client and a real River client. Used by Darkadia tests that need the
+// igdb.Client and a real River client. Used by import tests that need the
 // handler's IGDB guard to pass.
 func newTestEchoConfiguredIGDB(t *testing.T, db *bun.DB, cfg *config.Config, igdbClient *igdb.Client) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
@@ -105,19 +105,6 @@ func newTestEchoConfiguredIGDB(t *testing.T, db *bun.DB, cfg *config.Config, igd
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	rc := newTestRiverClient(t)
 	return api.New(testEncrypter, cfg, m, db, "", igdbClient, nil, nil, "dev", "unknown", nil, rc)
-}
-
-// canonicalDarkadiaCSV returns a minimal valid Darkadia CSV with the given
-// game titles (one named row each, no copy rows).
-func canonicalDarkadiaCSV(titles ...string) []byte {
-	const hdr = `Name,Added,Loved,Owned,Played,Playing,Finished,Mastered,Dominated,Shelved,Rating,"Copy label","Copy Release","Copy platform","Copy media","Copy media other","Copy source","Copy source other","Copy purchase date","Copy box","Copy box condition","Copy box notes","Copy manual","Copy manual condition","Copy manual notes","Copy complete","Copy complete notes",Platforms,Notes`
-	var buf bytes.Buffer
-	buf.WriteString(hdr + "\n")
-	for _, title := range titles {
-		// 29 columns: Name followed by 28 empty fields.
-		buf.WriteString(title + strings.Repeat(",", 28) + "\n")
-	}
-	return buf.Bytes()
 }
 
 // ─── Import tests ─────────────────────────────────────────────────────────────
@@ -332,113 +319,6 @@ func TestImportNexorious_RefusesWhenIGDBNotConfigured(t *testing.T) {
 	}
 	if !strings.Contains(resp["message"], "IGDB") {
 		t.Fatalf("error message = %q, want it to mention IGDB", resp["message"])
-	}
-}
-
-// ─── Darkadia import tests ────────────────────────────────────────────────────
-
-func TestImportDarkadia_RefusesWhenIGDBNotConfigured(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	// newTestEchoPool passes nil as igdbClient to api.New, so the handler's
-	// IGDB guard fires — which is what this test exercises.
-	e := newTestEchoPool(t, testDB, cfg)
-
-	_, token := setupTagUser(t, testDB, e, "dark-noigdb")
-
-	csvData := canonicalDarkadiaCSV("Portal")
-	rec := postMultipartFile(t, e, "/api/import/darkadia", "darkadia.csv", csvData, token)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
-	}
-	var resp map[string]string
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if !strings.Contains(resp["message"], "IGDB") {
-		t.Fatalf("error message %q does not mention IGDB", resp["message"])
-	}
-}
-
-func TestImportDarkadia_RejectsNonDarkadiaHeader(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
-
-	_, token := setupTagUser(t, testDB, e, "dark-badheader")
-
-	badCSV := []byte("a,b,c\n1,2,3\n")
-	rec := postMultipartFile(t, e, "/api/import/darkadia", "darkadia.csv", badCSV, token)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
-	}
-	var resp map[string]string
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if !strings.Contains(resp["message"], "Darkadia") {
-		t.Fatalf("error message %q does not mention Darkadia", resp["message"])
-	}
-}
-
-func TestImportDarkadia_CreatesJobAndItems(t *testing.T) {
-	truncateAllTables(t)
-	cfg := testCfg()
-	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
-
-	_, token := setupTagUser(t, testDB, e, "dark-success")
-
-	csvData := canonicalDarkadiaCSV("Portal", "Half-Life 2")
-	rec := postMultipartFile(t, e, "/api/import/darkadia", "darkadia.csv", csvData, token)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
-	}
-
-	var resp map[string]any
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-
-	jobID, _ := resp["job_id"].(string)
-	if jobID == "" {
-		t.Fatalf("expected non-empty job_id, got %v", resp["job_id"])
-	}
-	if resp["source"] != "darkadia" {
-		t.Fatalf("source = %v, want darkadia", resp["source"])
-	}
-	totalItems, ok := resp["total_items"].(float64)
-	if !ok || int(totalItems) != 2 {
-		t.Fatalf("total_items = %v, want 2", resp["total_items"])
-	}
-
-	// Verify the job row in the DB.
-	ctx := context.Background()
-	var dbTotalItems int
-	var dbSource string
-	if err := testDB.NewRaw(
-		`SELECT total_items, source FROM jobs WHERE id = ?`, jobID,
-	).Scan(ctx, &dbTotalItems, &dbSource); err != nil {
-		t.Fatalf("select job: %v", err)
-	}
-	if dbSource != "darkadia" {
-		t.Errorf("job.source = %q, want darkadia", dbSource)
-	}
-	if dbTotalItems != 2 {
-		t.Errorf("job.total_items = %d, want 2", dbTotalItems)
-	}
-
-	// Verify 2 job_items were created.
-	var itemCount int
-	if err := testDB.NewRaw(
-		`SELECT COUNT(*) FROM job_items WHERE job_id = ?`, jobID,
-	).Scan(ctx, &itemCount); err != nil {
-		t.Fatalf("count job_items: %v", err)
-	}
-	if itemCount != 2 {
-		t.Errorf("job_items count = %d, want 2", itemCount)
 	}
 }
 

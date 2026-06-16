@@ -1,7 +1,7 @@
 package matching
 
 // AutoResolveThreshold and TieEpsilon are the auto-resolve gate, shared by the
-// sync IGDB-match worker and the Darkadia import match worker.
+// sync IGDB-match worker and the import match worker.
 const (
 	AutoResolveThreshold = 0.85
 	TieEpsilon           = 0.01

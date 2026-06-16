@@ -16,7 +16,6 @@ vi.mock('@/hooks', () => ({
           steam: 'Steam',
           'epic-games-store': 'Epic Games Store',
           gog: 'GOG',
-          darkadia: 'Darkadia',
         }) as Record<string, string>
       )[source] ?? source,
 }));
@@ -198,7 +197,6 @@ describe('JobCard', () => {
       [{ jobType: JobType.EXPORT }, 'Export - Steam'],
       [{ source: JobSource.EPIC_GAMES_STORE }, 'Sync - Epic Games Store'],
       [{ source: JobSource.GOG }, 'Sync - GOG'],
-      [{ source: JobSource.DARKADIA }, 'Sync - Darkadia'],
     ] as const)('renders %o as "%s"', (overrides, expected) => {
       render(<JobCard job={{ ...mockJob, ...overrides }} />);
 

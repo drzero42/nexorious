@@ -27,10 +27,10 @@ func TestHandleListImportSources(t *testing.T) {
 	}
 	found := false
 	for _, s := range got {
-		if s["slug"] == "darkadia" {
+		if s["slug"] == "vglist" {
 			found = true
-			if s["display_name"] != "Darkadia" {
-				t.Errorf("display_name = %v, want Darkadia", s["display_name"])
+			if s["display_name"] != "vglist" {
+				t.Errorf("display_name = %v, want vglist", s["display_name"])
 			}
 			if acc, ok := s["accept"].([]any); !ok || len(acc) == 0 {
 				t.Errorf("accept = %v, want non-empty list", s["accept"])
@@ -38,6 +38,6 @@ func TestHandleListImportSources(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("darkadia missing from /import/sources")
+		t.Error("vglist missing from /import/sources")
 	}
 }

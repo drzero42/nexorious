@@ -11,7 +11,7 @@ import (
 //
 // It is the wishlist counterpart to PromoteToInProgressIfPlayed: callers invoke
 // it right after inserting user_game_platforms rows for a user game, from every
-// insert path (API create/attach/bulk, sync, import, Darkadia). The EXISTS
+// insert path (API create/attach/bulk, sync, import). The EXISTS
 // guard keeps the invariant safe — it never clears a wishlisted row that somehow
 // has no platforms — and makes the call idempotent. Accepts bun.IDB so it runs
 // inside a caller's transaction when one is present.

@@ -15,7 +15,7 @@ import (
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
-// insertImportItem inserts a darkadia job + one job_item with the given payload
+// insertImportItem inserts a csv import job + one job_item with the given payload
 // as source_metadata. Returns (jobID, itemID).
 func insertImportItem(t *testing.T, userID string, payload map[string]any) (string, string) {
 	t.Helper()
@@ -26,7 +26,7 @@ func insertImportItem(t *testing.T, userID string, payload map[string]any) (stri
 	meta := json.RawMessage(metaBytes)
 	if _, err := testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, dispatch_complete, created_at)
-		 VALUES (?, ?, 'import', 'darkadia', 'processing', 'high', 1, true, now())`,
+		 VALUES (?, ?, 'import', 'csv', 'processing', 'high', 1, true, now())`,
 		jobID, userID,
 	).Exec(ctx); err != nil {
 		t.Fatal(err)
@@ -171,7 +171,7 @@ func TestImportFinalize_WritesUserGameAndPlatforms(t *testing.T) {
 	}
 }
 
-// An invalid play_status in the Darkadia payload must be coerced to unset
+// An invalid play_status in the import payload must be coerced to unset
 // (nil), mirroring the nexorious import worker. user_games.play_status is NOT
 // NULL DEFAULT 'not_started', so the DB applies the default; the invalid value
 // is never stored verbatim.
@@ -220,7 +220,7 @@ func TestImportFinalize_ConcurrentDuplicateGameNoFailure(t *testing.T) {
 	jobID := uuid.NewString()
 	if _, err := testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, dispatch_complete, created_at)
-		 VALUES (?, ?, 'import', 'darkadia', 'processing', 'high', 2, true, now())`, jobID, userID).Exec(ctx); err != nil {
+		 VALUES (?, ?, 'import', 'csv', 'processing', 'high', 2, true, now())`, jobID, userID).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
 	payload := map[string]any{"title": "Dup Game", "play_status": "not_started", "platforms": []map[string]any{{"platform": "pc-windows"}}}
@@ -276,7 +276,7 @@ func TestImportCheckJobCompletion_BlockedUntilDispatchComplete(t *testing.T) {
 	jobID := uuid.NewString()
 	if _, err := testDB.NewRaw(
 		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, dispatch_complete, created_at)
-		 VALUES (?, ?, 'import', 'darkadia', 'processing', 'high', 1, false, now())`, jobID, userID).Exec(ctx); err != nil {
+		 VALUES (?, ?, 'import', 'csv', 'processing', 'high', 1, false, now())`, jobID, userID).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
 	payload := map[string]any{"title": "G", "play_status": "not_started", "platforms": []map[string]any{}}
@@ -311,22 +311,6 @@ func TestImportCheckJobCompletion_BlockedUntilDispatchComplete(t *testing.T) {
 	}
 	if status != "completed" {
 		t.Fatalf("job not completed after dispatch complete: status=%s", status)
-	}
-}
-
-func TestFinalizeArgsForSource(t *testing.T) {
-	args, err := tasks.FinalizeArgsForSource(models.JobSourceDarkadia, "item-1")
-	if err != nil {
-		t.Fatalf("darkadia: unexpected error %v", err)
-	}
-	if _, ok := args.(tasks.ImportFinalizeArgs); !ok {
-		t.Fatalf("darkadia: got %T, want ImportFinalizeArgs", args)
-	}
-	if _, err := tasks.FinalizeArgsForSource(models.JobSourceNexorious, "item-1"); err == nil {
-		t.Error("nexorious: expected error (no interactive finalize stage)")
-	}
-	if _, err := tasks.FinalizeArgsForSource("steam", "item-1"); err == nil {
-		t.Error("steam: expected error")
 	}
 }
 

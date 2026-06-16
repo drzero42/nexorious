@@ -107,8 +107,11 @@ func Parse(raw []byte, cfg Config) ([]importmodel.Game, error) {
 	return buildGames(records[1:], idx, cfg), nil
 }
 
-// buildGames dispatches between one-row and merge-by-title grouping.
+// buildGames dispatches between copy-row grouping, merge-by-title, and one-row.
 func buildGames(rows [][]string, idx map[string]int, cfg Config) []importmodel.Game {
+	if cfg.Grouping.CopyRows != nil {
+		return buildGrouped(rows, idx, cfg)
+	}
 	if cfg.Grouping.MergeByTitle {
 		return buildMerged(rows, idx, cfg)
 	}
@@ -306,8 +309,8 @@ func extractDate(raw string, cfg Config) string {
 	return tm.Format("2006-01-02")
 }
 
-// extractHours parses decimal hours. h:mm is rejected at validation, so only the
-// decimal branch is needed here.
+// extractHours parses the hours_played cell per cfg.Duration.Format: "decimal"
+// (strconv float) or "h:mm" (H:MM clock).
 func extractHours(rec []string, idx map[string]int, cfg Config) *float64 {
 	if cfg.Duration == nil {
 		return nil
@@ -315,6 +318,9 @@ func extractHours(rec []string, idx map[string]int, cfg Config) *float64 {
 	raw := cell(rec, idx, cfg.Columns.HoursPlayed)
 	if raw == "" {
 		return nil
+	}
+	if normKey(cfg.Duration.Format) == "h:mm" {
+		return parseHMM(raw)
 	}
 	f, err := strconv.ParseFloat(raw, 64)
 	if err != nil || f <= 0 {
