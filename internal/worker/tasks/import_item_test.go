@@ -963,3 +963,85 @@ func TestImportItem_EmitsImportFailedWhenItemsFail(t *testing.T) {
 		t.Errorf("events count for dedup_key %q = %d, want 0", completedKey, completedCount)
 	}
 }
+
+func TestImportItem_AppliesWishlistAndAvailability(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT (name) DO NOTHING`); err != nil {
+		t.Fatalf("seed platform: %v", err)
+	}
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	g := &models.Game{ID: 6001, Title: "Avail", LastUpdated: time.Now(), CreatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(g).Exec(ctx); err != nil {
+		t.Fatalf("insert game: %v", err)
+	}
+	jobID := uuid.NewString()
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	// Wishlisted game with one platform marked unavailable.
+	itemID := insertTestJobItem(t, testDB, jobID, userID, map[string]any{
+		"igdb_id":       6001,
+		"title":         "Avail",
+		"is_wishlisted": true,
+		"platforms": []map[string]any{
+			{"platform": "pc-windows", "is_available": false},
+		},
+	})
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("work: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(6001)).Scan(ctx); err != nil {
+		t.Fatalf("user_game: %v", err)
+	}
+	// A wishlisted game DOES carry a platform here, so ClearWishlistOnAcquire clears it.
+	if ug.IsWishlisted {
+		t.Errorf("is_wishlisted = true, want false (cleared on acquire because a platform exists)")
+	}
+	var ugp models.UserGamePlatform
+	if err := testDB.NewSelect().Model(&ugp).Where("user_game_id = ?", ug.ID).Scan(ctx); err != nil {
+		t.Fatalf("platform: %v", err)
+	}
+	if ugp.IsAvailable {
+		t.Errorf("is_available = true, want false")
+	}
+}
+
+func TestImportItem_WishlistSurvivesWithoutPlatforms(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	g := &models.Game{ID: 6002, Title: "Wished", LastUpdated: time.Now(), CreatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(g).Exec(ctx); err != nil {
+		t.Fatalf("insert game: %v", err)
+	}
+	jobID := uuid.NewString()
+	insertTestJob(t, testDB, jobID, userID, 1)
+	itemID := insertTestJobItem(t, testDB, jobID, userID, map[string]any{
+		"igdb_id":       6002,
+		"title":         "Wished",
+		"is_wishlisted": true,
+		"platforms":     []map[string]any{},
+	})
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("work: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(6002)).Scan(ctx); err != nil {
+		t.Fatalf("user_game: %v", err)
+	}
+	if !ug.IsWishlisted {
+		t.Errorf("is_wishlisted = false, want true (no platforms ⇒ flag survives)")
+	}
+}

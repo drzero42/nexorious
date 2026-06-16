@@ -47,6 +47,7 @@ type importGameData struct {
 	PlayStatus     *string              `json:"play_status"`
 	PersonalRating *int                 `json:"personal_rating"`
 	IsLoved        bool                 `json:"is_loved"`
+	IsWishlisted   bool                 `json:"is_wishlisted"`
 	PersonalNotes  *string              `json:"personal_notes"`
 	CreatedAt      *string              `json:"created_at"` // RFC3339
 	UpdatedAt      *string              `json:"updated_at"` // RFC3339
@@ -60,6 +61,7 @@ type importPlatformData struct {
 	OwnershipStatus *string  `json:"ownership_status"`
 	AcquiredDate    *string  `json:"acquired_date"` // date-only or RFC3339
 	HoursPlayed     *float64 `json:"hours_played"`
+	IsAvailable     *bool    `json:"is_available"`
 }
 
 // parseFlexibleDate accepts either a date-only string ("2006-01-02") or a full
@@ -182,6 +184,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			PlayStatus:     playStatus,
 			PersonalRating: personalRating,
 			IsLoved:        gd.IsLoved,
+			IsWishlisted:   gd.IsWishlisted,
 			PersonalNotes:  gd.PersonalNotes,
 			CreatedAt:      createdAt,
 			UpdatedAt:      updatedAt,
@@ -269,7 +272,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			UserGameID:      ug.ID,
 			Platform:        &platformName,
 			Storefront:      storefrontPtr,
-			IsAvailable:     true, // imported rows default available; sync re-derives
+			IsAvailable:     pd.IsAvailable == nil || *pd.IsAvailable, // absent ⇒ available; sync re-derives
 			HoursPlayed:     pd.HoursPlayed,
 			OwnershipStatus: ownership,
 			AcquiredDate:    parseFlexibleDate(pd.AcquiredDate),
