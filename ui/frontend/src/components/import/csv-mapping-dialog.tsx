@@ -88,7 +88,12 @@ function CsvMappingForm({ inspect, isImporting, onImport, onCancel }: CsvMapping
   );
   const [format, setFormat] = useState('generic');
   const isPreset = format !== 'generic';
-  const presets: CsvPresetInfo[] = inspect.presets ?? [];
+  // Presets are listed alphabetically by display name; "Generic CSV" stays pinned
+  // at the top as the default (manual-mapping) option, not a named source.
+  const presets: CsvPresetInfo[] = useMemo(
+    () => [...(inspect.presets ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+    [inspect.presets],
+  );
 
   const setColumn = (key: 'title' | OptionalKey, raw: string) => {
     const value = raw === NONE ? '' : raw;
