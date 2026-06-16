@@ -199,6 +199,9 @@ func extractStatus(rec []string, idx map[string]int, cfg Config) (status string,
 		}
 		present[nv] = mapped
 	}
+	// When Precedence is set, a mapped candidate must appear in it to be chosen;
+	// a candidate absent from Precedence falls through to Default. List every
+	// status-bearing source value in Precedence.
 	for _, p := range sc.Precedence {
 		if s, ok := present[normKey(p)]; ok {
 			return s, wishlisted
