@@ -138,6 +138,7 @@ type csvInspectResponse struct {
 	Columns          []csvColumnInfo         `json:"columns"`
 	SuggestedMapping csvmap.SuggestedMapping `json:"suggested_mapping"`
 	Presets          []csvPresetInfo         `json:"presets"`
+	Detected         *csvPresetInfo          `json:"detected,omitempty"`
 }
 
 // readUploadFile parses the multipart form and reads the "file" field, enforcing
@@ -268,6 +269,7 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 		Columns:          cols,
 		SuggestedMapping: suggested,
 		Presets:          presets,
+		Detected:         detectPreset(header),
 	})
 }
 
