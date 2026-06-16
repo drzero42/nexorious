@@ -10,7 +10,7 @@ It runs on the shared, source-neutral import pipeline (the same `jobs` / `job_it
 
 ## Overview
 
-A vglist export is a flat JSON array of the user's library entries. Each entry carries the game's title, an optional Wikidata id (**not** used for matching — see below), hours played, a completion status, a 0–100 rating, optional start/completion dates, free-text comments, a replay count, and two independent sets: the **platforms** the user owns the game on and the digital **stores** they own it through.
+A vglist export is a JSON object wrapping the user's library entries in a `games` array (see [Part 1](#part-1--the-vglist-export-format)). Each entry carries the game's title, an optional Wikidata id (**not** used for matching — see below), hours played, a completion status, a 0–100 rating, optional start/completion dates, free-text comments, a replay count, and two independent sets: the **platforms** the user owns the game on and the digital **stores** they own it through.
 
 The import is designed to be:
 
@@ -36,38 +36,45 @@ Identifying games requires IGDB. **The import is blocked unless IGDB is configur
 
 ## Part 1 — The vglist export format
 
-The export is produced by vglist's `exportLibrary` GraphQL mutation (`app/graphql/mutations/users/export_library.rb`); the frontend downloads the returned JSON string verbatim with no extra wrapper. The root is a **JSON array** with **one object per library entry** and **no** wrapper object or metadata/version field. An empty library exports as exactly `[]`.
+The export is produced by vglist's `exportLibrary` GraphQL mutation (`app/graphql/mutations/users/export_library.rb`); the frontend downloads the returned JSON verbatim. The root is a **JSON object** with a `user` block and a `games` array — **one object per library entry** under `games`. An empty library exports as `{ "user": …, "games": [] }`.
 
-### Entry shape
+The parser keys on the first non-space byte: `{` selects the wrapper-object form (the real export); a bare `[` top-level array of entries is also accepted for back-compat (older captures / hand-rolled files). Either way the per-entry shape below is identical.
+
+### Export shape
 
 ```json
-[
-  {
-    "game": { "id": 1, "name": "Half-Life 2", "wikidata_id": 193581 },
-    "hours_played": 12.5,
-    "completion_status": "completed",
-    "rating": 95,
-    "start_date": "2024-01-10",
-    "completion_date": "2024-02-01",
-    "comments": "Great game.",
-    "replay_count": 1,
-    "platforms": [ { "id": 3, "name": "Microsoft Windows" }, { "id": 7, "name": "Linux" } ],
-    "stores": [ { "id": 2, "name": "Steam" } ]
-  },
-  {
-    "game": { "id": 42, "name": "Some Obscure Game", "wikidata_id": null },
-    "hours_played": null,
-    "completion_status": "unplayed",
-    "rating": null,
-    "start_date": null,
-    "completion_date": null,
-    "comments": "",
-    "replay_count": 0,
-    "platforms": [],
-    "stores": []
-  }
-]
+{
+  "user": { "id": 2882, "username": "drzero" },
+  "games": [
+    {
+      "game": { "id": 1, "name": "Half-Life 2", "wikidata_id": 193581 },
+      "hours_played": 12.5,
+      "completion_status": "completed",
+      "rating": 95,
+      "start_date": "2024-01-10",
+      "completion_date": "2024-02-01",
+      "comments": "Great game.",
+      "replay_count": 1,
+      "platforms": [ { "id": 3, "name": "Microsoft Windows" }, { "id": 7, "name": "Linux" } ],
+      "stores": [ { "id": 2, "name": "Steam" } ]
+    },
+    {
+      "game": { "id": 42, "name": "Some Obscure Game", "wikidata_id": null },
+      "hours_played": null,
+      "completion_status": "unplayed",
+      "rating": null,
+      "start_date": null,
+      "completion_date": null,
+      "comments": "",
+      "replay_count": 0,
+      "platforms": [],
+      "stores": []
+    }
+  ]
+}
 ```
+
+The `user` block is ignored by the importer; only `games` is read.
 
 ### Field reference
 
