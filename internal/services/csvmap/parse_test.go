@@ -599,3 +599,37 @@ func TestExtractStatus_ScalarUnchanged(t *testing.T) {
 		t.Errorf("empty -> %q, want not_started", st)
 	}
 }
+
+func TestExtractPlatforms_JSONKeys(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "name"},
+		Platform: PlatformConfig{Simple: &PlatformSimple{
+			PlatformColumn: "platforms", PlatformFormat: FormatJSONKeys,
+			PlatformMap: map[string]string{
+				"pc (microsoft windows)": "pc-windows", "playstation 4": "playstation-4",
+			},
+		}},
+	}
+	idx := map[string]int{"platforms": 0}
+
+	one := extractPlatforms([]string{`{"PC (Microsoft Windows)": {"url": "x"}}`}, idx, cfg)
+	if len(one) != 1 || one[0].Platform != "pc-windows" || one[0].Storefront != nil {
+		t.Fatalf("single platform = %+v", one)
+	}
+	empty := extractPlatforms([]string{`{}`}, idx, cfg)
+	if empty != nil {
+		t.Errorf("empty platforms = %+v, want nil", empty)
+	}
+	two := extractPlatforms([]string{`{"PC (Microsoft Windows)": {}, "PlayStation 4": {}}`}, idx, cfg)
+	got := map[string]bool{}
+	for _, p := range two {
+		got[p.Platform] = true
+	}
+	if len(two) != 2 || !got["pc-windows"] || !got["playstation-4"] {
+		t.Errorf("two platforms = %+v", two)
+	}
+	miss := extractPlatforms([]string{`{"Sega Saturn": {}}`}, idx, cfg)
+	if len(miss) != 1 || miss[0].Platform != "Sega Saturn" {
+		t.Errorf("unmapped platform should passthrough, got %+v", miss)
+	}
+}

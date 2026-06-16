@@ -82,6 +82,7 @@ type PlatformConfig struct {
 // PlatformSimple derives a single (platform, storefront, acquired-date) entry from columns.
 type PlatformSimple struct {
 	PlatformColumn     string
+	PlatformFormat     ColumnFormat      // "" scalar (default, one entry) | "json-keys" (one entry per key)
 	StorefrontColumn   string            // optional
 	AcquiredDateColumn string            // optional; attaches to the platform entry
 	PlatformMap        map[string]string // optional value (normalized) -> slug; nil/miss = passthrough as-is

@@ -337,23 +337,18 @@ func extractIGDBID(rec []string, idx map[string]int, cfg Config) *int32 {
 	return &v
 }
 
-// extractPlatforms builds the simple-variant ownership entry (at most one) from
-// the configured platform/storefront/acquired-date columns. An empty platform
-// cell or no PlatformSimple config yields no entries. Map miss = passthrough.
+// extractPlatforms builds ownership entries from the platform column. Scalar
+// yields at most one; json-keys yields one per key (deduped by slug within the
+// row). The optional storefront/acquired-date scalar columns apply to every
+// entry. Map miss = passthrough. No PlatformSimple config / empty column = none.
 func extractPlatforms(rec []string, idx map[string]int, cfg Config) []importmodel.Platform {
 	ps := cfg.Platform.Simple
 	if ps == nil {
 		return nil
 	}
-	pv := cell(rec, idx, ps.PlatformColumn)
-	if pv == "" {
+	values := decodeKeys(cell(rec, idx, ps.PlatformColumn), ps.PlatformFormat)
+	if len(values) == 0 {
 		return nil
-	}
-	slug := pv
-	if ps.PlatformMap != nil {
-		if mapped, ok := ps.PlatformMap[normKey(pv)]; ok {
-			slug = mapped
-		}
 	}
 	var sf *string
 	if sv := cell(rec, idx, ps.StorefrontColumn); sv != "" {
@@ -366,7 +361,22 @@ func extractPlatforms(rec []string, idx map[string]int, cfg Config) []importmode
 		sf = &s
 	}
 	date := extractDate(cell(rec, idx, ps.AcquiredDateColumn), cfg)
-	return []importmodel.Platform{{Platform: slug, Storefront: sf, AcquiredDate: date}}
+	var out []importmodel.Platform
+	seen := map[string]bool{}
+	for _, pv := range values {
+		slug := pv
+		if ps.PlatformMap != nil {
+			if mapped, ok := ps.PlatformMap[normKey(pv)]; ok {
+				slug = mapped
+			}
+		}
+		if seen[slug] {
+			continue
+		}
+		seen[slug] = true
+		out = append(out, importmodel.Platform{Platform: slug, Storefront: sf, AcquiredDate: date})
+	}
+	return out
 }
 
 // extractGame builds one Game from a row, or (zero, false) if the title is empty.
