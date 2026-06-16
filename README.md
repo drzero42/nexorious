@@ -23,7 +23,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 - **Search, don't type.** Add a game by searching for it — Nexorious pulls everything from IGDB automatically: cover art, descriptions, release dates, genres, ratings, and time-to-beat estimates. Your collection looks complete without manual data entry.
 - **Own your data.** Self-hosted, single binary, no third-party cloud, MIT-licensed.
 - **Automatic library sync** from Steam, PlayStation Network, GOG, and Epic Games Store today, with more sources on the way.
-- **Migrating from Darkadia?** Darkadia (RIP) is gone, but your collection doesn't have to be. Export your Darkadia library to CSV and import it straight into Nexorious — games, platforms, ratings, notes, and the date you added each game all come across.
+- **Migrating from another tracker?** Whether you're leaving Darkadia (RIP), vglist, Grouvee, or Completionator, your collection doesn't have to stay behind. Export your library and import it straight into Nexorious — games, platforms, ratings, notes, and the date you added each game come across. Known formats are recognised automatically, and any other tracker's CSV can be mapped column-by-column.
 - **You want to know how bad your pile of shame is.** Nexorious counts the games you own but have never played, so you can confront — and maybe finally shrink — your backlog.
 
 ## Reasons not to use Nexorious
@@ -36,7 +36,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 
 ## Alternatives
 
-- **Hosted web trackers** — [Backloggd](https://www.backloggd.com/), [Grouvee](https://www.grouvee.com/), [Completionator](https://www.completionator.com/), and [HowLongToBeat](https://howlongtobeat.com/) are the closest peers in what they do. They are zero-ops and often social, but they are cloud-hosted rather than self-hosted, and you do not own the data.
+- **Hosted web trackers** — [Backloggd](https://www.backloggd.com/), [Grouvee](https://www.grouvee.com/), [Completionator](https://www.completionator.com/), and [HowLongToBeat](https://howlongtobeat.com/) are the closest peers in what they do. They are zero-ops and often social, but they are cloud-hosted rather than self-hosted, and you do not own the data. Already on Grouvee or Completionator? Export your library from either and import it straight into Nexorious.
 - **[Playnite](https://playnite.link/)** — an open-source desktop library aggregator, similar in spirit, but it *is* a launcher and runs only on the Windows desktop rather than as a self-hosted web app.
 - **Spreadsheets / Notion** — the DIY default. Total control, but everything is manual: no library sync and no metadata enrichment.
 
@@ -46,7 +46,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 - **Sync Integrations**: Automatic library sync from Steam, PlayStation Network (PSN), GOG, and Epic Games Store (via legendary-gl)
 - **Rich Game Discovery**: Search and import games from IGDB's extensive database with automatic metadata population
 - **Progress Tracking**: Track play status, personal ratings, time played, and detailed notes
-- **Import & Export**: Export your collection to JSON or CSV; import from Nexorious's own JSON format or a Darkadia CSV export
+- **Import & Export**: Export your collection to JSON or CSV; import from Nexorious's own JSON or CSV, a vglist JSON export, a Darkadia, Grouvee, or Completionator CSV, or any other tracker's CSV via column mapping
 - **Easy to self-host**: single Go binary with the React SPA embedded — run the container image, the Helm chart, native `.deb`/`.rpm` packages, or the raw binary
 - **Modern Tech Stack**: Go backend with React + Vite frontend
 
