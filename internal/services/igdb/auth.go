@@ -19,8 +19,14 @@ const (
 )
 
 // AuthManager handles Twitch OAuth2 client credentials flow for IGDB.
+//
+// mu guards accessToken/expiresAt. It is an RWMutex so that the common case —
+// concurrent reads of an already-valid cached token (e.g. SearchGames fires its
+// fuzzy + exact queries concurrently, each calling GetAccessToken) — does not
+// serialize. Writers (fetchToken, InvalidateToken) take the write lock; the
+// fast-path reader must take the read lock, otherwise the read races the write.
 type AuthManager struct {
-	mu           sync.Mutex
+	mu           sync.RWMutex
 	accessToken  string
 	expiresAt    time.Time
 	clientID     string
@@ -47,10 +53,14 @@ func NewAuthManager(clientID, clientSecret, preConfiguredToken string) *AuthMana
 
 // GetAccessToken returns a valid access token, refreshing if needed.
 func (am *AuthManager) GetAccessToken(ctx context.Context) (string, error) {
-	// Fast path: check without lock
+	// Fast path: read-lock the cached token to stay race-free against writers.
+	am.mu.RLock()
 	if am.isTokenValid() {
-		return am.accessToken, nil
+		token := am.accessToken
+		am.mu.RUnlock()
+		return token, nil
 	}
+	am.mu.RUnlock()
 
 	am.mu.Lock()
 	defer am.mu.Unlock()
@@ -67,7 +77,8 @@ func (am *AuthManager) GetAccessToken(ctx context.Context) (string, error) {
 	return am.accessToken, nil
 }
 
-// isTokenValid checks if the current token is usable.
+// isTokenValid checks if the current token is usable. Callers must hold am.mu
+// (read or write), as it reads accessToken/expiresAt.
 func (am *AuthManager) isTokenValid() bool {
 	if am.accessToken == "" {
 		return false

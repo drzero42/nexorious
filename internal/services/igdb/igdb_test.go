@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -262,10 +263,17 @@ func TestClient_GetGameByID_NotFound(t *testing.T) {
 }
 
 func TestClient_SearchGames_EmptyPlatformIDs_NoClause(t *testing.T) {
-	var receivedBodies []string
+	// SearchGames issues its fuzzy + exact queries concurrently, so the handler
+	// runs on multiple goroutines — guard the shared slice.
+	var (
+		mu             sync.Mutex
+		receivedBodies []string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
 		receivedBodies = append(receivedBodies, string(body))
+		mu.Unlock()
 		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
 			{ID: 1, Name: "X", Slug: "x"},
 		})
@@ -288,10 +296,15 @@ func TestClient_SearchGames_EmptyPlatformIDs_NoClause(t *testing.T) {
 }
 
 func TestClient_SearchGames_NonEmptyPlatformIDs_AppendsClause(t *testing.T) {
-	var receivedBodies []string
+	var (
+		mu             sync.Mutex
+		receivedBodies []string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
 		receivedBodies = append(receivedBodies, string(body))
+		mu.Unlock()
 		_ = json.NewEncoder(w).Encode([]igdbGameResponse{
 			{ID: 1, Name: "X", Slug: "x"},
 		})
@@ -315,10 +328,15 @@ func TestClient_SearchGames_NonEmptyPlatformIDs_AppendsClause(t *testing.T) {
 }
 
 func TestClient_SearchGames_EmptyFilteredResult_FallsBackUnfiltered(t *testing.T) {
-	var bodies []string
+	var (
+		mu     sync.Mutex
+		bodies []string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
 		bodies = append(bodies, string(body))
+		mu.Unlock()
 		if strings.Contains(string(body), "platforms = (") {
 			_ = json.NewEncoder(w).Encode([]igdbGameResponse{})
 			return
