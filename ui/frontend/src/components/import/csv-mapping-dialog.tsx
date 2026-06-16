@@ -86,8 +86,9 @@ function CsvMappingForm({ inspect, isImporting, onImport, onCancel }: CsvMapping
   const [mapping, setMapping] = useState<CsvMapping>(
     () => inspect.suggested_mapping ?? emptyCsvMapping(),
   );
-  const [format, setFormat] = useState('generic');
+  const [format, setFormat] = useState(() => inspect.detected?.slug ?? 'generic');
   const isPreset = format !== 'generic';
+  const isAutoDetected = format === inspect.detected?.slug;
   // Presets are listed alphabetically by display name; "Generic CSV" stays pinned
   // at the top as the default (manual-mapping) option, not a named source.
   const presets: CsvPresetInfo[] = useMemo(
@@ -163,8 +164,10 @@ function CsvMappingForm({ inspect, isImporting, onImport, onCancel }: CsvMapping
 
         {isPreset && (
           <p className="text-sm text-muted-foreground">
+            {isAutoDetected && 'Detected automatically. '}
             Columns, play-status, platforms, ratings and dates are mapped automatically by the{' '}
             {presets.find((p) => p.slug === format)?.name ?? format} preset.
+            {isAutoDetected && ' Switch the Format above to map columns yourself.'}
           </p>
         )}
 
