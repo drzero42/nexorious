@@ -379,6 +379,20 @@ func extractPlatforms(rec []string, idx map[string]int, cfg Config) []importmode
 	return out
 }
 
+// assembleNote combines an optional bold heading with a body. Either may be empty.
+func assembleNote(title, body string) string {
+	switch {
+	case title == "" && body == "":
+		return ""
+	case title == "":
+		return body
+	case body == "":
+		return "**" + title + "**"
+	default:
+		return "**" + title + "**\n\n" + body
+	}
+}
+
 // extractGame builds one Game from a row, or (zero, false) if the title is empty.
 func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game, bool) {
 	title := cell(rec, idx, cfg.Columns.Title)
@@ -400,8 +414,8 @@ func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game
 	if h := extractHours(rec, idx, cfg); h != nil {
 		g.HoursPlayed = h
 	}
-	if n := cell(rec, idx, cfg.Notes.Column); n != "" {
-		g.PersonalNotes = &n
+	if note := assembleNote(cell(rec, idx, cfg.Notes.TitleColumn), cell(rec, idx, cfg.Notes.Column)); note != "" {
+		g.PersonalNotes = &note
 	}
 	g.Platforms = extractPlatforms(rec, idx, cfg)
 	return g, true

@@ -111,8 +111,9 @@ type PlatformMapping struct {
 
 // NotesConfig is a verbatim notes column plus optional advanced assembly.
 type NotesConfig struct {
-	Column   string        // SIMPLE: verbatim notes column
-	Assembly *NoteAssembly // ADVANCED #1016 (Parse rejects)
+	Column      string        // SIMPLE: verbatim notes / body column
+	TitleColumn string        // optional heading; non-empty -> prepended as "**title**\n\n"
+	Assembly    *NoteAssembly // ADVANCED #1016 (Parse rejects)
 }
 
 // NoteAssembly describes extra column-sourced note inputs (Darkadia). Behaviour lands in #1016.

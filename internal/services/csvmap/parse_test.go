@@ -633,3 +633,17 @@ func TestExtractPlatforms_JSONKeys(t *testing.T) {
 		t.Errorf("unmapped platform should passthrough, got %+v", miss)
 	}
 }
+
+func TestAssembleNote(t *testing.T) {
+	cases := []struct{ title, body, want string }{
+		{"", "", ""},
+		{"", "just body", "just body"},
+		{"Heading", "", "**Heading**"},
+		{"Heading", "body text", "**Heading**\n\nbody text"},
+	}
+	for _, c := range cases {
+		if got := assembleNote(c.title, c.body); got != c.want {
+			t.Errorf("assembleNote(%q,%q) = %q, want %q", c.title, c.body, got, c.want)
+		}
+	}
+}
