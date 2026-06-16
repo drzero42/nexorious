@@ -12,6 +12,7 @@ type Preset struct {
 // presetList is the registry of known CSV source presets.
 var presetList = []Preset{
 	{Slug: "completionator", DisplayName: "Completionator", Config: Completionator()},
+	{Slug: "grouvee", DisplayName: "Grouvee", Config: Grouvee()},
 }
 
 // Presets returns the registered presets (a copy; callers must not mutate the registry).

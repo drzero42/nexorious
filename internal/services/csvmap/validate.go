@@ -46,7 +46,35 @@ func validate(cfg Config) error {
 	if cfg.Grouping.CopyRows != nil {
 		return notImplemented("Grouping.CopyRows")
 	}
+	if cfg.Status.Column != nil {
+		if err := validateColumnFormat("Status.Column", cfg.Status.Column.Format); err != nil {
+			return err
+		}
+	}
+	if cfg.Platform.Simple != nil {
+		if err := validateColumnFormat("Platform.Simple", cfg.Platform.Simple.PlatformFormat); err != nil {
+			return err
+		}
+	}
+	if cfg.PlayLog != nil {
+		if cfg.Duration != nil {
+			return errors.New("csvmap: Duration and PlayLog are mutually exclusive")
+		}
+		if strings.TrimSpace(cfg.PlayLog.Column) == "" ||
+			strings.TrimSpace(cfg.PlayLog.SecondsField) == "" ||
+			strings.TrimSpace(cfg.PlayLog.CompletionField) == "" {
+			return errors.New("csvmap: PlayLog requires Column, SecondsField, and CompletionField")
+		}
+	}
 	return nil
+}
+
+func validateColumnFormat(name string, f ColumnFormat) error {
+	switch f {
+	case FormatScalar, FormatJSONKeys:
+		return nil
+	}
+	return fmt.Errorf("csvmap: %s format %q must be %q or %q", name, f, FormatScalar, FormatJSONKeys)
 }
 
 // notImplemented is returned for an advanced Config slot whose behaviour lands in #1016.

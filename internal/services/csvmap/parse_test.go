@@ -3,6 +3,9 @@ package csvmap
 import (
 	"errors"
 	"io"
+	"math"
+	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/services/importmodel"
@@ -512,5 +515,187 @@ func TestParse_EmptyFile_ReturnsEOF(t *testing.T) {
 	_, err := Parse([]byte{}, titleOnlyConfig())
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("want io.EOF on empty input, got %v", err)
+	}
+}
+
+func TestDecodeKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		cell string
+		f    ColumnFormat
+		want []string
+	}{
+		{"scalar value", "PC", FormatScalar, []string{"PC"}},
+		{"scalar blank", "", FormatScalar, nil},
+		{"json object keys", `{"Played": {"x": 1}, "Backlog": {}}`, FormatJSONKeys, []string{"Backlog", "Played"}},
+		{"json empty object", "{}", FormatJSONKeys, nil},
+		{"json blank", "", FormatJSONKeys, nil},
+		{"json malformed", `{"Played": `, FormatJSONKeys, nil},
+		{"json not-an-object", `["a","b"]`, FormatJSONKeys, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := decodeKeys(tt.cell, tt.f)
+			sort.Strings(got)
+			want := append([]string(nil), tt.want...)
+			sort.Strings(want)
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("decodeKeys(%q,%q) = %v, want %v", tt.cell, tt.f, got, want)
+			}
+		})
+	}
+}
+
+func TestExtractStatus_JSONShelvesAndWishlist(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "name"},
+		Status: StatusConfig{Column: &StatusColumn{
+			Column: "shelves", Format: FormatJSONKeys,
+			ValueMap: map[string]string{
+				"playing": "in_progress", "played": "completed",
+				"backlog": "not_started", "wish list": WishlistStatus,
+			},
+			Precedence: []string{"playing", "played", "backlog"},
+			Default:    "not_started",
+		}},
+	}
+	idx := map[string]int{"shelves": 0}
+	cases := []struct {
+		shelves  string
+		wantStat string
+		wantWish bool
+	}{
+		{`{"Playing": {}}`, "in_progress", false},
+		{`{"Played": {}}`, "completed", false},
+		{`{"Backlog": {}}`, "not_started", false},
+		{`{"Played": {}, "Backlog": {}}`, "completed", false}, // precedence: played > backlog
+		{`{"Wish List": {}}`, "not_started", true},            // wishlist flag, status defaults
+		{`{"Playing": {}, "Wish List": {}}`, "in_progress", true},
+		{`{"Some Custom Shelf": {}}`, "not_started", false}, // unrecognized -> default
+		{`{}`, "not_started", false},
+	}
+	for _, c := range cases {
+		st, wish := extractStatus([]string{c.shelves}, idx, cfg)
+		if st != c.wantStat || wish != c.wantWish {
+			t.Errorf("shelves %s -> (%q,%v), want (%q,%v)", c.shelves, st, wish, c.wantStat, c.wantWish)
+		}
+	}
+}
+
+// The scalar status path (Completionator) is unchanged: one value, no precedence.
+func TestExtractStatus_ScalarUnchanged(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "name"},
+		Status: StatusConfig{Column: &StatusColumn{
+			Column:   "Progress Status",
+			ValueMap: map[string]string{"finished": "completed", "incomplete": "not_started"},
+			Default:  "not_started",
+		}},
+	}
+	idx := map[string]int{"progress status": 0}
+	if st, wish := extractStatus([]string{"Finished"}, idx, cfg); st != "completed" || wish {
+		t.Errorf("Finished -> (%q,%v), want (completed,false)", st, wish)
+	}
+	if st, _ := extractStatus([]string{""}, idx, cfg); st != "not_started" {
+		t.Errorf("empty -> %q, want not_started", st)
+	}
+}
+
+func TestExtractPlatforms_JSONKeys(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "name"},
+		Platform: PlatformConfig{Simple: &PlatformSimple{
+			PlatformColumn: "platforms", PlatformFormat: FormatJSONKeys,
+			PlatformMap: map[string]string{
+				"pc (microsoft windows)": "pc-windows", "playstation 4": "playstation-4",
+			},
+		}},
+	}
+	idx := map[string]int{"platforms": 0}
+
+	one := extractPlatforms([]string{`{"PC (Microsoft Windows)": {"url": "x"}}`}, idx, cfg)
+	if len(one) != 1 || one[0].Platform != "pc-windows" || one[0].Storefront != nil {
+		t.Fatalf("single platform = %+v", one)
+	}
+	empty := extractPlatforms([]string{`{}`}, idx, cfg)
+	if empty != nil {
+		t.Errorf("empty platforms = %+v, want nil", empty)
+	}
+	two := extractPlatforms([]string{`{"PC (Microsoft Windows)": {}, "PlayStation 4": {}}`}, idx, cfg)
+	got := map[string]bool{}
+	for _, p := range two {
+		got[p.Platform] = true
+	}
+	if len(two) != 2 || !got["pc-windows"] || !got["playstation-4"] {
+		t.Errorf("two platforms = %+v", two)
+	}
+	miss := extractPlatforms([]string{`{"Sega Saturn": {}}`}, idx, cfg)
+	if len(miss) != 1 || miss[0].Platform != "Sega Saturn" {
+		t.Errorf("unmapped platform should passthrough, got %+v", miss)
+	}
+}
+
+func TestAssembleNote(t *testing.T) {
+	cases := []struct{ title, body, want string }{
+		{"", "", ""},
+		{"", "just body", "just body"},
+		{"Heading", "", "**Heading**"},
+		{"Heading", "body text", "**Heading**\n\nbody text"},
+	}
+	for _, c := range cases {
+		if got := assembleNote(c.title, c.body); got != c.want {
+			t.Errorf("assembleNote(%q,%q) = %q, want %q", c.title, c.body, got, c.want)
+		}
+	}
+}
+
+func TestExtractPlayLog(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "name"},
+		PlayLog: &PlayLogConfig{
+			Column: "dates", SecondsField: "seconds_played", CompletionField: "level_of_completion",
+			CompletionMap: map[string]string{
+				"main story": "completed", "main story + extras": "mastered", "100% completion": "dominated",
+			},
+		},
+	}
+	idx := map[string]int{"dates": 0}
+
+	// Real finish: seconds -> hours, tier -> dominated.
+	hrs, tier := extractPlayLog([]string{`[{"seconds_played": 36300, "level_of_completion": "100% Completion"}]`}, idx, cfg)
+	if hrs == nil || math.Abs(*hrs-36300.0/3600.0) > 1e-9 {
+		t.Errorf("hours = %v, want %v", hrs, 36300.0/3600.0)
+	}
+	if tier != "dominated" {
+		t.Errorf("tier = %q, want dominated", tier)
+	}
+
+	// Zero seconds -> no hours; tier still recognized.
+	hrs, tier = extractPlayLog([]string{`[{"seconds_played": 0, "level_of_completion": "Main Story"}]`}, idx, cfg)
+	if hrs != nil {
+		t.Errorf("hours = %v, want nil", hrs)
+	}
+	if tier != "completed" {
+		t.Errorf("tier = %q, want completed", tier)
+	}
+
+	// Multiple entries: seconds summed, highest tier wins.
+	hrs, tier = extractPlayLog([]string{`[{"seconds_played": 1800, "level_of_completion": "Main Story"},{"seconds_played": 1800, "level_of_completion": "Main Story + Extras"}]`}, idx, cfg)
+	if hrs == nil || math.Abs(*hrs-1.0) > 1e-9 {
+		t.Errorf("hours = %v, want 1.0", hrs)
+	}
+	if tier != "mastered" {
+		t.Errorf("tier = %q, want mastered (highest of the two)", tier)
+	}
+
+	// Empty / unrecognized / no config.
+	if h, ts := extractPlayLog([]string{`[]`}, idx, cfg); h != nil || ts != "" {
+		t.Errorf("empty array = (%v,%q), want (nil,\"\")", h, ts)
+	}
+	if h, ts := extractPlayLog([]string{`[{"seconds_played": 60, "level_of_completion": "Unknown"}]`}, idx, cfg); ts != "" {
+		t.Errorf("unrecognized tier ts = %q, want \"\" (h=%v)", ts, h)
+	}
+	if h, ts := extractPlayLog([]string{`garbage`}, idx, cfg); h != nil || ts != "" {
+		t.Errorf("malformed = (%v,%q), want (nil,\"\")", h, ts)
 	}
 }

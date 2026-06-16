@@ -42,3 +42,22 @@ func TestPresets_ReturnsCopy(t *testing.T) {
 		t.Fatalf("Presets() len = %d, want %d", len(got), len(presetList))
 	}
 }
+
+func TestPresets_IncludesGrouvee(t *testing.T) {
+	cfg, ok := PresetBySlug("grouvee")
+	if !ok {
+		t.Fatal("expected a 'grouvee' preset in the registry")
+	}
+	if cfg.Columns.Title != "name" {
+		t.Errorf("grouvee preset not wired to Grouvee() (title col = %q)", cfg.Columns.Title)
+	}
+	var found bool
+	for _, p := range Presets() {
+		if p.Slug == "grouvee" && p.DisplayName == "Grouvee" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Presets() must list grouvee with DisplayName Grouvee")
+	}
+}

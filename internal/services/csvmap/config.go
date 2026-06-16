@@ -6,6 +6,14 @@
 // their behaviour. See docs/superpowers/specs/2026-06-14-issue-1014-csvmap-engine-design.md.
 package csvmap
 
+// ColumnFormat selects how a configured column's cell is read.
+type ColumnFormat string
+
+const (
+	FormatScalar   ColumnFormat = ""          // default: the trimmed cell is the single value
+	FormatJSONKeys ColumnFormat = "json-keys" // cell is a JSON object; its keys are the values
+)
+
 // Config declaratively describes how to turn one source's CSV into canonical
 // importmodel.Game values.
 type Config struct {
@@ -17,6 +25,7 @@ type Config struct {
 	Grouping     GroupingConfig  //
 	Rating       *RatingConfig   // nil = ignore ratings
 	Duration     *DurationConfig // nil = ignore hours_played
+	PlayLog      *PlayLogConfig  // nil = ignore; JSON-array play-log (seconds + completion tier)
 	TruthyValues []string        // Loved truthy set (matched normalized); nil = {"1","true","yes"}
 	TagSeparator string          // tag list separator; "" = ","
 	DateLayout   string          // Go time layout for date columns; "" = "2006-01-02"
@@ -39,12 +48,18 @@ type StatusConfig struct {
 	Flags  *StatusFlags  // ADVANCED #1016 (Parse rejects)
 }
 
-// StatusColumn derives play_status from a single column via a value map.
+// StatusColumn derives play_status from a single column (scalar or JSON-keys).
 type StatusColumn struct {
-	Column   string
-	ValueMap map[string]string // normalized source value -> play_status
-	Default  string            // empty/unmapped -> this; "" falls back to "not_started"
+	Column     string
+	Format     ColumnFormat      // "" scalar (default) | "json-keys"
+	ValueMap   map[string]string // normalized source value -> play_status, or WishlistStatus
+	Precedence []string          // normalized source values, highest priority first
+	Default    string            // empty/unmapped -> this; "" falls back to "not_started"
 }
+
+// WishlistStatus is the reserved ValueMap target that flags is_wishlisted rather
+// than setting play_status. play_status is then derived from the remaining values.
+const WishlistStatus = "wishlisted"
 
 // StatusFlags derives play_status from ordered boolean-flag columns (Darkadia).
 type StatusFlags struct {
@@ -68,6 +83,7 @@ type PlatformConfig struct {
 // PlatformSimple derives a single (platform, storefront, acquired-date) entry from columns.
 type PlatformSimple struct {
 	PlatformColumn     string
+	PlatformFormat     ColumnFormat      // "" scalar (default, one entry) | "json-keys" (one entry per key)
 	StorefrontColumn   string            // optional
 	AcquiredDateColumn string            // optional; attaches to the platform entry
 	PlatformMap        map[string]string // optional value (normalized) -> slug; nil/miss = passthrough as-is
@@ -96,8 +112,9 @@ type PlatformMapping struct {
 
 // NotesConfig is a verbatim notes column plus optional advanced assembly.
 type NotesConfig struct {
-	Column   string        // SIMPLE: verbatim notes column
-	Assembly *NoteAssembly // ADVANCED #1016 (Parse rejects)
+	Column      string        // SIMPLE: verbatim notes / body column
+	TitleColumn string        // optional heading; non-empty -> prepended as "**title**\n\n"
+	Assembly    *NoteAssembly // ADVANCED #1016 (Parse rejects)
 }
 
 // NoteAssembly describes extra column-sourced note inputs (Darkadia). Behaviour lands in #1016.
@@ -127,4 +144,14 @@ type RatingConfig struct {
 // DurationConfig describes the hours_played format.
 type DurationConfig struct {
 	Format string // "decimal" (SIMPLE) | "h:mm" (ADVANCED #1016, rejected)
+}
+
+// PlayLogConfig reads playtime and a completion tier from a JSON-array column of
+// play-session objects (Grouvee's "dates"). A recognized CompletionField value
+// overrides the shelf-derived play_status. Mutually exclusive with Duration.
+type PlayLogConfig struct {
+	Column          string            // JSON-array column of session objects
+	SecondsField    string            // numeric field; summed across entries, ÷3600 -> hours_played
+	CompletionField string            // completion-tier field
+	CompletionMap   map[string]string // normalized tier -> play_status; unrecognized ignored
 }

@@ -1,6 +1,7 @@
 package csvmap
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -37,6 +38,31 @@ func cell(rec []string, idx map[string]int, colName string) string {
 		return ""
 	}
 	return strings.TrimSpace(rec[i])
+}
+
+// decodeKeys returns the values a column yields under format f. Scalar: the cell
+// as a single value (nil if blank). JSON-keys: the keys of a JSON object (nil for
+// "", "{}", a non-object, or unparseable JSON). Object key order is undefined;
+// callers that must pick one value apply an explicit precedence.
+func decodeKeys(cell string, f ColumnFormat) []string {
+	if cell == "" {
+		return nil
+	}
+	if f != FormatJSONKeys {
+		return []string{cell}
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(cell), &obj); err != nil {
+		return nil
+	}
+	if len(obj) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // MatchesSignature reports whether every name in cfg.Signature is present in
@@ -146,25 +172,47 @@ func buildMerged(rows [][]string, idx map[string]int, cfg Config) []importmodel.
 	return out
 }
 
-// extractStatus resolves play_status from the simple status column, or
-// "not_started" when no status column is configured.
-func extractStatus(rec []string, idx map[string]int, cfg Config) string {
+// extractStatus resolves the shelf-derived play_status and the wishlist flag from
+// the status column (scalar or JSON-keys). A value mapped to WishlistStatus sets
+// wishlisted; the remaining mapped values are play_status candidates, resolved by
+// Precedence (first listed present wins), else the single candidate (scalar
+// case), else Default.
+func extractStatus(rec []string, idx map[string]int, cfg Config) (status string, wishlisted bool) {
 	if cfg.Status.Column == nil {
-		return "not_started"
+		return "not_started", false
 	}
 	sc := cfg.Status.Column
 	def := sc.Default
 	if def == "" {
 		def = "not_started"
 	}
-	v := normKey(cell(rec, idx, sc.Column))
-	if v == "" {
-		return def
+	present := map[string]string{} // normalized source value -> mapped play_status
+	for _, v := range decodeKeys(cell(rec, idx, sc.Column), sc.Format) {
+		nv := normKey(v)
+		mapped, ok := sc.ValueMap[nv]
+		if !ok {
+			continue
+		}
+		if mapped == WishlistStatus {
+			wishlisted = true
+			continue
+		}
+		present[nv] = mapped
 	}
-	if status, ok := sc.ValueMap[v]; ok {
-		return status
+	// When Precedence is set, a mapped candidate must appear in it to be chosen;
+	// a candidate absent from Precedence falls through to Default. List every
+	// status-bearing source value in Precedence.
+	for _, p := range sc.Precedence {
+		if s, ok := present[normKey(p)]; ok {
+			return s, wishlisted
+		}
 	}
-	return def
+	if len(sc.Precedence) == 0 {
+		for _, s := range present { // scalar case: at most one entry
+			return s, wishlisted
+		}
+	}
+	return def, wishlisted
 }
 
 // extractRating normalizes a raw rating to whole 1-5 stars per cfg.Rating.
@@ -275,6 +323,51 @@ func extractHours(rec []string, idx map[string]int, cfg Config) *float64 {
 	return &f
 }
 
+// statusRank orders completion tiers so the highest across play-log entries wins.
+var statusRank = map[string]int{"completed": 1, "mastered": 2, "dominated": 3}
+
+// extractPlayLog sums the seconds field into hours_played and maps the highest
+// recognized completion tier to a play_status. Non-array/blank/malformed input,
+// zero seconds, and unrecognized tiers yield nil hours / "" tier respectively.
+func extractPlayLog(rec []string, idx map[string]int, cfg Config) (hours *float64, tierStatus string) {
+	pl := cfg.PlayLog
+	if pl == nil {
+		return nil, ""
+	}
+	raw := cell(rec, idx, pl.Column)
+	if raw == "" {
+		return nil, ""
+	}
+	var entries []map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil, ""
+	}
+	var totalSeconds float64
+	bestRank := 0
+	for _, e := range entries {
+		if rs, ok := e[pl.SecondsField]; ok {
+			var sec float64
+			if json.Unmarshal(rs, &sec) == nil && sec > 0 {
+				totalSeconds += sec
+			}
+		}
+		if rt, ok := e[pl.CompletionField]; ok {
+			var tier string
+			if json.Unmarshal(rt, &tier) == nil {
+				if st, ok := pl.CompletionMap[normKey(tier)]; ok && statusRank[st] > bestRank {
+					bestRank = statusRank[st]
+					tierStatus = st
+				}
+			}
+		}
+	}
+	if totalSeconds > 0 {
+		h := totalSeconds / 3600.0
+		hours = &h
+	}
+	return hours, tierStatus
+}
+
 // extractIGDBID parses the configured IGDB-id cell into a positive int32. A
 // missing/unconfigured column, blank, non-numeric, zero, negative, or
 // out-of-int32-range value yields nil — such a row falls back to title matching
@@ -292,23 +385,18 @@ func extractIGDBID(rec []string, idx map[string]int, cfg Config) *int32 {
 	return &v
 }
 
-// extractPlatforms builds the simple-variant ownership entry (at most one) from
-// the configured platform/storefront/acquired-date columns. An empty platform
-// cell or no PlatformSimple config yields no entries. Map miss = passthrough.
+// extractPlatforms builds ownership entries from the platform column. Scalar
+// yields at most one; json-keys yields one per key (deduped by slug within the
+// row). The optional storefront/acquired-date scalar columns apply to every
+// entry. Map miss = passthrough. No PlatformSimple config / empty column = none.
 func extractPlatforms(rec []string, idx map[string]int, cfg Config) []importmodel.Platform {
 	ps := cfg.Platform.Simple
 	if ps == nil {
 		return nil
 	}
-	pv := cell(rec, idx, ps.PlatformColumn)
-	if pv == "" {
+	values := decodeKeys(cell(rec, idx, ps.PlatformColumn), ps.PlatformFormat)
+	if len(values) == 0 {
 		return nil
-	}
-	slug := pv
-	if ps.PlatformMap != nil {
-		if mapped, ok := ps.PlatformMap[normKey(pv)]; ok {
-			slug = mapped
-		}
 	}
 	var sf *string
 	if sv := cell(rec, idx, ps.StorefrontColumn); sv != "" {
@@ -321,7 +409,36 @@ func extractPlatforms(rec []string, idx map[string]int, cfg Config) []importmode
 		sf = &s
 	}
 	date := extractDate(cell(rec, idx, ps.AcquiredDateColumn), cfg)
-	return []importmodel.Platform{{Platform: slug, Storefront: sf, AcquiredDate: date}}
+	var out []importmodel.Platform
+	seen := map[string]bool{}
+	for _, pv := range values {
+		slug := pv
+		if ps.PlatformMap != nil {
+			if mapped, ok := ps.PlatformMap[normKey(pv)]; ok {
+				slug = mapped
+			}
+		}
+		if seen[slug] {
+			continue
+		}
+		seen[slug] = true
+		out = append(out, importmodel.Platform{Platform: slug, Storefront: sf, AcquiredDate: date})
+	}
+	return out
+}
+
+// assembleNote combines an optional bold heading with a body. Either may be empty.
+func assembleNote(title, body string) string {
+	switch {
+	case title == "" && body == "":
+		return ""
+	case title == "":
+		return body
+	case body == "":
+		return "**" + title + "**"
+	default:
+		return "**" + title + "**\n\n" + body
+	}
 }
 
 // extractGame builds one Game from a row, or (zero, false) if the title is empty.
@@ -330,9 +447,15 @@ func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game
 	if title == "" {
 		return importmodel.Game{}, false
 	}
+	status, wishlisted := extractStatus(rec, idx, cfg)
+	hours, tierStatus := extractPlayLog(rec, idx, cfg)
+	if tierStatus != "" {
+		status = tierStatus
+	}
 	g := importmodel.Game{
-		Title:      title,
-		PlayStatus: extractStatus(rec, idx, cfg),
+		Title:        title,
+		PlayStatus:   status,
+		IsWishlisted: wishlisted,
 	}
 	g.IGDBID = extractIGDBID(rec, idx, cfg)
 	if r := extractRating(cell(rec, idx, cfg.Columns.Rating), cfg); r != nil {
@@ -344,8 +467,11 @@ func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game
 	if h := extractHours(rec, idx, cfg); h != nil {
 		g.HoursPlayed = h
 	}
-	if n := cell(rec, idx, cfg.Notes.Column); n != "" {
-		g.PersonalNotes = &n
+	if hours != nil {
+		g.HoursPlayed = hours
+	}
+	if note := assembleNote(cell(rec, idx, cfg.Notes.TitleColumn), cell(rec, idx, cfg.Notes.Column)); note != "" {
+		g.PersonalNotes = &note
 	}
 	g.Platforms = extractPlatforms(rec, idx, cfg)
 	return g, true
