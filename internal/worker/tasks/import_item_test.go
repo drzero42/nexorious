@@ -963,3 +963,251 @@ func TestImportItem_EmitsImportFailedWhenItemsFail(t *testing.T) {
 		t.Errorf("events count for dedup_key %q = %d, want 0", completedKey, completedCount)
 	}
 }
+
+func TestImportItem_AppliesWishlistAndAvailability(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT (name) DO NOTHING`); err != nil {
+		t.Fatalf("seed platform: %v", err)
+	}
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	g := &models.Game{ID: 6001, Title: "Avail", LastUpdated: time.Now(), CreatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(g).Exec(ctx); err != nil {
+		t.Fatalf("insert game: %v", err)
+	}
+	jobID := uuid.NewString()
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	// Wishlisted game with one platform marked unavailable.
+	itemID := insertTestJobItem(t, testDB, jobID, userID, map[string]any{
+		"igdb_id":       6001,
+		"title":         "Avail",
+		"is_wishlisted": true,
+		"platforms": []map[string]any{
+			{"platform": "pc-windows", "is_available": false},
+		},
+	})
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("work: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(6001)).Scan(ctx); err != nil {
+		t.Fatalf("user_game: %v", err)
+	}
+	// A wishlisted game DOES carry a platform here, so ClearWishlistOnAcquire clears it.
+	if ug.IsWishlisted {
+		t.Errorf("is_wishlisted = true, want false (cleared on acquire because a platform exists)")
+	}
+	var ugp models.UserGamePlatform
+	if err := testDB.NewSelect().Model(&ugp).Where("user_game_id = ?", ug.ID).Scan(ctx); err != nil {
+		t.Fatalf("platform: %v", err)
+	}
+	if ugp.IsAvailable {
+		t.Errorf("is_available = true, want false")
+	}
+}
+
+func TestImportItem_WishlistSurvivesWithoutPlatforms(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	g := &models.Game{ID: 6002, Title: "Wished", LastUpdated: time.Now(), CreatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(g).Exec(ctx); err != nil {
+		t.Fatalf("insert game: %v", err)
+	}
+	jobID := uuid.NewString()
+	insertTestJob(t, testDB, jobID, userID, 1)
+	itemID := insertTestJobItem(t, testDB, jobID, userID, map[string]any{
+		"igdb_id":       6002,
+		"title":         "Wished",
+		"is_wishlisted": true,
+		"platforms":     []map[string]any{},
+	})
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("work: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(6002)).Scan(ctx); err != nil {
+		t.Fatalf("user_game: %v", err)
+	}
+	if !ug.IsWishlisted {
+		t.Errorf("is_wishlisted = false, want true (no platforms ⇒ flag survives)")
+	}
+}
+
+func TestImportItem_AppliesPoolsOnCompletion(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	for _, id := range []int32{7001, 7002} {
+		g := &models.Game{ID: id, Title: "G", LastUpdated: time.Now(), CreatedAt: time.Now()}
+		if _, err := testDB.NewInsert().Model(g).Exec(ctx); err != nil {
+			t.Fatalf("insert game: %v", err)
+		}
+	}
+	jobID := uuid.NewString()
+	insertTestJob(t, testDB, jobID, userID, 2)
+
+	// Two game items.
+	item1 := insertTestJobItem(t, testDB, jobID, userID, map[string]any{"igdb_id": 7001, "title": "G1"})
+	item2 := insertTestJobItem(t, testDB, jobID, userID, map[string]any{"igdb_id": 7002, "title": "G2"})
+
+	// Synthetic pools item (mirrors what HandleImportNexorious writes).
+	poolsPayload := []map[string]any{{
+		"name":     "Backlog",
+		"color":    "#abc",
+		"position": 0,
+		"filter":   map[string]any{"loved": true},
+		"games": []map[string]any{
+			{"igdb_id": 7001, "position": nil},
+			{"igdb_id": 7002, "position": 0},
+		},
+	}}
+	insertTestPoolsItem(t, testDB, jobID, userID, poolsPayload)
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	for _, id := range []string{item1, item2} {
+		if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: id}}); err != nil {
+			t.Fatalf("work: %v", err)
+		}
+	}
+
+	var poolName string
+	var memberCount int
+	if err := testDB.NewRaw(`SELECT name FROM pools WHERE user_id = ? AND name = 'Backlog'`, userID).Scan(ctx, &poolName); err != nil {
+		t.Fatalf("pool not created: %v", err)
+	}
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM pool_games pg JOIN pools p ON p.id = pg.pool_id WHERE p.user_id = ?`, userID,
+	).Scan(ctx, &memberCount); err != nil {
+		t.Fatalf("count members: %v", err)
+	}
+	if memberCount != 2 {
+		t.Errorf("pool members = %d, want 2", memberCount)
+	}
+}
+
+func TestImportItem_BackwardCompatDefaults(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT (name) DO NOTHING`); err != nil {
+		t.Fatalf("seed platform: %v", err)
+	}
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	g := &models.Game{ID: 8001, Title: "Legacy", LastUpdated: time.Now(), CreatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(g).Exec(ctx); err != nil {
+		t.Fatalf("insert game: %v", err)
+	}
+	jobID := uuid.NewString()
+	insertTestJob(t, testDB, jobID, userID, 1)
+	// A 2.0-shaped game: no is_wishlisted, platform with no is_available.
+	itemID := insertTestJobItem(t, testDB, jobID, userID, map[string]any{
+		"igdb_id":   8001,
+		"title":     "Legacy",
+		"platforms": []map[string]any{{"platform": "pc-windows"}},
+	})
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("work: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(8001)).Scan(ctx); err != nil {
+		t.Fatalf("user_game: %v", err)
+	}
+	if ug.IsWishlisted {
+		t.Errorf("is_wishlisted = true, want false (absent ⇒ false)")
+	}
+	var ugp models.UserGamePlatform
+	if err := testDB.NewSelect().Model(&ugp).Where("user_game_id = ?", ug.ID).Scan(ctx); err != nil {
+		t.Fatalf("platform: %v", err)
+	}
+	if !ugp.IsAvailable {
+		t.Errorf("is_available = false, want true (absent ⇒ true)")
+	}
+}
+
+func TestApplyImportedPools_MergesIntoExistingPool(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	for _, id := range []int32{9001, 9002} {
+		g := &models.Game{ID: id, Title: "G", LastUpdated: time.Now(), CreatedAt: time.Now()}
+		if _, err := testDB.NewInsert().Model(g).Exec(ctx); err != nil {
+			t.Fatalf("insert game: %v", err)
+		}
+	}
+	ug1 := &models.UserGame{ID: uuid.NewString(), UserID: userID, GameID: 9001, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	ug2 := &models.UserGame{ID: uuid.NewString(), UserID: userID, GameID: 9002, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(ug1).Exec(ctx); err != nil {
+		t.Fatalf("insert ug1: %v", err)
+	}
+	if _, err := testDB.NewInsert().Model(ug2).Exec(ctx); err != nil {
+		t.Fatalf("insert ug2: %v", err)
+	}
+	// Pre-existing pool named Backlog with ug1 already a member and a custom color.
+	existingPool := uuid.NewString()
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO pools (id, user_id, name, color, position) VALUES (?, ?, 'Backlog', '#existing', 5)`, existingPool, userID); err != nil {
+		t.Fatalf("insert pool: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO pool_games (id, pool_id, user_game_id, position) VALUES (?, ?, ?, NULL)`, uuid.NewString(), existingPool, ug1.ID); err != nil {
+		t.Fatalf("insert pg: %v", err)
+	}
+
+	jobID := uuid.NewString()
+	insertTestJob(t, testDB, jobID, userID, 0)
+	// Import payload re-adds ug1 (dup) and adds ug2, with a DIFFERENT color.
+	insertTestPoolsItem(t, testDB, jobID, userID, []map[string]any{{
+		"name":  "Backlog",
+		"color": "#imported",
+		"games": []map[string]any{
+			{"igdb_id": 9001, "position": nil},
+			{"igdb_id": 9002, "position": 0},
+		},
+	}})
+
+	tasks.ApplyImportedPoolsForTest(ctx, testDB, jobID, userID)
+
+	// Existing pool kept (color unchanged, no duplicate pool), ug2 merged in.
+	var poolCount, memberCount int
+	var color string
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM pools WHERE user_id = ? AND name = 'Backlog'`, userID).Scan(ctx, &poolCount); err != nil {
+		t.Fatalf("count pools: %v", err)
+	}
+	if poolCount != 1 {
+		t.Errorf("pool count = %d, want 1 (find-or-create, no dup)", poolCount)
+	}
+	if err := testDB.NewRaw(`SELECT color FROM pools WHERE id = ?`, existingPool).Scan(ctx, &color); err != nil {
+		t.Fatalf("select color: %v", err)
+	}
+	if color != "#existing" {
+		t.Errorf("color = %q, want #existing (curation not overwritten)", color)
+	}
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM pool_games WHERE pool_id = ?`, existingPool).Scan(ctx, &memberCount); err != nil {
+		t.Fatalf("count members: %v", err)
+	}
+	if memberCount != 2 {
+		t.Errorf("member count = %d, want 2 (ug1 dedup + ug2 added)", memberCount)
+	}
+}

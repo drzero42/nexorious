@@ -21,6 +21,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/migrations"
+	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 // testDB is the shared database connection for all external package tests.
@@ -165,6 +166,19 @@ func insertTestJobItem(t *testing.T, db *bun.DB, jobID, userID string, gameData 
 		t.Fatalf("insertTestJobItem: %v", err)
 	}
 	return itemID
+}
+
+func insertTestPoolsItem(t *testing.T, db *bun.DB, jobID, userID string, pools any) {
+	t.Helper()
+	sourceMetadata := mustMarshal(t, map[string]any{"item_type": "pools", "data": pools})
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
+		 VALUES (?, ?, ?, ?, ?, ?, 'completed', '{}', '[]')`,
+		uuid.NewString(), jobID, userID, tasks.PoolsItemKey, "(pools)", sourceMetadata,
+	)
+	if err != nil {
+		t.Fatalf("insertTestPoolsItem: %v", err)
+	}
 }
 
 func mustMarshal(t *testing.T, v any) json.RawMessage {

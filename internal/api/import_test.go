@@ -350,3 +350,95 @@ func TestImportSource_UnregisteredSlugNotRouted(t *testing.T) {
 		t.Errorf("jobs for unregistered source = %d, want 0", jobCount)
 	}
 }
+
+func TestImportNexorious_AcceptsVersion21(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "imp-v21")
+
+	export := map[string]any{
+		"format":  "nexorious-library",
+		"version": "2.1",
+		"games":   []map[string]any{{"igdb_id": 1, "title": "Game 1"}},
+	}
+	data, err := json.Marshal(export)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	rec := postMultipartFile(t, e, "/api/import/nexorious", "export.json", data, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestImportNexorious_CreatesPoolsItemHiddenFromListing(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "imp-pools")
+
+	export := map[string]any{
+		"format":  "nexorious-library",
+		"version": "2.1",
+		"games":   []map[string]any{{"igdb_id": 1, "title": "Game 1"}},
+		"pools": []map[string]any{{
+			"name":     "Backlog",
+			"position": 0,
+			"games":    []map[string]any{{"igdb_id": 1, "position": nil}},
+		}},
+	}
+	data, err := json.Marshal(export)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	rec := postMultipartFile(t, e, "/api/import/nexorious", "export.json", data, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode resp: %v", err)
+	}
+	jobID, _ := resp["job_id"].(string)
+	if jobID == "" {
+		t.Fatal("no job_id in response")
+	}
+	// total_items counts games only, not the synthetic pools item.
+	if got := resp["total_items"]; got != float64(1) {
+		t.Errorf("total_items = %v, want 1", got)
+	}
+	// The synthetic __pools__ item exists in the DB...
+	var raw int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM job_items WHERE job_id = ? AND item_key = '__pools__'`, jobID,
+	).Scan(context.Background(), &raw); err != nil {
+		t.Fatalf("count raw: %v", err)
+	}
+	if raw != 1 {
+		t.Errorf("synthetic pools items = %d, want 1", raw)
+	}
+	// ...but it is hidden from the per-job item listing.
+	listReq := httptest.NewRequest(http.MethodGet, "/api/jobs/"+jobID+"/items", nil)
+	listReq.AddCookie(&http.Cookie{Name: "session_id", Value: token})
+	listRec := httptest.NewRecorder()
+	e.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list items status = %d, want 200; body=%s", listRec.Code, listRec.Body.String())
+	}
+	var listResp struct {
+		Items []map[string]any `json:"items"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("decode list resp: %v", err)
+	}
+	if listResp.Total != 1 {
+		t.Errorf("listed total = %d, want 1 (synthetic pools item excluded)", listResp.Total)
+	}
+	for _, it := range listResp.Items {
+		if it["item_key"] == "__pools__" {
+			t.Errorf("listing leaked synthetic __pools__ item")
+		}
+	}
+}

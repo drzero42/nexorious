@@ -162,8 +162,8 @@ func TestBuildJSONDoc(t *testing.T) {
 				if doc.Format != "nexorious-library" {
 					t.Errorf("format = %q, want nexorious-library", doc.Format)
 				}
-				if doc.Version != "2.0" {
-					t.Errorf("version = %q, want 2.0", doc.Version)
+				if doc.Version != "2.1" {
+					t.Errorf("version = %q, want 2.1", doc.Version)
 				}
 				if doc.ExportedAt == "" {
 					t.Errorf("exported_at should be set")
@@ -246,7 +246,7 @@ func TestBuildJSONDoc(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.check(t, buildJSONDoc(tc.games))
+			tc.check(t, buildJSONDoc(tc.games, nil))
 		})
 	}
 }
