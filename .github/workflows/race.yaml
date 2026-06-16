@@ -1,0 +1,146 @@
+---
+name: Race Detector
+
+# Post-merge data-race alerting. The race detector requires cgo
+# (CGO_ENABLED=1) and is ~2x slower than the plain suite, so it deliberately
+# runs OFF the PR path to keep merge-check latency low. It is NOT part of the
+# `CI Gate` required check (see test.yaml) — a red run here pings via an
+# auto-opened issue rather than blocking a merge.
+#
+# Triggered on every push to main (attributes a race to the single squash
+# commit, caught within minutes) and on demand before a risky merge.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  race:
+    name: Go Tests (-race)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Cache PostgreSQL 18 client packages
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/apt-archives
+          key: apt-pgclient18-${{ runner.os }}
+
+      - name: Install PostgreSQL 18 client
+        run: |
+          set -euo pipefail
+          # curl and ca-certificates are preinstalled on ubuntu-latest, so we
+          # skip an apt install for them.
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          # Refresh only the PGDG source list, not every Ubuntu mirror — the
+          # base package lists already present on the runner image satisfy the
+          # transitive dependencies. A full `apt-get update` here costs ~10s.
+          sudo apt-get update \
+            -o Dir::Etc::sourcelist="sources.list.d/pgdg.list" \
+            -o Dir::Etc::sourceparts="-" \
+            -o APT::Get::List-Cleanup="0"
+          # Use a workspace-local archive dir so actions/cache can persist the
+          # downloaded .deb files (and their dependencies) between runs.
+          ARCHIVES="$GITHUB_WORKSPACE/apt-archives"
+          mkdir -p "$ARCHIVES/partial"
+          sudo apt-get install -y \
+            -o Dir::Cache::archives="$ARCHIVES" \
+            postgresql-client-18
+          # Make the cached debs readable by the (non-root) runner user so the
+          # cache save step can pack them.
+          sudo chown -R "$(id -u):$(id -g)" "$ARCHIVES"
+
+      - name: Cache Postgres test image
+        id: pg-image
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.docker-cache/postgres-18-alpine.tar
+          key: docker-postgres-18-alpine
+
+      - name: Load or pull Postgres test image
+        run: |
+          set -euo pipefail
+          TAR="$GITHUB_WORKSPACE/.docker-cache/postgres-18-alpine.tar"
+          if [ -f "$TAR" ]; then
+            docker load -i "$TAR"
+          else
+            docker pull postgres:18-alpine
+            mkdir -p "$(dirname "$TAR")"
+            docker save postgres:18-alpine -o "$TAR"
+          fi
+
+      - name: Run Go tests with the race detector
+        env:
+          # Tests use testcontainers to spin up their own PostgreSQL container.
+          # Point testcontainers at the Docker daemon available on GitHub-hosted runners.
+          DOCKER_HOST: unix:///var/run/docker.sock
+          # The race detector requires cgo; the rest of the repo builds cgo-disabled.
+          CGO_ENABLED: "1"
+        run: go test -race -timeout 600s ./...
+
+      - name: Open or update a failure issue
+        if: failure()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const label = 'race-detector';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            // Ensure the dedicated dedup label exists (created on first failure).
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner, repo, name: label, color: 'd73a4a',
+                  description: 'Data race detected by the -race CI lane',
+                });
+              } else {
+                throw e;
+              }
+            }
+
+            const body = [
+              `The race-detector workflow failed on \`${context.sha}\`.`,
+              '',
+              `**Failing run:** ${runUrl}`,
+              '',
+              'Reproduce locally (cgo required):',
+              '```bash',
+              'CGO_ENABLED=1 go test -race -timeout 600s ./...',
+              '```',
+            ].join('\n');
+
+            // Dedup: reuse the single open race-detector issue if one exists,
+            // otherwise open a new one — so repeated failures don't spam.
+            const open = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: label,
+            });
+            if (open.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: open.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner, repo,
+                title: '`-race` CI lane detected a data race on main',
+                body,
+                labels: [label, 'tech-debt'],
+              });
+            }

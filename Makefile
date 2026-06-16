@@ -1,4 +1,4 @@
-.PHONY: all frontend build docker test test-backend test-frontend coverage print-version
+.PHONY: all frontend build docker test test-backend test-frontend coverage deadcode print-version
 
 COMMIT  := $(shell git rev-parse --short=7 HEAD 2>/dev/null || echo "unknown")
 TAG     := $(shell git describe --exact-match HEAD 2>/dev/null)
@@ -40,6 +40,9 @@ test-frontend:
 coverage:
 	go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
+
+deadcode:
+	go run golang.org/x/tools/cmd/deadcode@latest -test ./...
 
 print-version:
 	@echo $(VERSION)
