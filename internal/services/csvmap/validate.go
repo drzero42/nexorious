@@ -27,24 +27,10 @@ func validate(cfg Config) error {
 	}
 	if cfg.Duration != nil {
 		switch normKey(cfg.Duration.Format) {
-		case "decimal":
-		case "h:mm":
-			return notImplemented(`Duration.Format "h:mm"`)
+		case "decimal", "h:mm":
 		default:
 			return fmt.Errorf("csvmap: Duration.Format must be %q or %q, got %q", "decimal", "h:mm", cfg.Duration.Format)
 		}
-	}
-	if cfg.Status.Flags != nil {
-		return notImplemented("Status.Flags")
-	}
-	if cfg.Platform.Tables != nil {
-		return notImplemented("Platform.Tables")
-	}
-	if cfg.Notes.Assembly != nil {
-		return notImplemented("Notes.Assembly")
-	}
-	if cfg.Grouping.CopyRows != nil {
-		return notImplemented("Grouping.CopyRows")
 	}
 	if cfg.Status.Column != nil {
 		if err := validateColumnFormat("Status.Column", cfg.Status.Column.Format); err != nil {
@@ -66,6 +52,14 @@ func validate(cfg Config) error {
 			return errors.New("csvmap: PlayLog requires Column, SecondsField, and CompletionField")
 		}
 	}
+	if cfg.Grouping.CopyRows != nil {
+		if strings.TrimSpace(cfg.Grouping.CopyRows.ContinuationColumn) == "" {
+			return errors.New("csvmap: Grouping.CopyRows requires ContinuationColumn")
+		}
+		if cfg.Grouping.MergeByTitle {
+			return errors.New("csvmap: Grouping.CopyRows and MergeByTitle are mutually exclusive")
+		}
+	}
 	return nil
 }
 
@@ -75,9 +69,4 @@ func validateColumnFormat(name string, f ColumnFormat) error {
 		return nil
 	}
 	return fmt.Errorf("csvmap: %s format %q must be %q or %q", name, f, FormatScalar, FormatJSONKeys)
-}
-
-// notImplemented is returned for an advanced Config slot whose behaviour lands in #1016.
-func notImplemented(feature string) error {
-	return fmt.Errorf("csvmap: %s is not implemented yet (advanced feature, see #1016)", feature)
 }

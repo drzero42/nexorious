@@ -62,40 +62,6 @@ func TestParse_RequiresTitle(t *testing.T) {
 	}
 }
 
-func TestParse_RejectsAdvancedSlots(t *testing.T) {
-	base := func() Config { return Config{Columns: ColumnMap{Title: "Name"}} }
-	cases := map[string]Config{
-		"status flags": func() Config { c := base(); c.Status.Flags = &StatusFlags{}; return c }(),
-		"platform tables": func() Config {
-			c := base()
-			c.Platform.Tables = &PlatformTables{}
-			return c
-		}(),
-		"notes assembly": func() Config { c := base(); c.Notes.Assembly = &NoteAssembly{}; return c }(),
-		"copy rows": func() Config {
-			c := base()
-			c.Grouping.CopyRows = &CopyRowGrouping{}
-			return c
-		}(),
-		"h:mm duration": func() Config {
-			c := base()
-			c.Duration = &DurationConfig{Format: "h:mm"}
-			return c
-		}(),
-	}
-	for name, cfg := range cases {
-		t.Run(name, func(t *testing.T) {
-			_, err := Parse([]byte("Name\nx\n"), cfg)
-			if err == nil {
-				t.Fatalf("want error for advanced slot %q", name)
-			}
-			if errors.Is(err, importmodel.ErrInvalidSignature) {
-				t.Fatalf("advanced-slot error must not be ErrInvalidSignature (%q)", name)
-			}
-		})
-	}
-}
-
 func TestParse_RejectsConflictingStatusVariants(t *testing.T) {
 	cfg := Config{
 		Columns: ColumnMap{Title: "Name"},
