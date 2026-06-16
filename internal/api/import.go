@@ -200,7 +200,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 
 		if h.riverClient != nil {
 			if _, err := h.riverClient.Insert(ctx, tasks.ImportItemArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.ErrorContext(reqCtx, "import: submit task", "item_id", item.ID, logging.KeyErr, err)
+				slog.ErrorContext(reqCtx, "import: submit task", logging.KeyJobItemID, item.ID, logging.KeyErr, err)
 			}
 		}
 	}
@@ -285,7 +285,7 @@ func (h *ImportHandler) enqueueImportJob(reqCtx context.Context, userID, source,
 		}
 		if h.riverClient != nil {
 			if _, err := h.riverClient.Insert(ctx, tasks.ImportMatchArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.ErrorContext(reqCtx, "import: submit import_match", "item_id", item.ID, logging.KeyErr, err)
+				slog.ErrorContext(reqCtx, "import: submit import_match", logging.KeyJobItemID, item.ID, logging.KeyErr, err)
 			}
 		}
 	}

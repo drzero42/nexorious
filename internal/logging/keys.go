@@ -8,6 +8,7 @@ package logging
 const (
 	KeyRequestID      = "request_id"
 	KeyJobID          = "job_id"
+	KeyJobItemID      = "item_id"
 	KeyRiverJobID     = "river_job_id"
 	KeyJobType        = "job_type"
 	KeyUserID         = "user_id"
