@@ -28,6 +28,39 @@ import (
 
 const maxImportBodyBytes = 50 * 1024 * 1024 // 50 MB
 
+// readUploadFile parses the multipart form and reads the "file" field, enforcing
+// the 50 MB limit. Returns the bytes or an *echo.HTTPError. Shared by every
+// import upload handler so they read identically.
+func (h *ImportHandler) readUploadFile(c *echo.Context) ([]byte, error) {
+	if err := c.Request().ParseMultipartForm(maxImportBodyBytes); err != nil {
+		return nil, echo.NewHTTPError(http.StatusBadRequest, "failed to parse multipart form")
+	}
+	file, _, err := c.Request().FormFile("file")
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusBadRequest, "missing file field")
+	}
+	defer func() { _ = file.Close() }()
+	lr := io.LimitReader(file, maxImportBodyBytes+1)
+	body, err := io.ReadAll(lr)
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to read file")
+	}
+	if len(body) > maxImportBodyBytes {
+		return nil, echo.NewHTTPError(http.StatusRequestEntityTooLarge, "file exceeds 50 MB limit")
+	}
+	return body, nil
+}
+
+// igdbGuard returns a 400 *echo.HTTPError when IGDB is not configured. Every
+// import requires IGDB for title matching and metadata; displayName names the
+// collection in the error message (e.g. "CSV", "Nexorious", "vglist").
+func (h *ImportHandler) igdbGuard(displayName string) error {
+	if h.igdbClient == nil || !h.igdbClient.Configured() {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("IGDB must be configured to import a %s collection", displayName))
+	}
+	return nil
+}
+
 // ImportHandler handles import-related endpoints.
 type ImportHandler struct {
 	db          *bun.DB
@@ -56,29 +89,13 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 
 	// Prerequisite: IGDB must be configured. Each game is re-hydrated from its
 	// igdb_id; with no client an import cannot construct usable games.
-	if h.igdbClient == nil || !h.igdbClient.Configured() {
-		return echo.NewHTTPError(http.StatusBadRequest, "IGDB must be configured to import a Nexorious library")
+	if err := h.igdbGuard("Nexorious"); err != nil {
+		return err
 	}
 
-	// Parse multipart form (limit to maxImportBodyBytes + some overhead for form fields).
-	if err := c.Request().ParseMultipartForm(maxImportBodyBytes); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "failed to parse multipart form")
-	}
-
-	file, _, err := c.Request().FormFile("file")
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "missing file field")
-	}
-	defer func() { _ = file.Close() }()
-
-	// Read and enforce 50 MB limit.
-	lr := io.LimitReader(file, maxImportBodyBytes+1)
-	body, err := io.ReadAll(lr)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read file")
-	}
-	if len(body) > maxImportBodyBytes {
-		return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "file exceeds 50 MB limit")
+	body, herr := h.readUploadFile(c)
+	if herr != nil {
+		return herr
 	}
 
 	var export nexoriousExport
@@ -102,7 +119,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 
 	// Check for an active nexorious import job for this user.
 	var existing models.Job
-	err = h.db.NewSelect().
+	err := h.db.NewSelect().
 		Model(&existing).
 		Where("user_id = ?", userID).
 		Where("job_type = ?", models.JobTypeImport).
@@ -296,26 +313,13 @@ func (h *ImportHandler) handleImportSource(src importsource.Source) echo.Handler
 		if userID == "" {
 			return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 		}
-		if h.igdbClient == nil || !h.igdbClient.Configured() {
-			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("IGDB must be configured to import a %s collection", src.DisplayName))
+		if err := h.igdbGuard(src.DisplayName); err != nil {
+			return err
 		}
 
-		if err := c.Request().ParseMultipartForm(maxImportBodyBytes); err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "failed to parse multipart form")
-		}
-		file, _, err := c.Request().FormFile("file")
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "missing file field")
-		}
-		defer func() { _ = file.Close() }()
-
-		lr := io.LimitReader(file, maxImportBodyBytes+1)
-		body, err := io.ReadAll(lr)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to read file")
-		}
-		if len(body) > maxImportBodyBytes {
-			return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "file exceeds 50 MB limit")
+		body, herr := h.readUploadFile(c)
+		if herr != nil {
+			return herr
 		}
 
 		games, err := src.Mapper.Parse(body)
