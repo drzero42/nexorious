@@ -110,8 +110,8 @@ func TestExportJSON_Task(t *testing.T) {
 	if payload["format"] != "nexorious-library" {
 		t.Errorf("format = %v, want nexorious-library", payload["format"])
 	}
-	if payload["version"] != "2.0" {
-		t.Errorf("version = %v, want 2.0", payload["version"])
+	if payload["version"] != "2.1" {
+		t.Errorf("version = %v, want 2.1", payload["version"])
 	}
 	if payload["exported_at"] == nil || payload["exported_at"] == "" {
 		t.Errorf("exported_at should be set, got %v", payload["exported_at"])
@@ -429,5 +429,58 @@ func TestExportJSON_EmitsExportFailed(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("events count for dedup_key %q = %d, want 1", dedupKey, count)
+	}
+}
+
+func TestBuildJSONDoc_ScalarFieldsAndVersion(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO platforms (name, display_name) VALUES ('pc-windows', 'PC (Windows)') ON CONFLICT (name) DO NOTHING`); err != nil {
+		t.Fatalf("seed platform: %v", err)
+	}
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	g := &models.Game{ID: 4242, Title: "Wishlist Game", LastUpdated: time.Now(), CreatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(g).Exec(ctx); err != nil {
+		t.Fatalf("insert game: %v", err)
+	}
+	ug := &models.UserGame{
+		ID: uuid.NewString(), UserID: userID, GameID: 4242, IsWishlisted: true,
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	if _, err := testDB.NewInsert().Model(ug).Exec(ctx); err != nil {
+		t.Fatalf("insert user_game: %v", err)
+	}
+	plat := "pc-windows"
+	ugp := &models.UserGamePlatform{
+		ID: uuid.NewString(), UserGameID: ug.ID, Platform: &plat, IsAvailable: false,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if _, err := testDB.NewInsert().Model(ugp).Exec(ctx); err != nil {
+		t.Fatalf("insert ugp: %v", err)
+	}
+
+	ugs, err := tasks.LoadUserGamesWithRelationsForTest(ctx, testDB, userID)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	doc := tasks.BuildJSONDocForTest(ugs)
+
+	if doc.Version != "2.1" {
+		t.Errorf("version = %q, want 2.1", doc.Version)
+	}
+	if len(doc.Games) != 1 {
+		t.Fatalf("games = %d, want 1", len(doc.Games))
+	}
+	if !doc.Games[0].IsWishlisted {
+		t.Errorf("is_wishlisted = false, want true")
+	}
+	if len(doc.Games[0].Platforms) != 1 {
+		t.Fatalf("platforms = %d, want 1", len(doc.Games[0].Platforms))
+	}
+	if doc.Games[0].Platforms[0].IsAvailable {
+		t.Errorf("is_available = true, want false")
 	}
 }

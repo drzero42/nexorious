@@ -162,8 +162,8 @@ func TestBuildJSONDoc(t *testing.T) {
 				if doc.Format != "nexorious-library" {
 					t.Errorf("format = %q, want nexorious-library", doc.Format)
 				}
-				if doc.Version != "2.0" {
-					t.Errorf("version = %q, want 2.0", doc.Version)
+				if doc.Version != "2.1" {
+					t.Errorf("version = %q, want 2.1", doc.Version)
 				}
 				if doc.ExportedAt == "" {
 					t.Errorf("exported_at should be set")

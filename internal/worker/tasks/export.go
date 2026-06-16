@@ -191,6 +191,7 @@ type exportGameJSON struct {
 	PlayStatus     *string              `json:"play_status"`
 	PersonalRating *int32               `json:"personal_rating"`
 	IsLoved        bool                 `json:"is_loved"`
+	IsWishlisted   bool                 `json:"is_wishlisted"`
 	PersonalNotes  *string              `json:"personal_notes"`
 	CreatedAt      string               `json:"created_at"`
 	UpdatedAt      string               `json:"updated_at"`
@@ -204,6 +205,7 @@ type exportPlatformJSON struct {
 	OwnershipStatus *string  `json:"ownership_status"`
 	AcquiredDate    *string  `json:"acquired_date"`
 	HoursPlayed     *float64 `json:"hours_played"`
+	IsAvailable     bool     `json:"is_available"`
 }
 
 type exportTagJSON struct {
@@ -258,6 +260,7 @@ func buildJSONDoc(ugs []models.UserGame) exportDocJSON {
 				Storefront:      p.Storefront,
 				OwnershipStatus: p.OwnershipStatus,
 				HoursPlayed:     p.HoursPlayed,
+				IsAvailable:     p.IsAvailable,
 			}
 			if p.AcquiredDate != nil {
 				d := p.AcquiredDate.Format("2006-01-02")
@@ -285,6 +288,7 @@ func buildJSONDoc(ugs []models.UserGame) exportDocJSON {
 			PlayStatus:     ug.PlayStatus,
 			PersonalRating: ug.PersonalRating,
 			IsLoved:        ug.IsLoved,
+			IsWishlisted:   ug.IsWishlisted,
 			PersonalNotes:  ug.PersonalNotes,
 			CreatedAt:      ug.CreatedAt.UTC().Format(time.RFC3339),
 			UpdatedAt:      ug.UpdatedAt.UTC().Format(time.RFC3339),
@@ -295,7 +299,7 @@ func buildJSONDoc(ugs []models.UserGame) exportDocJSON {
 
 	return exportDocJSON{
 		Format:     "nexorious-library",
-		Version:    "2.0",
+		Version:    "2.1",
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
 		Games:      games,
 	}
