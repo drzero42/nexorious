@@ -384,6 +384,58 @@ func TestImportCSVInspect_ReturnsPresets(t *testing.T) {
 	}
 }
 
+func TestImportCSVInspect_DetectsRegisteredPreset(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-detect")
+
+	rec := postMultipartFile(t, e, "/api/import/csv/inspect", "c.csv",
+		[]byte(completionatorCSV+"\"Celeste\",,,,,Yes,No,Owned,Beaten,,,,,,,,,,2024-01-01,,,,2024-01-02,"), token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var resp struct {
+		Detected *struct {
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		} `json:"detected"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Detected == nil {
+		t.Fatal("detected = nil, want the completionator preset")
+	}
+	if resp.Detected.Slug != "completionator" || resp.Detected.Name != "Completionator" {
+		t.Fatalf("detected = %+v, want {completionator, Completionator}", resp.Detected)
+	}
+}
+
+func TestImportCSVInspect_NoDetectionForUnknownHeader(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-no-detect")
+
+	rec := postMultipartFile(t, e, "/api/import/csv/inspect", "x.csv",
+		[]byte("Title,Console\nCeleste,PC\n"), token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var resp struct {
+		Detected *struct {
+			Slug string `json:"slug"`
+		} `json:"detected"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Detected != nil {
+		t.Fatalf("detected = %+v, want nil for an unrecognised header", resp.Detected)
+	}
+}
+
 func TestImportCSV_PresetFormat_UsesServerConfig(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()

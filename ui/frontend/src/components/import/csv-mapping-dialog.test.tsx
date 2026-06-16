@@ -138,6 +138,51 @@ describe('CsvMappingDialog', () => {
     expect(screen.getByRole('button', { name: /import 3 games/i })).toBeDisabled();
   });
 
+  it('pre-selects the detected preset and imports with its slug', async () => {
+    const user = userEvent.setup();
+    const onImport = vi.fn();
+    render(
+      <CsvMappingDialog
+        open
+        onOpenChange={vi.fn()}
+        inspect={{
+          ...inspect,
+          presets: [{ slug: 'completionator', name: 'Completionator' }],
+          detected: { slug: 'completionator', name: 'Completionator' },
+        }}
+        isImporting={false}
+        onImport={onImport}
+      />,
+    );
+
+    // Opened straight into the collapsed preset view (no manual mapping form).
+    expect(screen.queryByText('1 · Map columns')).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Format' })).toHaveTextContent('Completionator');
+    // The auto-detected hint copy is shown.
+    expect(screen.getByText(/detected automatically/i)).toBeInTheDocument();
+
+    const importBtn = screen.getByRole('button', { name: /import 3 games/i });
+    expect(importBtn).toBeEnabled();
+    await user.click(importBtn);
+
+    expect(onImport).toHaveBeenCalledTimes(1);
+    expect(onImport.mock.calls[0][0].format).toBe('completionator');
+  });
+
+  it('defaults to Generic CSV when nothing is detected', () => {
+    render(
+      <CsvMappingDialog
+        open
+        onOpenChange={vi.fn()}
+        inspect={inspect}
+        isImporting={false}
+        onImport={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('1 · Map columns')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Format' })).toHaveTextContent('Generic CSV');
+  });
+
   it('pre-fills the form from inspect.suggested_mapping', () => {
     const seeded: CsvInspectResponse = {
       ...inspect,

@@ -47,6 +47,7 @@ export interface CsvInspectResponse {
   columns: CsvColumnInfo[];
   suggested_mapping?: CsvMapping;
   presets?: CsvPresetInfo[];
+  detected?: CsvPresetInfo | null;
 }
 
 export interface CsvMapping {
