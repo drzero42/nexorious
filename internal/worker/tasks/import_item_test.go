@@ -1045,3 +1045,57 @@ func TestImportItem_WishlistSurvivesWithoutPlatforms(t *testing.T) {
 		t.Errorf("is_wishlisted = false, want true (no platforms ⇒ flag survives)")
 	}
 }
+
+func TestImportItem_AppliesPoolsOnCompletion(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	for _, id := range []int32{7001, 7002} {
+		g := &models.Game{ID: id, Title: "G", LastUpdated: time.Now(), CreatedAt: time.Now()}
+		if _, err := testDB.NewInsert().Model(g).Exec(ctx); err != nil {
+			t.Fatalf("insert game: %v", err)
+		}
+	}
+	jobID := uuid.NewString()
+	insertTestJob(t, testDB, jobID, userID, 2)
+
+	// Two game items.
+	item1 := insertTestJobItem(t, testDB, jobID, userID, map[string]any{"igdb_id": 7001, "title": "G1"})
+	item2 := insertTestJobItem(t, testDB, jobID, userID, map[string]any{"igdb_id": 7002, "title": "G2"})
+
+	// Synthetic pools item (mirrors what HandleImportNexorious writes).
+	poolsPayload := []map[string]any{{
+		"name":     "Backlog",
+		"color":    "#abc",
+		"position": 0,
+		"filter":   map[string]any{"loved": true},
+		"games": []map[string]any{
+			{"igdb_id": 7001, "position": nil},
+			{"igdb_id": 7002, "position": 0},
+		},
+	}}
+	insertTestPoolsItem(t, testDB, jobID, userID, poolsPayload)
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	for _, id := range []string{item1, item2} {
+		if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: id}}); err != nil {
+			t.Fatalf("work: %v", err)
+		}
+	}
+
+	var poolName string
+	var memberCount int
+	if err := testDB.NewRaw(`SELECT name FROM pools WHERE user_id = ? AND name = 'Backlog'`, userID).Scan(ctx, &poolName); err != nil {
+		t.Fatalf("pool not created: %v", err)
+	}
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM pool_games pg JOIN pools p ON p.id = pg.pool_id WHERE p.user_id = ?`, userID,
+	).Scan(ctx, &memberCount); err != nil {
+		t.Fatalf("count members: %v", err)
+	}
+	if memberCount != 2 {
+		t.Errorf("pool members = %d, want 2", memberCount)
+	}
+}

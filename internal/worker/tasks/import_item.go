@@ -21,6 +21,27 @@ import (
 	"github.com/drzero42/nexorious/internal/usergame"
 )
 
+// PoolsItemKey is the sentinel item_key of the synthetic job_item that carries
+// the Play Planning pools payload for a Nexorious JSON import. It is created
+// pre-completed and applied once at the job-completion transition; it is not a
+// game item and is excluded from per-job item listings.
+const PoolsItemKey = "__pools__"
+
+// importPoolData is one pool entry in a Nexorious JSON import's `pools` section.
+type importPoolData struct {
+	Name     string               `json:"name"`
+	Color    *string              `json:"color"`
+	Position int                  `json:"position"`
+	Filter   json.RawMessage      `json:"filter"`
+	Games    []importPoolGameData `json:"games"`
+}
+
+// importPoolGameData is a pool membership: position nil = Candidate, set = queued.
+type importPoolGameData struct {
+	IGDBID   int32 `json:"igdb_id"`
+	Position *int  `json:"position"`
+}
+
 // ImportItemArgs is the River job args type for "import_item".
 type ImportItemArgs struct {
 	JobItemID string `json:"job_item_id"`
@@ -384,6 +405,80 @@ func findOrCreateTag(ctx context.Context, db *bun.DB, userID, name string, color
 	return tag.ID, nil
 }
 
+// applyImportedPools reads the synthetic pools job_item for a finished import job
+// and applies its pools additively: find-or-create each pool by (user_id, name),
+// then attach members resolved from igdb_id to the user's user_games. It is
+// best-effort — a per-pool or per-member failure is logged and skipped, never
+// failing the job. Safe to call only on the single job-completion transition.
+func applyImportedPools(ctx context.Context, db *bun.DB, jobID, userID string) {
+	var item models.JobItem
+	err := db.NewSelect().Model(&item).
+		Where("job_id = ? AND item_key = ?", jobID, PoolsItemKey).Scan(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "import: load pools item", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return
+	}
+	var wrapper struct {
+		Data []importPoolData `json:"data"`
+	}
+	if err := json.Unmarshal(item.SourceMetadata, &wrapper); err != nil {
+		slog.WarnContext(ctx, "import: parse pools payload", logging.KeyErr, err, logging.Cat(logging.CategoryValidation))
+		return
+	}
+	for _, p := range wrapper.Data {
+		poolID, err := findOrCreatePool(ctx, db, userID, p)
+		if err != nil {
+			slog.WarnContext(ctx, "import: find/create pool", logging.KeyErr, err, "pool", p.Name, logging.Cat(logging.CategoryDB))
+			continue
+		}
+		for _, m := range p.Games {
+			var ugID string
+			if err := db.NewRaw(
+				`SELECT id FROM user_games WHERE user_id = ? AND game_id = ?`, userID, m.IGDBID,
+			).Scan(ctx, &ugID); err != nil {
+				// Game absent (failed import) or lookup error: skip this member.
+				continue
+			}
+			if _, err := db.NewRaw(
+				`INSERT INTO pool_games (id, pool_id, user_game_id, position, created_at)
+				 VALUES (?, ?, ?, ?, now())
+				 ON CONFLICT (pool_id, user_game_id) DO NOTHING`,
+				uuid.NewString(), poolID, ugID, m.Position,
+			).Exec(ctx); err != nil {
+				slog.WarnContext(ctx, "import: insert pool_game", logging.KeyErr, err, "pool", p.Name, logging.Cat(logging.CategoryDB))
+			}
+		}
+	}
+}
+
+// findOrCreatePool returns the id of the user's pool named p.Name, creating it
+// (with the imported color/filter and next position) if absent. An existing
+// pool's curation is never overwritten — only its id is returned.
+func findOrCreatePool(ctx context.Context, db *bun.DB, userID string, p importPoolData) (string, error) {
+	var filterArg any
+	if len(p.Filter) > 0 {
+		filterArg = string(p.Filter)
+	}
+	if _, err := db.NewRaw(
+		`INSERT INTO pools (id, user_id, name, color, position, filter, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, COALESCE((SELECT MAX(position)+1 FROM pools WHERE user_id = ?), 0), ?, now(), now())
+		 ON CONFLICT (user_id, name) DO NOTHING`,
+		uuid.NewString(), userID, p.Name, p.Color, userID, filterArg,
+	).Exec(ctx); err != nil {
+		return "", err
+	}
+	var poolID string
+	if err := db.NewRaw(
+		`SELECT id FROM pools WHERE user_id = ? AND name = ?`, userID, p.Name,
+	).Scan(ctx, &poolID); err != nil {
+		return "", err
+	}
+	return poolID, nil
+}
+
 // igdbMetadataToGame maps an IGDB GameMetadata response to a models.Game ready for insert.
 func igdbMetadataToGame(md *igdb.GameMetadata) *models.Game {
 	now := time.Now().UTC()
@@ -442,9 +537,12 @@ func checkJobCompletion(db *bun.DB, jobID string) {
 		return
 	}
 
-	finalizeJobCompleted(ctx, db, jobID, "import_item: update job status", false)
+	finalized := finalizeJobCompleted(ctx, db, jobID, "import_item: update job status", false)
 
 	uid, _ := syncJobUserAndStorefront(ctx, db, jobID)
+	if finalized {
+		applyImportedPools(ctx, db, jobID, uid)
+	}
 	if failedCount > 0 {
 		notify.Emit(ctx, db, notify.EmitParams{
 			Type: notify.TypeImportFailed, Scope: notify.ScopeUser, ActorUserID: uid,
