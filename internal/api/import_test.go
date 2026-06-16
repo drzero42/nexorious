@@ -350,3 +350,24 @@ func TestImportSource_UnregisteredSlugNotRouted(t *testing.T) {
 		t.Errorf("jobs for unregistered source = %d, want 0", jobCount)
 	}
 }
+
+func TestImportNexorious_AcceptsVersion21(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "imp-v21")
+
+	export := map[string]any{
+		"format":  "nexorious-library",
+		"version": "2.1",
+		"games":   []map[string]any{{"igdb_id": 1, "title": "Game 1"}},
+	}
+	data, err := json.Marshal(export)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	rec := postMultipartFile(t, e, "/api/import/nexorious", "export.json", data, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+}

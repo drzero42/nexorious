@@ -103,10 +103,10 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid JSON")
 	}
 
-	if export.Version != "2.0" {
-		msg := "Unsupported import file. Only Nexorious library format version 2.0 is supported."
+	if export.Version != "2.0" && export.Version != "2.1" {
+		msg := "Unsupported import file. Only Nexorious library format versions 2.0 and 2.1 are supported."
 		if export.ExportVersion != "" {
-			msg = fmt.Sprintf("Unsupported legacy export (version %s). Only Nexorious library format version 2.0 is supported.", export.ExportVersion)
+			msg = fmt.Sprintf("Unsupported legacy export (version %s). Only Nexorious library format versions 2.0 and 2.1 are supported.", export.ExportVersion)
 		}
 		return echo.NewHTTPError(http.StatusBadRequest, msg)
 	}
