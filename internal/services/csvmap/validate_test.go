@@ -36,3 +36,9 @@ func TestValidate_PlayLogAndDurationExclusive(t *testing.T) {
 		t.Fatalf("want a mutual-exclusion error, got %v", err)
 	}
 }
+
+func TestValidate_AcceptsGrouvee(t *testing.T) {
+	if err := validate(Grouvee()); err != nil {
+		t.Fatalf("Grouvee() must validate, got %v", err)
+	}
+}
