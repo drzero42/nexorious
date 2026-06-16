@@ -55,9 +55,9 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 
 	var successCount, failureCount int
 	for _, o := range orphans {
-		// Route by job_type AND source so a Darkadia import (which shares the
-		// "import" job_type but needs its own match→finalize chain) re-enters at
-		// the right worker rather than the JSON importer.
+		// Route by job_type AND source so a generic-pipeline import (e.g. CSV,
+		// which shares the "import" job_type but needs its own match→finalize
+		// chain) re-enters at the right worker rather than the JSON importer.
 		args, err := tasks.ArgsForJobType(o.JobType, o.Source, o.ID)
 		if err != nil {
 			slog.WarnContext(ctx, "rescue_orphaned_items: unknown job_type, skipping", "item_id", o.ID, logging.KeyJobType, o.JobType, logging.KeySource, o.Source)
