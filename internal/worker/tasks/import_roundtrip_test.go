@@ -58,7 +58,7 @@ func TestImport_RoundTripPreservesUserData(t *testing.T) {
 	acq := time.Date(2024, 12, 25, 0, 0, 0, 0, time.UTC)
 	ugp := &models.UserGamePlatform{
 		ID: uuid.NewString(), UserGameID: ug.ID, Platform: &plat, Storefront: &store,
-		OwnershipStatus: &own, HoursPlayed: &hours, AcquiredDate: &acq, IsAvailable: true,
+		OwnershipStatus: &own, HoursPlayed: &hours, AcquiredDate: &acq, IsAvailable: false,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if _, err := testDB.NewInsert().Model(ugp).Exec(ctx); err != nil {
@@ -74,14 +74,51 @@ func TestImport_RoundTripPreservesUserData(t *testing.T) {
 		t.Fatalf("insert user_game_tag: %v", err)
 	}
 
+	// Second game, plus a platform-less wishlisted game.
+	game2 := &models.Game{ID: 7778, Title: "Queued", LastUpdated: time.Now(), CreatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(game2).Exec(ctx); err != nil {
+		t.Fatalf("insert game2: %v", err)
+	}
+	ug2 := &models.UserGame{ID: uuid.NewString(), UserID: srcUser, GameID: 7778, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(ug2).Exec(ctx); err != nil {
+		t.Fatalf("insert ug2: %v", err)
+	}
+	gameW := &models.Game{ID: 7779, Title: "Wished", LastUpdated: time.Now(), CreatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(gameW).Exec(ctx); err != nil {
+		t.Fatalf("insert gameW: %v", err)
+	}
+	ugW := &models.UserGame{ID: uuid.NewString(), UserID: srcUser, GameID: 7779, IsWishlisted: true, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(ugW).Exec(ctx); err != nil {
+		t.Fatalf("insert ugW: %v", err)
+	}
+	// Pool: ug (7777) Candidate, ug2 (7778) queued at 0.
+	poolID := uuid.NewString()
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO pools (id, user_id, name, color, position, filter) VALUES (?, ?, 'Backlog', '#abc', 0, '{"loved":true}')`,
+		poolID, srcUser); err != nil {
+		t.Fatalf("insert pool: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO pool_games (id, pool_id, user_game_id, position) VALUES (?, ?, ?, NULL)`, uuid.NewString(), poolID, ug.ID); err != nil {
+		t.Fatalf("insert pg candidate: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO pool_games (id, pool_id, user_game_id, position) VALUES (?, ?, ?, 0)`, uuid.NewString(), poolID, ug2.ID); err != nil {
+		t.Fatalf("insert pg queued: %v", err)
+	}
+
 	// Export.
 	ugs, err := tasks.LoadUserGamesWithRelationsForTest(ctx, testDB, srcUser)
 	if err != nil {
 		t.Fatalf("load source games: %v", err)
 	}
-	doc := tasks.BuildJSONDocForTest(ugs, nil)
-	if len(doc.Games) != 1 {
-		t.Fatalf("expected 1 exported game, got %d", len(doc.Games))
+	pools, err := tasks.LoadPoolsForExportForTest(ctx, testDB, srcUser)
+	if err != nil {
+		t.Fatalf("load pools: %v", err)
+	}
+	doc := tasks.BuildJSONDocForTest(ugs, pools)
+	if len(doc.Games) != 3 {
+		t.Fatalf("expected 3 exported games, got %d", len(doc.Games))
 	}
 
 	// Import into a fresh user.
@@ -90,7 +127,23 @@ func TestImport_RoundTripPreservesUserData(t *testing.T) {
 	jobID := uuid.NewString()
 	insertTestJob(t, testDB, jobID, dstUser, len(doc.Games))
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	// Stash pools BEFORE running items so the completion transition applies them.
+	poolsPayload := make([]map[string]any, 0, len(doc.Pools))
+	for _, p := range doc.Pools {
+		members := make([]map[string]any, 0, len(p.Games))
+		for _, m := range p.Games {
+			members = append(members, map[string]any{"igdb_id": m.IGDBID, "position": m.Position})
+		}
+		poolsPayload = append(poolsPayload, map[string]any{
+			"name": p.Name, "color": p.Color, "position": p.Position, "games": members,
+		})
+	}
+	insertTestPoolsItem(t, testDB, jobID, dstUser, poolsPayload)
+
+	// Insert all game items first (mirroring the handler's dispatch), then process
+	// them — otherwise the job would finalize after the first item (when no other
+	// game item is pending yet) and pools would apply before all games exist.
+	itemIDs := make([]string, 0, len(doc.Games))
 	for _, g := range doc.Games {
 		raw, err := json.Marshal(g)
 		if err != nil {
@@ -100,7 +153,11 @@ func TestImport_RoundTripPreservesUserData(t *testing.T) {
 		if err := json.Unmarshal(raw, &asMap); err != nil {
 			t.Fatalf("game to map: %v", err)
 		}
-		itemID := insertTestJobItem(t, testDB, jobID, dstUser, asMap)
+		itemIDs = append(itemIDs, insertTestJobItem(t, testDB, jobID, dstUser, asMap))
+	}
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	for _, itemID := range itemIDs {
 		if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
 			t.Fatalf("import work: %v", err)
 		}
@@ -142,6 +199,30 @@ func TestImport_RoundTripPreservesUserData(t *testing.T) {
 	}
 	if gotP.AcquiredDate == nil || gotP.AcquiredDate.Format("2006-01-02") != "2024-12-25" {
 		t.Errorf("acquired_date = %v, want 2024-12-25", gotP.AcquiredDate)
+	}
+	if gotP.IsAvailable {
+		t.Errorf("is_available = true, want false (round-trip)")
+	}
+
+	// Platform-less wishlisted game keeps its flag.
+	var gotW models.UserGame
+	if err := testDB.NewSelect().Model(&gotW).Where("user_id = ? AND game_id = ?", dstUser, int32(7779)).Scan(ctx); err != nil {
+		t.Fatalf("dst wishlist game not found: %v", err)
+	}
+	if !gotW.IsWishlisted {
+		t.Errorf("is_wishlisted = false, want true")
+	}
+
+	// Pool restored with both members.
+	var members int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM pool_games pg JOIN pools p ON p.id = pg.pool_id
+		 WHERE p.user_id = ? AND p.name = 'Backlog'`, dstUser,
+	).Scan(ctx, &members); err != nil {
+		t.Fatalf("count pool members: %v", err)
+	}
+	if members != 2 {
+		t.Errorf("pool members = %d, want 2", members)
 	}
 
 	var tagCount int

@@ -27,3 +27,8 @@ func SyncJobItemStatusCountsForTest(ctx context.Context, db *bun.DB, jobID strin
 func LoadUserGamesWithRelationsForTest(ctx context.Context, db *bun.DB, userID string) ([]models.UserGame, error) {
 	return loadUserGamesWithRelations(ctx, db, userID)
 }
+
+// ApplyImportedPoolsForTest exposes applyImportedPools for cross-package tests.
+func ApplyImportedPoolsForTest(ctx context.Context, db *bun.DB, jobID, userID string) {
+	applyImportedPools(ctx, db, jobID, userID)
+}
