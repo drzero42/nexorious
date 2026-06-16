@@ -149,7 +149,7 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 	}
 
 	if err := tasks.EnqueueOrFail(context.Background(), h.db, h.riverClient, itemID, finalizeArgs); err != nil {
-		slog.ErrorContext(c.Request().Context(), "resolve_item: enqueue finalize", "item_id", itemID, logging.KeyErr, err)
+		slog.ErrorContext(c.Request().Context(), "resolve_item: enqueue finalize", logging.KeyJobItemID, itemID, logging.KeyErr, err)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }

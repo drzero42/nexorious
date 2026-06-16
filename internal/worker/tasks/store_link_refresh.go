@@ -203,7 +203,7 @@ func (w *StoreLinkRefreshDispatchWorker) Work(ctx context.Context, job *river.Jo
 
 	for _, itemID := range itemIDs {
 		if e := EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, StoreLinkRefreshItemArgs{JobItemID: itemID}); e != nil {
-			slog.WarnContext(ctx, "store_link_refresh_dispatch: enqueue item", logging.KeyErr, e, "item_id", itemID, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "store_link_refresh_dispatch: enqueue item", logging.KeyErr, e, logging.KeyJobItemID, itemID, logging.Cat(logging.CategoryDB))
 		}
 	}
 	slog.InfoContext(ctx, "store_link_refresh_dispatch: job created", logging.KeyJobID, jobID, "groups", len(groups), "rows", total)
@@ -243,7 +243,7 @@ func (w *StoreLinkRefreshItemWorker) Work(ctx context.Context, job *river.Job[St
 		// Only the pre-load failure path returns an error; surface it so River
 		// retries (the item was never loaded, so nothing could be marked). Every
 		// other path finalizes the item itself.
-		slog.ErrorContext(ctx, "store_link_refresh_item: process", logging.KeyErr, err, "item_id", job.Args.JobItemID, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(ctx, "store_link_refresh_item: process", logging.KeyErr, err, logging.KeyJobItemID, job.Args.JobItemID, logging.Cat(logging.CategoryDB))
 		return err
 	}
 	return nil
@@ -313,7 +313,7 @@ func (w *StoreLinkRefreshItemWorker) ProcessItem(ctx context.Context, jobItemID 
 			// Shutdown mid-loop: stop now. The deferred finalizer marks the item
 			// failed; the next incremental refresh re-resolves the rows still null.
 			slog.InfoContext(ctx, "store_link_refresh: interrupted mid-group, remaining rows resolve on next refresh",
-				logging.KeySource, meta.Storefront, "item_id", jobItemID)
+				logging.KeySource, meta.Storefront, logging.KeyJobItemID, jobItemID)
 			return nil
 		}
 		var sm map[string]string
@@ -389,7 +389,7 @@ func reapStuckStoreLinkJobs(ctx context.Context, db *bun.DB) {
 	for _, s := range stuck {
 		var item models.JobItem
 		if err := db.NewSelect().Model(&item).Where("id = ?", s.ItemID).Scan(ctx); err != nil {
-			slog.WarnContext(ctx, "store_link_refresh_dispatch: reap load item", logging.KeyErr, err, "item_id", s.ItemID, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "store_link_refresh_dispatch: reap load item", logging.KeyErr, err, logging.KeyJobItemID, s.ItemID, logging.Cat(logging.CategoryDB))
 			continue
 		}
 		markItemFailed(ctx, db, &item, "orphaned: no active worker (reaped)", "store_link_refresh: reap")
