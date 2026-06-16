@@ -246,6 +246,10 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 		}
 	}
 
+	if !h.igdbConfigured() {
+		return h.mapIGDBError(c, igdb.ErrIGDBNotConfigured)
+	}
+
 	results, err := h.igdb.SearchGames(ctx, req.Query, req.Limit, platformIDs)
 	if err != nil {
 		return h.mapIGDBError(c, err)
@@ -273,6 +277,9 @@ func (h *GamesHandler) HandleGetIGDBGame(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid IGDB ID"})
 	}
+	if !h.igdbConfigured() {
+		return h.mapIGDBError(c, igdb.ErrIGDBNotConfigured)
+	}
 
 	ctx := c.Request().Context()
 	md, err := h.igdb.GetGameByID(ctx, igdbID)
@@ -298,6 +305,9 @@ func (h *GamesHandler) HandleImportFromIGDB(c *echo.Context) error {
 	}
 	if req.IgdbID == 0 {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "igdb_id is required"})
+	}
+	if !h.igdbConfigured() {
+		return h.mapIGDBError(c, igdb.ErrIGDBNotConfigured)
 	}
 
 	ctx := c.Request().Context()
@@ -477,6 +487,14 @@ func (h *GamesHandler) HandleStartStoreLinkRefreshJob(c *echo.Context) error {
 		"message": "Store link refresh job queued",
 		"job_id":  jobID,
 	})
+}
+
+// igdbConfigured reports whether the handler has a usable IGDB client. A nil
+// client pointer (no IGDB client wired at all) is treated as "not configured",
+// the same as a non-nil client built without credentials — without this guard,
+// calling a method on the nil pointer dereferences it and panics (issue #1051).
+func (h *GamesHandler) igdbConfigured() bool {
+	return h.igdb != nil && h.igdb.Configured()
 }
 
 func (h *GamesHandler) mapIGDBError(c *echo.Context, err error) error {
