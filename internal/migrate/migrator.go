@@ -277,8 +277,6 @@ func (mg *Migrator) sendLog(ch chan string, line string) {
 	}
 }
 
-func (mg *Migrator) Close() error { return nil }
-
 func (mg *Migrator) SetStateForTest(s AppState) {
 	mg.state.Store(int32(s))
 }
