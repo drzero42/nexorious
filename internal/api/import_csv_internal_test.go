@@ -119,3 +119,34 @@ func TestBuildCSVConfig_IGDBIDOmittedWhenUnmapped(t *testing.T) {
 		t.Errorf("cfg.Columns.IGDBID = %q, want empty", cfg.Columns.IGDBID)
 	}
 }
+
+func TestDetectPreset_MatchesCompletionatorSignature(t *testing.T) {
+	header := []string{
+		"Name", "Now Playing", "Backlogged", "Ownership Status",
+		"Progress Status", "Added On",
+	}
+	got := detectPreset(header)
+	if got == nil || got.Slug != "completionator" {
+		t.Fatalf("detectPreset = %+v, want completionator", got)
+	}
+	if got.Name != "Completionator" {
+		t.Errorf("name = %q, want Completionator", got.Name)
+	}
+}
+
+func TestDetectPreset_MatchesGrouveeSignature(t *testing.T) {
+	header := []string{
+		"name", "shelves", "date_added_to_collection",
+		"review_platform", "giantbomb_id", "igdb_id",
+	}
+	if got := detectPreset(header); got == nil || got.Slug != "grouvee" {
+		t.Fatalf("detectPreset = %+v, want grouvee", got)
+	}
+}
+
+func TestDetectPreset_NoMatchReturnsNil(t *testing.T) {
+	header := []string{"Title", "Console", "Hours"}
+	if got := detectPreset(header); got != nil {
+		t.Fatalf("detectPreset = %+v, want nil for an unrecognised header", got)
+	}
+}

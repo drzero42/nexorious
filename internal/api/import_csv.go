@@ -115,6 +115,23 @@ type csvPresetInfo struct {
 	Name string `json:"name"`
 }
 
+// detectPreset returns the first registered preset whose signature matches the
+// uploaded header, or nil if none match. Presets with an empty signature are
+// skipped: csvmap.MatchesSignature treats an empty signature as "matches
+// anything", which is correct for the manual/generic path but must never
+// auto-match here. First match in registry order wins.
+func detectPreset(header []string) *csvPresetInfo {
+	for _, p := range csvmap.Presets() {
+		if len(p.Config.Signature) == 0 {
+			continue
+		}
+		if csvmap.MatchesSignature(header, p.Config) {
+			return &csvPresetInfo{Slug: p.Slug, Name: p.DisplayName}
+		}
+	}
+	return nil
+}
+
 type csvInspectResponse struct {
 	Headers          []string                `json:"headers"`
 	RowCount         int                     `json:"row_count"`
