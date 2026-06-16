@@ -900,3 +900,213 @@ func TestAPIKeyAuth_BearerToken(t *testing.T) {
 		t.Fatalf("API key auth: status = %d, want 200; body: %s", rec.Code, rec.Body)
 	}
 }
+
+// ─── API key scope enforcement (issue #1049) ───────────────────────────────
+
+// createAPIKeyWithScope creates a key with the given scope via the real
+// endpoint and returns the raw key value.
+func createAPIKeyWithScope(t *testing.T, e interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, sessionID, scope string) string {
+	t.Helper()
+	rec := postJSONSession(t, e, "/api/auth/api-keys", map[string]any{
+		"name":   "key-" + scope,
+		"scopes": scope,
+	}, sessionID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create %s key: status = %d; body: %s", scope, rec.Code, rec.Body)
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode create-key resp: %v", err)
+	}
+	key, _ := resp["key"].(string)
+	if key == "" {
+		t.Fatalf("create %s key: empty key in response", scope)
+	}
+	return key
+}
+
+// bearerReq fires a request authenticated with a Bearer API key and an optional
+// JSON body, returning the recorder.
+func bearerReq(t *testing.T, e interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, method, path string, body any, key string) *httptest.ResponseRecorder {
+	t.Helper()
+	var r io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		r = bytes.NewReader(b)
+	}
+	req := httptest.NewRequest(method, path, r)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestAPIKeyScope_ReadKeyBlockedOnWrite(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-u1", "scopeu1", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "scope-u1")
+	readKey := createAPIKeyWithScope(t, e, sessionID, "read")
+
+	rec := bearerReq(t, e, http.MethodPost, "/api/tags", map[string]any{"name": "blocked"}, readKey)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("read key POST /api/tags: status = %d, want 403; body: %s", rec.Code, rec.Body)
+	}
+
+	// The write must not have happened.
+	var count int
+	_ = testDB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM tags WHERE user_id = ?", "scope-u1",
+	).Scan(&count)
+	if count != 0 {
+		t.Errorf("tags created by read key = %d, want 0", count)
+	}
+}
+
+func TestAPIKeyScope_ReadKeyAllowedOnGet(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-u2", "scopeu2", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "scope-u2")
+	readKey := createAPIKeyWithScope(t, e, sessionID, "read")
+
+	rec := bearerReq(t, e, http.MethodGet, "/api/tags", nil, readKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("read key GET /api/tags: status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAPIKeyScope_WriteKeyAllowedOnWrite(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-u3", "scopeu3", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "scope-u3")
+	writeKey := createAPIKeyWithScope(t, e, sessionID, "write")
+
+	rec := bearerReq(t, e, http.MethodPost, "/api/tags", map[string]any{"name": "allowed"}, writeKey)
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("write key POST /api/tags: got 403, want success; body: %s", rec.Body)
+	}
+}
+
+func TestAPIKeyScope_DefaultScopeIsWrite(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-u4", "scopeu4", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "scope-u4")
+	// Omit "scopes" entirely → server defaults to "write".
+	rec := postJSONSession(t, e, "/api/auth/api-keys", map[string]any{"name": "default-key"}, sessionID)
+	var resp map[string]any
+	_ = json.NewDecoder(rec.Body).Decode(&resp)
+	key, _ := resp["key"].(string)
+
+	w := bearerReq(t, e, http.MethodPost, "/api/tags", map[string]any{"name": "ok"}, key)
+	if w.Code == http.StatusForbidden {
+		t.Fatalf("default-scope key POST /api/tags: got 403, want success; body: %s", w.Body)
+	}
+}
+
+func TestAPIKeyScope_ReadKeyAllowedOnAllowlistedSearch(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-u5", "scopeu5", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "scope-u5")
+	readKey := createAPIKeyWithScope(t, e, sessionID, "read")
+	writeKey := createAPIKeyWithScope(t, e, sessionID, "write")
+
+	// POST /api/games/search/igdb is allowlisted: a read key must pass the scope
+	// gate exactly like a write key. The handler's own status (IGDB is not
+	// configured in this test) is irrelevant — what matters is that the read key
+	// is NOT rejected by the scope gate, i.e. it behaves identically to a write key.
+	body := map[string]any{"query": "zelda"}
+	readRec := bearerReq(t, e, http.MethodPost, "/api/games/search/igdb", body, readKey)
+	writeRec := bearerReq(t, e, http.MethodPost, "/api/games/search/igdb", body, writeKey)
+	if readRec.Code == http.StatusForbidden {
+		t.Fatalf("read key on allowlisted search: got 403, want not-forbidden; body: %s", readRec.Body)
+	}
+	if readRec.Code != writeRec.Code {
+		t.Errorf("allowlisted search: read key status %d != write key status %d", readRec.Code, writeRec.Code)
+	}
+}
+
+func TestAPIKeyScope_ReadKeyBlockedOnUpload(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-u6", "scopeu6", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "scope-u6")
+	readKey := createAPIKeyWithScope(t, e, sessionID, "read")
+
+	// csv/inspect is a POST but is intentionally NOT allowlisted (it requires a
+	// file upload). The scope gate fires before any body parsing, so a bodyless
+	// POST is enough to assert the rejection.
+	rec := bearerReq(t, e, http.MethodPost, "/api/import/csv/inspect", nil, readKey)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("read key POST /api/import/csv/inspect: status = %d, want 403; body: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAPIKeyScope_SessionCookieImpliesWrite(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-u7", "scopeu7", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "scope-u7")
+
+	rec := postJSONSession(t, e, "/api/tags", map[string]any{"name": "session-write"}, sessionID)
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("session cookie POST /api/tags: got 403, want success; body: %s", rec.Body)
+	}
+}
+
+func TestAPIKeyScope_AdminReadKeyBlockedOnAdminWrite(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-admin1", "scopeadmin1", "pw", true, true) // admin
+	sessionID := insertAuthTestSession(t, testDB, "scope-admin1")
+	readKey := createAPIKeyWithScope(t, e, sessionID, "read")
+
+	// Admin user's READ key on an admin WRITE endpoint → 403 from the scope gate
+	// (which runs before AdminMiddleware). Body is irrelevant.
+	rec := bearerReq(t, e, http.MethodPut, "/api/admin/backups/config", map[string]any{}, readKey)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("admin read key PUT admin config: status = %d, want 403; body: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAPIKeyScope_AdminReadKeyAllowedOnAdminGet(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-admin2", "scopeadmin2", "pw", true, true) // admin
+	sessionID := insertAuthTestSession(t, testDB, "scope-admin2")
+	readKey := createAPIKeyWithScope(t, e, sessionID, "read")
+
+	// Admin's read key on an admin GET → allowed (GET passes scope; admin passes).
+	rec := bearerReq(t, e, http.MethodGet, "/api/admin/events", nil, readKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin read key GET /api/admin/events: status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAPIKeyScope_NonAdminKeyBlockedOnAdminGet(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-nonadmin", "scopenonadmin", "pw", true, false) // not admin
+	sessionID := insertAuthTestSession(t, testDB, "scope-nonadmin")
+	writeKey := createAPIKeyWithScope(t, e, sessionID, "write")
+
+	// Even a WRITE key from a non-admin must be blocked by the admin gate
+	// (admin-guarding is unchanged and auth-method-agnostic).
+	rec := bearerReq(t, e, http.MethodGet, "/api/admin/events", nil, writeKey)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("non-admin write key GET /api/admin/events: status = %d, want 403; body: %s", rec.Code, rec.Body)
+	}
+}
