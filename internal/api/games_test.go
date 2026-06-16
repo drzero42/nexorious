@@ -270,6 +270,66 @@ func TestIGDB_NotConfigured(t *testing.T) {
 	}
 }
 
+// TestIGDB_NilClient verifies every IGDB-backed endpoint returns a clean 503
+// (rather than panicking into a recovered 500) when the handler's IGDB client
+// pointer is nil — the wiring used when no IGDB client is constructed at all
+// (issue #1051).
+func TestIGDB_NilClient(t *testing.T) {
+	tests := []struct {
+		name   string
+		userID string
+		user   string
+		do     func(t *testing.T, e interface {
+			ServeHTTP(http.ResponseWriter, *http.Request)
+		}, token string) *httptest.ResponseRecorder
+	}{
+		{
+			name:   "search",
+			userID: "u-igdbnil-1",
+			user:   "igdbniluser",
+			do: func(t *testing.T, e interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			}, token string) *httptest.ResponseRecorder {
+				return postAuth(t, e, "/api/games/search/igdb", token, `{"query": "Zelda", "limit": 10}`)
+			},
+		},
+		{
+			name:   "get game",
+			userID: "u-igdbnil-2",
+			user:   "igdbniluser2",
+			do: func(t *testing.T, e interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			}, token string) *httptest.ResponseRecorder {
+				return getAuth(t, e, "/api/games/igdb/12345", token)
+			},
+		},
+		{
+			name:   "import",
+			userID: "u-igdbnil-3",
+			user:   "igdbniluser3",
+			do: func(t *testing.T, e interface {
+				ServeHTTP(http.ResponseWriter, *http.Request)
+			}, token string) *httptest.ResponseRecorder {
+				return postAuth(t, e, "/api/games/igdb-import", token, `{"igdb_id": 12345}`)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			truncateAllTables(t)
+			e := newTestEcho(t, testDB, testCfg()) // nil IGDB client
+			insertAuthTestUser(t, testDB, tt.userID, tt.user, "pass123", true, false)
+			token := loginAndGetToken(t, e, tt.user, "pass123")
+
+			rec := tt.do(t, e, token)
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Errorf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 // ─── IGDB input validation tests ───────────────────────────────────────────
 
 func TestSearchIGDB_EmptyQuery(t *testing.T) {
