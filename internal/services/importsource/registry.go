@@ -6,7 +6,6 @@ package importsource
 
 import (
 	"github.com/drzero42/nexorious/internal/db/models"
-	"github.com/drzero42/nexorious/internal/services/darkadia"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 	"github.com/drzero42/nexorious/internal/services/vglist"
 )
@@ -25,8 +24,8 @@ func (f mapperFunc) Parse(raw []byte) ([]importmodel.Game, error) { return f(raw
 
 // Source is one registered import source.
 type Source struct {
-	Slug        string   `json:"slug"`         // JobSource* value, e.g. "darkadia"
-	DisplayName string   `json:"display_name"` // "Darkadia"
+	Slug        string   `json:"slug"`         // JobSource* value, e.g. "vglist"
+	DisplayName string   `json:"display_name"` // "vglist"
 	Description string   `json:"description"`  // picker blurb
 	Features    []string `json:"features"`     // picker bullet list
 	Accept      []string `json:"accept"`       // file-input accept hints
@@ -35,18 +34,6 @@ type Source struct {
 
 // registry is the ordered list of sources (stable order drives the picker).
 var registry = []Source{
-	{
-		Slug:        models.JobSourceDarkadia,
-		DisplayName: "Darkadia",
-		Description: "Migrate a Darkadia collection export. Games are matched to IGDB; ambiguous matches go to review. Requires IGDB to be configured.",
-		Features: []string{
-			"Preserves ratings, notes & added date",
-			"Matches games to IGDB",
-			"Interactive review",
-		},
-		Accept: []string{".csv", "text/csv"},
-		Mapper: mapperFunc(darkadia.Parse),
-	},
 	{
 		Slug:        models.JobSourceVglist,
 		DisplayName: "vglist",

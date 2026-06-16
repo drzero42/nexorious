@@ -314,22 +314,6 @@ func TestImportCheckJobCompletion_BlockedUntilDispatchComplete(t *testing.T) {
 	}
 }
 
-func TestFinalizeArgsForSource(t *testing.T) {
-	args, err := tasks.FinalizeArgsForSource(models.JobSourceDarkadia, "item-1")
-	if err != nil {
-		t.Fatalf("darkadia: unexpected error %v", err)
-	}
-	if _, ok := args.(tasks.ImportFinalizeArgs); !ok {
-		t.Fatalf("darkadia: got %T, want ImportFinalizeArgs", args)
-	}
-	if _, err := tasks.FinalizeArgsForSource(models.JobSourceNexorious, "item-1"); err == nil {
-		t.Error("nexorious: expected error (no interactive finalize stage)")
-	}
-	if _, err := tasks.FinalizeArgsForSource("steam", "item-1"); err == nil {
-		t.Error("steam: expected error")
-	}
-}
-
 func TestImportFinalize_AdditiveMergeDoesNotOverwrite(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
