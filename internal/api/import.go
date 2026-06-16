@@ -78,6 +78,7 @@ type nexoriousExport struct {
 	Version       string            `json:"version"`
 	ExportVersion string            `json:"export_version"` // legacy 1.x key, used only for error messages
 	Games         []json.RawMessage `json:"games"`
+	Pools         json.RawMessage   `json:"pools"`
 }
 
 // HandleImportNexorious handles POST /api/import/nexorious.
@@ -151,6 +152,32 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 	}
 
 	reqCtx := c.Request().Context()
+
+	// Stash any pools section as a synthetic, pre-completed job_item. It carries
+	// no River task and is applied once at the job-completion transition, after
+	// every game's user_game exists. It is NOT counted in total_items. Inserted
+	// before any game task is enqueued so it is present at completion time (the
+	// legacy completion check does not gate on dispatch_complete).
+	if len(export.Pools) > 0 && string(export.Pools) != "null" {
+		poolsMeta, err := json.Marshal(map[string]any{"item_type": "pools", "data": export.Pools})
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to build pools item metadata")
+		}
+		poolsItem := &models.JobItem{
+			ID:             uuid.NewString(),
+			JobID:          job.ID,
+			UserID:         userID,
+			ItemKey:        tasks.PoolsItemKey,
+			SourceTitle:    "(pools)",
+			SourceMetadata: poolsMeta,
+			Status:         models.JobItemStatusCompleted,
+			Result:         json.RawMessage(`{}`),
+			IGDBCandidates: json.RawMessage(`[]`),
+		}
+		if _, err := h.db.NewInsert().Model(poolsItem).Exec(ctx); err != nil {
+			slog.ErrorContext(reqCtx, "import: create pools item", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		}
+	}
 
 	// Create one JobItem per game and enqueue a task.
 	var skipCount int

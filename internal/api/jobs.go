@@ -526,8 +526,8 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 
 	statusParam := c.QueryParam("status")
 
-	q := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID)
-	countQ := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID)
+	q := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID).Where("item_key <> ?", tasks.PoolsItemKey)
+	countQ := h.db.NewSelect().TableExpr("job_items").Where("job_id = ?", jobID).Where("item_key <> ?", tasks.PoolsItemKey)
 
 	if statusParam != "" && statusParam != "pending_review" {
 		q = q.Where("status = ?", statusParam)
