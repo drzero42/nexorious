@@ -41,6 +41,9 @@ func validate(cfg Config) error {
 		if err := validateColumnFormat("Platform.Simple", cfg.Platform.Simple.PlatformFormat); err != nil {
 			return err
 		}
+		if cfg.Platform.Simple.PlatformSeparator != "" && cfg.Platform.Simple.PlatformFormat == FormatJSONKeys {
+			return errors.New("csvmap: Platform.Simple PlatformSeparator and json-keys format are mutually exclusive")
+		}
 	}
 	if cfg.PlayLog != nil {
 		if cfg.Duration != nil {

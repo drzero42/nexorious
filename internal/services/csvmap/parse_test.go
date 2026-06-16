@@ -615,6 +615,48 @@ func TestAssembleNote(t *testing.T) {
 	}
 }
 
+func TestExtractPlatforms_SeparatorSplit(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "title"},
+		Platform: PlatformConfig{Simple: &PlatformSimple{
+			PlatformColumn:    "platforms",
+			PlatformSeparator: ";",
+		}},
+	}
+	header := []string{"title", "platforms"}
+	idx := buildIndex(header)
+
+	tests := []struct {
+		name string
+		cell string
+		want []string // expected platform slugs, in order
+	}{
+		{"two slugs", "pc-windows;playstation-5", []string{"pc-windows", "playstation-5"}},
+		{"single slug", "pc-windows", []string{"pc-windows"}},
+		{"empty", "", nil},
+		{"trailing separator", "pc-windows;", []string{"pc-windows"}},
+		{"empty middle piece", "pc-windows;;mac", []string{"pc-windows", "mac"}},
+		{"duplicate deduped", "mac;mac", []string{"mac"}},
+		{"whitespace trimmed", "pc-windows; mac ", []string{"pc-windows", "mac"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractPlatforms([]string{"X", tc.cell}, idx, cfg)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d entries %+v, want %v", len(got), got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i].Platform != tc.want[i] {
+					t.Errorf("entry %d = %q, want %q", i, got[i].Platform, tc.want[i])
+				}
+				if got[i].Storefront != nil {
+					t.Errorf("entry %d storefront = %v, want nil", i, got[i].Storefront)
+				}
+			}
+		})
+	}
+}
+
 func TestExtractPlayLog(t *testing.T) {
 	cfg := Config{
 		Columns: ColumnMap{Title: "name"},

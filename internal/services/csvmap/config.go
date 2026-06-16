@@ -84,6 +84,7 @@ type PlatformConfig struct {
 type PlatformSimple struct {
 	PlatformColumn     string
 	PlatformFormat     ColumnFormat      // "" scalar (default, one entry) | "json-keys" (one entry per key)
+	PlatformSeparator  string            // when non-empty, split PlatformColumn on this (one entry per piece); mutually exclusive with json-keys
 	StorefrontColumn   string            // optional
 	AcquiredDateColumn string            // optional; attaches to the platform entry
 	PlatformMap        map[string]string // optional value (normalized) -> slug; nil/miss = passthrough as-is

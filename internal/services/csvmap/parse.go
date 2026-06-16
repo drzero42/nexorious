@@ -268,6 +268,22 @@ func extractLoved(rec []string, idx map[string]int, cfg Config) bool {
 	return false
 }
 
+// splitTrim splits raw on sep, trims each piece, and drops empties. Order
+// preserved; duplicates are NOT removed (callers dedupe as their semantics need).
+// An empty sep yields no values (rather than exploding raw into runes).
+func splitTrim(raw, sep string) []string {
+	if raw == "" || sep == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(raw, sep) {
+		if s := strings.TrimSpace(p); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // extractTags splits, trims, drops empties, and order-preserving dedupes the tag cell.
 func extractTags(rec []string, idx map[string]int, cfg Config) []string {
 	raw := cell(rec, idx, cfg.Columns.Tags)
@@ -280,9 +296,8 @@ func extractTags(rec []string, idx map[string]int, cfg Config) []string {
 	}
 	var out []string
 	seen := map[string]bool{}
-	for _, p := range strings.Split(raw, sep) {
-		tag := strings.TrimSpace(p)
-		if tag == "" || seen[tag] {
+	for _, tag := range splitTrim(raw, sep) {
+		if seen[tag] {
 			continue
 		}
 		seen[tag] = true
@@ -400,7 +415,12 @@ func extractPlatforms(rec []string, idx map[string]int, cfg Config) []importmode
 	if ps == nil {
 		return nil
 	}
-	values := decodeKeys(cell(rec, idx, ps.PlatformColumn), ps.PlatformFormat)
+	var values []string
+	if ps.PlatformSeparator != "" {
+		values = splitTrim(cell(rec, idx, ps.PlatformColumn), ps.PlatformSeparator)
+	} else {
+		values = decodeKeys(cell(rec, idx, ps.PlatformColumn), ps.PlatformFormat)
+	}
 	if len(values) == 0 {
 		return nil
 	}
