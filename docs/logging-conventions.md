@@ -87,13 +87,13 @@ The governing rule: **if the surrounding code handles the condition and continue
 `internal/logging/keys.go` is the single source of truth. Use the `Key*` constants
 instead of string literals so keys never drift:
 
-`KeyRequestID`, `KeyJobID`, `KeyRiverJobID`, `KeyTraceID`, `KeySpanID`, `KeyJobType`,
-`KeyUserID`, `KeySource`, `KeyOperation`, `KeyExternalGameID`, `KeyDurationMS`,
+`KeyRequestID`, `KeyJobID`, `KeyJobItemID`, `KeyRiverJobID`, `KeyTraceID`, `KeySpanID`,
+`KeyJobType`, `KeyUserID`, `KeySource`, `KeyOperation`, `KeyExternalGameID`, `KeyDurationMS`,
 `KeyHost`, `KeyEndpoint`, `KeyStatus`, `KeyRoute`, `KeyOutcome`, `KeyCategory`, `KeyErr`.
 
-Attributes that have no constant (e.g. `"item_id"`, `"appid"`, `"backup_id"`,
-`"path"`) stay as string literals. Add a constant only when a key is
-used widely enough to be worth pinning.
+Attributes that have no constant (e.g. `"appid"`, `"backup_id"`, `"path"`) stay
+as string literals. Add a constant only when a key is used widely enough to be
+worth pinning.
 
 `KeySource` carries the **canonical storefront slug** — the same value used as the
 job `source` and the adapter-factory `case` label: `steam`, `playstation-store`,
