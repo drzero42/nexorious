@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -194,13 +195,13 @@ func TestStartDBProbe_RecoveryFromUnavailable(t *testing.T) {
 	m.SetStateForTest(migrate.AppStateDBUnavailable)
 	m.SetProbeIntervalForTest(30 * time.Millisecond)
 
-	onRecoveryCalled := false
+	var onRecoveryCalled atomic.Bool
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Probe with the good DB — the probe should detect recovery.
 	m.StartDBProbe(ctx, db, func(_ context.Context) error {
-		onRecoveryCalled = true
+		onRecoveryCalled.Store(true)
 		return nil
 	})
 
@@ -215,7 +216,7 @@ func TestStartDBProbe_RecoveryFromUnavailable(t *testing.T) {
 
 	// Either the onRecovery callback was invoked or the state changed.
 	// The probe transitions from DBUnavailable via recoverFromUnavailable.
-	if m.State() == migrate.AppStateDBUnavailable && !onRecoveryCalled {
+	if m.State() == migrate.AppStateDBUnavailable && !onRecoveryCalled.Load() {
 		t.Error("expected recovery from DBUnavailable but state is still DBUnavailable")
 	}
 }
