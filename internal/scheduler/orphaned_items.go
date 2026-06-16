@@ -60,14 +60,14 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		// chain) re-enters at the right worker rather than the JSON importer.
 		args, err := tasks.ArgsForJobType(o.JobType, o.Source, o.ID)
 		if err != nil {
-			slog.WarnContext(ctx, "rescue_orphaned_items: unknown job_type, skipping", "item_id", o.ID, logging.KeyJobType, o.JobType, logging.KeySource, o.Source)
+			slog.WarnContext(ctx, "rescue_orphaned_items: unknown job_type, skipping", logging.KeyJobItemID, o.ID, logging.KeyJobType, o.JobType, logging.KeySource, o.Source)
 			continue
 		}
 		if _, err := rc.Insert(ctx, args, nil); err != nil {
-			slog.WarnContext(ctx, "rescue_orphaned_items: re-enqueue failed", "item_id", o.ID, logging.KeyErr, err)
+			slog.WarnContext(ctx, "rescue_orphaned_items: re-enqueue failed", logging.KeyJobItemID, o.ID, logging.KeyErr, err)
 			failureCount++
 		} else {
-			slog.InfoContext(ctx, "rescue_orphaned_items: re-enqueued orphaned item", "item_id", o.ID, logging.KeyJobType, o.JobType)
+			slog.InfoContext(ctx, "rescue_orphaned_items: re-enqueued orphaned item", logging.KeyJobItemID, o.ID, logging.KeyJobType, o.JobType)
 			successCount++
 		}
 	}

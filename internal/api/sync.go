@@ -980,7 +980,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 					`UPDATE job_items SET status = 'skipped', processed_at = now() WHERE id = ?`,
 					childItem.ID,
 				).Exec(ctx); err != nil {
-					slog.ErrorContext(c.Request().Context(), "sync: skip game: cascade child job_item", logging.KeyErr, err, "job_item_id", childItem.ID, logging.Cat(logging.CategoryDB))
+					slog.ErrorContext(c.Request().Context(), "sync: skip game: cascade child job_item", logging.KeyErr, err, logging.KeyJobItemID, childItem.ID, logging.Cat(logging.CategoryDB))
 				} else {
 					tasks.SyncCheckJobCompletion(ctx, h.db, h.riverClient, childItem.JobID)
 				}
@@ -1004,7 +1004,7 @@ func (h *SyncHandler) HandleSkipGame(c *echo.Context) error {
 			`UPDATE job_items SET status = 'skipped', processed_at = now() WHERE id = ?`,
 			jobItemRow.ID,
 		).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: skip game: mark job_item skipped", logging.KeyErr, err, "job_item_id", jobItemRow.ID, logging.Cat(logging.CategoryDB))
+			slog.ErrorContext(c.Request().Context(), "sync: skip game: mark job_item skipped", logging.KeyErr, err, logging.KeyJobItemID, jobItemRow.ID, logging.Cat(logging.CategoryDB))
 		} else {
 			if _, err := h.db.NewRaw(
 				`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
@@ -1072,7 +1072,7 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 		}
 		if h.riverClient != nil {
 			if _, err := h.riverClient.Insert(ctx, tasks.IGDBMatchArgs{JobItemID: itemID}, nil); err != nil {
-				slog.ErrorContext(c.Request().Context(), "sync: enqueue igdb_match failed", logging.KeyErr, err, "job_item_id", itemID, logging.Cat(logging.CategoryDB))
+				slog.ErrorContext(c.Request().Context(), "sync: enqueue igdb_match failed", logging.KeyErr, err, logging.KeyJobItemID, itemID, logging.Cat(logging.CategoryDB))
 				return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 			}
 		}
@@ -1368,14 +1368,14 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		if _, err := h.db.NewRaw(
 			`UPDATE job_items SET status = 'pending' WHERE id = ?`, jobItemID,
 		).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: rematch: update job_item status failed", logging.KeyErr, err, "job_item_id", jobItemID, logging.Cat(logging.CategoryDB))
+			slog.ErrorContext(c.Request().Context(), "sync: rematch: update job_item status failed", logging.KeyErr, err, logging.KeyJobItemID, jobItemID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update job item")
 		}
 	}
 
 	if h.riverClient != nil {
 		if _, err := h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: jobItemID}, nil); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: enqueue user_game_write failed", logging.KeyErr, err, "job_item_id", jobItemID, logging.Cat(logging.CategoryDB))
+			slog.ErrorContext(c.Request().Context(), "sync: enqueue user_game_write failed", logging.KeyErr, err, logging.KeyJobItemID, jobItemID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 		}
 	}
@@ -1472,12 +1472,12 @@ func (h *SyncHandler) HandleRetryFailedExternalGames(c *echo.Context) error {
 			`UPDATE job_items SET status = 'pending', error_message = NULL, processed_at = NULL WHERE id = ?`,
 			item.ID,
 		).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: retry-failed: reset item", "job_item_id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			slog.ErrorContext(c.Request().Context(), "sync: retry-failed: reset item", logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			continue
 		}
 		if h.riverClient != nil {
 			if _, err := h.riverClient.Insert(ctx, tasks.IGDBMatchArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.ErrorContext(c.Request().Context(), "sync: retry-failed: enqueue", "job_item_id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+				slog.ErrorContext(c.Request().Context(), "sync: retry-failed: enqueue", logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			}
 		}
 	}

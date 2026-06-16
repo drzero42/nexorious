@@ -483,7 +483,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 	}
 
 	slog.DebugContext(ctx, "igdb_match: processing",
-		"item_id", p.JobItemID,
+		logging.KeyJobItemID, p.JobItemID,
 		"title", eg.Title,
 		logging.KeySource, eg.Storefront,
 		logging.KeyExternalGameID, eg.ID,
@@ -492,14 +492,14 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 
 	// Fast-path: skipped games go straight to UserGameWorker.
 	if eg.IsSkipped {
-		slog.DebugContext(ctx, "igdb_match: game is skipped, fast-path to user_game_write", "item_id", p.JobItemID, "title", eg.Title)
+		slog.DebugContext(ctx, "igdb_match: game is skipped, fast-path to user_game_write", logging.KeyJobItemID, p.JobItemID, "title", eg.Title)
 		return w.enqueueUserGame(ctx, item.ID, item.JobID)
 	}
 
 	// Fast-path: already resolved (manual or prior run).
 	if eg.ResolvedIGDBID != nil {
 		slog.DebugContext(ctx, "igdb_match: already resolved, fast-path to user_game_write",
-			"item_id", p.JobItemID, "title", eg.Title, "igdb_id", *eg.ResolvedIGDBID)
+			logging.KeyJobItemID, p.JobItemID, "title", eg.Title, "igdb_id", *eg.ResolvedIGDBID)
 		return w.enqueueUserGame(ctx, item.ID, item.JobID)
 	}
 
@@ -511,7 +511,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 			Scan(ctx); err == nil && parent.ResolvedIGDBID != nil {
 			igdbID := *parent.ResolvedIGDBID
 			slog.DebugContext(ctx, "igdb_match: child inheriting from resolved parent",
-				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", igdbID, "parent_id", *eg.ParentID)
+				logging.KeyJobItemID, p.JobItemID, "title", eg.Title, "igdb_id", igdbID, "parent_id", *eg.ParentID)
 			if _, err := w.DB.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 				igdbID, eg.Title,
@@ -529,7 +529,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		// Parent not yet resolved — leave job_item in pending.
 		// Stage 3 of the parent will re-enqueue Stage 2 for this child.
 		slog.DebugContext(ctx, "igdb_match: parent unresolved, waiting",
-			"item_id", p.JobItemID, "parent_id", *eg.ParentID)
+			logging.KeyJobItemID, p.JobItemID, "parent_id", *eg.ParentID)
 		return nil
 	}
 
@@ -538,14 +538,14 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		platformIDs, perErr := platformresolution.IGDBPlatformIDsForExternalGame(ctx, w.DB, eg.ID)
 		if perErr != nil {
 			slog.DebugContext(ctx, "igdb_match: platform resolution failed, falling back to unfiltered",
-				"item_id", p.JobItemID, logging.KeyExternalGameID, eg.ID, logging.KeyErr, perErr)
+				logging.KeyJobItemID, p.JobItemID, logging.KeyExternalGameID, eg.ID, logging.KeyErr, perErr)
 			platformIDs = nil
 		}
 		candidates, err := w.IGDBClient.SearchGames(ctx, eg.Title, 10, platformIDs)
 		if err != nil {
 			if job.Attempt >= job.MaxAttempts {
 				slog.WarnContext(ctx, "igdb_match: IGDB failed on final attempt, marking pending_review",
-					"item_id", p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+					logging.KeyJobItemID, p.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 				syncMarkItemPendingReview(ctx, w.DB, &item)
 				SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 				return nil
@@ -560,7 +560,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		decision := matching.Decide(eg.Title, cands)
 
 		slog.DebugContext(ctx, "igdb_match: search results",
-			"item_id", p.JobItemID,
+			logging.KeyJobItemID, p.JobItemID,
 			"title", eg.Title,
 			"candidate_count", len(candidates),
 			"best_score", decision.BestScore,
@@ -571,7 +571,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 		if decision.Confident {
 			bestID := decision.ResolvedID
 			slog.DebugContext(ctx, "igdb_match: auto-resolved",
-				"item_id", p.JobItemID, "title", eg.Title, "igdb_id", bestID, "score", decision.BestScore)
+				logging.KeyJobItemID, p.JobItemID, "title", eg.Title, "igdb_id", bestID, "score", decision.BestScore)
 			if _, err := w.DB.NewRaw(
 				`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, now(), now()) ON CONFLICT (id) DO NOTHING`,
 				bestID, eg.Title,
@@ -589,7 +589,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 
 		// Low confidence or tie — store candidates, mark pending_review.
 		slog.DebugContext(ctx, "igdb_match: low confidence, marking pending_review",
-			"item_id", p.JobItemID,
+			logging.KeyJobItemID, p.JobItemID,
 			"title", eg.Title,
 			"best_score", decision.BestScore,
 			"threshold", matching.AutoResolveThreshold,
@@ -606,7 +606,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 	}
 
 	// No IGDB client configured — mark pending_review.
-	slog.DebugContext(ctx, "igdb_match: no IGDB client configured, marking pending_review", "item_id", p.JobItemID, "title", eg.Title)
+	slog.DebugContext(ctx, "igdb_match: no IGDB client configured, marking pending_review", logging.KeyJobItemID, p.JobItemID, "title", eg.Title)
 	syncMarkItemPendingReview(ctx, w.DB, &item)
 	SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
 	return nil
@@ -614,7 +614,7 @@ func (w *IGDBMatchWorker) Work(ctx context.Context, job *river.Job[IGDBMatchArgs
 
 func (w *IGDBMatchWorker) enqueueUserGame(ctx context.Context, jobItemID, jobID string) error {
 	if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, jobItemID, UserGameArgs{JobItemID: jobItemID}); err != nil {
-		slog.WarnContext(ctx, "igdb_match: enqueue user_game_write failed", "item_id", jobItemID, logging.KeyErr, err)
+		slog.WarnContext(ctx, "igdb_match: enqueue user_game_write failed", logging.KeyJobItemID, jobItemID, logging.KeyErr, err)
 		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, jobID)
 	}
 	return nil
@@ -784,10 +784,10 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 				ugpID, ugID, egp.Platform, storefrontSlug, egp.HoursPlayed, ownership,
 				eg.ID,
 			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "user_game_write: insert user_game_platform", logging.KeyErr, err, "item_id", p.JobItemID, logging.Cat(logging.CategoryDB))
+				slog.WarnContext(ctx, "user_game_write: insert user_game_platform", logging.KeyErr, err, logging.KeyJobItemID, p.JobItemID, logging.Cat(logging.CategoryDB))
 			}
 		case err != nil:
-			slog.WarnContext(ctx, "user_game_write: select existing ugp", logging.KeyErr, err, "item_id", p.JobItemID, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "user_game_write: select existing ugp", logging.KeyErr, err, logging.KeyJobItemID, p.JobItemID, logging.Cat(logging.CategoryDB))
 		default:
 			// Resolve final ownership and hours in Go, then write a single
 			// unconditional UPDATE. This collapses the previous three branches
@@ -827,7 +827,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 				`UPDATE user_game_platforms SET ownership_status = ?, hours_played = ?, external_game_id = ?, updated_at = now() WHERE id = ?`,
 				finalOwnership, finalHours, eg.ID, existingID,
 			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "user_game_write: update ugp", logging.KeyErr, err, "item_id", p.JobItemID, logging.Cat(logging.CategoryDB))
+				slog.WarnContext(ctx, "user_game_write: update ugp", logging.KeyErr, err, logging.KeyJobItemID, p.JobItemID, logging.Cat(logging.CategoryDB))
 			}
 		}
 	}
@@ -841,7 +841,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	// the DB and its play_status = 'not_started' guard covers freshly-upserted
 	// rows (which default to not_started), so no separate isNew check is needed.
 	if err := usergame.PromoteToInProgressIfPlayed(ctx, w.DB, ugID); err != nil {
-		slog.WarnContext(ctx, "user_game_write: auto-promote play_status", logging.KeyErr, err, "item_id", p.JobItemID, logging.Cat(logging.CategoryDB))
+		slog.WarnContext(ctx, "user_game_write: auto-promote play_status", logging.KeyErr, err, logging.KeyJobItemID, p.JobItemID, logging.Cat(logging.CategoryDB))
 	}
 
 	if _, err := w.DB.NewRaw(
@@ -898,7 +898,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			for _, child := range childItems {
 				if _, err := w.RiverClient.Insert(ctx, IGDBMatchArgs{JobItemID: child.JobItemID}, nil); err != nil {
 					slog.WarnContext(ctx, "user_game_write: enqueue sibling Stage 2",
-						logging.KeyErr, err, "child_eg_id", child.ExternalGameID, "job_item_id", child.JobItemID)
+						logging.KeyErr, err, "child_eg_id", child.ExternalGameID, logging.KeyJobItemID, child.JobItemID)
 				}
 			}
 		}

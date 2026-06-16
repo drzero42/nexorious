@@ -111,6 +111,6 @@ func markEnqueueFailed(ctx context.Context, db *bun.DB, jobItemID, msg string) {
 		models.JobItemStatusFailed, msg, now, jobItemID, models.JobItemStatusPending,
 	).Exec(ctx); err != nil {
 		slog.ErrorContext(ctx, "EnqueueOrFail: mark item failed",
-			"job_item_id", jobItemID, "msg", msg, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			logging.KeyJobItemID, jobItemID, "msg", msg, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 }

@@ -166,7 +166,7 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 	// Enqueue River jobs now that job_items are committed and visible.
 	for _, itemID := range itemIDs {
 		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, MetadataRefreshItemArgs{JobItemID: itemID}); err != nil {
-			slog.WarnContext(ctx, "metadata_refresh_dispatch: enqueue item failed", logging.KeyErr, err, logging.KeyJobID, jobID, "item_id", itemID, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "metadata_refresh_dispatch: enqueue item failed", logging.KeyErr, err, logging.KeyJobID, jobID, logging.KeyJobItemID, itemID, logging.Cat(logging.CategoryDB))
 		}
 	}
 

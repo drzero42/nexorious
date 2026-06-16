@@ -737,11 +737,11 @@ func retryInsert(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], jobT
 	args, err := tasks.ArgsForJobType(jobType, source, jobItemID)
 	if err != nil {
 		slog.ErrorContext(ctx, "retryInsert: unsupported job_type",
-			"job_type", jobType, logging.KeySource, source, "job_item_id", jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryValidation))
+			"job_type", jobType, logging.KeySource, source, logging.KeyJobItemID, jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryValidation))
 		return
 	}
 	if err := tasks.EnqueueOrFail(ctx, db, rc, jobItemID, args); err != nil {
 		slog.ErrorContext(ctx, "retryInsert: enqueue failed",
-			"job_type", jobType, logging.KeySource, source, "job_item_id", jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			"job_type", jobType, logging.KeySource, source, logging.KeyJobItemID, jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 }

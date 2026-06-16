@@ -62,10 +62,10 @@ func (w *ImportMatchWorker) Work(ctx context.Context, job *river.Job[ImportMatch
 			`UPDATE job_items SET resolved_igdb_id = ?, match_confidence = 1 WHERE id = ?`,
 			*payload.IGDBID, item.ID,
 		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "import_match: set resolved id from payload", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "import_match: set resolved id from payload", logging.KeyErr, err, logging.KeyJobItemID, item.ID, logging.Cat(logging.CategoryDB))
 		}
 		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, item.ID, ImportFinalizeArgs{JobItemID: item.ID}); err != nil {
-			slog.WarnContext(ctx, "import_match: enqueue finalize (igdb-id short-circuit)", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "import_match: enqueue finalize (igdb-id short-circuit)", logging.KeyErr, err, logging.KeyJobItemID, item.ID, logging.Cat(logging.CategoryDB))
 			ImportCheckJobCompletion(w.DB, item.JobID)
 		}
 		return nil
@@ -80,7 +80,7 @@ func (w *ImportMatchWorker) Work(ctx context.Context, job *river.Job[ImportMatch
 	candidates, err := w.IGDBClient.SearchGames(ctx, item.SourceTitle, 10, nil)
 	if err != nil {
 		if job.Attempt >= job.MaxAttempts {
-			slog.WarnContext(ctx, "import_match: IGDB failed on final attempt, pending_review", "item_id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+			slog.WarnContext(ctx, "import_match: IGDB failed on final attempt, pending_review", logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 			importMarkPendingReview(ctx, w.DB, &item, nil, nil)
 			ImportCheckJobCompletion(w.DB, item.JobID)
 			return nil
@@ -99,10 +99,10 @@ func (w *ImportMatchWorker) Work(ctx context.Context, job *river.Job[ImportMatch
 			`UPDATE job_items SET resolved_igdb_id = ?, match_confidence = ? WHERE id = ?`,
 			decision.ResolvedID, decision.BestScore, item.ID,
 		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "import_match: set resolved id", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "import_match: set resolved id", logging.KeyErr, err, logging.KeyJobItemID, item.ID, logging.Cat(logging.CategoryDB))
 		}
 		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, item.ID, ImportFinalizeArgs{JobItemID: item.ID}); err != nil {
-			slog.WarnContext(ctx, "import_match: enqueue finalize", logging.KeyErr, err, "item_id", item.ID, logging.Cat(logging.CategoryDB))
+			slog.WarnContext(ctx, "import_match: enqueue finalize", logging.KeyErr, err, logging.KeyJobItemID, item.ID, logging.Cat(logging.CategoryDB))
 			ImportCheckJobCompletion(w.DB, item.JobID)
 		}
 		return nil
