@@ -55,6 +55,54 @@ func TestParse_EmptyLibraryIsZeroGamesNoError(t *testing.T) {
 	}
 }
 
+// TestParse_WrapperObjectRoot covers the real vglist export shape: a top-level
+// { user, games } object rather than a bare array. The entries under .games are
+// mapped exactly as the array form is. Regression for #1029.
+func TestParse_WrapperObjectRoot(t *testing.T) {
+	games, err := Parse([]byte(`{
+		"user": {"id": 2882, "username": "drzero"},
+		"games": [
+			{"game": {"id": 1, "name": "Half-Life 2", "wikidata_id": 193581},
+			 "hours_played": 12.5, "completion_status": "completed", "rating": 95,
+			 "comments": "Great game.", "replay_count": 0,
+			 "platforms": [{"id": 3, "name": "Microsoft Windows"}], "stores": [{"id": 2, "name": "Steam"}]},
+			{"game": {"id": 42, "name": "Some Obscure Game", "wikidata_id": null},
+			 "platforms": [], "stores": []}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("Parse(wrapper) err = %v, want nil", err)
+	}
+	if len(games) != 2 {
+		t.Fatalf("games = %d, want 2", len(games))
+	}
+	if games[0].Title != "Half-Life 2" || games[1].Title != "Some Obscure Game" {
+		t.Errorf("titles = %q, %q", games[0].Title, games[1].Title)
+	}
+}
+
+// TestParse_EmptyWrapperLibraryIsZeroGamesNoError covers an empty real export:
+// the wrapper carries a present-but-empty games array.
+func TestParse_EmptyWrapperLibraryIsZeroGamesNoError(t *testing.T) {
+	games, err := Parse([]byte(`{"user": {"id": 1, "username": "x"}, "games": []}`))
+	if err != nil {
+		t.Fatalf("Parse(empty wrapper) err = %v, want nil", err)
+	}
+	if len(games) != 0 {
+		t.Errorf("games = %d, want 0", len(games))
+	}
+}
+
+// TestParse_RejectsObjectWithoutGamesKey ensures an arbitrary object without a
+// games key is not mistaken for an empty vglist library.
+func TestParse_RejectsObjectWithoutGamesKey(t *testing.T) {
+	for _, body := range []string{`{"foo": 1}`, `{"user": {"id": 1}}`} {
+		if _, err := Parse([]byte(body)); !errors.Is(err, importmodel.ErrInvalidSignature) {
+			t.Errorf("Parse(%q) err = %v, want ErrInvalidSignature", body, err)
+		}
+	}
+}
+
 func TestParse_BasicFields(t *testing.T) {
 	g := parseOne(t, `{
 		"game": {"id": 1, "name": "Half-Life 2", "wikidata_id": 193581},

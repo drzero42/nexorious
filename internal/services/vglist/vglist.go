@@ -46,12 +46,32 @@ type exportEntry struct {
 }
 
 // Parse reads a vglist JSON export and returns one Game per library entry.
+//
+// A real export is a top-level { "user": ..., "games": [ ... ] } object; the
+// entries live under .games. A bare top-level array of entries is also accepted
+// for back-compat (older captures / hand-rolled files).
 func Parse(raw []byte) ([]importmodel.Game, error) {
-	if trimmed := bytes.TrimSpace(raw); len(trimmed) == 0 || trimmed[0] != '[' {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
 		return nil, ErrInvalidExport
 	}
 	var entries []exportEntry
-	if err := json.Unmarshal(raw, &entries); err != nil {
+	switch trimmed[0] {
+	case '[':
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			return nil, ErrInvalidExport
+		}
+	case '{':
+		// The games key must be present (pointer non-nil) to distinguish a real
+		// vglist wrapper from an arbitrary JSON object.
+		var wrapper struct {
+			Games *[]exportEntry `json:"games"`
+		}
+		if err := json.Unmarshal(raw, &wrapper); err != nil || wrapper.Games == nil {
+			return nil, ErrInvalidExport
+		}
+		entries = *wrapper.Games
+	default:
 		return nil, ErrInvalidExport
 	}
 	// Signature: a real export is an array of entries each with a game name.
