@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.16.0](https://github.com/drzero42/nexorious/compare/v0.15.0...v0.16.0) (2026-06-16)
+
+
+### Features
+
+* auto-detect known CSV formats on import ([#1035](https://github.com/drzero42/nexorious/issues/1035)) ([e6b053b](https://github.com/drzero42/nexorious/commit/e6b053b46461f0e4e4582c12c83fed0898b3648c)), closes [#1015](https://github.com/drzero42/nexorious/issues/1015)
+* auto-guess CSV import column mapping from headers ([#1023](https://github.com/drzero42/nexorious/issues/1023)) ([f0c0bbc](https://github.com/drzero42/nexorious/commit/f0c0bbc8b26bf975c3f5f929feb381799cbf0b4d)), closes [#1021](https://github.com/drzero42/nexorious/issues/1021)
+* carry IGDB id through CSV import to skip matching ([#1022](https://github.com/drzero42/nexorious/issues/1022)) ([#1027](https://github.com/drzero42/nexorious/issues/1027)) ([edbf949](https://github.com/drzero42/nexorious/commit/edbf949a3a094ded76a754af2cc203ad695fad61))
+* complete JSON export/import round-trip (wishlist, availability, pools) ([#1040](https://github.com/drzero42/nexorious/issues/1040)) ([355fc8f](https://github.com/drzero42/nexorious/commit/355fc8f441adf98038f447cee77ebff60ab955c0))
+* Completionator CSV import as a csvmap Config ([#1003](https://github.com/drzero42/nexorious/issues/1003)) ([#1028](https://github.com/drzero42/nexorious/issues/1028)) ([d5f8c86](https://github.com/drzero42/nexorious/commit/d5f8c863e3956536e6621b253858fedf8e57f284))
+* first-class Nexorious-CSV import format (own-export round-trip) ([#1034](https://github.com/drzero42/nexorious/issues/1034)) ([3df013c](https://github.com/drzero42/nexorious/commit/3df013c807dfdbfee32d073e18fb90947e4cedf3))
+* generic user-mapped CSV import ([#1004](https://github.com/drzero42/nexorious/issues/1004)) ([#1018](https://github.com/drzero42/nexorious/issues/1018)) ([48a29fa](https://github.com/drzero42/nexorious/commit/48a29fab73ccf307f6f21b763f2b295ec79a87e2))
+* Grouvee CSV import as a csvmap Config ([#1031](https://github.com/drzero42/nexorious/issues/1031)) ([286c85e](https://github.com/drzero42/nexorious/commit/286c85ea564c79294598d067a360c9938d7ba922)), closes [#1002](https://github.com/drzero42/nexorious/issues/1002)
+* vglist library import ([#1012](https://github.com/drzero42/nexorious/issues/1012)) ([78f3b07](https://github.com/drzero42/nexorious/commit/78f3b07bb63bf3b9b5d0589ced2381cac8546956)), closes [#1001](https://github.com/drzero42/nexorious/issues/1001)
+
+
+### Bug Fixes
+
+* accept vglist wrapper-object export root ([#1036](https://github.com/drzero42/nexorious/issues/1036)) ([281d8b2](https://github.com/drzero42/nexorious/commit/281d8b24831e6c7864a08ddf9c76367566a29f62)), closes [#1029](https://github.com/drzero42/nexorious/issues/1029)
+* data race in import/sync title matching; extract source-neutral import pipeline ([#1005](https://github.com/drzero42/nexorious/issues/1005)) ([8979586](https://github.com/drzero42/nexorious/commit/89795864975609bf08eaa4c910a0e4b4601d0394))
+* eliminate data races surfaced by -race detector ([#1043](https://github.com/drzero42/nexorious/issues/1043)) ([3c31c31](https://github.com/drzero42/nexorious/commit/3c31c3103a4bfd6f2d84619a2775aabfe6e589bd)), closes [#1013](https://github.com/drzero42/nexorious/issues/1013)
+
 ## [0.15.0](https://github.com/drzero42/nexorious/compare/v0.14.0...v0.15.0) (2026-06-14)
 
 
