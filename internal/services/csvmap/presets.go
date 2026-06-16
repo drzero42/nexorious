@@ -14,6 +14,7 @@ var presetList = []Preset{
 	{Slug: "completionator", DisplayName: "Completionator", Config: Completionator()},
 	{Slug: "grouvee", DisplayName: "Grouvee", Config: Grouvee()},
 	{Slug: "darkadia", DisplayName: "Darkadia", Config: Darkadia()},
+	{Slug: "nexorious", DisplayName: "Nexorious CSV", Config: NexoriousCSV()},
 }
 
 // Presets returns the registered presets (a copy; callers must not mutate the registry).

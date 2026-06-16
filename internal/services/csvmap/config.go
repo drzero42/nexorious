@@ -80,10 +80,13 @@ type PlatformConfig struct {
 	Tables *PlatformTables // table-driven consolidation (Darkadia)
 }
 
-// PlatformSimple derives a single (platform, storefront, acquired-date) entry from columns.
+// PlatformSimple derives ownership (platform, storefront, acquired-date) entries
+// from columns: one entry for a scalar platform column, or several when the
+// column is json-keys or split on PlatformSeparator.
 type PlatformSimple struct {
 	PlatformColumn     string
 	PlatformFormat     ColumnFormat      // "" scalar (default, one entry) | "json-keys" (one entry per key)
+	PlatformSeparator  string            // when non-empty, split PlatformColumn on this (one entry per piece); mutually exclusive with json-keys
 	StorefrontColumn   string            // optional
 	AcquiredDateColumn string            // optional; attaches to the platform entry
 	PlatformMap        map[string]string // optional value (normalized) -> slug; nil/miss = passthrough as-is

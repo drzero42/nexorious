@@ -83,3 +83,22 @@ func TestPresets_IncludesDarkadia(t *testing.T) {
 		t.Error("Presets() omits the darkadia entry")
 	}
 }
+
+func TestPresets_IncludesNexorious(t *testing.T) {
+	cfg, ok := PresetBySlug("nexorious")
+	if !ok {
+		t.Fatal("expected a 'nexorious' preset in the registry")
+	}
+	if cfg.Columns.Title != "title" {
+		t.Errorf("nexorious preset not wired to NexoriousCSV() (title col = %q)", cfg.Columns.Title)
+	}
+	var found bool
+	for _, p := range Presets() {
+		if p.Slug == "nexorious" && p.DisplayName == "Nexorious CSV" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Presets() must list nexorious with DisplayName Nexorious CSV")
+	}
+}
