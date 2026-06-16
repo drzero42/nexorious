@@ -246,7 +246,7 @@ func TestBuildJSONDoc(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.check(t, buildJSONDoc(tc.games))
+			tc.check(t, buildJSONDoc(tc.games, nil))
 		})
 	}
 }

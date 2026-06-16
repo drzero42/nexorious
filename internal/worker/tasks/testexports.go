@@ -9,8 +9,13 @@ import (
 )
 
 // BuildJSONDocForTest exposes buildJSONDoc for cross-package tests.
-func BuildJSONDocForTest(ugs []models.UserGame) exportDocJSON {
-	return buildJSONDoc(ugs)
+func BuildJSONDocForTest(ugs []models.UserGame, pools []exportPoolJSON) exportDocJSON {
+	return buildJSONDoc(ugs, pools)
+}
+
+// LoadPoolsForExportForTest exposes loadPoolsForExport for cross-package tests.
+func LoadPoolsForExportForTest(ctx context.Context, db *bun.DB, userID string) ([]exportPoolJSON, error) {
+	return loadPoolsForExport(ctx, db, userID)
 }
 
 // SyncJobItemStatusCountsForTest exposes syncJobItemStatusCounts for cross-package tests.

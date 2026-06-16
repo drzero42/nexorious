@@ -466,7 +466,7 @@ func TestBuildJSONDoc_ScalarFieldsAndVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	doc := tasks.BuildJSONDocForTest(ugs)
+	doc := tasks.BuildJSONDocForTest(ugs, nil)
 
 	if doc.Version != "2.1" {
 		t.Errorf("version = %q, want 2.1", doc.Version)
@@ -482,5 +482,67 @@ func TestBuildJSONDoc_ScalarFieldsAndVersion(t *testing.T) {
 	}
 	if doc.Games[0].Platforms[0].IsAvailable {
 		t.Errorf("is_available = true, want false")
+	}
+}
+
+func TestLoadPoolsForExport_TranslatesMembershipToIGDBID(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	for _, id := range []int32{5001, 5002} {
+		g := &models.Game{ID: id, Title: "G", LastUpdated: time.Now(), CreatedAt: time.Now()}
+		if _, err := testDB.NewInsert().Model(g).Exec(ctx); err != nil {
+			t.Fatalf("insert game: %v", err)
+		}
+	}
+	ug1 := &models.UserGame{ID: uuid.NewString(), UserID: userID, GameID: 5001, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	ug2 := &models.UserGame{ID: uuid.NewString(), UserID: userID, GameID: 5002, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if _, err := testDB.NewInsert().Model(ug1).Exec(ctx); err != nil {
+		t.Fatalf("insert ug1: %v", err)
+	}
+	if _, err := testDB.NewInsert().Model(ug2).Exec(ctx); err != nil {
+		t.Fatalf("insert ug2: %v", err)
+	}
+	poolID := uuid.NewString()
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO pools (id, user_id, name, color, position, filter) VALUES (?, ?, 'Backlog', '#abc', 0, '{"loved":true}')`,
+		poolID, userID); err != nil {
+		t.Fatalf("insert pool: %v", err)
+	}
+	// ug1 = Candidate (NULL position); ug2 = queued at position 0.
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO pool_games (id, pool_id, user_game_id, position) VALUES (?, ?, ?, NULL)`,
+		uuid.NewString(), poolID, ug1.ID); err != nil {
+		t.Fatalf("insert pg1: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO pool_games (id, pool_id, user_game_id, position) VALUES (?, ?, ?, 0)`,
+		uuid.NewString(), poolID, ug2.ID); err != nil {
+		t.Fatalf("insert pg2: %v", err)
+	}
+
+	pools, err := tasks.LoadPoolsForExportForTest(ctx, testDB, userID)
+	if err != nil {
+		t.Fatalf("loadPoolsForExport: %v", err)
+	}
+	doc := tasks.BuildJSONDocForTest(nil, pools)
+	if len(doc.Pools) != 1 {
+		t.Fatalf("pools = %d, want 1", len(doc.Pools))
+	}
+	p := doc.Pools[0]
+	if p.Name != "Backlog" {
+		t.Errorf("name = %q, want Backlog", p.Name)
+	}
+	if len(p.Games) != 2 {
+		t.Fatalf("members = %d, want 2", len(p.Games))
+	}
+	// Queued member (position set) sorts before the Candidate (NULL position last).
+	if p.Games[0].IGDBID != 5002 || p.Games[0].Position == nil || *p.Games[0].Position != 0 {
+		t.Errorf("member0 = %+v, want igdb 5002 @ pos 0", p.Games[0])
+	}
+	if p.Games[1].IGDBID != 5001 || p.Games[1].Position != nil {
+		t.Errorf("member1 = %+v, want igdb 5001 candidate", p.Games[1])
 	}
 }

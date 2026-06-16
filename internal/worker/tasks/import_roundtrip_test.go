@@ -79,7 +79,7 @@ func TestImport_RoundTripPreservesUserData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load source games: %v", err)
 	}
-	doc := tasks.BuildJSONDocForTest(ugs)
+	doc := tasks.BuildJSONDocForTest(ugs, nil)
 	if len(doc.Games) != 1 {
 		t.Fatalf("expected 1 exported game, got %d", len(doc.Games))
 	}

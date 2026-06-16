@@ -49,7 +49,12 @@ func (w *ExportJSONWorker) Work(ctx context.Context, job *river.Job[ExportJSONAr
 		markJobFailed(ctx, w.DB, j, fmt.Sprintf("load user games: %v", err))
 		return nil
 	}
-	outPath, err := writeJSONExport(w.StoragePath, j.UserID, userGames)
+	pools, err := loadPoolsForExport(ctx, w.DB, j.UserID)
+	if err != nil {
+		markJobFailed(ctx, w.DB, j, fmt.Sprintf("load pools: %v", err))
+		return nil
+	}
+	outPath, err := writeJSONExport(w.StoragePath, j.UserID, userGames, pools)
 	if err != nil {
 		markJobFailed(ctx, w.DB, j, fmt.Sprintf("write JSON: %v", err))
 		return nil
@@ -213,14 +218,73 @@ type exportTagJSON struct {
 	Color *string `json:"color"`
 }
 
+type exportPoolJSON struct {
+	Name     string               `json:"name"`
+	Color    *string              `json:"color"`
+	Position int                  `json:"position"`
+	Filter   json.RawMessage      `json:"filter,omitempty"`
+	Games    []exportPoolGameJSON `json:"games"`
+}
+
+type exportPoolGameJSON struct {
+	IGDBID   int32 `json:"igdb_id"`
+	Position *int  `json:"position"`
+}
+
 type exportDocJSON struct {
 	Format     string           `json:"format"`
 	Version    string           `json:"version"`
 	ExportedAt string           `json:"exported_at"`
 	Games      []exportGameJSON `json:"games"`
+	Pools      []exportPoolJSON `json:"pools"`
 }
 
-func writeJSONExport(storagePath, userID string, ugs []models.UserGame) (string, error) {
+// loadPoolsForExport returns the user's Play Planning pools with each membership
+// translated from the opaque user_game_id to the game's igdb_id (the stable
+// cross-instance key). Queued members (position set) sort before Candidates.
+func loadPoolsForExport(ctx context.Context, db *bun.DB, userID string) ([]exportPoolJSON, error) {
+	var pools []struct {
+		ID       string          `bun:"id"`
+		Name     string          `bun:"name"`
+		Color    *string         `bun:"color"`
+		Position int             `bun:"position"`
+		Filter   json.RawMessage `bun:"filter"`
+	}
+	if err := db.NewRaw(
+		`SELECT id, name, color, position, filter FROM pools WHERE user_id = ? ORDER BY position`, userID,
+	).Scan(ctx, &pools); err != nil {
+		return nil, err
+	}
+	out := make([]exportPoolJSON, 0, len(pools))
+	for _, p := range pools {
+		var members []struct {
+			Position *int  `bun:"position"`
+			GameID   int32 `bun:"game_id"`
+		}
+		if err := db.NewRaw(
+			`SELECT pg.position AS position, ug.game_id AS game_id
+			 FROM pool_games pg JOIN user_games ug ON ug.id = pg.user_game_id
+			 WHERE pg.pool_id = ?
+			 ORDER BY pg.position NULLS LAST, ug.game_id`, p.ID,
+		).Scan(ctx, &members); err != nil {
+			return nil, err
+		}
+		games := make([]exportPoolGameJSON, 0, len(members))
+		for _, m := range members {
+			games = append(games, exportPoolGameJSON{IGDBID: m.GameID, Position: m.Position})
+		}
+		var filter json.RawMessage
+		if len(p.Filter) > 0 {
+			filter = p.Filter
+		}
+		out = append(out, exportPoolJSON{
+			Name: p.Name, Color: p.Color, Position: p.Position, Filter: filter, Games: games,
+		})
+	}
+	return out, nil
+}
+
+func writeJSONExport(storagePath, userID string, ugs []models.UserGame, pools []exportPoolJSON) (string, error) {
 	dir, err := exportsDir(storagePath)
 	if err != nil {
 		return "", err
@@ -230,7 +294,7 @@ func writeJSONExport(storagePath, userID string, ugs []models.UserGame) (string,
 	filename := fmt.Sprintf("%s_%s.json", userID, ts)
 	outPath := filepath.Join(dir, filename)
 
-	doc := buildJSONDoc(ugs)
+	doc := buildJSONDoc(ugs, pools)
 
 	f, err := os.Create(outPath) //nolint:gosec // outPath is an internally-derived export path under storagePath, not user input
 	if err != nil {
@@ -250,7 +314,7 @@ func writeJSONExport(storagePath, userID string, ugs []models.UserGame) (string,
 	return outPath, nil
 }
 
-func buildJSONDoc(ugs []models.UserGame) exportDocJSON {
+func buildJSONDoc(ugs []models.UserGame, pools []exportPoolJSON) exportDocJSON {
 	games := make([]exportGameJSON, 0, len(ugs))
 	for _, ug := range ugs {
 		platforms := make([]exportPlatformJSON, 0, len(ug.Platforms))
@@ -302,6 +366,7 @@ func buildJSONDoc(ugs []models.UserGame) exportDocJSON {
 		Version:    "2.1",
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
 		Games:      games,
+		Pools:      pools,
 	}
 }
 
