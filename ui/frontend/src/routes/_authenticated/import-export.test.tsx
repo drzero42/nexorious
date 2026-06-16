@@ -35,11 +35,11 @@ vi.mock('@/hooks', () => ({
   useImportSources: () => ({
     data: [
       {
-        slug: 'darkadia',
-        display_name: 'Darkadia',
+        slug: 'vglist',
+        display_name: 'vglist',
         description: 'desc',
         features: [],
-        accept: ['.csv'],
+        accept: ['.json'],
       },
     ],
   }),
@@ -114,8 +114,8 @@ describe('ImportExportPage review surface', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the per-item review surface for an active Darkadia import', () => {
-    h.job = makeJob(JobSource.DARKADIA);
+  it('renders the per-item review surface for an active vglist import', () => {
+    h.job = makeJob(JobSource.VGLIST);
     render(<ImportExportPage />);
     expect(screen.getByTestId('import-review')).toBeInTheDocument();
   });

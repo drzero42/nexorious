@@ -97,7 +97,7 @@ describe('jobsApi', () => {
       await jobsApi.getJobs(
         {
           jobType: JobType.IMPORT,
-          source: JobSource.DARKADIA,
+          source: JobSource.VGLIST,
           status: JobStatus.COMPLETED,
           sortBy: 'created_at',
           sortOrder: 'desc',
@@ -111,7 +111,7 @@ describe('jobsApi', () => {
           page: 2,
           per_page: 10,
           job_type: 'import',
-          source: 'darkadia',
+          source: 'vglist',
           status: 'completed',
           sort_by: 'created_at',
           sort_order: 'desc',

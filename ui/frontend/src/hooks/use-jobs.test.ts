@@ -129,7 +129,7 @@ describe('use-jobs hooks', () => {
       const { result } = renderHook(
         () =>
           useJobs(
-            { jobType: JobType.IMPORT, source: JobSource.DARKADIA, status: JobStatus.COMPLETED },
+            { jobType: JobType.IMPORT, source: JobSource.VGLIST, status: JobStatus.COMPLETED },
             2,
             10,
           ),
@@ -142,7 +142,7 @@ describe('use-jobs hooks', () => {
 
       expect(capturedParams).not.toBeNull();
       expect(capturedParams!.get('job_type')).toBe('import');
-      expect(capturedParams!.get('source')).toBe('darkadia');
+      expect(capturedParams!.get('source')).toBe('vglist');
       expect(capturedParams!.get('status')).toBe('completed');
       expect(capturedParams!.get('page')).toBe('2');
       expect(capturedParams!.get('per_page')).toBe('10');
