@@ -3,6 +3,7 @@ package csvmap
 import (
 	"errors"
 	"io"
+	"math"
 	"reflect"
 	"sort"
 	"testing"
@@ -645,5 +646,56 @@ func TestAssembleNote(t *testing.T) {
 		if got := assembleNote(c.title, c.body); got != c.want {
 			t.Errorf("assembleNote(%q,%q) = %q, want %q", c.title, c.body, got, c.want)
 		}
+	}
+}
+
+func TestExtractPlayLog(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "name"},
+		PlayLog: &PlayLogConfig{
+			Column: "dates", SecondsField: "seconds_played", CompletionField: "level_of_completion",
+			CompletionMap: map[string]string{
+				"main story": "completed", "main story + extras": "mastered", "100% completion": "dominated",
+			},
+		},
+	}
+	idx := map[string]int{"dates": 0}
+
+	// Real finish: seconds -> hours, tier -> dominated.
+	hrs, tier := extractPlayLog([]string{`[{"seconds_played": 36300, "level_of_completion": "100% Completion"}]`}, idx, cfg)
+	if hrs == nil || math.Abs(*hrs-36300.0/3600.0) > 1e-9 {
+		t.Errorf("hours = %v, want %v", hrs, 36300.0/3600.0)
+	}
+	if tier != "dominated" {
+		t.Errorf("tier = %q, want dominated", tier)
+	}
+
+	// Zero seconds -> no hours; tier still recognized.
+	hrs, tier = extractPlayLog([]string{`[{"seconds_played": 0, "level_of_completion": "Main Story"}]`}, idx, cfg)
+	if hrs != nil {
+		t.Errorf("hours = %v, want nil", hrs)
+	}
+	if tier != "completed" {
+		t.Errorf("tier = %q, want completed", tier)
+	}
+
+	// Multiple entries: seconds summed, highest tier wins.
+	hrs, tier = extractPlayLog([]string{`[{"seconds_played": 1800, "level_of_completion": "Main Story"},{"seconds_played": 1800, "level_of_completion": "Main Story + Extras"}]`}, idx, cfg)
+	if hrs == nil || math.Abs(*hrs-1.0) > 1e-9 {
+		t.Errorf("hours = %v, want 1.0", hrs)
+	}
+	if tier != "mastered" {
+		t.Errorf("tier = %q, want mastered (highest of the two)", tier)
+	}
+
+	// Empty / unrecognized / no config.
+	if h, ts := extractPlayLog([]string{`[]`}, idx, cfg); h != nil || ts != "" {
+		t.Errorf("empty array = (%v,%q), want (nil,\"\")", h, ts)
+	}
+	if h, ts := extractPlayLog([]string{`[{"seconds_played": 60, "level_of_completion": "Unknown"}]`}, idx, cfg); ts != "" {
+		t.Errorf("unrecognized tier ts = %q, want \"\" (h=%v)", ts, h)
+	}
+	if h, ts := extractPlayLog([]string{`garbage`}, idx, cfg); h != nil || ts != "" {
+		t.Errorf("malformed = (%v,%q), want (nil,\"\")", h, ts)
 	}
 }

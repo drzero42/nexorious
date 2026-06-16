@@ -320,6 +320,51 @@ func extractHours(rec []string, idx map[string]int, cfg Config) *float64 {
 	return &f
 }
 
+// statusRank orders completion tiers so the highest across play-log entries wins.
+var statusRank = map[string]int{"completed": 1, "mastered": 2, "dominated": 3}
+
+// extractPlayLog sums the seconds field into hours_played and maps the highest
+// recognized completion tier to a play_status. Non-array/blank/malformed input,
+// zero seconds, and unrecognized tiers yield nil hours / "" tier respectively.
+func extractPlayLog(rec []string, idx map[string]int, cfg Config) (hours *float64, tierStatus string) {
+	pl := cfg.PlayLog
+	if pl == nil {
+		return nil, ""
+	}
+	raw := cell(rec, idx, pl.Column)
+	if raw == "" {
+		return nil, ""
+	}
+	var entries []map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil, ""
+	}
+	var totalSeconds float64
+	bestRank := 0
+	for _, e := range entries {
+		if rs, ok := e[pl.SecondsField]; ok {
+			var sec float64
+			if json.Unmarshal(rs, &sec) == nil && sec > 0 {
+				totalSeconds += sec
+			}
+		}
+		if rt, ok := e[pl.CompletionField]; ok {
+			var tier string
+			if json.Unmarshal(rt, &tier) == nil {
+				if st, ok := pl.CompletionMap[normKey(tier)]; ok && statusRank[st] > bestRank {
+					bestRank = statusRank[st]
+					tierStatus = st
+				}
+			}
+		}
+	}
+	if totalSeconds > 0 {
+		h := totalSeconds / 3600.0
+		hours = &h
+	}
+	return hours, tierStatus
+}
+
 // extractIGDBID parses the configured IGDB-id cell into a positive int32. A
 // missing/unconfigured column, blank, non-numeric, zero, negative, or
 // out-of-int32-range value yields nil — such a row falls back to title matching
@@ -399,10 +444,15 @@ func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game
 	if title == "" {
 		return importmodel.Game{}, false
 	}
-	status, _ := extractStatus(rec, idx, cfg)
+	status, wishlisted := extractStatus(rec, idx, cfg)
+	hours, tierStatus := extractPlayLog(rec, idx, cfg)
+	if tierStatus != "" {
+		status = tierStatus
+	}
 	g := importmodel.Game{
-		Title:      title,
-		PlayStatus: status,
+		Title:        title,
+		PlayStatus:   status,
+		IsWishlisted: wishlisted,
 	}
 	g.IGDBID = extractIGDBID(rec, idx, cfg)
 	if r := extractRating(cell(rec, idx, cfg.Columns.Rating), cfg); r != nil {
@@ -413,6 +463,9 @@ func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game
 	g.Tags = extractTags(rec, idx, cfg)
 	if h := extractHours(rec, idx, cfg); h != nil {
 		g.HoursPlayed = h
+	}
+	if hours != nil {
+		g.HoursPlayed = hours
 	}
 	if note := assembleNote(cell(rec, idx, cfg.Notes.TitleColumn), cell(rec, idx, cfg.Notes.Column)); note != "" {
 		g.PersonalNotes = &note

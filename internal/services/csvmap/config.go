@@ -25,6 +25,7 @@ type Config struct {
 	Grouping     GroupingConfig  //
 	Rating       *RatingConfig   // nil = ignore ratings
 	Duration     *DurationConfig // nil = ignore hours_played
+	PlayLog      *PlayLogConfig  // nil = ignore; JSON-array play-log (seconds + completion tier)
 	TruthyValues []string        // Loved truthy set (matched normalized); nil = {"1","true","yes"}
 	TagSeparator string          // tag list separator; "" = ","
 	DateLayout   string          // Go time layout for date columns; "" = "2006-01-02"
@@ -143,4 +144,14 @@ type RatingConfig struct {
 // DurationConfig describes the hours_played format.
 type DurationConfig struct {
 	Format string // "decimal" (SIMPLE) | "h:mm" (ADVANCED #1016, rejected)
+}
+
+// PlayLogConfig reads playtime and a completion tier from a JSON-array column of
+// play-session objects (Grouvee's "dates"). A recognized CompletionField value
+// overrides the shelf-derived play_status. Mutually exclusive with Duration.
+type PlayLogConfig struct {
+	Column          string            // JSON-array column of session objects
+	SecondsField    string            // numeric field; summed across entries, ÷3600 -> hours_played
+	CompletionField string            // completion-tier field
+	CompletionMap   map[string]string // normalized tier -> play_status; unrecognized ignored
 }
