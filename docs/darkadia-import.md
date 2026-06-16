@@ -133,7 +133,16 @@ The import therefore **consolidates** the two sources rather than choosing one (
 
 The import runs on Nexorious's existing **`jobs` / `job_items` import framework** — the same machinery the Nexorious-JSON importer already uses — **not** the storefront-sync pipeline. It reuses the IGDB matching *primitives* (title search, fuzzy-confidence scoring, the auto-resolve thresholds) and the generic, source-agnostic `job_items` review surface, but it does **not** create `external_games` staging rows, does not masquerade as a storefront, and does not touch the sync connection/config machinery. Each game becomes one `job_item`; the full consolidated per-game payload rides in that item's `source_metadata`. At a high level:
 
-1. **Upload & validate.** The user uploads the Darkadia CSV via a dedicated `darkadia` import source on the Import/Export page. The file is validated as a Darkadia export by its header row; non-Darkadia files are rejected with a clear error. The import is **refused up front** if IGDB is not configured (see below).
+> **Implementation note (#1016):** As of this refactor the Darkadia mapping is no
+> longer a bespoke parser — it is expressed as a `csvmap.Config` value
+> (`internal/services/csvmap/darkadia.go`) on the shared CSV engine, with **zero
+> behaviour change** to the column-to-game mapping. The import is reached through
+> the generic **CSV** card on the Import / Export page by selecting **Darkadia** in
+> the Format dropdown (there is no longer a dedicated Darkadia card), and the
+> resulting job is recorded with source `csv`. Everything this document describes
+> about the format and the resulting Nexorious data is unchanged.
+
+1. **Upload & validate.** The user uploads the Darkadia CSV via the generic **CSV** import card on the Import/Export page and selects **Darkadia** in the Format dropdown. The file is validated as a Darkadia export by its header row; non-Darkadia files are rejected with a clear error. The import is **refused up front** if IGDB is not configured (see below).
 2. **Parse & consolidate.** Rows are grouped into games and copies, and each game's owned platforms are consolidated (below). The full per-game payload (status, rating, loved, notes, added-date, and the consolidated platform/storefront/date list, with provenance lines already assembled) is written as one `job_item` per game, carried in `source_metadata`.
 3. **Match to IGDB.** Each game's title is matched against IGDB using the shared matching primitives. A confident, unambiguous match auto-resolves; anything low-confidence or tied is stored as candidates on the `job_item` and set to **`pending_review`** — surfaced through the generic `JobItemsDetails` review UI (reusing `IGDBMatchDialog`).
 4. **Finalize.** Once a game is resolved (automatically or by the user), it is written into the library: a `user_game` plus its `user_game_platforms`, with the Darkadia-derived fields applied under the additive merge rules below.
