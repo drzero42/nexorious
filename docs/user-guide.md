@@ -44,7 +44,7 @@ Open **Profile** from the user menu to manage your own account.
 - **Username** — you can change it. The page checks as you type whether the new name is free. Changing it signs you out, so you'll log back in with the new name.
 - **Password** — change it by entering your current password and a new one (at least 8 characters). A strength indicator gives you a rough sense of how good the new password is. Changing your password also signs you out.
 - **Deal region** — sets the region used for the price and deal links shown on wishlisted games, so the prices you see match where you actually buy.
-- **API keys** — create keys here if you want to talk to Nexorious from a script or the command-line tool. Each key has a name, a scope (read or write), and an optional expiry. A key's full value is shown only once when you create it, so copy it then. You can revoke a key at any time.
+- **API keys** — create keys here if you want to talk to Nexorious from a script or the command-line tool. Each key has a name, a scope, and an optional expiry. A **read** key can only read your data — any attempt to create, change, or delete is rejected — which makes it safe to hand to a script or third-party tool that only needs to look. A **write** key has full access. A key's full value is shown only once when you create it, so copy it then. You can revoke a key at any time.
 - **Notifications** — set up where you want to be notified and what about (see [Notifications](#notifications) below).
 
 At the bottom is a **Clear Library** action. It removes every game from your collection in one go and can't be undone, so it asks you to type a confirmation first. It clears your games — it doesn't delete your account.
