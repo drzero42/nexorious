@@ -428,3 +428,59 @@ func TestImportFinalize_TagsAndPlaytimeOnFirstPlatform(t *testing.T) {
 		t.Errorf("mac hours = %+v, want NULL", macHours)
 	}
 }
+
+// A wishlisted, platform-less game keeps is_wishlisted=true after finalize
+// (ClearWishlistOnAcquire only clears when a platform exists). A wishlisted game
+// that also has a platform is cleared (acquisition wins).
+func TestImportFinalize_WishlistFlag(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := "u-gv-wish"
+	insertTestUser(t, testDB, userID)
+	if _, err := testDB.NewRaw(`INSERT INTO games (id, title, last_updated, created_at) VALUES (314246, 'Borderlands 4', now(), now()), (71, 'Portal', now(), now())`).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wishlist-only (no platforms) -> stays wishlisted.
+	wishPayload := map[string]any{
+		"title": "Borderlands 4", "play_status": "not_started",
+		"is_wishlisted": true, "platforms": []map[string]any{},
+	}
+	_, wishItem := insertImportItem(t, userID, wishPayload)
+	if _, err := testDB.NewRaw(`UPDATE job_items SET resolved_igdb_id = 314246 WHERE id = ?`, wishItem).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wishlisted + owned (has a platform) -> cleared on acquire.
+	ownedPayload := map[string]any{
+		"title": "Portal", "play_status": "completed",
+		"is_wishlisted": true,
+		"platforms":     []map[string]any{{"platform": "pc-windows"}},
+	}
+	_, ownedItem := insertImportItem(t, userID, ownedPayload)
+	if _, err := testDB.NewRaw(`UPDATE job_items SET resolved_igdb_id = 71 WHERE id = ?`, ownedItem).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	for _, id := range []string{wishItem, ownedItem} {
+		if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: id}}); err != nil {
+			t.Fatalf("finalize %s: %v", id, err)
+		}
+	}
+
+	var wish models.UserGame
+	if err := testDB.NewSelect().Model(&wish).Where("user_id = ? AND game_id = 314246", userID).Scan(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !wish.IsWishlisted {
+		t.Errorf("platform-less wishlist game: is_wishlisted = false, want true")
+	}
+	var owned models.UserGame
+	if err := testDB.NewSelect().Model(&owned).Where("user_id = ? AND game_id = 71", userID).Scan(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if owned.IsWishlisted {
+		t.Errorf("owned game: is_wishlisted = true, want false (cleared on acquire)")
+	}
+}
