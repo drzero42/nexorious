@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -141,36 +140,6 @@ type csvInspectResponse struct {
 	Detected         *csvPresetInfo          `json:"detected,omitempty"`
 }
 
-// readUploadFile parses the multipart form and reads the "file" field, enforcing
-// the 50 MB limit. Returns the bytes or an *echo.HTTPError.
-func (h *ImportHandler) readUploadFile(c *echo.Context) ([]byte, error) {
-	if err := c.Request().ParseMultipartForm(maxImportBodyBytes); err != nil {
-		return nil, echo.NewHTTPError(http.StatusBadRequest, "failed to parse multipart form")
-	}
-	file, _, err := c.Request().FormFile("file")
-	if err != nil {
-		return nil, echo.NewHTTPError(http.StatusBadRequest, "missing file field")
-	}
-	defer func() { _ = file.Close() }()
-	lr := io.LimitReader(file, maxImportBodyBytes+1)
-	body, err := io.ReadAll(lr)
-	if err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to read file")
-	}
-	if len(body) > maxImportBodyBytes {
-		return nil, echo.NewHTTPError(http.StatusRequestEntityTooLarge, "file exceeds 50 MB limit")
-	}
-	return body, nil
-}
-
-// csvIGDBGuard returns a 400 *echo.HTTPError when IGDB is not configured.
-func (h *ImportHandler) csvIGDBGuard() error {
-	if h.igdbClient == nil || !h.igdbClient.Configured() {
-		return echo.NewHTTPError(http.StatusBadRequest, "IGDB must be configured to import a CSV collection")
-	}
-	return nil
-}
-
 // HandleImportCSVInspect handles POST /api/import/csv/inspect. It parses the
 // uploaded CSV and returns headers, data-row count, and per-column distinct
 // values (capped) to drive the mapping dialog.
@@ -179,7 +148,7 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	if err := h.csvIGDBGuard(); err != nil {
+	if err := h.igdbGuard("CSV"); err != nil {
 		return err
 	}
 	body, herr := h.readUploadFile(c)
@@ -281,7 +250,7 @@ func (h *ImportHandler) HandleImportCSV(c *echo.Context) error {
 	if userID == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
-	if err := h.csvIGDBGuard(); err != nil {
+	if err := h.igdbGuard("CSV"); err != nil {
 		return err
 	}
 	body, herr := h.readUploadFile(c)
