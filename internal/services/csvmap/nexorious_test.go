@@ -74,9 +74,16 @@ func TestNexoriousCSV_MapsRealFixture(t *testing.T) {
 	if r.IsLoved {
 		t.Errorf("rdr2 should not be loved")
 	}
+	if r.IGDBID == nil || *r.IGDBID != 25076 {
+		t.Errorf("rdr2 igdb = %v, want 25076", r.IGDBID)
+	}
 
-	// Blank play_status -> not_started; no platforms/tags.
+	// Blank play_status -> not_started; no platforms/tags. id still parses (the
+	// preset's whole point is id-matching every row).
 	b := games[2]
+	if b.IGDBID == nil || *b.IGDBID != 314246 {
+		t.Errorf("blank igdb = %v, want 314246", b.IGDBID)
+	}
 	if b.PlayStatus != "not_started" {
 		t.Errorf("blank status = %q, want not_started", b.PlayStatus)
 	}
