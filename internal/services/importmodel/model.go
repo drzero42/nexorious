@@ -18,6 +18,7 @@ type Game struct {
 	IGDBID         *int32     `json:"igdb_id,omitempty"` // when set (>0), import hydrates directly and skips title matching
 	PlayStatus     string     `json:"play_status"`
 	IsLoved        bool       `json:"is_loved"`
+	IsWishlisted   bool       `json:"is_wishlisted,omitempty"`
 	PersonalRating *int32     `json:"personal_rating,omitempty"`
 	PersonalNotes  *string    `json:"personal_notes,omitempty"`
 	CreatedAt      string     `json:"created_at,omitempty"` // "2006-01-02" or ""
