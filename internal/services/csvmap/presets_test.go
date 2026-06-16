@@ -61,3 +61,25 @@ func TestPresets_IncludesGrouvee(t *testing.T) {
 		t.Error("Presets() must list grouvee with DisplayName Grouvee")
 	}
 }
+
+func TestPresets_IncludesDarkadia(t *testing.T) {
+	cfg, ok := PresetBySlug("darkadia")
+	if !ok {
+		t.Fatal("darkadia preset not registered")
+	}
+	if cfg.Columns.Title != "Name" {
+		t.Errorf("Title column = %q, want Name", cfg.Columns.Title)
+	}
+	if cfg.Platform.Tables == nil {
+		t.Error("darkadia preset must use Platform.Tables")
+	}
+	found := false
+	for _, p := range Presets() {
+		if p.Slug == "darkadia" && p.DisplayName == "Darkadia" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Presets() omits the darkadia entry")
+	}
+}
