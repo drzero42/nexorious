@@ -90,34 +90,65 @@ jobs:
           DOCKER_HOST: unix:///var/run/docker.sock
           # The race detector requires cgo; the rest of the repo builds cgo-disabled.
           CGO_ENABLED: "1"
-        run: go test -race -timeout 600s ./...
+        run: |
+          set -o pipefail
+          # Tee the combined output so the failure step can tell a genuine data
+          # race apart from an ordinary (e.g. flaky) test failure: both make
+          # `go test` exit non-zero, but only a race prints "DATA RACE".
+          go test -race -timeout 600s ./... 2>&1 | tee race-output.log
+
+      - name: Classify failure (data race vs. plain test failure)
+        id: classify
+        if: failure()
+        run: |
+          # The race detector prints "WARNING: DATA RACE" only when it actually
+          # detects a race. Absent that marker, a non-zero exit is just a
+          # failing/flaky test — don't mislabel it as a data race.
+          if grep -q "DATA RACE" race-output.log; then
+            echo "is_race=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_race=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Open or update a failure issue
         if: failure()
+        env:
+          IS_RACE: ${{ steps.classify.outputs.is_race }}
         uses: actions/github-script@v9
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const label = 'race-detector';
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            // A genuine data race and a plain (e.g. flaky) test failure are
+            // different problems with different fixes, so they get distinct
+            // dedup labels, titles, and bodies — never conflated onto one issue.
+            const isRace = process.env.IS_RACE === 'true';
+            const label = isRace ? 'race-detector' : 'race-lane-failure';
+            const labelMeta = isRace
+              ? { color: 'd73a4a', description: 'Data race detected by the -race CI lane' }
+              : { color: 'fbca04', description: 'Test failure (not a data race) in the -race CI lane' };
+            const title = isRace
+              ? '`-race` CI lane detected a data race on main'
+              : '`-race` CI lane failed on main (test failure, not a data race)';
+            const summary = isRace
+              ? `The race detector reported a **data race** on \`${context.sha}\`.`
+              : `The \`-race\` lane **failed without reporting a data race** on \`${context.sha}\` — a test failure (possibly flaky) rather than a race.`;
 
             // Ensure the dedicated dedup label exists (created on first failure).
             try {
               await github.rest.issues.getLabel({ owner, repo, name: label });
             } catch (e) {
               if (e.status === 404) {
-                await github.rest.issues.createLabel({
-                  owner, repo, name: label, color: 'd73a4a',
-                  description: 'Data race detected by the -race CI lane',
-                });
+                await github.rest.issues.createLabel({ owner, repo, name: label, ...labelMeta });
               } else {
                 throw e;
               }
             }
 
             const body = [
-              `The race-detector workflow failed on \`${context.sha}\`.`,
+              summary,
               '',
               `**Failing run:** ${runUrl}`,
               '',
@@ -127,8 +158,9 @@ jobs:
               '```',
             ].join('\n');
 
-            // Dedup: reuse the single open race-detector issue if one exists,
-            // otherwise open a new one — so repeated failures don't spam.
+            // Dedup: reuse the single open issue carrying this label if one
+            // exists, otherwise open a new one — so repeated failures of the
+            // same kind don't spam.
             const open = await github.rest.issues.listForRepo({
               owner, repo, state: 'open', labels: label,
             });
@@ -139,7 +171,7 @@ jobs:
             } else {
               await github.rest.issues.create({
                 owner, repo,
-                title: '`-race` CI lane detected a data race on main',
+                title,
                 body,
                 labels: [label, 'tech-debt'],
               });

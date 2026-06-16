@@ -91,10 +91,20 @@ func TestHandleRun_202_ThenReady(t *testing.T) {
 		runtime.Gosched()
 		ch = h.Migrator().LogCh()
 	}
-	// Wait for migration to finish.
+	// Drain the log channel so the migration goroutine is never blocked on a
+	// full buffer.
 	for range ch {
 	}
 
+	// The channel closing only signals that the log stream is done; the state
+	// flip to Ready happens afterwards in the HandleRun goroutine (after
+	// RunMigrations returns). Poll for the terminal state rather than reading it
+	// the instant the channel closes, which races that flip — a window the
+	// race detector reliably loses.
+	deadline := time.Now().Add(2 * time.Second)
+	for h.Migrator().State() != migrate.AppStateReady && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if h.Migrator().State() != migrate.AppStateReady {
 		t.Errorf("expected Ready after migration, got %v", h.Migrator().State())
 	}
