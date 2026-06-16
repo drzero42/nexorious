@@ -47,12 +47,18 @@ type StatusConfig struct {
 	Flags  *StatusFlags  // ADVANCED #1016 (Parse rejects)
 }
 
-// StatusColumn derives play_status from a single column via a value map.
+// StatusColumn derives play_status from a single column (scalar or JSON-keys).
 type StatusColumn struct {
-	Column   string
-	ValueMap map[string]string // normalized source value -> play_status
-	Default  string            // empty/unmapped -> this; "" falls back to "not_started"
+	Column     string
+	Format     ColumnFormat      // "" scalar (default) | "json-keys"
+	ValueMap   map[string]string // normalized source value -> play_status, or WishlistStatus
+	Precedence []string          // normalized source values, highest priority first
+	Default    string            // empty/unmapped -> this; "" falls back to "not_started"
 }
+
+// WishlistStatus is the reserved ValueMap target that flags is_wishlisted rather
+// than setting play_status. play_status is then derived from the remaining values.
+const WishlistStatus = "wishlisted"
 
 // StatusFlags derives play_status from ordered boolean-flag columns (Darkadia).
 type StatusFlags struct {

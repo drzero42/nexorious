@@ -544,3 +544,58 @@ func TestDecodeKeys(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractStatus_JSONShelvesAndWishlist(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "name"},
+		Status: StatusConfig{Column: &StatusColumn{
+			Column: "shelves", Format: FormatJSONKeys,
+			ValueMap: map[string]string{
+				"playing": "in_progress", "played": "completed",
+				"backlog": "not_started", "wish list": WishlistStatus,
+			},
+			Precedence: []string{"playing", "played", "backlog"},
+			Default:    "not_started",
+		}},
+	}
+	idx := map[string]int{"shelves": 0}
+	cases := []struct {
+		shelves  string
+		wantStat string
+		wantWish bool
+	}{
+		{`{"Playing": {}}`, "in_progress", false},
+		{`{"Played": {}}`, "completed", false},
+		{`{"Backlog": {}}`, "not_started", false},
+		{`{"Played": {}, "Backlog": {}}`, "completed", false}, // precedence: played > backlog
+		{`{"Wish List": {}}`, "not_started", true},            // wishlist flag, status defaults
+		{`{"Playing": {}, "Wish List": {}}`, "in_progress", true},
+		{`{"Some Custom Shelf": {}}`, "not_started", false}, // unrecognized -> default
+		{`{}`, "not_started", false},
+	}
+	for _, c := range cases {
+		st, wish := extractStatus([]string{c.shelves}, idx, cfg)
+		if st != c.wantStat || wish != c.wantWish {
+			t.Errorf("shelves %s -> (%q,%v), want (%q,%v)", c.shelves, st, wish, c.wantStat, c.wantWish)
+		}
+	}
+}
+
+// The scalar status path (Completionator) is unchanged: one value, no precedence.
+func TestExtractStatus_ScalarUnchanged(t *testing.T) {
+	cfg := Config{
+		Columns: ColumnMap{Title: "name"},
+		Status: StatusConfig{Column: &StatusColumn{
+			Column:   "Progress Status",
+			ValueMap: map[string]string{"finished": "completed", "incomplete": "not_started"},
+			Default:  "not_started",
+		}},
+	}
+	idx := map[string]int{"progress status": 0}
+	if st, wish := extractStatus([]string{"Finished"}, idx, cfg); st != "completed" || wish {
+		t.Errorf("Finished -> (%q,%v), want (completed,false)", st, wish)
+	}
+	if st, _ := extractStatus([]string{""}, idx, cfg); st != "not_started" {
+		t.Errorf("empty -> %q, want not_started", st)
+	}
+}

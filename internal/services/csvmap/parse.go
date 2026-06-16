@@ -172,25 +172,44 @@ func buildMerged(rows [][]string, idx map[string]int, cfg Config) []importmodel.
 	return out
 }
 
-// extractStatus resolves play_status from the simple status column, or
-// "not_started" when no status column is configured.
-func extractStatus(rec []string, idx map[string]int, cfg Config) string {
+// extractStatus resolves the shelf-derived play_status and the wishlist flag from
+// the status column (scalar or JSON-keys). A value mapped to WishlistStatus sets
+// wishlisted; the remaining mapped values are play_status candidates, resolved by
+// Precedence (first listed present wins), else the single candidate (scalar
+// case), else Default.
+func extractStatus(rec []string, idx map[string]int, cfg Config) (status string, wishlisted bool) {
 	if cfg.Status.Column == nil {
-		return "not_started"
+		return "not_started", false
 	}
 	sc := cfg.Status.Column
 	def := sc.Default
 	if def == "" {
 		def = "not_started"
 	}
-	v := normKey(cell(rec, idx, sc.Column))
-	if v == "" {
-		return def
+	present := map[string]string{} // normalized source value -> mapped play_status
+	for _, v := range decodeKeys(cell(rec, idx, sc.Column), sc.Format) {
+		nv := normKey(v)
+		mapped, ok := sc.ValueMap[nv]
+		if !ok {
+			continue
+		}
+		if mapped == WishlistStatus {
+			wishlisted = true
+			continue
+		}
+		present[nv] = mapped
 	}
-	if status, ok := sc.ValueMap[v]; ok {
-		return status
+	for _, p := range sc.Precedence {
+		if s, ok := present[normKey(p)]; ok {
+			return s, wishlisted
+		}
 	}
-	return def
+	if len(sc.Precedence) == 0 {
+		for _, s := range present { // scalar case: at most one entry
+			return s, wishlisted
+		}
+	}
+	return def, wishlisted
 }
 
 // extractRating normalizes a raw rating to whole 1-5 stars per cfg.Rating.
@@ -356,9 +375,10 @@ func extractGame(rec []string, idx map[string]int, cfg Config) (importmodel.Game
 	if title == "" {
 		return importmodel.Game{}, false
 	}
+	status, _ := extractStatus(rec, idx, cfg)
 	g := importmodel.Game{
 		Title:      title,
-		PlayStatus: extractStatus(rec, idx, cfg),
+		PlayStatus: status,
 	}
 	g.IGDBID = extractIGDBID(rec, idx, cfg)
 	if r := extractRating(cell(rec, idx, cfg.Columns.Rating), cfg); r != nil {
