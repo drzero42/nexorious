@@ -1,6 +1,7 @@
 package csvmap
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -37,6 +38,31 @@ func cell(rec []string, idx map[string]int, colName string) string {
 		return ""
 	}
 	return strings.TrimSpace(rec[i])
+}
+
+// decodeKeys returns the values a column yields under format f. Scalar: the cell
+// as a single value (nil if blank). JSON-keys: the keys of a JSON object (nil for
+// "", "{}", a non-object, or unparseable JSON). Object key order is undefined;
+// callers that must pick one value apply an explicit precedence.
+func decodeKeys(cell string, f ColumnFormat) []string {
+	if cell == "" {
+		return nil
+	}
+	if f != FormatJSONKeys {
+		return []string{cell}
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(cell), &obj); err != nil {
+		return nil
+	}
+	if len(obj) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // MatchesSignature reports whether every name in cfg.Signature is present in

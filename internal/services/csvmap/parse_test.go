@@ -3,6 +3,8 @@ package csvmap
 import (
 	"errors"
 	"io"
+	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/services/importmodel"
@@ -512,5 +514,33 @@ func TestParse_EmptyFile_ReturnsEOF(t *testing.T) {
 	_, err := Parse([]byte{}, titleOnlyConfig())
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("want io.EOF on empty input, got %v", err)
+	}
+}
+
+func TestDecodeKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		cell string
+		f    ColumnFormat
+		want []string
+	}{
+		{"scalar value", "PC", FormatScalar, []string{"PC"}},
+		{"scalar blank", "", FormatScalar, nil},
+		{"json object keys", `{"Played": {"x": 1}, "Backlog": {}}`, FormatJSONKeys, []string{"Backlog", "Played"}},
+		{"json empty object", "{}", FormatJSONKeys, nil},
+		{"json blank", "", FormatJSONKeys, nil},
+		{"json malformed", `{"Played": `, FormatJSONKeys, nil},
+		{"json not-an-object", `["a","b"]`, FormatJSONKeys, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := decodeKeys(tt.cell, tt.f)
+			sort.Strings(got)
+			want := append([]string(nil), tt.want...)
+			sort.Strings(want)
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("decodeKeys(%q,%q) = %v, want %v", tt.cell, tt.f, got, want)
+			}
+		})
 	}
 }

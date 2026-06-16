@@ -6,6 +6,14 @@
 // their behaviour. See docs/superpowers/specs/2026-06-14-issue-1014-csvmap-engine-design.md.
 package csvmap
 
+// ColumnFormat selects how a configured column's cell is read.
+type ColumnFormat string
+
+const (
+	FormatScalar   ColumnFormat = ""          // default: the trimmed cell is the single value
+	FormatJSONKeys ColumnFormat = "json-keys" // cell is a JSON object; its keys are the values
+)
+
 // Config declaratively describes how to turn one source's CSV into canonical
 // importmodel.Game values.
 type Config struct {
