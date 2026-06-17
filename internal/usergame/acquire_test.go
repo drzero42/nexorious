@@ -2,6 +2,7 @@ package usergame
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -132,6 +133,28 @@ func TestAcquire_SyncFromSourcePersistedCorrectly(t *testing.T) {
 	}
 	if restFlag {
 		t.Error("sync_from_source should be false for REST/import-acquired platform")
+	}
+}
+
+func TestAcquire_NilHoursPlayedPersistsNull(t *testing.T) {
+	truncateAllTables(t)
+	u := seedUser(t)
+	seedGame(t, 600, "Celeste")
+	res, err := Acquire(context.Background(), testDB, AcquireParams{
+		UserID: u, GameID: 600, Mode: ModeUpsert,
+		Platforms: []PlatformInput{{Platform: strptr("pc-windows"), Storefront: strptr("steam"), HoursPlayed: nil}},
+	})
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	var hp sql.NullFloat64
+	if err := testDB.NewRaw(
+		`SELECT hours_played FROM user_game_platforms WHERE user_game_id = ?`, res.UserGameID,
+	).Scan(context.Background(), &hp); err != nil {
+		t.Fatalf("scan hours_played: %v", err)
+	}
+	if hp.Valid {
+		t.Errorf("expected NULL hours_played, got %v", hp.Float64)
 	}
 }
 

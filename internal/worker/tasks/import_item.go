@@ -169,12 +169,15 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 	}
 	alreadyExists := err == nil
 
-	// Build and insert UserGame (skip if already exists)
+	// Build and insert UserGame (skip if already exists).
+	// The full metadata row (play_status, personal_rating, timestamps, etc.) is
+	// written here on first import; Acquire(ModeUpsert) below will no-op the
+	// user_game upsert (DO UPDATE SET updated_at only) and handle platforms+tags.
+	// importedUpdatedAt tracks the caller-supplied updated_at so we can restore
+	// it after Acquire's upsert clobbers it with now().
 	now := time.Now().UTC()
-	var ug *models.UserGame
-	if alreadyExists {
-		ug = &existingUG
-	} else {
+	var importedUpdatedAt *time.Time
+	if !alreadyExists {
 		createdAt := now
 		updatedAt := now
 		if gd.CreatedAt != nil {
@@ -185,6 +188,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		if gd.UpdatedAt != nil {
 			if t, err := time.Parse(time.RFC3339, *gd.UpdatedAt); err == nil {
 				updatedAt = t.UTC()
+				importedUpdatedAt = &updatedAt
 			}
 		}
 
@@ -198,7 +202,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 
 		playStatus := coercePlayStatus(ctx, gd.PlayStatus)
 
-		ug = &models.UserGame{
+		ug := &models.UserGame{
 			ID:             uuid.NewString(),
 			UserID:         item.UserID,
 			GameID:         gd.IGDBID,
@@ -210,39 +214,18 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			CreatedAt:      createdAt,
 			UpdatedAt:      updatedAt,
 		}
-		_, err = w.DB.NewInsert().Model(ug).Exec(ctx)
-		if err != nil {
+		if _, err = w.DB.NewInsert().Model(ug).Exec(ctx); err != nil {
 			markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("insert user_game: %v", err), "import_item: markItemFailed")
 			checkJobCompletion(w.DB, item.JobID)
 			return nil
 		}
 	}
+	_ = existingUG // queried above only to determine alreadyExists
 
-	// Platforms
-	// Build a set of existing (platform, storefront) pairs to avoid duplicates
-	// when merging into an existing UserGame.
-	type platformKey struct{ platform, storefront string }
-	existingPlatforms := map[platformKey]bool{}
-	if alreadyExists {
-		var existingUGPs []models.UserGamePlatform
-		if err := w.DB.NewSelect().Model(&existingUGPs).
-			Where("user_game_id = ?", ug.ID).Scan(ctx); err == nil {
-			for _, ugp := range existingUGPs {
-				p := ""
-				if ugp.Platform != nil {
-					p = *ugp.Platform
-				}
-				s := ""
-				if ugp.Storefront != nil {
-					s = *ugp.Storefront
-				}
-				existingPlatforms[platformKey{p, s}] = true
-			}
-		}
-	}
-
-	newPlatformCount := 0
-	newTagCount := 0
+	// Build platform inputs, verifying each platform/storefront against the DB
+	// (platforms not in the seed data are silently skipped; storefronts not found
+	// are recorded with a NULL storefront and a warning).
+	var plats []usergame.PlatformInput
 	for _, pd := range gd.Platforms {
 		if pd.Platform == "" {
 			continue
@@ -270,15 +253,6 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			}
 		}
 
-		// Skip if this (platform, storefront) pair is already recorded.
-		sStr := ""
-		if storefrontPtr != nil {
-			sStr = *storefrontPtr
-		}
-		if existingPlatforms[platformKey{platformName, sStr}] {
-			continue
-		}
-
 		ownership := pd.OwnershipStatus
 		if ownership == nil || !enum.OwnershipStatus(*ownership).Valid() {
 			if ownership != nil {
@@ -288,72 +262,79 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			ownership = &owned
 		}
 
-		ugp := &models.UserGamePlatform{
-			ID:              uuid.NewString(),
-			UserGameID:      ug.ID,
+		plats = append(plats, usergame.PlatformInput{
 			Platform:        &platformName,
 			Storefront:      storefrontPtr,
-			IsAvailable:     pd.IsAvailable == nil || *pd.IsAvailable, // absent ⇒ available; sync re-derives
+			IsAvailable:     pd.IsAvailable, // nil ⇒ Acquire defaults to true
 			HoursPlayed:     pd.HoursPlayed,
 			OwnershipStatus: ownership,
 			AcquiredDate:    parseFlexibleDate(pd.AcquiredDate),
-			CreatedAt:       now,
-			UpdatedAt:       now,
+			// SyncFromSource intentionally omitted (false) — imports are not storefront syncs.
+		})
+	}
+
+	// Build tag inputs.
+	tags := make([]usergame.TagInput, 0, len(gd.Tags))
+	for _, td := range gd.Tags {
+		tags = append(tags, usergame.TagInput{Name: td.Name, Color: td.Color})
+	}
+
+	// Snapshot the tag count BEFORE Acquire so we can detect newly merged links.
+	// (Acquire merges tags additively; counting after would make existingTagCount
+	// equal totalTagCount and produce newTagCount = 0.)
+	existingTagCount := 0
+	if alreadyExists && len(tags) > 0 {
+		if err := w.DB.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM user_game_tags ugt"+
+				" JOIN user_games ug ON ug.id = ugt.user_game_id"+
+				" WHERE ug.user_id = ? AND ug.game_id = ?", item.UserID, gd.IGDBID,
+		).Scan(&existingTagCount); err != nil {
+			existingTagCount = 0
 		}
-		if _, err := w.DB.NewInsert().Model(ugp).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "import_item: insert user_game_platform", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		} else {
+	}
+
+	// Acquire upserts the user_game (no-op if it already exists), merges platforms
+	// (max-hours, ownership upgrade), clears wishlist on acquire, auto-promotes
+	// play_status, and merges tags additively.
+	res, err := usergame.Acquire(ctx, w.DB, usergame.AcquireParams{
+		UserID: item.UserID, GameID: gd.IGDBID, Mode: usergame.ModeUpsert,
+		Platforms: plats, Tags: tags, TagMode: usergame.TagMerge,
+	})
+	if err != nil {
+		markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("acquire: %v", err), "import_item: markItemFailed")
+		checkJobCompletion(w.DB, item.JobID)
+		return nil
+	}
+
+	// Acquire(ModeUpsert)'s ON CONFLICT DO UPDATE SET updated_at = now() fires
+	// even when the row was just freshly inserted by this worker (above) with a
+	// caller-supplied updated_at. Restore it so imported timestamps are preserved.
+	if importedUpdatedAt != nil {
+		if _, err := w.DB.NewRaw(
+			`UPDATE user_games SET updated_at = ? WHERE user_id = ? AND game_id = ?`,
+			*importedUpdatedAt, item.UserID, gd.IGDBID,
+		).Exec(ctx); err != nil {
+			slog.WarnContext(ctx, "import_item: restore updated_at", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		}
+	}
+
+	// Determine change type for the changes table.
+	newPlatformCount := 0
+	for _, ch := range res.PlatformChanges {
+		if ch.Created {
 			newPlatformCount++
 		}
 	}
-	if err := usergame.ClearWishlistOnAcquire(ctx, w.DB, ug.ID); err != nil {
-		slog.WarnContext(ctx, "import_item: clear wishlist on acquire", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
-	}
-
-	// Auto-promote not_started → in_progress when the game has any played hours,
-	// matching the storefront sync path. The shared helper sums all the game's
-	// platforms in the DB and its play_status = 'not_started' guard makes it a
-	// no-op when the source supplied an explicit status (issue #1061).
-	if err := usergame.PromoteToInProgressIfPlayed(ctx, w.DB, ug.ID); err != nil {
-		slog.WarnContext(ctx, "import_item: auto-promote play_status", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
-	}
-
-	// Tags
-	// Build existing tag set to avoid duplicates when merging.
-	existingTagIDs := map[string]bool{}
-	if alreadyExists {
-		var existingUGTs []models.UserGameTag
-		if err := w.DB.NewSelect().Model(&existingUGTs).
-			Where("user_game_id = ?", ug.ID).Scan(ctx); err == nil {
-			for _, ugt := range existingUGTs {
-				existingTagIDs[ugt.TagID] = true
-			}
+	// Count total tags post-Acquire; diff against the pre-Acquire snapshot.
+	var totalTagCount int
+	if len(tags) > 0 {
+		if err := w.DB.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM user_game_tags WHERE user_game_id = ?", res.UserGameID,
+		).Scan(&totalTagCount); err != nil {
+			totalTagCount = 0
 		}
 	}
-
-	for _, td := range gd.Tags {
-		tagID, err := usergame.ResolveOrCreateTag(ctx, w.DB, item.UserID, td.Name, td.Color)
-		if err != nil {
-			markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("find/create tag %q: %v", td.Name, err), "import_item: markItemFailed")
-			checkJobCompletion(w.DB, item.JobID)
-			return nil
-		}
-		if existingTagIDs[tagID] {
-			continue
-		}
-
-		ugt := &models.UserGameTag{
-			ID:         uuid.NewString(),
-			UserGameID: ug.ID,
-			TagID:      tagID,
-			CreatedAt:  now,
-		}
-		if _, err := w.DB.NewInsert().Model(ugt).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "import_item: insert user_game_tag", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		} else {
-			newTagCount++
-		}
-	}
+	newTagCount := totalTagCount - existingTagCount
 
 	// Mark item completed
 	// Record a per-item change row mirroring the sync worker's `changes` writes.
@@ -368,14 +349,14 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 	if _, err := w.DB.NewRaw(
 		`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, created_at)
 		 VALUES (?, ?, ?, NULL, ?, ?, ?, now())`,
-		uuid.NewString(), item.JobID, item.UserID, ug.ID, changeType, item.SourceTitle,
+		uuid.NewString(), item.JobID, item.UserID, res.UserGameID, changeType, item.SourceTitle,
 	).Exec(ctx); err != nil {
 		slog.WarnContext(ctx, "import_item: insert change", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
 	result := map[string]any{
 		"game_id":         gd.IGDBID,
-		"user_game_id":    ug.ID,
+		"user_game_id":    res.UserGameID,
 		"is_new_addition": !alreadyExists,
 		"already_exists":  alreadyExists,
 	}

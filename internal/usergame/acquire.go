@@ -128,12 +128,14 @@ func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformI
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		ch.Created = true
+		// Bind in.HoursPlayed (*float64) directly so nil → SQL NULL.
+		// Do NOT use the coerced `hours` local here (nil → 0 is wrong for INSERT).
 		_, err := tx.NewRaw(
 			`INSERT INTO user_game_platforms
 			 (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, external_game_id, acquired_date, sync_from_source, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
 			 ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
-			uuid.NewString(), ugID, in.Platform, in.Storefront, available, hours, ownership, in.ExternalGameID, in.AcquiredDate, in.SyncFromSource,
+			uuid.NewString(), ugID, in.Platform, in.Storefront, available, in.HoursPlayed, ownership, in.ExternalGameID, in.AcquiredDate, in.SyncFromSource,
 		).Exec(ctx)
 		if err != nil {
 			return ch, fmt.Errorf("insert platform: %w", err)
@@ -152,6 +154,8 @@ func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformI
 			ch.NewOwnership = &o
 			finalOwnership = ownership
 		}
+		// UPDATE branch: use coerced `hours` (0 if nil) for max comparison.
+		// This is correct — the UPDATE always writes a concrete value.
 		finalHours := hours
 		if existingHours != nil && *existingHours > finalHours {
 			finalHours = *existingHours
