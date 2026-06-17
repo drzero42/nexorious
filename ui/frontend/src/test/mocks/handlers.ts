@@ -223,47 +223,6 @@ export const handlers = [
     });
   }),
 
-  // Assign tags to game
-  http.post(`${API_URL}/tags/assign/:userGameId`, async ({ request }) => {
-    const body = (await request.json()) as { tag_ids: string[] };
-    return HttpResponse.json({
-      message: 'Tags assigned successfully',
-      new_associations: body.tag_ids.length,
-      total_requested: body.tag_ids.length,
-    });
-  }),
-
-  // Remove tags from game
-  http.delete(`${API_URL}/tags/remove/:userGameId`, async ({ request }) => {
-    const body = (await request.json()) as { tag_ids: string[] };
-    return HttpResponse.json({
-      message: 'Tags removed successfully',
-      removed_associations: body.tag_ids.length,
-      total_requested: body.tag_ids.length,
-    });
-  }),
-
-  // Create or get tag
-  http.post(`${API_URL}/tags/create-or-get`, ({ request }) => {
-    const url = new URL(request.url);
-    const name = url.searchParams.get('name') ?? 'New Tag';
-    const color = url.searchParams.get('color') ?? '#808080';
-
-    return HttpResponse.json({
-      tag: {
-        id: `tag-${Date.now()}`,
-        user_id: 'test-user-id',
-        name,
-        color,
-        description: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        game_count: 0,
-      },
-      created: true,
-    });
-  }),
-
   // Jobs endpoints
   http.get(`${API_URL}/jobs/status/:job_type`, () => {
     return HttpResponse.json({
