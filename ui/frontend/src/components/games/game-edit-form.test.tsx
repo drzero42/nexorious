@@ -36,23 +36,24 @@ const hooks = vi.hoisted(() => ({
   addPlatform: vi.fn(),
   removePlatform: vi.fn(),
   updatePlatform: vi.fn(),
-  assignTags: vi.fn(),
-  removeTags: vi.fn(),
-  createOrGetTag: vi.fn(),
+  replaceTags: vi.fn(),
+  createTag: vi.fn(),
 }));
 
-const state = vi.hoisted(() => ({ platforms: [] as unknown[] }));
+const state = vi.hoisted(() => ({
+  platforms: [] as unknown[],
+  tags: [] as { id: string; name: string; color: string }[],
+}));
 
 vi.mock('@/hooks', () => ({
   useUpdateUserGame: () => ({ mutateAsync: hooks.updateGame }),
   useAddPlatformToUserGame: () => ({ mutateAsync: hooks.addPlatform }),
   useRemovePlatformFromUserGame: () => ({ mutateAsync: hooks.removePlatform }),
   useUpdatePlatformAssociation: () => ({ mutateAsync: hooks.updatePlatform }),
-  useAssignTagsToGame: () => ({ mutateAsync: hooks.assignTags }),
-  useRemoveTagsFromGame: () => ({ mutateAsync: hooks.removeTags }),
+  useReplaceUserGameTags: () => ({ mutateAsync: hooks.replaceTags, isPending: false }),
   useAllPlatforms: () => ({ data: state.platforms, isLoading: false }),
-  useAllTags: () => ({ data: [], isLoading: false }),
-  useCreateOrGetTag: () => ({ mutateAsync: hooks.createOrGetTag }),
+  useAllTags: () => ({ data: state.tags, isLoading: false }),
+  useCreateTag: () => ({ mutateAsync: hooks.createTag }),
   useSyncConfig: () => ({ data: null }),
 }));
 
@@ -150,6 +151,7 @@ describe('GameEditForm', () => {
     mockNavigate.mockReset();
     Object.values(hooks).forEach((fn) => fn.mockResolvedValue({}));
     state.platforms = [];
+    state.tags = [];
   });
 
   it('renders the form with game title', async () => {
@@ -279,5 +281,81 @@ describe('GameEditForm', () => {
     );
     // The existing Steam row is untouched.
     expect(hooks.removePlatform).not.toHaveBeenCalled();
+  });
+
+  it('saves the selected tags as names via replace-set on save (#1054)', async () => {
+    const user = userEvent.setup();
+    state.tags = [{ id: 'tag-1', name: 'RPG', color: '#FF5733' }];
+    render(<GameEditForm game={mockGame} />);
+
+    await user.click(screen.getAllByRole('button', { name: /save changes/i })[0]);
+
+    await waitFor(() => {
+      expect(hooks.replaceTags).toHaveBeenCalledWith({
+        userGameId: mockGame.id,
+        tags: ['RPG'],
+      });
+    });
+  });
+
+  it('preserves inline-created tag name on save without server refetch (#1054)', async () => {
+    // Regression: before the fix, a tag created inline (via handleCreateTag) was
+    // added to selectedTagIds but NOT to tagNameById (which was derived only from
+    // the server `tags` list). On save, tagNameById.get(created.id) returned
+    // undefined and the name was filtered out, so replaceTags received [] instead
+    // of ['Indie'].
+    const user = userEvent.setup();
+
+    // No pre-existing tags in the server list — simulates a fresh state where
+    // 'Indie' doesn't exist yet and won't appear in allTags without the fix.
+    state.tags = [];
+
+    const createdTag: {
+      id: string;
+      name: string;
+      color: string;
+      user_id: string;
+      created_at: string;
+      updated_at: string;
+    } = {
+      id: 'tag-new',
+      name: 'Indie',
+      color: '#888888',
+      user_id: 'u1',
+      created_at: '',
+      updated_at: '',
+    };
+    hooks.createTag.mockResolvedValue(createdTag);
+
+    // Game with no initial tags so the only tag in the save payload comes from
+    // the inline creation.
+    const noTagGame: typeof mockGame = { ...mockGame, tags: [] };
+    render(<GameEditForm game={noTagGame} />);
+
+    // Open the tag selector popover.
+    await user.click(screen.getByRole('combobox', { name: /select tags/i }));
+
+    // Type the new tag name so the "Create" option appears.
+    const searchInput = screen.getByPlaceholderText('Search tags...');
+    await user.type(searchInput, 'Indie');
+
+    // Click the "Create «Indie»" command item (role=option in cmdk).
+    const createOption = await screen.findByRole('option', { name: /Create "Indie"/i });
+    await user.click(createOption);
+
+    // Wait for createTag to have been called (handleCreateTag is async).
+    await waitFor(() => expect(hooks.createTag).toHaveBeenCalledWith({ name: 'Indie' }));
+
+    // Now save the form.
+    await user.click(screen.getAllByRole('button', { name: /save changes/i })[0]);
+
+    // The fix ensures the created tag's name is resolved via allTags (which
+    // includes createdTags), so replaceTags receives ['Indie'] not [].
+    await waitFor(() => {
+      expect(hooks.replaceTags).toHaveBeenCalledWith({
+        userGameId: noTagGame.id,
+        tags: ['Indie'],
+      });
+    });
   });
 });

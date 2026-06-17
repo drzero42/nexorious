@@ -277,7 +277,7 @@ func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFi
 	}
 	newTags := 0
 	for _, name := range payload.Tags {
-		tagID, terr := findOrCreateTag(ctx, w.DB, item.UserID, name, nil)
+		tagID, terr := usergame.ResolveOrCreateTag(ctx, w.DB, item.UserID, name, nil)
 		if terr != nil {
 			// Unlike the JSON importer (which fails the item), a tag error here
 			// is logged and skipped: this is a one-off migration where dropping

@@ -89,6 +89,25 @@ describe('TagSelector', () => {
     expect(trigger).toHaveTextContent('RPG');
   });
 
+  it('renders a selected tag with null color without crashing (#1054)', () => {
+    // Tags created without an explicit color (auto-created on assignment,
+    // imported, or inline-created) come back from the API with color: null.
+    const nullColorTag = {
+      id: '99',
+      user_id: 'user1',
+      name: 'NoColor',
+      color: null,
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    } as unknown as Tag;
+
+    render(
+      <TagSelector selectedTagIds={['99']} availableTags={[nullColorTag]} onChange={vi.fn()} />,
+    );
+
+    expect(screen.getByRole('combobox', { name: 'Select tags' })).toHaveTextContent('NoColor');
+  });
+
   it('shows "+N more" badge when more than 3 tags are selected', () => {
     render(
       <TagSelector

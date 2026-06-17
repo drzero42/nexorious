@@ -332,7 +332,7 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 	}
 
 	for _, td := range gd.Tags {
-		tagID, err := findOrCreateTag(ctx, w.DB, item.UserID, td.Name, td.Color)
+		tagID, err := usergame.ResolveOrCreateTag(ctx, w.DB, item.UserID, td.Name, td.Color)
 		if err != nil {
 			markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("find/create tag %q: %v", td.Name, err), "import_item: markItemFailed")
 			checkJobCompletion(w.DB, item.JobID)
@@ -382,35 +382,6 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 	markItemCompletedWithResult(context.Background(), w.DB, &item, result, "import_item: markItemCompleted")
 	checkJobCompletion(w.DB, item.JobID)
 	return nil
-}
-
-// findOrCreateTag finds a tag by name (case-insensitive) for the user, or creates it.
-func findOrCreateTag(ctx context.Context, db *bun.DB, userID, name string, color *string) (string, error) {
-	var tag models.Tag
-	err := db.NewSelect().Model(&tag).
-		Where("user_id = ? AND LOWER(name) = LOWER(?)", userID, name).
-		Scan(ctx)
-	if err == nil {
-		return tag.ID, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return "", fmt.Errorf("select tag: %w", err)
-	}
-
-	now := time.Now().UTC()
-	tag = models.Tag{
-		ID:        uuid.NewString(),
-		UserID:    userID,
-		Name:      name,
-		Color:     color,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	_, err = db.NewInsert().Model(&tag).Exec(ctx)
-	if err != nil {
-		return "", fmt.Errorf("insert tag: %w", err)
-	}
-	return tag.ID, nil
 }
 
 // applyImportedPools reads the synthetic pools job_item for a finished import job

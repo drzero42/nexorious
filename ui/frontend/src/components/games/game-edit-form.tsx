@@ -22,11 +22,10 @@ import {
   useAddPlatformToUserGame,
   useRemovePlatformFromUserGame,
   useUpdatePlatformAssociation,
-  useAssignTagsToGame,
-  useRemoveTagsFromGame,
+  useReplaceUserGameTags,
   useAllPlatforms,
   useAllTags,
-  useCreateOrGetTag,
+  useCreateTag,
   useSyncConfig,
 } from '@/hooks';
 import { SyncStorefront, SyncFrequency } from '@/types/sync';
@@ -34,7 +33,7 @@ import { formatHoursPlayed, resolveImageUrl, toDateInputValue } from '@/lib/game
 import { planPlatformChanges, type PlatformDetailState } from './platform-reconcile';
 import { PlatformDetailFields } from './platform-detail-fields';
 import { PlayStatus, OwnershipStatus } from '@/types';
-import type { UserGame } from '@/types';
+import type { Tag, UserGame } from '@/types';
 import { ArrowLeft, Save, Loader2, Heart } from 'lucide-react';
 
 // Status options
@@ -84,6 +83,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
   );
   const [personalNotes, setPersonalNotes] = useState(game.personal_notes ?? '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(game.tags?.map((t) => t.id) ?? []);
+  const [createdTags, setCreatedTags] = useState<Tag[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformSelection[]>(
     game.platforms
       .filter((p) => p.platform)
@@ -109,17 +109,15 @@ export function GameEditForm({ game }: GameEditFormProps) {
   const addPlatform = useAddPlatformToUserGame();
   const removePlatform = useRemovePlatformFromUserGame();
   const updatePlatformAssoc = useUpdatePlatformAssociation();
-  const assignTags = useAssignTagsToGame();
-  const removeTags = useRemoveTagsFromGame();
-  const createOrGetTag = useCreateOrGetTag();
+  const replaceTags = useReplaceUserGameTags();
+  const createTag = useCreateTag();
 
   const isSaving =
     updateGame.isPending ||
     addPlatform.isPending ||
     removePlatform.isPending ||
     updatePlatformAssoc.isPending ||
-    assignTags.isPending ||
-    removeTags.isPending;
+    replaceTags.isPending;
 
   // Selections that have a platform chosen (blank rows from "Add platform" are
   // ignored until the user picks a platform).
@@ -149,8 +147,13 @@ export function GameEditForm({ game }: GameEditFormProps) {
     [activeSelections, platformPlaytimes],
   );
 
-  // Track original tag ids for comparison
-  const originalTagIds = useMemo(() => game.tags?.map((t) => t.id) ?? [], [game.tags]);
+  const allTags = useMemo(() => {
+    const byId = new Map<string, Tag>();
+    for (const t of tags) byId.set(t.id, t);
+    for (const t of createdTags) byId.set(t.id, t);
+    return [...byId.values()];
+  }, [tags, createdTags]);
+  const tagNameById = useMemo(() => new Map(allTags.map((t) => [t.id, t.name])), [allTags]);
 
   const handleSave = async () => {
     try {
@@ -212,23 +215,11 @@ export function GameEditForm({ game }: GameEditFormProps) {
         });
       }
 
-      // 3. Handle tag changes
-      const tagsToAdd = selectedTagIds.filter((id) => !originalTagIds.includes(id));
-      const tagsToRemove = originalTagIds.filter((id) => !selectedTagIds.includes(id));
-
-      if (tagsToAdd.length > 0) {
-        await assignTags.mutateAsync({
-          userGameId: game.id,
-          tagIds: tagsToAdd,
-        });
-      }
-
-      if (tagsToRemove.length > 0) {
-        await removeTags.mutateAsync({
-          userGameId: game.id,
-          tagIds: tagsToRemove,
-        });
-      }
+      // 3. Replace the full tag set (resolved by name on the backend).
+      const tagNames = selectedTagIds
+        .map((id) => tagNameById.get(id))
+        .filter((name): name is string => name !== undefined);
+      await replaceTags.mutateAsync({ userGameId: game.id, tags: tagNames });
 
       toast.success('Game updated successfully');
       navigate({ to: `/games/${game.id}` });
@@ -240,11 +231,10 @@ export function GameEditForm({ game }: GameEditFormProps) {
 
   const handleCreateTag = async (name: string) => {
     try {
-      const result = await createOrGetTag.mutateAsync({ name });
-      setSelectedTagIds((prev) => [...prev, result.tag.id]);
-      if (result.created) {
-        toast.success(`Tag "${name}" created`);
-      }
+      const created = await createTag.mutateAsync({ name });
+      setCreatedTags((prev) => [...prev, created]);
+      setSelectedTagIds((prev) => [...prev, created.id]);
+      toast.success(`Tag "${name}" created`);
     } catch (error) {
       console.error('Failed to create tag:', error);
       toast.error('Failed to create tag');
@@ -443,7 +433,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
           ) : (
             <TagSelector
               selectedTagIds={selectedTagIds}
-              availableTags={tags}
+              availableTags={allTags}
               onChange={setSelectedTagIds}
               onCreateTag={handleCreateTag}
               allowCreate

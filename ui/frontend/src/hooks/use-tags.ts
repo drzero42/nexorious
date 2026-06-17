@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as tagsApi from '@/api/tags';
 import type { GetTagsParams, TagsListResponse, TagCreateData, TagUpdateData } from '@/api/tags';
-import type { Tag } from '@/types';
+import type { Tag, UserGame } from '@/types';
 import { gameKeys } from './use-games';
 
 // Query Keys
@@ -48,19 +48,6 @@ export function useCreateTag() {
   });
 }
 
-export function useCreateOrGetTag() {
-  const queryClient = useQueryClient();
-
-  return useMutation<{ tag: Tag; created: boolean }, Error, { name: string; color?: string }>({
-    mutationFn: ({ name, color }) => tagsApi.createOrGetTag(name, color),
-    onSuccess: (result) => {
-      if (result.created) {
-        queryClient.invalidateQueries({ queryKey: tagKeys.lists() });
-      }
-    },
-  });
-}
-
 export function useUpdateTag() {
   const queryClient = useQueryClient();
 
@@ -84,33 +71,14 @@ export function useDeleteTag() {
   });
 }
 
-export function useAssignTagsToGame() {
+export function useReplaceUserGameTags() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    { message: string; newAssociations: number; totalRequested: number },
-    Error,
-    { userGameId: string; tagIds: string[] }
-  >({
-    mutationFn: ({ userGameId, tagIds }) => tagsApi.assignTagsToGame(userGameId, tagIds),
+  return useMutation<UserGame, Error, { userGameId: string; tags: string[] }>({
+    mutationFn: ({ userGameId, tags }) => tagsApi.replaceUserGameTags(userGameId, tags),
     onSuccess: (_result, { userGameId }) => {
       queryClient.invalidateQueries({ queryKey: gameKeys.detail(userGameId) });
-      queryClient.invalidateQueries({ queryKey: tagKeys.lists() });
-    },
-  });
-}
-
-export function useRemoveTagsFromGame() {
-  const queryClient = useQueryClient();
-
-  return useMutation<
-    { message: string; removedAssociations: number; totalRequested: number },
-    Error,
-    { userGameId: string; tagIds: string[] }
-  >({
-    mutationFn: ({ userGameId, tagIds }) => tagsApi.removeTagsFromGame(userGameId, tagIds),
-    onSuccess: (_result, { userGameId }) => {
-      queryClient.invalidateQueries({ queryKey: gameKeys.detail(userGameId) });
+      queryClient.invalidateQueries({ queryKey: gameKeys.lists() });
       queryClient.invalidateQueries({ queryKey: tagKeys.lists() });
     },
   });
