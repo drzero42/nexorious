@@ -28,7 +28,7 @@ type UpdateFieldsParams struct {
 }
 
 // UpdateFields applies a partial update to a user_games row. Only non-nil
-// fields are written. If PlayStatus is set, RemoveFromPoolsIfFinished is called
+// fields are written. If PlayStatus is set, removeFromPoolsIfFinished is called
 // inside the same transaction. Returns ErrNotFound if the row does not belong
 // to the user, ErrValidation if play_status is invalid.
 func UpdateFields(ctx context.Context, db *bun.DB, p UpdateFieldsParams) error {
@@ -93,7 +93,7 @@ func UpdateFields(ctx context.Context, db *bun.DB, p UpdateFieldsParams) error {
 		}
 
 		if p.PlayStatus != nil {
-			if err := RemoveFromPoolsIfFinished(ctx, tx, p.UserGameID); err != nil {
+			if err := removeFromPoolsIfFinished(ctx, tx, p.UserGameID); err != nil {
 				return fmt.Errorf("remove from pools: %w", err)
 			}
 		}
@@ -109,7 +109,7 @@ type ProgressParams struct {
 }
 
 // RecordProgress verifies ownership, sets play_status on the user_games row,
-// then calls PromoteToInProgressIfPlayed so any accrued platform hours are
+// then calls promoteToInProgressIfPlayed so any accrued platform hours are
 // reflected in the status when transitioning from not_started.
 // RowsAffected==0 → ErrNotFound. Returns ErrValidation for an invalid status.
 func RecordProgress(ctx context.Context, db *bun.DB, p ProgressParams) error {
@@ -134,7 +134,7 @@ func RecordProgress(ctx context.Context, db *bun.DB, p ProgressParams) error {
 			return ErrNotFound
 		}
 
-		return PromoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
+		return promoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
 	})
 }
 
@@ -146,7 +146,7 @@ type BulkStatusParams struct {
 }
 
 // SetPlayStatusBulk updates play_status on each supplied user_game row (owned
-// by UserID) and calls RemoveFromPoolsIfFinished for each, all in one
+// by UserID) and calls removeFromPoolsIfFinished for each, all in one
 // transaction. Returns the count of rows actually updated.
 func SetPlayStatusBulk(ctx context.Context, db *bun.DB, p BulkStatusParams) (int, error) {
 	if !enum.PlayStatus(p.PlayStatus).Valid() {
@@ -169,7 +169,7 @@ func SetPlayStatusBulk(ctx context.Context, db *bun.DB, p BulkStatusParams) (int
 			}
 			if rows > 0 {
 				updated++
-				if err := RemoveFromPoolsIfFinished(ctx, tx, ugID); err != nil {
+				if err := removeFromPoolsIfFinished(ctx, tx, ugID); err != nil {
 					return fmt.Errorf("remove from pools: %w", err)
 				}
 			}

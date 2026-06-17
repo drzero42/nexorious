@@ -33,7 +33,7 @@ type BulkRemovePlatformParams struct {
 }
 
 // UpdatePlatform verifies ownership, applies a PATCH-style partial update to
-// the named platform row, then runs PromoteToInProgressIfPlayed (hours may
+// the named platform row, then runs promoteToInProgressIfPlayed (hours may
 // have changed). RowsAffected==0 → ErrNotFound.
 func UpdatePlatform(ctx context.Context, db *bun.DB, p UpdatePlatformParams) error {
 	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
@@ -84,7 +84,7 @@ func UpdatePlatform(ctx context.Context, db *bun.DB, p UpdatePlatformParams) err
 			return ErrNotFound
 		}
 
-		return PromoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
+		return promoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
 	})
 }
 

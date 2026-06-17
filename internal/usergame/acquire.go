@@ -32,10 +32,10 @@ func Acquire(ctx context.Context, db *bun.DB, p AcquireParams) (Result, error) {
 		}
 		res.PlatformChanges = changes
 
-		if err := ClearWishlistOnAcquire(ctx, tx, ugID); err != nil {
+		if err := clearWishlistOnAcquire(ctx, tx, ugID); err != nil {
 			return fmt.Errorf("clear wishlist: %w", err)
 		}
-		if err := PromoteToInProgressIfPlayed(ctx, tx, ugID); err != nil {
+		if err := promoteToInProgressIfPlayed(ctx, tx, ugID); err != nil {
 			return fmt.Errorf("promote if played: %w", err)
 		}
 		if len(p.Tags) > 0 {
@@ -207,10 +207,10 @@ func AddPlatform(ctx context.Context, db *bun.DB, p AddPlatformParams) (Result, 
 			return err
 		}
 		res.PlatformID = platID
-		if err := ClearWishlistOnAcquire(ctx, tx, p.UserGameID); err != nil {
+		if err := clearWishlistOnAcquire(ctx, tx, p.UserGameID); err != nil {
 			return fmt.Errorf("clear wishlist: %w", err)
 		}
-		return PromoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
+		return promoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
 	})
 	if err != nil {
 		return Result{}, err
@@ -244,7 +244,7 @@ func AddPlatformBulk(ctx context.Context, db *bun.DB, p BulkAddPlatformParams) (
 			rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pgdriver; count is advisory
 			if rows > 0 {
 				added++
-				if err := ClearWishlistOnAcquire(ctx, tx, ugID); err != nil {
+				if err := clearWishlistOnAcquire(ctx, tx, ugID); err != nil {
 					return fmt.Errorf("clear wishlist: %w", err)
 				}
 			}
@@ -269,10 +269,10 @@ func MoveToLibrary(ctx context.Context, db *bun.DB, p MoveParams) (Result, error
 				return err
 			}
 		}
-		if err := ClearWishlistOnAcquire(ctx, tx, p.UserGameID); err != nil {
+		if err := clearWishlistOnAcquire(ctx, tx, p.UserGameID); err != nil {
 			return fmt.Errorf("clear wishlist: %w", err)
 		}
-		return PromoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
+		return promoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
 	})
 	if err != nil {
 		return Result{}, err
