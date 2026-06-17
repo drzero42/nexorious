@@ -20,6 +20,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/db"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/filter"
@@ -436,7 +437,7 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 
 	_, err = h.db.NewInsert().Model(ug).Exec(ctx)
 	if err != nil {
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "game already in collection")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
@@ -1152,7 +1153,7 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 
 	_, err := h.db.NewInsert().Model(plat).Exec(ctx)
 	if err != nil {
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "platform/storefront combination already exists"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
@@ -1259,7 +1260,7 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 
 	_, err = h.db.NewUpdate().Model(&plat).WherePK().Exec(ctx)
 	if err != nil {
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "platform/storefront combination already exists"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
@@ -1381,7 +1382,7 @@ func (h *UserGamesHandler) HandleMoveToLibrary(c *echo.Context) error {
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.NewInsert().Model(&plats).Exec(ctx); err != nil {
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "platform/storefront combination already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")

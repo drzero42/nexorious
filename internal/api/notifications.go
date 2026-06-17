@@ -14,6 +14,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/crypto"
+	"github.com/drzero42/nexorious/internal/db"
 	"github.com/drzero42/nexorious/internal/notify"
 )
 
@@ -96,7 +97,7 @@ func (h *NotificationsHandler) HandleCreateChannel(c *echo.Context) error {
 		id, userID, req.Name, ciphertext,
 	).Scan(context.Background(), &out)
 	if err != nil {
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "a channel with that name already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create channel")
@@ -149,7 +150,7 @@ func (h *NotificationsHandler) HandleUpdateChannel(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
 		}
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "a channel with that name already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update channel")
