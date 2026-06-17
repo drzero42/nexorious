@@ -580,54 +580,51 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 
 	ctx := context.Background()
 
-	// Build dynamic SET clause. Column names match the bun struct tags.
-	colMap := map[string]string{
-		"play_status":     "play_status",
-		"personal_rating": "personal_rating",
-		"is_loved":        "is_loved",
-		"personal_notes":  "personal_notes",
+	// Map allowed JSON keys onto UpdateFieldsParams.
+	p := usergame.UpdateFieldsParams{UserID: userID, UserGameID: id}
+	if v, ok := body["play_status"]; ok {
+		if v == nil {
+			s := ""
+			p.PlayStatus = &s
+		} else {
+			s := v.(string)
+			p.PlayStatus = &s
+		}
+	}
+	if v, ok := body["personal_notes"]; ok {
+		if v == nil {
+			p.ClearPersonalNotes = true
+		} else {
+			s := v.(string)
+			p.PersonalNotes = &s
+		}
+	}
+	if v, ok := body["personal_rating"]; ok {
+		if v == nil {
+			p.ClearPersonalRating = true
+		} else {
+			r := int32(v.(float64))
+			p.PersonalRating = &r
+		}
+	}
+	if v, ok := body["is_loved"]; ok {
+		if v == nil {
+			b := false
+			p.IsLoved = &b
+		} else {
+			b := v.(bool)
+			p.IsLoved = &b
+		}
 	}
 
-	setClauses := []string{"updated_at = NOW()"}
-	args := []any{}
-	for k, v := range body {
-		col := colMap[k]
-		setClauses = append(setClauses, fmt.Sprintf("%s = ?", col))
-		args = append(args, v)
-	}
-
-	query := fmt.Sprintf(
-		`UPDATE user_games SET %s WHERE id = ? AND user_id = ?
-		 RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, created_at, updated_at`,
-		strings.Join(setClauses, ", "),
-	)
-	args = append(args, id, userID)
-
-	_, statusChanged := body["play_status"]
-
-	var ug models.UserGame
-	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if scanErr := tx.NewRaw(query, args...).Scan(ctx, &ug); scanErr != nil {
-			return scanErr
-		}
-		if statusChanged {
-			// The UPDATE above is applied within this txn, so the helper's
-			// EXISTS guard sees the new play_status. Removes from every pool
-			// if the new status is finished; no-op otherwise.
-			return usergame.RemoveFromPoolsIfFinished(ctx, tx, ug.ID)
-		}
-		return nil
-	})
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "user game not found")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	if err := usergame.UpdateFields(ctx, h.db, p); err != nil {
+		return h.httpError(c, err)
 	}
 
 	// Eager-load relations for the response.
+	var ug models.UserGame
 	if err := h.db.NewSelect().Model(&ug).
-		Where("user_game.id = ?", ug.ID).
+		Where("user_game.id = ?", id).
 		Relation("Game").
 		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
 			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
@@ -801,66 +798,26 @@ func (h *UserGamesHandler) HandleBulkUpdate(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "updates must not be empty")
 	}
 
-	allowedFields := map[string]string{
-		"play_status":     "play_status",
-		"is_loved":        "is_loved",
-		"personal_rating": "personal_rating",
+	ps, ok := req.Updates["play_status"]
+	if !ok {
+		return echo.NewHTTPError(http.StatusBadRequest, "updates must include play_status")
 	}
-
-	var setClauses []string
-	args := []any{time.Now().UTC()}
-
-	for key, val := range req.Updates {
-		col, ok := allowedFields[key]
-		if !ok {
-			return echo.NewHTTPError(http.StatusBadRequest, "unknown update field: "+key)
-		}
-		if key == "play_status" {
-			ps, ok := val.(string)
-			if !ok {
-				return echo.NewHTTPError(http.StatusBadRequest, "play_status must be a string")
-			}
-			if !enum.PlayStatus(ps).Valid() {
-				return echo.NewHTTPError(http.StatusBadRequest, "invalid play_status")
-			}
-		}
-		setClauses = append(setClauses, col+" = ?")
-		args = append(args, val)
+	psStr, ok := ps.(string)
+	if !ok {
+		return echo.NewHTTPError(http.StatusBadRequest, "play_status must be a string")
 	}
-
-	// append WHERE args: list of IDs, then userID
-	args = append(args, bun.List(req.IDs), userID)
-
-	query := fmt.Sprintf(
-		`UPDATE user_games SET updated_at = ?, %s WHERE id IN (?) AND user_id = ?`,
-		strings.Join(setClauses, ", "),
-	)
 
 	ctx := context.Background()
-	var rowsAffected int64
-	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		res, err := tx.ExecContext(ctx, query, args...)
-		if err != nil {
-			return err
-		}
-		rowsAffected, err = res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if _, ok := req.Updates["play_status"]; ok {
-			for _, id := range req.IDs {
-				if hookErr := usergame.RemoveFromPoolsIfFinished(ctx, tx, id); hookErr != nil {
-					return hookErr
-				}
-			}
-		}
-		return nil
+	updated, err := usergame.SetPlayStatusBulk(ctx, h.db, usergame.BulkStatusParams{
+		UserID:      userID,
+		UserGameIDs: req.IDs,
+		PlayStatus:  psStr,
 	})
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{"updated": rowsAffected})
+	return c.JSON(http.StatusOK, map[string]any{"updated": updated})
 }
 
 type bulkDeleteRequest struct {
