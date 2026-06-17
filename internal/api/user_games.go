@@ -683,6 +683,78 @@ func (h *UserGamesHandler) HandleDeleteUserGame(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// replaceTagsRequest is the body for PUT /api/user-games/:id/tags. The tags
+// slice is the complete desired set of tag names.
+type replaceTagsRequest struct {
+	Tags []string `json:"tags"`
+}
+
+// HandleReplaceTags handles PUT /api/user-games/:id/tags. It validates the
+// supplied tag names, then within one transaction verifies ownership of the
+// user game and reconciles its tag set via usergame.ReplaceTags (resolving or
+// creating each name within the caller's own tags). An empty or absent "tags"
+// clears all tags. Returns the updated user game with its Tags relation.
+func (h *UserGamesHandler) HandleReplaceTags(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	id := c.Param("id")
+
+	var req replaceTagsRequest
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	names := make([]string, 0, len(req.Tags))
+	for _, raw := range req.Tags {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			return echo.NewHTTPError(http.StatusBadRequest, "tag name cannot be empty")
+		}
+		if len(name) > 100 {
+			return echo.NewHTTPError(http.StatusBadRequest, "tag name must be 100 characters or less")
+		}
+		names = append(names, name)
+	}
+
+	ctx := context.Background()
+
+	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		exists, existsErr := tx.NewSelect().Model((*models.UserGame)(nil)).
+			Where("id = ? AND user_id = ?", id, userID).Exists(ctx)
+		if existsErr != nil {
+			return existsErr
+		}
+		if !exists {
+			return sql.ErrNoRows
+		}
+		return usergame.ReplaceTags(ctx, tx, id, userID, names)
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, "user game not found")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+
+	var ug models.UserGame
+	if err := h.db.NewSelect().Model(&ug).
+		Where("user_game.id = ?", id).
+		Relation("Game").
+		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
+		}).
+		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("Tag")
+		}).
+		Scan(ctx); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
+}
+
 type updateProgressRequest struct {
 	PlayStatus *string `json:"play_status"`
 }
