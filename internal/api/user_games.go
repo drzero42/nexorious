@@ -385,6 +385,22 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	})
 }
 
+// httpError maps a usergame operation error to an echo HTTP error, preserving
+// the existing status codes. Unmapped errors become 500 and are logged.
+func (h *UserGamesHandler) httpError(c *echo.Context, err error) error {
+	switch {
+	case errors.Is(err, usergame.ErrNotFound):
+		return echo.NewHTTPError(http.StatusNotFound, "user game not found")
+	case errors.Is(err, usergame.ErrConflict):
+		return echo.NewHTTPError(http.StatusConflict, "game already in collection")
+	case errors.Is(err, usergame.ErrValidation):
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	default:
+		slog.ErrorContext(c.Request().Context(), "user_games: operation failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+}
+
 // HandleCreateUserGame handles POST /api/user-games.
 func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
@@ -421,73 +437,44 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		}
 	}
 
-	now := time.Now().UTC()
-	ug := &models.UserGame{
-		ID:             uuid.NewString(),
+	// Map request platforms → usergame.PlatformInput, validating each entry.
+	plats := make([]usergame.PlatformInput, 0, len(req.Platforms))
+	for _, p := range req.Platforms {
+		if p.OwnershipStatus != nil && *p.OwnershipStatus != "" && !enum.OwnershipStatus(*p.OwnershipStatus).Valid() {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+*p.OwnershipStatus)
+		}
+		var acquired *time.Time
+		if p.AcquiredDate != nil && *p.AcquiredDate != "" {
+			a, err := parseAcquiredDate(*p.AcquiredDate)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+			}
+			acquired = a
+		}
+		plats = append(plats, usergame.PlatformInput{
+			Platform: p.Platform, Storefront: p.Storefront, HoursPlayed: p.HoursPlayed,
+			OwnershipStatus: p.OwnershipStatus, IsAvailable: p.IsAvailable, AcquiredDate: acquired,
+		})
+	}
+
+	res, err := usergame.Acquire(ctx, h.db, usergame.AcquireParams{
 		UserID:         userID,
 		GameID:         req.GameID,
+		Mode:           usergame.ModeCreate,
+		Platforms:      plats,
 		PlayStatus:     req.PlayStatus,
 		PersonalRating: req.PersonalRating,
 		IsLoved:        req.IsLoved,
 		PersonalNotes:  req.PersonalNotes,
 		IsWishlisted:   req.IsWishlisted,
-		CreatedAt:      now,
-		UpdatedAt:      now,
-	}
-
-	_, err = h.db.NewInsert().Model(ug).Exec(ctx)
+	})
 	if err != nil {
-		if db.IsUniqueViolation(err) {
-			return echo.NewHTTPError(http.StatusConflict, "game already in collection")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
 
-	if len(req.Platforms) > 0 {
-		plats := make([]*models.UserGamePlatform, len(req.Platforms))
-		for i, p := range req.Platforms {
-			if p.OwnershipStatus != nil && *p.OwnershipStatus != "" {
-				if !enum.OwnershipStatus(*p.OwnershipStatus).Valid() {
-					return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+*p.OwnershipStatus)
-				}
-			}
-			pl := &models.UserGamePlatform{
-				ID:              uuid.New().String(),
-				UserGameID:      ug.ID,
-				Platform:        p.Platform,
-				Storefront:      p.Storefront,
-				HoursPlayed:     p.HoursPlayed,
-				OwnershipStatus: p.OwnershipStatus,
-				CreatedAt:       now,
-				UpdatedAt:       now,
-			}
-			if p.IsAvailable != nil {
-				pl.IsAvailable = *p.IsAvailable
-			} else {
-				pl.IsAvailable = true
-			}
-			if p.AcquiredDate != nil && *p.AcquiredDate != "" {
-				acquired, err := parseAcquiredDate(*p.AcquiredDate)
-				if err != nil {
-					return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-				}
-				pl.AcquiredDate = acquired
-			}
-			plats[i] = pl
-		}
-		if _, err := h.db.NewInsert().Model(&plats).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "user_games: failed to insert platforms on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-		}
-		if err := usergame.ClearWishlistOnAcquire(ctx, h.db, ug.ID); err != nil {
-			slog.ErrorContext(c.Request().Context(), "user_games: clear wishlist on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
-		}
-		if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, ug.ID); err != nil {
-			slog.ErrorContext(c.Request().Context(), "user_games: auto-promote play_status on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
-		}
-	}
-
-	// Eager-load relations so the response includes the game, platforms and tags.
+	// Re-select the user game with all relations for the response.
+	ug := &models.UserGame{}
+	ug.ID = res.UserGameID
 	if err := h.db.NewSelect().Model(ug).
 		Where("user_game.id = ?", ug.ID).
 		Relation("Game").

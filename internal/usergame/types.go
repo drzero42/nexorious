@@ -44,6 +44,14 @@ type AcquireParams struct {
 	Platforms []PlatformInput
 	Tags      []TagInput
 	TagMode   TagMode
+
+	// Meta fields — used by ModeCreate to initialise the user_games row.
+	// Ignored on ModeUpsert (the row already exists or is created with defaults).
+	PlayStatus     *string
+	PersonalRating *int32
+	IsLoved        bool
+	PersonalNotes  *string
+	IsWishlisted   bool
 }
 
 type Result struct {

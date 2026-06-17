@@ -71,10 +71,14 @@ func upsertUserGame(ctx context.Context, tx bun.IDB, p AcquireParams) (string, b
 		}
 		return row.ID, row.IsNew, nil
 	}
-	// ModeCreate
+	// ModeCreate — persist all caller-supplied meta fields in the initial row.
+	// play_status has a NOT NULL DEFAULT 'not_started'; use COALESCE so a nil
+	// pointer falls through to the column default rather than violating the constraint.
 	_, err := tx.NewRaw(
-		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		id, p.UserID, p.GameID, now, now,
+		`INSERT INTO user_games
+		 (id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, is_wishlisted, created_at, updated_at)
+		 VALUES (?, ?, ?, COALESCE(?, 'not_started'), ?, ?, ?, ?, ?, ?)`,
+		id, p.UserID, p.GameID, p.PlayStatus, p.PersonalRating, p.IsLoved, p.PersonalNotes, p.IsWishlisted, now, now,
 	).Exec(ctx)
 	if err != nil {
 		if nexdb.IsUniqueViolation(err) {
