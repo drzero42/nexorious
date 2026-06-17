@@ -258,6 +258,14 @@ func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFi
 		slog.WarnContext(ctx, "import_finalize: clear wishlist on acquire", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
 	}
 
+	// Auto-promote not_started → in_progress when the game has any played hours,
+	// matching the storefront sync path. The shared helper sums all the game's
+	// platforms in the DB and its play_status = 'not_started' guard makes it a
+	// no-op when the source supplied an explicit status (issue #1061).
+	if err := usergame.PromoteToInProgressIfPlayed(ctx, w.DB, ug.ID); err != nil {
+		slog.WarnContext(ctx, "import_finalize: auto-promote play_status", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
+	}
+
 	existingTagIDs := map[string]bool{}
 	if alreadyExists {
 		var existingUGTs []models.UserGameTag

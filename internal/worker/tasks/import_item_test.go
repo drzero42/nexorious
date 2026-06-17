@@ -128,6 +128,94 @@ func TestImportItem_InvalidPlayStatusCoercedToNull(t *testing.T) {
 	}
 }
 
+// A game imported with playtime but no explicit play_status must be promoted
+// from the not_started default to in_progress, matching the storefront sync
+// path. Otherwise the library holds an incoherent hours_played>0 + not_started
+// row (issue #1061).
+func TestImportItem_PromotesToInProgressWhenPlayed(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	if _, err := testDB.ExecContext(ctx,
+		"INSERT INTO platforms (name, display_name) VALUES ('pc', 'PC') ON CONFLICT DO NOTHING",
+	); err != nil {
+		t.Fatalf("insert platform: %v", err)
+	}
+
+	gameData := map[string]any{
+		"igdb_id": int32(22010),
+		"title":   "Played No Status",
+		// no play_status supplied -> NOT NULL default 'not_started' applies
+		"platforms": []any{
+			map[string]any{
+				"platform":     "pc",
+				"hours_played": 12.5,
+			},
+		},
+	}
+	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(22010)).Scan(ctx); err != nil {
+		t.Fatalf("user_game not found: %v", err)
+	}
+	if ug.PlayStatus == nil || *ug.PlayStatus != "in_progress" {
+		t.Errorf("play_status = %v, want 'in_progress' (played game auto-promoted)", ug.PlayStatus)
+	}
+}
+
+// The promote-if-played guard keys off play_status = 'not_started', so a game
+// imported with an explicit status must never be clobbered, even with playtime.
+func TestImportItem_PlayedDoesNotClobberExplicitStatus(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	insertTestJob(t, testDB, jobID, userID, 1)
+
+	if _, err := testDB.ExecContext(ctx,
+		"INSERT INTO platforms (name, display_name) VALUES ('pc', 'PC') ON CONFLICT DO NOTHING",
+	); err != nil {
+		t.Fatalf("insert platform: %v", err)
+	}
+
+	gameData := map[string]any{
+		"igdb_id":     int32(22011),
+		"title":       "Played Completed",
+		"play_status": "completed",
+		"platforms": []any{
+			map[string]any{
+				"platform":     "pc",
+				"hours_played": 40.0,
+			},
+		},
+	}
+	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
+
+	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = ?", userID, int32(22011)).Scan(ctx); err != nil {
+		t.Fatalf("user_game not found: %v", err)
+	}
+	if ug.PlayStatus == nil || *ug.PlayStatus != "completed" {
+		t.Errorf("play_status = %v, want 'completed' (explicit status must survive promote)", ug.PlayStatus)
+	}
+}
+
 func TestImportItem_InvalidOwnershipCoercedToOwned(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
