@@ -30,6 +30,9 @@ type PlatformInput struct {
 	IsAvailable     *bool
 	AcquiredDate    *time.Time
 	ExternalGameID  *string
+	// SyncFromSource marks the platform row as storefront-synced. Set to true
+	// only in the sync worker; REST-create and import callers leave it false.
+	SyncFromSource bool
 }
 
 type TagInput struct {

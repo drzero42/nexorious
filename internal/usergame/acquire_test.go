@@ -84,6 +84,57 @@ func TestAcquire_UpsertIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestAcquire_SyncFromSourcePersistedCorrectly(t *testing.T) {
+	truncateAllTables(t)
+	u := seedUser(t)
+	seedGame(t, 500, "Hollow Knight")
+	seedGame(t, 501, "Disco Elysium")
+
+	// Platform acquired with SyncFromSource=true (sync path) should persist true.
+	resSync, err := Acquire(context.Background(), testDB, AcquireParams{
+		UserID: u, GameID: 500, Mode: ModeUpsert,
+		Platforms: []PlatformInput{{
+			Platform: strptr("pc-windows"), Storefront: strptr("steam"),
+			HoursPlayed: fptr(2), SyncFromSource: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("sync acquire: %v", err)
+	}
+	var syncFlag bool
+	if err := testDB.NewRaw(
+		`SELECT sync_from_source FROM user_game_platforms WHERE user_game_id = ?`,
+		resSync.UserGameID,
+	).Scan(context.Background(), &syncFlag); err != nil {
+		t.Fatalf("fetch sync_from_source: %v", err)
+	}
+	if !syncFlag {
+		t.Error("sync_from_source should be true for sync-acquired platform")
+	}
+
+	// Platform acquired without SyncFromSource (REST/import path) should persist false.
+	resREST, err := Acquire(context.Background(), testDB, AcquireParams{
+		UserID: u, GameID: 501, Mode: ModeCreate,
+		Platforms: []PlatformInput{{
+			Platform: strptr("pc-windows"), Storefront: strptr("steam"),
+			HoursPlayed: fptr(1),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("rest acquire: %v", err)
+	}
+	var restFlag bool
+	if err := testDB.NewRaw(
+		`SELECT sync_from_source FROM user_game_platforms WHERE user_game_id = ?`,
+		resREST.UserGameID,
+	).Scan(context.Background(), &restFlag); err != nil {
+		t.Fatalf("fetch sync_from_source (rest): %v", err)
+	}
+	if restFlag {
+		t.Error("sync_from_source should be false for REST/import-acquired platform")
+	}
+}
+
 func TestAcquire_MergeKeepsMaxHoursAndUpgradesOwnership(t *testing.T) {
 	truncateAllTables(t)
 	u := seedUser(t)

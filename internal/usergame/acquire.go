@@ -130,10 +130,10 @@ func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformI
 		ch.Created = true
 		_, err := tx.NewRaw(
 			`INSERT INTO user_game_platforms
-			 (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, external_game_id, acquired_date, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
+			 (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, external_game_id, acquired_date, sync_from_source, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
 			 ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
-			uuid.NewString(), ugID, in.Platform, in.Storefront, available, hours, ownership, in.ExternalGameID, in.AcquiredDate,
+			uuid.NewString(), ugID, in.Platform, in.Storefront, available, hours, ownership, in.ExternalGameID, in.AcquiredDate, in.SyncFromSource,
 		).Exec(ctx)
 		if err != nil {
 			return ch, fmt.Errorf("insert platform: %w", err)

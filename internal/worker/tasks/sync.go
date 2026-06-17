@@ -731,6 +731,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			Platform: &egp.Platform, Storefront: &storefrontSlug,
 			HoursPlayed: &egp.HoursPlayed, OwnershipStatus: &ownership,
 			IsAvailable: boolptr(true), ExternalGameID: &eg.ID,
+			SyncFromSource: true,
 		})
 	}
 	res, err := usergame.Acquire(ctx, w.DB, usergame.AcquireParams{
