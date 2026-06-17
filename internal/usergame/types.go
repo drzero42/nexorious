@@ -61,6 +61,8 @@ type Result struct {
 	UserGameID      string
 	Created         bool
 	PlatformChanges []PlatformChange
+	// PlatformID is populated by AddPlatform with the newly inserted platform row ID.
+	PlatformID string
 }
 
 type PlatformChange struct {

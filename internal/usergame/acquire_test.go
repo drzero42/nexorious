@@ -158,6 +158,41 @@ func TestAcquire_NilHoursPlayedPersistsNull(t *testing.T) {
 	}
 }
 
+func TestAddPlatform_ConflictOnDuplicate(t *testing.T) {
+	truncateAllTables(t)
+	u := seedUser(t)
+	ugID := seedUserGame(t, u, 500)
+	in := PlatformInput{Platform: strptr("pc-windows"), Storefront: strptr("steam")}
+	if _, err := AddPlatform(context.Background(), testDB, AddPlatformParams{UserID: u, UserGameID: ugID, Platform: in}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := AddPlatform(context.Background(), testDB, AddPlatformParams{UserID: u, UserGameID: ugID, Platform: in})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestAddPlatform_NotFoundForOtherUser(t *testing.T) {
+	truncateAllTables(t)
+	owner := seedUser(t)
+	other := seedUser(t)
+	ugID := seedUserGame(t, owner, 501)
+	_, err := AddPlatform(context.Background(), testDB, AddPlatformParams{UserID: other, UserGameID: ugID, Platform: PlatformInput{Platform: strptr("pc-windows"), Storefront: strptr("gog")}})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestMoveToLibrary_RequiresWishlisted(t *testing.T) {
+	truncateAllTables(t)
+	u := seedUser(t)
+	ugID := seedUserGame(t, u, 502) // not wishlisted
+	_, err := MoveToLibrary(context.Background(), testDB, MoveParams{UserID: u, UserGameID: ugID, Platforms: []PlatformInput{{Platform: strptr("pc-windows"), Storefront: strptr("steam")}}})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation, got %v", err)
+	}
+}
+
 func TestAcquire_MergeKeepsMaxHoursAndUpgradesOwnership(t *testing.T) {
 	truncateAllTables(t)
 	u := seedUser(t)

@@ -171,6 +171,175 @@ func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformI
 	return ch, nil
 }
 
+// AddPlatformParams is the parameter struct for AddPlatform.
+type AddPlatformParams struct {
+	UserID     string
+	UserGameID string
+	Platform   PlatformInput
+}
+
+// BulkAddPlatformParams is the parameter struct for AddPlatformBulk.
+type BulkAddPlatformParams struct {
+	UserID      string
+	UserGameIDs []string
+	Platform    PlatformInput
+}
+
+// MoveParams is the parameter struct for MoveToLibrary.
+type MoveParams struct {
+	UserID     string
+	UserGameID string
+	Platforms  []PlatformInput
+}
+
+// AddPlatform verifies ownership, inserts the platform strictly (duplicate →
+// ErrConflict), clears the wishlist flag, and promotes play status, all
+// atomically.
+func AddPlatform(ctx context.Context, db *bun.DB, p AddPlatformParams) (Result, error) {
+	var res Result
+	res.UserGameID = p.UserGameID
+	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := assertOwned(ctx, tx, p.UserGameID, p.UserID); err != nil {
+			return err
+		}
+		platID, err := insertPlatformStrict(ctx, tx, p.UserGameID, p.Platform)
+		if err != nil {
+			return err
+		}
+		res.PlatformID = platID
+		if err := ClearWishlistOnAcquire(ctx, tx, p.UserGameID); err != nil {
+			return fmt.Errorf("clear wishlist: %w", err)
+		}
+		return PromoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	return res, nil
+}
+
+// AddPlatformBulk inserts a platform onto each owned user_game in one
+// transaction, skipping rows not owned by UserID and rows where the platform
+// already exists. Returns the number of newly inserted rows.
+func AddPlatformBulk(ctx context.Context, db *bun.DB, p BulkAddPlatformParams) (int, error) {
+	var added int
+	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		for _, ugID := range p.UserGameIDs {
+			if err := assertOwned(ctx, tx, ugID, p.UserID); err != nil {
+				if errors.Is(err, ErrNotFound) {
+					continue // skip rows not owned
+				}
+				return err
+			}
+			result, insertErr := tx.NewRaw(
+				`INSERT INTO user_game_platforms
+				 (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, external_game_id, acquired_date, sync_from_source, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, true, NULL, 'owned', NULL, NULL, false, now(), now())
+				 ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
+				uuid.NewString(), ugID, p.Platform.Platform, p.Platform.Storefront,
+			).Exec(ctx)
+			if insertErr != nil {
+				return fmt.Errorf("bulk insert platform: %w", insertErr)
+			}
+			rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pgdriver; count is advisory
+			if rows > 0 {
+				added++
+				if err := ClearWishlistOnAcquire(ctx, tx, ugID); err != nil {
+					return fmt.Errorf("clear wishlist: %w", err)
+				}
+			}
+		}
+		return nil
+	})
+	return added, err
+}
+
+// MoveToLibrary asserts the row exists and is_wishlisted, inserts each
+// platform strictly (duplicate → ErrConflict), clears the wishlist flag, and
+// promotes play status, all atomically.
+func MoveToLibrary(ctx context.Context, db *bun.DB, p MoveParams) (Result, error) {
+	var res Result
+	res.UserGameID = p.UserGameID
+	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := assertWishlisted(ctx, tx, p.UserGameID, p.UserID); err != nil {
+			return err
+		}
+		for _, plat := range p.Platforms {
+			if _, err := insertPlatformStrict(ctx, tx, p.UserGameID, plat); err != nil {
+				return err
+			}
+		}
+		if err := ClearWishlistOnAcquire(ctx, tx, p.UserGameID); err != nil {
+			return fmt.Errorf("clear wishlist: %w", err)
+		}
+		return PromoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	return res, nil
+}
+
+// assertOwned returns ErrNotFound if the user_game row does not exist or is
+// not owned by userID.
+func assertOwned(ctx context.Context, tx bun.IDB, ugID, userID string) error {
+	var x int
+	err := tx.NewRaw(
+		`SELECT 1 FROM user_games WHERE id = ? AND user_id = ?`, ugID, userID,
+	).Scan(ctx, &x)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
+}
+
+// assertWishlisted returns ErrNotFound if the row does not exist, ErrValidation
+// if it exists but is not on the wishlist.
+func assertWishlisted(ctx context.Context, tx bun.IDB, ugID, userID string) error {
+	var wishlisted bool
+	err := tx.NewRaw(
+		`SELECT is_wishlisted FROM user_games WHERE id = ? AND user_id = ?`, ugID, userID,
+	).Scan(ctx, &wishlisted)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !wishlisted {
+		return fmt.Errorf("not on wishlist: %w", ErrValidation)
+	}
+	return nil
+}
+
+// insertPlatformStrict inserts a platform row without ON CONFLICT DO NOTHING,
+// so a duplicate (user_game_id, platform, storefront) returns ErrConflict.
+// Returns the new platform row ID.
+func insertPlatformStrict(ctx context.Context, tx bun.IDB, ugID string, in PlatformInput) (string, error) {
+	ownership := "owned"
+	if in.OwnershipStatus != nil && *in.OwnershipStatus != "" {
+		ownership = *in.OwnershipStatus
+	}
+	available := true
+	if in.IsAvailable != nil {
+		available = *in.IsAvailable
+	}
+	id := uuid.NewString()
+	_, err := tx.NewRaw(
+		`INSERT INTO user_game_platforms
+		 (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, external_game_id, acquired_date, sync_from_source, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, false, now(), now())`,
+		id, ugID, in.Platform, in.Storefront, available, in.HoursPlayed, ownership, in.ExternalGameID, in.AcquiredDate,
+	).Exec(ctx)
+	if err != nil {
+		if nexdb.IsUniqueViolation(err) {
+			return "", fmt.Errorf("platform already exists: %w", ErrConflict)
+		}
+		return "", fmt.Errorf("insert platform: %w", err)
+	}
+	return id, nil
+}
+
 func ownershipRankPtr(s *string) int {
 	if s == nil {
 		return 0
