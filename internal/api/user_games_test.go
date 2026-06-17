@@ -92,6 +92,11 @@ func TestCreateUserGame(t *testing.T) {
 		if rec.Code != http.StatusConflict {
 			t.Fatalf("expected 409 for duplicate, got %d: %s", rec.Code, rec.Body.String())
 		}
+		var errResp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &errResp)
+		if msg, _ := errResp["message"].(string); msg != "game already in collection" {
+			t.Fatalf("want message %q, got %q", "game already in collection", msg)
+		}
 	})
 
 	t.Run("invalid game_id", func(t *testing.T) {
@@ -899,6 +904,11 @@ func TestPlatformCRUD(t *testing.T) {
 		}, token)
 		if rec.Code != http.StatusConflict {
 			t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var errResp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &errResp)
+		if msg, _ := errResp["message"].(string); msg != "platform already exists" {
+			t.Fatalf("want message %q, got %q", "platform already exists", msg)
 		}
 	})
 

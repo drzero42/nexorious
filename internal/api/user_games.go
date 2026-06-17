@@ -390,7 +390,7 @@ func (h *UserGamesHandler) httpError(c *echo.Context, err error) error {
 	case errors.Is(err, usergame.ErrNotFound):
 		return echo.NewHTTPError(http.StatusNotFound, "user game not found")
 	case errors.Is(err, usergame.ErrConflict):
-		return echo.NewHTTPError(http.StatusConflict, "conflict: already exists")
+		return echo.NewHTTPError(http.StatusConflict, strings.TrimSuffix(err.Error(), ": conflict"))
 	case errors.Is(err, usergame.ErrValidation):
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	default:
