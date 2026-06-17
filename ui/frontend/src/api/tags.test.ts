@@ -6,13 +6,9 @@ import {
   getAllTags,
   getTag,
   createTag,
-  createOrGetTag,
   updateTag,
   deleteTag,
-  assignTagsToGame,
-  removeTagsFromGame,
-  bulkAssignTags,
-  bulkRemoveTags,
+  replaceUserGameTags,
 } from './tags';
 
 const API_URL = '/api';
@@ -218,52 +214,24 @@ describe('tags.ts', () => {
     });
   });
 
-  describe('createOrGetTag', () => {
-    it('creates new tag when it does not exist', async () => {
-      server.use(
-        http.post(`${API_URL}/tags/create-or-get`, ({ request }) => {
-          const url = new URL(request.url);
-          expect(url.searchParams.get('name')).toBe('New Tag');
-          expect(url.searchParams.get('color')).toBe('#FF0000');
+  describe('replaceUserGameTags', () => {
+    it('replaces the full tag set on a user game', async () => {
+      const mockUserGame = {
+        id: 'ug-1',
+        tags: [{ id: 'tag-1', name: 'RPG' }],
+      };
 
-          return HttpResponse.json({
-            tag: {
-              id: 'tag-new',
-              user_id: 'user-123',
-              name: 'New Tag',
-              color: '#FF0000',
-              created_at: '2024-01-02T00:00:00Z',
-              updated_at: '2024-01-02T00:00:00Z',
-            },
-            created: true,
-          });
+      server.use(
+        http.put(`${API_URL}/user-games/ug-1/tags`, async ({ request }) => {
+          const body = (await request.json()) as { tags: string[] };
+          expect(body.tags).toEqual(['RPG']);
+          return HttpResponse.json(mockUserGame);
         }),
       );
 
-      const result = await createOrGetTag('New Tag', '#FF0000');
+      const result = await replaceUserGameTags('ug-1', ['RPG']);
 
-      expect(result.tag.id).toBe('tag-new');
-      expect(result.tag.name).toBe('New Tag');
-      expect(result.created).toBe(true);
-    });
-
-    it('returns existing tag when it already exists', async () => {
-      server.use(
-        http.post(`${API_URL}/tags/create-or-get`, ({ request }) => {
-          const url = new URL(request.url);
-          expect(url.searchParams.get('name')).toBe('RPG');
-
-          return HttpResponse.json({
-            tag: mockTagApi,
-            created: false,
-          });
-        }),
-      );
-
-      const result = await createOrGetTag('RPG');
-
-      expect(result.tag.id).toBe('tag-1');
-      expect(result.created).toBe(false);
+      expect(result.id).toBe('ug-1');
     });
   });
 
@@ -350,123 +318,6 @@ describe('tags.ts', () => {
         message: 'Tag not found',
         status: 404,
       });
-    });
-  });
-
-  describe('assignTagsToGame', () => {
-    it('assigns tags to a game', async () => {
-      server.use(
-        http.post(`${API_URL}/tags/assign/game-123`, async ({ request }) => {
-          const body = (await request.json()) as { tag_ids: string[] };
-          expect(body.tag_ids).toEqual(['tag-1', 'tag-2']);
-
-          return HttpResponse.json({
-            message: 'Tags assigned successfully',
-            new_associations: 2,
-            total_requested: 2,
-          });
-        }),
-      );
-
-      const result = await assignTagsToGame('game-123', ['tag-1', 'tag-2']);
-
-      expect(result.message).toBe('Tags assigned successfully');
-      expect(result.newAssociations).toBe(2);
-      expect(result.totalRequested).toBe(2);
-    });
-
-    it('handles partial assignment (some already assigned)', async () => {
-      server.use(
-        http.post(`${API_URL}/tags/assign/game-123`, () => {
-          return HttpResponse.json({
-            message: 'Tags assigned successfully',
-            new_associations: 1,
-            total_requested: 2,
-          });
-        }),
-      );
-
-      const result = await assignTagsToGame('game-123', ['tag-1', 'tag-2']);
-
-      expect(result.newAssociations).toBe(1);
-      expect(result.totalRequested).toBe(2);
-    });
-  });
-
-  describe('removeTagsFromGame', () => {
-    it('removes tags from a game', async () => {
-      server.use(
-        http.delete(`${API_URL}/tags/remove/game-123`, async ({ request }) => {
-          const body = (await request.json()) as { tag_ids: string[] };
-          expect(body.tag_ids).toEqual(['tag-1']);
-
-          return HttpResponse.json({
-            message: 'Tags removed successfully',
-            removed_associations: 1,
-            total_requested: 1,
-          });
-        }),
-      );
-
-      const result = await removeTagsFromGame('game-123', ['tag-1']);
-
-      expect(result.message).toBe('Tags removed successfully');
-      expect(result.removedAssociations).toBe(1);
-      expect(result.totalRequested).toBe(1);
-    });
-  });
-
-  describe('bulkAssignTags', () => {
-    it('assigns tags to multiple games', async () => {
-      server.use(
-        http.post(`${API_URL}/tags/bulk-assign`, async ({ request }) => {
-          const body = (await request.json()) as {
-            user_game_ids: string[];
-            tag_ids: string[];
-          };
-          expect(body.user_game_ids).toEqual(['game-1', 'game-2', 'game-3']);
-          expect(body.tag_ids).toEqual(['tag-1', 'tag-2']);
-
-          return HttpResponse.json({
-            message: 'Tags bulk assigned successfully',
-            total_new_associations: 6,
-            games_processed: 3,
-          });
-        }),
-      );
-
-      const result = await bulkAssignTags(['game-1', 'game-2', 'game-3'], ['tag-1', 'tag-2']);
-
-      expect(result.message).toBe('Tags bulk assigned successfully');
-      expect(result.totalNewAssociations).toBe(6);
-      expect(result.gamesProcessed).toBe(3);
-    });
-  });
-
-  describe('bulkRemoveTags', () => {
-    it('removes tags from multiple games', async () => {
-      server.use(
-        http.delete(`${API_URL}/tags/bulk-remove`, async ({ request }) => {
-          const body = (await request.json()) as {
-            user_game_ids: string[];
-            tag_ids: string[];
-          };
-          expect(body.user_game_ids).toEqual(['game-1', 'game-2']);
-          expect(body.tag_ids).toEqual(['tag-1']);
-
-          return HttpResponse.json({
-            message: 'Tags bulk removed successfully',
-            total_removed_associations: 2,
-            games_processed: 2,
-          });
-        }),
-      );
-
-      const result = await bulkRemoveTags(['game-1', 'game-2'], ['tag-1']);
-
-      expect(result.message).toBe('Tags bulk removed successfully');
-      expect(result.totalRemovedAssociations).toBe(2);
-      expect(result.gamesProcessed).toBe(2);
     });
   });
 

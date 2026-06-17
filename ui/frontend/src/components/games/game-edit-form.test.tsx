@@ -36,23 +36,24 @@ const hooks = vi.hoisted(() => ({
   addPlatform: vi.fn(),
   removePlatform: vi.fn(),
   updatePlatform: vi.fn(),
-  assignTags: vi.fn(),
-  removeTags: vi.fn(),
-  createOrGetTag: vi.fn(),
+  replaceTags: vi.fn(),
+  createTag: vi.fn(),
 }));
 
-const state = vi.hoisted(() => ({ platforms: [] as unknown[] }));
+const state = vi.hoisted(() => ({
+  platforms: [] as unknown[],
+  tags: [] as { id: string; name: string; color: string }[],
+}));
 
 vi.mock('@/hooks', () => ({
   useUpdateUserGame: () => ({ mutateAsync: hooks.updateGame }),
   useAddPlatformToUserGame: () => ({ mutateAsync: hooks.addPlatform }),
   useRemovePlatformFromUserGame: () => ({ mutateAsync: hooks.removePlatform }),
   useUpdatePlatformAssociation: () => ({ mutateAsync: hooks.updatePlatform }),
-  useAssignTagsToGame: () => ({ mutateAsync: hooks.assignTags }),
-  useRemoveTagsFromGame: () => ({ mutateAsync: hooks.removeTags }),
+  useReplaceUserGameTags: () => ({ mutateAsync: hooks.replaceTags, isPending: false }),
   useAllPlatforms: () => ({ data: state.platforms, isLoading: false }),
-  useAllTags: () => ({ data: [], isLoading: false }),
-  useCreateOrGetTag: () => ({ mutateAsync: hooks.createOrGetTag }),
+  useAllTags: () => ({ data: state.tags, isLoading: false }),
+  useCreateTag: () => ({ mutateAsync: hooks.createTag }),
   useSyncConfig: () => ({ data: null }),
 }));
 
@@ -150,6 +151,7 @@ describe('GameEditForm', () => {
     mockNavigate.mockReset();
     Object.values(hooks).forEach((fn) => fn.mockResolvedValue({}));
     state.platforms = [];
+    state.tags = [];
   });
 
   it('renders the form with game title', async () => {
@@ -279,5 +281,20 @@ describe('GameEditForm', () => {
     );
     // The existing Steam row is untouched.
     expect(hooks.removePlatform).not.toHaveBeenCalled();
+  });
+
+  it('saves the selected tags as names via replace-set on save (#1054)', async () => {
+    const user = userEvent.setup();
+    state.tags = [{ id: 'tag-1', name: 'RPG', color: '#FF5733' }];
+    render(<GameEditForm game={mockGame} />);
+
+    await user.click(screen.getAllByRole('button', { name: /save changes/i })[0]);
+
+    await waitFor(() => {
+      expect(hooks.replaceTags).toHaveBeenCalledWith({
+        userGameId: mockGame.id,
+        tags: ['RPG'],
+      });
+    });
   });
 });

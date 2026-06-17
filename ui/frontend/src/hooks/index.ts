@@ -44,11 +44,9 @@ export {
   useAllTags,
   useTag,
   useCreateTag,
-  useCreateOrGetTag,
   useUpdateTag,
   useDeleteTag,
-  useAssignTagsToGame,
-  useRemoveTagsFromGame,
+  useReplaceUserGameTags,
 } from './use-tags';
 
 // Sync hooks

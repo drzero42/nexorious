@@ -1,21 +1,5 @@
 import { api } from './client';
-import type { Tag } from '@/types';
-
-// ============================================================================
-// API Response Types (snake_case from backend)
-// ============================================================================
-
-interface TagAssignApiResponse {
-  message: string;
-  new_associations: number;
-  total_requested: number;
-}
-
-interface TagRemoveApiResponse {
-  message: string;
-  removed_associations: number;
-  total_requested: number;
-}
+import type { Tag, UserGame } from '@/types';
 
 // ============================================================================
 // Request Parameter Types
@@ -47,23 +31,6 @@ export interface TagsListResponse {
   page: number;
   perPage: number;
   totalPages: number;
-}
-
-interface TagCreateOrGetResponse {
-  tag: Tag;
-  created: boolean;
-}
-
-interface TagAssignResponse {
-  message: string;
-  newAssociations: number;
-  totalRequested: number;
-}
-
-interface TagRemoveResponse {
-  message: string;
-  removedAssociations: number;
-  totalRequested: number;
 }
 
 // ============================================================================
@@ -127,25 +94,6 @@ export async function createTag(data: TagCreateData): Promise<Tag> {
 }
 
 /**
- * Create a tag or get existing one by name (for inline tag creation).
- */
-export async function createOrGetTag(
-  name: string,
-  color?: string,
-): Promise<TagCreateOrGetResponse> {
-  const queryParams: Record<string, string | undefined> = { name };
-  if (color) {
-    queryParams.color = color;
-  }
-
-  const response = await api.post<TagCreateOrGetResponse>('/tags/create-or-get', undefined, {
-    params: queryParams,
-  });
-
-  return response;
-}
-
-/**
  * Update an existing tag.
  */
 export async function updateTag(id: string, data: TagUpdateData): Promise<Tag> {
@@ -170,85 +118,10 @@ export async function deleteTag(id: string): Promise<void> {
 }
 
 /**
- * Assign tags to a user game.
+ * Replace the complete tag set on a user game with the given tag names.
+ * The backend resolves or creates each name within the user's tags and
+ * reconciles the join table, returning the updated user game.
  */
-export async function assignTagsToGame(
-  userGameId: string,
-  tagIds: string[],
-): Promise<TagAssignResponse> {
-  const response = await api.post<TagAssignApiResponse>(`/tags/assign/${userGameId}`, {
-    tag_ids: tagIds,
-  });
-
-  return {
-    message: response.message,
-    newAssociations: response.new_associations,
-    totalRequested: response.total_requested,
-  };
-}
-
-/**
- * Remove tags from a user game.
- */
-export async function removeTagsFromGame(
-  userGameId: string,
-  tagIds: string[],
-): Promise<TagRemoveResponse> {
-  const response = await api.delete<TagRemoveApiResponse>(`/tags/remove/${userGameId}`, {
-    body: JSON.stringify({ tag_ids: tagIds }),
-  });
-
-  return {
-    message: response.message,
-    removedAssociations: response.removed_associations,
-    totalRequested: response.total_requested,
-  };
-}
-
-/**
- * Bulk assign tags to multiple games.
- */
-export async function bulkAssignTags(
-  userGameIds: string[],
-  tagIds: string[],
-): Promise<{ message: string; totalNewAssociations: number; gamesProcessed: number }> {
-  const response = await api.post<{
-    message: string;
-    total_new_associations: number;
-    games_processed: number;
-  }>('/tags/bulk-assign', {
-    user_game_ids: userGameIds,
-    tag_ids: tagIds,
-  });
-
-  return {
-    message: response.message,
-    totalNewAssociations: response.total_new_associations,
-    gamesProcessed: response.games_processed,
-  };
-}
-
-/**
- * Bulk remove tags from multiple games.
- */
-export async function bulkRemoveTags(
-  userGameIds: string[],
-  tagIds: string[],
-): Promise<{ message: string; totalRemovedAssociations: number; gamesProcessed: number }> {
-  const response = await api.delete<{
-    message: string;
-    total_removed_associations: number;
-    games_processed: number;
-  }>('/tags/bulk-remove', {
-    body: JSON.stringify({
-      user_game_ids: userGameIds,
-      tag_ids: tagIds,
-    }),
-  });
-
-  return {
-    message: response.message,
-    totalRemovedAssociations: response.total_removed_associations,
-    gamesProcessed: response.games_processed,
-  };
+export async function replaceUserGameTags(userGameId: string, tags: string[]): Promise<UserGame> {
+  return api.put<UserGame>(`/user-games/${userGameId}/tags`, { tags });
 }
