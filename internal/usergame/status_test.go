@@ -35,3 +35,26 @@ func TestUpdateFields_NotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestRecordProgress_PromotesNotStartedToInProgress(t *testing.T) {
+	truncateAllTables(t)
+	u := seedUser(t)
+	ugID := seedUserGame(t, u, 800) // play_status defaults to not_started
+	// add a platform with hours so PromoteToInProgressIfPlayed has something to find
+	_, _ = AddPlatform(context.Background(), testDB, AddPlatformParams{UserID: u, UserGameID: ugID, Platform: PlatformInput{Platform: strptr("pc-windows"), Storefront: strptr("steam"), HoursPlayed: fptr(2)}})
+
+	if err := RecordProgress(context.Background(), testDB, ProgressParams{UserID: u, UserGameID: ugID, PlayStatus: "in_progress"}); err != nil {
+		t.Fatal(err)
+	}
+	if ug := fetchUG(t, ugID); ug.PlayStatus == nil || *ug.PlayStatus != "in_progress" {
+		t.Errorf("expected in_progress after RecordProgress, got %v", ug.PlayStatus)
+	}
+}
+
+func TestRecordProgress_NotFound(t *testing.T) {
+	truncateAllTables(t)
+	u := seedUser(t)
+	if err := RecordProgress(context.Background(), testDB, ProgressParams{UserID: u, UserGameID: uuid.NewString(), PlayStatus: "in_progress"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}

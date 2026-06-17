@@ -101,6 +101,43 @@ func UpdateFields(ctx context.Context, db *bun.DB, p UpdateFieldsParams) error {
 	})
 }
 
+// ProgressParams holds the parameters for RecordProgress.
+type ProgressParams struct {
+	UserID     string
+	UserGameID string
+	PlayStatus string
+}
+
+// RecordProgress verifies ownership, sets play_status on the user_games row,
+// then calls PromoteToInProgressIfPlayed so any accrued platform hours are
+// reflected in the status when transitioning from not_started.
+// RowsAffected==0 → ErrNotFound. Returns ErrValidation for an invalid status.
+func RecordProgress(ctx context.Context, db *bun.DB, p ProgressParams) error {
+	if !enum.PlayStatus(p.PlayStatus).Valid() {
+		return fmt.Errorf("invalid play_status %q: %w", p.PlayStatus, ErrValidation)
+	}
+
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := assertOwned(ctx, tx, p.UserGameID, p.UserID); err != nil {
+			return err
+		}
+
+		res, err := tx.NewRaw(
+			`UPDATE user_games SET play_status = ?, updated_at = NOW() WHERE id = ? AND user_id = ?`,
+			p.PlayStatus, p.UserGameID, p.UserID,
+		).Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("update play_status: %w", err)
+		}
+		rows, _ := res.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pgdriver; count is advisory
+		if rows == 0 {
+			return ErrNotFound
+		}
+
+		return PromoteToInProgressIfPlayed(ctx, tx, p.UserGameID)
+	})
+}
+
 // BulkStatusParams holds the parameters for SetPlayStatusBulk.
 type BulkStatusParams struct {
 	UserID      string

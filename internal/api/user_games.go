@@ -710,15 +710,12 @@ func (h *UserGamesHandler) HandleReplaceTags(c *echo.Context) error {
 			return existsErr
 		}
 		if !exists {
-			return sql.ErrNoRows
+			return usergame.ErrNotFound
 		}
 		return usergame.ReplaceTags(ctx, tx, id, userID, names)
 	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "user game not found")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
 
 	var ug models.UserGame
@@ -762,17 +759,27 @@ func (h *UserGamesHandler) HandleUpdateProgress(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid play_status")
 	}
 
-	args := []any{time.Now().UTC(), *req.PlayStatus, id, userID}
-
-	query := `UPDATE user_games SET updated_at = ?, play_status = ? WHERE id = ? AND user_id = ? RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, created_at, updated_at`
-
 	ctx := context.Background()
+	if err := usergame.RecordProgress(ctx, h.db, usergame.ProgressParams{
+		UserID:     userID,
+		UserGameID: id,
+		PlayStatus: *req.PlayStatus,
+	}); err != nil {
+		return h.httpError(c, err)
+	}
+
+	// Eager-load relations for the response.
 	var ug models.UserGame
-	err := h.db.NewRaw(query, args...).Scan(ctx, &ug)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "user game not found")
-		}
+	if err := h.db.NewSelect().Model(&ug).
+		Where("user_game.id = ?", id).
+		Relation("Game").
+		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
+		}).
+		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("Tag")
+		}).
+		Scan(ctx); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
