@@ -19,7 +19,6 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/config"
-	"github.com/drzero42/nexorious/internal/db"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/enum"
 	"github.com/drzero42/nexorious/internal/filter"
@@ -957,20 +956,16 @@ func (h *UserGamesHandler) HandleBulkRemovePlatforms(c *echo.Context) error {
 	}
 
 	ctx := context.Background()
-	result, err := h.db.NewRaw(
-		`DELETE FROM user_game_platforms
-		 WHERE user_game_id IN (
-		   SELECT id FROM user_games WHERE id IN (?) AND user_id = ?
-		 )
-		 AND platform = ? AND storefront = ?`,
-		bun.List(req.UserGameIDs), userID, req.Platform, req.Storefront,
-	).Exec(ctx)
+	removed, err := usergame.RemovePlatformBulk(ctx, h.db, usergame.BulkRemovePlatformParams{
+		UserID:      userID,
+		UserGameIDs: req.UserGameIDs,
+		Platform:    req.Platform,
+		Storefront:  req.Storefront,
+	})
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
-
-	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
-	return c.JSON(http.StatusOK, map[string]int64{"removed": rows})
+	return c.JSON(http.StatusOK, map[string]int{"removed": removed})
 }
 
 // verifyUserGameOwnership checks that userGameID belongs to userID.
@@ -1166,47 +1161,46 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 		}
 	}
 
-	// Apply updates
-	if req.Platform != nil {
-		plat.Platform = req.Platform
-	}
-	if req.Storefront != nil {
-		plat.Storefront = req.Storefront
-	}
-	if req.IsAvailable != nil {
-		plat.IsAvailable = *req.IsAvailable
-	}
-	if req.HoursPlayed != nil {
-		plat.HoursPlayed = req.HoursPlayed
-	}
-	if req.OwnershipStatus != nil {
-		plat.OwnershipStatus = req.OwnershipStatus
-	}
 	// AcquiredDate is three-way: omitted (nil) leaves it unchanged, an empty
 	// string clears it to NULL, a valid date sets it.
+	var acquiredDate *time.Time
+	acquiredDateProvided := false
 	if req.AcquiredDate != nil {
-		if *req.AcquiredDate == "" {
-			plat.AcquiredDate = nil
-		} else {
+		acquiredDateProvided = true
+		if *req.AcquiredDate != "" {
 			acquired, err := parseAcquiredDate(*req.AcquiredDate)
 			if err != nil {
 				return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 			}
-			plat.AcquiredDate = acquired
+			acquiredDate = acquired
 		}
+		// empty string → acquiredDate stays nil → stored as NULL
 	}
-	plat.UpdatedAt = time.Now()
 
-	_, err = h.db.NewUpdate().Model(&plat).WherePK().Exec(ctx)
-	if err != nil {
-		if db.IsUniqueViolation(err) {
-			return c.JSON(http.StatusConflict, map[string]string{"error": "platform/storefront combination already exists"})
+	fields := usergame.PlatformInput{
+		Platform:        req.Platform,
+		Storefront:      req.Storefront,
+		IsAvailable:     req.IsAvailable,
+		HoursPlayed:     req.HoursPlayed,
+		OwnershipStatus: req.OwnershipStatus,
+	}
+	if acquiredDateProvided {
+		if acquiredDate == nil {
+			fields.ClearAcquiredDate = true
+		} else {
+			fields.AcquiredDate = acquiredDate
 		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: auto-promote play_status on update platform", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
+
+	if err := usergame.UpdatePlatform(ctx, h.db, usergame.UpdatePlatformParams{
+		UserID:     userID,
+		UserGameID: userGameID,
+		PlatformID: platformID,
+		Fields:     fields,
+	}); err != nil {
+		return h.httpError(c, err)
 	}
+
 	if err := h.db.NewSelect().Model(&plat).
 		Where("id = ?", plat.ID).
 		Relation("PlatformRecord").
@@ -1225,20 +1219,12 @@ func (h *UserGamesHandler) HandleDeletePlatform(c *echo.Context) error {
 	platformID := c.Param("platform_id")
 	ctx := c.Request().Context()
 
-	if err := h.verifyUserGameOwnership(ctx, userGameID, userID); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "user game not found"})
-	}
-
-	result, err := h.db.NewDelete().Model((*models.UserGamePlatform)(nil)).
-		Where("id = ?", platformID).
-		Where("user_game_id = ?", userGameID).
-		Exec(ctx)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
-	}
-	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
-	if rows == 0 {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found"})
+	if err := usergame.RemovePlatform(ctx, h.db, usergame.RemovePlatformParams{
+		UserID:     userID,
+		UserGameID: userGameID,
+		PlatformID: platformID,
+	}); err != nil {
+		return h.httpError(c, err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }

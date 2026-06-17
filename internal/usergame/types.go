@@ -29,7 +29,11 @@ type PlatformInput struct {
 	OwnershipStatus *string
 	IsAvailable     *bool
 	AcquiredDate    *time.Time
-	ExternalGameID  *string
+	// ClearAcquiredDate instructs UpdatePlatform to set acquired_date to NULL.
+	// It is distinct from AcquiredDate==nil (which means "leave unchanged") and
+	// is used when the caller explicitly supplies an empty string for the field.
+	ClearAcquiredDate bool
+	ExternalGameID    *string
 	// SyncFromSource marks the platform row as storefront-synced. Set to true
 	// only in the sync worker; REST-create and import callers leave it false.
 	SyncFromSource bool
