@@ -93,7 +93,6 @@ func seedUser(t *testing.T) string {
 	return id
 }
 
-//nolint:unused // consumed by later tasks in this package
 func seedGame(t *testing.T, gameID int32, title string) {
 	t.Helper()
 	_, err := testDB.NewRaw(
@@ -105,8 +104,6 @@ func seedGame(t *testing.T, gameID int32, title string) {
 }
 
 // seedUserGame inserts a user_games row (no platforms) and returns its id.
-//
-//nolint:unused // consumed by later tasks in this package
 func seedUserGame(t *testing.T, userID string, gameID int32) string {
 	t.Helper()
 	seedGame(t, gameID, fmt.Sprintf("Game %d", gameID))
