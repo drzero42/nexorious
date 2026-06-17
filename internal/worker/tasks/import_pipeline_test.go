@@ -206,6 +206,43 @@ func TestImportFinalize_InvalidPlayStatusCoercedToNull(t *testing.T) {
 	}
 }
 
+// A game finalized with game-level playtime but no explicit play_status must be
+// promoted from the not_started default to in_progress, matching the storefront
+// sync path (issue #1061).
+func TestImportFinalize_PromotesToInProgressWhenPlayed(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := "u-dk-played"
+	insertTestUser(t, testDB, userID)
+	if _, err := testDB.NewRaw(`INSERT INTO games (id, title, last_updated, created_at) VALUES (43, 'Played', now(), now())`).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	payload := map[string]any{
+		"title":        "Played", // no play_status -> NOT NULL default 'not_started'
+		"hours_played": 9.0,
+		"platforms": []map[string]any{
+			{"platform": "pc-windows", "storefront": "steam"},
+		},
+	}
+	_, itemID := insertImportItem(t, userID, payload)
+	if _, err := testDB.NewRaw(`UPDATE job_items SET resolved_igdb_id = 43 WHERE id = ?`, itemID).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+
+	var ug models.UserGame
+	if err := testDB.NewSelect().Model(&ug).Where("user_id = ? AND game_id = 43", userID).Scan(ctx); err != nil {
+		t.Fatalf("user_game not written: %v", err)
+	}
+	if ug.PlayStatus == nil || *ug.PlayStatus != "in_progress" {
+		t.Errorf("play_status = %v, want 'in_progress' (played game auto-promoted)", ug.PlayStatus)
+	}
+}
+
 // Two items in one import that resolve to the SAME game (duplicate titles) must
 // not fail on the user_games (user_id, game_id) unique index; the loser of the
 // race re-selects the existing row and merges its platforms in.
