@@ -19,6 +19,12 @@ import type { Tag } from '@/types';
 // Color Utilities
 // ============================================================================
 
+// Fallback for tags persisted without a color (auto-created on assignment,
+// imported, or inline-created). The API returns color: null for these, so the
+// render sites below must never assume a hex string is present. Matches the
+// default used by the tag-management UI.
+const DEFAULT_TAG_COLOR = '#6B7280';
+
 /**
  * Calculate appropriate text color based on background luminance.
  */
@@ -46,7 +52,8 @@ interface TagBadgeProps {
 }
 
 function TagBadge({ tag, onRemove, size = 'md', className }: TagBadgeProps) {
-  const textColor = getTextColor(tag.color);
+  const bgColor = tag.color ?? DEFAULT_TAG_COLOR;
+  const textColor = getTextColor(bgColor);
   const sizeClasses = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-2.5 py-1';
 
   return (
@@ -56,7 +63,7 @@ function TagBadge({ tag, onRemove, size = 'md', className }: TagBadgeProps) {
         sizeClasses,
         className,
       )}
-      style={{ backgroundColor: tag.color, color: textColor }}
+      style={{ backgroundColor: bgColor, color: textColor }}
     >
       <span className="truncate max-w-[120px]">{tag.name}</span>
       {tag.game_count !== undefined && tag.game_count > 0 && (
@@ -328,7 +335,7 @@ export function TagSelector({
                           </div>
                           <div
                             className="h-3 w-3 rounded-full border border-muted-foreground/25 flex-shrink-0"
-                            style={{ backgroundColor: tag.color }}
+                            style={{ backgroundColor: tag.color ?? DEFAULT_TAG_COLOR }}
                           />
                           <span className="truncate flex-1">{tag.name}</span>
                           {showGameCounts && tag.game_count !== undefined && tag.game_count > 0 && (
@@ -566,7 +573,7 @@ function TagListItem({ tag, isSelected, disabled, onToggle }: TagListItemProps) 
       <div className="flex-1 flex items-center gap-2 min-w-0">
         <div
           className="w-3 h-3 rounded-full border border-muted-foreground/25 flex-shrink-0"
-          style={{ backgroundColor: tag.color }}
+          style={{ backgroundColor: tag.color ?? DEFAULT_TAG_COLOR }}
         />
         <div className="min-w-0 flex-1">
           <div className="font-medium text-sm truncate">{tag.name}</div>
