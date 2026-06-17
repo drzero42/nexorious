@@ -33,7 +33,7 @@ import { formatHoursPlayed, resolveImageUrl, toDateInputValue } from '@/lib/game
 import { planPlatformChanges, type PlatformDetailState } from './platform-reconcile';
 import { PlatformDetailFields } from './platform-detail-fields';
 import { PlayStatus, OwnershipStatus } from '@/types';
-import type { UserGame } from '@/types';
+import type { Tag, UserGame } from '@/types';
 import { ArrowLeft, Save, Loader2, Heart } from 'lucide-react';
 
 // Status options
@@ -83,6 +83,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
   );
   const [personalNotes, setPersonalNotes] = useState(game.personal_notes ?? '');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(game.tags?.map((t) => t.id) ?? []);
+  const [createdTags, setCreatedTags] = useState<Tag[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformSelection[]>(
     game.platforms
       .filter((p) => p.platform)
@@ -146,7 +147,13 @@ export function GameEditForm({ game }: GameEditFormProps) {
     [activeSelections, platformPlaytimes],
   );
 
-  const tagNameById = useMemo(() => new Map(tags.map((t) => [t.id, t.name])), [tags]);
+  const allTags = useMemo(() => {
+    const byId = new Map<string, Tag>();
+    for (const t of tags) byId.set(t.id, t);
+    for (const t of createdTags) byId.set(t.id, t);
+    return [...byId.values()];
+  }, [tags, createdTags]);
+  const tagNameById = useMemo(() => new Map(allTags.map((t) => [t.id, t.name])), [allTags]);
 
   const handleSave = async () => {
     try {
@@ -225,6 +232,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
   const handleCreateTag = async (name: string) => {
     try {
       const created = await createTag.mutateAsync({ name });
+      setCreatedTags((prev) => [...prev, created]);
       setSelectedTagIds((prev) => [...prev, created.id]);
       toast.success(`Tag "${name}" created`);
     } catch (error) {
@@ -425,7 +433,7 @@ export function GameEditForm({ game }: GameEditFormProps) {
           ) : (
             <TagSelector
               selectedTagIds={selectedTagIds}
-              availableTags={tags}
+              availableTags={allTags}
               onChange={setSelectedTagIds}
               onCreateTag={handleCreateTag}
               allowCreate
