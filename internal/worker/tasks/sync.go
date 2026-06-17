@@ -422,22 +422,8 @@ func userSubscribed(ctx context.Context, db *bun.DB, userID, eventType string) b
 	return subscribed
 }
 
-// ownershipRank returns a numeric rank for an ownership status string.
-// Higher = better. Used to avoid downgrading ownership on update.
-func ownershipRank(status string) int {
-	switch status {
-	case "owned":
-		return 4
-	case "borrowed", "rented":
-		return 3
-	case "subscription":
-		return 2
-	case "no_longer_owned":
-		return 1
-	default:
-		return 0
-	}
-}
+// boolptr returns a pointer to b.
+func boolptr(b bool) *bool { return &b }
 
 // ── IGDBMatchWorker — Stage 2 ─────────────────────────────────────────────────
 
@@ -715,28 +701,6 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		slog.WarnContext(ctx, "user_game_write: ensure game row", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
-	// (xmax = 0) detects new vs. updated row; relies on ON CONFLICT DO UPDATE (not DO NOTHING).
-	// NOTE: changes('added') is written after the platform loop to avoid orphans when
-	// platform load fails after the user_games row has already been committed.
-	ugID := uuid.NewString()
-	now := time.Now().UTC()
-	var isNewRow struct {
-		ID    string `bun:"id"`
-		IsNew bool   `bun:"is_new"`
-	}
-	if err := w.DB.NewRaw(
-		`INSERT INTO user_games (id, user_id, game_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?)
-		 ON CONFLICT (user_id, game_id) DO UPDATE SET updated_at = now()
-		 RETURNING id, (xmax = 0) AS is_new`,
-		ugID, item.UserID, *eg.ResolvedIGDBID, now, now,
-	).Scan(ctx, &isNewRow); err != nil {
-		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("upsert user_game: %v", err), "process_sync_item: markItemFailed")
-		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
-		return nil
-	}
-	ugID = isNewRow.ID
-
 	// Load platform rows from external_game_platforms.
 	var egPlatforms []models.ExternalGamePlatform
 	if err := w.DB.NewSelect().Model(&egPlatforms).
@@ -760,88 +724,37 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 	} else if eg.IsSubscription {
 		ownership = "subscription"
 	}
-
-	var platformUpgraded bool
+	plats := make([]usergame.PlatformInput, 0, len(egPlatforms))
 	for _, egp := range egPlatforms {
-		var existingID string
-		var existingOwnership *string
-		var existingHours *float64
-		err := w.DB.NewRaw(
-			`SELECT id, ownership_status, hours_played FROM user_game_platforms WHERE user_game_id = ? AND platform = ? AND storefront = ?`,
-			ugID, egp.Platform, storefrontSlug,
-		).Scan(ctx, &existingID, &existingOwnership, &existingHours)
+		egp := egp
+		plats = append(plats, usergame.PlatformInput{
+			Platform: &egp.Platform, Storefront: &storefrontSlug,
+			HoursPlayed: &egp.HoursPlayed, OwnershipStatus: &ownership,
+			IsAvailable: boolptr(true), ExternalGameID: &eg.ID,
+		})
+	}
+	res, err := usergame.Acquire(ctx, w.DB, usergame.AcquireParams{
+		UserID: item.UserID, GameID: *eg.ResolvedIGDBID, Mode: usergame.ModeUpsert, Platforms: plats,
+	})
+	if err != nil {
+		markItemFailed(ctx, w.DB, &item, fmt.Sprintf("acquire: %v", err), "process_sync_item: markItemFailed")
+		SyncCheckJobCompletion(ctx, w.DB, w.RiverClient, item.JobID)
+		return nil
+	}
+	ugID := res.UserGameID
 
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			// No existing row — insert new platform.
-			ugpID := uuid.NewString()
-			if _, err := w.DB.NewRaw(`
-				INSERT INTO user_game_platforms
-				(id, user_game_id, platform, storefront, is_available, hours_played, ownership_status,
-				 external_game_id, sync_from_source, created_at, updated_at)
-				VALUES (?, ?, ?, ?, true, ?, ?, ?, true, now(), now())
-				ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
-				ugpID, ugID, egp.Platform, storefrontSlug, egp.HoursPlayed, ownership,
-				eg.ID,
-			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "user_game_write: insert user_game_platform", logging.KeyErr, err, logging.KeyJobItemID, p.JobItemID, logging.Cat(logging.CategoryDB))
-			}
-		case err != nil:
-			slog.WarnContext(ctx, "user_game_write: select existing ugp", logging.KeyErr, err, logging.KeyJobItemID, p.JobItemID, logging.Cat(logging.CategoryDB))
-		default:
-			// Resolve final ownership and hours in Go, then write a single
-			// unconditional UPDATE. This collapses the previous three branches
-			// (ownership upgrade / hours-only / no-op) and guarantees that
-			// external_game_id is always backfilled — see docs/sync.md
-			// § "Manually added games".
-			existingRank := 0
-			if existingOwnership != nil {
-				existingRank = ownershipRank(*existingOwnership)
-			}
-			newRank := ownershipRank(ownership)
-
-			finalOwnership := ownership
-			if existingOwnership != nil {
-				finalOwnership = *existingOwnership
-			}
-			if newRank > existingRank {
-				platformUpgraded = true
-				// Insert the status_changed sync_change BEFORE the UPDATE so
-				// that old_status reflects the pre-UPDATE value.
-				if _, err := w.DB.NewRaw(
-					`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, old_status, new_status, created_at)
-					 VALUES (?, ?, ?, ?, ?, 'status_changed', ?, ?, ?, now())`,
-					uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title, existingOwnership, &ownership,
-				).Exec(ctx); err != nil {
-					slog.WarnContext(ctx, "user_game_write: insert sync_change (status_changed)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-				}
-				finalOwnership = ownership
-			}
-
-			finalHours := egp.HoursPlayed
-			if existingHours != nil && *existingHours > finalHours {
-				finalHours = *existingHours
-			}
-
+	platformUpgraded := false
+	for _, pc := range res.PlatformChanges {
+		if pc.OwnershipUpgraded {
+			platformUpgraded = true
 			if _, err := w.DB.NewRaw(
-				`UPDATE user_game_platforms SET ownership_status = ?, hours_played = ?, external_game_id = ?, updated_at = now() WHERE id = ?`,
-				finalOwnership, finalHours, eg.ID, existingID,
+				`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, old_status, new_status, created_at)
+				 VALUES (?, ?, ?, ?, ?, 'status_changed', ?, ?, ?, now())`,
+				uuid.NewString(), item.JobID, item.UserID, eg.ID, ugID, eg.Title, pc.OldOwnership, pc.NewOwnership,
 			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "user_game_write: update ugp", logging.KeyErr, err, logging.KeyJobItemID, p.JobItemID, logging.Cat(logging.CategoryDB))
+				slog.WarnContext(ctx, "user_game_write: insert sync_change (status_changed)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			}
 		}
-	}
-
-	if err := usergame.ClearWishlistOnAcquire(ctx, w.DB, ugID); err != nil {
-		slog.WarnContext(ctx, "user_game_write: clear wishlist on acquire", logging.KeyErr, err, "user_game_id", ugID, logging.Cat(logging.CategoryDB))
-	}
-
-	// Auto-promote not_started → in_progress when the game has any played
-	// hours. The shared helper keys off the SUM of all the game's platforms in
-	// the DB and its play_status = 'not_started' guard covers freshly-upserted
-	// rows (which default to not_started), so no separate isNew check is needed.
-	if err := usergame.PromoteToInProgressIfPlayed(ctx, w.DB, ugID); err != nil {
-		slog.WarnContext(ctx, "user_game_write: auto-promote play_status", logging.KeyErr, err, logging.KeyJobItemID, p.JobItemID, logging.Cat(logging.CategoryDB))
 	}
 
 	if _, err := w.DB.NewRaw(
@@ -850,9 +763,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		slog.WarnContext(ctx, "user_game_write: update external_game updated_at", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
 
-	// Write changes('added') only after platforms are confirmed written,
-	// preventing orphan user_games + changes rows on platform-load failure.
-	if isNewRow.IsNew {
+	if res.Created {
 		if _, err := w.DB.NewRaw(
 			`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, created_at)
 			 VALUES (?, ?, ?, ?, ?, 'added', ?, now())`,
