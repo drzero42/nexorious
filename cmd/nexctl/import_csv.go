@@ -107,6 +107,8 @@ func newImportCSVCmd() *cobra.Command {
 				if sm.Status.Column != "" {
 					fmt.Fprintf(out, "  status column: %s\n", sm.Status.Column)
 				}
+				fmt.Fprintf(out, "  rating_scale: %d\n", sm.RatingScale)
+				fmt.Fprintf(out, "  merge_by_title: %v\n", sm.MergeByTitle)
 				return nil
 			}
 
@@ -139,6 +141,9 @@ func newImportCSVCmd() *cobra.Command {
 			// Manual mapping path.
 			if strings.TrimSpace(titleCol) == "" {
 				return fmt.Errorf("a --title-col is required (or use --preset)")
+			}
+			if cmd.Flags().Changed("status-map") && statusCol == "" {
+				return fmt.Errorf("--status-map requires --status-col")
 			}
 
 			// Build columns map with only non-empty values.

@@ -168,7 +168,14 @@ func TestImportCSVManualMapping(t *testing.T) {
 		t.Errorf("columns.platform should be absent when not set")
 	}
 
+	if cols["rating"] != "Score" {
+		t.Errorf("columns.rating = %v, want Score", cols["rating"])
+	}
+
 	status, _ := m["status"].(map[string]any)
+	if status["column"] != "Status" {
+		t.Errorf("status.column = %v, want Status", status["column"])
+	}
 	vm, _ := status["value_map"].(map[string]any)
 	if vm["Beat"] != "completed" {
 		t.Errorf("status.value_map[Beat] = %v, want completed", vm["Beat"])
@@ -205,6 +212,69 @@ func TestImportCSVManualNoTitleCol(t *testing.T) {
 	}
 	if uploaded {
 		t.Error("must not upload when --title-col is absent")
+	}
+}
+
+func TestImportCSVInvalidRatingScale(t *testing.T) {
+	var uploaded bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/import/csv", func(http.ResponseWriter, *http.Request) { uploaded = true })
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	file := writeTempFile(t, "games.csv", "Name,Score\nPortal,8")
+	_, err := runImport(t, srv.URL, "import", "csv", file,
+		"--title-col", "Name", "--rating-col", "Score", "--rating-scale", "7")
+	if err == nil {
+		t.Fatal("expected error for an invalid rating scale, got nil")
+	}
+	if !strings.Contains(err.Error(), "rating-scale") {
+		t.Errorf("error should mention rating-scale: %v", err)
+	}
+	if uploaded {
+		t.Error("must not upload on an invalid rating scale")
+	}
+}
+
+func TestImportCSVStatusMapMissingEquals(t *testing.T) {
+	var uploaded bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/import/csv", func(http.ResponseWriter, *http.Request) { uploaded = true })
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	file := writeTempFile(t, "games.csv", "Name,Status\nPortal,Beat")
+	_, err := runImport(t, srv.URL, "import", "csv", file,
+		"--title-col", "Name", "--status-col", "Status", "--status-map", "Beat")
+	if err == nil {
+		t.Fatal("expected error for a --status-map entry without '=', got nil")
+	}
+	if !strings.Contains(err.Error(), "raw=canonical") {
+		t.Errorf("error should mention raw=canonical: %v", err)
+	}
+	if uploaded {
+		t.Error("must not upload on a malformed --status-map")
+	}
+}
+
+func TestImportCSVStatusMapRequiresStatusCol(t *testing.T) {
+	var uploaded bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/import/csv", func(http.ResponseWriter, *http.Request) { uploaded = true })
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	file := writeTempFile(t, "games.csv", "Name,Status\nPortal,Beat")
+	_, err := runImport(t, srv.URL, "import", "csv", file,
+		"--title-col", "Name", "--status-map", "Beat=completed")
+	if err == nil {
+		t.Fatal("expected error for --status-map without --status-col, got nil")
+	}
+	if !strings.Contains(err.Error(), "--status-col") {
+		t.Errorf("error should mention --status-col: %v", err)
+	}
+	if uploaded {
+		t.Error("must not upload when --status-map lacks --status-col")
 	}
 }
 
