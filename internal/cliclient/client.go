@@ -760,3 +760,69 @@ func (c *Client) GetPool(key, id string) (*PoolDetail, error) {
 	}
 	return &out, nil
 }
+
+// CreatePool creates a pool with optional color and filter (raw JSON, server-validated).
+func (c *Client) CreatePool(key, name string, color *string, filter json.RawMessage) (*Pool, error) {
+	body := map[string]any{"name": name}
+	if color != nil {
+		body["color"] = *color
+	}
+	if filter != nil {
+		body["filter"] = filter
+	}
+	var out Pool
+	if err := c.doBearer(http.MethodPost, "/api/pools", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdatePool applies a partial update (name/color/filter).
+func (c *Client) UpdatePool(key, id string, fields map[string]any) (*Pool, error) {
+	var out Pool
+	if err := c.doBearer(http.MethodPut, "/api/pools/"+url.PathEscape(id), key, fields, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeletePool removes a pool.
+func (c *Client) DeletePool(key, id string) error {
+	return c.doBearer(http.MethodDelete, "/api/pools/"+url.PathEscape(id), key, nil, nil)
+}
+
+// AddPoolGame adds one game (as a candidate) to a pool.
+func (c *Client) AddPoolGame(key, poolID, userGameID string) error {
+	body := map[string]any{"user_game_id": userGameID}
+	return c.doBearer(http.MethodPost, "/api/pools/"+url.PathEscape(poolID)+"/games", key, body, nil)
+}
+
+// BulkAddPoolGames adds multiple games (as candidates); returns the count newly inserted.
+func (c *Client) BulkAddPoolGames(key, poolID string, userGameIDs []string) (int64, error) {
+	body := map[string]any{"user_game_ids": userGameIDs}
+	var out struct {
+		Added int64 `json:"added"`
+	}
+	if err := c.doBearer(http.MethodPost, "/api/pools/"+url.PathEscape(poolID)+"/games/bulk", key, body, &out); err != nil {
+		return 0, err
+	}
+	return out.Added, nil
+}
+
+// RemovePoolGame removes a game from a pool.
+func (c *Client) RemovePoolGame(key, poolID, userGameID string) error {
+	return c.doBearer(http.MethodDelete, "/api/pools/"+url.PathEscape(poolID)+"/games/"+url.PathEscape(userGameID), key, nil, nil)
+}
+
+// SetQueue declaratively sets the pool's ordered queue (ids must already be members;
+// an empty slice clears the queue). Members not listed become candidates.
+func (c *Client) SetQueue(key, poolID string, userGameIDs []string) error {
+	body := map[string]any{"ids": userGameIDs}
+	return c.doBearer(http.MethodPut, "/api/pools/"+url.PathEscape(poolID)+"/queue", key, body, nil)
+}
+
+// ReorderPools sets pool positions by the given order.
+func (c *Client) ReorderPools(key string, poolIDs []string) error {
+	body := map[string]any{"ids": poolIDs}
+	return c.doBearer(http.MethodPost, "/api/pools/reorder", key, body, nil)
+}

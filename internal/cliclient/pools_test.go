@@ -7,6 +7,44 @@ import (
 	"testing"
 )
 
+func TestPoolMutations(t *testing.T) {
+	var queueIDs []any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/pools", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "p-9", "name": "New"})
+	})
+	mux.HandleFunc("/api/pools/p-9/games/bulk", func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		_ = json.NewEncoder(w).Encode(map[string]any{"added": len(b["user_game_ids"].([]any))})
+	})
+	mux.HandleFunc("/api/pools/p-9/queue", func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		queueIDs = b["ids"].([]any)
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := New(srv.URL)
+
+	p, err := c.CreatePool("k", "New", nil, nil)
+	if err != nil || p.ID != "p-9" {
+		t.Fatalf("CreatePool: %v %+v", err, p)
+	}
+	n, err := c.BulkAddPoolGames("k", "p-9", []string{"ug-1", "ug-2"})
+	if err != nil || n != 2 {
+		t.Fatalf("BulkAddPoolGames: %v %d", err, n)
+	}
+	if err := c.SetQueue("k", "p-9", []string{"ug-2", "ug-1"}); err != nil {
+		t.Fatalf("SetQueue: %v", err)
+	}
+	if len(queueIDs) != 2 || queueIDs[0] != "ug-2" {
+		t.Fatalf("queue order = %v", queueIDs)
+	}
+}
+
 func TestListAndGetPool(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/pools", func(w http.ResponseWriter, _ *http.Request) {
