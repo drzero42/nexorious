@@ -714,3 +714,49 @@ func (c *Client) UpdateTag(key, id string, name, color *string) (*Tag, error) {
 func (c *Client) DeleteTag(key, id string) error {
 	return c.doBearer(http.MethodDelete, "/api/tags/"+url.PathEscape(id), key, nil, nil)
 }
+
+// Pool is a play-planning pool's metadata.
+type Pool struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Color     *string         `json:"color"`
+	Position  int             `json:"position"`
+	Filter    json.RawMessage `json:"filter"`
+	HasFilter bool            `json:"has_filter"`
+}
+
+// PoolListItem is one row of the pool list.
+type PoolListItem struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Color          *string `json:"color"`
+	Position       int     `json:"position"`
+	HasFilter      bool    `json:"has_filter"`
+	QueueCount     int64   `json:"queue_count"`
+	CandidateCount int64   `json:"candidate_count"`
+}
+
+// PoolDetail is a pool plus its ordered queue and candidate user-games.
+type PoolDetail struct {
+	Pool
+	Queue      []UserGame `json:"queue"`
+	Candidates []UserGame `json:"candidates"`
+}
+
+// ListPools returns the caller's pools ordered by position.
+func (c *Client) ListPools(key string) ([]PoolListItem, error) {
+	var out []PoolListItem
+	if err := c.doBearer(http.MethodGet, "/api/pools", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetPool returns a pool with its queue and candidates.
+func (c *Client) GetPool(key, id string) (*PoolDetail, error) {
+	var out PoolDetail
+	if err := c.doBearer(http.MethodGet, "/api/pools/"+url.PathEscape(id), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
