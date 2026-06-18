@@ -99,6 +99,20 @@ func parseFlexibleDate(s *string) *time.Time {
 	return nil
 }
 
+// parseRFC3339 returns the parsed *time.Time for an RFC3339 string, or nil if s
+// is nil or unparseable. Used to seed imported created_at/updated_at; a nil
+// result lets Acquire fall through to now().
+func parseRFC3339(s *string) *time.Time {
+	if s == nil {
+		return nil
+	}
+	if t, err := time.Parse(time.RFC3339, *s); err == nil {
+		u := t.UTC()
+		return &u
+	}
+	return nil
+}
+
 type importTagData struct {
 	Name  string  `json:"name"`
 	Color *string `json:"color"`
@@ -157,70 +171,19 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		return nil
 	}
 
-	// Check for existing UserGame
-	var existingUG models.UserGame
-	err := w.DB.NewSelect().Model(&existingUG).
-		Where("user_id = ? AND game_id = ?", item.UserID, gd.IGDBID).
-		Scan(ctx)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("check existing user_game: %v", err), "import_item: markItemFailed")
-		checkJobCompletion(w.DB, item.JobID)
-		return nil
+	// Parse the meta fields for the (possible) initial insert. Acquire(ModeImport)
+	// writes these — and the caller-supplied timestamps — only when it creates the
+	// user_game row; an existing row (including its updated_at) is left untouched.
+	var personalRating *int32
+	if gd.PersonalRating != nil && *gd.PersonalRating >= 1 && *gd.PersonalRating <= 5 {
+		r := int32(*gd.PersonalRating) //nolint:gosec // bounded to 1..5 above
+		personalRating = &r
+	} else if gd.PersonalRating != nil {
+		slog.WarnContext(ctx, "import_item: personal_rating out of range, treating as unrated", "value", *gd.PersonalRating)
 	}
-	alreadyExists := err == nil
-
-	// Build and insert UserGame (skip if already exists).
-	// The full metadata row (play_status, personal_rating, timestamps, etc.) is
-	// written here on first import; Acquire(ModeUpsert) below will no-op the
-	// user_game upsert (DO UPDATE SET updated_at only) and handle platforms+tags.
-	// importedUpdatedAt tracks the caller-supplied updated_at so we can restore
-	// it after Acquire's upsert clobbers it with now().
-	now := time.Now().UTC()
-	var importedUpdatedAt *time.Time
-	if !alreadyExists {
-		createdAt := now
-		updatedAt := now
-		if gd.CreatedAt != nil {
-			if t, err := time.Parse(time.RFC3339, *gd.CreatedAt); err == nil {
-				createdAt = t.UTC()
-			}
-		}
-		if gd.UpdatedAt != nil {
-			if t, err := time.Parse(time.RFC3339, *gd.UpdatedAt); err == nil {
-				updatedAt = t.UTC()
-				importedUpdatedAt = &updatedAt
-			}
-		}
-
-		var personalRating *int32
-		if gd.PersonalRating != nil && *gd.PersonalRating >= 1 && *gd.PersonalRating <= 5 {
-			r := int32(*gd.PersonalRating) //nolint:gosec // bounded to 1..5 above
-			personalRating = &r
-		} else if gd.PersonalRating != nil {
-			slog.WarnContext(ctx, "import_item: personal_rating out of range, treating as unrated", "value", *gd.PersonalRating)
-		}
-
-		playStatus := coercePlayStatus(ctx, gd.PlayStatus)
-
-		ug := &models.UserGame{
-			ID:             uuid.NewString(),
-			UserID:         item.UserID,
-			GameID:         gd.IGDBID,
-			PlayStatus:     playStatus,
-			PersonalRating: personalRating,
-			IsLoved:        gd.IsLoved,
-			IsWishlisted:   gd.IsWishlisted,
-			PersonalNotes:  gd.PersonalNotes,
-			CreatedAt:      createdAt,
-			UpdatedAt:      updatedAt,
-		}
-		if _, err = w.DB.NewInsert().Model(ug).Exec(ctx); err != nil {
-			markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("insert user_game: %v", err), "import_item: markItemFailed")
-			checkJobCompletion(w.DB, item.JobID)
-			return nil
-		}
-	}
-	_ = existingUG // queried above only to determine alreadyExists
+	playStatus := coercePlayStatus(ctx, gd.PlayStatus)
+	createdAt := parseRFC3339(gd.CreatedAt)
+	updatedAt := parseRFC3339(gd.UpdatedAt)
 
 	// Build platform inputs, verifying each platform/storefront against the DB
 	// (platforms not in the seed data are silently skipped; storefronts not found
@@ -281,9 +244,10 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 
 	// Snapshot the tag count BEFORE Acquire so we can detect newly merged links.
 	// (Acquire merges tags additively; counting after would make existingTagCount
-	// equal totalTagCount and produce newTagCount = 0.)
+	// equal totalTagCount and produce newTagCount = 0.) Counts 0 for a row that
+	// does not exist yet, so the snapshot needs no prior existence check.
 	existingTagCount := 0
-	if alreadyExists && len(tags) > 0 {
+	if len(tags) > 0 {
 		if err := w.DB.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM user_game_tags ugt"+
 				" JOIN user_games ug ON ug.id = ugt.user_game_id"+
@@ -293,30 +257,23 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 		}
 	}
 
-	// Acquire upserts the user_game (no-op if it already exists), merges platforms
+	// Acquire creates the user_game with the imported meta + timestamps (or leaves
+	// an existing row, including its updated_at, untouched), merges platforms
 	// (max-hours, ownership upgrade), clears wishlist on acquire, auto-promotes
-	// play_status, and merges tags additively.
+	// play_status, and merges tags additively — all atomically.
 	res, err := usergame.Acquire(ctx, w.DB, usergame.AcquireParams{
-		UserID: item.UserID, GameID: gd.IGDBID, Mode: usergame.ModeUpsert,
+		UserID: item.UserID, GameID: gd.IGDBID, Mode: usergame.ModeImport,
 		Platforms: plats, Tags: tags, TagMode: usergame.TagMerge,
+		PlayStatus: playStatus, PersonalRating: personalRating,
+		IsLoved: gd.IsLoved, IsWishlisted: gd.IsWishlisted, PersonalNotes: gd.PersonalNotes,
+		CreatedAt: createdAt, UpdatedAt: updatedAt,
 	})
 	if err != nil {
 		markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("acquire: %v", err), "import_item: markItemFailed")
 		checkJobCompletion(w.DB, item.JobID)
 		return nil
 	}
-
-	// Acquire(ModeUpsert)'s ON CONFLICT DO UPDATE SET updated_at = now() fires
-	// even when the row was just freshly inserted by this worker (above) with a
-	// caller-supplied updated_at. Restore it so imported timestamps are preserved.
-	if importedUpdatedAt != nil {
-		if _, err := w.DB.NewRaw(
-			`UPDATE user_games SET updated_at = ? WHERE user_id = ? AND game_id = ?`,
-			*importedUpdatedAt, item.UserID, gd.IGDBID,
-		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "import_item: restore updated_at", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		}
-	}
+	alreadyExists := !res.Created
 
 	// Determine change type for the changes table.
 	newPlatformCount := 0

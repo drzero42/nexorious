@@ -71,6 +71,38 @@ func upsertUserGame(ctx context.Context, tx bun.IDB, p AcquireParams) (string, b
 		}
 		return row.ID, row.IsNew, nil
 	}
+	if p.Mode == ModeImport {
+		// Persist all caller-supplied meta + timestamps on a fresh insert; leave an
+		// existing row (including its updated_at) fully intact on conflict. The
+		// DO UPDATE self-assignment is a no-op value-wise but still emits a row, so
+		// RETURNING surfaces the existing id and (xmax = 0) reports created-vs-merged.
+		// play_status NOT NULL DEFAULT 'not_started': COALESCE so a nil pointer
+		// lands on 'not_started' (which the promote-if-played guard keys off).
+		createdAt := now
+		if p.CreatedAt != nil {
+			createdAt = p.CreatedAt.UTC()
+		}
+		updatedAt := now
+		if p.UpdatedAt != nil {
+			updatedAt = p.UpdatedAt.UTC()
+		}
+		var row struct {
+			ID    string `bun:"id"`
+			IsNew bool   `bun:"is_new"`
+		}
+		err := tx.NewRaw(
+			`INSERT INTO user_games
+			 (id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, is_wishlisted, created_at, updated_at)
+			 VALUES (?, ?, ?, COALESCE(?, 'not_started'), ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT (user_id, game_id) DO UPDATE SET updated_at = user_games.updated_at
+			 RETURNING id, (xmax = 0) AS is_new`,
+			id, p.UserID, p.GameID, p.PlayStatus, p.PersonalRating, p.IsLoved, p.PersonalNotes, p.IsWishlisted, createdAt, updatedAt,
+		).Scan(ctx, &row)
+		if err != nil {
+			return "", false, fmt.Errorf("import upsert user_game: %w", err)
+		}
+		return row.ID, row.IsNew, nil
+	}
 	// ModeCreate — persist all caller-supplied meta fields in the initial row.
 	// play_status has a NOT NULL DEFAULT 'not_started'; use COALESCE so a nil
 	// pointer falls through to the column default rather than violating the constraint.
