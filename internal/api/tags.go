@@ -14,6 +14,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/db"
 )
 
 // TagsHandler handles tag CRUD endpoints.
@@ -114,7 +115,7 @@ func (h *TagsHandler) HandleCreateTag(c *echo.Context) error {
 		id, userID, req.Name, req.Color, now, now,
 	).Scan(context.Background(), &tag)
 	if err != nil {
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "tag name already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create tag")
@@ -185,7 +186,7 @@ func (h *TagsHandler) HandleUpdateTag(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
 		}
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "tag name already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update tag")
@@ -220,15 +221,4 @@ func (h *TagsHandler) HandleDeleteTag(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusNoContent)
-}
-
-// isDuplicateKeyError reports whether err is a PostgreSQL unique_violation (code 23505).
-func isDuplicateKeyError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// pgdriver wraps the error; the code is embedded in the message.
-	return strings.Contains(err.Error(), "23505") ||
-		strings.Contains(err.Error(), "unique constraint") ||
-		strings.Contains(err.Error(), "unique_violation")
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/db"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/filter"
 )
@@ -125,7 +126,7 @@ func (h *PoolsHandler) HandleCreatePool(c *echo.Context) error {
 		id, userID, req.Name, req.Color, userID, normFilter, now, now,
 	).Scan(ctx, &pool)
 	if err != nil {
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "pool name already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create pool")
@@ -203,7 +204,7 @@ func (h *PoolsHandler) HandleUpdatePool(c *echo.Context) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
 		}
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "pool name already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update pool")
