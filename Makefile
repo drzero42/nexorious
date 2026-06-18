@@ -25,6 +25,7 @@ frontend:
 
 build:
 	go build $(LDFLAGS) -o nexorious ./cmd/nexorious
+	go build $(LDFLAGS) -o nexctl ./cmd/nexctl
 
 docker:
 	docker build --target runtime --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t nexorious:local .
