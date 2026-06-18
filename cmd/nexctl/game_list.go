@@ -38,7 +38,6 @@ func newGameListCmd() *cobra.Command {
 			setIf(params, "platform", platform)
 			setIf(params, "storefront", storefront)
 			setIf(params, "genre", genre)
-			setIf(params, "pool", pool)
 			setIf(params, "sort_by", sortBy)
 			setIf(params, "sort_order", order)
 			if cmd.Flags().Changed("wishlist") {
@@ -74,6 +73,13 @@ func newGameListCmd() *cobra.Command {
 					return err
 				}
 				params.Set("tag", id)
+			}
+			if pool != "" {
+				ref, err := resolvePoolRef(cmd, c, p.Key, pool)
+				if err != nil {
+					return err
+				}
+				params.Set("pool", ref.ID)
 			}
 
 			res, err := c.ListUserGames(p.Key, params)
@@ -116,7 +122,7 @@ func newGameListCmd() *cobra.Command {
 	f.StringVar(&platform, "platform", "", "Filter by platform slug")
 	f.StringVar(&storefront, "storefront", "", "Filter by storefront slug")
 	f.StringVar(&genre, "genre", "", "Filter by genre")
-	f.StringVar(&pool, "pool", "", "Filter by pool id")
+	f.StringVar(&pool, "pool", "", "Filter by pool name or id")
 	f.StringVar(&sortBy, "sort", "", "Sort field (title, created_at, personal_rating, hours_played, …)")
 	f.StringVar(&order, "order", "", "Sort order (asc|desc)")
 	f.BoolVar(&wishlist, "wishlist", false, "Show only wishlisted games")
