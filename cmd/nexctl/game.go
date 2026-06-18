@@ -63,7 +63,12 @@ func interactive(cmd *cobra.Command) bool {
 	if flagBool(cmd, "json") || flagBool(cmd, "quiet") || flagBool(cmd, "yes") {
 		return false
 	}
-	return term.IsTerminal(int(os.Stdin.Fd()))
+	// Probe the command's own input (honors cmd.SetIn in tests); a non-*os.File
+	// reader (e.g. a piped bytes.Reader) is never a TTY.
+	if f, ok := cmd.InOrStdin().(*os.File); ok {
+		return term.IsTerminal(int(f.Fd()))
+	}
+	return false
 }
 
 func pickUserGame(cmd *cobra.Command, games []cliclient.UserGame) (*cliclient.UserGame, error) {
