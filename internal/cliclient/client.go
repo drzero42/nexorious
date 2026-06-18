@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -501,6 +502,82 @@ func (c *Client) ImportIGDBGame(key string, igdbID int) (*Game, error) {
 	var out Game
 	body := map[string]any{"igdb_id": igdbID, "download_cover_art": true}
 	if err := c.doBearer(http.MethodPost, "/api/games/igdb-import", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GameRef is the minimal game metadata embedded in a user-game (the title source).
+type GameRef struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
+
+// Tag is a user tag.
+type Tag struct {
+	ID    string  `json:"id"`
+	Name  string  `json:"name"`
+	Color *string `json:"color"`
+}
+
+// UserGamePlatform is one platform row on a user-game.
+type UserGamePlatform struct {
+	ID              string   `json:"id"`
+	Platform        *string  `json:"platform"`
+	Storefront      *string  `json:"storefront"`
+	HoursPlayed     *float64 `json:"hours_played"`
+	OwnershipStatus *string  `json:"ownership_status"`
+}
+
+// UserGame is one collection entry (subset of the API response).
+type UserGame struct {
+	ID             string             `json:"id"`
+	GameID         int                `json:"game_id"`
+	PlayStatus     *string            `json:"play_status"`
+	PersonalRating *int               `json:"personal_rating"`
+	IsLoved        bool               `json:"is_loved"`
+	IsWishlisted   bool               `json:"is_wishlisted"`
+	PersonalNotes  *string            `json:"personal_notes"`
+	Game           *GameRef           `json:"game"`
+	HoursPlayed    float64            `json:"hours_played"`
+	Platforms      []UserGamePlatform `json:"platforms"`
+	Tags           []Tag              `json:"tags"`
+}
+
+// Title returns the game's title, or "" if the relation is absent.
+func (u *UserGame) Title() string {
+	if u.Game == nil {
+		return ""
+	}
+	return u.Game.Title
+}
+
+// UserGameListResponse is the paged list payload.
+type UserGameListResponse struct {
+	UserGames []UserGame `json:"user_games"`
+	Total     int        `json:"total"`
+	Page      int        `json:"page"`
+	PerPage   int        `json:"per_page"`
+	Pages     int        `json:"pages"`
+}
+
+// ListUserGames returns user-games filtered by the given query params.
+func (c *Client) ListUserGames(key string, params url.Values) (*UserGameListResponse, error) {
+	path := "/api/user-games"
+	if enc := params.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var out UserGameListResponse
+	if err := c.doBearer(http.MethodGet, path, key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetUserGame fetches a single user-game by id.
+func (c *Client) GetUserGame(key, id string) (*UserGame, error) {
+	var out UserGame
+	if err := c.doBearer(http.MethodGet, "/api/user-games/"+url.PathEscape(id), key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
