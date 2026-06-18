@@ -47,7 +47,7 @@ func newGameEditCmd() *cobra.Command {
 				fmt.Fprintln(out, "No games matched.")
 				return nil
 			}
-			if len(games) > 1 {
+			if useFilter || len(games) > 1 {
 				ok, err := cliui.Confirm(bufio.NewReader(cmd.InOrStdin()), out,
 					fmt.Sprintf("Edit %d game(s)?", len(games)), flagBool(cmd, "yes"))
 				if err != nil {

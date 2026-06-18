@@ -52,3 +52,38 @@ func TestGameEditStatusAndTags(t *testing.T) {
 		t.Fatalf("tags = %v", gotTags)
 	}
 }
+
+// TestGameEditFilterSingleConfirms verifies a --filter edit matching exactly one
+// game still requires confirmation (a filtered edit is bulk regardless of count).
+// With no -y and empty stdin the confirm is declined, so the edit aborts before
+// any mutating call.
+func TestGameEditFilterSingleConfirms(t *testing.T) {
+	var mutated bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"user_games": []map[string]any{{"id": "ug-1", "game": map[string]any{"title": "Solo"}}},
+			"total":      1,
+		})
+	})
+	mux.HandleFunc("/api/user-games/ug-1/progress", func(w http.ResponseWriter, _ *http.Request) {
+		mutated = true
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "ug-1"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(bytes.NewReader(nil)) // non-TTY, declines confirm
+	root.SetArgs([]string{"game", "edit", "--filter", "--filter-status", "completed", "--status", "in_progress"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected --filter edit to require confirmation and abort")
+	}
+	if mutated {
+		t.Fatal("edit applied a mutation despite declined confirmation")
+	}
+}
