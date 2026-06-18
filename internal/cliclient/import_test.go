@@ -262,6 +262,38 @@ func TestImportCSV_mappingOnly(t *testing.T) {
 	}
 }
 
+// TestImportCSV_bothFields documents the contract that when both a preset
+// format and a mapping are supplied the client sends both; the server ignores
+// the mapping and the preset wins. The client must not blow up.
+func TestImportCSV_bothFields(t *testing.T) {
+	payload := []byte("title,status\nPortal,Completed")
+	mappingJSON := json.RawMessage(`{"columns":{"title":"title"}}`)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/import/csv", func(w http.ResponseWriter, r *http.Request) {
+		_, fields := parseMultipartFile(t, r)
+		if fields["format"] != "grouvee" {
+			t.Errorf("format = %q, want grouvee", fields["format"])
+		}
+		if fields["mapping"] != string(mappingJSON) {
+			t.Errorf("mapping = %q, want %q", fields["mapping"], mappingJSON)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"job_id": "j-4", "source": "csv", "status": "processing", "total_items": 1,
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := New(srv.URL)
+
+	res, err := c.ImportCSV("k", "games.csv", payload, "grouvee", mappingJSON)
+	if err != nil {
+		t.Fatalf("ImportCSV (both fields): %v", err)
+	}
+	if res.JobID != "j-4" {
+		t.Errorf("JobID = %q, want j-4", res.JobID)
+	}
+}
+
 func TestImportSource_pathEscape(t *testing.T) {
 	payload := []byte(`[{"name":"Half-Life","status":"completed"}]`)
 	// "vglist" is a normal slug that should not be altered by path escaping, but

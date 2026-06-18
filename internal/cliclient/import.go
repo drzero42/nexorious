@@ -73,7 +73,7 @@ type CSVInspect struct {
 	Columns          []CSVColumn         `json:"columns"`
 	SuggestedMapping CSVSuggestedMapping `json:"suggested_mapping"`
 	Presets          []CSVPreset         `json:"presets"`
-	Detected         *CSVPreset          `json:"detected"`
+	Detected         *CSVPreset          `json:"detected,omitempty"`
 }
 
 // doBearerMultipart performs an authenticated multipart/form-data request. It

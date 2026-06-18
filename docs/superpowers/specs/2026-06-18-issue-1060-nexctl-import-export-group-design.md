@@ -44,7 +44,7 @@ Every import endpoint takes a `multipart/form-data` body with a `file` field (50
 
 ### Registry-driven import sources (not hardcoded)
 
-`import run <source> <file>` validates `<source>` against the live registry from `GET /api/import/sources` (`importsource.All()`), erroring with the valid list on a miss — the same runtime-validation pattern as Phase 4's `resolveStorefront` (a static binary must not bake in a server-defined set). `nexorious` and `csv` are **not** registry sources (dedicated endpoints with distinct request shapes), so they get their own subcommands. `import sources` lists both the registry sources and the CSV presets for discovery.
+`import run <source> <file>` validates `<source>` against the live registry from `GET /api/import/sources` (`importsource.All()`), erroring with the valid list on a miss — the same runtime-validation pattern as Phase 4's `resolveStorefront` (a static binary must not bake in a server-defined set). `nexorious` and `csv` are **not** registry sources (dedicated endpoints with distinct request shapes), so they get their own subcommands. `import sources` lists the registry sources from the API for `import run`, and names nexctl's own dedicated importers (`nexorious`, `csv`) in its footer. **CSV presets are not separately listable over REST** (the only endpoint returning them, `/api/import/csv/inspect`, requires a file upload), so preset discovery lives on `import csv <file> --inspect`, not on `import sources` — keeping the binary free of a hardcoded preset set.
 
 ### CSV mapping flags → server `mapping` JSON
 
