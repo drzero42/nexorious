@@ -98,6 +98,29 @@ func TestSyncStatusQuiet(t *testing.T) {
 	}
 }
 
+func TestResolveStorefrontEmptyConfigs(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sync/config", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"configs": []map[string]any{}, "total": 0})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"sync", "status", "steam"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatalf("expected error for empty configs, got nil\n%s", out.String())
+	}
+	if !strings.Contains(err.Error(), "no storefronts available") {
+		t.Fatalf("error = %v, want 'no storefronts available'", err)
+	}
+}
+
 func TestSyncStatusStorefront(t *testing.T) {
 	jobID := "job-42"
 	lastSynced := "2026-06-01T12:00:00Z"

@@ -55,6 +55,9 @@ func resolveStorefront(c *cliclient.Client, key, arg string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("list sync configs failed: %w", err)
 	}
+	if len(configs) == 0 {
+		return "", fmt.Errorf("no storefronts available on this server")
+	}
 	for _, cfg := range configs {
 		if strings.EqualFold(cfg.Storefront, arg) {
 			return cfg.Storefront, nil
