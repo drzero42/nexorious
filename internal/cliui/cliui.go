@@ -24,11 +24,6 @@ func FirstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// IsTTY reports whether f is an interactive terminal.
-func IsTTY(f *os.File) bool {
-	return term.IsTerminal(int(f.Fd()))
-}
-
 // Prompt writes label to out and reads one trimmed line from in.
 func Prompt(in *bufio.Reader, out io.Writer, label string) (string, error) {
 	fmt.Fprint(out, label)
