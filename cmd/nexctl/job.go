@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -22,8 +23,58 @@ func yesNo(b bool) string {
 
 func newJobCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "job", Short: "Inspect and manage background jobs"}
-	cmd.AddCommand(newJobListCmd(), newJobShowCmd())
+	cmd.AddCommand(newJobListCmd(), newJobShowCmd(), newJobRetryCmd(), newJobCancelCmd())
 	return cmd
+}
+
+func newJobRetryCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "retry <id>",
+		Short: "Re-enqueue a job's failed items",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			res, err := cliclient.New(p.URL).RetryFailedJob(p.Key, args[0])
+			if err != nil {
+				return fmt.Errorf("retry failed: %w", err)
+			}
+			fmt.Fprintf(out, "%s (%d item(s) re-enqueued)\n", res.Message, res.RetriedCount)
+			return nil
+		},
+	}
+}
+
+func newJobCancelCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "cancel <id>",
+		Short: "Cancel a running job",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			in := bufio.NewReader(cmd.InOrStdin())
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			ok, err := cliui.Confirm(in, out, fmt.Sprintf("Cancel job %s?", args[0]), flagBool(cmd, "yes"))
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintln(out, "Aborted.")
+				return nil
+			}
+			if err := cliclient.New(p.URL).CancelJob(p.Key, args[0]); err != nil {
+				return fmt.Errorf("cancel failed: %w", err)
+			}
+			fmt.Fprintf(out, "cancelled job %s\n", args[0])
+			return nil
+		},
+	}
 }
 
 func newJobListCmd() *cobra.Command {
