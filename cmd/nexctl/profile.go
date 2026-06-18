@@ -32,7 +32,25 @@ func newProfileListCmd() *cobra.Command {
 			}
 			names := cfg.Names()
 			if flagBool(cmd, "json") {
-				return cliui.EncodeJSON(out, cfg.Profiles)
+				// Emit a redacted view — never the stored API key (cfg.Profiles
+				// includes the live bearer token in Profile.Key).
+				type profileView struct {
+					Name     string `json:"name"`
+					URL      string `json:"url"`
+					Username string `json:"username"`
+					Current  bool   `json:"current"`
+				}
+				views := make([]profileView, 0, len(names))
+				for _, n := range names {
+					p, _ := cfg.Profile(n)
+					views = append(views, profileView{
+						Name:     n,
+						URL:      p.URL,
+						Username: p.Username,
+						Current:  n == cfg.CurrentName(),
+					})
+				}
+				return cliui.EncodeJSON(out, views)
 			}
 			if flagBool(cmd, "quiet") {
 				for _, n := range names {
