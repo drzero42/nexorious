@@ -42,7 +42,8 @@ var storefrontCreds = map[string][]storefrontCredField{
 
 func newSyncCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "sync", Short: "Manage storefront sync"}
-	cmd.AddCommand(newSyncStatusCmd(), newSyncConnectCmd(), newSyncDisconnectCmd())
+	cmd.AddCommand(newSyncStatusCmd(), newSyncConnectCmd(), newSyncDisconnectCmd(),
+		newSyncConfigCmd(), newSyncRunCmd(), newSyncResetCmd())
 	return cmd
 }
 
@@ -262,4 +263,130 @@ func newSyncStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newSyncConfigCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "config <storefront>",
+		Short: "Show or update sync configuration for a storefront",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			sf, err := resolveStorefront(c, p.Key, args[0])
+			if err != nil {
+				return err
+			}
+
+			if cmd.Flags().Changed("frequency") {
+				freq, err := cmd.Flags().GetString("frequency")
+				if err != nil {
+					return err
+				}
+				cfg, err := c.UpdateSyncConfig(p.Key, sf, freq)
+				if err != nil {
+					return fmt.Errorf("update sync config failed: %w", err)
+				}
+				if flagBool(cmd, "json") {
+					return cliui.EncodeJSON(out, cfg)
+				}
+				fmt.Fprintf(out, "%s sync frequency: %s\n", cfg.Storefront, cfg.Frequency)
+				return nil
+			}
+
+			cfg, err := c.GetSyncConfig(p.Key, sf)
+			if err != nil {
+				return fmt.Errorf("get sync config failed: %w", err)
+			}
+			if flagBool(cmd, "json") {
+				return cliui.EncodeJSON(out, cfg)
+			}
+			lastSynced := "never"
+			if cfg.LastSyncedAt != nil {
+				lastSynced = *cfg.LastSyncedAt
+			}
+			configured := "no"
+			if cfg.IsConfigured {
+				configured = "yes"
+			}
+			fmt.Fprintf(out, "storefront:   %s\n", cfg.Storefront)
+			fmt.Fprintf(out, "frequency:    %s\n", cfg.Frequency)
+			fmt.Fprintf(out, "configured:   %s\n", configured)
+			fmt.Fprintf(out, "last synced:  %s\n", lastSynced)
+			return nil
+		},
+	}
+	cmd.Flags().String("frequency", "", "Sync frequency (e.g. daily, weekly)")
+	return cmd
+}
+
+func newSyncRunCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "run <storefront>",
+		Short: "Trigger a sync for a storefront",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			sf, err := resolveStorefront(c, p.Key, args[0])
+			if err != nil {
+				return err
+			}
+			result, err := c.TriggerSync(p.Key, sf)
+			if err != nil {
+				return fmt.Errorf("trigger sync failed: %w", err)
+			}
+			if flagBool(cmd, "json") {
+				return cliui.EncodeJSON(out, result)
+			}
+			fmt.Fprintf(out, "started %s sync (job %s)\n", result.Storefront, result.JobID)
+			return nil
+		},
+	}
+}
+
+func newSyncResetCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "reset <storefront>",
+		Short: "Delete all synced data for a storefront",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			sf, err := resolveStorefront(c, p.Key, args[0])
+			if err != nil {
+				return err
+			}
+
+			in := bufio.NewReader(cmd.InOrStdin())
+			ok, err := cliui.Confirm(in, out, fmt.Sprintf("Delete ALL synced data for %s? This cannot be undone.", sf), flagBool(cmd, "yes"))
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintln(out, "Aborted.")
+				return nil
+			}
+
+			if err := c.ResetSyncData(p.Key, sf); err != nil {
+				return fmt.Errorf("reset sync data failed: %w", err)
+			}
+			fmt.Fprintf(out, "reset %s sync data\n", sf)
+			return nil
+		},
+	}
+	cmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
+	return cmd
 }
