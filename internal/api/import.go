@@ -225,10 +225,8 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
 
-		if h.riverClient != nil {
-			if _, err := h.riverClient.Insert(ctx, tasks.ImportItemArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.ErrorContext(reqCtx, "import: submit task", logging.KeyJobItemID, item.ID, logging.KeyErr, err)
-			}
+		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, item.ID, tasks.ImportItemArgs{JobItemID: item.ID}); err != nil {
+			slog.ErrorContext(reqCtx, "import: submit task", logging.KeyJobItemID, item.ID, logging.KeyErr, err)
 		}
 	}
 
@@ -310,10 +308,8 @@ func (h *ImportHandler) enqueueImportJob(reqCtx context.Context, userID, source,
 		if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
 			return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
-		if h.riverClient != nil {
-			if _, err := h.riverClient.Insert(ctx, tasks.ImportMatchArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.ErrorContext(reqCtx, "import: submit import_match", logging.KeyJobItemID, item.ID, logging.KeyErr, err)
-			}
+		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, item.ID, tasks.ImportMatchArgs{JobItemID: item.ID}); err != nil {
+			slog.ErrorContext(reqCtx, "import: submit import_match", logging.KeyJobItemID, item.ID, logging.KeyErr, err)
 		}
 	}
 

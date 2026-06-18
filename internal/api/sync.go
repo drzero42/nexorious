@@ -1070,11 +1070,9 @@ func (h *SyncHandler) HandleUnskipGame(c *echo.Context) error {
 			slog.ErrorContext(c.Request().Context(), "sync: insert job_item for unskip failed", logging.KeyErr, err, logging.KeyExternalGameID, eg.ID, logging.Cat(logging.CategoryDB))
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
 		}
-		if h.riverClient != nil {
-			if _, err := h.riverClient.Insert(ctx, tasks.IGDBMatchArgs{JobItemID: itemID}, nil); err != nil {
-				slog.ErrorContext(c.Request().Context(), "sync: enqueue igdb_match failed", logging.KeyErr, err, logging.KeyJobItemID, itemID, logging.Cat(logging.CategoryDB))
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
-			}
+		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, itemID, tasks.IGDBMatchArgs{JobItemID: itemID}); err != nil {
+			slog.ErrorContext(c.Request().Context(), "sync: enqueue igdb_match failed", logging.KeyErr, err, logging.KeyJobItemID, itemID, logging.Cat(logging.CategoryDB))
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 		}
 	}
 
@@ -1373,11 +1371,9 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 		}
 	}
 
-	if h.riverClient != nil {
-		if _, err := h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: jobItemID}, nil); err != nil {
-			slog.ErrorContext(c.Request().Context(), "sync: enqueue user_game_write failed", logging.KeyErr, err, logging.KeyJobItemID, jobItemID, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
-		}
+	if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, jobItemID, tasks.UserGameArgs{JobItemID: jobItemID}); err != nil {
+		slog.ErrorContext(c.Request().Context(), "sync: enqueue user_game_write failed", logging.KeyErr, err, logging.KeyJobItemID, jobItemID, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue sync item")
 	}
 
 	// Resolve children: external_games with parent_id pointing to this row.
@@ -1430,10 +1426,8 @@ func (h *SyncHandler) HandleRematchExternalGame(c *echo.Context) error {
 					slog.ErrorContext(c.Request().Context(), "sync: rematch: update sibling job_item status", "sibling_id", sib.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				}
 			}
-			if h.riverClient != nil {
-				if _, err := h.riverClient.Insert(ctx, tasks.UserGameArgs{JobItemID: sibItemID}, nil); err != nil {
-					slog.ErrorContext(c.Request().Context(), "sync: rematch: enqueue sibling Stage 3", "sibling_id", sib.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-				}
+			if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, sibItemID, tasks.UserGameArgs{JobItemID: sibItemID}); err != nil {
+				slog.ErrorContext(c.Request().Context(), "sync: rematch: enqueue sibling Stage 3", "sibling_id", sib.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			}
 		}
 	}
@@ -1475,10 +1469,8 @@ func (h *SyncHandler) HandleRetryFailedExternalGames(c *echo.Context) error {
 			slog.ErrorContext(c.Request().Context(), "sync: retry-failed: reset item", logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			continue
 		}
-		if h.riverClient != nil {
-			if _, err := h.riverClient.Insert(ctx, tasks.IGDBMatchArgs{JobItemID: item.ID}, nil); err != nil {
-				slog.ErrorContext(c.Request().Context(), "sync: retry-failed: enqueue", logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			}
+		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, item.ID, tasks.IGDBMatchArgs{JobItemID: item.ID}); err != nil {
+			slog.ErrorContext(c.Request().Context(), "sync: retry-failed: enqueue", logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	}
 	return c.NoContent(http.StatusNoContent)

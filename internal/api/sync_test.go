@@ -47,7 +47,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.Pla
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -1647,6 +1647,37 @@ func TestUnskipGame_EnqueuesJobItem(t *testing.T) {
 	}
 }
 
+// TestUnskipGame_RiverInsertFails_MarksItemFailed locks in the dual-write
+// contract enforced by tasks.EnqueueOrFail: when the River insert fails, the
+// just-created job_item must be marked 'failed' rather than stranded in
+// 'pending' with no backing river_job (the stuck-item class this consolidation
+// closes — #1058). The handler also surfaces a 500 to the caller.
+func TestUnskipGame_RiverInsertFails_MarksItemFailed(t *testing.T) {
+	truncateAllTables(t)
+	rc := newFailingRiverClient(t)
+	e := newSyncTestAppWithRiverClient(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{}, rc)
+	userID, token := setupTagUser(t, testDB, e, "unskip-river-fail")
+	insertExternalGame(t, testDB, "eg-unskip-fail", userID, "steam", "99", "Portal 3")
+
+	postJSONAuth(t, e, "/api/sync/ignored/eg-unskip-fail", nil, token)
+
+	rec := deleteAuth(t, e, "/api/sync/ignored/eg-unskip-fail", token)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when River insert fails, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// The job_item must not be left stuck in 'pending'.
+	var status string
+	if err := testDB.NewRaw(
+		`SELECT status FROM job_items WHERE item_key = '99' AND user_id = ?`, userID,
+	).Scan(context.Background(), &status); err != nil {
+		t.Fatalf("query job_item status: %v", err)
+	}
+	if status != "failed" {
+		t.Fatalf("expected job_item status='failed' after River insert failure, got %q", status)
+	}
+}
+
 // ── TestResetSyncData ─────────────────────────────────────────────────────────
 
 func TestResetSyncData_DeletesDataAndResetsTimestamp(t *testing.T) {
@@ -1937,7 +1968,7 @@ func (s *stubEpicGamesStoreClient) Configured() bool {
 }
 
 // newSyncTestAppWithEpicGamesStore builds the sync app with a custom EpicGamesStoreClient. Used by
-// the Epic connection tests; other tests use newSyncTestApp which passes nil.
+// the Epic connection tests.
 func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.PlaystationStoreClient, epic api.EpicGamesStoreClient) interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 } {
@@ -1946,7 +1977,7 @@ func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam api.SteamC
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, epic, (api.GOGClient)(nil), (api.HumbleClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, epic, (api.GOGClient)(nil), (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -2008,7 +2039,7 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, nil, steam, psn, (api.EpicGamesStoreClient)(nil), gog, (api.HumbleClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, (api.EpicGamesStoreClient)(nil), gog, (api.HumbleClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
