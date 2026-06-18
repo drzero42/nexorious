@@ -21,7 +21,8 @@ func newGameCmd() *cobra.Command {
 		Short: "Manage your game collection",
 	}
 	cmd.AddCommand(newGameListCmd())
-	// Subcommands are added by later tasks: show, add, edit, acquire, rm.
+	cmd.AddCommand(newGameShowCmd())
+	// Subcommands are added by later tasks: add, edit, acquire, rm.
 	return cmd
 }
 
