@@ -515,9 +515,10 @@ type GameRef struct {
 
 // Tag is a user tag.
 type Tag struct {
-	ID    string  `json:"id"`
-	Name  string  `json:"name"`
-	Color *string `json:"color"`
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Color     *string `json:"color"`
+	GameCount int64   `json:"game_count"`
 }
 
 // UserGamePlatform is one platform row on a user-game.
@@ -678,4 +679,38 @@ func (c *Client) ListTags(key string) ([]Tag, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// CreateTag creates a tag with an optional color.
+func (c *Client) CreateTag(key, name string, color *string) (*Tag, error) {
+	body := map[string]any{"name": name}
+	if color != nil {
+		body["color"] = *color
+	}
+	var out Tag
+	if err := c.doBearer(http.MethodPost, "/api/tags", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateTag updates a tag's name and/or color (only non-nil fields are sent).
+func (c *Client) UpdateTag(key, id string, name, color *string) (*Tag, error) {
+	body := map[string]any{}
+	if name != nil {
+		body["name"] = *name
+	}
+	if color != nil {
+		body["color"] = *color
+	}
+	var out Tag
+	if err := c.doBearer(http.MethodPut, "/api/tags/"+url.PathEscape(id), key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteTag removes a tag.
+func (c *Client) DeleteTag(key, id string) error {
+	return c.doBearer(http.MethodDelete, "/api/tags/"+url.PathEscape(id), key, nil, nil)
 }
