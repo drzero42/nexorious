@@ -826,3 +826,104 @@ func (c *Client) ReorderPools(key string, poolIDs []string) error {
 	body := map[string]any{"ids": poolIDs}
 	return c.doBearer(http.MethodPost, "/api/pools/reorder", key, body, nil)
 }
+
+// SyncConfig is the per-storefront sync configuration returned by
+// GET /api/sync/config and GET/PUT /api/sync/config/:storefront.
+type SyncConfig struct {
+	ID           string  `json:"id"`
+	Storefront   string  `json:"storefront"`
+	Frequency    string  `json:"frequency"`
+	LastSyncedAt *string `json:"last_synced_at"`
+	IsConfigured bool    `json:"is_configured"`
+	CreatedAt    string  `json:"created_at"`
+	UpdatedAt    string  `json:"updated_at"`
+}
+
+// SyncStatus is the real-time sync state for a single storefront, returned by
+// GET /api/sync/:storefront/status.
+type SyncStatus struct {
+	Storefront        string  `json:"storefront"`
+	IsSyncing         bool    `json:"is_syncing"`
+	LastSyncedAt      *string `json:"last_synced_at"`
+	ActiveJobID       *string `json:"active_job_id"`
+	ExternalGameCount int     `json:"external_game_count"`
+}
+
+// SyncTriggerResult is the response from POST /api/sync/:storefront.
+type SyncTriggerResult struct {
+	Message    string `json:"message"`
+	JobID      string `json:"job_id"`
+	Storefront string `json:"storefront"`
+	Status     string `json:"status"`
+}
+
+// ListSyncConfigs returns the sync configuration for all storefronts.
+// The response envelope is {"configs":[...],"total":N}; only the slice is returned.
+func (c *Client) ListSyncConfigs(key string) ([]SyncConfig, error) {
+	var env struct {
+		Configs []SyncConfig `json:"configs"`
+		Total   int          `json:"total"`
+	}
+	if err := c.doBearer(http.MethodGet, "/api/sync/config", key, nil, &env); err != nil {
+		return nil, err
+	}
+	return env.Configs, nil
+}
+
+// GetSyncConfig returns the sync configuration for a single storefront.
+func (c *Client) GetSyncConfig(key, storefront string) (*SyncConfig, error) {
+	var out SyncConfig
+	if err := c.doBearer(http.MethodGet, "/api/sync/config/"+url.PathEscape(storefront), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateSyncConfig sets the sync frequency for a storefront and returns the
+// updated configuration.
+func (c *Client) UpdateSyncConfig(key, storefront, frequency string) (*SyncConfig, error) {
+	var out SyncConfig
+	body := map[string]string{"frequency": frequency}
+	if err := c.doBearer(http.MethodPut, "/api/sync/config/"+url.PathEscape(storefront), key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetSyncStatus returns the real-time sync state for a storefront.
+func (c *Client) GetSyncStatus(key, storefront string) (*SyncStatus, error) {
+	var out SyncStatus
+	if err := c.doBearer(http.MethodGet, "/api/sync/"+url.PathEscape(storefront)+"/status", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// TriggerSync starts a sync job for the given storefront.
+func (c *Client) TriggerSync(key, storefront string) (*SyncTriggerResult, error) {
+	var out SyncTriggerResult
+	if err := c.doBearer(http.MethodPost, "/api/sync/"+url.PathEscape(storefront), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ConnectStorefront configures the connection credentials for a storefront.
+// The response shape varies per storefront, so it is returned as a raw map.
+func (c *Client) ConnectStorefront(key, storefront string, body map[string]string) (map[string]any, error) {
+	var out map[string]any
+	if err := c.doBearer(http.MethodPut, "/api/sync/"+url.PathEscape(storefront)+"/connection", key, body, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DisconnectStorefront removes the connection credentials for a storefront.
+func (c *Client) DisconnectStorefront(key, storefront string) error {
+	return c.doBearer(http.MethodDelete, "/api/sync/"+url.PathEscape(storefront)+"/connection", key, nil, nil)
+}
+
+// ResetSyncData deletes all synced data for a storefront.
+func (c *Client) ResetSyncData(key, storefront string) error {
+	return c.doBearer(http.MethodDelete, "/api/sync/"+url.PathEscape(storefront)+"/data", key, nil, nil)
+}
