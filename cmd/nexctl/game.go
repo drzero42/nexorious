@@ -20,7 +20,8 @@ func newGameCmd() *cobra.Command {
 		Use:   "game",
 		Short: "Manage your game collection",
 	}
-	// Subcommands are added by later tasks: list, show, add, edit, acquire, rm.
+	cmd.AddCommand(newGameListCmd())
+	// Subcommands are added by later tasks: show, add, edit, acquire, rm.
 	return cmd
 }
 
@@ -99,14 +100,14 @@ func statusOf(u *cliclient.UserGame) string {
 	return *u.PlayStatus
 }
 
-func ratingOf(u *cliclient.UserGame) string { //nolint:unused // used by Tasks 5–10 subcommands
+func ratingOf(u *cliclient.UserGame) string {
 	if u.PersonalRating == nil {
 		return "-"
 	}
 	return strconv.Itoa(*u.PersonalRating)
 }
 
-func platformsOf(u *cliclient.UserGame) string { //nolint:unused // used by Tasks 5–10 subcommands
+func platformsOf(u *cliclient.UserGame) string {
 	if len(u.Platforms) == 0 {
 		return "-"
 	}
@@ -122,7 +123,7 @@ func platformsOf(u *cliclient.UserGame) string { //nolint:unused // used by Task
 	return strings.Join(parts, ",")
 }
 
-func tagsOf(u *cliclient.UserGame) string { //nolint:unused // used by Tasks 5–10 subcommands
+func tagsOf(u *cliclient.UserGame) string {
 	if len(u.Tags) == 0 {
 		return "-"
 	}
