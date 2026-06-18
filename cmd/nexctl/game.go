@@ -24,7 +24,8 @@ func newGameCmd() *cobra.Command {
 	cmd.AddCommand(newGameShowCmd())
 	cmd.AddCommand(newGameAddCmd())
 	cmd.AddCommand(newGameAcquireCmd())
-	// Subcommands are added by later tasks: edit, rm.
+	cmd.AddCommand(newGameRmCmd())
+	// Subcommands are added by later tasks: edit.
 	return cmd
 }
 
