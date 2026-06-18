@@ -12,6 +12,14 @@ import (
 	"github.com/drzero42/nexorious/internal/cliui"
 )
 
+// yesNo renders a bool as a human-friendly yes/no.
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
+}
+
 func newJobCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "job", Short: "Inspect and manage background jobs"}
 	cmd.AddCommand(newJobListCmd(), newJobShowCmd())
@@ -21,6 +29,7 @@ func newJobCmd() *cobra.Command {
 func newJobListCmd() *cobra.Command {
 	var (
 		status, jobType, source string
+		sortBy, order           string
 		limit, page             int
 	)
 	cmd := &cobra.Command{
@@ -37,6 +46,8 @@ func newJobListCmd() *cobra.Command {
 			setIf(params, "status", status)
 			setIf(params, "job_type", jobType)
 			setIf(params, "source", source)
+			setIf(params, "sort_by", sortBy)
+			setIf(params, "sort_order", order)
 			if limit > 0 {
 				params.Set("per_page", strconv.Itoa(limit))
 			}
@@ -80,6 +91,8 @@ func newJobListCmd() *cobra.Command {
 	f.StringVar(&status, "status", "", "Filter by job status")
 	f.StringVar(&jobType, "type", "", "Filter by job type")
 	f.StringVar(&source, "source", "", "Filter by source")
+	f.StringVar(&sortBy, "sort", "", "Sort field (created_at, started_at, completed_at, job_type, status)")
+	f.StringVar(&order, "order", "", "Sort order (asc|desc)")
 	f.IntVar(&limit, "limit", 0, "Max results per page")
 	f.IntVar(&page, "page", 0, "Page number")
 	return cmd
@@ -121,17 +134,20 @@ func newJobShowCmd() *cobra.Command {
 				errMsg = *job.ErrorMessage
 			}
 
-			fmt.Fprintf(out, "id:        %s\n", job.ID)
-			fmt.Fprintf(out, "type:      %s\n", job.JobType)
-			fmt.Fprintf(out, "source:    %s\n", job.Source)
-			fmt.Fprintf(out, "status:    %s\n", job.Status)
-			fmt.Fprintf(out, "priority:  %s\n", job.Priority)
-			fmt.Fprintf(out, "items:     %d\n", job.TotalItems)
-			fmt.Fprintf(out, "created:   %s\n", job.CreatedAt)
-			fmt.Fprintf(out, "started:   %s\n", derefStr(job.StartedAt))
-			fmt.Fprintf(out, "completed: %s\n", derefStr(job.CompletedAt))
-			fmt.Fprintf(out, "duration:  %s\n", duration)
-			fmt.Fprintf(out, "error:     %s\n", errMsg)
+			fmt.Fprintf(out, "id:         %s\n", job.ID)
+			fmt.Fprintf(out, "type:       %s\n", job.JobType)
+			fmt.Fprintf(out, "source:     %s\n", job.Source)
+			fmt.Fprintf(out, "status:     %s\n", job.Status)
+			fmt.Fprintf(out, "priority:   %s\n", job.Priority)
+			fmt.Fprintf(out, "items:      %d\n", job.TotalItems)
+			fmt.Fprintf(out, "file:       %s\n", derefStr(job.FilePath))
+			fmt.Fprintf(out, "terminal:   %s\n", yesNo(job.IsTerminal))
+			fmt.Fprintf(out, "auto-retry: %s\n", yesNo(job.AutoRetryDone))
+			fmt.Fprintf(out, "created:    %s\n", job.CreatedAt)
+			fmt.Fprintf(out, "started:    %s\n", derefStr(job.StartedAt))
+			fmt.Fprintf(out, "completed:  %s\n", derefStr(job.CompletedAt))
+			fmt.Fprintf(out, "duration:   %s\n", duration)
+			fmt.Fprintf(out, "error:      %s\n", errMsg)
 			fmt.Fprintln(out, "\nPROGRESS:")
 			pr := job.Progress
 			fmt.Fprintf(out, "  pending:        %d\n", pr.Pending)
