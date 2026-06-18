@@ -76,11 +76,12 @@ func (h *NotificationsHandler) HandleCreateChannel(c *echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
-	req.Name = strings.TrimSpace(req.Name)
-	req.URL = strings.TrimSpace(req.URL)
-	if req.Name == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+	name, err := validateName(req.Name, 0)
+	if err != nil {
+		return err
 	}
+	req.Name = name
+	req.URL = strings.TrimSpace(req.URL)
 	if req.URL == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "url is required")
 	}
@@ -119,9 +120,9 @@ func (h *NotificationsHandler) HandleUpdateChannel(c *echo.Context) error {
 	setClauses := []string{}
 	args := []any{}
 	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			return echo.NewHTTPError(http.StatusBadRequest, "name cannot be empty")
+		name, err := validateName(*req.Name, 0)
+		if err != nil {
+			return err
 		}
 		setClauses = append(setClauses, "name = ?")
 		args = append(args, name)

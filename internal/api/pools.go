@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -101,13 +100,11 @@ func (h *PoolsHandler) HandleCreatePool(c *echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+	name, err := validateName(req.Name, 100)
+	if err != nil {
+		return err
 	}
-	if len(req.Name) > 100 {
-		return echo.NewHTTPError(http.StatusBadRequest, "name must be 100 characters or less")
-	}
+	req.Name = name
 
 	normFilter, err := normalizePoolFilter(req.Filter)
 	if err != nil {
@@ -157,16 +154,13 @@ func (h *PoolsHandler) HandleUpdatePool(c *echo.Context) error {
 	hasFields := false
 
 	if nameRaw, ok := raw["name"]; ok {
-		var name string
-		if err := json.Unmarshal(nameRaw, &name); err != nil {
+		var nameStr string
+		if err := json.Unmarshal(nameRaw, &nameStr); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid name")
 		}
-		name = strings.TrimSpace(name)
-		if name == "" {
-			return echo.NewHTTPError(http.StatusBadRequest, "name is required")
-		}
-		if len(name) > 100 {
-			return echo.NewHTTPError(http.StatusBadRequest, "name must be 100 characters or less")
+		name, err := validateName(nameStr, 100)
+		if err != nil {
+			return err
 		}
 		q = q.Set("name = ?", name)
 		hasFields = true
