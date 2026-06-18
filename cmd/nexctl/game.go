@@ -22,7 +22,8 @@ func newGameCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newGameListCmd())
 	cmd.AddCommand(newGameShowCmd())
-	// Subcommands are added by later tasks: add, edit, acquire, rm.
+	cmd.AddCommand(newGameAddCmd())
+	// Subcommands are added by later tasks: edit, acquire, rm.
 	return cmd
 }
 
