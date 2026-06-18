@@ -129,3 +129,16 @@ func (c *Client) RetryFailedJob(key, id string) (*RetryResult, error) {
 func (c *Client) CancelJob(key, id string) error {
 	return c.doBearer(http.MethodPost, "/api/jobs/"+url.PathEscape(id)+"/cancel", key, nil, nil)
 }
+
+// ResolveJobItem sets the resolved IGDB game for a pending-review job item.
+// The server returns {"status":"ok"} which is not surfaced to the caller.
+func (c *Client) ResolveJobItem(key, id string, igdbID int) error {
+	return c.doBearer(http.MethodPost, "/api/job-items/"+url.PathEscape(id)+"/resolve", key,
+		map[string]any{"igdb_id": igdbID}, nil)
+}
+
+// SkipJobItem marks a pending-review job item as skipped.
+// The server returns {"status":"ok"} which is not surfaced to the caller.
+func (c *Client) SkipJobItem(key, id string) error {
+	return c.doBearer(http.MethodPost, "/api/job-items/"+url.PathEscape(id)+"/skip", key, nil, nil)
+}
