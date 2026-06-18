@@ -515,9 +515,10 @@ type GameRef struct {
 
 // Tag is a user tag.
 type Tag struct {
-	ID    string  `json:"id"`
-	Name  string  `json:"name"`
-	Color *string `json:"color"`
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Color     *string `json:"color"`
+	GameCount int64   `json:"game_count"`
 }
 
 // UserGamePlatform is one platform row on a user-game.
@@ -678,4 +679,150 @@ func (c *Client) ListTags(key string) ([]Tag, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// CreateTag creates a tag with an optional color.
+func (c *Client) CreateTag(key, name string, color *string) (*Tag, error) {
+	body := map[string]any{"name": name}
+	if color != nil {
+		body["color"] = *color
+	}
+	var out Tag
+	if err := c.doBearer(http.MethodPost, "/api/tags", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateTag updates a tag's name and/or color (only non-nil fields are sent).
+func (c *Client) UpdateTag(key, id string, name, color *string) (*Tag, error) {
+	body := map[string]any{}
+	if name != nil {
+		body["name"] = *name
+	}
+	if color != nil {
+		body["color"] = *color
+	}
+	var out Tag
+	if err := c.doBearer(http.MethodPut, "/api/tags/"+url.PathEscape(id), key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteTag removes a tag.
+func (c *Client) DeleteTag(key, id string) error {
+	return c.doBearer(http.MethodDelete, "/api/tags/"+url.PathEscape(id), key, nil, nil)
+}
+
+// Pool is a play-planning pool's metadata.
+type Pool struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Color     *string         `json:"color"`
+	Position  int             `json:"position"`
+	Filter    json.RawMessage `json:"filter"`
+	HasFilter bool            `json:"has_filter"`
+}
+
+// PoolListItem is one row of the pool list.
+type PoolListItem struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Color          *string `json:"color"`
+	Position       int     `json:"position"`
+	HasFilter      bool    `json:"has_filter"`
+	QueueCount     int64   `json:"queue_count"`
+	CandidateCount int64   `json:"candidate_count"`
+}
+
+// PoolDetail is a pool plus its ordered queue and candidate user-games.
+type PoolDetail struct {
+	Pool
+	Queue      []UserGame `json:"queue"`
+	Candidates []UserGame `json:"candidates"`
+}
+
+// ListPools returns the caller's pools ordered by position.
+func (c *Client) ListPools(key string) ([]PoolListItem, error) {
+	var out []PoolListItem
+	if err := c.doBearer(http.MethodGet, "/api/pools", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetPool returns a pool with its queue and candidates.
+func (c *Client) GetPool(key, id string) (*PoolDetail, error) {
+	var out PoolDetail
+	if err := c.doBearer(http.MethodGet, "/api/pools/"+url.PathEscape(id), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreatePool creates a pool with optional color and filter (raw JSON, server-validated).
+func (c *Client) CreatePool(key, name string, color *string, filter json.RawMessage) (*Pool, error) {
+	body := map[string]any{"name": name}
+	if color != nil {
+		body["color"] = *color
+	}
+	if filter != nil {
+		body["filter"] = filter
+	}
+	var out Pool
+	if err := c.doBearer(http.MethodPost, "/api/pools", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdatePool applies a partial update (name/color/filter).
+func (c *Client) UpdatePool(key, id string, fields map[string]any) (*Pool, error) {
+	var out Pool
+	if err := c.doBearer(http.MethodPut, "/api/pools/"+url.PathEscape(id), key, fields, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeletePool removes a pool.
+func (c *Client) DeletePool(key, id string) error {
+	return c.doBearer(http.MethodDelete, "/api/pools/"+url.PathEscape(id), key, nil, nil)
+}
+
+// AddPoolGame adds one game (as a candidate) to a pool.
+func (c *Client) AddPoolGame(key, poolID, userGameID string) error {
+	body := map[string]any{"user_game_id": userGameID}
+	return c.doBearer(http.MethodPost, "/api/pools/"+url.PathEscape(poolID)+"/games", key, body, nil)
+}
+
+// BulkAddPoolGames adds multiple games (as candidates); returns the count newly inserted.
+func (c *Client) BulkAddPoolGames(key, poolID string, userGameIDs []string) (int64, error) {
+	body := map[string]any{"user_game_ids": userGameIDs}
+	var out struct {
+		Added int64 `json:"added"`
+	}
+	if err := c.doBearer(http.MethodPost, "/api/pools/"+url.PathEscape(poolID)+"/games/bulk", key, body, &out); err != nil {
+		return 0, err
+	}
+	return out.Added, nil
+}
+
+// RemovePoolGame removes a game from a pool.
+func (c *Client) RemovePoolGame(key, poolID, userGameID string) error {
+	return c.doBearer(http.MethodDelete, "/api/pools/"+url.PathEscape(poolID)+"/games/"+url.PathEscape(userGameID), key, nil, nil)
+}
+
+// SetQueue declaratively sets the pool's ordered queue (ids must already be members;
+// an empty slice clears the queue). Members not listed become candidates.
+func (c *Client) SetQueue(key, poolID string, userGameIDs []string) error {
+	body := map[string]any{"ids": userGameIDs}
+	return c.doBearer(http.MethodPut, "/api/pools/"+url.PathEscape(poolID)+"/queue", key, body, nil)
+}
+
+// ReorderPools sets pool positions by the given order.
+func (c *Client) ReorderPools(key string, poolIDs []string) error {
+	body := map[string]any{"ids": poolIDs}
+	return c.doBearer(http.MethodPost, "/api/pools/reorder", key, body, nil)
 }

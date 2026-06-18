@@ -59,7 +59,7 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 ## Project Structure
 
 - `cmd/nexorious/` — server entry point, wires config/db/echo/workers (auth/account commands have moved to `nexctl`)
-- `cmd/nexctl/` — REST client binary; `account` (login/logout/whoami/api-key), `profile`, and `game` (list/show/add/edit/acquire/rm) commands. Game commands call the user-games/IGDB REST API via `cliclient`; `add`/`edit` are multi-call orchestrations (IGDB search→import→create; ordered platform/hours/status/fields/tags updates)
+- `cmd/nexctl/` — REST client binary; `account` (login/logout/whoami/api-key), `profile`, `game` (list/show/add/edit/acquire/rm), `tag` (list/create/rename/rm), and `pool` (list/show/create/edit/rm/add/remove/queue/reorder) commands. Commands call the user-games/IGDB/tags/pools REST API via `cliclient`; `game add`/`game edit` are multi-call orchestrations (IGDB search→import→create; ordered platform/hours/status/fields/tags updates). Pools key off `user_game_id` (game refs resolve via `resolveUserGameRef`); `pool queue` bulk-adds then sets the declarative order; `pool create --filter` takes a raw JSON `{"filters":[…]}` string
 - `internal/cliui/` — shared TTY/prompt/JSON terminal helpers used by `nexctl`
 - `internal/cliauth/` — login-bootstrap shared by `nexctl account login` and `nexorious setup --login`
 - `internal/api/` — Echo route handlers per domain (games, user_games, auth, setup, platforms, tags, jobs, job_items, import, export, backup, sync, settings, docs, store_url, events, notifications, admin_users, admin_reset, db_error)
