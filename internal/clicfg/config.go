@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -138,4 +139,44 @@ func (c *Config) SetProfile(name string, p Profile) {
 	}
 	c.Profiles[name] = p
 	c.Current = name
+}
+
+// Profile returns the named profile (defaulting "" to the default profile).
+func (c *Config) Profile(name string) (Profile, bool) {
+	if name == "" {
+		name = defaultProfile
+	}
+	p, ok := c.Profiles[name]
+	return p, ok
+}
+
+// RemoveProfile deletes a profile. If it was the current profile, Current is
+// cleared so CurrentName falls back to the default.
+func (c *Config) RemoveProfile(name string) {
+	if name == "" {
+		name = defaultProfile
+	}
+	delete(c.Profiles, name)
+	if c.Current == name {
+		c.Current = ""
+	}
+}
+
+// SetCurrent marks an existing profile as current, erroring if it is unknown.
+func (c *Config) SetCurrent(name string) error {
+	if _, ok := c.Profiles[name]; !ok {
+		return fmt.Errorf("no profile named %q", name)
+	}
+	c.Current = name
+	return nil
+}
+
+// Names returns the profile names in sorted order.
+func (c *Config) Names() []string {
+	names := make([]string, 0, len(c.Profiles))
+	for n := range c.Profiles {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
