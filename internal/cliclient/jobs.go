@@ -18,6 +18,8 @@ type JobProgress struct {
 }
 
 // Job is one import/sync job as returned by GET /api/jobs and GET /api/jobs/:id.
+// This is a display subset: user_id is intentionally omitted since the CLI is
+// always scoped to the authenticated profile and never renders it.
 type Job struct {
 	ID              string      `json:"id"`
 	JobType         string      `json:"job_type"`
