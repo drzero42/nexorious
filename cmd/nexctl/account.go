@@ -66,7 +66,7 @@ func runLogin(cmd *cobra.Command, urlFlag, usernameFlag string) error {
 		return fmt.Errorf("username is required")
 	}
 
-	password, err := cliui.ReadPassword(in, out)
+	password, err := cliui.ReadPassword(in, out, fmt.Sprintf("Password for %s@%s: ", username, url))
 	if err != nil {
 		return err
 	}
