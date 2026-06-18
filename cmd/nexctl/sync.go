@@ -648,7 +648,10 @@ func newSyncReviewCmd() *cobra.Command {
 					fmt.Fprint(out, "Select [1]: ")
 					selLine, err := in.ReadString('\n')
 					if err != nil {
-						break
+						// EOF/closed stdin mid-selection: stop reviewing, same as
+						// the outer-loop EOF (an unlabeled break here would only
+						// exit the switch and silently advance to the next item).
+						return nil
 					}
 					selStr := strings.TrimSpace(selLine)
 					sel := 1

@@ -92,6 +92,32 @@ func TestSyncResolveByTitle(t *testing.T) {
 	}
 }
 
+func TestSyncResolveOrphanAction(t *testing.T) {
+	mux := http.NewServeMux()
+	serveSyncConfigs(mux, "steam")
+	serveExternalGames(mux, "steam", reviewUUID, "Braid")
+	mux.HandleFunc("/api/sync/external-games/"+reviewUUID+"/rematch", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["orphan_action"] != "remove" {
+			t.Errorf("orphan_action = %v, want remove", body["orphan_action"])
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"sync", "resolve", "steam", reviewUUID, "--igdb-id", "9", "--orphan-action", "remove"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("resolve --orphan-action: %v\n%s", err, out.String())
+	}
+}
+
 func TestSyncResolveMissingIgdbID(t *testing.T) {
 	mux := http.NewServeMux()
 	serveSyncConfigs(mux, "steam")
