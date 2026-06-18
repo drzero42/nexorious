@@ -17,7 +17,7 @@ func newAccountCmd() *cobra.Command {
 		Use:   "account",
 		Short: "Authenticate and inspect the active session",
 	}
-	cmd.AddCommand(newLoginCmd(), newLogoutCmd(), newWhoamiCmd())
+	cmd.AddCommand(newLoginCmd(), newLogoutCmd(), newWhoamiCmd(), newAPIKeyCmd())
 	return cmd
 }
 

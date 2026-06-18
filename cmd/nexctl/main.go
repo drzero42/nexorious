@@ -73,7 +73,7 @@ func resolveProfile(cmd *cobra.Command) (clicfg.Profile, *clicfg.Config, error) 
 }
 
 // flagBool reads an inherited persistent bool flag.
-func flagBool(cmd *cobra.Command, name string) bool { //nolint:unused // used by Tasks 6–8
+func flagBool(cmd *cobra.Command, name string) bool {
 	v, _ := cmd.Flags().GetBool(name) //nolint:errcheck // absent flag yields false
 	return v
 }
