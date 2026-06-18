@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/drzero42/nexorious/internal/db/models"
 )
+
+func i32ptr(i int32) *int32 { return &i }
 
 func strptr(s string) *string { return &s }
 func fptr(f float64) *float64 { return &f }
@@ -221,5 +224,79 @@ func TestAcquire_MergeKeepsMaxHoursAndUpgradesOwnership(t *testing.T) {
 	}
 	if len(res.PlatformChanges) != 1 || !res.PlatformChanges[0].OwnershipUpgraded {
 		t.Errorf("expected OwnershipUpgraded change, got %+v", res.PlatformChanges)
+	}
+}
+
+// ModeImport persists the caller-supplied meta and timestamps on a fresh insert,
+// then on a re-acquire (conflict) leaves the existing row — meta AND updated_at —
+// fully intact while still merging the new platform. This is the invariant the
+// import workers rely on now that row-creation routes through Acquire (#1068).
+func TestAcquire_ModeImportPersistsMetaAndPreservesOnConflict(t *testing.T) {
+	truncateAllTables(t)
+	u := seedUser(t)
+	seedGame(t, 500, "Outer Wilds")
+
+	created := time.Date(2023, 1, 15, 10, 0, 0, 0, time.UTC)
+	updated := time.Date(2023, 6, 20, 12, 0, 0, 0, time.UTC)
+
+	// Fresh insert: meta + timestamps land on the new row.
+	r1, err := Acquire(context.Background(), testDB, AcquireParams{
+		UserID: u, GameID: 500, Mode: ModeImport,
+		PlayStatus: strptr("completed"), PersonalRating: i32ptr(5),
+		IsLoved: true, PersonalNotes: strptr("masterpiece"),
+		CreatedAt: &created, UpdatedAt: &updated,
+	})
+	if err != nil {
+		t.Fatalf("import create: %v", err)
+	}
+	if !r1.Created {
+		t.Fatal("expected Created=true on fresh insert")
+	}
+	ug := fetchUG(t, r1.UserGameID)
+	if ug.PlayStatus == nil || *ug.PlayStatus != "completed" {
+		t.Errorf("play_status = %v, want completed", ug.PlayStatus)
+	}
+	if ug.PersonalRating == nil || *ug.PersonalRating != 5 || !ug.IsLoved ||
+		ug.PersonalNotes == nil || *ug.PersonalNotes != "masterpiece" {
+		t.Errorf("meta not persisted: %+v", ug)
+	}
+	if !ug.CreatedAt.Equal(created) || !ug.UpdatedAt.Equal(updated) {
+		t.Errorf("timestamps = (%v, %v), want (%v, %v)", ug.CreatedAt, ug.UpdatedAt, created, updated)
+	}
+
+	// Re-acquire (conflict): existing meta + updated_at preserved; platform merged.
+	r2, err := Acquire(context.Background(), testDB, AcquireParams{
+		UserID: u, GameID: 500, Mode: ModeImport,
+		PlayStatus: strptr("not_started"), PersonalRating: i32ptr(1),
+		IsLoved: false, PersonalNotes: strptr("changed"),
+		CreatedAt: &created, UpdatedAt: &created, // different updated_at; must be ignored
+		Platforms: []PlatformInput{{Platform: strptr("pc-windows"), Storefront: strptr("steam")}},
+	})
+	if err != nil {
+		t.Fatalf("import merge: %v", err)
+	}
+	if r2.Created {
+		t.Error("expected Created=false on conflict")
+	}
+	if r2.UserGameID != r1.UserGameID {
+		t.Error("conflict should return the existing user_game id")
+	}
+	ug = fetchUG(t, r1.UserGameID)
+	if ug.PlayStatus == nil || *ug.PlayStatus != "completed" {
+		t.Errorf("play_status clobbered on merge: %v", ug.PlayStatus)
+	}
+	if ug.PersonalRating == nil || *ug.PersonalRating != 5 || !ug.IsLoved ||
+		ug.PersonalNotes == nil || *ug.PersonalNotes != "masterpiece" {
+		t.Errorf("meta clobbered on merge: %+v", ug)
+	}
+	if !ug.UpdatedAt.Equal(updated) {
+		t.Errorf("updated_at clobbered on merge: %v, want %v", ug.UpdatedAt, updated)
+	}
+	var n int
+	if err := testDB.NewRaw(`SELECT count(*) FROM user_game_platforms WHERE user_game_id = ?`, r1.UserGameID).Scan(context.Background(), &n); err != nil {
+		t.Fatalf("count platforms: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("expected platform merged, got %d platforms", n)
 	}
 }

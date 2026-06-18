@@ -2,9 +2,7 @@ package tasks
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -175,44 +173,14 @@ func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFi
 		return nil
 	}
 
-	err := w.DB.NewSelect().Model(&models.UserGame{}).
-		Where("user_id = ? AND game_id = ?", item.UserID, igdbID).Scan(ctx)
-	alreadyExists := err == nil
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		markItemFailed(bg, w.DB, &item, fmt.Sprintf("load user_game: %v", err), "import_finalize: markItemFailed")
-		ImportCheckJobCompletion(w.DB, item.JobID)
-		return nil
-	}
-	now := time.Now().UTC()
-	if !alreadyExists {
-		created := now
-		if payload.CreatedAt != "" {
-			if t, perr := time.Parse("2006-01-02", payload.CreatedAt); perr == nil {
-				created = t.UTC()
-			}
-		}
-		ps := coercePlayStatus(ctx, &payload.PlayStatus)
-		ug := models.UserGame{
-			ID: uuid.NewString(), UserID: item.UserID, GameID: igdbID,
-			PlayStatus: ps, PersonalRating: payload.PersonalRating, IsLoved: payload.IsLoved,
-			IsWishlisted:  payload.IsWishlisted,
-			PersonalNotes: payload.PersonalNotes, CreatedAt: created, UpdatedAt: now,
-		}
-		// ON CONFLICT DO NOTHING guards against a concurrent finalize of another
-		// item that resolved to the same game (duplicate titles in one import):
-		// the loser re-selects the winner's row and proceeds as the merge path,
-		// rather than failing on the user_games (user_id, game_id) unique index.
-		insertRes, ierr := w.DB.NewInsert().Model(&ug).On("CONFLICT (user_id, game_id) DO NOTHING").Exec(ctx)
-		if ierr != nil {
-			markItemFailed(bg, w.DB, &item, fmt.Sprintf("insert user_game: %v", ierr), "import_finalize: markItemFailed")
-			ImportCheckJobCompletion(w.DB, item.JobID)
-			return nil
-		}
-		if n, _ := insertRes.RowsAffected(); n == 0 { //nolint:errcheck // advisory RowsAffected
-			// Concurrent finalize won the race; treat this as a merge.
-			alreadyExists = true
-		}
-	}
+	// Parse the meta fields for the (possible) initial insert. Acquire(ModeImport)
+	// writes these — and the imported created_at — only when it creates the row;
+	// an existing row is left untouched. Its ON CONFLICT DO UPDATE also subsumes
+	// the concurrent-finalize race (duplicate titles resolving to the same game):
+	// the loser conflicts and proceeds down the merge path (res.Created == false)
+	// rather than failing on the user_games (user_id, game_id) unique index.
+	ps := coercePlayStatus(ctx, &payload.PlayStatus)
+	createdAt := parseDateOnly(payload.CreatedAt)
 
 	// Build platform inputs. Game-level HoursPlayed goes on the first entry only,
 	// matching the pre-refactor behaviour (playtime has no home if the first entry
@@ -244,9 +212,10 @@ func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFi
 
 	// Snapshot the tag count BEFORE Acquire so we can detect newly merged links.
 	// (Acquire merges tags additively; counting after would make existingTagCount
-	// equal totalTagCount and produce newTags = 0.)
+	// equal totalTagCount and produce newTags = 0.) Counts 0 for a row that does
+	// not exist yet, so the snapshot needs no prior existence check.
 	existingTagCount := 0
-	if alreadyExists && len(tags) > 0 {
+	if len(tags) > 0 {
 		if qerr := w.DB.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM user_game_tags ugt"+
 				" JOIN user_games ug ON ug.id = ugt.user_game_id"+
@@ -256,18 +225,23 @@ func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFi
 		}
 	}
 
-	// Acquire upserts the user_game (no-op since the row exists), merges platforms
-	// (max-hours, ownership upgrade), clears wishlist on acquire, auto-promotes
-	// play_status, and merges tags additively.
+	// Acquire creates the user_game with the imported meta + created_at (or leaves
+	// an existing row untouched), merges platforms (max-hours, ownership upgrade),
+	// clears wishlist on acquire, auto-promotes play_status, and merges tags
+	// additively — all atomically.
 	acqRes, acqErr := usergame.Acquire(ctx, w.DB, usergame.AcquireParams{
-		UserID: item.UserID, GameID: igdbID, Mode: usergame.ModeUpsert,
+		UserID: item.UserID, GameID: igdbID, Mode: usergame.ModeImport,
 		Platforms: plats, Tags: tags, TagMode: usergame.TagMerge,
+		PlayStatus: ps, PersonalRating: payload.PersonalRating,
+		IsLoved: payload.IsLoved, IsWishlisted: payload.IsWishlisted, PersonalNotes: payload.PersonalNotes,
+		CreatedAt: createdAt,
 	})
 	if acqErr != nil {
 		markItemFailed(bg, w.DB, &item, fmt.Sprintf("acquire: %v", acqErr), "import_finalize: markItemFailed")
 		ImportCheckJobCompletion(w.DB, item.JobID)
 		return nil
 	}
+	alreadyExists := !acqRes.Created
 
 	// Determine change type from Acquire results.
 	newPlatforms := 0

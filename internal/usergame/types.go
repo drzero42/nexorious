@@ -8,9 +8,14 @@ const (
 	// ModeCreate requires the user_games row not to exist; a pre-existing row
 	// (or duplicate platform) yields ErrConflict. Used by the REST create path.
 	ModeCreate AcquireMode = iota
-	// ModeUpsert finds-or-creates idempotently and merges platforms. Used by
-	// sync and import.
+	// ModeUpsert finds-or-creates idempotently and merges platforms, bumping
+	// updated_at on conflict. Used by sync.
 	ModeUpsert
+	// ModeImport finds-or-creates idempotently and merges platforms, but persists
+	// the meta fields (and caller-supplied created_at/updated_at) on a fresh
+	// insert while leaving an existing row — including its updated_at — fully
+	// intact on conflict. Used by the import workers.
+	ModeImport
 )
 
 type TagMode int
@@ -52,13 +57,20 @@ type AcquireParams struct {
 	Tags      []TagInput
 	TagMode   TagMode
 
-	// Meta fields — used by ModeCreate to initialise the user_games row.
-	// Ignored on ModeUpsert (the row already exists or is created with defaults).
+	// Meta fields — used by ModeCreate and ModeImport to initialise the
+	// user_games row on a fresh insert. Ignored on ModeUpsert (sync creates the
+	// row with column defaults) and on the conflict path (the existing row wins).
 	PlayStatus     *string
 	PersonalRating *int32
 	IsLoved        bool
 	PersonalNotes  *string
 	IsWishlisted   bool
+
+	// CreatedAt / UpdatedAt seed the timestamps on a ModeImport insert so
+	// imported rows round-trip their original timestamps. Nil falls through to
+	// now(). Ignored by ModeCreate (always now()) and ModeUpsert.
+	CreatedAt *time.Time
+	UpdatedAt *time.Time
 }
 
 type Result struct {
