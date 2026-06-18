@@ -385,7 +385,7 @@ func newSyncRunCmd() *cobra.Command {
 }
 
 func newSyncResetCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "reset <storefront>",
 		Short: "Delete all synced data for a storefront",
 		Args:  cobra.ExactArgs(1),
@@ -418,6 +418,4 @@ func newSyncResetCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
-	return cmd
 }
