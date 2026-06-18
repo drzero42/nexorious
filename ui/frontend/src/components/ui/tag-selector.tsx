@@ -51,7 +51,7 @@ interface TagBadgeProps {
   className?: string;
 }
 
-function TagBadge({ tag, onRemove, size = 'md', className }: TagBadgeProps) {
+export function TagBadge({ tag, onRemove, size = 'md', className }: TagBadgeProps) {
   const bgColor = tag.color ?? DEFAULT_TAG_COLOR;
   const textColor = getTextColor(bgColor);
   const sizeClasses = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-2.5 py-1';

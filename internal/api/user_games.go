@@ -104,6 +104,7 @@ type userGameWithPlatformsResponse struct {
 	models.UserGame
 	HoursPlayed    float64                    `json:"hours_played"`
 	Platforms      []userGamePlatformResponse `json:"platforms"`
+	Tags           []tagResponse              `json:"tags"`
 	PoolMembership *string                    `json:"pool_membership,omitempty"`
 }
 
@@ -119,6 +120,14 @@ func toUserGameWithPlatformsResponse(ug models.UserGame) userGameWithPlatformsRe
 	resp.HoursPlayed = totalHours
 	if resp.Platforms == nil {
 		resp.Platforms = []userGamePlatformResponse{}
+	}
+	// Flatten the user_game_tags join rows into their nested Tag DTOs so the
+	// client receives a plain []tagResponse rather than join-table internals.
+	resp.Tags = make([]tagResponse, 0, len(ug.Tags))
+	for _, link := range ug.Tags {
+		if link.Tag != nil {
+			resp.Tags = append(resp.Tags, toTagResponse(*link.Tag))
+		}
 	}
 	return resp
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db"
+	"github.com/drzero42/nexorious/internal/db/models"
 )
 
 // TagsHandler handles tag CRUD endpoints.
@@ -46,6 +47,18 @@ type tagResponse struct {
 	Color     *string   `json:"color"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// toTagResponse maps a tag model to its API DTO.
+func toTagResponse(t models.Tag) tagResponse {
+	return tagResponse{
+		ID:        t.ID,
+		UserID:    t.UserID,
+		Name:      t.Name,
+		Color:     t.Color,
+		CreatedAt: t.CreatedAt,
+		UpdatedAt: t.UpdatedAt,
+	}
 }
 
 // HandleListTags handles GET /api/tags.
