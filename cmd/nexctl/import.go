@@ -50,7 +50,7 @@ func resolveImportSource(c *cliclient.Client, key, arg string) (string, error) {
 	for i, s := range sources {
 		slugs[i] = s.Slug
 	}
-	return "", fmt.Errorf("unknown import source %q; valid: %s\n(nexorious and csv are separate subcommands)", arg, strings.Join(slugs, ", "))
+	return "", fmt.Errorf("unknown import source %q; valid: %s (nexorious and csv are separate subcommands)", arg, strings.Join(slugs, ", "))
 }
 
 // printImportResult writes a text confirmation or JSON for an import result.

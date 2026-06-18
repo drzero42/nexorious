@@ -150,6 +150,56 @@ func TestImportNexorious(t *testing.T) {
 	}
 }
 
+func TestImportNexoriousJSON(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/import/nexorious", func(w http.ResponseWriter, r *http.Request) {
+		_ = readMultipartFile(t, r)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"job_id": "j-7", "source": "nexorious", "status": "pending", "total_items": 2,
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	file := writeTempFile(t, "export.json", `{"version":"2.1","games":[]}`)
+	out, err := runImport(t, srv.URL, "import", "nexorious", file, "--json")
+	if err != nil {
+		t.Fatalf("import nexorious --json: %v\n%s", err, out)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	if got["job_id"] != "j-7" {
+		t.Errorf("job_id = %v, want j-7", got["job_id"])
+	}
+}
+
+func TestImportRunCaseInsensitive(t *testing.T) {
+	mux := http.NewServeMux()
+	serveImportSources(mux, "vglist")
+	var hit bool
+	mux.HandleFunc("/api/import/vglist", func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		_ = readMultipartFile(t, r)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"job_id": "j-ci", "source": "vglist", "status": "processing", "total_items": 1,
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	file := writeTempFile(t, "lib.json", "[]")
+	// Mixed-case source must resolve to the canonical slug.
+	out, err := runImport(t, srv.URL, "import", "run", "VGList", file)
+	if err != nil {
+		t.Fatalf("import run VGList: %v\n%s", err, out)
+	}
+	if !hit {
+		t.Error("expected upload to /api/import/vglist for a case-insensitive match")
+	}
+}
+
 func TestImportNexoriousMissingFile(t *testing.T) {
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
