@@ -15,7 +15,8 @@ import (
 
 func newImportCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "import", Short: "Import a library from a file or migration source"}
-	cmd.AddCommand(newImportSourcesCmd(), newImportNexoriousCmd(), newImportRunCmd(), newImportCSVCmd())
+	cmd.AddCommand(newImportSourcesCmd(), newImportNexoriousCmd(), newImportRunCmd(), newImportCSVCmd(),
+		newImportReviewCmd(), newImportResolveCmd(), newImportSkipCmd())
 	return cmd
 }
 
