@@ -927,3 +927,23 @@ func (c *Client) DisconnectStorefront(key, storefront string) error {
 func (c *Client) ResetSyncData(key, storefront string) error {
 	return c.doBearer(http.MethodDelete, "/api/sync/"+url.PathEscape(storefront)+"/data", key, nil, nil)
 }
+
+// ExternalGame is one external game entry as returned by
+// GET /api/sync/:storefront/external-games.
+type ExternalGame struct {
+	ID                         string   `json:"id"`
+	Storefront                 string   `json:"storefront"`
+	ExternalID                 string   `json:"external_id"`
+	Title                      string   `json:"title"`
+	ResolvedIgdbID             *int     `json:"resolved_igdb_id"`
+	IgdbTitle                  *string  `json:"igdb_title"`
+	IsSkipped                  bool     `json:"is_skipped"`
+	IsAvailable                bool     `json:"is_available"`
+	IsSubscription             bool     `json:"is_subscription"`
+	HasUserGame                bool     `json:"has_user_game"`
+	UserGameID                 *string  `json:"user_game_id"`
+	UserGameOtherPlatformCount int      `json:"user_game_other_platform_count"`
+	SyncStatus                 string   `json:"sync_status"`
+	FailedJobItemID            *string  `json:"failed_job_item_id"`
+	Platforms                  []string `json:"platforms"`
+}
