@@ -292,6 +292,90 @@ func TestPoolCRUD(t *testing.T) {
 	})
 }
 
+func TestPoolUpdate(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	_, token := setupUserGamesUser(t, testDB, e, "poolupd")
+
+	createPool := func(t *testing.T, body map[string]any) string {
+		t.Helper()
+		rec := postJSONAuth(t, e, "/api/pools", body, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create pool: expected 201, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var c struct {
+			ID string `json:"id"`
+		}
+		mustUnmarshal(t, rec, &c)
+		return c.ID
+	}
+
+	t.Run("partial color update leaves name untouched", func(t *testing.T) {
+		id := createPool(t, map[string]any{"name": "Colorful"})
+		color := "#abcdef"
+		rec := putJSONAuth(t, e, "/api/pools/"+id, map[string]any{"color": color}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Name  string  `json:"name"`
+			Color *string `json:"color"`
+		}
+		mustUnmarshal(t, rec, &resp)
+		if resp.Name != "Colorful" {
+			t.Fatalf("expected name unchanged (Colorful), got %q", resp.Name)
+		}
+		if resp.Color == nil || *resp.Color != color {
+			t.Fatalf("expected color %q, got %v", color, resp.Color)
+		}
+	})
+
+	t.Run("color cleared to null", func(t *testing.T) {
+		id := createPool(t, map[string]any{"name": "ClearMe", "color": "#123456"})
+		rec := putJSONAuth(t, e, "/api/pools/"+id, map[string]any{"color": nil}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Color *string `json:"color"`
+		}
+		mustUnmarshal(t, rec, &resp)
+		if resp.Color != nil {
+			t.Fatalf("expected color cleared to null, got %v", *resp.Color)
+		}
+	})
+
+	t.Run("empty body rejected with 400", func(t *testing.T) {
+		id := createPool(t, map[string]any{"name": "NoChange"})
+		rec := putJSONAuth(t, e, "/api/pools/"+id, map[string]any{}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for no fields, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("name too long rejected with 400", func(t *testing.T) {
+		id := createPool(t, map[string]any{"name": "TooLongTest"})
+		long := make([]byte, 101)
+		for i := range long {
+			long[i] = 'a'
+		}
+		rec := putJSONAuth(t, e, "/api/pools/"+id, map[string]any{"name": string(long)}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for name >100, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("wrong owner gets 404", func(t *testing.T) {
+		id := createPool(t, map[string]any{"name": "Mine"})
+		_, otherTok := setupUserGamesUser(t, testDB, e, "poolupd-other")
+		rec := putJSONAuth(t, e, "/api/pools/"+id, map[string]any{"name": "Stolen"}, otherTok)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for wrong owner, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
 func TestPoolMembershipAndQueue(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
