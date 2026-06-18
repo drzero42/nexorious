@@ -466,6 +466,56 @@ func TestHandleGetUserGame_StoreURL(t *testing.T) {
 	}
 }
 
+// TestHandleGetUserGame_TagsFlattened pins the API contract that GET
+// /api/user-games/:id serializes "tags" as a flat array of tag DTOs
+// ({id,name,color}), not as raw user_game_tags join rows. The detail page and
+// edit form read tag fields off each element directly, so a regression to the
+// join-row shape (where the element id is the join-row id and name/color are
+// absent) would silently break both. See #1064.
+func TestHandleGetUserGame_TagsFlattened(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "tags-flat")
+	gameID := insertTestGame(t, testDB, "Tagged Game")
+	insertTestUserGame(t, testDB, "ug-tags-1", userID, int(gameID))
+
+	color := "#FF8800"
+	insertTag(t, testDB, "tag-flat-1", userID, "RPG", &color)
+	// The join-row id is deliberately different from the tag id so a regression
+	// to the join-row shape would surface as a wrong "id".
+	insertUserGameTag(t, testDB, "ugt-flat-1", "ug-tags-1", "tag-flat-1")
+
+	rec := getAuth(t, e, "/api/user-games/ug-tags-1", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	tags, ok := resp["tags"].([]any)
+	if !ok || len(tags) != 1 {
+		t.Fatalf("expected 1 tag, got: %v", resp["tags"])
+	}
+	tag := tags[0].(map[string]any)
+	if tag["id"] != "tag-flat-1" {
+		t.Fatalf("expected tag id %q (the tag, not the join row), got %q", "tag-flat-1", tag["id"])
+	}
+	if tag["name"] != "RPG" {
+		t.Fatalf("expected tag name %q, got %v", "RPG", tag["name"])
+	}
+	if tag["color"] != color {
+		t.Fatalf("expected tag color %q, got %v", color, tag["color"])
+	}
+	// The join-row internals must not leak.
+	if _, leaked := tag["tag_id"]; leaked {
+		t.Fatalf("join-row field tag_id leaked into the tags DTO: %v", tag)
+	}
+}
+
 func TestDeleteUserGame_Cascades(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
