@@ -16,8 +16,7 @@ import (
 func newPoolCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "pool", Short: "Manage play-planning pools"}
 	cmd.AddCommand(newPoolListCmd(), newPoolShowCmd(), newPoolCreateCmd(), newPoolEditCmd(), newPoolRmCmd(),
-		newPoolAddCmd(), newPoolRemoveCmd())
-	// queue/reorder (Task 8) are added there.
+		newPoolAddCmd(), newPoolRemoveCmd(), newPoolQueueCmd(), newPoolReorderCmd())
 	return cmd
 }
 

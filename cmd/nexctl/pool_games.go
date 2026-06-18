@@ -88,3 +88,71 @@ func newPoolRemoveCmd() *cobra.Command {
 		},
 	}
 }
+
+func newPoolQueueCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "queue <pool-ref> [game-ref…]",
+		Short: "Set a pool's ordered queue (no games clears it)",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			pool, err := resolvePoolRef(cmd, c, p.Key, args[0])
+			if err != nil {
+				return err
+			}
+			ids, err := resolveGameIDs(cmd, c, p.Key, args[1:])
+			if err != nil {
+				return err
+			}
+			// Ensure membership before ordering (the queue endpoint requires it).
+			if len(ids) > 0 {
+				if _, err := c.BulkAddPoolGames(p.Key, pool.ID, ids); err != nil {
+					return fmt.Errorf("ensure pool membership failed: %w", err)
+				}
+			}
+			if err := c.SetQueue(p.Key, pool.ID, ids); err != nil {
+				return fmt.Errorf("set queue failed: %w", err)
+			}
+			if len(ids) == 0 {
+				fmt.Fprintf(out, "Cleared the queue for %q.\n", pool.Name)
+			} else {
+				fmt.Fprintf(out, "Queued %d game(s) in %q.\n", len(ids), pool.Name)
+			}
+			return nil
+		},
+	}
+}
+
+func newPoolReorderCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reorder <pool-ref…>",
+		Short: "Reorder pools (positions follow argument order)",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			ids := make([]string, 0, len(args))
+			for _, ref := range args {
+				pool, err := resolvePoolRef(cmd, c, p.Key, ref)
+				if err != nil {
+					return err
+				}
+				ids = append(ids, pool.ID)
+			}
+			if err := c.ReorderPools(p.Key, ids); err != nil {
+				return fmt.Errorf("reorder pools failed: %w", err)
+			}
+			fmt.Fprintf(out, "Reordered %d pool(s).\n", len(ids))
+			return nil
+		},
+	}
+}
