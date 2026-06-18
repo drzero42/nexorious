@@ -410,3 +410,98 @@ func (c *Client) MigrationStatus() (state, detail string, err error) {
 	}
 	return out.State, out.Error, nil
 }
+
+// doBearer performs an authenticated JSON request. A non-nil body is JSON-encoded
+// as the request body; on a 2xx response a non-nil out is decoded from the body
+// (skipped for 204). Non-2xx responses become an httpError.
+func (c *Client) doBearer(method, path, key string, body, out any) error {
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("marshal request: %w", err)
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, c.baseURL+path, rdr)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return httpError(resp)
+	}
+	if out != nil && resp.StatusCode != http.StatusNoContent {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+	}
+	return nil
+}
+
+// IGDBCandidate is one IGDB search hit. UserGameID is non-nil when the game is
+// already in the caller's library.
+type IGDBCandidate struct {
+	IgdbID               int      `json:"igdb_id"`
+	IgdbSlug             string   `json:"igdb_slug"`
+	Title                string   `json:"title"`
+	ReleaseDate          string   `json:"release_date"`
+	CoverArtURL          string   `json:"cover_art_url"`
+	Description          string   `json:"description"`
+	Platforms            []string `json:"platforms"`
+	HowLongToBeatMain    *float64 `json:"howlongtobeat_main"`
+	UserGameID           *string  `json:"user_game_id"`
+	UserGameIsWishlisted *bool    `json:"user_game_is_wishlisted"`
+}
+
+// IGDBSearchResponse is the result of an IGDB search or single-game lookup.
+type IGDBSearchResponse struct {
+	Games []IGDBCandidate `json:"games"`
+	Total int             `json:"total"`
+}
+
+// Game is the minimal local game record returned by igdb-import.
+type Game struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
+
+// SearchIGDB searches the IGDB catalog for the given query (limit 1–50).
+func (c *Client) SearchIGDB(key, query string, limit int) (*IGDBSearchResponse, error) {
+	var out IGDBSearchResponse
+	body := map[string]any{"query": query, "limit": limit}
+	if err := c.doBearer(http.MethodPost, "/api/games/search/igdb", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetIGDBGame fetches a single IGDB game by id (response Total == 1).
+func (c *Client) GetIGDBGame(key string, igdbID int) (*IGDBSearchResponse, error) {
+	var out IGDBSearchResponse
+	if err := c.doBearer(http.MethodGet, fmt.Sprintf("/api/games/igdb/%d", igdbID), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ImportIGDBGame imports IGDB metadata for igdbID into the local DB, returning
+// the local game record.
+func (c *Client) ImportIGDBGame(key string, igdbID int) (*Game, error) {
+	var out Game
+	body := map[string]any{"igdb_id": igdbID, "download_cover_art": true}
+	if err := c.doBearer(http.MethodPost, "/api/games/igdb-import", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
