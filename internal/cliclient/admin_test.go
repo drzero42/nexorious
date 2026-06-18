@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -155,6 +156,10 @@ func TestUpdateUser_ErrorSurfaced(t *testing.T) {
 	_, err := c.UpdateUser("k", "self", map[string]any{"is_active": false})
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+	// The {"error":…} message must be surfaced (httpError reads both keys).
+	if !strings.Contains(err.Error(), "Cannot deactivate") {
+		t.Errorf("error = %v, want it to surface the server message", err)
 	}
 }
 

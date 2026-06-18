@@ -183,7 +183,8 @@ func TestCreateBackup_conflict(t *testing.T) {
 	mux.HandleFunc("/api/admin/backups", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(map[string]any{"message": "A backup or restore operation is already in progress"})
+		// The backup handler uses the {"error":…} body shape (not {"message":…}).
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "A backup or restore operation is already in progress"})
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -195,6 +196,10 @@ func TestCreateBackup_conflict(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "409") {
 		t.Errorf("error = %v, want 409", err)
+	}
+	// The {"error":…} message must be surfaced, not dropped.
+	if !strings.Contains(err.Error(), "already in progress") {
+		t.Errorf("error = %v, want it to surface the server message", err)
 	}
 }
 
@@ -272,6 +277,9 @@ func TestRestoreBackup(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
+		if got := r.Header.Get("Authorization"); got != "Bearer k" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer k")
+		}
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		if body["confirm"] != true {
@@ -297,6 +305,9 @@ func TestRestoreBackupUpload(t *testing.T) {
 	mux.HandleFunc("/api/admin/backups/restore/upload", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer k" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer k")
 		}
 		got, _ := parseMultipartFile(t, r)
 		if string(got) != string(payload) {

@@ -95,15 +95,17 @@ func (c *Client) DeleteUser(key, id string) error {
 }
 
 // adminResetResponse is the response body for POST /api/auth/admin/reset.
+// Deleted mirrors the server's int64 RowsAffected count.
 type adminResetResponse struct {
-	Deleted int `json:"deleted"`
+	Deleted int64 `json:"deleted"`
 }
 
 // AdminReset wipes all user data (except the admin account) via POST /api/auth/admin/reset.
-// It returns the number of user_games rows deleted.
-func (c *Client) AdminReset(key string) (int, error) {
+// It returns the number of user_games rows deleted. The endpoint ignores the
+// request body, so none is sent.
+func (c *Client) AdminReset(key string) (int64, error) {
 	var out adminResetResponse
-	if err := c.doBearer(http.MethodPost, "/api/auth/admin/reset", key, map[string]any{}, &out); err != nil {
+	if err := c.doBearer(http.MethodPost, "/api/auth/admin/reset", key, nil, &out); err != nil {
 		return 0, err
 	}
 	return out.Deleted, nil
