@@ -42,12 +42,14 @@ func newRootCmd() *cobra.Command {
 	pf.BoolP("yes", "y", false, "Skip confirmation prompts")
 
 	root.AddCommand(newVersionCmd())
+	root.AddCommand(newAccountCmd())
+	root.AddCommand(newLoginCmd(), newLogoutCmd()) // top-level aliases for `account login`/`logout`
 
 	return root
 }
 
 // profileName returns the --profile value, defaulting to the current profile.
-func profileName(cmd *cobra.Command, cfg *clicfg.Config) string { //nolint:unused // used by Tasks 6–8
+func profileName(cmd *cobra.Command, cfg *clicfg.Config) string {
 	name, _ := cmd.Flags().GetString("profile") //nolint:errcheck // absent flag yields ""
 	if name == "" {
 		name = cfg.CurrentName()
@@ -57,7 +59,7 @@ func profileName(cmd *cobra.Command, cfg *clicfg.Config) string { //nolint:unuse
 
 // resolveProfile loads config and returns the active profile, erroring with a
 // login hint when no API key is stored for it.
-func resolveProfile(cmd *cobra.Command) (clicfg.Profile, *clicfg.Config, error) { //nolint:unused // used by Tasks 6–8
+func resolveProfile(cmd *cobra.Command) (clicfg.Profile, *clicfg.Config, error) {
 	cfg, err := clicfg.Load()
 	if err != nil {
 		return clicfg.Profile{}, nil, err
