@@ -71,6 +71,11 @@ func TestDownloadExport(t *testing.T) {
 			http.Error(w, "wrong method", http.StatusMethodNotAllowed)
 			return
 		}
+		// DownloadExport builds its own request (not via doBearer), so it is the
+		// one place a missing auth header would slip past the helper's coverage.
+		if got := r.Header.Get("Authorization"); got != "Bearer k" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer k")
+		}
 		w.Header().Set("Content-Disposition", `attachment; filename="export.csv"`)
 		_, _ = w.Write([]byte(payload))
 	})
@@ -102,5 +107,28 @@ func TestDownloadExportNonOK(t *testing.T) {
 	err := c.DownloadExport("k", "exp-missing", &buf)
 	if err == nil {
 		t.Fatal("expected error on 404, got nil")
+	}
+	if buf.Len() != 0 {
+		t.Errorf("expected no bytes written on error, got %d", buf.Len())
+	}
+}
+
+func TestDownloadExportPathEscaping(t *testing.T) {
+	const payload = "ok"
+	mux := http.NewServeMux()
+	// An id with a space must be %20-encoded into the request path.
+	mux.HandleFunc("/api/export/exp%207/download", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(payload))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := New(srv.URL)
+
+	var buf bytes.Buffer
+	if err := c.DownloadExport("k", "exp 7", &buf); err != nil {
+		t.Fatalf("DownloadExport: %v", err)
+	}
+	if buf.String() != payload {
+		t.Errorf("body = %q, want %q", buf.String(), payload)
 	}
 }
