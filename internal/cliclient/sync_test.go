@@ -71,6 +71,38 @@ func TestUpdateSyncConfig(t *testing.T) {
 	}
 }
 
+func TestGetSyncConfig(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sync/gog/config", func(http.ResponseWriter, *http.Request) {
+		t.Error("unexpected path")
+	})
+	mux.HandleFunc("/api/sync/config/gog", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		synced := "2026-06-01T00:00:00Z"
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "sc-2", "storefront": "gog", "frequency": "weekly", "is_configured": true,
+			"last_synced_at": synced,
+			"created_at":     "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := New(srv.URL)
+
+	cfg, err := c.GetSyncConfig("k", "gog")
+	if err != nil {
+		t.Fatalf("GetSyncConfig: %v", err)
+	}
+	if cfg.Storefront != "gog" || cfg.Frequency != "weekly" || !cfg.IsConfigured {
+		t.Errorf("cfg = %+v", cfg)
+	}
+	if cfg.LastSyncedAt == nil || *cfg.LastSyncedAt != "2026-06-01T00:00:00Z" {
+		t.Errorf("LastSyncedAt = %v, want non-nil", cfg.LastSyncedAt)
+	}
+}
+
 func TestGetSyncStatus(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/sync/steam/status", func(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +142,6 @@ func TestTriggerSync(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		w.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"message":    "sync started",
 			"job_id":     "j-99",
