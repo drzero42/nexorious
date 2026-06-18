@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -43,7 +44,8 @@ var storefrontCreds = map[string][]storefrontCredField{
 func newSyncCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "sync", Short: "Manage storefront sync"}
 	cmd.AddCommand(newSyncStatusCmd(), newSyncConnectCmd(), newSyncDisconnectCmd(),
-		newSyncConfigCmd(), newSyncRunCmd(), newSyncResetCmd())
+		newSyncConfigCmd(), newSyncRunCmd(), newSyncResetCmd(),
+		newSyncReviewCmd(), newSyncResolveCmd(), newSyncSkipCmd(), newSyncRetryCmd())
 	return cmd
 }
 
@@ -415,6 +417,269 @@ func newSyncResetCmd() *cobra.Command {
 				return fmt.Errorf("reset sync data failed: %w", err)
 			}
 			fmt.Fprintf(out, "reset %s sync data\n", sf)
+			return nil
+		},
+	}
+}
+
+// resolveExternalRef resolves an external game by UUID or title from the given
+// storefront's external-game list. UUID matching is exact; title matching is
+// case-insensitive. When multiple titles match on a non-interactive session it
+// returns an error listing candidates; on an interactive session it presents a
+// numbered picker.
+func resolveExternalRef(cmd *cobra.Command, c *cliclient.Client, key, sf, ref string) (*cliclient.ExternalGame, error) {
+	games, err := c.ListExternalGames(key, sf)
+	if err != nil {
+		return nil, err
+	}
+	if looksLikeUUID(ref) {
+		for i := range games {
+			if games[i].ID == ref {
+				return &games[i], nil
+			}
+		}
+		return nil, fmt.Errorf("no external game with id %s", ref)
+	}
+	var matches []*cliclient.ExternalGame
+	for i := range games {
+		if strings.EqualFold(games[i].Title, ref) {
+			matches = append(matches, &games[i])
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("no external game matching %q", ref)
+	case 1:
+		return matches[0], nil
+	}
+	if interactive(cmd) {
+		return pickExternalGame(cmd, matches)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%q matches %d external games; re-run with an id:", ref, len(matches))
+	for _, eg := range matches {
+		fmt.Fprintf(&b, "\n  %s  %s", eg.ID, eg.Title)
+	}
+	return nil, fmt.Errorf("%s", b.String())
+}
+
+func pickExternalGame(cmd *cobra.Command, games []*cliclient.ExternalGame) (*cliclient.ExternalGame, error) {
+	out := cmd.OutOrStdout()
+	for i, eg := range games {
+		fmt.Fprintf(out, "%2d) %s\n", i+1, eg.Title)
+	}
+	fmt.Fprint(out, "Select a game [1]: ")
+	line, _ := bufio.NewReader(cmd.InOrStdin()).ReadString('\n') //nolint:errcheck // empty/EOF -> default selection
+	choice := strings.TrimSpace(line)
+	if choice == "" {
+		return games[0], nil
+	}
+	n, err := strconv.Atoi(choice)
+	if err != nil || n < 1 || n > len(games) {
+		return nil, fmt.Errorf("invalid selection %q", choice)
+	}
+	return games[n-1], nil
+}
+
+func newSyncResolveCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "resolve <storefront> <ref>",
+		Short: "Manually match an external game to an IGDB id",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			sf, err := resolveStorefront(c, p.Key, args[0])
+			if err != nil {
+				return err
+			}
+			igdbID, err := cmd.Flags().GetInt("igdb-id")
+			if err != nil {
+				return err
+			}
+			if igdbID == 0 {
+				return fmt.Errorf("--igdb-id is required")
+			}
+			orphanAction, err := cmd.Flags().GetString("orphan-action")
+			if err != nil {
+				return err
+			}
+			eg, err := resolveExternalRef(cmd, c, p.Key, sf, args[1])
+			if err != nil {
+				return err
+			}
+			if err := c.RematchExternalGame(p.Key, eg.ID, igdbID, orphanAction); err != nil {
+				return fmt.Errorf("resolve failed: %w", err)
+			}
+			fmt.Fprintf(out, "resolved %s -> igdb %d\n", eg.Title, igdbID)
+			return nil
+		},
+	}
+	cmd.Flags().Int("igdb-id", 0, "IGDB game id to match to (required)")
+	cmd.Flags().String("orphan-action", "", "Action when the game is already matched elsewhere (e.g. replace)")
+	return cmd
+}
+
+func newSyncSkipCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "skip <storefront> <ref>",
+		Short: "Mark an external game as skipped",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			sf, err := resolveStorefront(c, p.Key, args[0])
+			if err != nil {
+				return err
+			}
+			eg, err := resolveExternalRef(cmd, c, p.Key, sf, args[1])
+			if err != nil {
+				return err
+			}
+			in := bufio.NewReader(cmd.InOrStdin())
+			ok, err := cliui.Confirm(in, out, fmt.Sprintf("Skip %s?", eg.Title), flagBool(cmd, "yes"))
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintln(out, "Aborted.")
+				return nil
+			}
+			if err := c.SkipExternalGame(p.Key, eg.ID); err != nil {
+				return fmt.Errorf("skip failed: %w", err)
+			}
+			fmt.Fprintf(out, "skipped %s\n", eg.Title)
+			return nil
+		},
+	}
+	return cmd
+}
+
+func newSyncRetryCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "retry <storefront>",
+		Short: "Re-queue failed external games for a storefront",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			sf, err := resolveStorefront(c, p.Key, args[0])
+			if err != nil {
+				return err
+			}
+			if err := c.RetryFailedExternalGames(p.Key, sf); err != nil {
+				return fmt.Errorf("retry failed: %w", err)
+			}
+			fmt.Fprintf(out, "re-queued failed %s games\n", sf)
+			return nil
+		},
+	}
+}
+
+func newSyncReviewCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "review <storefront>",
+		Short: "Interactively review external games that need attention",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !interactive(cmd) {
+				return fmt.Errorf("review is interactive; use 'sync resolve'/'sync skip' off a terminal")
+			}
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			sf, err := resolveStorefront(c, p.Key, args[0])
+			if err != nil {
+				return err
+			}
+			all, err := c.ListExternalGames(p.Key, sf)
+			if err != nil {
+				return fmt.Errorf("list external games failed: %w", err)
+			}
+			var pending []cliclient.ExternalGame
+			for _, eg := range all {
+				if eg.SyncStatus == "needs_review" {
+					pending = append(pending, eg)
+				}
+			}
+			if len(pending) == 0 {
+				fmt.Fprintln(out, "Nothing to review.")
+				return nil
+			}
+			in := bufio.NewReader(cmd.InOrStdin())
+			for i := range pending {
+				eg := &pending[i]
+				fmt.Fprintf(out, "\n%s\n", eg.Title)
+				fmt.Fprint(out, "[s]earch IGDB / s[k]ip / [n]ext / [q]uit: ")
+				line, err := in.ReadString('\n')
+				if err != nil {
+					// EOF or closed stdin: stop reviewing
+					break
+				}
+				switch strings.TrimSpace(line) {
+				case "s":
+					results, err := c.SearchIGDB(p.Key, eg.Title, 10)
+					if err != nil {
+						fmt.Fprintf(out, "search failed: %v\n", err)
+						continue
+					}
+					if len(results.Games) == 0 {
+						fmt.Fprintln(out, "No results found.")
+						continue
+					}
+					for j, cand := range results.Games {
+						fmt.Fprintf(out, "  %2d) %s (%s)\n", j+1, cand.Title, cand.ReleaseDate)
+					}
+					fmt.Fprint(out, "Select [1]: ")
+					selLine, err := in.ReadString('\n')
+					if err != nil {
+						break
+					}
+					selStr := strings.TrimSpace(selLine)
+					sel := 1
+					if selStr != "" {
+						n, parseErr := strconv.Atoi(selStr)
+						if parseErr != nil || n < 1 || n > len(results.Games) {
+							fmt.Fprintf(out, "invalid selection %q\n", selStr)
+							continue
+						}
+						sel = n
+					}
+					chosen := results.Games[sel-1]
+					if rematchErr := c.RematchExternalGame(p.Key, eg.ID, chosen.IgdbID, ""); rematchErr != nil {
+						fmt.Fprintf(out, "rematch error: %v (use 'sync resolve --orphan-action' to handle this)\n", rematchErr)
+						continue
+					}
+					fmt.Fprintf(out, "resolved %s -> igdb %d\n", eg.Title, chosen.IgdbID)
+				case "k":
+					if skipErr := c.SkipExternalGame(p.Key, eg.ID); skipErr != nil {
+						fmt.Fprintf(out, "skip error: %v\n", skipErr)
+						continue
+					}
+					fmt.Fprintf(out, "skipped %s\n", eg.Title)
+				case "n":
+					continue
+				case "q":
+					return nil
+				default:
+					fmt.Fprintln(out, "Unknown choice; skipping to next.")
+				}
+			}
 			return nil
 		},
 	}
