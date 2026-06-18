@@ -582,3 +582,100 @@ func (c *Client) GetUserGame(key, id string) (*UserGame, error) {
 	}
 	return &out, nil
 }
+
+// PlatformInput is a platform row for create / move-to-library / add-platform.
+type PlatformInput struct {
+	Platform        string   `json:"platform,omitempty"`
+	Storefront      string   `json:"storefront,omitempty"`
+	OwnershipStatus string   `json:"ownership_status,omitempty"`
+	HoursPlayed     *float64 `json:"hours_played,omitempty"`
+}
+
+// CreateUserGameInput is the body for creating a collection entry.
+type CreateUserGameInput struct {
+	GameID         int             `json:"game_id"`
+	PlayStatus     string          `json:"play_status,omitempty"`
+	PersonalRating *int            `json:"personal_rating,omitempty"`
+	IsLoved        bool            `json:"is_loved,omitempty"`
+	PersonalNotes  *string         `json:"personal_notes,omitempty"`
+	IsWishlisted   bool            `json:"is_wishlisted,omitempty"`
+	Platforms      []PlatformInput `json:"platforms,omitempty"`
+}
+
+// CreateUserGame adds a game to the collection.
+func (c *Client) CreateUserGame(key string, in CreateUserGameInput) (*UserGame, error) {
+	var out UserGame
+	if err := c.doBearer(http.MethodPost, "/api/user-games", key, in, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// MoveToLibrary promotes a wishlisted user-game to the library with platforms.
+func (c *Client) MoveToLibrary(key, id string, platforms []PlatformInput) (*UserGame, error) {
+	var out UserGame
+	body := map[string]any{"platforms": platforms}
+	if err := c.doBearer(http.MethodPost, "/api/user-games/"+url.PathEscape(id)+"/move-to-library", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateUserGame applies a partial field update (play_status, personal_rating,
+// is_loved, personal_notes). A nil map value clears the field server-side.
+func (c *Client) UpdateUserGame(key, id string, fields map[string]any) (*UserGame, error) {
+	var out UserGame
+	if err := c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id), key, fields, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateProgress sets play_status via the dedicated progress endpoint.
+func (c *Client) UpdateProgress(key, id, playStatus string) (*UserGame, error) {
+	var out UserGame
+	body := map[string]any{"play_status": playStatus}
+	if err := c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id)+"/progress", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AddPlatform creates a platform row on a user-game.
+func (c *Client) AddPlatform(key, id string, p PlatformInput) error {
+	return c.doBearer(http.MethodPost, "/api/user-games/"+url.PathEscape(id)+"/platforms", key, p, nil)
+}
+
+// UpdatePlatform applies a partial update to one platform row.
+func (c *Client) UpdatePlatform(key, id, platformID string, fields map[string]any) error {
+	return c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id)+"/platforms/"+url.PathEscape(platformID), key, fields, nil)
+}
+
+// DeletePlatform removes a platform row.
+func (c *Client) DeletePlatform(key, id, platformID string) error {
+	return c.doBearer(http.MethodDelete, "/api/user-games/"+url.PathEscape(id)+"/platforms/"+url.PathEscape(platformID), key, nil, nil)
+}
+
+// ReplaceTags sets the complete tag set (by name) on a user-game.
+func (c *Client) ReplaceTags(key, id string, tags []string) (*UserGame, error) {
+	var out UserGame
+	body := map[string]any{"tags": tags}
+	if err := c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id)+"/tags", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteUserGame removes a user-game.
+func (c *Client) DeleteUserGame(key, id string) error {
+	return c.doBearer(http.MethodDelete, "/api/user-games/"+url.PathEscape(id), key, nil, nil)
+}
+
+// ListTags returns the caller's tags (used to resolve --tag NAME to an id).
+func (c *Client) ListTags(key string) ([]Tag, error) {
+	var out []Tag
+	if err := c.doBearer(http.MethodGet, "/api/tags", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

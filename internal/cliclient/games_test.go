@@ -103,3 +103,54 @@ func TestGetUserGame(t *testing.T) {
 		t.Fatalf("ug = %+v", ug)
 	}
 }
+
+func TestCreateUserGameAndReplaceTags(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s", r.Method)
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["game_id"].(float64) != 2131 {
+			t.Errorf("game_id = %v", body["game_id"])
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "ug-9", "game_id": 2131})
+	})
+	mux.HandleFunc("/api/user-games/ug-9/tags", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		tags := body["tags"].([]any)
+		if len(tags) != 2 {
+			t.Errorf("tags = %v", tags)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "ug-9", "tags": []map[string]any{{"id": "t1", "name": "RPG"}}})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := New(srv.URL)
+
+	ug, err := c.CreateUserGame("k", CreateUserGameInput{GameID: 2131, PlayStatus: "not_started"})
+	if err != nil || ug.ID != "ug-9" {
+		t.Fatalf("CreateUserGame: %v %+v", err, ug)
+	}
+	if _, err := c.ReplaceTags("k", "ug-9", []string{"RPG", "Backlog"}); err != nil {
+		t.Fatalf("ReplaceTags: %v", err)
+	}
+}
+
+func TestDeleteUserGame(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games/ug-1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s", r.Method)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	if err := New(srv.URL).DeleteUserGame("k", "ug-1"); err != nil {
+		t.Fatalf("DeleteUserGame: %v", err)
+	}
+}
