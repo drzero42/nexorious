@@ -178,6 +178,8 @@ When working with code, if you identify a problem, bug, or inconsistency that yo
 
 When you do create an issue, **label it** at creation (`gh issue create --label ...`). Run `gh label list` to pick from the repo's defined set (e.g. `documentation`, `enhancement`, `bug`, `tech-debt`, `security`, `observability`) — a docs feature request is `documentation` + `enhancement`.
 
+**Cross-references in issue/epic bodies go stale.** Epic bodies (e.g. #1055) list "child/related issues" in hand-written prose that does *not* update when a child closes or is re-scoped. Before acting on a referenced issue, verify its live state (`gh issue view <n> --json state` or absence from `gh issue list --state open`) and re-read its current body as the authority — never the epic's summary of it. `gh issue view <n>` returns a body regardless of open/closed, so reading it is not proof it's open.
+
 ### Branch Workflow (MANDATORY)
 - ✅ Always create a branch before starting task work
 - ✅ Use `--squash --delete-branch` when merging PRs
