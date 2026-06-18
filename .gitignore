@@ -1,5 +1,6 @@
-# Go binary
+# Go binaries
 /nexorious
+/nexctl
 
 # Frontend build output (populated by make frontend)
 ui/frontend/dist/*

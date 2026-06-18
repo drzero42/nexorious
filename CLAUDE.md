@@ -58,7 +58,10 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 
 ## Project Structure
 
-- `cmd/nexorious/` — entry point, wires config/db/echo/workers
+- `cmd/nexorious/` — server entry point, wires config/db/echo/workers (auth/account commands have moved to `nexctl`)
+- `cmd/nexctl/` — REST client binary; `account` (login/logout/whoami/api-key) and `profile` commands
+- `internal/cliui/` — shared TTY/prompt/JSON terminal helpers used by `nexctl`
+- `internal/cliauth/` — login-bootstrap shared by `nexctl account login` and `nexorious setup --login`
 - `internal/api/` — Echo route handlers per domain (games, user_games, auth, setup, platforms, tags, jobs, job_items, import, export, backup, sync, settings, docs, store_url, events, notifications, admin_users, admin_reset, db_error)
 - `internal/db/` — database layer
   - `migrations/` — Bun migrate SQL files with timestamp-prefix naming (`20260503000001_name.up.sql` / `.down.sql`); auto-discovered via `//go:embed *.sql` in `migrations.go`

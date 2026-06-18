@@ -13,8 +13,10 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/drzero42/nexorious/internal/cliauth"
 	"github.com/drzero42/nexorious/internal/clicfg"
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/cliui"
 )
 
 const (
@@ -46,7 +48,7 @@ func newSetupCmd() *cobra.Command {
 			return runSetup(cmd, opts)
 		},
 	}
-	cmd.Flags().StringVar(&opts.url, "url", "", "Server URL (default "+defaultServerURL+")")
+	cmd.Flags().StringVar(&opts.url, "url", "", "Server URL (default "+cliauth.DefaultServerURL+")")
 	cmd.Flags().StringVar(&opts.username, "username", "", "Admin username (prompted if omitted; required with --password-stdin)")
 	cmd.Flags().BoolVar(&opts.passwordStdin, "password-stdin", false, "Read the password from stdin instead of prompting")
 	cmd.Flags().BoolVar(&opts.login, "login", false, "After creating the admin, log in with the same credentials and store an API key")
@@ -66,7 +68,7 @@ func runSetup(cmd *cobra.Command, opts setupOpts) error {
 		return fmt.Errorf("--username is required with --password-stdin")
 	}
 
-	url := firstNonEmpty(opts.url, defaultServerURL)
+	url := cliui.FirstNonEmpty(opts.url, cliauth.DefaultServerURL)
 	client := cliclient.New(url)
 
 	if err := preflight(out, client, url); err != nil {
@@ -76,7 +78,7 @@ func runSetup(cmd *cobra.Command, opts setupOpts) error {
 	username := opts.username
 	if username == "" { // interactive (TTY) path
 		var err error
-		username, err = prompt(in, out, "Username: ")
+		username, err = cliui.Prompt(in, out, "Username: ")
 		if err != nil {
 			return err
 		}
@@ -101,14 +103,14 @@ func runSetup(cmd *cobra.Command, opts setupOpts) error {
 	// --login: the admin now exists; reuse the credentials we already have to log
 	// in and store an API key. The admin creation (above) has already succeeded
 	// and printed its success line, so any failure here is scoped to the login
-	// step — the operator must NOT re-run setup, only `nexorious login`.
+	// step — the operator must NOT re-run setup, only `nexctl account login`.
 	if opts.login {
 		cfg, err := clicfg.Load()
 		if err != nil {
-			return fmt.Errorf("admin created, but loading CLI config for --login failed (run \"nexorious login\"): %w", err)
+			return fmt.Errorf("admin created, but loading CLI config for --login failed (run \"nexctl account login\"): %w", err)
 		}
-		if err := loginAndStoreKey(out, client, cfg, url, username, password); err != nil {
-			return fmt.Errorf("admin created, but --login failed (run \"nexorious login\"): %w", err)
+		if err := cliauth.LoginAndStoreKey(out, client, cfg, cfg.CurrentName(), url, username, password); err != nil {
+			return fmt.Errorf("admin created, but --login failed (run \"nexctl account login\"): %w", err)
 		}
 	}
 	return nil

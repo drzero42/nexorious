@@ -50,10 +50,6 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newResetPasswordCmd())
 	root.AddCommand(newSetupCmd())
 	root.AddCommand(newVersionCmd())
-	root.AddCommand(newLoginCmd())
-	root.AddCommand(newLogoutCmd())
-	root.AddCommand(newWhoamiCmd())
-	root.AddCommand(newAPIKeyCmd())
 
 	return root
 }
