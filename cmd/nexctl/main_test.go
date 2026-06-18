@@ -16,7 +16,7 @@ func TestRootCmd_Structure(t *testing.T) {
 			t.Errorf("expected persistent flag --%s", f)
 		}
 	}
-	want := map[string]bool{"version": false, "account": false, "login": false, "logout": false}
+	want := map[string]bool{"version": false, "account": false, "profile": false, "login": false, "logout": false}
 	for _, sub := range root.Commands() {
 		if _, ok := want[sub.Name()]; ok {
 			want[sub.Name()] = true
