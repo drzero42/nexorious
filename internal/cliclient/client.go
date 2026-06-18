@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -409,4 +410,272 @@ func (c *Client) MigrationStatus() (state, detail string, err error) {
 		return "", "", fmt.Errorf("decode status response: %w", err)
 	}
 	return out.State, out.Error, nil
+}
+
+// doBearer performs an authenticated JSON request. A non-nil body is JSON-encoded
+// as the request body; on a 2xx response a non-nil out is decoded from the body
+// (skipped for 204). Non-2xx responses become an httpError.
+func (c *Client) doBearer(method, path, key string, body, out any) error {
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("marshal request: %w", err)
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, c.baseURL+path, rdr)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return httpError(resp)
+	}
+	if out != nil && resp.StatusCode != http.StatusNoContent {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+	}
+	return nil
+}
+
+// IGDBCandidate is one IGDB search hit. UserGameID is non-nil when the game is
+// already in the caller's library.
+type IGDBCandidate struct {
+	IgdbID               int      `json:"igdb_id"`
+	IgdbSlug             string   `json:"igdb_slug"`
+	Title                string   `json:"title"`
+	ReleaseDate          string   `json:"release_date"`
+	CoverArtURL          string   `json:"cover_art_url"`
+	Description          string   `json:"description"`
+	Platforms            []string `json:"platforms"`
+	HowLongToBeatMain    *float64 `json:"howlongtobeat_main"`
+	UserGameID           *string  `json:"user_game_id"`
+	UserGameIsWishlisted *bool    `json:"user_game_is_wishlisted"`
+}
+
+// IGDBSearchResponse is the result of an IGDB search or single-game lookup.
+type IGDBSearchResponse struct {
+	Games []IGDBCandidate `json:"games"`
+	Total int             `json:"total"`
+}
+
+// Game is the minimal local game record returned by igdb-import.
+type Game struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
+
+// SearchIGDB searches the IGDB catalog for the given query (limit 1–50).
+func (c *Client) SearchIGDB(key, query string, limit int) (*IGDBSearchResponse, error) {
+	var out IGDBSearchResponse
+	body := map[string]any{"query": query, "limit": limit}
+	if err := c.doBearer(http.MethodPost, "/api/games/search/igdb", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetIGDBGame fetches a single IGDB game by id (response Total == 1).
+func (c *Client) GetIGDBGame(key string, igdbID int) (*IGDBSearchResponse, error) {
+	var out IGDBSearchResponse
+	if err := c.doBearer(http.MethodGet, fmt.Sprintf("/api/games/igdb/%d", igdbID), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ImportIGDBGame imports IGDB metadata for igdbID into the local DB, returning
+// the local game record.
+func (c *Client) ImportIGDBGame(key string, igdbID int) (*Game, error) {
+	var out Game
+	body := map[string]any{"igdb_id": igdbID, "download_cover_art": true}
+	if err := c.doBearer(http.MethodPost, "/api/games/igdb-import", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GameRef is the minimal game metadata embedded in a user-game (the title source).
+type GameRef struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
+
+// Tag is a user tag.
+type Tag struct {
+	ID    string  `json:"id"`
+	Name  string  `json:"name"`
+	Color *string `json:"color"`
+}
+
+// UserGamePlatform is one platform row on a user-game.
+type UserGamePlatform struct {
+	ID              string   `json:"id"`
+	Platform        *string  `json:"platform"`
+	Storefront      *string  `json:"storefront"`
+	HoursPlayed     *float64 `json:"hours_played"`
+	OwnershipStatus *string  `json:"ownership_status"`
+}
+
+// UserGame is one collection entry (subset of the API response).
+type UserGame struct {
+	ID             string             `json:"id"`
+	GameID         int                `json:"game_id"`
+	PlayStatus     *string            `json:"play_status"`
+	PersonalRating *int               `json:"personal_rating"`
+	IsLoved        bool               `json:"is_loved"`
+	IsWishlisted   bool               `json:"is_wishlisted"`
+	PersonalNotes  *string            `json:"personal_notes"`
+	Game           *GameRef           `json:"game"`
+	HoursPlayed    float64            `json:"hours_played"`
+	Platforms      []UserGamePlatform `json:"platforms"`
+	Tags           []Tag              `json:"tags"`
+}
+
+// Title returns the game's title, or "" if the relation is absent.
+func (u *UserGame) Title() string {
+	if u.Game == nil {
+		return ""
+	}
+	return u.Game.Title
+}
+
+// UserGameListResponse is the paged list payload.
+type UserGameListResponse struct {
+	UserGames []UserGame `json:"user_games"`
+	Total     int        `json:"total"`
+	Page      int        `json:"page"`
+	PerPage   int        `json:"per_page"`
+	Pages     int        `json:"pages"`
+}
+
+// ListUserGames returns user-games filtered by the given query params.
+func (c *Client) ListUserGames(key string, params url.Values) (*UserGameListResponse, error) {
+	path := "/api/user-games"
+	if enc := params.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var out UserGameListResponse
+	if err := c.doBearer(http.MethodGet, path, key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetUserGame fetches a single user-game by id.
+func (c *Client) GetUserGame(key, id string) (*UserGame, error) {
+	var out UserGame
+	if err := c.doBearer(http.MethodGet, "/api/user-games/"+url.PathEscape(id), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// PlatformInput is a platform row for create / move-to-library / add-platform.
+type PlatformInput struct {
+	Platform        string   `json:"platform,omitempty"`
+	Storefront      string   `json:"storefront,omitempty"`
+	OwnershipStatus string   `json:"ownership_status,omitempty"`
+	HoursPlayed     *float64 `json:"hours_played,omitempty"`
+}
+
+// CreateUserGameInput is the body for creating a collection entry.
+type CreateUserGameInput struct {
+	GameID         int             `json:"game_id"`
+	PlayStatus     string          `json:"play_status,omitempty"`
+	PersonalRating *int            `json:"personal_rating,omitempty"`
+	IsLoved        bool            `json:"is_loved,omitempty"`
+	PersonalNotes  *string         `json:"personal_notes,omitempty"`
+	IsWishlisted   bool            `json:"is_wishlisted,omitempty"`
+	Platforms      []PlatformInput `json:"platforms,omitempty"`
+}
+
+// CreateUserGame adds a game to the collection.
+func (c *Client) CreateUserGame(key string, in CreateUserGameInput) (*UserGame, error) {
+	var out UserGame
+	if err := c.doBearer(http.MethodPost, "/api/user-games", key, in, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// MoveToLibrary promotes a wishlisted user-game to the library with platforms.
+func (c *Client) MoveToLibrary(key, id string, platforms []PlatformInput) (*UserGame, error) {
+	var out UserGame
+	body := map[string]any{"platforms": platforms}
+	if err := c.doBearer(http.MethodPost, "/api/user-games/"+url.PathEscape(id)+"/move-to-library", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateUserGame applies a partial field update (play_status, personal_rating,
+// is_loved, personal_notes). A nil map value clears the field server-side.
+func (c *Client) UpdateUserGame(key, id string, fields map[string]any) (*UserGame, error) {
+	var out UserGame
+	if err := c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id), key, fields, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateProgress sets play_status via the dedicated progress endpoint.
+func (c *Client) UpdateProgress(key, id, playStatus string) (*UserGame, error) {
+	var out UserGame
+	body := map[string]any{"play_status": playStatus}
+	if err := c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id)+"/progress", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AddPlatform creates a platform row on a user-game.
+func (c *Client) AddPlatform(key, id string, p PlatformInput) error {
+	return c.doBearer(http.MethodPost, "/api/user-games/"+url.PathEscape(id)+"/platforms", key, p, nil)
+}
+
+// UpdatePlatform applies a partial update to one platform row.
+func (c *Client) UpdatePlatform(key, id, platformID string, fields map[string]any) error {
+	return c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id)+"/platforms/"+url.PathEscape(platformID), key, fields, nil)
+}
+
+// DeletePlatform removes a platform row.
+func (c *Client) DeletePlatform(key, id, platformID string) error {
+	return c.doBearer(http.MethodDelete, "/api/user-games/"+url.PathEscape(id)+"/platforms/"+url.PathEscape(platformID), key, nil, nil)
+}
+
+// ReplaceTags sets the complete tag set (by name) on a user-game.
+func (c *Client) ReplaceTags(key, id string, tags []string) (*UserGame, error) {
+	var out UserGame
+	body := map[string]any{"tags": tags}
+	if err := c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id)+"/tags", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteUserGame removes a user-game.
+func (c *Client) DeleteUserGame(key, id string) error {
+	return c.doBearer(http.MethodDelete, "/api/user-games/"+url.PathEscape(id), key, nil, nil)
+}
+
+// ListTags returns the caller's tags (used to resolve --tag NAME to an id).
+func (c *Client) ListTags(key string) ([]Tag, error) {
+	var out []Tag
+	if err := c.doBearer(http.MethodGet, "/api/tags", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
