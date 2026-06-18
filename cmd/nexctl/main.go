@@ -47,6 +47,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newGameCmd())
 	root.AddCommand(newTagCmd())
 	root.AddCommand(newPoolCmd())
+	root.AddCommand(newSyncCmd())
 	root.AddCommand(newLoginCmd(), newLogoutCmd()) // top-level aliases for `account login`/`logout`
 
 	return root
