@@ -151,8 +151,10 @@ func (h *PoolsHandler) HandleUpdatePool(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	setClauses := []string{"updated_at = ?"}
-	args := []any{time.Now().UTC()}
+	q := h.db.NewUpdate().
+		TableExpr("pools").
+		Set("updated_at = ?", time.Now().UTC())
+	hasFields := false
 
 	if nameRaw, ok := raw["name"]; ok {
 		var name string
@@ -166,40 +168,35 @@ func (h *PoolsHandler) HandleUpdatePool(c *echo.Context) error {
 		if len(name) > 100 {
 			return echo.NewHTTPError(http.StatusBadRequest, "name must be 100 characters or less")
 		}
-		setClauses = append(setClauses, "name = ?")
-		args = append(args, name)
+		q = q.Set("name = ?", name)
+		hasFields = true
 	}
 	if colorRaw, ok := raw["color"]; ok {
 		var color *string
 		if err := json.Unmarshal(colorRaw, &color); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid color")
 		}
-		setClauses = append(setClauses, "color = ?")
-		args = append(args, color)
+		q = q.Set("color = ?", color)
+		hasFields = true
 	}
 	if filterRaw, ok := raw["filter"]; ok {
 		normFilter, err := normalizePoolFilter(filterRaw)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
-		setClauses = append(setClauses, "filter = ?")
-		args = append(args, normFilter)
+		q = q.Set("filter = ?", normFilter)
+		hasFields = true
 	}
 
-	if len(setClauses) == 1 {
+	if !hasFields {
 		return echo.NewHTTPError(http.StatusBadRequest, "no fields to update")
 	}
 
-	args = append(args, poolID, userID)
-	query := fmt.Sprintf(`
-		UPDATE pools SET %s
-		WHERE id = ? AND user_id = ?
-		RETURNING id, user_id, name, color, position, filter, created_at, updated_at`,
-		strings.Join(setClauses, ", "),
-	)
-
 	var pool poolResponse
-	err := h.db.NewRaw(query, args...).Scan(context.Background(), &pool)
+	err := q.
+		Where("id = ? AND user_id = ?", poolID, userID).
+		Returning("id, user_id, name, color, position, filter, created_at, updated_at").
+		Scan(context.Background(), &pool)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")

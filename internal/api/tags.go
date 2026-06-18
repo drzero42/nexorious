@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -171,30 +170,22 @@ func (h *TagsHandler) HandleUpdateTag(c *echo.Context) error {
 	}
 
 	// Build dynamic SET clause.
-	setClauses := []string{"updated_at = ?"}
-	args := []any{time.Now().UTC()}
+	q := h.db.NewUpdate().
+		TableExpr("tags").
+		Set("updated_at = ?", time.Now().UTC())
 
 	if req.Name != nil {
-		setClauses = append(setClauses, "name = ?")
-		args = append(args, *req.Name)
+		q = q.Set("name = ?", *req.Name)
 	}
 	if req.Color != nil {
-		setClauses = append(setClauses, "color = ?")
-		args = append(args, *req.Color)
+		q = q.Set("color = ?", *req.Color)
 	}
 
-	// WHERE args.
-	args = append(args, tagID, userID)
-
-	query := fmt.Sprintf(
-		`UPDATE tags SET %s
-		 WHERE id = ? AND user_id = ?
-		 RETURNING id, user_id, name, color, created_at, updated_at`,
-		strings.Join(setClauses, ", "),
-	)
-
 	var tag tagResponse
-	err := h.db.NewRaw(query, args...).Scan(context.Background(), &tag)
+	err := q.
+		Where("id = ? AND user_id = ?", tagID, userID).
+		Returning("id, user_id, name, color, created_at, updated_at").
+		Scan(context.Background(), &tag)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
