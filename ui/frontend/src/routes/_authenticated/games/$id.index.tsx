@@ -52,6 +52,7 @@ import {
   type OwnershipStatus as OwnershipStatusType,
 } from '@/types';
 import { PlatformSelector, type PlatformSelection } from '@/components/ui/platform-selector';
+import { TagBadge } from '@/components/ui/tag-selector';
 import {
   PlatformDetailFields,
   type PlatformDetail,
@@ -613,6 +614,17 @@ export function GameDetailPage() {
               )}
             </div>
           </div>
+
+          {game.tags && game.tags.length > 0 && (
+            <div className="mt-4">
+              <h4 className="text-sm font-medium text-muted-foreground mb-2">Tags</h4>
+              <div className="flex flex-wrap gap-2">
+                {game.tags.map((tag) => (
+                  <TagBadge key={tag.id} tag={tag} size="sm" />
+                ))}
+              </div>
+            </div>
+          )}
 
           {game.personal_notes && (
             <div className="mt-4">
