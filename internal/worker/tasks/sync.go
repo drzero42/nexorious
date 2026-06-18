@@ -808,7 +808,7 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			eg.ID,
 		).Scan(ctx, &childItems); err == nil {
 			for _, child := range childItems {
-				if _, err := w.RiverClient.Insert(ctx, IGDBMatchArgs{JobItemID: child.JobItemID}, nil); err != nil {
+				if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, child.JobItemID, IGDBMatchArgs{JobItemID: child.JobItemID}); err != nil {
 					slog.WarnContext(ctx, "user_game_write: enqueue sibling Stage 2",
 						logging.KeyErr, err, "child_eg_id", child.ExternalGameID, logging.KeyJobItemID, child.JobItemID)
 				}

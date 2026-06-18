@@ -63,7 +63,7 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 			slog.WarnContext(ctx, "rescue_orphaned_items: unknown job_type, skipping", logging.KeyJobItemID, o.ID, logging.KeyJobType, o.JobType, logging.KeySource, o.Source)
 			continue
 		}
-		if _, err := rc.Insert(ctx, args, nil); err != nil {
+		if err := tasks.EnqueueOrFail(ctx, db, rc, o.ID, args); err != nil {
 			slog.WarnContext(ctx, "rescue_orphaned_items: re-enqueue failed", logging.KeyJobItemID, o.ID, logging.KeyErr, err)
 			failureCount++
 		} else {
