@@ -71,6 +71,30 @@ func resolveStorefront(c *cliclient.Client, key, arg string) (string, error) {
 	return "", fmt.Errorf("unknown storefront %q; valid: %s", arg, strings.Join(slugs, ", "))
 }
 
+// connectRejected reports whether a 200-status connect response actually signals
+// a rejection. Steam returns {valid:false, error:"..."} on bad credentials with
+// HTTP 200; some storefronts use a {success:false} shape. The returned reason
+// prefers the server's error/message text.
+func connectRejected(resp map[string]any) (string, bool) {
+	flagFalse := func(key string) bool {
+		v, ok := resp[key]
+		if !ok {
+			return false
+		}
+		b, ok := v.(bool)
+		return ok && !b
+	}
+	if !flagFalse("valid") && !flagFalse("success") {
+		return "", false
+	}
+	for _, key := range []string{"error", "message"} {
+		if s, ok := resp[key].(string); ok && s != "" {
+			return s, true
+		}
+	}
+	return "server rejected credentials", true
+}
+
 func newSyncConnectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "connect <storefront>",
@@ -124,6 +148,13 @@ Flag reference by storefront:
 			resp, err := c.ConnectStorefront(p.Key, sf, body)
 			if err != nil {
 				return fmt.Errorf("connect failed: %w", err)
+			}
+			// Steam returns HTTP 200 with valid:false (and an error code) on bad
+			// credentials rather than a 4xx, so a 2xx alone doesn't mean success.
+			// Other storefronts only ever send a truthy flag on 200, so this guard
+			// is safe across the board.
+			if reason, rejected := connectRejected(resp); rejected {
+				return fmt.Errorf("connect failed: %s", reason)
 			}
 
 			for _, key := range []string{"steam_username", "online_id", "display_name", "username", "message"} {

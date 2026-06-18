@@ -87,6 +87,35 @@ func TestSyncConnectPSN(t *testing.T) {
 	}
 }
 
+func TestSyncConnectSteamInvalid(t *testing.T) {
+	mux := http.NewServeMux()
+	serveSyncConfigs(mux, "steam")
+	mux.HandleFunc("/api/sync/steam/connection", func(w http.ResponseWriter, _ *http.Request) {
+		// Steam reports bad credentials as HTTP 200 with valid:false.
+		_ = json.NewEncoder(w).Encode(map[string]any{"valid": false, "error": "invalid_api_key"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader(""))
+	root.SetArgs([]string{"sync", "connect", "steam", "--steam-id", "76561198000000001", "--api-key", "BADKEY"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatalf("expected error for valid:false, got nil\n%s", out.String())
+	}
+	if !strings.Contains(err.Error(), "invalid_api_key") {
+		t.Fatalf("error = %v, want it to surface invalid_api_key", err)
+	}
+	if strings.Contains(out.String(), "connected") {
+		t.Fatalf("must not print success on rejection: %q", out.String())
+	}
+}
+
 func TestSyncConnectMissingFlagOffTTY(t *testing.T) {
 	mux := http.NewServeMux()
 	serveSyncConfigs(mux, "steam")
@@ -137,5 +166,34 @@ func TestSyncDisconnect(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "disconnected steam") {
 		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestSyncDisconnectAbortsWithoutYes(t *testing.T) {
+	mux := http.NewServeMux()
+	serveSyncConfigs(mux, "steam")
+	var deleted bool
+	mux.HandleFunc("/api/sync/steam/connection", func(w http.ResponseWriter, _ *http.Request) {
+		deleted = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader("")) // non-TTY, no -y: must abort
+	root.SetArgs([]string{"sync", "disconnect", "steam"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("disconnect abort: unexpected error %v", err)
+	}
+	if deleted {
+		t.Fatal("DELETE must not be sent when not confirmed")
+	}
+	if !strings.Contains(out.String(), "Aborted.") {
+		t.Fatalf("output = %q, want Aborted.", out.String())
 	}
 }
