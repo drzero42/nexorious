@@ -96,6 +96,11 @@ func gamesForRefsOrFilter(cmd *cobra.Command, c *cliclient.Client, key string, a
 		if err != nil {
 			return nil, err
 		}
+		if res.Total > len(res.UserGames) {
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"warning: filter matched %d games but only the first %d are affected; narrow the filter and re-run for the rest\n",
+				res.Total, len(res.UserGames))
+		}
 		return res.UserGames, nil
 	}
 	if len(args) == 0 {
