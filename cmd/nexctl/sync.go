@@ -520,7 +520,7 @@ func newSyncResolveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().Int("igdb-id", 0, "IGDB game id to match to (required)")
-	cmd.Flags().String("orphan-action", "", "Action when the game is already matched elsewhere (e.g. replace)")
+	cmd.Flags().String("orphan-action", "", "How to handle a user-game left orphaned by the rematch (remove)")
 	return cmd
 }
 
