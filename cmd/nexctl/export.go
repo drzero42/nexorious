@@ -24,15 +24,18 @@ func newExportCmd() *cobra.Command {
 		Short: "Export your library to a file",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outW := cmd.OutOrStdout()
+			// --out names a download destination, which --no-wait never reaches;
+			// rejecting the combination avoids silently ignoring --out.
+			if noWait && out != "" {
+				return fmt.Errorf("--out and --no-wait are mutually exclusive")
+			}
 			p, _, err := resolveProfile(cmd)
 			if err != nil {
 				return err
 			}
 
-			if format != "json" && format != "csv" {
-				return fmt.Errorf("unsupported export format %q: must be json or csv", format)
-			}
-
+			// Format is validated by cliclient.TriggerExport (before any network
+			// call), so the command layer does not re-check it.
 			c := cliclient.New(p.URL)
 			res, err := c.TriggerExport(p.Key, format)
 			if err != nil {
@@ -42,6 +45,10 @@ func newExportCmd() *cobra.Command {
 			if noWait {
 				if flagBool(cmd, "json") {
 					return cliui.EncodeJSON(outW, res)
+				}
+				if flagBool(cmd, "quiet") {
+					fmt.Fprintln(outW, res.JobID)
+					return nil
 				}
 				fmt.Fprintf(outW, "export job %s queued (%d games)\n", res.JobID, res.EstimatedItems)
 				return nil
@@ -61,11 +68,10 @@ func newExportCmd() *cobra.Command {
 			}
 
 			if job.Status != "completed" {
-				msg := job.Status
 				if job.ErrorMessage != nil {
-					msg = *job.ErrorMessage
+					return fmt.Errorf("export job %s: %s", job.Status, *job.ErrorMessage)
 				}
-				return fmt.Errorf("export job %s: %s", job.Status, msg)
+				return fmt.Errorf("export job ended with status %s", job.Status)
 			}
 
 			// Resolve the destination writer / path.

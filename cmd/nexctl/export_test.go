@@ -81,6 +81,40 @@ func TestExportNoWait(t *testing.T) {
 	}
 }
 
+func TestExportNoWaitQuiet(t *testing.T) {
+	mux := http.NewServeMux()
+	serveExportTrigger(mux, "json", "ex-q", 3)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runExport(t, srv.URL, "export", "--no-wait", "-q")
+	if err != nil {
+		t.Fatalf("export --no-wait -q: %v\n%s", err, out)
+	}
+	if strings.TrimSpace(out) != "ex-q" {
+		t.Errorf("quiet output = %q, want bare job id", out)
+	}
+}
+
+func TestExportOutNoWaitMutualExclusion(t *testing.T) {
+	mux := http.NewServeMux()
+	var triggered bool
+	mux.HandleFunc("/api/export/json", func(http.ResponseWriter, *http.Request) { triggered = true })
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	_, err := runExport(t, srv.URL, "export", "--no-wait", "--out", "x.json")
+	if err == nil {
+		t.Fatal("expected mutual-exclusion error, got nil")
+	}
+	if !strings.Contains(err.Error(), "--no-wait") {
+		t.Errorf("error = %v, want it to mention --no-wait", err)
+	}
+	if triggered {
+		t.Error("must not trigger an export on the mutual-exclusion error")
+	}
+}
+
 func TestExportNoWaitJSON(t *testing.T) {
 	mux := http.NewServeMux()
 	serveExportTrigger(mux, "json", "ex-2", 7)
