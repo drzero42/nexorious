@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -108,19 +107,17 @@ func (h *TagsHandler) HandleCreateTag(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+	name, err := validateName(req.Name, 100)
+	if err != nil {
+		return err
 	}
-	if len(req.Name) > 100 {
-		return echo.NewHTTPError(http.StatusBadRequest, "name must be 100 characters or less")
-	}
+	req.Name = name
 
 	now := time.Now().UTC()
 	id := uuid.NewString()
 
 	var tag tagResponse
-	err := h.db.NewRaw(`
+	err = h.db.NewRaw(`
 		INSERT INTO tags (id, user_id, name, color, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		RETURNING id, user_id, name, color, created_at, updated_at`,
@@ -159,14 +156,11 @@ func (h *TagsHandler) HandleUpdateTag(c *echo.Context) error {
 
 	// Validate name if provided.
 	if req.Name != nil {
-		trimmed := strings.TrimSpace(*req.Name)
-		req.Name = &trimmed
-		if *req.Name == "" {
-			return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+		name, err := validateName(*req.Name, 100)
+		if err != nil {
+			return err
 		}
-		if len(*req.Name) > 100 {
-			return echo.NewHTTPError(http.StatusBadRequest, "name must be 100 characters or less")
-		}
+		req.Name = &name
 	}
 
 	// Build dynamic SET clause.
