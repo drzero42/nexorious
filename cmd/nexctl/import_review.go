@@ -28,19 +28,30 @@ func newImportReviewCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			params := url.Values{}
-			params.Set("status", "pending_review")
-			page, err := c.GetJobItems(p.Key, args[0], params)
-			if err != nil {
-				return fmt.Errorf("get job items failed: %w", err)
+			// Fetch every page of pending_review items up front so a review
+			// session is never silently capped at the server's per-page default.
+			var items []cliclient.JobItem
+			for pageNum := 1; ; pageNum++ {
+				params := url.Values{}
+				params.Set("status", "pending_review")
+				params.Set("per_page", "100")
+				params.Set("page", strconv.Itoa(pageNum))
+				page, err := c.GetJobItems(p.Key, args[0], params)
+				if err != nil {
+					return fmt.Errorf("get job items failed: %w", err)
+				}
+				items = append(items, page.Items...)
+				if pageNum >= page.TotalPages || len(page.Items) == 0 {
+					break
+				}
 			}
-			if len(page.Items) == 0 {
+			if len(items) == 0 {
 				fmt.Fprintln(out, "Nothing to review.")
 				return nil
 			}
 			in := bufio.NewReader(cmd.InOrStdin())
-			for i := range page.Items {
-				item := &page.Items[i]
+			for i := range items {
+				item := &items[i]
 				fmt.Fprintf(out, "\n%s\n", item.SourceTitle)
 				fmt.Fprint(out, "[s]earch IGDB / s[k]ip / [n]ext / [q]uit: ")
 				line, err := in.ReadString('\n')
