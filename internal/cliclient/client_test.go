@@ -472,3 +472,72 @@ func TestRunMigrationsAcceptsInProgress(t *testing.T) {
 		t.Fatalf("RunMigrations(in progress) should be nil, got: %v", err)
 	}
 }
+
+func TestServerVersionReturnsInfo(t *testing.T) {
+	var gotAuth string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"version":          "1.2.3",
+			"commit":           "def5678",
+			"update_available": true,
+			"latest_version":   "1.3.0",
+			"release_url":      "https://example.test/releases/v1.3.0",
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	info, err := New(srv.URL).ServerVersion("nxr_rawkey")
+	if err != nil {
+		t.Fatalf("ServerVersion: %v", err)
+	}
+	if gotAuth != "Bearer nxr_rawkey" {
+		t.Fatalf("Authorization header = %q, want Bearer nxr_rawkey", gotAuth)
+	}
+	if info.Version != "1.2.3" || info.Commit != "def5678" {
+		t.Fatalf("version=%q commit=%q", info.Version, info.Commit)
+	}
+	if !info.UpdateAvailable || info.LatestVersion != "1.3.0" {
+		t.Fatalf("update fields = %+v", info)
+	}
+}
+
+func TestServerVersionNoKeyOmitsAuthHeader(t *testing.T) {
+	var gotAuth string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"version": "1.2.3", "commit": "def5678"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	if _, err := New(srv.URL).ServerVersion(""); err != nil {
+		t.Fatalf("ServerVersion: %v", err)
+	}
+	if gotAuth != "" {
+		t.Fatalf("Authorization header = %q, want empty when no key", gotAuth)
+	}
+}
+
+func TestServerVersionErrorOnNon200(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "unauthorized"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	_, err := New(srv.URL).ServerVersion("")
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !strings.Contains(err.Error(), "unauthorized") {
+		t.Fatalf("error = %q, want server message", err.Error())
+	}
+}
