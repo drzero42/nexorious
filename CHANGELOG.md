@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.17.0](https://github.com/drzero42/nexorious/compare/v0.16.0...v0.17.0) (2026-06-19)
+
+
+### Features
+
+* add nexctl backup, admin, and config command groups (Phase 6) ([#1090](https://github.com/drzero42/nexorious/issues/1090)) ([ff3f0fe](https://github.com/drzero42/nexorious/commit/ff3f0fe69edce9ca9d4eb73cb5e0676ce505909a))
+* add nexctl CLI client (Phase 1: scaffold + account/profile) ([#1081](https://github.com/drzero42/nexorious/issues/1081)) ([3d087a7](https://github.com/drzero42/nexorious/commit/3d087a7b95416ef096ffda8f1747559a2f568d50))
+* add nexctl game command group (Phase 2) ([#1083](https://github.com/drzero42/nexorious/issues/1083)) ([80039c0](https://github.com/drzero42/nexorious/commit/80039c0c2fffad6a0f92dab14fc6c8737df9cc13))
+* add nexctl game filters command ([#1097](https://github.com/drzero42/nexorious/issues/1097)) ([039a6e3](https://github.com/drzero42/nexorious/commit/039a6e32b0cd54642e7d9abb42a014dd996a73b3)), closes [#1095](https://github.com/drzero42/nexorious/issues/1095)
+* add nexctl game stats command ([#1096](https://github.com/drzero42/nexorious/issues/1096)) ([104da4f](https://github.com/drzero42/nexorious/commit/104da4fcfaec86aaf0f2fdf813c363a6a6287487)), closes [#1094](https://github.com/drzero42/nexorious/issues/1094)
+* add nexctl import and export command groups (Phase 5) ([#1088](https://github.com/drzero42/nexorious/issues/1088)) ([4fb1a02](https://github.com/drzero42/nexorious/commit/4fb1a020b7a228d178dedcf2aedb30ecf10bf421))
+* add nexctl sync and job command groups (Phase 4) ([#1087](https://github.com/drzero42/nexorious/issues/1087)) ([59454dc](https://github.com/drzero42/nexorious/commit/59454dcec731085e3b72222a48dc2698bc39d38c))
+* add nexctl tag and pool command groups (Phase 3) ([#1085](https://github.com/drzero42/nexorious/issues/1085)) ([573cbaa](https://github.com/drzero42/nexorious/commit/573cbaa3b0640fe816156cf553c819f7865a9850))
+* add tag-assignment endpoint for user-games ([#1065](https://github.com/drzero42/nexorious/issues/1065)) ([4dce23b](https://github.com/drzero42/nexorious/commit/4dce23bd9ce4543f838c31bb2f282d72e306e7cf))
+* auto-detect CSV format/mapping when none is specified ([#1105](https://github.com/drzero42/nexorious/issues/1105)) ([c969fea](https://github.com/drzero42/nexorious/commit/c969feae30021fea9db82edbfb6c40f367b14569)), closes [#1089](https://github.com/drzero42/nexorious/issues/1089)
+* nexctl version reports client and server version ([#1109](https://github.com/drzero42/nexorious/issues/1109)) ([81f770d](https://github.com/drzero42/nexorious/commit/81f770ddb226f94da674333497ccce7e1a0b5d76))
+* **nexctl:** MCP server (Phase 8) ([#1098](https://github.com/drzero42/nexorious/issues/1098)) ([70c2e8c](https://github.com/drzero42/nexorious/commit/70c2e8c6e04410998efb039ce7b1467133a49f3c))
+* resolve nexctl game list --pool by name ([#1060](https://github.com/drzero42/nexorious/issues/1060)) ([#1086](https://github.com/drzero42/nexorious/issues/1086)) ([5c9cec2](https://github.com/drzero42/nexorious/commit/5c9cec276acb90fdc7855d677a3f1e4af0923097))
+
+
+### Bug Fixes
+
+* **deps:** update go non-major to v0.43.0 ([#1101](https://github.com/drzero42/nexorious/issues/1101)) ([9a681e2](https://github.com/drzero42/nexorious/commit/9a681e23037f9ee5d19625d0f75c59d6b594ec10))
+* **deps:** update go non-major to v5.2.1 ([#1007](https://github.com/drzero42/nexorious/issues/1007)) ([f029e09](https://github.com/drzero42/nexorious/commit/f029e09b2258d9c1da776a51c5016e530cd9f284))
+* enforce API-key read scope on mutating requests ([#1050](https://github.com/drzero42/nexorious/issues/1050)) ([f010108](https://github.com/drzero42/nexorious/commit/f0101088bf926d5709ee68782371c5304c1cb765)), closes [#1049](https://github.com/drzero42/nexorious/issues/1049)
+* guard IGDB handlers against nil client ([#1053](https://github.com/drzero42/nexorious/issues/1053)) ([4665d49](https://github.com/drzero42/nexorious/commit/4665d490c2ea2589c10d04f2b06b310a4994a985)), closes [#1051](https://github.com/drzero42/nexorious/issues/1051)
+* nexctl backup/export download honor server Content-Disposition filename ([#1107](https://github.com/drzero42/nexorious/issues/1107)) ([613447a](https://github.com/drzero42/nexorious/commit/613447a7f68a94f09619ba78f9ad503aed90c1ba)), closes [#1092](https://github.com/drzero42/nexorious/issues/1092)
+* **nexctl:** mirror CLI igdb-id error wording in MCP game_add, test mcp config --profile ([#1110](https://github.com/drzero42/nexorious/issues/1110)) ([bc4d2d3](https://github.com/drzero42/nexorious/commit/bc4d2d371dab8f0a2a8390c3da8b3ef08dd5d8e1)), closes [#1099](https://github.com/drzero42/nexorious/issues/1099)
+* **nix:** share one Go vendorHash across server and client, build both in CI ([#1113](https://github.com/drzero42/nexorious/issues/1113)) ([0ec2b3d](https://github.com/drzero42/nexorious/commit/0ec2b3d9f7114af56d238e484d0b8a7f546deb9d))
+* promote imported played games to in_progress ([#1063](https://github.com/drzero42/nexorious/issues/1063)) ([ad47b43](https://github.com/drzero42/nexorious/commit/ad47b434c30e6405f193dcf90ffdcf6adb73fa0e)), closes [#1061](https://github.com/drzero42/nexorious/issues/1061)
+* render assigned tags on game details page ([#1071](https://github.com/drzero42/nexorious/issues/1071)) ([fe27bdf](https://github.com/drzero42/nexorious/commit/fe27bdf31d7deb88d651b61bc1c8f34ca62f9b8f)), closes [#1064](https://github.com/drzero42/nexorious/issues/1064)
+* require authentication for GET /api/version ([#1112](https://github.com/drzero42/nexorious/issues/1112)) ([7f6562d](https://github.com/drzero42/nexorious/commit/7f6562dcbd92521b2e9185bb69489ddc679b7db7)), closes [#1108](https://github.com/drzero42/nexorious/issues/1108)
+* return 422 for invalid platform/storefront slug instead of 500 ([#1111](https://github.com/drzero42/nexorious/issues/1111)) ([2be5040](https://github.com/drzero42/nexorious/commit/2be504027728c215ce235a994337fe45f4e283ed)), closes [#1100](https://github.com/drzero42/nexorious/issues/1100)
+* stop auto-suggesting genres/categories CSV columns as tags ([#1074](https://github.com/drzero42/nexorious/issues/1074)) ([b9a5088](https://github.com/drzero42/nexorious/commit/b9a50881aebf58be9e80da4415609ccd721160c8)), closes [#1073](https://github.com/drzero42/nexorious/issues/1073)
+* stream nexctl multipart uploads instead of buffering in memory ([#1106](https://github.com/drzero42/nexorious/issues/1106)) ([9f38404](https://github.com/drzero42/nexorious/commit/9f3840469893f60d68ab5ff45beb606c1f8fd191)), closes [#1091](https://github.com/drzero42/nexorious/issues/1091)
+* type Tag.color as nullable to match API serialization ([#1078](https://github.com/drzero42/nexorious/issues/1078)) ([f65a526](https://github.com/drzero42/nexorious/commit/f65a526b6c364c2cfe37402533c1d1f4805d354c)), closes [#1072](https://github.com/drzero42/nexorious/issues/1072)
+
 ## [0.16.0](https://github.com/drzero42/nexorious/compare/v0.15.0...v0.16.0) (2026-06-16)
 
 
