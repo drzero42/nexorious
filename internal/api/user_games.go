@@ -322,16 +322,9 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 
 	// Fetch full records with relations, preserving sort order.
 	var userGames []models.UserGame
-	q := h.db.NewSelect().
+	q := withUserGameRelations(h.db.NewSelect().
 		Model(&userGames).
-		Where("user_game.id IN (?)", bun.List(ids)).
-		Relation("Game").
-		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
-		}).
-		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("Tag")
-		})
+		Where("user_game.id IN (?)", bun.List(ids)))
 
 	// Re-apply sort on the Model query.
 	if sortCol != "" {
@@ -479,19 +472,8 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		return h.httpError(c, err)
 	}
 
-	// Re-select the user game with all relations for the response.
-	ug := &models.UserGame{}
-	ug.ID = res.UserGameID
-	if err := h.db.NewSelect().Model(ug).
-		Where("user_game.id = ?", ug.ID).
-		Relation("Game").
-		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
-		}).
-		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("Tag")
-		}).
-		Scan(ctx); err != nil {
+	ug, err := LoadUserGameDetail(ctx, h.db, res.UserGameID, userID)
+	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
@@ -508,18 +490,7 @@ func (h *UserGamesHandler) HandleGetUserGame(c *echo.Context) error {
 	id := c.Param("id")
 	ctx := context.Background()
 
-	var ug models.UserGame
-	err := h.db.NewSelect().Model(&ug).
-		Where("user_game.id = ?", id).
-		Where("user_game.user_id = ?", userID).
-		Relation("Game").
-		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("PlatformRecord").Relation("StorefrontRecord").Relation("ExternalGame")
-		}).
-		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("Tag")
-		}).
-		Scan(ctx)
+	ug, err := LoadUserGameDetail(ctx, h.db, id, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "user game not found")
@@ -527,7 +498,7 @@ func (h *UserGamesHandler) HandleGetUserGame(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
-	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(*ug))
 }
 
 // allowedUpdateFields is the set of mutable fields on a user game.
@@ -630,22 +601,12 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 		return h.httpError(c, err)
 	}
 
-	// Eager-load relations for the response.
-	var ug models.UserGame
-	if err := h.db.NewSelect().Model(&ug).
-		Where("user_game.id = ?", id).
-		Relation("Game").
-		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
-		}).
-		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("Tag")
-		}).
-		Scan(ctx); err != nil {
+	ug, err := LoadUserGameDetail(ctx, h.db, id, userID)
+	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
-	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(*ug))
 }
 
 // HandleDeleteUserGame handles DELETE /api/user-games/:id.
@@ -717,21 +678,12 @@ func (h *UserGamesHandler) HandleReplaceTags(c *echo.Context) error {
 		return h.httpError(c, err)
 	}
 
-	var ug models.UserGame
-	if err := h.db.NewSelect().Model(&ug).
-		Where("user_game.id = ?", id).
-		Relation("Game").
-		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
-		}).
-		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("Tag")
-		}).
-		Scan(ctx); err != nil {
+	ug, err := LoadUserGameDetail(ctx, h.db, id, userID)
+	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
-	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(*ug))
 }
 
 type updateProgressRequest struct {
@@ -767,22 +719,12 @@ func (h *UserGamesHandler) HandleUpdateProgress(c *echo.Context) error {
 		return h.httpError(c, err)
 	}
 
-	// Eager-load relations for the response.
-	var ug models.UserGame
-	if err := h.db.NewSelect().Model(&ug).
-		Where("user_game.id = ?", id).
-		Relation("Game").
-		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
-		}).
-		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("Tag")
-		}).
-		Scan(ctx); err != nil {
+	ug, err := LoadUserGameDetail(ctx, h.db, id, userID)
+	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
-	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(*ug))
 }
 
 type bulkUpdateRequest struct {
@@ -1241,21 +1183,12 @@ func (h *UserGamesHandler) HandleMoveToLibrary(c *echo.Context) error {
 		return h.httpError(c, err)
 	}
 
-	var ug models.UserGame
-	if err := h.db.NewSelect().Model(&ug).
-		Where("user_game.id = ?", userGameID).
-		Relation("Game").
-		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
-		}).
-		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("Tag")
-		}).
-		Scan(ctx); err != nil {
+	ug, err := LoadUserGameDetail(ctx, h.db, userGameID, userID)
+	if err != nil {
 		slog.ErrorContext(ctx, "user_games: reload after move-to-library", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
-	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(ug))
+	return c.JSON(http.StatusOK, toUserGameWithPlatformsResponse(*ug))
 }
 
 // ── Utility endpoint types ──────────────────────────────────────────────
