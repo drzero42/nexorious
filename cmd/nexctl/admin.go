@@ -123,9 +123,10 @@ func newAdminUserCreateCmd() *cobra.Command {
 
 			password := passwordFlag
 			if password == "" {
-				in := bufio.NewReader(cmd.InOrStdin())
+				src := cmd.InOrStdin()
+				in := bufio.NewReader(src)
 				var err error
-				password, err = cliui.ReadPassword(in, out, fmt.Sprintf("Password for %s: ", username))
+				password, err = cliui.ReadPassword(in, src, out, fmt.Sprintf("Password for %s: ", username))
 				if err != nil {
 					return err
 				}
@@ -246,9 +247,10 @@ func newAdminUserPasswdCmd() *cobra.Command {
 
 			password := passwordFlag
 			if password == "" {
-				in := bufio.NewReader(cmd.InOrStdin())
+				src := cmd.InOrStdin()
+				in := bufio.NewReader(src)
 				var err error
-				password, err = cliui.ReadPassword(in, out, fmt.Sprintf("New password for %s: ", args[0]))
+				password, err = cliui.ReadPassword(in, src, out, fmt.Sprintf("New password for %s: ", args[0]))
 				if err != nil {
 					return err
 				}

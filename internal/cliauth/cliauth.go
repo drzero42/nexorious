@@ -24,7 +24,7 @@ func LoginAndStoreKey(out io.Writer, client *cliclient.Client, cfg *clicfg.Confi
 	}
 
 	// Rotate: revoke a previously stored key for this profile before minting a new one.
-	if existing, _ := cfg.Profile(profileName); existing.KeyID != "" {
+	if existing, _ := cfg.ProfileNamed(profileName); existing.KeyID != "" {
 		if err := client.RevokeAPIKeyWithCookie(sessionID, existing.KeyID); err != nil {
 			fmt.Fprintf(out, "warning: could not revoke previous key %s: %v\n", existing.KeyID, err)
 		}

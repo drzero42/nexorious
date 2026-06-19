@@ -127,13 +127,14 @@ Flag reference by storefront:
 				return fmt.Errorf("no credential fields defined for storefront %q", sf)
 			}
 
-			in := bufio.NewReader(cmd.InOrStdin())
+			src := cmd.InOrStdin()
+			in := bufio.NewReader(src)
 			body := make(map[string]string, len(fields))
 			for _, f := range fields {
 				val, _ := cmd.Flags().GetString(f.flagName) //nolint:errcheck // absent flag yields ""
 				if val == "" && interactive(cmd) {
 					if f.secret {
-						val, err = cliui.ReadPassword(in, out, f.label+": ")
+						val, err = cliui.ReadPassword(in, src, out, f.label+": ")
 					} else {
 						val, err = cliui.Prompt(in, out, f.label+": ")
 					}
