@@ -254,13 +254,13 @@ The `nix/` directory contains the Nix package and NixOS module. Two hashes must 
   nix run nixpkgs#prefetch-npm-deps -- ui/frontend/package-lock.json
   # paste the output hash into nix/frontend.nix → npmDepsHash
   ```
-- **`vendorHash` in `nix/package.nix` AND `nix/nexctl.nix`** — update after any `go.mod` / `go.sum` change:
+- **`goVendorHash` in `flake.nix`** — update after any `go.mod` / `go.sum` change:
   ```bash
-  # Set vendorHash = pkgs.lib.fakeHash; in nix/package.nix, then:
+  # Set goVendorHash = pkgs.lib.fakeHash; in flake.nix, then:
   nix build .#nexorious 2>&1 | grep "got:"
-  # paste the "got:" hash into nix/package.nix → vendorHash
+  # paste the "got:" hash into flake.nix → goVendorHash
   ```
-  Both server and client build from the same `go.mod`/`go.sum`, so they share **one** `vendorHash` value — `nix/nexctl.nix` must carry the identical hash. Update both files together (verify the client with `nix build .#nexctl`).
+  Server (`nix/package.nix`) and client (`nix/nexctl.nix`) build from the same `go.mod`/`go.sum`, and `buildGoModule`'s `vendorHash` is independent of `subPackages`, so the two are **always identical**. They share **one** value — `goVendorHash` in `flake.nix`, passed to both via `callPackage` — so there is no second hash to keep in sync. The `Nix Build` workflow (`nix.yaml`) builds **both** `.#nexorious` and `.#nexctl` and auto-patches this one line on a hash mismatch.
 
 The `version` field in `flake.nix` is managed automatically by release-please (same as `Chart.yaml`). The flake exposes two packages, `nexorious` (server) and `nexctl` (CLI client); both are also in `overlays.default`. The `nexorious` NixOS module (`nix/module.nix`) installs only the server — `nexctl` is opt-in (add `packages.nexctl` to `environment.systemPackages`).
 
