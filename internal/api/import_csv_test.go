@@ -481,6 +481,104 @@ func TestImportCSV_PresetFormat_SignatureMismatch_400(t *testing.T) {
 	}
 }
 
+func TestImportCSV_Auto_DetectsPreset(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-auto-preset")
+
+	// completionatorCSV header matches the completionator signature; append a data row.
+	data := []byte(completionatorCSV + "\"Celeste\",,,,,Yes,No,Owned,Beaten,,,,,,,,,,2024-01-01,,,,2024-01-02,")
+	rec := postMultipartFile(t, e, "/api/import/csv", "c.csv", data, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var resp struct {
+		JobID string `json:"job_id"`
+		Auto  *struct {
+			Mode   string `json:"mode"`
+			Preset *struct {
+				Slug string `json:"slug"`
+				Name string `json:"name"`
+			} `json:"preset"`
+		} `json:"auto"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.JobID == "" {
+		t.Error("expected a job_id")
+	}
+	if resp.Auto == nil || resp.Auto.Mode != "preset" || resp.Auto.Preset == nil || resp.Auto.Preset.Slug != "completionator" {
+		t.Fatalf("auto = %+v, want preset completionator", resp.Auto)
+	}
+}
+
+func TestImportCSV_Auto_GuessesMapping(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-auto-guess")
+
+	data := []byte("Name,Status\nCeleste,Beaten\nHades,Playing\n")
+	rec := postMultipartFile(t, e, "/api/import/csv", "g.csv", data, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var resp struct {
+		JobID string `json:"job_id"`
+		Auto  *struct {
+			Mode    string `json:"mode"`
+			Mapping *struct {
+				Columns struct {
+					Title string `json:"title"`
+				} `json:"columns"`
+			} `json:"mapping"`
+		} `json:"auto"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.JobID == "" {
+		t.Error("expected a job_id")
+	}
+	if resp.Auto == nil || resp.Auto.Mode != "guessed" || resp.Auto.Mapping == nil || resp.Auto.Mapping.Columns.Title != "Name" {
+		t.Fatalf("auto = %+v, want guessed title=Name", resp.Auto)
+	}
+}
+
+func TestImportCSV_Auto_NoTitle_400(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-auto-notitle")
+
+	// "Console" guesses to platform, no title-like header, no preset signature.
+	data := []byte("Console\nPC\nSwitch\n")
+	rec := postMultipartFile(t, e, "/api/import/csv", "n.csv", data, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "no title column") {
+		t.Errorf("body = %q, want it to mention 'no title column'", rec.Body.String())
+	}
+}
+
+func TestImportCSV_GenericNoMapping_StillMissingMapping_400(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-generic-nomap")
+
+	rec := postCSVImportFormat(t, e, "x.csv", []byte("Name,Status\nCeleste,Beaten\n"), "generic", token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "missing mapping field") {
+		t.Errorf("body = %q, want 'missing mapping field'", rec.Body.String())
+	}
+}
+
 // postCSVImportFormat posts a CSV with a "format" form field (preset path), no mapping.
 func postCSVImportFormat(t *testing.T, e interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
