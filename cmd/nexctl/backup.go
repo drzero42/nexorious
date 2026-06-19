@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -156,30 +157,44 @@ func newBackupDownloadCmd() *cobra.Command {
 			}
 			c := cliclient.New(p.URL)
 
+			serverName, body, err := c.OpenBackupDownload(p.Key, id)
+			if err != nil {
+				return fmt.Errorf("download backup: %w", err)
+			}
+			defer func() { _ = body.Close() }()
+
 			if outPath == "-" {
 				// Stream directly to stdout; no extra output so the stream is clean.
-				return c.DownloadBackup(p.Key, id, outW)
+				if _, err := io.Copy(outW, body); err != nil {
+					return fmt.Errorf("stream backup: %w", err)
+				}
+				return nil
 			}
 
+			// Prefer an explicit --out, then the server-suggested filename,
+			// then a predictable fallback.
 			destPath := outPath
+			if destPath == "" {
+				destPath = serverName
+			}
 			if destPath == "" {
 				destPath = fmt.Sprintf("backup-%s.tar.gz", id)
 			}
 
-			f, err := os.Create(destPath) //nolint:gosec // operator-supplied output path
+			f, err := os.Create(destPath) //nolint:gosec // path is --out, a basename-sanitized server name, or a fixed fallback
 			if err != nil {
 				return fmt.Errorf("create output file: %w", err)
 			}
 			defer func() { _ = f.Close() }()
 
-			if err := c.DownloadBackup(p.Key, id, f); err != nil {
+			if _, err := io.Copy(f, body); err != nil {
 				return fmt.Errorf("download backup: %w", err)
 			}
 			fmt.Fprintf(outW, "downloaded to %s\n", destPath)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&outPath, "out", "", `Output path; "-" for stdout; empty uses backup-<id>.tar.gz`)
+	cmd.Flags().StringVar(&outPath, "out", "", `Output path; "-" for stdout; empty uses the server filename (else backup-<id>.tar.gz)`)
 	return cmd
 }
 

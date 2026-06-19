@@ -29,27 +29,27 @@ func (c *Client) TriggerExport(key, format string) (*ExportResult, error) {
 	return &out, nil
 }
 
-// DownloadExport streams the completed export file for jobID into w.
+// OpenExportDownload opens the completed export file for jobID.
 // It builds the request directly rather than through doBearer because the
-// response body is a raw file stream, not a JSON envelope.
-func (c *Client) DownloadExport(key, jobID string, w io.Writer) error {
+// response body is a raw file stream, not a JSON envelope. It returns the
+// server-suggested filename (parsed from Content-Disposition, "" when absent)
+// and the open body, which the caller must Close. On a non-2xx response the
+// body is consumed/closed and a nil body is returned alongside the error.
+func (c *Client) OpenExportDownload(key, jobID string) (filename string, body io.ReadCloser, err error) {
 	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/export/"+url.PathEscape(jobID)+"/download", nil)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return "", nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return fmt.Errorf("request: %w", err)
+		return "", nil, fmt.Errorf("request: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return httpError(resp)
+		defer func() { _ = resp.Body.Close() }()
+		return "", nil, httpError(resp)
 	}
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		return fmt.Errorf("stream response: %w", err)
-	}
-	return nil
+	return filenameFromContentDisposition(resp.Header.Get("Content-Disposition")), resp.Body, nil
 }

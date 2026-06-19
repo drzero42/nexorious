@@ -3,6 +3,7 @@ package cliclient
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -220,7 +221,7 @@ func TestDeleteBackup(t *testing.T) {
 	}
 }
 
-func TestDownloadBackup(t *testing.T) {
+func TestOpenBackupDownload(t *testing.T) {
 	const payload = "\x1f\x8b\x00mock-tar-gz-bytes"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/admin/backups/bk-dl/download", func(w http.ResponseWriter, r *http.Request) {
@@ -232,22 +233,51 @@ func TestDownloadBackup(t *testing.T) {
 			t.Errorf("Authorization = %q, want %q", got, "Bearer k")
 		}
 		w.Header().Set("Content-Type", "application/x-tar")
+		w.Header().Set("Content-Disposition", `attachment; filename="nexorious-backup-20260102-150405.tar.gz"`)
 		_, _ = w.Write([]byte(payload))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
+	name, body, err := c.OpenBackupDownload("k", "bk-dl")
+	if err != nil {
+		t.Fatalf("OpenBackupDownload: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+	if want := "nexorious-backup-20260102-150405.tar.gz"; name != want {
+		t.Errorf("filename = %q, want %q", name, want)
+	}
 	var buf bytes.Buffer
-	if err := c.DownloadBackup("k", "bk-dl", &buf); err != nil {
-		t.Fatalf("DownloadBackup: %v", err)
+	if _, err := io.Copy(&buf, body); err != nil {
+		t.Fatalf("copy body: %v", err)
 	}
 	if buf.String() != payload {
 		t.Errorf("body = %q, want %q", buf.String(), payload)
 	}
 }
 
-func TestDownloadBackup_nonOK(t *testing.T) {
+func TestOpenBackupDownload_noContentDisposition(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/admin/backups/bk-plain/download", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-tar")
+		_, _ = w.Write([]byte("data"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := New(srv.URL)
+
+	name, body, err := c.OpenBackupDownload("k", "bk-plain")
+	if err != nil {
+		t.Fatalf("OpenBackupDownload: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+	if name != "" {
+		t.Errorf("filename = %q, want empty when header absent", name)
+	}
+}
+
+func TestOpenBackupDownload_nonOK(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/admin/backups/bk-missing/download", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -258,16 +288,21 @@ func TestDownloadBackup_nonOK(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	var buf bytes.Buffer
-	err := c.DownloadBackup("k", "bk-missing", &buf)
+	name, body, err := c.OpenBackupDownload("k", "bk-missing")
 	if err == nil {
+		if body != nil {
+			_ = body.Close()
+		}
 		t.Fatal("expected error on 404, got nil")
 	}
 	if !strings.Contains(err.Error(), "404") {
 		t.Errorf("error = %v, want 404", err)
 	}
-	if buf.Len() != 0 {
-		t.Errorf("expected no bytes written on error, got %d", buf.Len())
+	if body != nil {
+		t.Errorf("expected nil body on error, got non-nil")
+	}
+	if name != "" {
+		t.Errorf("expected empty filename on error, got %q", name)
 	}
 }
 

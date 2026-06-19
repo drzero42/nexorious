@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -75,23 +76,37 @@ func newExportCmd() *cobra.Command {
 			}
 
 			// Resolve the destination writer / path.
+			serverName, body, err := c.OpenExportDownload(p.Key, res.JobID)
+			if err != nil {
+				return fmt.Errorf("download export: %w", err)
+			}
+			defer func() { _ = body.Close() }()
+
 			if out == "-" {
 				// Stream directly to stdout; no extra output so the stream is clean.
-				return c.DownloadExport(p.Key, res.JobID, outW)
+				if _, err := io.Copy(outW, body); err != nil {
+					return fmt.Errorf("stream export: %w", err)
+				}
+				return nil
 			}
 
+			// Prefer an explicit --out, then the server-suggested filename,
+			// then a predictable fallback.
 			destPath := out
+			if destPath == "" {
+				destPath = serverName
+			}
 			if destPath == "" {
 				destPath = fmt.Sprintf("nexorious_export_%s.%s", res.JobID, format)
 			}
 
-			f, err := os.Create(destPath) //nolint:gosec // operator-supplied output path, not network-derived
+			f, err := os.Create(destPath) //nolint:gosec // path is --out, a basename-sanitized server name, or a fixed fallback
 			if err != nil {
 				return fmt.Errorf("create output file: %w", err)
 			}
 			defer func() { _ = f.Close() }()
 
-			if err := c.DownloadExport(p.Key, res.JobID, f); err != nil {
+			if _, err := io.Copy(f, body); err != nil {
 				return fmt.Errorf("download export: %w", err)
 			}
 			fmt.Fprintf(outW, "exported to %s\n", destPath)
@@ -101,7 +116,7 @@ func newExportCmd() *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringVar(&format, "format", "json", "Export format: json or csv")
-	f.StringVar(&out, "out", "", `Output path; "-" for stdout; empty uses nexorious_export_<job-id>.<ext>`)
+	f.StringVar(&out, "out", "", `Output path; "-" for stdout; empty uses the server filename (else nexorious_export_<job-id>.<ext>)`)
 	f.BoolVar(&noWait, "no-wait", false, "Trigger the export and return without polling or downloading")
 	return cmd
 }

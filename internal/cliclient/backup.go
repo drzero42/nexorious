@@ -92,29 +92,29 @@ func (c *Client) DeleteBackup(key, id string) error {
 	return c.doBearer(http.MethodDelete, "/api/admin/backups/"+url.PathEscape(id), key, nil, nil)
 }
 
-// DownloadBackup streams the backup archive for id into w via
+// OpenBackupDownload opens the backup archive for id via
 // GET /api/admin/backups/:id/download. The response body is a raw tar.gz
-// stream; it is not JSON-decoded.
-func (c *Client) DownloadBackup(key, id string, w io.Writer) error {
+// stream; it is not JSON-decoded. It returns the server-suggested filename
+// (parsed from Content-Disposition, "" when absent) and the open body, which
+// the caller must Close. On a non-2xx response the body is consumed/closed and
+// a nil body is returned alongside the error.
+func (c *Client) OpenBackupDownload(key, id string) (filename string, body io.ReadCloser, err error) {
 	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/admin/backups/"+url.PathEscape(id)+"/download", nil)
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return "", nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return fmt.Errorf("request: %w", err)
+		return "", nil, fmt.Errorf("request: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return httpError(resp)
+		defer func() { _ = resp.Body.Close() }()
+		return "", nil, httpError(resp)
 	}
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		return fmt.Errorf("stream response: %w", err)
-	}
-	return nil
+	return filenameFromContentDisposition(resp.Header.Get("Content-Disposition")), resp.Body, nil
 }
 
 // RestoreBackup restores the server's database from the backup with the given
