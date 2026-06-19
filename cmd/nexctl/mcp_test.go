@@ -532,6 +532,136 @@ func TestMCPTagCreate(t *testing.T) {
 	}
 }
 
+func TestMCPSyncRun(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sync/config", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"configs": []map[string]any{{"storefront": "steam"}},
+			"total":   1,
+		})
+	})
+	mux.HandleFunc("/api/sync/steam", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"job_id": "job-1", "storefront": "steam", "status": "queued"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "sync_run", Arguments: map[string]any{"storefront": "steam"}})
+	if err != nil || res.IsError {
+		t.Fatalf("run: err=%v res=%+v", err, res)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	if !bytes.Contains(b, []byte("job-1")) {
+		t.Fatalf("missing job_id in output: %s", b)
+	}
+}
+
+func TestMCPWriteToolReadKey403(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sync/config", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"configs": []map[string]any{{"storefront": "steam"}},
+			"total":   1,
+		})
+	})
+	mux.HandleFunc("/api/sync/steam", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "forbidden"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "sync_run", Arguments: map[string]any{"storefront": "steam"}})
+	if err != nil {
+		t.Fatalf("transport err: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected tool error for 403")
+	}
+	// the message must mention read-only / write-scoped key
+	b, _ := json.Marshal(res.Content)
+	if !bytes.Contains(bytes.ToLower(b), []byte("read-only")) {
+		t.Fatalf("403 message not actionable: %s", b)
+	}
+}
+
+func TestMCPSyncReview(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sync/config", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"configs": []map[string]any{{"storefront": "steam"}},
+			"total":   1,
+		})
+	})
+	mux.HandleFunc("/api/sync/steam/external-games", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{
+				"id": "aaa", "title": "Half-Life 3", "external_id": "ext-1",
+				"sync_status": "needs_review", "platforms": []string{"pc-windows"},
+				"igdb_title": "Half-Life 3", "resolved_igdb_id": nil,
+			},
+			{
+				"id": "bbb", "title": "Portal 3", "external_id": "ext-2",
+				"sync_status": "synced", "platforms": []string{"pc-windows"},
+				"igdb_title": "Portal 3", "resolved_igdb_id": 9999,
+			},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+
+	// happy path: only needs_review item appears in output
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "sync_review", Arguments: map[string]any{"storefront": "steam"}})
+	if err != nil || res.IsError {
+		t.Fatalf("sync_review: err=%v res=%+v", err, res)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	var out syncReviewOutput
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, b)
+	}
+	if out.Total != 1 || len(out.PendingReview) != 1 {
+		t.Fatalf("expected 1 pending_review item, got %d: %s", out.Total, b)
+	}
+	if out.PendingReview[0].Title != "Half-Life 3" {
+		t.Fatalf("wrong title: %+v", out.PendingReview[0])
+	}
+	if out.PendingReview[0].IgdbTitle == nil || *out.PendingReview[0].IgdbTitle != "Half-Life 3" {
+		t.Fatalf("igdb_title missing or wrong: %+v", out.PendingReview[0])
+	}
+	// Portal 3 must not appear (it's synced)
+	if bytes.Contains(b, []byte("Portal")) {
+		t.Fatalf("synced item should not appear in pending_review: %s", b)
+	}
+}
+
+func TestMCPSyncReviewStorefrontNotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sync/config", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"configs": []map[string]any{{"storefront": "steam"}},
+			"total":   1,
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "sync_review", Arguments: map[string]any{"storefront": "nonexistent"}})
+	if err != nil {
+		t.Fatalf("transport err: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected tool error for unknown storefront")
+	}
+}
+
 func TestMCPSyncStatus(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/sync/config", func(w http.ResponseWriter, _ *http.Request) {
