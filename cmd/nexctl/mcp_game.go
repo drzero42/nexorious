@@ -351,6 +351,9 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 				return nil, gameAddOutput{}, mcpToolError("game_add", err)
 			}
 			if len(cands) == 0 {
+				if in.IgdbID != 0 {
+					return nil, gameAddOutput{}, fmt.Errorf("game_add: no IGDB game with id %d", in.IgdbID)
+				}
 				return nil, gameAddOutput{}, fmt.Errorf("game_add: no IGDB results for %q", in.Title)
 			}
 			if len(cands) > 1 {

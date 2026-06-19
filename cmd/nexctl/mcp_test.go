@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -90,6 +91,31 @@ func TestMCPGameAddAmbiguous(t *testing.T) {
 	}
 	if out.Candidates[0].IgdbID != 1 || out.Candidates[0].ReleaseDate != "2001" {
 		t.Fatalf("candidate[0] = %+v; want igdb_id=1 release_date=2001", out.Candidates[0])
+	}
+}
+
+func TestMCPGameAddIgdbIDNotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/games/igdb/999", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"games": []map[string]any{}, "total": 0})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "game_add",
+		Arguments: map[string]any{"igdb_id": 999},
+	})
+	if err != nil {
+		t.Fatalf("game_add: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected tool error, got %+v", res)
+	}
+	b, _ := json.Marshal(res.Content)
+	if !bytes.Contains(b, []byte("no IGDB game with id 999")) {
+		t.Fatalf("error should name the igdb id, got: %s", b)
 	}
 }
 
@@ -296,6 +322,32 @@ func TestMCPConfigStanza(t *testing.T) {
 	s, ok := cfg.MCPServers["nexorious"]
 	if !ok || s.Command != "nexctl" || len(s.Args) != 2 || s.Args[0] != "mcp" || s.Args[1] != "serve" {
 		t.Fatalf("stanza = %+v", cfg)
+	}
+}
+
+func TestMCPConfigStanzaProfile(t *testing.T) {
+	seedProfile(t, "https://example.test")
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"mcp", "config", "--profile", "work"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("mcp config --profile: %v\n%s", err, out.String())
+	}
+	var cfg struct {
+		MCPServers map[string]struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &cfg); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, out.String())
+	}
+	s, ok := cfg.MCPServers["nexorious"]
+	want := []string{"mcp", "serve", "--profile", "work"}
+	if !ok || s.Command != "nexctl" || !slices.Equal(s.Args, want) {
+		t.Fatalf("stanza args = %v, want %v", s.Args, want)
 	}
 }
 
