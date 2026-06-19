@@ -42,7 +42,7 @@ func newProfileListCmd() *cobra.Command {
 				}
 				views := make([]profileView, 0, len(names))
 				for _, n := range names {
-					p, _ := cfg.Profile(n)
+					p, _ := cfg.ProfileNamed(n)
 					views = append(views, profileView{
 						Name:     n,
 						URL:      p.URL,
@@ -65,7 +65,7 @@ func newProfileListCmd() *cobra.Command {
 			tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 			fmt.Fprintln(tw, "CURRENT\tNAME\tURL\tUSER")
 			for _, n := range names {
-				p, _ := cfg.Profile(n)
+				p, _ := cfg.ProfileNamed(n)
 				marker := ""
 				if n == cfg.CurrentName() {
 					marker = "*"
@@ -110,7 +110,7 @@ func newProfileAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, ok := cfg.Profile(args[0]); ok {
+			if _, ok := cfg.ProfileNamed(args[0]); ok {
 				return fmt.Errorf("profile %q already exists", args[0])
 			}
 			cfg.SetProfile(args[0], clicfg.Profile{URL: url})
@@ -136,7 +136,7 @@ func newProfileRmCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, ok := cfg.Profile(args[0]); !ok {
+			if _, ok := cfg.ProfileNamed(args[0]); !ok {
 				return fmt.Errorf("no profile named %q", args[0])
 			}
 			var ok bool

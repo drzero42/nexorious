@@ -41,9 +41,10 @@ func runLogin(cmd *cobra.Command, urlFlag, usernameFlag string) error {
 		return err
 	}
 	name := profileName(cmd, cfg)
-	existing, _ := cfg.Profile(name)
+	existing, _ := cfg.ProfileNamed(name)
 
-	in := bufio.NewReader(cmd.InOrStdin())
+	src := cmd.InOrStdin()
+	in := bufio.NewReader(src)
 	out := cmd.OutOrStdout()
 
 	url := cliui.FirstNonEmpty(urlFlag, existing.URL)
@@ -66,7 +67,7 @@ func runLogin(cmd *cobra.Command, urlFlag, usernameFlag string) error {
 		return fmt.Errorf("username is required")
 	}
 
-	password, err := cliui.ReadPassword(in, out, fmt.Sprintf("Password for %s@%s: ", username, url))
+	password, err := cliui.ReadPassword(in, src, out, fmt.Sprintf("Password for %s@%s: ", username, url))
 	if err != nil {
 		return err
 	}
@@ -122,7 +123,7 @@ func newWhoamiCmd() *cobra.Command {
 
 // clearStoredKey wipes the API key from the named profile and saves config.
 func clearStoredKey(cfg *clicfg.Config, name string) error {
-	p, _ := cfg.Profile(name)
+	p, _ := cfg.ProfileNamed(name)
 	p.Key, p.KeyID, p.KeyName = "", "", ""
 	cfg.SetProfile(name, p)
 	if err := clicfg.Save(cfg); err != nil {

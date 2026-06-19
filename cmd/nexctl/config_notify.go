@@ -64,8 +64,9 @@ func resolveChannelURL(cmd *cobra.Command, urlFlag string) (string, error) {
 	}
 	// Flag absent, or present-but-empty: prompt no-echo either way.
 	out := cmd.OutOrStdout()
-	in := bufio.NewReader(cmd.InOrStdin())
-	return cliui.ReadPassword(in, out, "Channel URL: ")
+	src := cmd.InOrStdin()
+	in := bufio.NewReader(src)
+	return cliui.ReadPassword(in, src, out, "Channel URL: ")
 }
 
 // printEventTypeList renders a slice of event-type strings honouring --json and
@@ -199,8 +200,9 @@ func newNotifyChannelEditCmd() *cobra.Command {
 				} else {
 					// --url was passed but empty — prompt no-echo.
 					out := cmd.OutOrStdout()
-					in := bufio.NewReader(cmd.InOrStdin())
-					u, err := cliui.ReadPassword(in, out, "Channel URL: ")
+					src := cmd.InOrStdin()
+					in := bufio.NewReader(src)
+					u, err := cliui.ReadPassword(in, src, out, "Channel URL: ")
 					if err != nil {
 						return err
 					}
@@ -290,9 +292,10 @@ func newNotifyTestURLCmd() *cobra.Command {
 				rawURL = urlFlag
 			}
 			if rawURL == "" {
-				in := bufio.NewReader(cmd.InOrStdin())
+				src := cmd.InOrStdin()
+				in := bufio.NewReader(src)
 				var err error
-				rawURL, err = cliui.ReadPassword(in, out, "Channel URL: ")
+				rawURL, err = cliui.ReadPassword(in, src, out, "Channel URL: ")
 				if err != nil {
 					return err
 				}

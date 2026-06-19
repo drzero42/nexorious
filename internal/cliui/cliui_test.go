@@ -31,6 +31,37 @@ func TestPromptTrimsLine(t *testing.T) {
 	}
 }
 
+func TestReadPasswordFromEnv(t *testing.T) {
+	t.Setenv("NEXORIOUS_PASSWORD", "from-env")
+	in := bufio.NewReader(strings.NewReader("typed\n"))
+	var out bytes.Buffer
+	got, err := ReadPassword(in, strings.NewReader("typed\n"), &out, "Password: ")
+	if err != nil {
+		t.Fatalf("ReadPassword: %v", err)
+	}
+	if got != "from-env" {
+		t.Fatalf("ReadPassword = %q, want from-env (env var wins)", got)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("env path should not prompt, wrote %q", out.String())
+	}
+}
+
+func TestReadPasswordFromPipe(t *testing.T) {
+	// src is not an *os.File, so the TTY branch is skipped and the line is read
+	// from the shared buffered reader.
+	src := strings.NewReader("  piped-pw \n")
+	in := bufio.NewReader(src)
+	var out bytes.Buffer
+	got, err := ReadPassword(in, src, &out, "Password: ")
+	if err != nil {
+		t.Fatalf("ReadPassword: %v", err)
+	}
+	if got != "piped-pw" {
+		t.Fatalf("ReadPassword = %q, want piped-pw", got)
+	}
+}
+
 func TestConfirm(t *testing.T) {
 	yes, err := Confirm(bufio.NewReader(strings.NewReader("y\n")), &bytes.Buffer{}, "ok?", false)
 	if err != nil || !yes {

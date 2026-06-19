@@ -141,8 +141,9 @@ func (c *Config) SetProfile(name string, p Profile) {
 	c.Current = name
 }
 
-// Profile returns the named profile (defaulting "" to the default profile).
-func (c *Config) Profile(name string) (Profile, bool) {
+// ProfileNamed returns the named profile (defaulting "" to the default
+// profile). It is named to avoid shadowing the Profile type.
+func (c *Config) ProfileNamed(name string) (Profile, bool) {
 	if name == "" {
 		name = defaultProfile
 	}

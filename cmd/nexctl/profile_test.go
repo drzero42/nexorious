@@ -25,7 +25,7 @@ func TestProfileAddUseRm(t *testing.T) {
 		t.Fatalf("add: %v", err)
 	}
 	cfg, _ := clicfg.Load()
-	if p, ok := cfg.Profile("work"); !ok || p.URL != "http://work:8000" {
+	if p, ok := cfg.ProfileNamed("work"); !ok || p.URL != "http://work:8000" {
 		t.Fatalf("work profile = %+v ok=%v", p, ok)
 	}
 	if cfg.CurrentName() != "work" {
@@ -44,7 +44,7 @@ func TestProfileAddUseRm(t *testing.T) {
 		t.Fatalf("rm: %v", err)
 	}
 	cfg, _ = clicfg.Load()
-	if _, ok := cfg.Profile("work"); ok {
+	if _, ok := cfg.ProfileNamed("work"); ok {
 		t.Fatal("work should be gone")
 	}
 }

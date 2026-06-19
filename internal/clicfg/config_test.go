@@ -110,8 +110,12 @@ func TestProfileHelpers(t *testing.T) {
 	if got := cfg.Names(); len(got) != 2 || got[0] != "default" || got[1] != "work" {
 		t.Fatalf("Names = %v, want [default work]", got)
 	}
-	if p, ok := cfg.Profile("work"); !ok || p.Key != "k2" {
-		t.Fatalf("Profile(work) = %+v,%v", p, ok)
+	if p, ok := cfg.ProfileNamed("work"); !ok || p.Key != "k2" {
+		t.Fatalf("ProfileNamed(work) = %+v,%v", p, ok)
+	}
+	// "" resolves to the default profile.
+	if p, ok := cfg.ProfileNamed(""); !ok || p.Key != "k1" {
+		t.Fatalf("ProfileNamed(\"\") = %+v,%v, want default profile k1", p, ok)
 	}
 	if err := cfg.SetCurrent("missing"); err == nil {
 		t.Fatal("SetCurrent(missing) should error")
@@ -120,7 +124,7 @@ func TestProfileHelpers(t *testing.T) {
 		t.Fatalf("SetCurrent(work) = %v, Current=%q", err, cfg.Current)
 	}
 	cfg.RemoveProfile("work")
-	if _, ok := cfg.Profile("work"); ok {
+	if _, ok := cfg.ProfileNamed("work"); ok {
 		t.Fatal("work should be removed")
 	}
 	if cfg.Current != "" {

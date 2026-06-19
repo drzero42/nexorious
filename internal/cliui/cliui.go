@@ -35,16 +35,18 @@ func Prompt(in *bufio.Reader, out io.Writer, label string) (string, error) {
 }
 
 // ReadPassword resolves a password from the NEXORIOUS_PASSWORD env var, else a
-// no-echo TTY prompt, else a plain line from in (piped input). The non-TTY path
-// reuses the caller's reader so it does not race with other prompts on stdin.
-// label is the TTY prompt text (e.g. "Password: "); it is only shown on the
-// interactive path.
-func ReadPassword(in *bufio.Reader, out io.Writer, label string) (string, error) {
+// no-echo TTY prompt, else a plain line from in (piped input). src is the
+// unbuffered stream backing in; the TTY detection reads its file descriptor
+// rather than assuming os.Stdin, so it stays correct when a caller (or test)
+// feeds something other than stdin. The non-TTY path reuses in so it does not
+// race with other prompts on the same stream. label is the TTY prompt text
+// (e.g. "Password: "); it is only shown on the interactive path.
+func ReadPassword(in *bufio.Reader, src io.Reader, out io.Writer, label string) (string, error) {
 	if env := os.Getenv("NEXORIOUS_PASSWORD"); env != "" {
 		return env, nil
 	}
-	fd := int(os.Stdin.Fd())
-	if term.IsTerminal(fd) {
+	if f, ok := src.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		fd := int(f.Fd())
 		fmt.Fprint(out, label)
 		b, err := term.ReadPassword(fd)
 		fmt.Fprintln(out)

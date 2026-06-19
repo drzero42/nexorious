@@ -77,7 +77,7 @@ func resolveProfile(cmd *cobra.Command) (clicfg.Profile, *clicfg.Config, error) 
 		return clicfg.Profile{}, nil, err
 	}
 	name := profileName(cmd, cfg)
-	p, ok := cfg.Profile(name)
+	p, ok := cfg.ProfileNamed(name)
 	if !ok || p.Key == "" {
 		return clicfg.Profile{}, nil, fmt.Errorf("not logged in to profile %q (run `nexctl account login` first)", name)
 	}
