@@ -140,6 +140,127 @@ type csvInspectResponse struct {
 	Detected         *csvPresetInfo          `json:"detected,omitempty"`
 }
 
+// scanCSV computes, in one pass over the data rows, each column's capped set of
+// distinct non-empty values and a data-refined suggested mapping (rating scale
+// from the observed max; status value-map from the status column's distinct
+// values). records[0] is the header. Shared by the inspect handler and the
+// auto import path so the inspect-time and import-time guesses cannot drift.
+func scanCSV(records [][]string) (cols []csvColumnInfo, suggested csvmap.SuggestedMapping) {
+	header := records[0]
+	suggested = csvmap.GuessColumns(header)
+	ratingIdx := -1
+	if suggested.Columns.Rating != "" {
+		for i, name := range header {
+			if name == suggested.Columns.Rating {
+				ratingIdx = i
+				break
+			}
+		}
+	}
+
+	cols = make([]csvColumnInfo, len(header))
+	seen := make([]map[string]bool, len(header))
+	for i, name := range header {
+		cols[i] = csvColumnInfo{Name: name, DistinctValues: []string{}}
+		seen[i] = map[string]bool{}
+	}
+
+	var ratingMax float64
+	for _, rec := range records[1:] {
+		for i := range header {
+			if i >= len(rec) {
+				continue
+			}
+			v := strings.TrimSpace(rec[i])
+			if i == ratingIdx && v != "" {
+				if f, perr := strconv.ParseFloat(v, 64); perr == nil && f > ratingMax {
+					ratingMax = f
+				}
+			}
+			if v == "" || cols[i].DistinctTruncated || seen[i][v] {
+				continue
+			}
+			if len(cols[i].DistinctValues) < csvDistinctCap {
+				seen[i][v] = true
+				cols[i].DistinctValues = append(cols[i].DistinctValues, v)
+			} else {
+				cols[i].DistinctTruncated = true
+			}
+		}
+	}
+
+	if suggested.Columns.Rating != "" {
+		suggested.RatingScale = csvmap.GuessRatingScale(ratingMax)
+	}
+	if suggested.Status.Column != "" {
+		for _, col := range cols {
+			if col.Name == suggested.Status.Column {
+				suggested.Status.ValueMap = csvmap.GuessStatusValueMap(col.DistinctValues)
+				break
+			}
+		}
+	}
+	return cols, suggested
+}
+
+// errCSVAutoNoTitle is returned by resolveCSVAuto when neither a preset nor the
+// header guess can identify a title column, so there is nothing to import.
+var errCSVAutoNoTitle = errors.New("could not auto-detect a column mapping: no title column found. Inspect the file and choose a preset or map the columns explicitly")
+
+// csvAutoResolution is the outcome of the import-time detect-or-guess policy:
+// either a preset matched by header signature, or a data-refined guessed
+// mapping. Config is what csvmap.Parse runs with.
+type csvAutoResolution struct {
+	Config   csvmap.Config
+	Detected *csvPresetInfo           // non-nil when a preset signature matched
+	Mapping  *csvmap.SuggestedMapping // non-nil when guessed (no preset matched)
+}
+
+// resolveCSVAuto applies the detect-or-guess policy to a parsed CSV:
+// a matching preset wins; otherwise the data-refined GuessColumns mapping is
+// used, or errCSVAutoNoTitle if that yields no title column.
+func resolveCSVAuto(records [][]string) (csvAutoResolution, error) {
+	header := records[0]
+	if d := detectPreset(header); d != nil {
+		cfg, ok := csvmap.PresetBySlug(d.Slug)
+		if !ok {
+			return csvAutoResolution{}, fmt.Errorf("detected preset %q is not registered", d.Slug)
+		}
+		return csvAutoResolution{Config: cfg, Detected: d}, nil
+	}
+	_, suggested := scanCSV(records)
+	if strings.TrimSpace(suggested.Columns.Title) == "" {
+		return csvAutoResolution{}, errCSVAutoNoTitle
+	}
+	cfg, err := buildCSVConfig(suggestedToCSVMapping(suggested))
+	if err != nil {
+		return csvAutoResolution{}, err
+	}
+	return csvAutoResolution{Config: cfg, Mapping: &suggested}, nil
+}
+
+// suggestedToCSVMapping copies a csvmap.SuggestedMapping into the flat csvMapping
+// shape buildCSVConfig consumes (the two share an identical JSON layout), so the
+// guessed mapping flows through the same translation as a user-submitted one.
+func suggestedToCSVMapping(s csvmap.SuggestedMapping) csvMapping {
+	var m csvMapping
+	m.Columns.Title = s.Columns.Title
+	m.Columns.IGDBID = s.Columns.IGDBID
+	m.Columns.Platform = s.Columns.Platform
+	m.Columns.Storefront = s.Columns.Storefront
+	m.Columns.Rating = s.Columns.Rating
+	m.Columns.Notes = s.Columns.Notes
+	m.Columns.AcquiredDate = s.Columns.AcquiredDate
+	m.Columns.HoursPlayed = s.Columns.HoursPlayed
+	m.Columns.Tags = s.Columns.Tags
+	m.Columns.Loved = s.Columns.Loved
+	m.Status.Column = s.Status.Column
+	m.Status.ValueMap = s.Status.ValueMap
+	m.RatingScale = s.RatingScale
+	m.MergeByTitle = s.MergeByTitle
+	return m
+}
+
 // HandleImportCSVInspect handles POST /api/import/csv/inspect. It parses the
 // uploaded CSV and returns headers, data-row count, and per-column distinct
 // values (capped) to drive the mapping dialog.
@@ -163,69 +284,8 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 	if len(records) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "could not read CSV header")
 	}
-	header := records[0]
 
-	// Guess the column->field mapping from the headers alone so we know which
-	// column is the rating column (to track its numeric max below).
-	suggested := csvmap.GuessColumns(header)
-	ratingIdx := -1
-	if suggested.Columns.Rating != "" {
-		for i, name := range header {
-			if name == suggested.Columns.Rating {
-				ratingIdx = i
-				break
-			}
-		}
-	}
-
-	cols := make([]csvColumnInfo, len(header))
-	seen := make([]map[string]bool, len(header))
-	for i, name := range header {
-		cols[i] = csvColumnInfo{Name: name, DistinctValues: []string{}}
-		seen[i] = map[string]bool{}
-	}
-
-	rowCount := 0
-	var ratingMax float64
-	for _, rec := range records[1:] {
-		rowCount++
-		for i := range header {
-			if i >= len(rec) {
-				continue
-			}
-			v := strings.TrimSpace(rec[i])
-			if i == ratingIdx && v != "" {
-				if f, perr := strconv.ParseFloat(v, 64); perr == nil && f > ratingMax {
-					ratingMax = f
-				}
-			}
-			if v == "" || cols[i].DistinctTruncated || seen[i][v] {
-				continue
-			}
-			if len(cols[i].DistinctValues) < csvDistinctCap {
-				seen[i][v] = true
-				cols[i].DistinctValues = append(cols[i].DistinctValues, v)
-			} else {
-				// A distinct value beyond the cap: flag truncation and stop
-				// tracking this column so `seen` stays bounded to the cap.
-				cols[i].DistinctTruncated = true
-			}
-		}
-	}
-
-	// Refine the suggestion from the data: rating scale from the observed max,
-	// and per-value status guesses from the status column's distinct values.
-	if suggested.Columns.Rating != "" {
-		suggested.RatingScale = csvmap.GuessRatingScale(ratingMax)
-	}
-	if suggested.Status.Column != "" {
-		for _, col := range cols {
-			if col.Name == suggested.Status.Column {
-				suggested.Status.ValueMap = csvmap.GuessStatusValueMap(col.DistinctValues)
-				break
-			}
-		}
-	}
+	cols, suggested := scanCSV(records)
 
 	presets := make([]csvPresetInfo, 0)
 	for _, p := range csvmap.Presets() {
@@ -233,12 +293,12 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, csvInspectResponse{
-		Headers:          header,
-		RowCount:         rowCount,
+		Headers:          records[0],
+		RowCount:         len(records) - 1,
 		Columns:          cols,
 		SuggestedMapping: suggested,
 		Presets:          presets,
-		Detected:         detectPreset(header),
+		Detected:         detectPreset(records[0]),
 	})
 }
 
@@ -259,19 +319,34 @@ func (h *ImportHandler) HandleImportCSV(c *echo.Context) error {
 	}
 
 	format := strings.TrimSpace(c.Request().FormValue("format"))
+	mappingJSON := c.Request().FormValue("mapping")
 	var cfg csvmap.Config
-	// "generic" (and empty) selects the manual user-mapping path; any other value
-	// must be a registered preset slug. "generic" is therefore reserved and must
-	// never be added to csvmap.presetList. When a preset is chosen its server-side
-	// Config wins and the "mapping" field, if any, is ignored.
-	if format != "" && format != "generic" {
+	var autoRes *csvAutoResolution
+	switch {
+	case format != "" && format != "generic":
+		// Preset path: server-side Config wins; any "mapping" field is ignored.
 		preset, ok := csvmap.PresetBySlug(format)
 		if !ok {
 			return echo.NewHTTPError(http.StatusBadRequest, "unknown CSV format: "+format)
 		}
 		cfg = preset
-	} else {
-		mappingJSON := c.Request().FormValue("mapping")
+	case format == "" && strings.TrimSpace(mappingJSON) == "":
+		// Auto path: no format and no mapping -> detect a preset, else guess.
+		records, err := csvmap.ReadRecords(body)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "failed to parse CSV: "+err.Error())
+		}
+		if len(records) == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "could not read CSV header")
+		}
+		res, err := resolveCSVAuto(records)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		cfg = res.Config
+		autoRes = &res
+	default:
+		// Manual path: a mapping is required (covers format=generic + no mapping).
 		if mappingJSON == "" {
 			return echo.NewHTTPError(http.StatusBadRequest, "missing mapping field")
 		}
@@ -301,11 +376,23 @@ func (h *ImportHandler) HandleImportCSV(c *echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"job_id":      jobID,
 		"source":      models.JobSourceCSV,
 		"status":      models.JobStatusProcessing,
 		"message":     fmt.Sprintf("CSV import job created. Matching %d games.", total),
 		"total_items": total,
-	})
+	}
+	if autoRes != nil {
+		auto := map[string]any{}
+		if autoRes.Detected != nil {
+			auto["mode"] = "preset"
+			auto["preset"] = autoRes.Detected
+		} else {
+			auto["mode"] = "guessed"
+			auto["mapping"] = autoRes.Mapping
+		}
+		resp["auto"] = auto
+	}
+	return c.JSON(http.StatusOK, resp)
 }

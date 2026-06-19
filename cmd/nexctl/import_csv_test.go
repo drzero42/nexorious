@@ -278,6 +278,86 @@ func TestImportCSVStatusMapRequiresStatusCol(t *testing.T) {
 	}
 }
 
+func TestImportCSV_AutoPreset(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/import/csv", func(w http.ResponseWriter, r *http.Request) {
+		_ = readMultipartFile(t, r)
+		if r.FormValue("format") != "" || r.FormValue("mapping") != "" {
+			t.Errorf("auto request should send no format/mapping; got format=%q mapping=%q", r.FormValue("format"), r.FormValue("mapping"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"job_id": "j1", "total_items": 2,
+			"auto": map[string]any{"mode": "preset", "preset": map[string]any{"slug": "grouvee", "name": "Grouvee"}},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	file := writeTempFile(t, "games.csv", "Name,Status\nPortal,Beat\n")
+	out, err := runImport(t, srv.URL, "import", "csv", file)
+	if err != nil {
+		t.Fatalf("import csv: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Auto-detected preset: grouvee") {
+		t.Errorf("output missing detected preset line: %q", out)
+	}
+}
+
+func TestImportCSV_AutoPresetJSON(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/import/csv", func(w http.ResponseWriter, r *http.Request) {
+		_ = readMultipartFile(t, r)
+		if r.FormValue("format") != "" || r.FormValue("mapping") != "" {
+			t.Errorf("auto request should send no format/mapping; got format=%q mapping=%q", r.FormValue("format"), r.FormValue("mapping"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"job_id": "j1", "total_items": 2,
+			"auto": map[string]any{"mode": "preset", "preset": map[string]any{"slug": "grouvee", "name": "Grouvee"}},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	file := writeTempFile(t, "games.csv", "Name,Status\nPortal,Beat\n")
+	out, err := runImport(t, srv.URL, "import", "csv", file, "--json")
+	if err != nil {
+		t.Fatalf("import csv --json: %v\n%s", err, out)
+	}
+	// --json should suppress the "Auto-detected preset:" preamble
+	if strings.Contains(out, "Auto-detected preset") {
+		t.Errorf("output should NOT contain 'Auto-detected preset' preamble with --json: %q", out)
+	}
+	// But should still contain the job_id in JSON form
+	if !strings.Contains(out, "j1") {
+		t.Errorf("output missing job id: %q", out)
+	}
+}
+
+func TestImportCSV_AutoGuessed(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/import/csv", func(w http.ResponseWriter, r *http.Request) {
+		_ = readMultipartFile(t, r)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"job_id": "j2", "total_items": 1,
+			"auto": map[string]any{
+				"mode":    "guessed",
+				"mapping": map[string]any{"columns": map[string]any{"title": "Name"}},
+			},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	file := writeTempFile(t, "games.csv", "Name\nPortal\n")
+	out, err := runImport(t, srv.URL, "import", "csv", file)
+	if err != nil {
+		t.Fatalf("import csv: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "No preset matched; guessed column mapping:") || !strings.Contains(out, "title=Name") {
+		t.Errorf("output missing guessed-mapping lines: %q", out)
+	}
+}
+
 func TestImportCSVPresetAndManualMutualExclusion(t *testing.T) {
 	var uploaded bool
 	mux := http.NewServeMux()
