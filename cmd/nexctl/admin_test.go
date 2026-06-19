@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -267,6 +266,9 @@ func TestAdminUserSetAdminRevoke(t *testing.T) {
 	if gotBody["is_admin"] != false {
 		t.Errorf("is_admin = %v, want false", gotBody["is_admin"])
 	}
+	if len(gotBody) != 1 {
+		t.Errorf("PUT body has %d keys, want exactly 1: %v", len(gotBody), gotBody)
+	}
 	if !strings.Contains(out, "revoked admin") {
 		t.Errorf("output = %q, want 'revoked admin'", out)
 	}
@@ -468,5 +470,4 @@ func TestAdminCmdStructure(t *testing.T) {
 			t.Errorf("missing user subcommand %q", want)
 		}
 	}
-	_ = fmt.Sprintf // keep fmt imported
 }
