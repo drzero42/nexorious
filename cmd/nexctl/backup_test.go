@@ -472,6 +472,133 @@ func TestBackupScheduleSetFrequency(t *testing.T) {
 	}
 }
 
+func TestBackupScheduleSetRetention(t *testing.T) {
+	var putBody map[string]any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/admin/backups/config", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"schedule":        "weekly",
+				"schedule_time":   "02:00",
+				"schedule_day":    1,
+				"retention_mode":  "count",
+				"retention_value": 7,
+				"updated_at":      "2026-06-01T00:00:00Z",
+			})
+		case http.MethodPut:
+			_ = json.NewDecoder(r.Body).Decode(&putBody)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"schedule":        "weekly",
+				"schedule_time":   "02:00",
+				"schedule_day":    1,
+				"retention_mode":  "days",
+				"retention_value": 14,
+				"updated_at":      "2026-06-18T00:00:00Z",
+			})
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runBackup(t, srv.URL, "backup", "schedule", "set",
+		"--retention-mode", "days", "--retention-value", "14")
+	if err != nil {
+		t.Fatalf("backup schedule set retention: %v\n%s", err, out)
+	}
+	if putBody["retention_mode"] != "days" {
+		t.Errorf("PUT retention_mode = %v, want days", putBody["retention_mode"])
+	}
+	// JSON numbers decode to float64.
+	if putBody["retention_value"] != float64(14) {
+		t.Errorf("PUT retention_value = %v, want 14", putBody["retention_value"])
+	}
+	// Schedule fields must be carried through unchanged (full-struct PUT).
+	if putBody["schedule"] != "weekly" {
+		t.Errorf("PUT schedule = %v, want weekly (unchanged)", putBody["schedule"])
+	}
+	if !strings.Contains(out, "days") {
+		t.Errorf("output = %q, want 'days'", out)
+	}
+}
+
+func TestBackupScheduleSetJSON(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/admin/backups/config", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"schedule": "manual", "schedule_time": "00:00", "schedule_day": 0,
+				"retention_mode": "count", "retention_value": 3, "updated_at": "2026-06-01T00:00:00Z",
+			})
+		case http.MethodPut:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"schedule": "daily", "schedule_time": "00:00", "schedule_day": 0,
+				"retention_mode": "count", "retention_value": 3, "updated_at": "2026-06-18T00:00:00Z",
+			})
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runBackup(t, srv.URL, "backup", "schedule", "set", "--frequency", "daily", "--json")
+	if err != nil {
+		t.Fatalf("backup schedule set --json: %v\n%s", err, out)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output not JSON: %v\n%s", err, out)
+	}
+	if got["schedule"] != "daily" {
+		t.Errorf("schedule = %v, want daily", got["schedule"])
+	}
+}
+
+func TestBackupRestoreByIDAborted(t *testing.T) {
+	var restoreHit bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/admin/backups/bk-1/restore", func(w http.ResponseWriter, _ *http.Request) {
+		restoreHit = true
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runBackup(t, srv.URL, "backup", "restore", "bk-1")
+	if err != nil {
+		t.Fatalf("backup restore (no -y): %v\n%s", err, out)
+	}
+	if restoreHit {
+		t.Fatal("POST /restore must not be sent when aborted")
+	}
+	if !strings.Contains(out, "Aborted.") {
+		t.Errorf("output = %q, want 'Aborted.'", out)
+	}
+}
+
+func TestBackupRestoreFileAborted(t *testing.T) {
+	var uploadHit bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/admin/backups/restore/upload", func(w http.ResponseWriter, _ *http.Request) {
+		uploadHit = true
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	file := writeTempFile(t, "backup.tar.gz", "data")
+	out, err := runBackup(t, srv.URL, "backup", "restore", "--file", file)
+	if err != nil {
+		t.Fatalf("backup restore --file (no -y): %v\n%s", err, out)
+	}
+	if uploadHit {
+		t.Fatal("upload must not be sent when aborted")
+	}
+	if !strings.Contains(out, "Aborted.") {
+		t.Errorf("output = %q, want 'Aborted.'", out)
+	}
+}
+
 func TestBackupScheduleSetOnlyChangedFlag(t *testing.T) {
 	// Verify that schedule_time is NOT overridden when --time is not passed.
 	var putBody map[string]any

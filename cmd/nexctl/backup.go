@@ -274,8 +274,8 @@ func newBackupScheduleCmd() *cobra.Command {
 }
 
 func newBackupScheduleSetCmd() *cobra.Command {
-	var frequency, schedTime string
-	var day int
+	var frequency, schedTime, retentionMode string
+	var day, retentionValue int
 	cmd := &cobra.Command{
 		Use:   "set",
 		Short: "Update backup schedule settings",
@@ -287,7 +287,9 @@ func newBackupScheduleSetCmd() *cobra.Command {
 			}
 			c := cliclient.New(p.URL)
 
-			// Fetch the current config and overlay only the changed flags.
+			// Fetch the current config and overlay only the changed flags. Sending
+			// the full struct keeps the unspecified fields (incl. retention) at
+			// their current, server-validated values.
 			current, err := c.GetBackupConfig(p.Key)
 			if err != nil {
 				return fmt.Errorf("get backup config: %w", err)
@@ -302,6 +304,12 @@ func newBackupScheduleSetCmd() *cobra.Command {
 			}
 			if cmd.Flags().Changed("day") {
 				updated.ScheduleDay = day
+			}
+			if cmd.Flags().Changed("retention-mode") {
+				updated.RetentionMode = retentionMode
+			}
+			if cmd.Flags().Changed("retention-value") {
+				updated.RetentionValue = retentionValue
 			}
 
 			saved, err := c.UpdateBackupConfig(p.Key, updated)
@@ -324,5 +332,7 @@ func newBackupScheduleSetCmd() *cobra.Command {
 	f.StringVar(&frequency, "frequency", "", "Backup frequency: manual, daily, or weekly")
 	f.StringVar(&schedTime, "time", "", "Time of day for scheduled backups (HH:MM)")
 	f.IntVar(&day, "day", 0, "Day of week for weekly backups (0=Sunday … 6=Saturday)")
+	f.StringVar(&retentionMode, "retention-mode", "", "Retention mode: days or count")
+	f.IntVar(&retentionValue, "retention-value", 0, "Retention amount (days to keep, or number of backups)")
 	return cmd
 }
