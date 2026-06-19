@@ -26,7 +26,7 @@
       # changes, the Nix Build workflow rebuilds both packages and patches this
       # line; to refresh by hand set it to lib.fakeHash, run `nix build .#nexorious`,
       # and copy the "got:" hash.
-      goVendorHash = "sha256-ukqriKqodG6w17a8gkL77+m8on0RhYGgx6kBSNCfyb4=";
+      goVendorHash = "sha256-ml//XaiFFBo7j3w3tSAVIUAq5Pk0jeIXYaZbaNdSGt4=";
     in
     {
       packages = forEachSystem (pkgs: rec {
