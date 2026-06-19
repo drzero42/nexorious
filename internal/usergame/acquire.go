@@ -19,6 +19,9 @@ import (
 func Acquire(ctx context.Context, db *bun.DB, p AcquireParams) (Result, error) {
 	var res Result
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := validatePlatformRefs(ctx, tx, p.Platforms); err != nil {
+			return err
+		}
 		ugID, created, err := upsertUserGame(ctx, tx, p)
 		if err != nil {
 			return err
@@ -234,6 +237,9 @@ func AddPlatform(ctx context.Context, db *bun.DB, p AddPlatformParams) (Result, 
 		if err := assertOwned(ctx, tx, p.UserGameID, p.UserID); err != nil {
 			return err
 		}
+		if err := validatePlatformRef(ctx, tx, p.Platform.Platform, p.Platform.Storefront); err != nil {
+			return err
+		}
 		platID, err := insertPlatformStrict(ctx, tx, p.UserGameID, p.Platform)
 		if err != nil {
 			return err
@@ -256,6 +262,9 @@ func AddPlatform(ctx context.Context, db *bun.DB, p AddPlatformParams) (Result, 
 func AddPlatformBulk(ctx context.Context, db *bun.DB, p BulkAddPlatformParams) (int, error) {
 	var added int
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := validatePlatformRef(ctx, tx, p.Platform.Platform, p.Platform.Storefront); err != nil {
+			return err
+		}
 		for _, ugID := range p.UserGameIDs {
 			if err := assertOwned(ctx, tx, ugID, p.UserID); err != nil {
 				if errors.Is(err, ErrNotFound) {
@@ -294,6 +303,9 @@ func MoveToLibrary(ctx context.Context, db *bun.DB, p MoveParams) (Result, error
 	res.UserGameID = p.UserGameID
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if err := assertWishlisted(ctx, tx, p.UserGameID, p.UserID); err != nil {
+			return err
+		}
+		if err := validatePlatformRefs(ctx, tx, p.Platforms); err != nil {
 			return err
 		}
 		for _, plat := range p.Platforms {

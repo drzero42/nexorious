@@ -40,6 +40,9 @@ func UpdatePlatform(ctx context.Context, db *bun.DB, p UpdatePlatformParams) err
 		if err := assertOwned(ctx, tx, p.UserGameID, p.UserID); err != nil {
 			return err
 		}
+		if err := validatePlatformRef(ctx, tx, p.Fields.Platform, p.Fields.Storefront); err != nil {
+			return err
+		}
 
 		// Build a dynamic SET clause from the non-nil fields.
 		q := tx.NewUpdate().TableExpr("user_game_platforms").
@@ -109,6 +112,50 @@ func RemovePlatform(ctx context.Context, db *bun.DB, p RemovePlatformParams) err
 		}
 		return nil
 	})
+}
+
+// validatePlatformRefs validates the platform/storefront slugs of every input.
+func validatePlatformRefs(ctx context.Context, tx bun.IDB, ins []PlatformInput) error {
+	for _, in := range ins {
+		if err := validatePlatformRef(ctx, tx, in.Platform, in.Storefront); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validatePlatformRef checks that the platform (when supplied) and storefront
+// (optional) slugs exist in the reference tables, returning ErrUnprocessable
+// naming the offending value. This converts a would-be foreign-key violation
+// (SQLSTATE 23503) into an actionable 422 for every caller (REST, sync, import).
+// Empty/nil values are skipped — a missing required platform is caught by the
+// NOT-NULL column itself, not here.
+func validatePlatformRef(ctx context.Context, tx bun.IDB, platform, storefront *string) error {
+	if platform != nil && *platform != "" {
+		ok, err := refExists(ctx, tx, "platforms", *platform)
+		if err != nil {
+			return fmt.Errorf("check platform slug: %w", err)
+		}
+		if !ok {
+			return fmt.Errorf("invalid platform %q: not a known platform slug: %w", *platform, ErrUnprocessable)
+		}
+	}
+	if storefront != nil && *storefront != "" {
+		ok, err := refExists(ctx, tx, "storefronts", *storefront)
+		if err != nil {
+			return fmt.Errorf("check storefront slug: %w", err)
+		}
+		if !ok {
+			return fmt.Errorf("invalid storefront %q: not a known storefront slug: %w", *storefront, ErrUnprocessable)
+		}
+	}
+	return nil
+}
+
+// refExists reports whether a row with the given name exists in a reference
+// table. The table name is always a fixed internal literal, never user input.
+func refExists(ctx context.Context, tx bun.IDB, table, name string) (bool, error) {
+	return tx.NewSelect().Table(table).Where("name = ?", name).Exists(ctx)
 }
 
 // RemovePlatformBulk deletes the named platform/storefront combination from

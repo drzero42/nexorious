@@ -12,4 +12,8 @@ var (
 	// ErrValidation is returned for invalid input (bad ownership status, empty
 	// platform set where one is required, etc.). Maps to HTTP 400.
 	ErrValidation = errors.New("validation")
+	// ErrUnprocessable is returned for a well-formed request whose values fail a
+	// referential check (e.g. an unknown platform or storefront slug). Maps to
+	// HTTP 422.
+	ErrUnprocessable = errors.New("unprocessable")
 )
