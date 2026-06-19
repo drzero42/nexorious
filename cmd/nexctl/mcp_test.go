@@ -410,6 +410,128 @@ func TestMCPTagList(t *testing.T) {
 	}
 }
 
+func TestMCPPoolCreate(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/pools", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s", r.Method)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "33333333-3333-3333-3333-333333333333", "name": "Backlog"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "pool_create", Arguments: map[string]any{"name": "Backlog"}})
+	if err != nil || res.IsError {
+		t.Fatalf("create: err=%v res=%+v", err, res)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	var out poolWriteOutput
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, b)
+	}
+	if out.Pool == nil || out.Pool.ID != "33333333-3333-3333-3333-333333333333" {
+		t.Fatalf("expected pool id 33333333-..., got: %s", b)
+	}
+}
+
+func TestMCPPoolQueue(t *testing.T) {
+	const (
+		poolID  = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+		game1ID = "11111111-1111-1111-1111-111111111111"
+		game2ID = "22222222-2222-2222-2222-222222222222"
+	)
+	var bulkCalled, queueCalled atomic.Bool
+	mux := http.NewServeMux()
+	// pool list for resolution
+	mux.HandleFunc("/api/pools", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": poolID, "name": "Backlog", "position": 1, "has_filter": false, "queue_count": 0, "candidate_count": 0},
+		})
+	})
+	// game fetch by UUID
+	mux.HandleFunc("/api/user-games/"+game1ID, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": game1ID, "game": map[string]any{"id": 1, "title": "Halo"},
+		})
+	})
+	mux.HandleFunc("/api/user-games/"+game2ID, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": game2ID, "game": map[string]any{"id": 2, "title": "Doom"},
+		})
+	})
+	// bulk add
+	mux.HandleFunc("/api/pools/"+poolID+"/games/bulk", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("bulk-add method = %s", r.Method)
+		}
+		bulkCalled.Store(true)
+		_ = json.NewEncoder(w).Encode(map[string]any{"added": 2})
+	})
+	// set queue
+	mux.HandleFunc("/api/pools/"+poolID+"/queue", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("set-queue method = %s", r.Method)
+		}
+		if !bulkCalled.Load() {
+			t.Error("SetQueue called before BulkAddPoolGames")
+		}
+		queueCalled.Store(true)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "pool_queue",
+		Arguments: map[string]any{
+			"pool":  poolID,
+			"games": []string{game1ID, game2ID},
+		},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("pool_queue: err=%v res=%+v", err, res)
+	}
+	if !bulkCalled.Load() {
+		t.Fatal("BulkAddPoolGames was not called")
+	}
+	if !queueCalled.Load() {
+		t.Fatal("SetQueue was not called")
+	}
+}
+
+func TestMCPTagCreate(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s", r.Method)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "dddddddd-dddd-dddd-dddd-dddddddddddd", "name": "Favourites", "game_count": 0,
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "tag_create", Arguments: map[string]any{"name": "Favourites"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("tag_create: err=%v res=%+v", err, res)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	var out tagWriteOutput
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, b)
+	}
+	if out.Tag == nil || out.Tag.Name != "Favourites" {
+		t.Fatalf("expected tag name 'Favourites', got: %s", b)
+	}
+}
+
 func TestMCPSyncStatus(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/sync/config", func(w http.ResponseWriter, _ *http.Request) {
