@@ -63,10 +63,10 @@ func withUserGameRelations(q *bun.SelectQuery) *bun.SelectQuery {
 ### 2. Single-row detail loader
 
 ```go
-// loadUserGameDetail loads a single user-game owned by userID with the canonical
+// LoadUserGameDetail loads a single user-game owned by userID with the canonical
 // relation set. Returns sql.ErrNoRows when the game does not exist or is not the
 // caller's.
-func loadUserGameDetail(ctx context.Context, db *bun.DB, userGameID, userID string) (*models.UserGame, error)
+func LoadUserGameDetail(ctx context.Context, db *bun.DB, userGameID, userID string) (*models.UserGame, error)
 ```
 
 Always scoped by `user_id`, folding `HandleGetUserGame`'s ownership filter into the canonical path. Replaces all six single-id query blocks:
@@ -83,10 +83,10 @@ The five post-mutation callers already verified ownership through the mutation; 
 ### 3. By-id-list card loader
 
 ```go
-// loadUserGameCardsByIDs loads user-games for the given ids with the canonical
+// LoadUserGameCardsByIDs loads user-games for the given ids with the canonical
 // relation set, for list/card projections. Order is not guaranteed; callers that
 // need a specific order re-apply it (HandleListUserGames) or key by id (pools).
-func loadUserGameCardsByIDs(ctx context.Context, db *bun.DB, ids []string) ([]models.UserGame, error)
+func LoadUserGameCardsByIDs(ctx context.Context, db *bun.DB, ids []string) ([]models.UserGame, error)
 ```
 
 Used by:
@@ -112,9 +112,9 @@ Detail-GET behaviour is unchanged.
 
 - Existing `internal/api/user_games_test.go` and the pool tests cover the endpoints behaviourally and must stay green (they will now also see `ExternalGame` populated where it was previously absent — assert additively, do not assert it is nil).
 - Add a focused test for the canonical loader(s):
-  - `loadUserGameDetail` returns all four relation groups (Game, Platforms with PlatformRecord/StorefrontRecord/ExternalGame, Tags with Tag) populated.
-  - `loadUserGameDetail` returns `sql.ErrNoRows` for another user's game id (ownership scoping).
-  - `loadUserGameCardsByIDs` returns the same relation set for a set of ids.
+  - `LoadUserGameDetail` returns all four relation groups (Game, Platforms with PlatformRecord/StorefrontRecord/ExternalGame, Tags with Tag) populated.
+  - `LoadUserGameDetail` returns `sql.ErrNoRows` for another user's game id (ownership scoping).
+  - `LoadUserGameCardsByIDs` returns the same relation set for a set of ids.
 - Use the shared `testDB` + `truncateAllTables(t)` pattern; seed platforms/storefronts with their **seeded** names (e.g. `pc-windows`, `steam`) per the FK constraint.
 
 ## Dead-code check

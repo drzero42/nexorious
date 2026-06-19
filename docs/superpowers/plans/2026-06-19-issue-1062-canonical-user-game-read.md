@@ -4,7 +4,7 @@
 
 **Goal:** Replace the ~9 hand-copied user-game relation-loading query blocks in `internal/api` with one canonical relation decorator + two loader helpers, reusing the existing projection DTO.
 
-**Architecture:** A new file `internal/api/user_game_read.go` holds three package-level free functions: `withUserGameRelations` (the one definition of the Game/Platforms/Tags/ExternalGame relation set), `loadUserGameDetail` (single owned row), and `loadUserGameCardsByIDs` (by-id list). All card/detail read sites in `user_games.go` and `pools.go` call them. The DTO projection `toUserGameWithPlatformsResponse` is unchanged.
+**Architecture:** A new file `internal/api/user_game_read.go` holds three package-level free functions: `withUserGameRelations` (the one definition of the Game/Platforms/Tags/ExternalGame relation set), `LoadUserGameDetail` (single owned row), and `LoadUserGameCardsByIDs` (by-id list). All card/detail read sites in `user_games.go` and `pools.go` call them. The DTO projection `toUserGameWithPlatformsResponse` is unchanged.
 
 **Tech Stack:** Go 1.26, Bun ORM (`uptrace/bun`), Echo v5, PostgreSQL via testcontainers.
 
@@ -14,7 +14,7 @@
 - Scope is `internal/api` only — do **not** touch `internal/worker/tasks/export.go`, stats/facet handlers, or `internal/usergame`.
 - `ExternalGame` is part of the **one** canonical relation set — loaded everywhere. This is a deliberate additive behaviour change: list cards / pool cards / mutation responses now carry the platform `store_url` deep-link they previously lacked (built by `toUserGamePlatformResponse` from `ugp.ExternalGame`).
 - All three helpers are package-level free functions taking `*bun.DB` (so both `UserGamesHandler` and `PoolsHandler` can call them).
-- `loadUserGameDetail` always scopes by `user_id`; callers map `sql.ErrNoRows` (via `errors.Is`) to their existing 404/500 handling.
+- `LoadUserGameDetail` always scopes by `user_id`; callers map `sql.ErrNoRows` (via `errors.Is`) to their existing 404/500 handling.
 - Echo handler signature is `func (h *Handler) X(c *echo.Context) error` (pointer Context, v5).
 - Tests use the shared `testDB` package var + `truncateAllTables(t)`; platform/storefront FK rows must use **seeded** names (`pc-windows`, `steam`).
 - Run targeted tests for changed logic; the Stop/pre-push hooks run build/lint/full suites.
@@ -30,8 +30,8 @@
 **Interfaces:**
 - Produces:
   - `func withUserGameRelations(q *bun.SelectQuery) *bun.SelectQuery`
-  - `func loadUserGameDetail(ctx context.Context, db *bun.DB, userGameID, userID string) (*models.UserGame, error)`
-  - `func loadUserGameCardsByIDs(ctx context.Context, db *bun.DB, ids []string) ([]models.UserGame, error)`
+  - `func LoadUserGameDetail(ctx context.Context, db *bun.DB, userGameID, userID string) (*models.UserGame, error)`
+  - `func LoadUserGameCardsByIDs(ctx context.Context, db *bun.DB, ids []string) ([]models.UserGame, error)`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -73,9 +73,9 @@ func TestLoadUserGameDetail(t *testing.T) {
 	insertUserGameTag(t, testDB, "ugt-read-1", "ug-read-1", "tag-read-1")
 
 	t.Run("loads full relation set", func(t *testing.T) {
-		ug, err := loadUserGameDetail(ctx, testDB, "ug-read-1", userID)
+		ug, err := LoadUserGameDetail(ctx, testDB, "ug-read-1", userID)
 		if err != nil {
-			t.Fatalf("loadUserGameDetail: %v", err)
+			t.Fatalf("LoadUserGameDetail: %v", err)
 		}
 		if ug.Game == nil {
 			t.Error("Game relation not loaded")
@@ -99,16 +99,16 @@ func TestLoadUserGameDetail(t *testing.T) {
 	})
 
 	t.Run("scopes by user_id", func(t *testing.T) {
-		_, err := loadUserGameDetail(ctx, testDB, "ug-read-1", "u-other")
+		_, err := LoadUserGameDetail(ctx, testDB, "ug-read-1", "u-other")
 		if !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("expected sql.ErrNoRows for another user's game, got %v", err)
 		}
 	})
 
 	t.Run("by-ids loader returns the same relation set", func(t *testing.T) {
-		ugs, err := loadUserGameCardsByIDs(ctx, testDB, []string{"ug-read-1"})
+		ugs, err := LoadUserGameCardsByIDs(ctx, testDB, []string{"ug-read-1"})
 		if err != nil {
-			t.Fatalf("loadUserGameCardsByIDs: %v", err)
+			t.Fatalf("LoadUserGameCardsByIDs: %v", err)
 		}
 		if len(ugs) != 1 {
 			t.Fatalf("expected 1, got %d", len(ugs))
@@ -119,7 +119,7 @@ func TestLoadUserGameDetail(t *testing.T) {
 	})
 
 	t.Run("by-ids loader with empty input", func(t *testing.T) {
-		ugs, err := loadUserGameCardsByIDs(ctx, testDB, nil)
+		ugs, err := LoadUserGameCardsByIDs(ctx, testDB, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -133,7 +133,7 @@ func TestLoadUserGameDetail(t *testing.T) {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `go test ./internal/api/ -run TestLoadUserGameDetail -v`
-Expected: FAIL — `undefined: loadUserGameDetail` / `undefined: loadUserGameCardsByIDs` (compile error).
+Expected: FAIL — `undefined: LoadUserGameDetail` / `undefined: LoadUserGameCardsByIDs` (compile error).
 
 - [ ] **Step 3: Write the helpers**
 
@@ -166,10 +166,10 @@ func withUserGameRelations(q *bun.SelectQuery) *bun.SelectQuery {
 		})
 }
 
-// loadUserGameDetail loads a single user-game owned by userID with the canonical
+// LoadUserGameDetail loads a single user-game owned by userID with the canonical
 // relation set. Returns sql.ErrNoRows when the game does not exist or is not the
 // caller's; callers map that to a 404.
-func loadUserGameDetail(ctx context.Context, db *bun.DB, userGameID, userID string) (*models.UserGame, error) {
+func LoadUserGameDetail(ctx context.Context, db *bun.DB, userGameID, userID string) (*models.UserGame, error) {
 	var ug models.UserGame
 	if err := withUserGameRelations(db.NewSelect().Model(&ug)).
 		Where("user_game.id = ?", userGameID).
@@ -180,10 +180,10 @@ func loadUserGameDetail(ctx context.Context, db *bun.DB, userGameID, userID stri
 	return &ug, nil
 }
 
-// loadUserGameCardsByIDs loads user-games for the given ids with the canonical
+// LoadUserGameCardsByIDs loads user-games for the given ids with the canonical
 // relation set, for list/card projections. Order is not guaranteed; callers that
 // need a specific order re-apply it (HandleListUserGames) or key by id (pools).
-func loadUserGameCardsByIDs(ctx context.Context, db *bun.DB, ids []string) ([]models.UserGame, error) {
+func LoadUserGameCardsByIDs(ctx context.Context, db *bun.DB, ids []string) ([]models.UserGame, error) {
 	var userGames []models.UserGame
 	if len(ids) == 0 {
 		return userGames, nil
@@ -217,7 +217,7 @@ git commit -m "feat(api): canonical user-game read helpers (#1062)"
 - Modify: `internal/api/user_games.go` — the list path (~324-334) and six single-id re-read blocks.
 
 **Interfaces:**
-- Consumes: `withUserGameRelations`, `loadUserGameDetail`, `loadUserGameCardsByIDs` from Task 1.
+- Consumes: `withUserGameRelations`, `LoadUserGameDetail`, `LoadUserGameCardsByIDs` from Task 1.
 
 - [ ] **Step 1: Replace the list-path relation block**
 
@@ -236,7 +236,7 @@ In `HandleListUserGames`, replace the query construction (currently the `var use
 Replace the `ug := &models.UserGame{}` re-select block (~lines 482-498) with:
 
 ```go
-	ug, err := loadUserGameDetail(ctx, h.db, res.UserGameID, userID)
+	ug, err := LoadUserGameDetail(ctx, h.db, res.UserGameID, userID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
@@ -249,7 +249,7 @@ Replace the `ug := &models.UserGame{}` re-select block (~lines 482-498) with:
 Replace the re-select block (~lines 511-530) with:
 
 ```go
-	ug, err := loadUserGameDetail(ctx, h.db, id, userID)
+	ug, err := LoadUserGameDetail(ctx, h.db, id, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "user game not found")
@@ -265,7 +265,7 @@ Replace the re-select block (~lines 511-530) with:
 Replace the `var ug models.UserGame` re-select block (~lines 634-648) with:
 
 ```go
-	ug, err := loadUserGameDetail(ctx, h.db, id, userID)
+	ug, err := LoadUserGameDetail(ctx, h.db, id, userID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
@@ -278,7 +278,7 @@ Replace the `var ug models.UserGame` re-select block (~lines 634-648) with:
 Replace the `var ug models.UserGame` re-select block (~lines 720-734) with:
 
 ```go
-	ug, err := loadUserGameDetail(ctx, h.db, id, userID)
+	ug, err := LoadUserGameDetail(ctx, h.db, id, userID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
@@ -291,7 +291,7 @@ Replace the `var ug models.UserGame` re-select block (~lines 720-734) with:
 Replace the `var ug models.UserGame` re-select block (~lines 771-785) with:
 
 ```go
-	ug, err := loadUserGameDetail(ctx, h.db, id, userID)
+	ug, err := LoadUserGameDetail(ctx, h.db, id, userID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
@@ -304,7 +304,7 @@ Replace the `var ug models.UserGame` re-select block (~lines 771-785) with:
 Replace the `var ug models.UserGame` re-select block (~lines 1244-1258) with — preserving the existing error log:
 
 ```go
-	ug, err := loadUserGameDetail(ctx, h.db, userGameID, userID)
+	ug, err := LoadUserGameDetail(ctx, h.db, userGameID, userID)
 	if err != nil {
 		slog.ErrorContext(ctx, "user_games: reload after move-to-library", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
@@ -334,7 +334,7 @@ git commit -m "refactor(api): route user_games reads through canonical loaders (
 - Modify: `internal/api/pools.go` — `loadUserGameCards` (~lines 377-397).
 
 **Interfaces:**
-- Consumes: `loadUserGameCardsByIDs` from Task 1.
+- Consumes: `LoadUserGameCardsByIDs` from Task 1.
 
 - [ ] **Step 1: Replace pools' `loadUserGameCards` body**
 
@@ -344,7 +344,7 @@ Replace the function body (the `var userGames` + `NewSelect().Model(...).Relatio
 // loadUserGameCards fetches user_games with relations for a set of ids and
 // returns them keyed by id, reusing the list-item DTO shape.
 func (h *PoolsHandler) loadUserGameCards(ctx context.Context, ids []string) (map[string]userGameWithPlatformsResponse, error) {
-	userGames, err := loadUserGameCardsByIDs(ctx, h.db, ids)
+	userGames, err := LoadUserGameCardsByIDs(ctx, h.db, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -389,8 +389,8 @@ git commit -m "refactor(api): route pool card reads through canonical loader (#1
 
 **Spec coverage:**
 - Relation decorator (`withUserGameRelations`) — Task 1. ✓
-- Single-row detail loader (`loadUserGameDetail`, user_id-scoped) replacing all six single-id blocks — Task 1 (def) + Task 2 (six sites). ✓
-- By-id-list loader (`loadUserGameCardsByIDs`) for list + pools — Task 1 (def) + Task 2 step 1 (list) + Task 3 (pools). ✓
+- Single-row detail loader (`LoadUserGameDetail`, user_id-scoped) replacing all six single-id blocks — Task 1 (def) + Task 2 (six sites). ✓
+- By-id-list loader (`LoadUserGameCardsByIDs`) for list + pools — Task 1 (def) + Task 2 step 1 (list) + Task 3 (pools). ✓
 - `ExternalGame` always loaded; deliberate additive `store_url` behaviour change — encoded in the decorator (Task 1) and flagged in Task 2 step 8. ✓
 - Projection `toUserGameWithPlatformsResponse` unchanged — never edited. ✓
 - Home = `internal/api` only; export/stats/facets/usergame untouched — Global Constraints. ✓
@@ -399,4 +399,4 @@ git commit -m "refactor(api): route pool card reads through canonical loader (#1
 
 **Placeholder scan:** No TBD/TODO; every code step shows complete code. ✓
 
-**Type consistency:** Helper names/signatures identical across Task 1 (definitions) and Tasks 2–3 (call sites): `withUserGameRelations`, `loadUserGameDetail(ctx, db, userGameID, userID)`, `loadUserGameCardsByIDs(ctx, db, ids)`. Detail loader returns `*models.UserGame` → callers project `*ug`. ✓
+**Type consistency:** Helper names/signatures identical across Task 1 (definitions) and Tasks 2–3 (call sites): `withUserGameRelations`, `LoadUserGameDetail(ctx, db, userGameID, userID)`, `LoadUserGameCardsByIDs(ctx, db, ids)`. Detail loader returns `*models.UserGame` → callers project `*ug`. ✓
