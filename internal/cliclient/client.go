@@ -41,20 +41,31 @@ func New(baseURL string) *Client {
 	}
 }
 
+// errorBody decodes both error-body shapes the server emits: Echo's default
+// `{"message":"…"}` and the hand-written handlers' `{"error":"…"}` (backup,
+// admin, settings, notifications). msg() returns whichever is set.
 type errorBody struct {
 	Message string `json:"message"`
+	Error   string `json:"error"`
 }
 
-// httpError decodes an Echo error response (`{"message":"…"}`) into a readable
-// error including the status code.
+func (eb errorBody) msg() string {
+	if eb.Message != "" {
+		return eb.Message
+	}
+	return eb.Error
+}
+
+// httpError decodes an error response (`{"message":…}` or `{"error":…}`) into a
+// readable error including the status code.
 func httpError(resp *http.Response) error {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if err != nil {
 		return fmt.Errorf("server returned %d (failed reading body: %w)", resp.StatusCode, err)
 	}
 	var eb errorBody
-	if json.Unmarshal(body, &eb) == nil && eb.Message != "" {
-		return fmt.Errorf("server returned %d: %s", resp.StatusCode, eb.Message)
+	if json.Unmarshal(body, &eb) == nil && eb.msg() != "" {
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, eb.msg())
 	}
 	return fmt.Errorf("server returned %d", resp.StatusCode)
 }
@@ -302,7 +313,7 @@ func (c *Client) SetupAdmin(username, password string) (*SetupResult, error) {
 		if readErr == nil {
 			var eb errorBody
 			if json.Unmarshal(body, &eb) == nil {
-				res.Message = eb.Message
+				res.Message = eb.msg()
 			}
 		}
 	}

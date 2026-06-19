@@ -51,6 +51,9 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newJobCmd())
 	root.AddCommand(newImportCmd())
 	root.AddCommand(newExportCmd())
+	root.AddCommand(newBackupCmd())
+	root.AddCommand(newAdminCmd())
+	root.AddCommand(newConfigCmd())
 	root.AddCommand(newLoginCmd(), newLogoutCmd()) // top-level aliases for `account login`/`logout`
 
 	return root
