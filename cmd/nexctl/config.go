@@ -17,8 +17,8 @@ func newConfigCmd() *cobra.Command {
 	cmd.AddCommand(
 		newConfigGetCmd(),
 		newConfigSetCmd(),
+		newConfigNotifyCmd(),
 	)
-	// N4 will append notify subcommands here.
 	return cmd
 }
 
