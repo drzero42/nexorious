@@ -102,7 +102,9 @@ Used by:
 
 Per the epic's policy that converging a divergence means picking the correct behaviour and calling it out:
 
-**List cards, pool cards, and the five mutation responses now include `ExternalGame` data on each platform** — they previously omitted it (only detail-GET loaded it). This is additive: the response gains a field, nothing is removed or changed. No back-compat concern — the project has a single user and no external client pinned to the payload shape. There is **no multi-user data-isolation impact**: `ExternalGame` is reachable only through a platform row of a user-game the caller owns, and every loader is `user_id`-scoped. The only cost is one extra relation fetch on the list/card query, independent of user count and accepted here for a single canonical loader.
+`toUserGamePlatformResponse` reads `ugp.ExternalGame` to populate the platform's **`store_url`** (the storefront deep-link, `json:"store_url,omitempty"`). Because only detail-GET loaded `ExternalGame`, **list cards, pool cards, and the five mutation responses currently omit `store_url`** — their `ExternalGame` is nil so the `if` is skipped. Converging to one loader that always loads `ExternalGame` means **those responses now carry the `store_url` deep-link too**, matching detail-GET. This is the correct behaviour: it removes a latent inconsistency where the library grid / post-mutation payloads lacked the storefront links the detail view had.
+
+It is additive — the response gains an `omitempty` field, nothing is removed or changed. No back-compat concern (single user, no external client pinned to the payload shape). There is **no multi-user data-isolation impact**: `ExternalGame` is reachable only through a platform row of a user-game the caller owns, and every loader is `user_id`-scoped. The only cost is one extra relation fetch on the list/card query, independent of user count and accepted here for a single canonical loader.
 
 Detail-GET behaviour is unchanged.
 
