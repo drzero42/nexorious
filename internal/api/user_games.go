@@ -541,7 +541,7 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 	}
 
 	if len(body) == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "no fields to update")
+		return errNoFieldsToUpdate()
 	}
 
 	// Field-level validations.

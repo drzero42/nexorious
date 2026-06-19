@@ -23,3 +23,9 @@ func validateName(name string, maxLen int) (string, error) {
 	}
 	return name, nil
 }
+
+// errNoFieldsToUpdate is the canonical 400 returned by partial-update handlers
+// when the request body carries no recognized fields to change.
+func errNoFieldsToUpdate() error {
+	return echo.NewHTTPError(http.StatusBadRequest, "no fields to update")
+}

@@ -140,7 +140,7 @@ func (h *NotificationsHandler) HandleUpdateChannel(c *echo.Context) error {
 		args = append(args, ct)
 	}
 	if len(setClauses) == 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "no fields to update")
+		return errNoFieldsToUpdate()
 	}
 	args = append(args, id, userID)
 	query := `UPDATE notification_channels SET ` + strings.Join(setClauses, ", ") +

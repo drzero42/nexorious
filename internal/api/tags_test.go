@@ -349,6 +349,73 @@ func TestUpdateTag(t *testing.T) {
 	})
 }
 
+// TestUpdateTag_PresenceDetection covers the absent-vs-null-vs-value distinction
+// the raw-map decoding gives the tag update handler: an explicit null clears the
+// color, an absent color leaves it unchanged, and a null name is rejected.
+func TestUpdateTag_PresenceDetection(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+
+	userID, token := setupTagUser(t, testDB, e, "presence")
+	color := "#abcdef"
+	insertTag(t, testDB, "tag-pres-1", userID, "Colored", &color)
+
+	t.Run("explicit null clears color", func(t *testing.T) {
+		rec := putJSONAuth(t, e, "/api/tags/tag-pres-1", map[string]any{
+			"color": nil,
+		}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["color"] != nil {
+			t.Fatalf("expected color cleared to null, got %v", resp["color"])
+		}
+	})
+
+	t.Run("absent color leaves it unchanged", func(t *testing.T) {
+		// Set a color first, then send a name-only update.
+		newColor := "#123456"
+		if _, err := testDB.ExecContext(context.Background(),
+			`UPDATE tags SET color = ? WHERE id = ?`, newColor, "tag-pres-1"); err != nil {
+			t.Fatalf("seed color: %v", err)
+		}
+		rec := putJSONAuth(t, e, "/api/tags/tag-pres-1", map[string]any{
+			"name": "Renamed",
+		}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["color"] != newColor {
+			t.Fatalf("expected color preserved as %s, got %v", newColor, resp["color"])
+		}
+	})
+
+	t.Run("explicit null name is rejected", func(t *testing.T) {
+		rec := putJSONAuth(t, e, "/api/tags/tag-pres-1", map[string]any{
+			"name": nil,
+		}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("no fields to update", func(t *testing.T) {
+		rec := putJSONAuth(t, e, "/api/tags/tag-pres-1", map[string]any{}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
 // ─── TestDeleteTag ────────────────────────────────────────────────────────────
 
 func TestDeleteTag(t *testing.T) {
