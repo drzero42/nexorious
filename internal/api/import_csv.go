@@ -140,6 +140,69 @@ type csvInspectResponse struct {
 	Detected         *csvPresetInfo          `json:"detected,omitempty"`
 }
 
+// scanCSV computes, in one pass over the data rows, each column's capped set of
+// distinct non-empty values and a data-refined suggested mapping (rating scale
+// from the observed max; status value-map from the status column's distinct
+// values). records[0] is the header. Shared by the inspect handler and the
+// auto import path so the inspect-time and import-time guesses cannot drift.
+func scanCSV(records [][]string) (cols []csvColumnInfo, suggested csvmap.SuggestedMapping) {
+	header := records[0]
+	suggested = csvmap.GuessColumns(header)
+	ratingIdx := -1
+	if suggested.Columns.Rating != "" {
+		for i, name := range header {
+			if name == suggested.Columns.Rating {
+				ratingIdx = i
+				break
+			}
+		}
+	}
+
+	cols = make([]csvColumnInfo, len(header))
+	seen := make([]map[string]bool, len(header))
+	for i, name := range header {
+		cols[i] = csvColumnInfo{Name: name, DistinctValues: []string{}}
+		seen[i] = map[string]bool{}
+	}
+
+	var ratingMax float64
+	for _, rec := range records[1:] {
+		for i := range header {
+			if i >= len(rec) {
+				continue
+			}
+			v := strings.TrimSpace(rec[i])
+			if i == ratingIdx && v != "" {
+				if f, perr := strconv.ParseFloat(v, 64); perr == nil && f > ratingMax {
+					ratingMax = f
+				}
+			}
+			if v == "" || cols[i].DistinctTruncated || seen[i][v] {
+				continue
+			}
+			if len(cols[i].DistinctValues) < csvDistinctCap {
+				seen[i][v] = true
+				cols[i].DistinctValues = append(cols[i].DistinctValues, v)
+			} else {
+				cols[i].DistinctTruncated = true
+			}
+		}
+	}
+
+	if suggested.Columns.Rating != "" {
+		suggested.RatingScale = csvmap.GuessRatingScale(ratingMax)
+	}
+	if suggested.Status.Column != "" {
+		for _, col := range cols {
+			if col.Name == suggested.Status.Column {
+				suggested.Status.ValueMap = csvmap.GuessStatusValueMap(col.DistinctValues)
+				break
+			}
+		}
+	}
+	return cols, suggested
+}
+
 // HandleImportCSVInspect handles POST /api/import/csv/inspect. It parses the
 // uploaded CSV and returns headers, data-row count, and per-column distinct
 // values (capped) to drive the mapping dialog.
@@ -163,69 +226,8 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 	if len(records) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "could not read CSV header")
 	}
-	header := records[0]
 
-	// Guess the column->field mapping from the headers alone so we know which
-	// column is the rating column (to track its numeric max below).
-	suggested := csvmap.GuessColumns(header)
-	ratingIdx := -1
-	if suggested.Columns.Rating != "" {
-		for i, name := range header {
-			if name == suggested.Columns.Rating {
-				ratingIdx = i
-				break
-			}
-		}
-	}
-
-	cols := make([]csvColumnInfo, len(header))
-	seen := make([]map[string]bool, len(header))
-	for i, name := range header {
-		cols[i] = csvColumnInfo{Name: name, DistinctValues: []string{}}
-		seen[i] = map[string]bool{}
-	}
-
-	rowCount := 0
-	var ratingMax float64
-	for _, rec := range records[1:] {
-		rowCount++
-		for i := range header {
-			if i >= len(rec) {
-				continue
-			}
-			v := strings.TrimSpace(rec[i])
-			if i == ratingIdx && v != "" {
-				if f, perr := strconv.ParseFloat(v, 64); perr == nil && f > ratingMax {
-					ratingMax = f
-				}
-			}
-			if v == "" || cols[i].DistinctTruncated || seen[i][v] {
-				continue
-			}
-			if len(cols[i].DistinctValues) < csvDistinctCap {
-				seen[i][v] = true
-				cols[i].DistinctValues = append(cols[i].DistinctValues, v)
-			} else {
-				// A distinct value beyond the cap: flag truncation and stop
-				// tracking this column so `seen` stays bounded to the cap.
-				cols[i].DistinctTruncated = true
-			}
-		}
-	}
-
-	// Refine the suggestion from the data: rating scale from the observed max,
-	// and per-value status guesses from the status column's distinct values.
-	if suggested.Columns.Rating != "" {
-		suggested.RatingScale = csvmap.GuessRatingScale(ratingMax)
-	}
-	if suggested.Status.Column != "" {
-		for _, col := range cols {
-			if col.Name == suggested.Status.Column {
-				suggested.Status.ValueMap = csvmap.GuessStatusValueMap(col.DistinctValues)
-				break
-			}
-		}
-	}
+	cols, suggested := scanCSV(records)
 
 	presets := make([]csvPresetInfo, 0)
 	for _, p := range csvmap.Presets() {
@@ -233,12 +235,12 @@ func (h *ImportHandler) HandleImportCSVInspect(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, csvInspectResponse{
-		Headers:          header,
-		RowCount:         rowCount,
+		Headers:          records[0],
+		RowCount:         len(records) - 1,
 		Columns:          cols,
 		SuggestedMapping: suggested,
 		Presets:          presets,
-		Detected:         detectPreset(header),
+		Detected:         detectPreset(records[0]),
 	})
 }
 
