@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # On pull_request events, check out the actual PR branch HEAD (not the
           # synthetic merge commit) so we can commit a hash fix and push it back.
