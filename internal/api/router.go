@@ -224,27 +224,6 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		})
 	}
 
-	// Version — public, not cached (changes on every deploy)
-	e.GET("/api/version", func(c *echo.Context) error {
-		c.Response().Header().Set("Cache-Control", "no-store")
-		resp := map[string]any{
-			"version":              version,
-			"commit":               commit,
-			"update_check_enabled": cfg.UpdateCheckEnabled,
-			"update_available":     false,
-			"latest_version":       "",
-			"release_url":          "",
-		}
-		if cfg.UpdateCheckEnabled && updateState != nil {
-			if latest, releaseURL := updateState.Latest(); updatecheck.UpdateAvailable(version, latest) {
-				resp["update_available"] = true
-				resp["latest_version"] = latest
-				resp["release_url"] = releaseURL
-			}
-		}
-		return c.JSON(http.StatusOK, resp)
-	})
-
 	// DB-error route (bypassed by Gate 1)
 	dh := NewDBErrorHandler(resolvedDatabaseURL, migrator)
 	e.GET("/db-error", dh.HandleDBError)
@@ -304,6 +283,30 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		authGroup.GET("/api-keys", ah.HandleListAPIKeys)
 		authGroup.POST("/api-keys", ah.HandleCreateAPIKey)
 		authGroup.DELETE("/api-keys/:id", ah.HandleRevokeAPIKey)
+
+		// Version — auth-protected (session cookie or API key), not cached
+		// (changes on every deploy). Build/version detail is reconnaissance for
+		// an attacker, so it must not be readable before login (issue #1108).
+		versionGroup := e.Group("/api/version", auth.AuthMiddleware(db))
+		versionGroup.GET("", func(c *echo.Context) error {
+			c.Response().Header().Set("Cache-Control", "no-store")
+			resp := map[string]any{
+				"version":              version,
+				"commit":               commit,
+				"update_check_enabled": cfg.UpdateCheckEnabled,
+				"update_available":     false,
+				"latest_version":       "",
+				"release_url":          "",
+			}
+			if cfg.UpdateCheckEnabled && updateState != nil {
+				if latest, releaseURL := updateState.Latest(); updatecheck.UpdateAvailable(version, latest) {
+					resp["update_available"] = true
+					resp["latest_version"] = latest
+					resp["release_url"] = releaseURL
+				}
+			}
+			return c.JSON(http.StatusOK, resp)
+		})
 
 		// Platform and storefront routes (all auth-protected)
 		ph := NewPlatformsHandler(db)

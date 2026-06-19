@@ -344,13 +344,69 @@ func TestHealth_ReportsIGDBStatusInvalidCredentials(t *testing.T) {
 	}
 }
 
-func TestVersionEndpoint(t *testing.T) {
+// newVersionTestEcho builds a ready, DB-backed Echo wired with the given
+// version/commit/update state, seeds a user, logs in, and returns the handler
+// plus the session token. The /api/version endpoint requires authentication
+// (issue #1108), so version tests must present a session.
+func newVersionTestEcho(t *testing.T, cfg *config.Config, version, commit string, st *updatecheck.State) (interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, string) {
+	t.Helper()
+	truncateAllTables(t)
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "1.2.3", "abc1234", nil)
+	e := api.New(testEncrypter, cfg, m, testDB, "", nil, nil, nil, version, commit, st)
+	insertAuthTestUser(t, testDB, "u-version-1", "versionuser", "pass123", true, false)
+	token := loginAndGetToken(t, e, "versionuser", "pass123")
+	return e, token
+}
+
+func TestVersionEndpoint_RequiresAuth(t *testing.T) {
+	truncateAllTables(t)
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	e := api.New(testEncrypter, testCfg(), m, testDB, "", nil, nil, nil, "1.2.3", "abc1234", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated GET /api/version = %d, want 401", rec.Code)
+	}
+}
+
+func TestVersionEndpoint_APIKeyBearer(t *testing.T) {
+	truncateAllTables(t)
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	e := api.New(testEncrypter, testCfg(), m, testDB, "", nil, nil, nil, "1.2.3", "abc1234", nil)
+	insertAuthTestUser(t, testDB, "user-version-key", "versionkeyuser", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "user-version-key")
+
+	createRec := postJSONSession(t, e, "/api/auth/api-keys", map[string]any{"name": "version-test"}, sessionID)
+	var createResp map[string]any
+	_ = json.NewDecoder(createRec.Body).Decode(&createResp)
+	rawKey, _ := createResp["key"].(string)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("API key auth on /api/version: status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body["version"] != "1.2.3" {
+		t.Errorf("version = %q, want %q", body["version"], "1.2.3")
+	}
+}
+
+func TestVersionEndpoint(t *testing.T) {
+	e, token := newVersionTestEcho(t, testCfg(), "1.2.3", "abc1234", nil)
+
+	rec := getAuth(t, e, "/api/version", token)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
@@ -371,11 +427,11 @@ func TestVersionEndpoint(t *testing.T) {
 	}
 }
 
-func getVersion(t *testing.T, e http.Handler) map[string]any {
+func getVersion(t *testing.T, e interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, token string) map[string]any {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	rec := getAuth(t, e, "/api/version", token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/version = %d, want 200", rec.Code)
 	}
@@ -387,14 +443,13 @@ func getVersion(t *testing.T, e http.Handler) map[string]any {
 }
 
 func TestVersionEndpoint_UpdateAvailable(t *testing.T) {
-	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	cfg := testCfg()
 	cfg.UpdateCheckEnabled = true
 	st := updatecheck.NewState()
 	st.Set("9.9.9", "https://github.com/drzero42/nexorious/releases/tag/v9.9.9")
-	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "0.1.0", "abc1234", st)
+	e, token := newVersionTestEcho(t, cfg, "0.1.0", "abc1234", st)
 
-	body := getVersion(t, e)
+	body := getVersion(t, e, token)
 	if body["update_available"] != true {
 		t.Errorf("update_available = %v, want true", body["update_available"])
 	}
@@ -413,14 +468,13 @@ func TestVersionEndpoint_UpdateAvailable(t *testing.T) {
 }
 
 func TestVersionEndpoint_DevBuildNeverClaimsUpdate(t *testing.T) {
-	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	cfg := testCfg()
 	cfg.UpdateCheckEnabled = true
 	st := updatecheck.NewState()
 	st.Set("9.9.9", "https://github.com/drzero42/nexorious/releases/tag/v9.9.9")
-	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "dev", "unknown", st)
+	e, token := newVersionTestEcho(t, cfg, "dev", "unknown", st)
 
-	body := getVersion(t, e)
+	body := getVersion(t, e, token)
 	if body["update_available"] != false {
 		t.Errorf("update_available = %v, want false for dev build", body["update_available"])
 	}
@@ -430,14 +484,13 @@ func TestVersionEndpoint_DevBuildNeverClaimsUpdate(t *testing.T) {
 }
 
 func TestVersionEndpoint_CheckDisabled(t *testing.T) {
-	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	cfg := testCfg()
 	cfg.UpdateCheckEnabled = false
 	st := updatecheck.NewState()
 	st.Set("9.9.9", "https://github.com/drzero42/nexorious/releases/tag/v9.9.9")
-	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "0.1.0", "abc1234", st)
+	e, token := newVersionTestEcho(t, cfg, "0.1.0", "abc1234", st)
 
-	body := getVersion(t, e)
+	body := getVersion(t, e, token)
 	if body["update_check_enabled"] != false {
 		t.Errorf("update_check_enabled = %v, want false", body["update_check_enabled"])
 	}
@@ -450,24 +503,22 @@ func TestVersionEndpoint_CheckDisabled(t *testing.T) {
 }
 
 func TestVersionEndpoint_NilStateIsSafe(t *testing.T) {
-	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	cfg := testCfg()
 	cfg.UpdateCheckEnabled = true
-	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "0.1.0", "abc1234", nil)
+	e, token := newVersionTestEcho(t, cfg, "0.1.0", "abc1234", nil)
 
-	body := getVersion(t, e)
+	body := getVersion(t, e, token)
 	if body["update_available"] != false {
 		t.Errorf("update_available = %v, want false with nil state", body["update_available"])
 	}
 }
 
 func TestVersionEndpoint_EmptyStateNoUpdate(t *testing.T) {
-	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	cfg := testCfg()
 	cfg.UpdateCheckEnabled = true
-	e := api.New(testEncrypter, cfg, m, nil, "", nil, nil, nil, "0.1.0", "abc1234", updatecheck.NewState())
+	e, token := newVersionTestEcho(t, cfg, "0.1.0", "abc1234", updatecheck.NewState())
 
-	body := getVersion(t, e)
+	body := getVersion(t, e, token)
 	if body["update_available"] != false {
 		t.Errorf("update_available = %v, want false with empty state", body["update_available"])
 	}
