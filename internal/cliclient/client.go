@@ -283,9 +283,9 @@ type ServerVersionInfo struct {
 	ReleaseURL      string `json:"release_url"`
 }
 
-// ServerVersion fetches GET /api/version. The endpoint is public today, but the
-// key (when non-empty) is sent as a bearer token so the call keeps working if
-// the endpoint is later made authenticated; an empty key sends no auth header.
+// ServerVersion fetches GET /api/version. The endpoint requires authentication
+// (issue #1108), so the key (when non-empty) is sent as a bearer token; an empty
+// key sends no auth header and the server responds 401, surfaced to the caller.
 func (c *Client) ServerVersion(key string) (*ServerVersionInfo, error) {
 	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/version", nil)
 	if err != nil {
