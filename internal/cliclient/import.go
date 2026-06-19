@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -88,37 +89,52 @@ type CSVInspect struct {
 }
 
 // doBearerMultipart performs an authenticated multipart/form-data request. It
-// writes one file part (field "file", given filename) and any additional text
-// fields from fields. On a 2xx response a non-nil out is decoded from the body
-// (skipped for 204). Non-2xx responses become an httpError.
-func (c *Client) doBearerMultipart(method, path, key, filename string, data []byte, fields map[string]string, out any) error {
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
+// writes one file part (field "file", given filename) streamed from body and
+// any additional text fields from fields. On a 2xx response a non-nil out is
+// decoded from the body (skipped for 204). Non-2xx responses become an
+// httpError.
+//
+// The request body is built with an io.Pipe so the multipart payload is never
+// fully buffered in memory: a goroutine writes the parts while http.Client
+// reads them incrementally (chunked transfer encoding). This lets large
+// uploads (e.g. backup restore) stream straight from a file.
+func (c *Client) doBearerMultipart(method, path, key, filename string, body io.Reader, fields map[string]string, out any) error {
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
 
-	fw, err := mw.CreateFormFile("file", filename)
-	if err != nil {
-		return fmt.Errorf("create form file: %w", err)
-	}
-	if _, err := fw.Write(data); err != nil {
-		return fmt.Errorf("write form file: %w", err)
-	}
+	// FormDataContentType() returns the boundary chosen at NewWriter time, so
+	// it is stable and safe to read before the goroutine starts writing.
+	contentType := mw.FormDataContentType()
 
-	for k, v := range fields {
-		if err := mw.WriteField(k, v); err != nil {
-			return fmt.Errorf("write form field %q: %w", k, err)
+	go func() {
+		fw, err := mw.CreateFormFile("file", filename)
+		if err != nil {
+			_ = pw.CloseWithError(fmt.Errorf("create form file: %w", err))
+			return
 		}
-	}
+		if _, err := io.Copy(fw, body); err != nil {
+			_ = pw.CloseWithError(fmt.Errorf("write form file: %w", err))
+			return
+		}
+		for k, v := range fields {
+			if err := mw.WriteField(k, v); err != nil {
+				_ = pw.CloseWithError(fmt.Errorf("write form field %q: %w", k, err))
+				return
+			}
+		}
+		// Close writes the boundary trailer; close the pipe to signal EOF.
+		if err := mw.Close(); err != nil {
+			_ = pw.CloseWithError(fmt.Errorf("close multipart writer: %w", err))
+			return
+		}
+		_ = pw.Close()
+	}()
 
-	// Close before building the request so the boundary trailer is written.
-	if err := mw.Close(); err != nil {
-		return fmt.Errorf("close multipart writer: %w", err)
-	}
-
-	req, err := http.NewRequest(method, c.baseURL+path, &buf)
+	req, err := http.NewRequest(method, c.baseURL+path, pr)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Authorization", "Bearer "+key)
 
 	resp, err := c.hc.Do(req)
@@ -152,7 +168,7 @@ func (c *Client) ListImportSources(key string) ([]ImportSource, error) {
 // POST /api/import/nexorious and returns the created import job.
 func (c *Client) ImportNexorious(key, filename string, data []byte) (*ImportResult, error) {
 	var out ImportResult
-	if err := c.doBearerMultipart(http.MethodPost, "/api/import/nexorious", key, filename, data, nil, &out); err != nil {
+	if err := c.doBearerMultipart(http.MethodPost, "/api/import/nexorious", key, filename, bytes.NewReader(data), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -163,7 +179,7 @@ func (c *Client) ImportNexorious(key, filename string, data []byte) (*ImportResu
 // suggested mapping).
 func (c *Client) InspectCSV(key, filename string, data []byte) (*CSVInspect, error) {
 	var out CSVInspect
-	if err := c.doBearerMultipart(http.MethodPost, "/api/import/csv/inspect", key, filename, data, nil, &out); err != nil {
+	if err := c.doBearerMultipart(http.MethodPost, "/api/import/csv/inspect", key, filename, bytes.NewReader(data), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -181,7 +197,7 @@ func (c *Client) ImportCSV(key, filename string, data []byte, format string, map
 		fields["mapping"] = string(mapping)
 	}
 	var out ImportResult
-	if err := c.doBearerMultipart(http.MethodPost, "/api/import/csv", key, filename, data, fields, &out); err != nil {
+	if err := c.doBearerMultipart(http.MethodPost, "/api/import/csv", key, filename, bytes.NewReader(data), fields, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -192,7 +208,7 @@ func (c *Client) ImportCSV(key, filename string, data []byte, format string, map
 func (c *Client) ImportSource(key, slug, filename string, data []byte) (*ImportResult, error) {
 	var out ImportResult
 	path := "/api/import/" + url.PathEscape(slug)
-	if err := c.doBearerMultipart(http.MethodPost, path, key, filename, data, nil, &out); err != nil {
+	if err := c.doBearerMultipart(http.MethodPost, path, key, filename, bytes.NewReader(data), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

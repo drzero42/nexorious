@@ -217,15 +217,16 @@ func newBackupRestoreCmd() *cobra.Command {
 
 			c := cliclient.New(p.URL)
 			if hasFile {
-				data, err := os.ReadFile(filePath) //nolint:gosec // operator-supplied restore archive path
+				f, err := os.Open(filePath) //nolint:gosec // operator-supplied restore archive path
 				if err != nil {
-					return fmt.Errorf("read file: %w", err)
+					return fmt.Errorf("open file: %w", err)
 				}
+				defer func() { _ = f.Close() }()
 				filename := filePath
 				if idx := strings.LastIndexByte(filePath, '/'); idx >= 0 {
 					filename = filePath[idx+1:]
 				}
-				if err := c.RestoreBackupUpload(p.Key, filename, data); err != nil {
+				if err := c.RestoreBackupUpload(p.Key, filename, f); err != nil {
 					return fmt.Errorf("restore upload: %w", err)
 				}
 				fmt.Fprintln(out, "restore initiated from uploaded file")

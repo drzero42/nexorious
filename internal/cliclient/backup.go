@@ -125,7 +125,9 @@ func (c *Client) RestoreBackup(key, id string) error {
 }
 
 // RestoreBackupUpload uploads a backup archive and restores from it via
-// POST /api/admin/backups/restore/upload (multipart field "file").
-func (c *Client) RestoreBackupUpload(key, filename string, data []byte) error {
-	return c.doBearerMultipart(http.MethodPost, "/api/admin/backups/restore/upload", key, filename, data, nil, nil)
+// POST /api/admin/backups/restore/upload (multipart field "file"). body is
+// streamed into the request, so the caller can pass an *os.File directly
+// instead of reading a (potentially multi-GB) archive into memory.
+func (c *Client) RestoreBackupUpload(key, filename string, body io.Reader) error {
+	return c.doBearerMultipart(http.MethodPost, "/api/admin/backups/restore/upload", key, filename, body, nil, nil)
 }
