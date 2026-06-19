@@ -40,7 +40,7 @@ func LoadUserGameDetail(ctx context.Context, db *bun.DB, userGameID, userID stri
 
 // LoadUserGameCardsByIDs loads user-games for the given ids with the canonical
 // relation set, for list/card projections. Order is not guaranteed; callers that
-// need a specific order re-apply it (HandleListUserGames) or key by id (pools).
+// need a specific order re-apply it (the list handler) or key by id (pools).
 func LoadUserGameCardsByIDs(ctx context.Context, db *bun.DB, ids []string) ([]models.UserGame, error) {
 	var userGames []models.UserGame
 	if len(ids) == 0 {
