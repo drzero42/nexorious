@@ -115,6 +115,9 @@ type editOpts struct {
 func editOne(c *cliclient.Client, key string, u *cliclient.UserGame, o editOpts) error {
 	if o.addPlatform != "" {
 		pl, sf := splitPlatform(o.addPlatform)
+		if err := validatePlatform(c, key, pl); err != nil {
+			return err
+		}
 		if err := c.AddPlatform(key, u.ID, cliclient.PlatformInput{Platform: pl, Storefront: sf, OwnershipStatus: "owned"}); err != nil {
 			return fmt.Errorf("add platform: %w", err)
 		}

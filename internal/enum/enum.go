@@ -30,6 +30,29 @@ func (s PlayStatus) Valid() bool {
 	return validPlayStatuses[s]
 }
 
+// allPlayStatuses lists every valid play status in display order (the order a
+// game progresses through, not alphabetical).
+var allPlayStatuses = []PlayStatus{
+	PlayStatusNotStarted,
+	PlayStatusInProgress,
+	PlayStatusCompleted,
+	PlayStatusMastered,
+	PlayStatusDominated,
+	PlayStatusShelved,
+	PlayStatusDropped,
+	PlayStatusReplay,
+}
+
+// AllPlayStatuses returns every valid play status as plain strings, in display
+// order. These are stable enum values, so clients may rely on them directly.
+func AllPlayStatuses() []string {
+	out := make([]string, len(allPlayStatuses))
+	for i, s := range allPlayStatuses {
+		out[i] = string(s)
+	}
+	return out
+}
+
 // FinishedPlayStatuses are the play statuses that remove a game from every pool
 // and exclude it from pool suggestions (#955). dropped is included deliberately:
 // it is the strongest "not next" signal, so it leaves the plan like a completion.
@@ -72,4 +95,24 @@ var validOwnershipStatuses = map[OwnershipStatus]bool{
 // Valid reports whether s is a recognised ownership status.
 func (s OwnershipStatus) Valid() bool {
 	return validOwnershipStatuses[s]
+}
+
+// allOwnershipStatuses lists every valid ownership status in display order.
+var allOwnershipStatuses = []OwnershipStatus{
+	OwnershipOwned,
+	OwnershipBorrowed,
+	OwnershipRented,
+	OwnershipSubscription,
+	OwnershipNoLongerOwned,
+}
+
+// AllOwnershipStatuses returns every valid ownership status as plain strings,
+// in display order. These are stable enum values, so clients may rely on them
+// directly.
+func AllOwnershipStatuses() []string {
+	out := make([]string, len(allOwnershipStatuses))
+	for i, s := range allOwnershipStatuses {
+		out[i] = string(s)
+	}
+	return out
 }

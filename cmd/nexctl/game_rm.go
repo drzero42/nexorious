@@ -71,6 +71,31 @@ type gameFilter struct {
 	wishlist, wishlistSet bool
 }
 
+// gamesByFilter runs a filtered library query and returns the matching games and
+// the server total (for truncation warnings). No cmd, no picker — callers own
+// the warning and the per_page=200 cap is applied here.
+func gamesByFilter(c *cliclient.Client, key string, f gameFilter) (games []cliclient.UserGame, total int, err error) {
+	params := url.Values{}
+	setIf(params, "play_status", f.status)
+	setIf(params, "platform", f.platform)
+	if f.wishlistSet {
+		params.Set("wishlist", strconv.FormatBool(f.wishlist))
+	}
+	if f.tag != "" {
+		id, err := resolveTagID(c, key, f.tag)
+		if err != nil {
+			return nil, 0, err
+		}
+		params.Set("tag", id)
+	}
+	params.Set("per_page", "200")
+	res, err := c.ListUserGames(key, params)
+	if err != nil {
+		return nil, 0, err
+	}
+	return res.UserGames, res.Total, nil
+}
+
 // gamesForRefsOrFilter resolves explicit refs (args) or, when f.use is set, runs
 // a filtered list. Exactly one mode must be used.
 func gamesForRefsOrFilter(cmd *cobra.Command, c *cliclient.Client, key string, args []string, f gameFilter) ([]cliclient.UserGame, error) {
@@ -78,30 +103,16 @@ func gamesForRefsOrFilter(cmd *cobra.Command, c *cliclient.Client, key string, a
 		if len(args) > 0 {
 			return nil, fmt.Errorf("pass refs or --filter, not both")
 		}
-		params := url.Values{}
-		setIf(params, "play_status", f.status)
-		setIf(params, "platform", f.platform)
-		if f.wishlistSet {
-			params.Set("wishlist", strconv.FormatBool(f.wishlist))
-		}
-		if f.tag != "" {
-			id, err := resolveTagID(c, key, f.tag)
-			if err != nil {
-				return nil, err
-			}
-			params.Set("tag", id)
-		}
-		params.Set("per_page", "200")
-		res, err := c.ListUserGames(key, params)
+		games, total, err := gamesByFilter(c, key, f)
 		if err != nil {
 			return nil, err
 		}
-		if res.Total > len(res.UserGames) {
+		if total > len(games) {
 			fmt.Fprintf(cmd.ErrOrStderr(),
 				"warning: filter matched %d games but only the first %d are affected; narrow the filter and re-run for the rest\n",
-				res.Total, len(res.UserGames))
+				total, len(games))
 		}
-		return res.UserGames, nil
+		return games, nil
 	}
 	if len(args) == 0 {
 		return nil, fmt.Errorf("provide one or more refs, or --filter")

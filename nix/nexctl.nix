@@ -10,7 +10,7 @@ buildGoModule {
   pname = "nexctl";
   inherit version src;
 
-  vendorHash = "sha256-gI4Sw6Eg7GTsjxkdoQUJQIYX0+/8Fk+OPtM7lyH93aE=";
+  vendorHash = "sha256-A1BEHVARhw18uQ1CyiUXV1s+j0iZv8A2MBrK0VbZ0iQ=";
 
   subPackages = [ "cmd/nexctl" ];
 

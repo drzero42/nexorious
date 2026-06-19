@@ -32,6 +32,9 @@ func newGameAcquireCmd() *cobra.Command {
 			if storefront != "" {
 				sf = storefront
 			}
+			if err := validatePlatform(c, p.Key, pl); err != nil {
+				return err
+			}
 			own := ownership
 			if own == "" {
 				own = "owned"

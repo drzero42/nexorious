@@ -595,6 +595,28 @@ func (c *Client) GetUserGame(key, id string) (*UserGame, error) {
 	return &out, nil
 }
 
+// CollectionStats mirrors the GET /api/user-games/stats response.
+type CollectionStats struct {
+	TotalGames       int            `json:"total_games"`
+	CompletionStats  map[string]int `json:"completion_stats"`
+	OwnershipStats   map[string]int `json:"ownership_stats"`
+	PlatformStats    map[string]int `json:"platform_stats"`
+	GenreStats       map[string]int `json:"genre_stats"`
+	PileOfShame      int            `json:"pile_of_shame"`
+	CompletionRate   float64        `json:"completion_rate"`
+	AverageRating    *float64       `json:"average_rating"`
+	TotalHoursPlayed float64        `json:"total_hours_played"`
+}
+
+// GetCollectionStats fetches aggregate collection statistics for the user.
+func (c *Client) GetCollectionStats(key string) (*CollectionStats, error) {
+	var out CollectionStats
+	if err := c.doBearer(http.MethodGet, "/api/user-games/stats", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // PlatformInput is a platform row for create / move-to-library / add-platform.
 type PlatformInput struct {
 	Platform        string   `json:"platform,omitempty"`
@@ -937,6 +959,57 @@ func (c *Client) DisconnectStorefront(key, storefront string) error {
 // ResetSyncData deletes all synced data for a storefront.
 func (c *Client) ResetSyncData(key, storefront string) error {
 	return c.doBearer(http.MethodDelete, "/api/sync/"+url.PathEscape(storefront)+"/data", key, nil, nil)
+}
+
+// FilterOptions mirrors the GET /api/user-games/filter-options response: the
+// distinct facet values present in the caller's library.
+type FilterOptions struct {
+	Genres             []string `json:"genres"`
+	GameModes          []string `json:"game_modes"`
+	Themes             []string `json:"themes"`
+	PlayerPerspectives []string `json:"player_perspectives"`
+}
+
+// GetFilterOptions fetches the distinct genre/game-mode/theme/perspective values
+// present in the caller's library, for filter discovery.
+func (c *Client) GetFilterOptions(key string) (*FilterOptions, error) {
+	var out FilterOptions
+	if err := c.doBearer(http.MethodGet, "/api/user-games/filter-options", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Storefront is one entry from GET /api/platforms/storefronts/simple-list.
+type Storefront struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+}
+
+// ListStorefronts returns the storefronts seeded on the server (name + display
+// name), the valid values for the --storefront filter.
+func (c *Client) ListStorefronts(key string) ([]Storefront, error) {
+	var out []Storefront
+	if err := c.doBearer(http.MethodGet, "/api/platforms/storefronts/simple-list", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SimplePlatform is one entry from GET /api/platforms/simple-list.
+type SimplePlatform struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+}
+
+// ListPlatforms returns the platforms seeded on the server (name + display
+// name), the valid values for a platform slug (e.g. on game add/edit/acquire).
+func (c *Client) ListPlatforms(key string) ([]SimplePlatform, error) {
+	var out []SimplePlatform
+	if err := c.doBearer(http.MethodGet, "/api/platforms/simple-list", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ExternalGame is one external game entry as returned by

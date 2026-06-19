@@ -26,6 +26,8 @@ func newGameCmd() *cobra.Command {
 	cmd.AddCommand(newGameAcquireCmd())
 	cmd.AddCommand(newGameRmCmd())
 	cmd.AddCommand(newGameEditCmd())
+	cmd.AddCommand(newGameStatsCmd())
+	cmd.AddCommand(newGameFiltersCmd())
 	return cmd
 }
 
@@ -33,31 +35,44 @@ var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 
 func looksLikeUUID(s string) bool { return uuidRe.MatchString(s) }
 
-// resolveUserGameRef turns a CLI reference into a user-game. A UUID is fetched
-// directly; otherwise ref is a title query: 0 hits errors, 1 hit is used, and
-// many hits prompt an interactive picker on a TTY or error with the candidate
-// ids off-TTY.
-func resolveUserGameRef(cmd *cobra.Command, c *cliclient.Client, key, ref string) (*cliclient.UserGame, error) {
+// findUserGamesByRef returns every library game matching ref: a UUID is fetched
+// directly (one element); a title is a search query (zero or more). No cmd, no
+// picker — callers own disambiguation.
+func findUserGamesByRef(c *cliclient.Client, key, ref string) ([]cliclient.UserGame, error) {
 	if looksLikeUUID(ref) {
-		return c.GetUserGame(key, ref)
+		u, err := c.GetUserGame(key, ref)
+		if err != nil {
+			return nil, err
+		}
+		return []cliclient.UserGame{*u}, nil
 	}
 	res, err := c.ListUserGames(key, urlValues("q", ref))
 	if err != nil {
 		return nil, err
 	}
-	switch len(res.UserGames) {
+	return res.UserGames, nil
+}
+
+// resolveUserGameRef is the CLI wrapper: one hit is used; many prompt a picker
+// (interactive) or error with candidate ids (off-TTY).
+func resolveUserGameRef(cmd *cobra.Command, c *cliclient.Client, key, ref string) (*cliclient.UserGame, error) {
+	games, err := findUserGamesByRef(c, key, ref)
+	if err != nil {
+		return nil, err
+	}
+	switch len(games) {
 	case 0:
 		return nil, fmt.Errorf("no game matching %q in your library", ref)
 	case 1:
-		return &res.UserGames[0], nil
+		return &games[0], nil
 	}
 	if interactive(cmd) {
-		return pickUserGame(cmd, res.UserGames)
+		return pickUserGame(cmd, games)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%q matches %d games; re-run with an id:", ref, len(res.UserGames))
-	for _, u := range res.UserGames {
-		fmt.Fprintf(&b, "\n  %s  %s", u.ID, u.Title())
+	fmt.Fprintf(&b, "%q matches %d games; re-run with an id:", ref, len(games))
+	for i := range games {
+		fmt.Fprintf(&b, "\n  %s  %s", games[i].ID, games[i].Title())
 	}
 	return nil, fmt.Errorf("%s", b.String())
 }
