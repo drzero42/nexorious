@@ -81,6 +81,88 @@ func TestMCPGameAddAmbiguous(t *testing.T) {
 		t.Fatal("import should NOT have been called for ambiguous result")
 	}
 	b, _ := json.Marshal(res.StructuredContent)
+	var out gameAddOutput
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, b)
+	}
+	if len(out.Candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d: %s", len(out.Candidates), b)
+	}
+	if out.Candidates[0].IgdbID != 1 || out.Candidates[0].ReleaseDate != "2001" {
+		t.Fatalf("candidate[0] = %+v; want igdb_id=1 release_date=2001", out.Candidates[0])
+	}
+}
+
+func TestMCPGameAcquire(t *testing.T) {
+	const id = "33333333-3333-3333-3333-333333333333"
+	var moved atomic.Bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games/", func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": id, "is_wishlisted": true,
+				"game": map[string]any{"id": 3, "title": "Hollow Knight"}})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/move-to-library"):
+			moved.Store(true)
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if _, ok := body["platforms"]; !ok {
+				t.Errorf("move-to-library body missing platforms: %v", body)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": id, "game": map[string]any{"id": 3, "title": "Hollow Knight"}})
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "game_acquire",
+		Arguments: map[string]any{"ref": id, "platform": "pc-windows/steam"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("game_acquire: err=%v res=%+v", err, res)
+	}
+	if !moved.Load() {
+		t.Fatal("expected move-to-library to be called")
+	}
+}
+
+func TestMCPGameAcquireAmbiguous(t *testing.T) {
+	var moved atomic.Bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"user_games": []map[string]any{
+				{"id": "11111111-1111-1111-1111-111111111111", "game": map[string]any{"id": 1, "title": "Halo"}},
+				{"id": "22222222-2222-2222-2222-222222222222", "game": map[string]any{"id": 2, "title": "Halo 2"}},
+			},
+			"total": 2,
+		})
+	})
+	mux.HandleFunc("/api/user-games/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/move-to-library") {
+			moved.Store(true)
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "game_acquire",
+		Arguments: map[string]any{"ref": "halo", "platform": "pc-windows"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("game_acquire: err=%v res=%+v", err, res)
+	}
+	if moved.Load() {
+		t.Fatal("move-to-library must NOT be called for an ambiguous ref")
+	}
+	b, _ := json.Marshal(res.StructuredContent)
 	var out gameWriteOutput
 	if err := json.Unmarshal(b, &out); err != nil {
 		t.Fatalf("unmarshal: %v\n%s", err, b)

@@ -159,11 +159,20 @@ type gameAddInput struct {
 	Rating     *int    `json:"rating,omitempty"`
 }
 
+// igdbCandidateBrief is the concise IGDB projection returned when a title search
+// is ambiguous (multiple results). It uses igdb_id (int) and release_date to
+// help MCP consumers distinguish candidates without confusing play-status fields.
+type igdbCandidateBrief struct {
+	IgdbID      int    `json:"igdb_id"`
+	Title       string `json:"title"`
+	ReleaseDate string `json:"release_date,omitempty"`
+}
+
 // gameAddOutput is the output for game_add.
 type gameAddOutput struct {
-	Game       *gameBrief  `json:"game,omitempty"`
-	Candidates []gameBrief `json:"candidates,omitempty"`
-	Message    string      `json:"message,omitempty"`
+	Game       *gameBrief           `json:"game,omitempty"`
+	Candidates []igdbCandidateBrief `json:"candidates,omitempty"`
+	Message    string               `json:"message,omitempty"`
 }
 
 // gameAcquireInput is the input schema for game_acquire.
@@ -209,8 +218,7 @@ func mcpResolveEditTargets(c *cliclient.Client, key string, refs []string, filte
 		}
 		switch len(matches) {
 		case 0:
-			cands := make([]gameBrief, 0)
-			return nil, cands, fmt.Sprintf("no game matching %q in your library", ref), nil
+			return nil, nil, fmt.Sprintf("no game matching %q in your library", ref), nil
 		case 1:
 			all = append(all, matches[0])
 		default:
@@ -328,9 +336,9 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 				return nil, gameAddOutput{}, fmt.Errorf("game_add: no IGDB results for %q", in.Title)
 			}
 			if len(cands) > 1 {
-				briefs := make([]gameBrief, len(cands))
+				briefs := make([]igdbCandidateBrief, len(cands))
 				for i, g := range cands {
-					briefs[i] = gameBrief{ID: strconv.Itoa(g.IgdbID), Title: g.Title, PlayStatus: g.ReleaseDate}
+					briefs[i] = igdbCandidateBrief{IgdbID: g.IgdbID, Title: g.Title, ReleaseDate: g.ReleaseDate}
 				}
 				return nil, gameAddOutput{
 					Candidates: briefs,
