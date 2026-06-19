@@ -104,6 +104,44 @@ func TestGetUserGame(t *testing.T) {
 	}
 }
 
+func TestGetCollectionStats(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games/stats", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer k" {
+			t.Errorf("auth = %q", got)
+		}
+		avg := 7.5
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"total_games":        342,
+			"completion_stats":   map[string]int{"not_started": 100, "completed": 50},
+			"ownership_stats":    map[string]int{"owned": 340, "borrowed": 2},
+			"platform_stats":     map[string]int{"PC (Windows)": 200},
+			"genre_stats":        map[string]int{"RPG": 120},
+			"pile_of_shame":      100,
+			"completion_rate":    41.2,
+			"average_rating":     avg,
+			"total_hours_played": 1280.5,
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	s, err := New(srv.URL).GetCollectionStats("k")
+	if err != nil {
+		t.Fatalf("GetCollectionStats: %v", err)
+	}
+	if s.TotalGames != 342 || s.PileOfShame != 100 || s.CompletionRate != 41.2 || s.TotalHoursPlayed != 1280.5 {
+		t.Fatalf("scalars = %+v", s)
+	}
+	if s.AverageRating == nil || *s.AverageRating != 7.5 {
+		t.Fatalf("average_rating = %v", s.AverageRating)
+	}
+	if s.CompletionStats["completed"] != 50 || s.OwnershipStats["owned"] != 340 ||
+		s.PlatformStats["PC (Windows)"] != 200 || s.GenreStats["RPG"] != 120 {
+		t.Fatalf("maps = %+v", s)
+	}
+}
+
 func TestCreateUserGameAndReplaceTags(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/user-games", func(w http.ResponseWriter, r *http.Request) {

@@ -595,6 +595,28 @@ func (c *Client) GetUserGame(key, id string) (*UserGame, error) {
 	return &out, nil
 }
 
+// CollectionStats mirrors the GET /api/user-games/stats response.
+type CollectionStats struct {
+	TotalGames       int            `json:"total_games"`
+	CompletionStats  map[string]int `json:"completion_stats"`
+	OwnershipStats   map[string]int `json:"ownership_stats"`
+	PlatformStats    map[string]int `json:"platform_stats"`
+	GenreStats       map[string]int `json:"genre_stats"`
+	PileOfShame      int            `json:"pile_of_shame"`
+	CompletionRate   float64        `json:"completion_rate"`
+	AverageRating    *float64       `json:"average_rating"`
+	TotalHoursPlayed float64        `json:"total_hours_played"`
+}
+
+// GetCollectionStats fetches aggregate collection statistics for the user.
+func (c *Client) GetCollectionStats(key string) (*CollectionStats, error) {
+	var out CollectionStats
+	if err := c.doBearer(http.MethodGet, "/api/user-games/stats", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // PlatformInput is a platform row for create / move-to-library / add-platform.
 type PlatformInput struct {
 	Platform        string   `json:"platform,omitempty"`
