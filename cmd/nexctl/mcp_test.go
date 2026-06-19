@@ -6,12 +6,119 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/drzero42/nexorious/internal/clicfg"
 )
+
+func TestMCPGameEditStatus(t *testing.T) {
+	var gotStatus string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games/", func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":   "11111111-1111-1111-1111-111111111111",
+				"game": map[string]any{"id": 1, "title": "Halo"}})
+		case strings.HasSuffix(r.URL.Path, "/progress"):
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			gotStatus, _ = body["play_status"].(string)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "11111111-1111-1111-1111-111111111111"})
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "game_edit",
+		Arguments: map[string]any{
+			"refs":        []string{"11111111-1111-1111-1111-111111111111"},
+			"play_status": "completed",
+		},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("edit: err=%v res=%+v", err, res)
+	}
+	if gotStatus != "completed" {
+		t.Fatalf("play_status sent = %q", gotStatus)
+	}
+}
+
+func TestMCPGameAddAmbiguous(t *testing.T) {
+	var importCalled atomic.Bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/games/search/igdb", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"games": []map[string]any{
+				{"igdb_id": 1, "title": "Halo", "release_date": "2001"},
+				{"igdb_id": 2, "title": "Halo 2", "release_date": "2004"},
+			},
+			"total": 2,
+		})
+	})
+	mux.HandleFunc("/api/games/igdb-import", func(w http.ResponseWriter, _ *http.Request) {
+		importCalled.Store(true)
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "game_add",
+		Arguments: map[string]any{"title": "Halo"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("game_add: err=%v res=%+v", err, res)
+	}
+	if importCalled.Load() {
+		t.Fatal("import should NOT have been called for ambiguous result")
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	var out gameWriteOutput
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, b)
+	}
+	if len(out.Candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d: %s", len(out.Candidates), b)
+	}
+}
+
+func TestMCPGameRm(t *testing.T) {
+	var deletedID string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":   "22222222-2222-2222-2222-222222222222",
+				"game": map[string]any{"id": 2, "title": "Doom"}})
+		case http.MethodDelete:
+			deletedID = strings.TrimPrefix(r.URL.Path, "/api/user-games/")
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "game_rm",
+		Arguments: map[string]any{"refs": []string{"22222222-2222-2222-2222-222222222222"}},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("game_rm: err=%v res=%+v", err, res)
+	}
+	if deletedID != "22222222-2222-2222-2222-222222222222" {
+		t.Fatalf("expected delete for id 22222222-..., got %q", deletedID)
+	}
+}
 
 func TestMCPConfigStanza(t *testing.T) {
 	seedProfile(t, "https://example.test")
