@@ -273,6 +273,42 @@ func (c *Client) Health() (string, error) {
 	return out.Status, nil
 }
 
+// ServerVersionInfo is the GET /api/version response: the server's own build
+// version/commit plus its update-check verdict.
+type ServerVersionInfo struct {
+	Version         string `json:"version"`
+	Commit          string `json:"commit"`
+	UpdateAvailable bool   `json:"update_available"`
+	LatestVersion   string `json:"latest_version"`
+	ReleaseURL      string `json:"release_url"`
+}
+
+// ServerVersion fetches GET /api/version. The endpoint is public today, but the
+// key (when non-empty) is sent as a bearer token so the call keeps working if
+// the endpoint is later made authenticated; an empty key sends no auth header.
+func (c *Client) ServerVersion(key string) (*ServerVersionInfo, error) {
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/version", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build version request: %w", err)
+	}
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("version request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, httpError(resp)
+	}
+	var out ServerVersionInfo
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode version response: %w", err)
+	}
+	return &out, nil
+}
+
 // SetupResult is the interpreted outcome of a setup-admin attempt. The caller
 // maps StatusCode (and Location for a 3xx redirect) to a message and exit code.
 type SetupResult struct {

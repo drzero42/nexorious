@@ -30,9 +30,10 @@ func TestRootCmd_Structure(t *testing.T) {
 }
 
 func TestVersionCmd(t *testing.T) {
-	prevV, prevC := version, commit
-	version, commit = "9.9.9-test", "cafef00d"
-	t.Cleanup(func() { version, commit = prevV, prevC })
+	withTestVersion(t)
+	// Point config resolution at an empty dir so the command can't read a real
+	// developer profile; with no profile the server line is just "unavailable".
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	root := newRootCmd()
 	var buf bytes.Buffer
