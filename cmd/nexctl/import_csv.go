@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -10,6 +11,40 @@ import (
 	"github.com/drzero42/nexorious/internal/cliclient"
 	"github.com/drzero42/nexorious/internal/cliui"
 )
+
+// printCSVAutoResolution reports how the server's auto mode mapped the CSV: the
+// detected preset, or the guessed column mapping (so an auto import isn't
+// silent about being a guess). A nil envelope prints nothing.
+func printCSVAutoResolution(out io.Writer, a *cliclient.CSVAutoResolution) {
+	if a == nil {
+		return
+	}
+	switch a.Mode {
+	case "preset":
+		if a.Preset != nil {
+			fmt.Fprintf(out, "Auto-detected preset: %s (%s)\n", a.Preset.Slug, a.Preset.Name)
+		}
+	case "guessed":
+		fmt.Fprintln(out, "No preset matched; guessed column mapping:")
+		if a.Mapping != nil {
+			m := a.Mapping
+			pairs := []struct{ field, val string }{
+				{"title", m.Columns.Title}, {"igdb_id", m.Columns.IGDBID},
+				{"platform", m.Columns.Platform}, {"storefront", m.Columns.Storefront},
+				{"rating", m.Columns.Rating}, {"notes", m.Columns.Notes},
+				{"acquired_date", m.Columns.AcquiredDate}, {"hours_played", m.Columns.HoursPlayed},
+				{"tags", m.Columns.Tags}, {"loved", m.Columns.Loved},
+				{"status", m.Status.Column},
+			}
+			for _, pr := range pairs {
+				if pr.val != "" {
+					fmt.Fprintf(out, "  %s=%s\n", pr.field, pr.val)
+				}
+			}
+		}
+		fmt.Fprintln(out, "Review the import job before applying.")
+	}
+}
 
 func newImportCSVCmd() *cobra.Command {
 	var (
@@ -138,9 +173,22 @@ func newImportCSVCmd() *cobra.Command {
 				return printImportResult(cmd, res)
 			}
 
+			// Auto path: no preset and no manual flags -> let the server detect
+			// a preset or guess the mapping in one call.
+			if !anyManual {
+				res, err := c.ImportCSV(p.Key, filename, data, "", nil)
+				if err != nil {
+					return fmt.Errorf("import CSV failed: %w", err)
+				}
+				if !flagBool(cmd, "json") {
+					printCSVAutoResolution(out, res.Auto)
+				}
+				return printImportResult(cmd, res)
+			}
+
 			// Manual mapping path.
 			if strings.TrimSpace(titleCol) == "" {
-				return fmt.Errorf("a --title-col is required (or use --preset)")
+				return fmt.Errorf("a --title-col is required (or use --preset, or run with no flags to auto-detect)")
 			}
 			if cmd.Flags().Changed("status-map") && statusCol == "" {
 				return fmt.Errorf("--status-map requires --status-col")
