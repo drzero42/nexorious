@@ -422,12 +422,11 @@ func newSyncResetCmd() *cobra.Command {
 	}
 }
 
-// resolveExternalRef resolves an external game by UUID or title from the given
-// storefront's external-game list. UUID matching is exact; title matching is
-// case-insensitive. When multiple titles match on a non-interactive session it
-// returns an error listing candidates; on an interactive session it presents a
-// numbered picker.
-func resolveExternalRef(cmd *cobra.Command, c *cliclient.Client, key, sf, ref string) (*cliclient.ExternalGame, error) {
+// findExternalGamesByRef returns every external game matching ref from the given
+// storefront: a UUID is matched exactly (one element or error); a title is
+// matched case-insensitively (zero or more). No cmd, no picker — callers own
+// disambiguation.
+func findExternalGamesByRef(c *cliclient.Client, key, sf, ref string) ([]cliclient.ExternalGame, error) {
 	games, err := c.ListExternalGames(key, sf)
 	if err != nil {
 		return nil, err
@@ -435,30 +434,48 @@ func resolveExternalRef(cmd *cobra.Command, c *cliclient.Client, key, sf, ref st
 	if looksLikeUUID(ref) {
 		for i := range games {
 			if games[i].ID == ref {
-				return &games[i], nil
+				return []cliclient.ExternalGame{games[i]}, nil
 			}
 		}
 		return nil, fmt.Errorf("no external game with id %s", ref)
 	}
-	var matches []*cliclient.ExternalGame
+	var matches []cliclient.ExternalGame
 	for i := range games {
 		if strings.EqualFold(games[i].Title, ref) {
-			matches = append(matches, &games[i])
+			matches = append(matches, games[i])
 		}
 	}
-	switch len(matches) {
+	return matches, nil
+}
+
+// resolveExternalRef resolves an external game by UUID or title from the given
+// storefront's external-game list. UUID matching is exact; title matching is
+// case-insensitive. When multiple titles match on a non-interactive session it
+// returns an error listing candidates; on an interactive session it presents a
+// numbered picker.
+func resolveExternalRef(cmd *cobra.Command, c *cliclient.Client, key, sf, ref string) (*cliclient.ExternalGame, error) {
+	games, err := findExternalGamesByRef(c, key, sf, ref)
+	if err != nil {
+		return nil, err
+	}
+	switch len(games) {
 	case 0:
 		return nil, fmt.Errorf("no external game matching %q", ref)
 	case 1:
-		return matches[0], nil
+		return &games[0], nil
+	}
+	// Convert to []*cliclient.ExternalGame for pickExternalGame
+	ptrs := make([]*cliclient.ExternalGame, len(games))
+	for i := range games {
+		ptrs[i] = &games[i]
 	}
 	if interactive(cmd) {
-		return pickExternalGame(cmd, matches)
+		return pickExternalGame(cmd, ptrs)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%q matches %d external games; re-run with an id:", ref, len(matches))
-	for _, eg := range matches {
-		fmt.Fprintf(&b, "\n  %s  %s", eg.ID, eg.Title)
+	fmt.Fprintf(&b, "%q matches %d external games; re-run with an id:", ref, len(games))
+	for i := range games {
+		fmt.Fprintf(&b, "\n  %s  %s", games[i].ID, games[i].Title)
 	}
 	return nil, fmt.Errorf("%s", b.String())
 }
