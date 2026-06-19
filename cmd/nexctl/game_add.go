@@ -125,8 +125,11 @@ func resolveIGDBCandidate(cmd *cobra.Command, c *cliclient.Client, key string, i
 	if err != nil {
 		return nil, err
 	}
-	if igdbID != 0 && len(games) == 0 {
-		return nil, fmt.Errorf("no IGDB game with id %d", igdbID)
+	if igdbID != 0 {
+		if len(games) == 0 {
+			return nil, fmt.Errorf("no IGDB game with id %d", igdbID)
+		}
+		return &games[0], nil
 	}
 	switch len(games) {
 	case 0:
