@@ -182,7 +182,7 @@ func (h *PoolsHandler) HandleUpdatePool(c *echo.Context) error {
 	}
 
 	if !hasFields {
-		return echo.NewHTTPError(http.StatusBadRequest, "no fields to update")
+		return errNoFieldsToUpdate()
 	}
 
 	var pool poolResponse

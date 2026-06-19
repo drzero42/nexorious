@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -133,13 +134,6 @@ func (h *TagsHandler) HandleCreateTag(c *echo.Context) error {
 	return c.JSON(http.StatusCreated, tag)
 }
 
-// updateTagRequest is the body for PUT /api/tags/:id.
-// Both fields are optional (partial update).
-type updateTagRequest struct {
-	Name  *string `json:"name"`
-	Color *string `json:"color"`
-}
-
 // HandleUpdateTag handles PUT /api/tags/:id.
 func (h *TagsHandler) HandleUpdateTag(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
@@ -149,30 +143,42 @@ func (h *TagsHandler) HandleUpdateTag(c *echo.Context) error {
 
 	tagID := c.Param("id")
 
-	var req updateTagRequest
-	if err := c.Bind(&req); err != nil {
+	// Decode into a raw map so we can distinguish an absent field (leave
+	// unchanged) from an explicit null (clear), matching HandleUpdatePool.
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(c.Request().Body).Decode(&raw); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
-	}
-
-	// Validate name if provided.
-	if req.Name != nil {
-		name, err := validateName(*req.Name, 100)
-		if err != nil {
-			return err
-		}
-		req.Name = &name
 	}
 
 	// Build dynamic SET clause.
 	q := h.db.NewUpdate().
 		TableExpr("tags").
 		Set("updated_at = ?", time.Now().UTC())
+	hasFields := false
 
-	if req.Name != nil {
-		q = q.Set("name = ?", *req.Name)
+	if nameRaw, ok := raw["name"]; ok {
+		var nameStr string
+		if err := json.Unmarshal(nameRaw, &nameStr); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid name")
+		}
+		name, err := validateName(nameStr, 100)
+		if err != nil {
+			return err
+		}
+		q = q.Set("name = ?", name)
+		hasFields = true
 	}
-	if req.Color != nil {
-		q = q.Set("color = ?", *req.Color)
+	if colorRaw, ok := raw["color"]; ok {
+		var color *string
+		if err := json.Unmarshal(colorRaw, &color); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid color")
+		}
+		q = q.Set("color = ?", color)
+		hasFields = true
+	}
+
+	if !hasFields {
+		return errNoFieldsToUpdate()
 	}
 
 	var tag tagResponse
