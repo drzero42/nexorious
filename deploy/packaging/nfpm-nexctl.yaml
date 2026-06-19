@@ -1,0 +1,20 @@
+name: nexctl
+# amd64 | arm64 — nfpm maps to x86_64/aarch64 for rpm
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${NFPM_VERSION}
+maintainer: Anders Bøgh Bruun <anders@boghbruun.dk>
+description: Nexorious CLI client.
+homepage: https://github.com/drzero42/nexorious
+license: MIT
+
+# nexctl is a pure REST client: a single binary, no systemd unit, env conffile,
+# data dir, maintainer scripts, or postgresql dependency (those are all
+# nexorious server concerns — see deploy/packaging/nfpm.yaml).
+contents:
+  - src: ci-binaries/nexctl-linux-${NFPM_ARCH}
+    dst: /usr/bin/nexctl
+    # ${NFPM_ARCH} in src is only expanded when expand is set.
+    expand: true
+    file_info:
+      mode: 0755

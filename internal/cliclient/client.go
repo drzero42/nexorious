@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -40,20 +41,31 @@ func New(baseURL string) *Client {
 	}
 }
 
+// errorBody decodes both error-body shapes the server emits: Echo's default
+// `{"message":"…"}` and the hand-written handlers' `{"error":"…"}` (backup,
+// admin, settings, notifications). msg() returns whichever is set.
 type errorBody struct {
 	Message string `json:"message"`
+	Error   string `json:"error"`
 }
 
-// httpError decodes an Echo error response (`{"message":"…"}`) into a readable
-// error including the status code.
+func (eb errorBody) msg() string {
+	if eb.Message != "" {
+		return eb.Message
+	}
+	return eb.Error
+}
+
+// httpError decodes an error response (`{"message":…}` or `{"error":…}`) into a
+// readable error including the status code.
 func httpError(resp *http.Response) error {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if err != nil {
 		return fmt.Errorf("server returned %d (failed reading body: %w)", resp.StatusCode, err)
 	}
 	var eb errorBody
-	if json.Unmarshal(body, &eb) == nil && eb.Message != "" {
-		return fmt.Errorf("server returned %d: %s", resp.StatusCode, eb.Message)
+	if json.Unmarshal(body, &eb) == nil && eb.msg() != "" {
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, eb.msg())
 	}
 	return fmt.Errorf("server returned %d", resp.StatusCode)
 }
@@ -301,7 +313,7 @@ func (c *Client) SetupAdmin(username, password string) (*SetupResult, error) {
 		if readErr == nil {
 			var eb errorBody
 			if json.Unmarshal(body, &eb) == nil {
-				res.Message = eb.Message
+				res.Message = eb.msg()
 			}
 		}
 	}
@@ -409,4 +421,613 @@ func (c *Client) MigrationStatus() (state, detail string, err error) {
 		return "", "", fmt.Errorf("decode status response: %w", err)
 	}
 	return out.State, out.Error, nil
+}
+
+// doBearer performs an authenticated JSON request. A non-nil body is JSON-encoded
+// as the request body; on a 2xx response a non-nil out is decoded from the body
+// (skipped for 204). Non-2xx responses become an httpError.
+func (c *Client) doBearer(method, path, key string, body, out any) error {
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("marshal request: %w", err)
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequest(method, c.baseURL+path, rdr)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return httpError(resp)
+	}
+	if out != nil && resp.StatusCode != http.StatusNoContent {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+	}
+	return nil
+}
+
+// IGDBCandidate is one IGDB search hit. UserGameID is non-nil when the game is
+// already in the caller's library.
+type IGDBCandidate struct {
+	IgdbID               int      `json:"igdb_id"`
+	IgdbSlug             string   `json:"igdb_slug"`
+	Title                string   `json:"title"`
+	ReleaseDate          string   `json:"release_date"`
+	CoverArtURL          string   `json:"cover_art_url"`
+	Description          string   `json:"description"`
+	Platforms            []string `json:"platforms"`
+	HowLongToBeatMain    *float64 `json:"howlongtobeat_main"`
+	UserGameID           *string  `json:"user_game_id"`
+	UserGameIsWishlisted *bool    `json:"user_game_is_wishlisted"`
+}
+
+// IGDBSearchResponse is the result of an IGDB search or single-game lookup.
+type IGDBSearchResponse struct {
+	Games []IGDBCandidate `json:"games"`
+	Total int             `json:"total"`
+}
+
+// Game is the minimal local game record returned by igdb-import.
+type Game struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
+
+// SearchIGDB searches the IGDB catalog for the given query (limit 1–50).
+func (c *Client) SearchIGDB(key, query string, limit int) (*IGDBSearchResponse, error) {
+	var out IGDBSearchResponse
+	body := map[string]any{"query": query, "limit": limit}
+	if err := c.doBearer(http.MethodPost, "/api/games/search/igdb", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetIGDBGame fetches a single IGDB game by id (response Total == 1).
+func (c *Client) GetIGDBGame(key string, igdbID int) (*IGDBSearchResponse, error) {
+	var out IGDBSearchResponse
+	if err := c.doBearer(http.MethodGet, fmt.Sprintf("/api/games/igdb/%d", igdbID), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ImportIGDBGame imports IGDB metadata for igdbID into the local DB, returning
+// the local game record.
+func (c *Client) ImportIGDBGame(key string, igdbID int) (*Game, error) {
+	var out Game
+	body := map[string]any{"igdb_id": igdbID, "download_cover_art": true}
+	if err := c.doBearer(http.MethodPost, "/api/games/igdb-import", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GameRef is the minimal game metadata embedded in a user-game (the title source).
+type GameRef struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
+
+// Tag is a user tag.
+type Tag struct {
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Color     *string `json:"color"`
+	GameCount int64   `json:"game_count"`
+}
+
+// UserGamePlatform is one platform row on a user-game.
+type UserGamePlatform struct {
+	ID              string   `json:"id"`
+	Platform        *string  `json:"platform"`
+	Storefront      *string  `json:"storefront"`
+	HoursPlayed     *float64 `json:"hours_played"`
+	OwnershipStatus *string  `json:"ownership_status"`
+}
+
+// UserGame is one collection entry (subset of the API response).
+type UserGame struct {
+	ID             string             `json:"id"`
+	GameID         int                `json:"game_id"`
+	PlayStatus     *string            `json:"play_status"`
+	PersonalRating *int               `json:"personal_rating"`
+	IsLoved        bool               `json:"is_loved"`
+	IsWishlisted   bool               `json:"is_wishlisted"`
+	PersonalNotes  *string            `json:"personal_notes"`
+	Game           *GameRef           `json:"game"`
+	HoursPlayed    float64            `json:"hours_played"`
+	Platforms      []UserGamePlatform `json:"platforms"`
+	Tags           []Tag              `json:"tags"`
+}
+
+// Title returns the game's title, or "" if the relation is absent.
+func (u *UserGame) Title() string {
+	if u.Game == nil {
+		return ""
+	}
+	return u.Game.Title
+}
+
+// UserGameListResponse is the paged list payload.
+type UserGameListResponse struct {
+	UserGames []UserGame `json:"user_games"`
+	Total     int        `json:"total"`
+	Page      int        `json:"page"`
+	PerPage   int        `json:"per_page"`
+	Pages     int        `json:"pages"`
+}
+
+// ListUserGames returns user-games filtered by the given query params.
+func (c *Client) ListUserGames(key string, params url.Values) (*UserGameListResponse, error) {
+	path := "/api/user-games"
+	if enc := params.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var out UserGameListResponse
+	if err := c.doBearer(http.MethodGet, path, key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetUserGame fetches a single user-game by id.
+func (c *Client) GetUserGame(key, id string) (*UserGame, error) {
+	var out UserGame
+	if err := c.doBearer(http.MethodGet, "/api/user-games/"+url.PathEscape(id), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CollectionStats mirrors the GET /api/user-games/stats response.
+type CollectionStats struct {
+	TotalGames       int            `json:"total_games"`
+	CompletionStats  map[string]int `json:"completion_stats"`
+	OwnershipStats   map[string]int `json:"ownership_stats"`
+	PlatformStats    map[string]int `json:"platform_stats"`
+	GenreStats       map[string]int `json:"genre_stats"`
+	PileOfShame      int            `json:"pile_of_shame"`
+	CompletionRate   float64        `json:"completion_rate"`
+	AverageRating    *float64       `json:"average_rating"`
+	TotalHoursPlayed float64        `json:"total_hours_played"`
+}
+
+// GetCollectionStats fetches aggregate collection statistics for the user.
+func (c *Client) GetCollectionStats(key string) (*CollectionStats, error) {
+	var out CollectionStats
+	if err := c.doBearer(http.MethodGet, "/api/user-games/stats", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// PlatformInput is a platform row for create / move-to-library / add-platform.
+type PlatformInput struct {
+	Platform        string   `json:"platform,omitempty"`
+	Storefront      string   `json:"storefront,omitempty"`
+	OwnershipStatus string   `json:"ownership_status,omitempty"`
+	HoursPlayed     *float64 `json:"hours_played,omitempty"`
+}
+
+// CreateUserGameInput is the body for creating a collection entry.
+type CreateUserGameInput struct {
+	GameID         int             `json:"game_id"`
+	PlayStatus     string          `json:"play_status,omitempty"`
+	PersonalRating *int            `json:"personal_rating,omitempty"`
+	IsLoved        bool            `json:"is_loved,omitempty"`
+	PersonalNotes  *string         `json:"personal_notes,omitempty"`
+	IsWishlisted   bool            `json:"is_wishlisted,omitempty"`
+	Platforms      []PlatformInput `json:"platforms,omitempty"`
+}
+
+// CreateUserGame adds a game to the collection.
+func (c *Client) CreateUserGame(key string, in CreateUserGameInput) (*UserGame, error) {
+	var out UserGame
+	if err := c.doBearer(http.MethodPost, "/api/user-games", key, in, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// MoveToLibrary promotes a wishlisted user-game to the library with platforms.
+func (c *Client) MoveToLibrary(key, id string, platforms []PlatformInput) (*UserGame, error) {
+	var out UserGame
+	body := map[string]any{"platforms": platforms}
+	if err := c.doBearer(http.MethodPost, "/api/user-games/"+url.PathEscape(id)+"/move-to-library", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateUserGame applies a partial field update (play_status, personal_rating,
+// is_loved, personal_notes). A nil map value clears the field server-side.
+func (c *Client) UpdateUserGame(key, id string, fields map[string]any) (*UserGame, error) {
+	var out UserGame
+	if err := c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id), key, fields, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateProgress sets play_status via the dedicated progress endpoint.
+func (c *Client) UpdateProgress(key, id, playStatus string) (*UserGame, error) {
+	var out UserGame
+	body := map[string]any{"play_status": playStatus}
+	if err := c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id)+"/progress", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AddPlatform creates a platform row on a user-game.
+func (c *Client) AddPlatform(key, id string, p PlatformInput) error {
+	return c.doBearer(http.MethodPost, "/api/user-games/"+url.PathEscape(id)+"/platforms", key, p, nil)
+}
+
+// UpdatePlatform applies a partial update to one platform row.
+func (c *Client) UpdatePlatform(key, id, platformID string, fields map[string]any) error {
+	return c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id)+"/platforms/"+url.PathEscape(platformID), key, fields, nil)
+}
+
+// DeletePlatform removes a platform row.
+func (c *Client) DeletePlatform(key, id, platformID string) error {
+	return c.doBearer(http.MethodDelete, "/api/user-games/"+url.PathEscape(id)+"/platforms/"+url.PathEscape(platformID), key, nil, nil)
+}
+
+// ReplaceTags sets the complete tag set (by name) on a user-game.
+func (c *Client) ReplaceTags(key, id string, tags []string) (*UserGame, error) {
+	var out UserGame
+	body := map[string]any{"tags": tags}
+	if err := c.doBearer(http.MethodPut, "/api/user-games/"+url.PathEscape(id)+"/tags", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteUserGame removes a user-game.
+func (c *Client) DeleteUserGame(key, id string) error {
+	return c.doBearer(http.MethodDelete, "/api/user-games/"+url.PathEscape(id), key, nil, nil)
+}
+
+// ListTags returns the caller's tags (used to resolve --tag NAME to an id).
+func (c *Client) ListTags(key string) ([]Tag, error) {
+	var out []Tag
+	if err := c.doBearer(http.MethodGet, "/api/tags", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CreateTag creates a tag with an optional color.
+func (c *Client) CreateTag(key, name string, color *string) (*Tag, error) {
+	body := map[string]any{"name": name}
+	if color != nil {
+		body["color"] = *color
+	}
+	var out Tag
+	if err := c.doBearer(http.MethodPost, "/api/tags", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateTag updates a tag's name and/or color (only non-nil fields are sent).
+func (c *Client) UpdateTag(key, id string, name, color *string) (*Tag, error) {
+	body := map[string]any{}
+	if name != nil {
+		body["name"] = *name
+	}
+	if color != nil {
+		body["color"] = *color
+	}
+	var out Tag
+	if err := c.doBearer(http.MethodPut, "/api/tags/"+url.PathEscape(id), key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteTag removes a tag.
+func (c *Client) DeleteTag(key, id string) error {
+	return c.doBearer(http.MethodDelete, "/api/tags/"+url.PathEscape(id), key, nil, nil)
+}
+
+// Pool is a play-planning pool's metadata.
+type Pool struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Color     *string         `json:"color"`
+	Position  int             `json:"position"`
+	Filter    json.RawMessage `json:"filter"`
+	HasFilter bool            `json:"has_filter"`
+}
+
+// PoolListItem is one row of the pool list.
+type PoolListItem struct {
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	Color          *string `json:"color"`
+	Position       int     `json:"position"`
+	HasFilter      bool    `json:"has_filter"`
+	QueueCount     int64   `json:"queue_count"`
+	CandidateCount int64   `json:"candidate_count"`
+}
+
+// PoolDetail is a pool plus its ordered queue and candidate user-games.
+type PoolDetail struct {
+	Pool
+	Queue      []UserGame `json:"queue"`
+	Candidates []UserGame `json:"candidates"`
+}
+
+// ListPools returns the caller's pools ordered by position.
+func (c *Client) ListPools(key string) ([]PoolListItem, error) {
+	var out []PoolListItem
+	if err := c.doBearer(http.MethodGet, "/api/pools", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetPool returns a pool with its queue and candidates.
+func (c *Client) GetPool(key, id string) (*PoolDetail, error) {
+	var out PoolDetail
+	if err := c.doBearer(http.MethodGet, "/api/pools/"+url.PathEscape(id), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreatePool creates a pool with optional color and filter (raw JSON, server-validated).
+func (c *Client) CreatePool(key, name string, color *string, filter json.RawMessage) (*Pool, error) {
+	body := map[string]any{"name": name}
+	if color != nil {
+		body["color"] = *color
+	}
+	if filter != nil {
+		body["filter"] = filter
+	}
+	var out Pool
+	if err := c.doBearer(http.MethodPost, "/api/pools", key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdatePool applies a partial update (name/color/filter).
+func (c *Client) UpdatePool(key, id string, fields map[string]any) (*Pool, error) {
+	var out Pool
+	if err := c.doBearer(http.MethodPut, "/api/pools/"+url.PathEscape(id), key, fields, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeletePool removes a pool.
+func (c *Client) DeletePool(key, id string) error {
+	return c.doBearer(http.MethodDelete, "/api/pools/"+url.PathEscape(id), key, nil, nil)
+}
+
+// AddPoolGame adds one game (as a candidate) to a pool.
+func (c *Client) AddPoolGame(key, poolID, userGameID string) error {
+	body := map[string]any{"user_game_id": userGameID}
+	return c.doBearer(http.MethodPost, "/api/pools/"+url.PathEscape(poolID)+"/games", key, body, nil)
+}
+
+// BulkAddPoolGames adds multiple games (as candidates); returns the count newly inserted.
+func (c *Client) BulkAddPoolGames(key, poolID string, userGameIDs []string) (int64, error) {
+	body := map[string]any{"user_game_ids": userGameIDs}
+	var out struct {
+		Added int64 `json:"added"`
+	}
+	if err := c.doBearer(http.MethodPost, "/api/pools/"+url.PathEscape(poolID)+"/games/bulk", key, body, &out); err != nil {
+		return 0, err
+	}
+	return out.Added, nil
+}
+
+// RemovePoolGame removes a game from a pool.
+func (c *Client) RemovePoolGame(key, poolID, userGameID string) error {
+	return c.doBearer(http.MethodDelete, "/api/pools/"+url.PathEscape(poolID)+"/games/"+url.PathEscape(userGameID), key, nil, nil)
+}
+
+// SetQueue declaratively sets the pool's ordered queue (ids must already be members;
+// an empty slice clears the queue). Members not listed become candidates.
+func (c *Client) SetQueue(key, poolID string, userGameIDs []string) error {
+	body := map[string]any{"ids": userGameIDs}
+	return c.doBearer(http.MethodPut, "/api/pools/"+url.PathEscape(poolID)+"/queue", key, body, nil)
+}
+
+// ReorderPools sets pool positions by the given order.
+func (c *Client) ReorderPools(key string, poolIDs []string) error {
+	body := map[string]any{"ids": poolIDs}
+	return c.doBearer(http.MethodPost, "/api/pools/reorder", key, body, nil)
+}
+
+// SyncConfig is the per-storefront sync configuration returned by
+// GET /api/sync/config and GET/PUT /api/sync/config/:storefront.
+type SyncConfig struct {
+	ID           string  `json:"id"`
+	Storefront   string  `json:"storefront"`
+	Frequency    string  `json:"frequency"`
+	LastSyncedAt *string `json:"last_synced_at"`
+	IsConfigured bool    `json:"is_configured"`
+	CreatedAt    string  `json:"created_at"`
+	UpdatedAt    string  `json:"updated_at"`
+}
+
+// SyncStatus is the real-time sync state for a single storefront, returned by
+// GET /api/sync/:storefront/status.
+type SyncStatus struct {
+	Storefront        string  `json:"storefront"`
+	IsSyncing         bool    `json:"is_syncing"`
+	LastSyncedAt      *string `json:"last_synced_at"`
+	ActiveJobID       *string `json:"active_job_id"`
+	ExternalGameCount int     `json:"external_game_count"`
+}
+
+// SyncTriggerResult is the response from POST /api/sync/:storefront.
+type SyncTriggerResult struct {
+	Message    string `json:"message"`
+	JobID      string `json:"job_id"`
+	Storefront string `json:"storefront"`
+	Status     string `json:"status"`
+}
+
+// ListSyncConfigs returns the sync configuration for all storefronts.
+// The response envelope is {"configs":[...],"total":N}; only the slice is returned.
+func (c *Client) ListSyncConfigs(key string) ([]SyncConfig, error) {
+	var env struct {
+		Configs []SyncConfig `json:"configs"`
+		Total   int          `json:"total"`
+	}
+	if err := c.doBearer(http.MethodGet, "/api/sync/config", key, nil, &env); err != nil {
+		return nil, err
+	}
+	return env.Configs, nil
+}
+
+// GetSyncConfig returns the sync configuration for a single storefront.
+func (c *Client) GetSyncConfig(key, storefront string) (*SyncConfig, error) {
+	var out SyncConfig
+	if err := c.doBearer(http.MethodGet, "/api/sync/config/"+url.PathEscape(storefront), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UpdateSyncConfig sets the sync frequency for a storefront and returns the
+// updated configuration.
+func (c *Client) UpdateSyncConfig(key, storefront, frequency string) (*SyncConfig, error) {
+	var out SyncConfig
+	body := map[string]string{"frequency": frequency}
+	if err := c.doBearer(http.MethodPut, "/api/sync/config/"+url.PathEscape(storefront), key, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetSyncStatus returns the real-time sync state for a storefront.
+func (c *Client) GetSyncStatus(key, storefront string) (*SyncStatus, error) {
+	var out SyncStatus
+	if err := c.doBearer(http.MethodGet, "/api/sync/"+url.PathEscape(storefront)+"/status", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// TriggerSync starts a sync job for the given storefront.
+func (c *Client) TriggerSync(key, storefront string) (*SyncTriggerResult, error) {
+	var out SyncTriggerResult
+	if err := c.doBearer(http.MethodPost, "/api/sync/"+url.PathEscape(storefront), key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ConnectStorefront configures the connection credentials for a storefront.
+// The response shape varies per storefront, so it is returned as a raw map.
+func (c *Client) ConnectStorefront(key, storefront string, body map[string]string) (map[string]any, error) {
+	var out map[string]any
+	if err := c.doBearer(http.MethodPut, "/api/sync/"+url.PathEscape(storefront)+"/connection", key, body, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DisconnectStorefront removes the connection credentials for a storefront.
+func (c *Client) DisconnectStorefront(key, storefront string) error {
+	return c.doBearer(http.MethodDelete, "/api/sync/"+url.PathEscape(storefront)+"/connection", key, nil, nil)
+}
+
+// ResetSyncData deletes all synced data for a storefront.
+func (c *Client) ResetSyncData(key, storefront string) error {
+	return c.doBearer(http.MethodDelete, "/api/sync/"+url.PathEscape(storefront)+"/data", key, nil, nil)
+}
+
+// FilterOptions mirrors the GET /api/user-games/filter-options response: the
+// distinct facet values present in the caller's library.
+type FilterOptions struct {
+	Genres             []string `json:"genres"`
+	GameModes          []string `json:"game_modes"`
+	Themes             []string `json:"themes"`
+	PlayerPerspectives []string `json:"player_perspectives"`
+}
+
+// GetFilterOptions fetches the distinct genre/game-mode/theme/perspective values
+// present in the caller's library, for filter discovery.
+func (c *Client) GetFilterOptions(key string) (*FilterOptions, error) {
+	var out FilterOptions
+	if err := c.doBearer(http.MethodGet, "/api/user-games/filter-options", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Storefront is one entry from GET /api/platforms/storefronts/simple-list.
+type Storefront struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+}
+
+// ListStorefronts returns the storefronts seeded on the server (name + display
+// name), the valid values for the --storefront filter.
+func (c *Client) ListStorefronts(key string) ([]Storefront, error) {
+	var out []Storefront
+	if err := c.doBearer(http.MethodGet, "/api/platforms/storefronts/simple-list", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SimplePlatform is one entry from GET /api/platforms/simple-list.
+type SimplePlatform struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+}
+
+// ListPlatforms returns the platforms seeded on the server (name + display
+// name), the valid values for a platform slug (e.g. on game add/edit/acquire).
+func (c *Client) ListPlatforms(key string) ([]SimplePlatform, error) {
+	var out []SimplePlatform
+	if err := c.doBearer(http.MethodGet, "/api/platforms/simple-list", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ExternalGame is one external game entry as returned by
+// GET /api/sync/:storefront/external-games.
+type ExternalGame struct {
+	ID                         string   `json:"id"`
+	Storefront                 string   `json:"storefront"`
+	ExternalID                 string   `json:"external_id"`
+	Title                      string   `json:"title"`
+	ResolvedIgdbID             *int     `json:"resolved_igdb_id"`
+	IgdbTitle                  *string  `json:"igdb_title"`
+	IsSkipped                  bool     `json:"is_skipped"`
+	IsAvailable                bool     `json:"is_available"`
+	IsSubscription             bool     `json:"is_subscription"`
+	HasUserGame                bool     `json:"has_user_game"`
+	UserGameID                 *string  `json:"user_game_id"`
+	UserGameOtherPlatformCount int      `json:"user_game_other_platform_count"`
+	SyncStatus                 string   `json:"sync_status"`
+	FailedJobItemID            *string  `json:"failed_job_item_id"`
+	Platforms                  []string `json:"platforms"`
 }

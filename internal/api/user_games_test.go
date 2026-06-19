@@ -92,6 +92,11 @@ func TestCreateUserGame(t *testing.T) {
 		if rec.Code != http.StatusConflict {
 			t.Fatalf("expected 409 for duplicate, got %d: %s", rec.Code, rec.Body.String())
 		}
+		var errResp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &errResp)
+		if msg, _ := errResp["message"].(string); msg != "game already in collection" {
+			t.Fatalf("want message %q, got %q", "game already in collection", msg)
+		}
 	})
 
 	t.Run("invalid game_id", func(t *testing.T) {
@@ -292,6 +297,47 @@ func TestUpdateUserGame(t *testing.T) {
 		}
 	})
 
+	t.Run("personal_notes string value", func(t *testing.T) {
+		rec := putJSONAuth(t, e, "/api/user-games/ug-upd-1", map[string]any{"personal_notes": "my notes"}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var notes *string
+		_ = testDB.QueryRowContext(context.Background(),
+			"SELECT personal_notes FROM user_games WHERE id = 'ug-upd-1'").Scan(&notes)
+		if notes == nil || *notes != "my notes" {
+			t.Fatalf("expected personal_notes='my notes', got %v", notes)
+		}
+	})
+
+	t.Run("personal_notes null clears to NULL", func(t *testing.T) {
+		// Ensure a non-null value exists first.
+		putJSONAuth(t, e, "/api/user-games/ug-upd-1", map[string]any{"personal_notes": "to be cleared"}, token)
+		rec := putJSONAuth(t, e, "/api/user-games/ug-upd-1", map[string]any{"personal_notes": nil}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var notes *string
+		_ = testDB.QueryRowContext(context.Background(),
+			"SELECT personal_notes FROM user_games WHERE id = 'ug-upd-1'").Scan(&notes)
+		if notes != nil {
+			t.Fatalf("expected personal_notes=NULL in DB, got %q", *notes)
+		}
+	})
+
+	t.Run("personal_notes omitted leaves unchanged", func(t *testing.T) {
+		// Set a known value.
+		putJSONAuth(t, e, "/api/user-games/ug-upd-1", map[string]any{"personal_notes": "keep me"}, token)
+		// Update something else without mentioning personal_notes.
+		putJSONAuth(t, e, "/api/user-games/ug-upd-1", map[string]any{"is_loved": false}, token)
+		var notes *string
+		_ = testDB.QueryRowContext(context.Background(),
+			"SELECT personal_notes FROM user_games WHERE id = 'ug-upd-1'").Scan(&notes)
+		if notes == nil || *notes != "keep me" {
+			t.Fatalf("expected personal_notes unchanged='keep me', got %v", notes)
+		}
+	})
+
 	t.Run("invalid play_status", func(t *testing.T) {
 		rec := putJSONAuth(t, e, "/api/user-games/ug-upd-1", map[string]any{"play_status": "invalid"}, token)
 		if rec.Code != http.StatusBadRequest {
@@ -417,6 +463,56 @@ func TestHandleGetUserGame_StoreURL(t *testing.T) {
 	const wantURL = "https://store.steampowered.com/app/440/"
 	if storeURL != wantURL {
 		t.Fatalf("expected store_url=%q, got %q", wantURL, storeURL)
+	}
+}
+
+// TestHandleGetUserGame_TagsFlattened pins the API contract that GET
+// /api/user-games/:id serializes "tags" as a flat array of tag DTOs
+// ({id,name,color}), not as raw user_game_tags join rows. The detail page and
+// edit form read tag fields off each element directly, so a regression to the
+// join-row shape (where the element id is the join-row id and name/color are
+// absent) would silently break both. See #1064.
+func TestHandleGetUserGame_TagsFlattened(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+	userID, token := setupUserGamesUser(t, testDB, e, "tags-flat")
+	gameID := insertTestGame(t, testDB, "Tagged Game")
+	insertTestUserGame(t, testDB, "ug-tags-1", userID, int(gameID))
+
+	color := "#FF8800"
+	insertTag(t, testDB, "tag-flat-1", userID, "RPG", &color)
+	// The join-row id is deliberately different from the tag id so a regression
+	// to the join-row shape would surface as a wrong "id".
+	insertUserGameTag(t, testDB, "ugt-flat-1", "ug-tags-1", "tag-flat-1")
+
+	rec := getAuth(t, e, "/api/user-games/ug-tags-1", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	tags, ok := resp["tags"].([]any)
+	if !ok || len(tags) != 1 {
+		t.Fatalf("expected 1 tag, got: %v", resp["tags"])
+	}
+	tag := tags[0].(map[string]any)
+	if tag["id"] != "tag-flat-1" {
+		t.Fatalf("expected tag id %q (the tag, not the join row), got %q", "tag-flat-1", tag["id"])
+	}
+	if tag["name"] != "RPG" {
+		t.Fatalf("expected tag name %q, got %v", "RPG", tag["name"])
+	}
+	if tag["color"] != color {
+		t.Fatalf("expected tag color %q, got %v", color, tag["color"])
+	}
+	// The join-row internals must not leak.
+	if _, leaked := tag["tag_id"]; leaked {
+		t.Fatalf("join-row field tag_id leaked into the tags DTO: %v", tag)
 	}
 }
 
@@ -650,11 +746,8 @@ func TestBulkUpdate(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		rec := putJSONAuth(t, e, "/api/user-games/bulk-update", map[string]any{
-			"ids": []string{"ug-bu-1", "ug-bu-2"},
-			"updates": map[string]any{
-				"play_status": "completed",
-				"is_loved":    true,
-			},
+			"ids":     []string{"ug-bu-1", "ug-bu-2"},
+			"updates": map[string]any{"play_status": "completed"},
 		}, token)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -670,7 +763,7 @@ func TestBulkUpdate(t *testing.T) {
 	t.Run("empty ids", func(t *testing.T) {
 		rec := putJSONAuth(t, e, "/api/user-games/bulk-update", map[string]any{
 			"ids":     []string{},
-			"updates": map[string]any{"is_loved": true},
+			"updates": map[string]any{"play_status": "completed"},
 		}, token)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
@@ -691,7 +784,7 @@ func TestBulkUpdate(t *testing.T) {
 		_, token2 := setupUserGamesUser(t, testDB, e, "bulk-upd-other")
 		rec := putJSONAuth(t, e, "/api/user-games/bulk-update", map[string]any{
 			"ids":     []string{"ug-bu-1", "ug-bu-2"},
-			"updates": map[string]any{"is_loved": false},
+			"updates": map[string]any{"play_status": "in_progress"},
 		}, token2)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -861,6 +954,11 @@ func TestPlatformCRUD(t *testing.T) {
 		}, token)
 		if rec.Code != http.StatusConflict {
 			t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var errResp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &errResp)
+		if msg, _ := errResp["message"].(string); msg != "platform already exists" {
+			t.Fatalf("want message %q, got %q", "platform already exists", msg)
 		}
 	})
 

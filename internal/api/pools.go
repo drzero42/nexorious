@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +14,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/db"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/filter"
 )
@@ -100,13 +100,11 @@ func (h *PoolsHandler) HandleCreatePool(c *echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+	name, err := validateName(req.Name, 100)
+	if err != nil {
+		return err
 	}
-	if len(req.Name) > 100 {
-		return echo.NewHTTPError(http.StatusBadRequest, "name must be 100 characters or less")
-	}
+	req.Name = name
 
 	normFilter, err := normalizePoolFilter(req.Filter)
 	if err != nil {
@@ -125,7 +123,7 @@ func (h *PoolsHandler) HandleCreatePool(c *echo.Context) error {
 		id, userID, req.Name, req.Color, userID, normFilter, now, now,
 	).Scan(ctx, &pool)
 	if err != nil {
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "pool name already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create pool")
@@ -150,60 +148,54 @@ func (h *PoolsHandler) HandleUpdatePool(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	setClauses := []string{"updated_at = ?"}
-	args := []any{time.Now().UTC()}
+	q := h.db.NewUpdate().
+		TableExpr("pools").
+		Set("updated_at = ?", time.Now().UTC())
+	hasFields := false
 
 	if nameRaw, ok := raw["name"]; ok {
-		var name string
-		if err := json.Unmarshal(nameRaw, &name); err != nil {
+		var nameStr string
+		if err := json.Unmarshal(nameRaw, &nameStr); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid name")
 		}
-		name = strings.TrimSpace(name)
-		if name == "" {
-			return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+		name, err := validateName(nameStr, 100)
+		if err != nil {
+			return err
 		}
-		if len(name) > 100 {
-			return echo.NewHTTPError(http.StatusBadRequest, "name must be 100 characters or less")
-		}
-		setClauses = append(setClauses, "name = ?")
-		args = append(args, name)
+		q = q.Set("name = ?", name)
+		hasFields = true
 	}
 	if colorRaw, ok := raw["color"]; ok {
 		var color *string
 		if err := json.Unmarshal(colorRaw, &color); err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid color")
 		}
-		setClauses = append(setClauses, "color = ?")
-		args = append(args, color)
+		q = q.Set("color = ?", color)
+		hasFields = true
 	}
 	if filterRaw, ok := raw["filter"]; ok {
 		normFilter, err := normalizePoolFilter(filterRaw)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
-		setClauses = append(setClauses, "filter = ?")
-		args = append(args, normFilter)
+		q = q.Set("filter = ?", normFilter)
+		hasFields = true
 	}
 
-	if len(setClauses) == 1 {
+	if !hasFields {
 		return echo.NewHTTPError(http.StatusBadRequest, "no fields to update")
 	}
 
-	args = append(args, poolID, userID)
-	query := fmt.Sprintf(`
-		UPDATE pools SET %s
-		WHERE id = ? AND user_id = ?
-		RETURNING id, user_id, name, color, position, filter, created_at, updated_at`,
-		strings.Join(setClauses, ", "),
-	)
-
 	var pool poolResponse
-	err := h.db.NewRaw(query, args...).Scan(context.Background(), &pool)
+	err := q.
+		Where("id = ? AND user_id = ?", poolID, userID).
+		Returning("id, user_id, name, color, position, filter, created_at, updated_at").
+		Scan(context.Background(), &pool)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
 		}
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "pool name already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update pool")

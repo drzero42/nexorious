@@ -84,6 +84,12 @@ jobs:
               -o "ci-binaries/nexorious-linux-${arch}" ./cmd/nexorious
             cp "ci-binaries/nexorious-linux-${arch}" \
                "dist/nexorious_${PKG_VERSION}_linux_${arch}"
+            # nexctl: the standalone REST client, shipped as its own asset.
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+              -o "ci-binaries/nexctl-linux-${arch}" ./cmd/nexctl
+            cp "ci-binaries/nexctl-linux-${arch}" \
+               "dist/nexctl_${PKG_VERSION}_linux_${arch}"
           done
 
       - name: Build packages (deb + rpm × amd64, arm64)
@@ -94,6 +100,8 @@ jobs:
           for arch in amd64 arm64; do
             NFPM_ARCH="$arch" nfpm package -f deploy/packaging/nfpm.yaml -p deb -t dist/
             NFPM_ARCH="$arch" nfpm package -f deploy/packaging/nfpm.yaml -p rpm -t dist/
+            NFPM_ARCH="$arch" nfpm package -f deploy/packaging/nfpm-nexctl.yaml -p deb -t dist/
+            NFPM_ARCH="$arch" nfpm package -f deploy/packaging/nfpm-nexctl.yaml -p rpm -t dist/
           done
 
       - name: Generate source SBOM (Go + npm)
@@ -105,13 +113,15 @@ jobs:
           upload-artifact: false
 
       - name: Checksums over all artifacts
-        run: cd dist && sha256sum nexorious* > sha256sums.txt
+        run: cd dist && sha256sum nexorious* nexctl* > sha256sums.txt
 
       - name: Attest build provenance (binaries, packages, source SBOM)
         if: github.event_name == 'release'
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: 'dist/nexorious*'
+          subject-path: |
+            dist/nexorious*
+            dist/nexctl*
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v7
@@ -173,6 +183,55 @@ jobs:
             rpm-arm64) PKG=$(ls dist/nexorious-*.aarch64.rpm) ;;
           esac
           bash deploy/packaging/smoke-test.sh "${{ matrix.pkg }}" "$PKG"
+
+  smoke-test-nexctl:
+    name: Smoke nexctl ${{ matrix.pkg }} on ${{ matrix.image }} (${{ matrix.arch }})
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-latest,    image: 'debian:13',    pkg: deb, arch: amd64}
+          - {runner: ubuntu-latest,    image: 'rockylinux/rockylinux:10', pkg: rpm, arch: amd64}
+          - {runner: ubuntu-24.04-arm, image: 'debian:13',    pkg: deb, arch: arm64}
+          - {runner: ubuntu-24.04-arm, image: 'rockylinux/rockylinux:10', pkg: rpm, arch: arm64}
+    steps:
+      - name: Install base tools
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update && apt-get install -y git ca-certificates curl
+          else
+            # --allowerasing: Rocky 9 ships curl-minimal, which conflicts with
+            # the full curl package; let dnf swap it rather than abort.
+            dnf install -y --allowerasing git ca-certificates curl
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: >-
+            ${{ github.event_name == 'release'
+                && github.event.release.tag_name || github.sha }}
+
+      - name: Download dist artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+
+      - name: Run smoke test
+        run: |
+          set -euo pipefail
+          case "${{ matrix.pkg }}-${{ matrix.arch }}" in
+            deb-amd64) PKG=$(ls dist/nexctl_*_amd64.deb) ;;
+            deb-arm64) PKG=$(ls dist/nexctl_*_arm64.deb) ;;
+            rpm-amd64) PKG=$(ls dist/nexctl-*.x86_64.rpm) ;;
+            rpm-arm64) PKG=$(ls dist/nexctl-*.aarch64.rpm) ;;
+          esac
+          bash deploy/packaging/smoke-test-nexctl.sh "${{ matrix.pkg }}" "$PKG"
 
   image:
     name: Container image
@@ -291,7 +350,7 @@ jobs:
 
   upload:
     name: Upload release assets
-    needs: smoke-test
+    needs: [smoke-test, smoke-test-nexctl]
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:

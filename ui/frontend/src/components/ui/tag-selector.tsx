@@ -23,7 +23,7 @@ import type { Tag } from '@/types';
 // imported, or inline-created). The API returns color: null for these, so the
 // render sites below must never assume a hex string is present. Matches the
 // default used by the tag-management UI.
-const DEFAULT_TAG_COLOR = '#6B7280';
+export const DEFAULT_TAG_COLOR = '#6B7280';
 
 /**
  * Calculate appropriate text color based on background luminance.
@@ -51,7 +51,7 @@ interface TagBadgeProps {
   className?: string;
 }
 
-function TagBadge({ tag, onRemove, size = 'md', className }: TagBadgeProps) {
+export function TagBadge({ tag, onRemove, size = 'md', className }: TagBadgeProps) {
   const bgColor = tag.color ?? DEFAULT_TAG_COLOR;
   const textColor = getTextColor(bgColor);
   const sizeClasses = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-2.5 py-1';

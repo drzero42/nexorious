@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/uptrace/bun"
 
@@ -105,6 +104,7 @@ type userGameWithPlatformsResponse struct {
 	models.UserGame
 	HoursPlayed    float64                    `json:"hours_played"`
 	Platforms      []userGamePlatformResponse `json:"platforms"`
+	Tags           []tagResponse              `json:"tags"`
 	PoolMembership *string                    `json:"pool_membership,omitempty"`
 }
 
@@ -120,6 +120,14 @@ func toUserGameWithPlatformsResponse(ug models.UserGame) userGameWithPlatformsRe
 	resp.HoursPlayed = totalHours
 	if resp.Platforms == nil {
 		resp.Platforms = []userGamePlatformResponse{}
+	}
+	// Flatten the user_game_tags join rows into their nested Tag DTOs so the
+	// client receives a plain []tagResponse rather than join-table internals.
+	resp.Tags = make([]tagResponse, 0, len(ug.Tags))
+	for _, link := range ug.Tags {
+		if link.Tag != nil {
+			resp.Tags = append(resp.Tags, toTagResponse(*link.Tag))
+		}
 	}
 	return resp
 }
@@ -384,6 +392,22 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	})
 }
 
+// httpError maps a usergame operation error to an echo HTTP error, preserving
+// the existing status codes. Unmapped errors become 500 and are logged.
+func (h *UserGamesHandler) httpError(c *echo.Context, err error) error {
+	switch {
+	case errors.Is(err, usergame.ErrNotFound):
+		return echo.NewHTTPError(http.StatusNotFound, "user game not found")
+	case errors.Is(err, usergame.ErrConflict):
+		return echo.NewHTTPError(http.StatusConflict, strings.TrimSuffix(err.Error(), ": conflict"))
+	case errors.Is(err, usergame.ErrValidation):
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	default:
+		slog.ErrorContext(c.Request().Context(), "user_games: operation failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	}
+}
+
 // HandleCreateUserGame handles POST /api/user-games.
 func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
@@ -420,73 +444,44 @@ func (h *UserGamesHandler) HandleCreateUserGame(c *echo.Context) error {
 		}
 	}
 
-	now := time.Now().UTC()
-	ug := &models.UserGame{
-		ID:             uuid.NewString(),
+	// Map request platforms → usergame.PlatformInput, validating each entry.
+	plats := make([]usergame.PlatformInput, 0, len(req.Platforms))
+	for _, p := range req.Platforms {
+		if p.OwnershipStatus != nil && *p.OwnershipStatus != "" && !enum.OwnershipStatus(*p.OwnershipStatus).Valid() {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+*p.OwnershipStatus)
+		}
+		var acquired *time.Time
+		if p.AcquiredDate != nil && *p.AcquiredDate != "" {
+			a, err := parseAcquiredDate(*p.AcquiredDate)
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+			}
+			acquired = a
+		}
+		plats = append(plats, usergame.PlatformInput{
+			Platform: p.Platform, Storefront: p.Storefront, HoursPlayed: p.HoursPlayed,
+			OwnershipStatus: p.OwnershipStatus, IsAvailable: p.IsAvailable, AcquiredDate: acquired,
+		})
+	}
+
+	res, err := usergame.Acquire(ctx, h.db, usergame.AcquireParams{
 		UserID:         userID,
 		GameID:         req.GameID,
+		Mode:           usergame.ModeCreate,
+		Platforms:      plats,
 		PlayStatus:     req.PlayStatus,
 		PersonalRating: req.PersonalRating,
 		IsLoved:        req.IsLoved,
 		PersonalNotes:  req.PersonalNotes,
 		IsWishlisted:   req.IsWishlisted,
-		CreatedAt:      now,
-		UpdatedAt:      now,
-	}
-
-	_, err = h.db.NewInsert().Model(ug).Exec(ctx)
+	})
 	if err != nil {
-		if isDuplicateKeyError(err) {
-			return echo.NewHTTPError(http.StatusConflict, "game already in collection")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
 
-	if len(req.Platforms) > 0 {
-		plats := make([]*models.UserGamePlatform, len(req.Platforms))
-		for i, p := range req.Platforms {
-			if p.OwnershipStatus != nil && *p.OwnershipStatus != "" {
-				if !enum.OwnershipStatus(*p.OwnershipStatus).Valid() {
-					return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+*p.OwnershipStatus)
-				}
-			}
-			pl := &models.UserGamePlatform{
-				ID:              uuid.New().String(),
-				UserGameID:      ug.ID,
-				Platform:        p.Platform,
-				Storefront:      p.Storefront,
-				HoursPlayed:     p.HoursPlayed,
-				OwnershipStatus: p.OwnershipStatus,
-				CreatedAt:       now,
-				UpdatedAt:       now,
-			}
-			if p.IsAvailable != nil {
-				pl.IsAvailable = *p.IsAvailable
-			} else {
-				pl.IsAvailable = true
-			}
-			if p.AcquiredDate != nil && *p.AcquiredDate != "" {
-				acquired, err := parseAcquiredDate(*p.AcquiredDate)
-				if err != nil {
-					return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-				}
-				pl.AcquiredDate = acquired
-			}
-			plats[i] = pl
-		}
-		if _, err := h.db.NewInsert().Model(&plats).Exec(ctx); err != nil {
-			slog.ErrorContext(c.Request().Context(), "user_games: failed to insert platforms on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
-			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-		}
-		if err := usergame.ClearWishlistOnAcquire(ctx, h.db, ug.ID); err != nil {
-			slog.ErrorContext(c.Request().Context(), "user_games: clear wishlist on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
-		}
-		if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, ug.ID); err != nil {
-			slog.ErrorContext(c.Request().Context(), "user_games: auto-promote play_status on create", logging.KeyErr, err, "user_game_id", ug.ID, logging.Cat(logging.CategoryDB))
-		}
-	}
-
-	// Eager-load relations so the response includes the game, platforms and tags.
+	// Re-select the user game with all relations for the response.
+	ug := &models.UserGame{}
+	ug.ID = res.UserGameID
 	if err := h.db.NewSelect().Model(ug).
 		Where("user_game.id = ?", ug.ID).
 		Relation("Game").
@@ -594,54 +589,51 @@ func (h *UserGamesHandler) HandleUpdateUserGame(c *echo.Context) error {
 
 	ctx := context.Background()
 
-	// Build dynamic SET clause. Column names match the bun struct tags.
-	colMap := map[string]string{
-		"play_status":     "play_status",
-		"personal_rating": "personal_rating",
-		"is_loved":        "is_loved",
-		"personal_notes":  "personal_notes",
+	// Map allowed JSON keys onto UpdateFieldsParams.
+	p := usergame.UpdateFieldsParams{UserID: userID, UserGameID: id}
+	if v, ok := body["play_status"]; ok {
+		if v == nil {
+			s := ""
+			p.PlayStatus = &s
+		} else {
+			s := v.(string)
+			p.PlayStatus = &s
+		}
+	}
+	if v, ok := body["personal_notes"]; ok {
+		if v == nil {
+			p.ClearPersonalNotes = true
+		} else {
+			s := v.(string)
+			p.PersonalNotes = &s
+		}
+	}
+	if v, ok := body["personal_rating"]; ok {
+		if v == nil {
+			p.ClearPersonalRating = true
+		} else {
+			r := int32(v.(float64))
+			p.PersonalRating = &r
+		}
+	}
+	if v, ok := body["is_loved"]; ok {
+		if v == nil {
+			b := false
+			p.IsLoved = &b
+		} else {
+			b := v.(bool)
+			p.IsLoved = &b
+		}
 	}
 
-	setClauses := []string{"updated_at = NOW()"}
-	args := []any{}
-	for k, v := range body {
-		col := colMap[k]
-		setClauses = append(setClauses, fmt.Sprintf("%s = ?", col))
-		args = append(args, v)
-	}
-
-	query := fmt.Sprintf(
-		`UPDATE user_games SET %s WHERE id = ? AND user_id = ?
-		 RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, created_at, updated_at`,
-		strings.Join(setClauses, ", "),
-	)
-	args = append(args, id, userID)
-
-	_, statusChanged := body["play_status"]
-
-	var ug models.UserGame
-	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if scanErr := tx.NewRaw(query, args...).Scan(ctx, &ug); scanErr != nil {
-			return scanErr
-		}
-		if statusChanged {
-			// The UPDATE above is applied within this txn, so the helper's
-			// EXISTS guard sees the new play_status. Removes from every pool
-			// if the new status is finished; no-op otherwise.
-			return usergame.RemoveFromPoolsIfFinished(ctx, tx, ug.ID)
-		}
-		return nil
-	})
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "user game not found")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+	if err := usergame.UpdateFields(ctx, h.db, p); err != nil {
+		return h.httpError(c, err)
 	}
 
 	// Eager-load relations for the response.
+	var ug models.UserGame
 	if err := h.db.NewSelect().Model(&ug).
-		Where("user_game.id = ?", ug.ID).
+		Where("user_game.id = ?", id).
 		Relation("Game").
 		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
 			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
@@ -666,18 +658,8 @@ func (h *UserGamesHandler) HandleDeleteUserGame(c *echo.Context) error {
 	id := c.Param("id")
 	ctx := context.Background()
 
-	res, err := h.db.NewDelete().
-		Model((*models.UserGame)(nil)).
-		Where("user_game.id = ?", id).
-		Where("user_game.user_id = ?", userID).
-		Exec(ctx)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-	}
-
-	rows, err := res.RowsAffected()
-	if err != nil || rows == 0 {
-		return echo.NewHTTPError(http.StatusNotFound, "user game not found")
+	if err := usergame.Delete(ctx, h.db, usergame.DeleteParams{UserID: userID, UserGameID: id}); err != nil {
+		return h.httpError(c, err)
 	}
 
 	return c.NoContent(http.StatusNoContent)
@@ -727,15 +709,12 @@ func (h *UserGamesHandler) HandleReplaceTags(c *echo.Context) error {
 			return existsErr
 		}
 		if !exists {
-			return sql.ErrNoRows
+			return usergame.ErrNotFound
 		}
 		return usergame.ReplaceTags(ctx, tx, id, userID, names)
 	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "user game not found")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
 
 	var ug models.UserGame
@@ -779,17 +758,27 @@ func (h *UserGamesHandler) HandleUpdateProgress(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid play_status")
 	}
 
-	args := []any{time.Now().UTC(), *req.PlayStatus, id, userID}
-
-	query := `UPDATE user_games SET updated_at = ?, play_status = ? WHERE id = ? AND user_id = ? RETURNING id, user_id, game_id, play_status, personal_rating, is_loved, personal_notes, created_at, updated_at`
-
 	ctx := context.Background()
+	if err := usergame.RecordProgress(ctx, h.db, usergame.ProgressParams{
+		UserID:     userID,
+		UserGameID: id,
+		PlayStatus: *req.PlayStatus,
+	}); err != nil {
+		return h.httpError(c, err)
+	}
+
+	// Eager-load relations for the response.
 	var ug models.UserGame
-	err := h.db.NewRaw(query, args...).Scan(ctx, &ug)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "user game not found")
-		}
+	if err := h.db.NewSelect().Model(&ug).
+		Where("user_game.id = ?", id).
+		Relation("Game").
+		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
+		}).
+		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.Relation("Tag")
+		}).
+		Scan(ctx); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
 
@@ -815,66 +804,26 @@ func (h *UserGamesHandler) HandleBulkUpdate(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "updates must not be empty")
 	}
 
-	allowedFields := map[string]string{
-		"play_status":     "play_status",
-		"is_loved":        "is_loved",
-		"personal_rating": "personal_rating",
+	ps, ok := req.Updates["play_status"]
+	if !ok {
+		return echo.NewHTTPError(http.StatusBadRequest, "updates must include play_status")
 	}
-
-	var setClauses []string
-	args := []any{time.Now().UTC()}
-
-	for key, val := range req.Updates {
-		col, ok := allowedFields[key]
-		if !ok {
-			return echo.NewHTTPError(http.StatusBadRequest, "unknown update field: "+key)
-		}
-		if key == "play_status" {
-			ps, ok := val.(string)
-			if !ok {
-				return echo.NewHTTPError(http.StatusBadRequest, "play_status must be a string")
-			}
-			if !enum.PlayStatus(ps).Valid() {
-				return echo.NewHTTPError(http.StatusBadRequest, "invalid play_status")
-			}
-		}
-		setClauses = append(setClauses, col+" = ?")
-		args = append(args, val)
+	psStr, ok := ps.(string)
+	if !ok {
+		return echo.NewHTTPError(http.StatusBadRequest, "play_status must be a string")
 	}
-
-	// append WHERE args: list of IDs, then userID
-	args = append(args, bun.List(req.IDs), userID)
-
-	query := fmt.Sprintf(
-		`UPDATE user_games SET updated_at = ?, %s WHERE id IN (?) AND user_id = ?`,
-		strings.Join(setClauses, ", "),
-	)
 
 	ctx := context.Background()
-	var rowsAffected int64
-	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		res, err := tx.ExecContext(ctx, query, args...)
-		if err != nil {
-			return err
-		}
-		rowsAffected, err = res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if _, ok := req.Updates["play_status"]; ok {
-			for _, id := range req.IDs {
-				if hookErr := usergame.RemoveFromPoolsIfFinished(ctx, tx, id); hookErr != nil {
-					return hookErr
-				}
-			}
-		}
-		return nil
+	updated, err := usergame.SetPlayStatusBulk(ctx, h.db, usergame.BulkStatusParams{
+		UserID:      userID,
+		UserGameIDs: req.IDs,
+		PlayStatus:  psStr,
 	})
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{"updated": rowsAffected})
+	return c.JSON(http.StatusOK, map[string]any{"updated": updated})
 }
 
 type bulkDeleteRequest struct {
@@ -893,24 +842,12 @@ func (h *UserGamesHandler) HandleBulkDelete(c *echo.Context) error {
 	}
 
 	ctx := context.Background()
-	var rowsAffected int64
-	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		res, err := tx.NewDelete().
-			Model((*models.UserGame)(nil)).
-			Where("id IN (?)", bun.List(req.IDs)).
-			Where("user_game.user_id = ?", userID).
-			Exec(ctx)
-		if err != nil {
-			return err
-		}
-		rowsAffected, err = res.RowsAffected()
-		return err
-	})
+	deleted, err := usergame.DeleteBulk(ctx, h.db, usergame.BulkDeleteParams{UserID: userID, UserGameIDs: req.IDs})
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{"deleted": rowsAffected})
+	return c.JSON(http.StatusOK, map[string]any{"deleted": deleted})
 }
 
 type bulkAddPlatformsRequest struct {
@@ -933,55 +870,20 @@ func (h *UserGamesHandler) HandleBulkAddPlatforms(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "user_game_ids is required")
 	}
 
-	ctx := context.Background()
-	tx, err := h.db.BeginTx(ctx, nil)
+	ctx := c.Request().Context()
+	added, err := usergame.AddPlatformBulk(ctx, h.db, usergame.BulkAddPlatformParams{
+		UserID:      userID,
+		UserGameIDs: req.UserGameIDs,
+		Platform: usergame.PlatformInput{
+			Platform:   &req.Platform,
+			Storefront: &req.Storefront,
+		},
+	})
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	// Get only owned IDs.
-	var ownedIDs []string
-	err = tx.NewSelect().Model((*models.UserGame)(nil)).
-		Column("id").
-		Where("id IN (?)", bun.List(req.UserGameIDs)).
-		Where("user_id = ?", userID).
-		Scan(ctx, &ownedIDs)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
 
-	if len(ownedIDs) == 0 {
-		return c.JSON(http.StatusOK, map[string]int{"added": 0})
-	}
-
-	now := time.Now().UTC()
-	var added int64
-	for _, ugID := range ownedIDs {
-		result, insertErr := tx.NewRaw(
-			`INSERT INTO user_game_platforms (id, user_game_id, platform, storefront, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?)
-			 ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
-			uuid.NewString(), ugID, req.Platform, req.Storefront, now, now,
-		).Exec(ctx)
-		if insertErr != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-		}
-		rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
-		added += rows
-		if rows > 0 {
-			// In-transaction: a failed wishlist-clear must roll back the platform inserts, so propagate rather than log-and-continue.
-			if err := usergame.ClearWishlistOnAcquire(ctx, tx, ugID); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-			}
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-	}
-
-	return c.JSON(http.StatusOK, map[string]int64{"added": added})
+	return c.JSON(http.StatusOK, map[string]int{"added": added})
 }
 
 type bulkRemovePlatformsRequest struct {
@@ -1005,20 +907,16 @@ func (h *UserGamesHandler) HandleBulkRemovePlatforms(c *echo.Context) error {
 	}
 
 	ctx := context.Background()
-	result, err := h.db.NewRaw(
-		`DELETE FROM user_game_platforms
-		 WHERE user_game_id IN (
-		   SELECT id FROM user_games WHERE id IN (?) AND user_id = ?
-		 )
-		 AND platform = ? AND storefront = ?`,
-		bun.List(req.UserGameIDs), userID, req.Platform, req.Storefront,
-	).Exec(ctx)
+	removed, err := usergame.RemovePlatformBulk(ctx, h.db, usergame.BulkRemovePlatformParams{
+		UserID:      userID,
+		UserGameIDs: req.UserGameIDs,
+		Platform:    req.Platform,
+		Storefront:  req.Storefront,
+	})
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
-
-	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
-	return c.JSON(http.StatusOK, map[string]int64{"removed": rows})
+	return c.JSON(http.StatusOK, map[string]int{"removed": removed})
 }
 
 // verifyUserGameOwnership checks that userGameID belongs to userID.
@@ -1091,10 +989,6 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 	userGameID := c.Param("id")
 	ctx := c.Request().Context()
 
-	if err := h.verifyUserGameOwnership(ctx, userGameID, userID); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "user game not found"})
-	}
-
 	var req platformRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -1127,51 +1021,43 @@ func (h *UserGamesHandler) HandleCreatePlatform(c *echo.Context) error {
 		}
 	}
 
-	now := time.Now()
-	plat := &models.UserGamePlatform{
-		ID:              uuid.New().String(),
-		UserGameID:      userGameID,
-		Platform:        req.Platform,
-		Storefront:      req.Storefront,
-		HoursPlayed:     req.HoursPlayed,
-		OwnershipStatus: req.OwnershipStatus,
-		IsAvailable:     true,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}
-	if req.IsAvailable != nil {
-		plat.IsAvailable = *req.IsAvailable
-	}
+	var acquiredDate *time.Time
 	if req.AcquiredDate != nil && *req.AcquiredDate != "" {
 		acquired, err := parseAcquiredDate(*req.AcquiredDate)
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
-		plat.AcquiredDate = acquired
+		acquiredDate = acquired
 	}
 
-	_, err := h.db.NewInsert().Model(plat).Exec(ctx)
+	platIn := usergame.PlatformInput{
+		Platform:        req.Platform,
+		Storefront:      req.Storefront,
+		HoursPlayed:     req.HoursPlayed,
+		OwnershipStatus: req.OwnershipStatus,
+		IsAvailable:     req.IsAvailable,
+		AcquiredDate:    acquiredDate,
+	}
+
+	res, err := usergame.AddPlatform(ctx, h.db, usergame.AddPlatformParams{
+		UserID:     userID,
+		UserGameID: userGameID,
+		Platform:   platIn,
+	})
 	if err != nil {
-		if isDuplicateKeyError(err) {
-			return c.JSON(http.StatusConflict, map[string]string{"error": "platform/storefront combination already exists"})
-		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return h.httpError(c, err)
 	}
-	if err := usergame.ClearWishlistOnAcquire(ctx, h.db, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: clear wishlist on create platform", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
-	}
-	if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: auto-promote play_status on create platform", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
-	}
-	if err := h.db.NewSelect().Model(plat).
-		Where("id = ?", plat.ID).
+
+	var plat models.UserGamePlatform
+	if err := h.db.NewSelect().Model(&plat).
+		Where("id = ?", res.PlatformID).
 		Relation("PlatformRecord").
 		Relation("StorefrontRecord").
 		Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "user_games: load platform relations failed", logging.KeyErr, err, "platform_id", plat.ID, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(ctx, "user_games: load platform relations failed", logging.KeyErr, err, "platform_id", res.PlatformID, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load platform")
 	}
-	return c.JSON(http.StatusCreated, toUserGamePlatformResponse(*plat))
+	return c.JSON(http.StatusCreated, toUserGamePlatformResponse(plat))
 }
 
 // HandleUpdatePlatform handles PUT /api/user-games/:id/platforms/:platform_id.
@@ -1226,47 +1112,46 @@ func (h *UserGamesHandler) HandleUpdatePlatform(c *echo.Context) error {
 		}
 	}
 
-	// Apply updates
-	if req.Platform != nil {
-		plat.Platform = req.Platform
-	}
-	if req.Storefront != nil {
-		plat.Storefront = req.Storefront
-	}
-	if req.IsAvailable != nil {
-		plat.IsAvailable = *req.IsAvailable
-	}
-	if req.HoursPlayed != nil {
-		plat.HoursPlayed = req.HoursPlayed
-	}
-	if req.OwnershipStatus != nil {
-		plat.OwnershipStatus = req.OwnershipStatus
-	}
 	// AcquiredDate is three-way: omitted (nil) leaves it unchanged, an empty
 	// string clears it to NULL, a valid date sets it.
+	var acquiredDate *time.Time
+	acquiredDateProvided := false
 	if req.AcquiredDate != nil {
-		if *req.AcquiredDate == "" {
-			plat.AcquiredDate = nil
-		} else {
+		acquiredDateProvided = true
+		if *req.AcquiredDate != "" {
 			acquired, err := parseAcquiredDate(*req.AcquiredDate)
 			if err != nil {
 				return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 			}
-			plat.AcquiredDate = acquired
+			acquiredDate = acquired
 		}
+		// empty string → acquiredDate stays nil → stored as NULL
 	}
-	plat.UpdatedAt = time.Now()
 
-	_, err = h.db.NewUpdate().Model(&plat).WherePK().Exec(ctx)
-	if err != nil {
-		if isDuplicateKeyError(err) {
-			return c.JSON(http.StatusConflict, map[string]string{"error": "platform/storefront combination already exists"})
+	fields := usergame.PlatformInput{
+		Platform:        req.Platform,
+		Storefront:      req.Storefront,
+		IsAvailable:     req.IsAvailable,
+		HoursPlayed:     req.HoursPlayed,
+		OwnershipStatus: req.OwnershipStatus,
+	}
+	if acquiredDateProvided {
+		if acquiredDate == nil {
+			fields.ClearAcquiredDate = true
+		} else {
+			fields.AcquiredDate = acquiredDate
 		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
-	if err := usergame.PromoteToInProgressIfPlayed(ctx, h.db, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: auto-promote play_status on update platform", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
+
+	if err := usergame.UpdatePlatform(ctx, h.db, usergame.UpdatePlatformParams{
+		UserID:     userID,
+		UserGameID: userGameID,
+		PlatformID: platformID,
+		Fields:     fields,
+	}); err != nil {
+		return h.httpError(c, err)
 	}
+
 	if err := h.db.NewSelect().Model(&plat).
 		Where("id = ?", plat.ID).
 		Relation("PlatformRecord").
@@ -1285,20 +1170,12 @@ func (h *UserGamesHandler) HandleDeletePlatform(c *echo.Context) error {
 	platformID := c.Param("platform_id")
 	ctx := c.Request().Context()
 
-	if err := h.verifyUserGameOwnership(ctx, userGameID, userID); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "user game not found"})
-	}
-
-	result, err := h.db.NewDelete().Model((*models.UserGamePlatform)(nil)).
-		Where("id = ?", platformID).
-		Where("user_game_id = ?", userGameID).
-		Exec(ctx)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
-	}
-	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
-	if rows == 0 {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "platform not found"})
+	if err := usergame.RemovePlatform(ctx, h.db, usergame.RemovePlatformParams{
+		UserID:     userID,
+		UserGameID: userGameID,
+		PlatformID: platformID,
+	}); err != nil {
+		return h.httpError(c, err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -1327,77 +1204,44 @@ func (h *UserGamesHandler) HandleMoveToLibrary(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnprocessableEntity, "at least one platform is required")
 	}
 
-	var ug models.UserGame
-	err := h.db.NewSelect().Model(&ug).
-		Where("id = ?", userGameID).
-		Where("user_id = ?", userID).
-		Scan(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusNotFound, "user game not found")
-	}
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-	}
-	if !ug.IsWishlisted {
-		return echo.NewHTTPError(http.StatusUnprocessableEntity, "user game is not on the wishlist")
-	}
-
-	now := time.Now().UTC()
-	plats := make([]*models.UserGamePlatform, 0, len(req.Platforms))
+	platIns := make([]usergame.PlatformInput, 0, len(req.Platforms))
 	for _, p := range req.Platforms {
 		if p.OwnershipStatus != nil && *p.OwnershipStatus != "" {
 			if !enum.OwnershipStatus(*p.OwnershipStatus).Valid() {
 				return echo.NewHTTPError(http.StatusBadRequest, "invalid ownership_status: "+*p.OwnershipStatus)
 			}
 		}
-		pl := &models.UserGamePlatform{
-			ID:              uuid.NewString(),
-			UserGameID:      userGameID,
-			Platform:        p.Platform,
-			Storefront:      p.Storefront,
-			HoursPlayed:     p.HoursPlayed,
-			OwnershipStatus: p.OwnershipStatus,
-			IsAvailable:     true,
-			CreatedAt:       now,
-			UpdatedAt:       now,
-		}
-		if p.IsAvailable != nil {
-			pl.IsAvailable = *p.IsAvailable
-		}
+		var acquiredDate *time.Time
 		if p.AcquiredDate != nil && *p.AcquiredDate != "" {
 			acquired, err := parseAcquiredDate(*p.AcquiredDate)
 			if err != nil {
 				return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 			}
-			pl.AcquiredDate = acquired
+			acquiredDate = acquired
 		}
-		plats = append(plats, pl)
+		platIns = append(platIns, usergame.PlatformInput{
+			Platform:        p.Platform,
+			Storefront:      p.Storefront,
+			HoursPlayed:     p.HoursPlayed,
+			OwnershipStatus: p.OwnershipStatus,
+			IsAvailable:     p.IsAvailable,
+			AcquiredDate:    acquiredDate,
+		})
 	}
 
-	tx, err := h.db.BeginTx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if _, err := tx.NewInsert().Model(&plats).Exec(ctx); err != nil {
-		if isDuplicateKeyError(err) {
-			return echo.NewHTTPError(http.StatusConflict, "platform/storefront combination already exists")
+	if _, err := usergame.MoveToLibrary(ctx, h.db, usergame.MoveParams{
+		UserID:     userID,
+		UserGameID: userGameID,
+		Platforms:  platIns,
+	}); err != nil {
+		// ErrValidation (not wishlisted) → 422 Unprocessable Entity
+		if errors.Is(err, usergame.ErrValidation) {
+			return echo.NewHTTPError(http.StatusUnprocessableEntity, "user game is not on the wishlist")
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-	}
-	if err := usergame.ClearWishlistOnAcquire(ctx, tx, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: clear wishlist on move-to-library", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-	}
-	if err := usergame.PromoteToInProgressIfPlayed(ctx, tx, userGameID); err != nil {
-		slog.ErrorContext(ctx, "user_games: auto-promote play_status on move-to-library", logging.KeyErr, err, "user_game_id", userGameID, logging.Cat(logging.CategoryDB))
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
-	}
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
 
+	var ug models.UserGame
 	if err := h.db.NewSelect().Model(&ug).
 		Where("user_game.id = ?", userGameID).
 		Relation("Game").
@@ -1459,34 +1303,9 @@ func (h *UserGamesHandler) HandleClearLibrary(c *echo.Context) error {
 	}
 
 	ctx := context.Background()
-	var deleted int64
-	err := h.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// Cancel active River jobs whose items belong to this user.
-		if _, err := tx.NewRaw(`
-			UPDATE river_job
-			SET state = 'cancelled', finalized_at = NOW()
-			WHERE state IN ('available', 'scheduled', 'retryable', 'pending')
-			  AND args->>'job_item_id' IN (SELECT id FROM job_items WHERE user_id = ?)`,
-			userID,
-		).Exec(ctx); err != nil {
-			return err
-		}
-		// Delete jobs (cascades job_items + changes).
-		if _, err := tx.NewDelete().Model((*models.Job)(nil)).
-			Where("user_id = ?", userID).Exec(ctx); err != nil {
-			return err
-		}
-		// Delete user games (cascades user_game_platforms + user_game_tags).
-		res, err := tx.NewDelete().Model((*models.UserGame)(nil)).
-			Where("user_id = ?", userID).Exec(ctx)
-		if err != nil {
-			return err
-		}
-		deleted, err = res.RowsAffected()
-		return err
-	})
+	deleted, err := usergame.ClearLibrary(ctx, h.db, userID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
+		return h.httpError(c, err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"deleted": deleted})
 }

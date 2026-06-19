@@ -52,30 +52,6 @@ func TestParseFlexibleDate(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ownershipRank
-// ---------------------------------------------------------------------------
-
-func TestOwnershipRank(t *testing.T) {
-	cases := []struct {
-		status string
-		want   int
-	}{
-		{"owned", 4},
-		{"borrowed", 3},
-		{"rented", 3},
-		{"subscription", 2},
-		{"no_longer_owned", 1},
-		{"unknown_status", 0},
-		{"", 0},
-	}
-	for _, tc := range cases {
-		if got := ownershipRank(tc.status); got != tc.want {
-			t.Errorf("ownershipRank(%q) = %d, want %d", tc.status, got, tc.want)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
 // igdbMetadataToGame
 // ---------------------------------------------------------------------------
 

@@ -4,9 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +12,8 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/db"
+	"github.com/drzero42/nexorious/internal/db/models"
 )
 
 // TagsHandler handles tag CRUD endpoints.
@@ -45,6 +45,18 @@ type tagResponse struct {
 	Color     *string   `json:"color"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// toTagResponse maps a tag model to its API DTO.
+func toTagResponse(t models.Tag) tagResponse {
+	return tagResponse{
+		ID:        t.ID,
+		UserID:    t.UserID,
+		Name:      t.Name,
+		Color:     t.Color,
+		CreatedAt: t.CreatedAt,
+		UpdatedAt: t.UpdatedAt,
+	}
 }
 
 // HandleListTags handles GET /api/tags.
@@ -95,26 +107,24 @@ func (h *TagsHandler) HandleCreateTag(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+	name, err := validateName(req.Name, 100)
+	if err != nil {
+		return err
 	}
-	if len(req.Name) > 100 {
-		return echo.NewHTTPError(http.StatusBadRequest, "name must be 100 characters or less")
-	}
+	req.Name = name
 
 	now := time.Now().UTC()
 	id := uuid.NewString()
 
 	var tag tagResponse
-	err := h.db.NewRaw(`
+	err = h.db.NewRaw(`
 		INSERT INTO tags (id, user_id, name, color, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		RETURNING id, user_id, name, color, created_at, updated_at`,
 		id, userID, req.Name, req.Color, now, now,
 	).Scan(context.Background(), &tag)
 	if err != nil {
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "tag name already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create tag")
@@ -146,46 +156,35 @@ func (h *TagsHandler) HandleUpdateTag(c *echo.Context) error {
 
 	// Validate name if provided.
 	if req.Name != nil {
-		trimmed := strings.TrimSpace(*req.Name)
-		req.Name = &trimmed
-		if *req.Name == "" {
-			return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+		name, err := validateName(*req.Name, 100)
+		if err != nil {
+			return err
 		}
-		if len(*req.Name) > 100 {
-			return echo.NewHTTPError(http.StatusBadRequest, "name must be 100 characters or less")
-		}
+		req.Name = &name
 	}
 
 	// Build dynamic SET clause.
-	setClauses := []string{"updated_at = ?"}
-	args := []any{time.Now().UTC()}
+	q := h.db.NewUpdate().
+		TableExpr("tags").
+		Set("updated_at = ?", time.Now().UTC())
 
 	if req.Name != nil {
-		setClauses = append(setClauses, "name = ?")
-		args = append(args, *req.Name)
+		q = q.Set("name = ?", *req.Name)
 	}
 	if req.Color != nil {
-		setClauses = append(setClauses, "color = ?")
-		args = append(args, *req.Color)
+		q = q.Set("color = ?", *req.Color)
 	}
 
-	// WHERE args.
-	args = append(args, tagID, userID)
-
-	query := fmt.Sprintf(
-		`UPDATE tags SET %s
-		 WHERE id = ? AND user_id = ?
-		 RETURNING id, user_id, name, color, created_at, updated_at`,
-		strings.Join(setClauses, ", "),
-	)
-
 	var tag tagResponse
-	err := h.db.NewRaw(query, args...).Scan(context.Background(), &tag)
+	err := q.
+		Where("id = ? AND user_id = ?", tagID, userID).
+		Returning("id, user_id, name, color, created_at, updated_at").
+		Scan(context.Background(), &tag)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "not found")
 		}
-		if isDuplicateKeyError(err) {
+		if db.IsUniqueViolation(err) {
 			return echo.NewHTTPError(http.StatusConflict, "tag name already exists")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update tag")
@@ -220,15 +219,4 @@ func (h *TagsHandler) HandleDeleteTag(c *echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusNoContent)
-}
-
-// isDuplicateKeyError reports whether err is a PostgreSQL unique_violation (code 23505).
-func isDuplicateKeyError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// pgdriver wraps the error; the code is embedded in the message.
-	return strings.Contains(err.Error(), "23505") ||
-		strings.Contains(err.Error(), "unique constraint") ||
-		strings.Contains(err.Error(), "unique_violation")
 }

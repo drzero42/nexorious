@@ -572,6 +572,39 @@ func TestUpdateChannelOwnershipEnforced(t *testing.T) {
 	}
 }
 
+// ─── TestUpdateChannelRejectsBlankName ────────────────────────────────────────
+
+// Renaming a channel to a blank name is rejected with the canonical
+// "name is required" message (converged from the former "name cannot be
+// empty" when name validation was centralized in validateName).
+func TestUpdateChannelRejectsBlankName(t *testing.T) {
+	truncateAllTables(t)
+	enc := newNotifTestEncrypter(t)
+	h := api.NewNotificationsHandler(testDB, enc, notify.NewRecorderSender())
+
+	userID := "u-notif-upd-blank"
+	insertAuthTestUser(t, testDB, userID, "notif-upd-blank", "pass123", true, false)
+
+	cc, ccRec := notifCtx(t, http.MethodPost, "/api/notifications/channels",
+		map[string]any{"name": "original", "url": "slack://atoken"}, userID, false, "")
+	if err := h.HandleCreateChannel(cc); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(ccRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	channelID, _ := created["id"].(string)
+
+	cUpd, _ := notifCtx(t, http.MethodPatch, "/api/notifications/channels/"+channelID,
+		map[string]any{"name": "   "}, userID, false, channelID)
+	err := h.HandleUpdateChannel(cUpd)
+	assertHTTPError(t, err, http.StatusBadRequest)
+	if he, ok := err.(*echo.HTTPError); ok && he.Message != "name is required" {
+		t.Fatalf("message = %q, want %q", he.Message, "name is required")
+	}
+}
+
 // ─── TestTestChannelOwnershipEnforced ─────────────────────────────────────────
 
 func TestTestChannelOwnershipEnforced(t *testing.T) {

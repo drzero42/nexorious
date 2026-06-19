@@ -38,6 +38,7 @@ import {
   BarChart3,
   TrendingUp,
 } from 'lucide-react';
+import { DEFAULT_TAG_COLOR } from '@/components/ui/tag-selector';
 import { useAllTags, useCreateTag, useUpdateTag, useDeleteTag } from '@/hooks';
 import type { Tag } from '@/types';
 
@@ -181,7 +182,7 @@ function TagsPage() {
     setSelectedTag(tag);
     setFormData({
       name: tag.name,
-      color: tag.color,
+      color: tag.color ?? DEFAULT_TAG_COLOR,
     });
     setShowEditDialog(true);
   };
@@ -446,7 +447,7 @@ function TagsPage() {
                   >
                     <div
                       className="h-6 w-6 shrink-0 rounded-full border"
-                      style={{ backgroundColor: tag.color }}
+                      style={{ backgroundColor: tag.color ?? DEFAULT_TAG_COLOR }}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">

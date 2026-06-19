@@ -58,7 +58,11 @@ var fieldAliases = []struct {
 	{func(m *SuggestedMapping, v string) { m.Columns.HoursPlayed = v }, []string{"hoursplayed", "playtimehours", "playtime", "timeplayed", "hours", "hrs"}},
 	{func(m *SuggestedMapping, v string) { m.Columns.AcquiredDate = v }, []string{"acquireddate", "dateacquired", "dateadded", "purchasedate", "acquired", "purchased", "bought", "added"}},
 	{func(m *SuggestedMapping, v string) { m.Columns.Rating = v }, []string{"rating", "score", "stars"}},
-	{func(m *SuggestedMapping, v string) { m.Columns.Tags = v }, []string{"tags", "tag", "labels", "label", "categories", "genres"}},
+	// "genres"/"categories" are intentionally NOT tag aliases: genre is an
+	// IGDB-derived game field set after matching, never imported from a CSV
+	// (no import format maps it), so auto-suggesting a genres/categories column
+	// as tags conflates two distinct concepts and produced junk tags (#1073).
+	{func(m *SuggestedMapping, v string) { m.Columns.Tags = v }, []string{"tags", "tag", "labels", "label"}},
 	{func(m *SuggestedMapping, v string) { m.Columns.Notes = v }, []string{"notes", "note", "review", "comment", "comments"}},
 	{func(m *SuggestedMapping, v string) { m.Columns.Loved = v }, []string{"loved", "favorite", "favourite", "fav", "liked", "starred"}},
 }

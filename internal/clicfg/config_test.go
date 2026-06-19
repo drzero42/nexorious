@@ -101,3 +101,29 @@ func TestSaveUsesOwnerOnlyPerms(t *testing.T) {
 		t.Fatalf("dir perm = %o, want 700", perm)
 	}
 }
+
+func TestProfileHelpers(t *testing.T) {
+	cfg := &Config{}
+	cfg.SetProfile("default", Profile{URL: "u1", Key: "k1"})
+	cfg.SetProfile("work", Profile{URL: "u2", Key: "k2"})
+
+	if got := cfg.Names(); len(got) != 2 || got[0] != "default" || got[1] != "work" {
+		t.Fatalf("Names = %v, want [default work]", got)
+	}
+	if p, ok := cfg.Profile("work"); !ok || p.Key != "k2" {
+		t.Fatalf("Profile(work) = %+v,%v", p, ok)
+	}
+	if err := cfg.SetCurrent("missing"); err == nil {
+		t.Fatal("SetCurrent(missing) should error")
+	}
+	if err := cfg.SetCurrent("work"); err != nil || cfg.Current != "work" {
+		t.Fatalf("SetCurrent(work) = %v, Current=%q", err, cfg.Current)
+	}
+	cfg.RemoveProfile("work")
+	if _, ok := cfg.Profile("work"); ok {
+		t.Fatal("work should be removed")
+	}
+	if cfg.Current != "" {
+		t.Fatalf("Current should reset after removing the current profile, got %q", cfg.Current)
+	}
+}

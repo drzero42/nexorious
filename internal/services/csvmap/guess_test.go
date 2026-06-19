@@ -6,7 +6,7 @@ import (
 )
 
 func TestGuessColumns_ExactAndContains(t *testing.T) {
-	header := []string{"Game Name", "System", "Play Status", "Score", "Date Bought", "Hours Played", "Genres", "Favorite", "Store", "Comments"}
+	header := []string{"Game Name", "System", "Play Status", "Score", "Date Bought", "Hours Played", "Tags", "Favorite", "Store", "Comments"}
 	m := GuessColumns(header)
 
 	if m.Columns.Title != "Game Name" {
@@ -27,8 +27,8 @@ func TestGuessColumns_ExactAndContains(t *testing.T) {
 	if m.Columns.HoursPlayed != "Hours Played" {
 		t.Errorf("hours_played = %q, want Hours Played", m.Columns.HoursPlayed)
 	}
-	if m.Columns.Tags != "Genres" {
-		t.Errorf("tags = %q, want Genres", m.Columns.Tags)
+	if m.Columns.Tags != "Tags" {
+		t.Errorf("tags = %q, want Tags", m.Columns.Tags)
 	}
 	if m.Columns.Loved != "Favorite" {
 		t.Errorf("loved = %q, want Favorite", m.Columns.Loved)
@@ -44,6 +44,22 @@ func TestGuessColumns_ExactAndContains(t *testing.T) {
 	}
 	if m.RatingScale != 5 {
 		t.Errorf("rating_scale default = %d, want 5", m.RatingScale)
+	}
+}
+
+// Genre is an IGDB-derived game field, not a user tag, and no import format
+// maps it. The auto-guesser must not suggest a "genres"/"categories" column as
+// the tags source, or a JSON-object genres cell gets shredded into junk tags (#1073).
+func TestGuessColumns_GenresAndCategoriesNotTags(t *testing.T) {
+	for _, h := range []string{"Genres", "genres", "Categories", "categories"} {
+		m := GuessColumns([]string{"Name", h})
+		if m.Columns.Tags != "" {
+			t.Errorf("header %q: tags = %q, want unmapped", h, m.Columns.Tags)
+		}
+	}
+	// A genuine tags column is still mapped.
+	if m := GuessColumns([]string{"Name", "Labels"}); m.Columns.Tags != "Labels" {
+		t.Errorf("tags = %q, want Labels", m.Columns.Tags)
 	}
 }
 
