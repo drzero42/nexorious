@@ -11,6 +11,9 @@ import (
 func TestGameAcquire(t *testing.T) {
 	const id = "123e4567-e89b-12d3-a456-426614174000"
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/platforms/simple-list", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "pc-windows", "display_name": "PC (Windows)"}})
+	})
 	mux.HandleFunc("/api/user-games/"+id, func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "game": map[string]any{"title": "X"}})
 	})
@@ -19,7 +22,7 @@ func TestGameAcquire(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		plats := body["platforms"].([]any)
 		first := plats[0].(map[string]any)
-		if first["platform"] != "pc_windows" || first["ownership_status"] != "owned" {
+		if first["platform"] != "pc-windows" || first["ownership_status"] != "owned" {
 			t.Errorf("platforms = %v", plats)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "game": map[string]any{"title": "X"}})
@@ -32,7 +35,7 @@ func TestGameAcquire(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"game", "acquire", id, "--platform", "pc_windows"})
+	root.SetArgs([]string{"game", "acquire", id, "--platform", "pc-windows"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("acquire: %v\n%s", err, out.String())
 	}

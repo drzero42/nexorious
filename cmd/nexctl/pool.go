@@ -20,9 +20,10 @@ func newPoolCmd() *cobra.Command {
 	return cmd
 }
 
-// resolvePoolRef resolves a pool by id (UUID) or name (case-insensitive) via the
-// pool list. Many matches prompt a TTY picker or, off-TTY, error with candidates.
-func resolvePoolRef(cmd *cobra.Command, c *cliclient.Client, key, ref string) (*cliclient.PoolListItem, error) {
+// findPoolsByRef returns every pool matching ref: a UUID is matched exactly; a
+// name is matched case-insensitively (zero or more results). No cmd, no picker —
+// callers own disambiguation.
+func findPoolsByRef(c *cliclient.Client, key, ref string) ([]cliclient.PoolListItem, error) {
 	pools, err := c.ListPools(key)
 	if err != nil {
 		return nil, err
@@ -30,30 +31,45 @@ func resolvePoolRef(cmd *cobra.Command, c *cliclient.Client, key, ref string) (*
 	if looksLikeUUID(ref) {
 		for i := range pools {
 			if pools[i].ID == ref {
-				return &pools[i], nil
+				return []cliclient.PoolListItem{pools[i]}, nil
 			}
 		}
 		return nil, fmt.Errorf("no pool with id %s", ref)
 	}
-	var matches []*cliclient.PoolListItem
+	var matches []cliclient.PoolListItem
 	for i := range pools {
 		if strings.EqualFold(pools[i].Name, ref) {
-			matches = append(matches, &pools[i])
+			matches = append(matches, pools[i])
 		}
 	}
-	switch len(matches) {
+	return matches, nil
+}
+
+// resolvePoolRef resolves a pool by id (UUID) or name (case-insensitive) via the
+// pool list. Many matches prompt a TTY picker or, off-TTY, error with candidates.
+func resolvePoolRef(cmd *cobra.Command, c *cliclient.Client, key, ref string) (*cliclient.PoolListItem, error) {
+	pools, err := findPoolsByRef(c, key, ref)
+	if err != nil {
+		return nil, err
+	}
+	switch len(pools) {
 	case 0:
 		return nil, fmt.Errorf("no pool named %q", ref)
 	case 1:
-		return matches[0], nil
+		return &pools[0], nil
+	}
+	// Convert to []*cliclient.PoolListItem for pickPool
+	ptrs := make([]*cliclient.PoolListItem, len(pools))
+	for i := range pools {
+		ptrs[i] = &pools[i]
 	}
 	if interactive(cmd) {
-		return pickPool(cmd, matches)
+		return pickPool(cmd, ptrs)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%q matches %d pools; re-run with an id:", ref, len(matches))
-	for _, m := range matches {
-		fmt.Fprintf(&b, "\n  %s  %s", m.ID, m.Name)
+	fmt.Fprintf(&b, "%q matches %d pools; re-run with an id:", ref, len(pools))
+	for i := range pools {
+		fmt.Fprintf(&b, "\n  %s  %s", pools[i].ID, pools[i].Name)
 	}
 	return nil, fmt.Errorf("%s", b.String())
 }
