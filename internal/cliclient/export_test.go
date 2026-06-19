@@ -3,6 +3,7 @@ package cliclient
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -63,7 +64,7 @@ func TestTriggerExportUnsupportedFormat(t *testing.T) {
 	}
 }
 
-func TestDownloadExport(t *testing.T) {
+func TestOpenExportDownload(t *testing.T) {
 	const payload = "game1,steam\ngame2,gog\n"
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/export/exp-7/download", func(w http.ResponseWriter, r *http.Request) {
@@ -71,28 +72,36 @@ func TestDownloadExport(t *testing.T) {
 			http.Error(w, "wrong method", http.StatusMethodNotAllowed)
 			return
 		}
-		// DownloadExport builds its own request (not via doBearer), so it is the
-		// one place a missing auth header would slip past the helper's coverage.
+		// OpenExportDownload builds its own request (not via doBearer), so it is
+		// the one place a missing auth header would slip past the helper's coverage.
 		if got := r.Header.Get("Authorization"); got != "Bearer k" {
 			t.Errorf("Authorization = %q, want %q", got, "Bearer k")
 		}
-		w.Header().Set("Content-Disposition", `attachment; filename="export.csv"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="nexorious_export_20260102_150405.csv"`)
 		_, _ = w.Write([]byte(payload))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
+	name, body, err := c.OpenExportDownload("k", "exp-7")
+	if err != nil {
+		t.Fatalf("OpenExportDownload: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+	if want := "nexorious_export_20260102_150405.csv"; name != want {
+		t.Errorf("filename = %q, want %q", name, want)
+	}
 	var buf bytes.Buffer
-	if err := c.DownloadExport("k", "exp-7", &buf); err != nil {
-		t.Fatalf("DownloadExport: %v", err)
+	if _, err := io.Copy(&buf, body); err != nil {
+		t.Fatalf("copy body: %v", err)
 	}
 	if buf.String() != payload {
 		t.Errorf("body = %q, want %q", buf.String(), payload)
 	}
 }
 
-func TestDownloadExportNonOK(t *testing.T) {
+func TestOpenExportDownloadNonOK(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/export/exp-missing/download", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -103,17 +112,22 @@ func TestDownloadExportNonOK(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	var buf bytes.Buffer
-	err := c.DownloadExport("k", "exp-missing", &buf)
+	name, body, err := c.OpenExportDownload("k", "exp-missing")
 	if err == nil {
+		if body != nil {
+			_ = body.Close()
+		}
 		t.Fatal("expected error on 404, got nil")
 	}
-	if buf.Len() != 0 {
-		t.Errorf("expected no bytes written on error, got %d", buf.Len())
+	if body != nil {
+		t.Errorf("expected nil body on error, got non-nil")
+	}
+	if name != "" {
+		t.Errorf("expected empty filename on error, got %q", name)
 	}
 }
 
-func TestDownloadExportPathEscaping(t *testing.T) {
+func TestOpenExportDownloadPathEscaping(t *testing.T) {
 	const payload = "ok"
 	mux := http.NewServeMux()
 	// An id with a space must be %20-encoded into the request path.
@@ -124,9 +138,14 @@ func TestDownloadExportPathEscaping(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
+	_, body, err := c.OpenExportDownload("k", "exp 7")
+	if err != nil {
+		t.Fatalf("OpenExportDownload: %v", err)
+	}
+	defer func() { _ = body.Close() }()
 	var buf bytes.Buffer
-	if err := c.DownloadExport("k", "exp 7", &buf); err != nil {
-		t.Fatalf("DownloadExport: %v", err)
+	if _, err := io.Copy(&buf, body); err != nil {
+		t.Fatalf("copy body: %v", err)
 	}
 	if buf.String() != payload {
 		t.Errorf("body = %q, want %q", buf.String(), payload)
