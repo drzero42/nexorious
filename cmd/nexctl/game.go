@@ -26,6 +26,7 @@ func newGameCmd() *cobra.Command {
 	cmd.AddCommand(newGameAcquireCmd())
 	cmd.AddCommand(newGameRmCmd())
 	cmd.AddCommand(newGameEditCmd())
+	cmd.AddCommand(newGameStatsCmd())
 	return cmd
 }
 
