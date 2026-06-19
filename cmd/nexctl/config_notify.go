@@ -55,22 +55,43 @@ func newNotifySubCmd() *cobra.Command {
 	return cmd
 }
 
-// resolveChannelURL returns the URL from --url flag if set, otherwise prompts
-// no-echo. This is the Shoutrrr URL which may embed tokens.
+// resolveChannelURL returns the URL from the --url flag when it is set to a
+// non-empty value, otherwise it prompts for it no-echo. This is the Shoutrrr
+// URL which may embed tokens, so it is never accepted as a positional arg.
 func resolveChannelURL(cmd *cobra.Command, urlFlag string) (string, error) {
 	if cmd.Flags().Changed("url") && urlFlag != "" {
 		return urlFlag, nil
 	}
-	if cmd.Flags().Changed("url") && urlFlag == "" {
-		// Flag was explicitly set to empty — prompt no-echo.
-		out := cmd.OutOrStdout()
-		in := bufio.NewReader(cmd.InOrStdin())
-		return cliui.ReadPassword(in, out, "Channel URL: ")
-	}
-	// Flag was not provided at all — prompt no-echo.
+	// Flag absent, or present-but-empty: prompt no-echo either way.
 	out := cmd.OutOrStdout()
 	in := bufio.NewReader(cmd.InOrStdin())
 	return cliui.ReadPassword(in, out, "Channel URL: ")
+}
+
+// printEventTypeList renders a slice of event-type strings honouring --json and
+// -q. With neither flag it prints a one-column table; an empty list prints
+// emptyMsg (when non-empty) instead of a bare header.
+func printEventTypeList(cmd *cobra.Command, types []string, emptyMsg string) error {
+	out := cmd.OutOrStdout()
+	if flagBool(cmd, "json") {
+		return cliui.EncodeJSON(out, types)
+	}
+	if flagBool(cmd, "quiet") {
+		for _, t := range types {
+			fmt.Fprintln(out, t)
+		}
+		return nil
+	}
+	if len(types) == 0 && emptyMsg != "" {
+		fmt.Fprintln(out, emptyMsg)
+		return nil
+	}
+	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "EVENT TYPE")
+	for _, t := range types {
+		fmt.Fprintln(tw, t)
+	}
+	return tw.Flush()
 }
 
 // printChannel prints a single NotifyChannel as a one-line table row.
@@ -300,7 +321,6 @@ func newNotifySubListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List subscribed event types",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			out := cmd.OutOrStdout()
 			p, _, err := resolveProfile(cmd)
 			if err != nil {
 				return err
@@ -309,26 +329,7 @@ func newNotifySubListCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("list subscriptions: %w", err)
 			}
-
-			if flagBool(cmd, "json") {
-				return cliui.EncodeJSON(out, types)
-			}
-			if flagBool(cmd, "quiet") {
-				for _, t := range types {
-					fmt.Fprintln(out, t)
-				}
-				return nil
-			}
-			if len(types) == 0 {
-				fmt.Fprintln(out, "No subscriptions.")
-				return nil
-			}
-			tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
-			fmt.Fprintln(tw, "EVENT TYPE")
-			for _, t := range types {
-				fmt.Fprintln(tw, t)
-			}
-			return tw.Flush()
+			return printEventTypeList(cmd, types, "No subscriptions.")
 		},
 	}
 }
@@ -339,7 +340,6 @@ func newNotifySubSetCmd() *cobra.Command {
 		Short: "Replace the subscription set",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			out := cmd.OutOrStdout()
 			p, _, err := resolveProfile(cmd)
 			if err != nil {
 				return err
@@ -348,21 +348,7 @@ func newNotifySubSetCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("set subscriptions: %w", err)
 			}
-			if flagBool(cmd, "json") {
-				return cliui.EncodeJSON(out, types)
-			}
-			if flagBool(cmd, "quiet") {
-				for _, t := range types {
-					fmt.Fprintln(out, t)
-				}
-				return nil
-			}
-			tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
-			fmt.Fprintln(tw, "EVENT TYPE")
-			for _, t := range types {
-				fmt.Fprintln(tw, t)
-			}
-			return tw.Flush()
+			return printEventTypeList(cmd, types, "")
 		},
 	}
 }
@@ -372,7 +358,6 @@ func newNotifySubResetCmd() *cobra.Command {
 		Use:   "reset",
 		Short: "Reset subscriptions to defaults",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			out := cmd.OutOrStdout()
 			p, _, err := resolveProfile(cmd)
 			if err != nil {
 				return err
@@ -381,21 +366,7 @@ func newNotifySubResetCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("reset subscriptions: %w", err)
 			}
-			if flagBool(cmd, "json") {
-				return cliui.EncodeJSON(out, types)
-			}
-			if flagBool(cmd, "quiet") {
-				for _, t := range types {
-					fmt.Fprintln(out, t)
-				}
-				return nil
-			}
-			tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
-			fmt.Fprintln(tw, "EVENT TYPE")
-			for _, t := range types {
-				fmt.Fprintln(tw, t)
-			}
-			return tw.Flush()
+			return printEventTypeList(cmd, types, "")
 		},
 	}
 }
