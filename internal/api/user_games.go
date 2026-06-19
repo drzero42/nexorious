@@ -395,6 +395,8 @@ func (h *UserGamesHandler) httpError(c *echo.Context, err error) error {
 		return echo.NewHTTPError(http.StatusConflict, strings.TrimSuffix(err.Error(), ": conflict"))
 	case errors.Is(err, usergame.ErrValidation):
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	case errors.Is(err, usergame.ErrUnprocessable):
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, strings.TrimSuffix(err.Error(), ": unprocessable"))
 	default:
 		slog.ErrorContext(c.Request().Context(), "user_games: operation failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")

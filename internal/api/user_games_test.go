@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/uptrace/bun"
@@ -116,6 +117,28 @@ func TestCreateUserGame(t *testing.T) {
 		}, token)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("invalid platform slug returns 422", func(t *testing.T) {
+		gameID := insertTestGame(t, testDB, "Test Game Bad Platform")
+		rec := postJSONAuth(t, e, "/api/user-games", map[string]any{
+			"game_id": gameID,
+			"platforms": []map[string]any{
+				{"platform": "PS5", "storefront": "steam"},
+			},
+		}, token)
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var errResp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &errResp)
+		msg, _ := errResp["message"].(string)
+		if !strings.Contains(msg, "PS5") {
+			t.Fatalf("expected message to name the bad slug, got %q", msg)
+		}
+		if strings.Contains(msg, "unprocessable") {
+			t.Fatalf("internal sentinel leaked into message: %q", msg)
 		}
 	})
 
