@@ -322,7 +322,7 @@ func TestRestoreBackupUpload(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.RestoreBackupUpload("k", "backup.tar.gz", payload); err != nil {
+	if err := c.RestoreBackupUpload("k", "backup.tar.gz", bytes.NewReader(payload)); err != nil {
 		t.Fatalf("RestoreBackupUpload: %v", err)
 	}
 }
