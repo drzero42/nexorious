@@ -13,7 +13,7 @@
 
       # release-please keeps this in sync with Chart.yaml etc.
       # On the release branch a CI-created nix/release-version.txt overrides it.
-      _releaseVersion = "0.17.0"; # x-release-please-version
+      _releaseVersion = "0.17.1"; # x-release-please-version
       version =
         if builtins.pathExists ./nix/release-version.txt
         then builtins.readFile ./nix/release-version.txt
