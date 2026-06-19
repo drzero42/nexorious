@@ -68,7 +68,7 @@ func buildMCPServer(p clicfg.Profile) *mcp.Server {
 
 // mcpToolError maps a cliclient error to an actionable tool error. A 403 from a
 // read-scoped key on a write tool gets a specific, corrective message.
-func mcpToolError(action string, err error) error { //nolint:unused // called by tool registrars in tasks 4–7
+func mcpToolError(action string, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -81,11 +81,6 @@ func mcpToolError(action string, err error) error { //nolint:unused // called by
 // isForbidden reports whether err is an HTTP 403 from cliclient.
 // cliclient.httpError produces plain fmt.Errorf strings ("server returned 403…");
 // there is no typed error to unwrap, so we match on the message directly.
-func isForbidden(err error) bool { //nolint:unused // called by mcpToolError, used in tasks 4–7
+func isForbidden(err error) bool {
 	return strings.Contains(err.Error(), "server returned 403")
 }
-
-func registerGameTools(_ *mcp.Server, _ *cliclient.Client, _ string) {}
-func registerPoolTools(_ *mcp.Server, _ *cliclient.Client, _ string) {}
-func registerTagTools(_ *mcp.Server, _ *cliclient.Client, _ string)  {}
-func registerSyncTools(_ *mcp.Server, _ *cliclient.Client, _ string) {}
