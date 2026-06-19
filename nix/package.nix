@@ -1,15 +1,13 @@
 # nix/package.nix
 #
-# Hash update: when go.mod or go.sum changes, set vendorHash = lib.fakeHash,
-# run `nix build .#nexorious`, and copy the "got:" hash from the error output.
+# The Go vendorHash is supplied by flake.nix (goVendorHash) and shared with
+# nix/nexctl.nix — see that definition for how to refresh it.
 { buildGoModule, makeWrapper, postgresql_18, legendary-gl, lib
-, src, version, commit, nexorious-frontend }:
+, src, version, commit, nexorious-frontend, vendorHash }:
 
 buildGoModule {
   pname = "nexorious";
-  inherit version src;
-
-  vendorHash = "sha256-ukqriKqodG6w17a8gkL77+m8on0RhYGgx6kBSNCfyb4=";
+  inherit version src vendorHash;
 
   subPackages = [ "cmd/nexorious" ];
 

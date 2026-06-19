@@ -1,16 +1,13 @@
 # nix/nexctl.nix
 #
 # nexctl is the pure REST client. It builds from the same go.mod/go.sum as the
-# nexorious server, so it shares the same vendorHash — keep this value identical
-# to nix/package.nix. Hash update: when go.mod or go.sum changes, set
-# vendorHash = lib.fakeHash, run `nix build .#nexctl`, and copy the "got:" hash.
-{ buildGoModule, lib, src, version, commit }:
+# nexorious server, so it shares the same vendorHash, supplied by flake.nix
+# (goVendorHash) — see that definition for how to refresh it.
+{ buildGoModule, lib, src, version, commit, vendorHash }:
 
 buildGoModule {
   pname = "nexctl";
-  inherit version src;
-
-  vendorHash = "sha256-A1BEHVARhw18uQ1CyiUXV1s+j0iZv8A2MBrK0VbZ0iQ=";
+  inherit version src vendorHash;
 
   subPackages = [ "cmd/nexctl" ];
 

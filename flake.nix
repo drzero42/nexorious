@@ -18,6 +18,15 @@
         if builtins.pathExists ./nix/release-version.txt
         then builtins.readFile ./nix/release-version.txt
         else "main-${self.shortRev or "dirty"}";
+
+      # Single source of truth for the Go vendor hash. The server (nexorious)
+      # and client (nexctl) build from the same go.mod/go.sum, and buildGoModule's
+      # vendorHash is independent of subPackages, so the two are always identical
+      # — sharing one value here makes drift impossible. When go.mod/go.sum
+      # changes, the Nix Build workflow rebuilds both packages and patches this
+      # line; to refresh by hand set it to lib.fakeHash, run `nix build .#nexorious`,
+      # and copy the "got:" hash.
+      goVendorHash = "sha256-ukqriKqodG6w17a8gkL77+m8on0RhYGgx6kBSNCfyb4=";
     in
     {
       packages = forEachSystem (pkgs: rec {
@@ -31,6 +40,7 @@
           src = self;
           inherit version;
           commit = self.shortRev or "dirty";
+          vendorHash = goVendorHash;
         };
 
         # nexctl is the standalone REST client. It is exposed as its own package
@@ -40,6 +50,7 @@
           src = self;
           inherit version;
           commit = self.shortRev or "dirty";
+          vendorHash = goVendorHash;
         };
 
         default = nexorious;
