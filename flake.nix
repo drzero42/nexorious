@@ -33,11 +33,21 @@
           commit = self.shortRev or "dirty";
         };
 
+        # nexctl is the standalone REST client. It is exposed as its own package
+        # but is intentionally NOT pulled in by the nexorious NixOS module — the
+        # client stays opt-in (add packages.nexctl to environment.systemPackages).
+        nexctl = pkgs.callPackage ./nix/nexctl.nix {
+          src = self;
+          inherit version;
+          commit = self.shortRev or "dirty";
+        };
+
         default = nexorious;
       });
 
       overlays.default = final: _prev: {
         nexorious = self.packages.${final.system}.nexorious;
+        nexctl = self.packages.${final.system}.nexctl;
       };
 
       nixosModules = {

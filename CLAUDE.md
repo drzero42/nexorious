@@ -254,14 +254,15 @@ The `nix/` directory contains the Nix package and NixOS module. Two hashes must 
   nix run nixpkgs#prefetch-npm-deps -- ui/frontend/package-lock.json
   # paste the output hash into nix/frontend.nix → npmDepsHash
   ```
-- **`vendorHash` in `nix/package.nix`** — update after any `go.mod` / `go.sum` change:
+- **`vendorHash` in `nix/package.nix` AND `nix/nexctl.nix`** — update after any `go.mod` / `go.sum` change:
   ```bash
   # Set vendorHash = pkgs.lib.fakeHash; in nix/package.nix, then:
   nix build .#nexorious 2>&1 | grep "got:"
   # paste the "got:" hash into nix/package.nix → vendorHash
   ```
+  Both server and client build from the same `go.mod`/`go.sum`, so they share **one** `vendorHash` value — `nix/nexctl.nix` must carry the identical hash. Update both files together (verify the client with `nix build .#nexctl`).
 
-The `version` field in `flake.nix` is managed automatically by release-please (same as `Chart.yaml`).
+The `version` field in `flake.nix` is managed automatically by release-please (same as `Chart.yaml`). The flake exposes two packages, `nexorious` (server) and `nexctl` (CLI client); both are also in `overlays.default`. The `nexorious` NixOS module (`nix/module.nix`) installs only the server — `nexctl` is opt-in (add `packages.nexctl` to `environment.systemPackages`).
 
 ## Release Process
 
@@ -283,7 +284,7 @@ All commits on `main` must follow [Conventional Commits](https://www.conventiona
 1. Wait until there is a `feat:` or `fix:` on `main` since the last release (otherwise release-please's Release PR will be empty).
 2. Find the open PR titled `chore(main): release X.Y.Z` (opened by `release-please-action`).
 3. Review the proposed `CHANGELOG.md` diff, `Chart.yaml` / `docker-compose.yml` version bumps.
-4. Merge the Release PR. release-please creates the `vX.Y.Z` tag and publishes a GitHub Release; `release-artifacts.yaml` then builds — for amd64 and arm64, from one per-arch binary — the raw binary, `.deb`, `.rpm`, and a multi-arch container image, smoke-tests the packages, uploads the release assets, pushes the image (semver tag + `latest`) and Helm chart, and advances the `release` branch. There is no nightly/dev build flow (`build-push.yaml` was removed); non-release artifacts no longer exist.
+4. Merge the Release PR. release-please creates the `vX.Y.Z` tag and publishes a GitHub Release; `release-artifacts.yaml` then builds — for amd64 and arm64, from one per-arch binary — the raw binary, `.deb`, `.rpm`, and a multi-arch container image, smoke-tests the packages, uploads the release assets, pushes the image (semver tag + `latest`) and Helm chart, and advances the `release` branch. The **`nexctl`** client ships the same way minus server-only pieces: per-arch raw binary + `.deb`/`.rpm` (via `deploy/packaging/nfpm-nexctl.yaml`, smoke-tested by the `smoke-test-nexctl` job using `deploy/packaging/smoke-test-nexctl.sh`), but **no container image or Helm chart**. Both binaries share one repo version. There is no nightly/dev build flow (`build-push.yaml` was removed); non-release artifacts no longer exist.
 
 ### Overrides
 
