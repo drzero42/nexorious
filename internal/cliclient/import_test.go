@@ -348,3 +348,27 @@ func TestImportSource_nonTwoXX(t *testing.T) {
 		t.Errorf("error = %v, want 400", err)
 	}
 }
+
+func TestImportCSV_DecodesAutoEnvelope(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"job_id":      "job-1",
+			"source":      "csv",
+			"status":      "processing",
+			"total_items": 3,
+			"auto": map[string]any{
+				"mode":   "preset",
+				"preset": map[string]any{"slug": "grouvee", "name": "Grouvee"},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	res, err := New(srv.URL).ImportCSV("k", "g.csv", []byte("Name\nCeleste\n"), "", nil)
+	if err != nil {
+		t.Fatalf("ImportCSV: %v", err)
+	}
+	if res.Auto == nil || res.Auto.Mode != "preset" || res.Auto.Preset == nil || res.Auto.Preset.Slug != "grouvee" {
+		t.Fatalf("Auto = %+v, want preset grouvee", res.Auto)
+	}
+}

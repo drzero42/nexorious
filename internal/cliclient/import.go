@@ -18,6 +18,17 @@ type ImportResult struct {
 	Message      string `json:"message"`
 	TotalItems   int    `json:"total_items"`
 	SkippedCount int    `json:"skipped_count"`
+	// Auto is set only by POST /api/import/csv's auto mode (no format, no
+	// mapping); nil for preset/manual imports and the other import endpoints.
+	Auto *CSVAutoResolution `json:"auto,omitempty"`
+}
+
+// CSVAutoResolution describes how POST /api/import/csv's auto mode mapped the
+// file: a preset matched by signature, or a guessed column mapping.
+type CSVAutoResolution struct {
+	Mode    string               `json:"mode"`              // "preset" | "guessed"
+	Preset  *CSVPreset           `json:"preset,omitempty"`  // set when mode=="preset"
+	Mapping *CSVSuggestedMapping `json:"mapping,omitempty"` // set when mode=="guessed"
 }
 
 // ImportSource is one registered import source as returned by GET /api/import/sources.
