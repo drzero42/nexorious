@@ -15,7 +15,6 @@ import (
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db"
-	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/filter"
 )
 
@@ -375,18 +374,8 @@ func (h *PoolsHandler) HandleGetPool(c *echo.Context) error {
 // loadUserGameCards fetches user_games with relations for a set of ids and
 // returns them keyed by id, reusing the list-item DTO shape.
 func (h *PoolsHandler) loadUserGameCards(ctx context.Context, ids []string) (map[string]userGameWithPlatformsResponse, error) {
-	var userGames []models.UserGame
-	if err := h.db.NewSelect().
-		Model(&userGames).
-		Where("user_game.id IN (?)", bun.List(ids)).
-		Relation("Game").
-		Relation("Platforms", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("PlatformRecord").Relation("StorefrontRecord")
-		}).
-		Relation("Tags", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Relation("Tag")
-		}).
-		Scan(ctx); err != nil {
+	userGames, err := LoadUserGameCardsByIDs(ctx, h.db, ids)
+	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]userGameWithPlatformsResponse, len(userGames))
