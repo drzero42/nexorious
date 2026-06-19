@@ -97,6 +97,9 @@ func TestMCPGameAcquire(t *testing.T) {
 	const id = "33333333-3333-3333-3333-333333333333"
 	var moved atomic.Bool
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/platforms/simple-list", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "pc-windows", "display_name": "PC (Windows)"}})
+	})
 	mux.HandleFunc("/api/user-games/", func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet:
@@ -133,6 +136,9 @@ func TestMCPGameAcquire(t *testing.T) {
 func TestMCPGameAcquireAmbiguous(t *testing.T) {
 	var moved atomic.Bool
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/platforms/simple-list", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "pc-windows", "display_name": "PC (Windows)"}})
+	})
 	mux.HandleFunc("/api/user-games", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"user_games": []map[string]any{
@@ -199,6 +205,72 @@ func TestMCPGameRm(t *testing.T) {
 	}
 	if deletedID != "22222222-2222-2222-2222-222222222222" {
 		t.Fatalf("expected delete for id 22222222-..., got %q", deletedID)
+	}
+}
+
+func TestMCPGameAddInvalidPlatform(t *testing.T) {
+	var created atomic.Bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/platforms/simple-list", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"name": "playstation-5", "display_name": "PlayStation 5"},
+			{"name": "pc-windows", "display_name": "PC (Windows)"},
+		})
+	})
+	mux.HandleFunc("/api/games/igdb/", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"games": []map[string]any{{"igdb_id": 2933, "title": "Kingdom Hearts III"}}, "total": 1})
+	})
+	mux.HandleFunc("/api/games/igdb-import", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusCreated) })
+	mux.HandleFunc("/api/user-games", func(w http.ResponseWriter, _ *http.Request) {
+		created.Store(true)
+		w.WriteHeader(http.StatusCreated)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "game_add",
+		Arguments: map[string]any{"igdb_id": 2933, "platform": "PS5"},
+	})
+	if err != nil {
+		t.Fatalf("transport err: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("expected tool error for invalid platform 'PS5'")
+	}
+	b, _ := json.Marshal(res.Content)
+	if !bytes.Contains(b, []byte("playstation-5")) {
+		t.Fatalf("error should list valid platform slugs: %s", b)
+	}
+	if created.Load() {
+		t.Fatal("create must NOT be called when the platform is invalid")
+	}
+}
+
+func TestMCPGameFiltersIncludesPlatforms(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games/filter-options", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"genres": []string{"RPG"}})
+	})
+	mux.HandleFunc("/api/platforms/storefronts/simple-list", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "steam", "display_name": "Steam"}})
+	})
+	mux.HandleFunc("/api/platforms/simple-list", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"name": "playstation-5", "display_name": "PlayStation 5"}})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "game_filters"})
+	if err != nil || res.IsError {
+		t.Fatalf("game_filters: err=%v res=%+v", err, res)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	if !bytes.Contains(b, []byte("playstation-5")) {
+		t.Fatalf("game_filters output should include platform slugs: %s", b)
 	}
 }
 
@@ -333,6 +405,11 @@ func TestMCPGameFilters(t *testing.T) {
 	mux.HandleFunc("/api/platforms/storefronts/simple-list", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"name": "steam", "display_name": "Steam"},
+		})
+	})
+	mux.HandleFunc("/api/platforms/simple-list", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"name": "pc-windows", "display_name": "PC (Windows)"},
 		})
 	})
 	srv := httptest.NewServer(mux)

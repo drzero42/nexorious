@@ -996,6 +996,22 @@ func (c *Client) ListStorefronts(key string) ([]Storefront, error) {
 	return out, nil
 }
 
+// SimplePlatform is one entry from GET /api/platforms/simple-list.
+type SimplePlatform struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+}
+
+// ListPlatforms returns the platforms seeded on the server (name + display
+// name), the valid values for a platform slug (e.g. on game add/edit/acquire).
+func (c *Client) ListPlatforms(key string) ([]SimplePlatform, error) {
+	var out []SimplePlatform
+	if err := c.doBearer(http.MethodGet, "/api/platforms/simple-list", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ExternalGame is one external game entry as returned by
 // GET /api/sync/:storefront/external-games.
 type ExternalGame struct {

@@ -62,6 +62,9 @@ func newGameAddCmd() *cobra.Command {
 				if storefront != "" {
 					sf = storefront
 				}
+				if err := validatePlatform(c, p.Key, pl); err != nil {
+					return err
+				}
 				in.Platforms = []cliclient.PlatformInput{{Platform: pl, Storefront: sf, OwnershipStatus: "owned"}}
 			}
 

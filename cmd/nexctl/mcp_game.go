@@ -107,6 +107,7 @@ type gameShowOutput struct {
 type gameFiltersOutput struct {
 	PlayStatuses       []string `json:"play_statuses"`
 	OwnershipStatuses  []string `json:"ownership_statuses"`
+	Platforms          []string `json:"platforms"`
 	Storefronts        []string `json:"storefronts"`
 	Genres             []string `json:"genres"`
 	GameModes          []string `json:"game_modes"`
@@ -297,7 +298,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 			return nil, stats, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "game_filters", Description: "Return valid values for every game_list filter: play/ownership statuses, storefronts, and library-derived genre/game-mode/theme/perspective facets."},
+	mcp.AddTool(s, &mcp.Tool{Name: "game_filters", Description: "Return valid values for every game_list filter and the platform slugs accepted by game_add/edit/acquire: play/ownership statuses, platforms, storefronts, and library-derived genre/game-mode/theme/perspective facets."},
 		func(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, gameFiltersOutput, error) {
 			opts, err := c.GetFilterOptions(key)
 			if err != nil {
@@ -307,14 +308,23 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 			if err != nil {
 				return nil, gameFiltersOutput{}, mcpToolError("game_filters (storefronts)", err)
 			}
-			slugs := make([]string, len(storefronts))
+			sfSlugs := make([]string, len(storefronts))
 			for i, sf := range storefronts {
-				slugs[i] = sf.Name
+				sfSlugs[i] = sf.Name
+			}
+			platforms, err := c.ListPlatforms(key)
+			if err != nil {
+				return nil, gameFiltersOutput{}, mcpToolError("game_filters (platforms)", err)
+			}
+			platSlugs := make([]string, len(platforms))
+			for i, p := range platforms {
+				platSlugs[i] = p.Name
 			}
 			out := gameFiltersOutput{
 				PlayStatuses:       enum.AllPlayStatuses(),
 				OwnershipStatuses:  enum.AllOwnershipStatuses(),
-				Storefronts:        slugs,
+				Platforms:          platSlugs,
+				Storefronts:        sfSlugs,
 				Genres:             opts.Genres,
 				GameModes:          opts.GameModes,
 				Themes:             opts.Themes,
@@ -327,6 +337,14 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 		func(_ context.Context, _ *mcp.CallToolRequest, in gameAddInput) (*mcp.CallToolResult, gameAddOutput, error) {
 			if in.IgdbID == 0 && in.Title == "" {
 				return nil, gameAddOutput{}, fmt.Errorf("game_add: provide title or igdb_id")
+			}
+			// Validate the platform up front so an invalid slug fails fast with an
+			// actionable error instead of a FK 500 after the IGDB import.
+			if in.Platform != "" {
+				pl, _ := splitPlatform(in.Platform)
+				if err := validatePlatform(c, key, pl); err != nil {
+					return nil, gameAddOutput{}, mcpToolError("game_add", err)
+				}
 			}
 			cands, err := findIGDBCandidates(c, key, in.IgdbID, in.Title)
 			if err != nil {
@@ -431,6 +449,10 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 		func(_ context.Context, _ *mcp.CallToolRequest, in gameAcquireInput) (*mcp.CallToolResult, gameWriteOutput, error) {
 			if in.Platform == "" {
 				return nil, gameWriteOutput{}, fmt.Errorf("game_acquire: platform is required")
+			}
+			plat, _ := splitPlatform(in.Platform)
+			if err := validatePlatform(c, key, plat); err != nil {
+				return nil, gameWriteOutput{}, mcpToolError("game_acquire", err)
 			}
 			matches, err := findUserGamesByRef(c, key, in.Ref)
 			if err != nil {
