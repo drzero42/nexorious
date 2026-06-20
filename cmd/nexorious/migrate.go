@@ -142,11 +142,16 @@ func runMigrate(cmd *cobra.Command, _ []string) error {
 	if err := migrator.DetermineState(); err != nil {
 		return fmt.Errorf("determine state: %w", err)
 	}
-	if migrator.State() == migrate.AppStateReady {
+	switch migrator.State() {
+	case migrate.AppStateReady:
 		slog.Info("migrate: no pending migrations")
 		fmt.Println("No pending migrations.")
 		return nil
+	case migrate.AppStateMigrationRefused:
+		return fmt.Errorf("migrate: refused — this database is not a clean v0.17.1 or baseline install; " +
+			"upgrade to v0.17.1 first (let it migrate fully) then to v0.90.0+, or export → fresh install → import")
 	}
+	// AppStateNeedsMigration and AppStateNeedsAdopt both proceed to RunMigrations.
 
 	migrator.SetLogWriter(slog.NewLogLogger(slog.Default().Handler(), slog.LevelInfo).Writer())
 	if err := migrator.RunMigrations(ctx); err != nil {
