@@ -448,6 +448,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			return nil
 		},
 		ReinitMigrator: func(db *bun.DB) error {
+			// DetermineState re-classifies the restored schema. A restored
+			// fully-migrated v0.17.1 dump (23 bun_migrations rows, no baseline)
+			// lands in AppStateNeedsAdopt and is adopted via the /migrate flow
+			// (Gate 2 serves the page); a same-version dump comes back Ready.
 			if err := migrator.DetermineState(); err != nil {
 				return err
 			}
