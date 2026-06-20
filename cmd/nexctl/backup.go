@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -144,18 +146,36 @@ func newBackupRmCmd() *cobra.Command {
 
 func newBackupDownloadCmd() *cobra.Command {
 	var outPath string
+	var latest bool
 	cmd := &cobra.Command{
-		Use:   "download <id>",
+		Use:   "download [<id>]",
 		Short: "Download a backup archive",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
 			outW := cmd.OutOrStdout()
+			hasID := len(args) == 1
+			if hasID && latest {
+				return fmt.Errorf("specify either an id or --latest, not both")
+			}
+			if !hasID && !latest {
+				return fmt.Errorf("specify an id or --latest")
+			}
+
 			p, _, err := resolveProfile(cmd)
 			if err != nil {
 				return err
 			}
 			c := cliclient.New(p.URL)
+
+			id := ""
+			if hasID {
+				id = args[0]
+			} else {
+				id, err = latestBackupID(c, p.Key)
+				if err != nil {
+					return err
+				}
+			}
 
 			serverName, body, err := c.OpenBackupDownload(p.Key, id)
 			if err != nil {
@@ -195,7 +215,32 @@ func newBackupDownloadCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&outPath, "out", "", `Output path; "-" for stdout; empty uses the server filename (else backup-<id>.tar.gz)`)
+	cmd.Flags().BoolVar(&latest, "latest", false, "Download the most recent backup instead of an explicit id")
 	return cmd
+}
+
+// latestBackupID returns the id of the newest backup, resolving "latest" by
+// sorting the list by created_at descending client-side rather than trusting
+// the server's array order.
+func latestBackupID(c *cliclient.Client, key string) (string, error) {
+	backups, err := c.ListBackups(key)
+	if err != nil {
+		return "", fmt.Errorf("list backups: %w", err)
+	}
+	if len(backups) == 0 {
+		return "", fmt.Errorf("no backups available")
+	}
+	sort.Slice(backups, func(i, j int) bool {
+		ti, errI := time.Parse(time.RFC3339, backups[i].CreatedAt)
+		tj, errJ := time.Parse(time.RFC3339, backups[j].CreatedAt)
+		if errI != nil || errJ != nil {
+			// Fall back to lexical order on unparseable timestamps; RFC3339
+			// sorts correctly lexically anyway for same-offset values.
+			return backups[i].CreatedAt > backups[j].CreatedAt
+		}
+		return ti.After(tj)
+	})
+	return backups[0].ID, nil
 }
 
 func newBackupRestoreCmd() *cobra.Command {
