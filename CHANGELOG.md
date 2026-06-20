@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.90.0](https://github.com/drzero42/nexorious/compare/v0.17.1...v0.90.0) (2026-06-20)
+
+
+### Features
+
+* **db:** squash migrations into a single v0.90.0 baseline with in-place adopt from v0.17.1 ([#1122](https://github.com/drzero42/nexorious/issues/1122)) ([29e809b](https://github.com/drzero42/nexorious/commit/29e809b7681860645e0076fdcf6d7bc1598e4fe0))
+* **nexctl:** add 'backup download --latest' to fetch the most recent backup ([#1125](https://github.com/drzero42/nexorious/issues/1125)) ([75f71a1](https://github.com/drzero42/nexorious/commit/75f71a147c5ff2147987c04586d9d5b964e2cf9f)), closes [#1119](https://github.com/drzero42/nexorious/issues/1119)
+* **nexctl:** add 'setup' and 'migrate' commands; ship nexctl in the container image ([#1128](https://github.com/drzero42/nexorious/issues/1128)) ([869bd48](https://github.com/drzero42/nexorious/commit/869bd48677a6a9eb7e3e956498a8ed924cec09b7)), closes [#1123](https://github.com/drzero42/nexorious/issues/1123)
+* **nix:** install bash/zsh/fish shell completions for nexorious and nexctl ([#1126](https://github.com/drzero42/nexorious/issues/1126)) ([189d7b2](https://github.com/drzero42/nexorious/commit/189d7b2bb0e8ae8bb02763c608e2b139bc6b053b)), closes [#1120](https://github.com/drzero42/nexorious/issues/1120)
+
 ## [0.17.1](https://github.com/drzero42/nexorious/compare/v0.17.0...v0.17.1) (2026-06-19)
 
 
