@@ -85,6 +85,19 @@ func (mg *Migrator) determineState() error {
 			return fmt.Errorf("determine state: init: %w", err)
 		}
 	}
+	applied, err := mg.bunMig.AppliedMigrations(context.Background())
+	if err != nil {
+		return fmt.Errorf("determine state: applied: %w", err)
+	}
+	switch classify(applied) {
+	case decisionAdopt:
+		mg.state.Store(int32(AppStateNeedsAdopt))
+		return nil
+	case decisionRefuse:
+		mg.state.Store(int32(AppStateMigrationRefused))
+		return nil
+	}
+	// decisionNormal: existing logic.
 	ms, err := mg.bunMig.MigrationsWithStatus(context.Background())
 	if err != nil {
 		return fmt.Errorf("determine state: %w", err)
@@ -164,6 +177,17 @@ func (mg *Migrator) PendingCount() (int, error) {
 			return 0, fmt.Errorf("pending count: init: %w", err)
 		}
 	}
+	applied, err := mg.bunMig.AppliedMigrations(context.Background())
+	if err != nil {
+		return 0, fmt.Errorf("pending count: applied: %w", err)
+	}
+	switch classify(applied) {
+	case decisionAdopt:
+		return 1, nil
+	case decisionRefuse:
+		return 0, nil
+	}
+	// decisionNormal: fall through to the existing Unapplied()+river count.
 	ms, err := mg.bunMig.MigrationsWithStatus(context.Background())
 	if err != nil {
 		return 0, fmt.Errorf("pending count: %w", err)
@@ -190,15 +214,26 @@ func (mg *Migrator) Status(ctx context.Context) (pending int, current string, er
 			return 0, "", fmt.Errorf("status: init: %w", err)
 		}
 	}
+	applied, err := mg.bunMig.AppliedMigrations(ctx)
+	if err != nil {
+		return 0, "", fmt.Errorf("status: applied: %w", err)
+	}
+	switch classify(applied) {
+	case decisionAdopt:
+		return 1, "v0.17.1 (adopt pending)", nil
+	case decisionRefuse:
+		return 0, "unknown (refused)", nil
+	}
+	// decisionNormal: fall through to existing Applied()/Unapplied() logic.
 	ms, err := mg.bunMig.MigrationsWithStatus(ctx)
 	if err != nil {
 		return 0, "", fmt.Errorf("status: %w", err)
 	}
-	applied := ms.Applied()
+	appliedMs := ms.Applied()
 	current = "none"
-	if len(applied) > 0 {
+	if len(appliedMs) > 0 {
 		// Applied is sorted in descending order; index 0 is the most recent.
-		current = applied[0].Name
+		current = appliedMs[0].Name
 	}
 	return len(ms.Unapplied()), current, nil
 }
@@ -235,6 +270,41 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 		return wrapped
 	}
 	defer mg.bunMig.Unlock(ctx) //nolint:errcheck
+
+	// Re-classify UNDER the lock: a concurrently-booting instance may have
+	// already adopted. Never trust the pre-lock determineState for the
+	// destructive adopt.
+	applied, err := mg.bunMig.AppliedMigrations(ctx)
+	if err != nil {
+		wrapped := fmt.Errorf("migrate: read applied: %w", err)
+		slog.ErrorContext(ctx, "migrate: read applied failed", logging.KeyErr, wrapped, logging.Cat(logging.CategoryDB))
+		mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", wrapped))
+		mg.TransitionToFailed(wrapped)
+		close(ch)
+		return wrapped
+	}
+	switch classify(applied) {
+	case decisionRefuse:
+		wrapped := fmt.Errorf("migrate: refusing to migrate a database that is not a clean v0.17.1 or baseline install")
+		mg.sendLog(ch, fmt.Sprintf("migration refused: %v\n", wrapped))
+		mg.state.Store(int32(AppStateMigrationRefused))
+		mg.lastError.Store(wrapped.Error())
+		close(ch)
+		return wrapped
+	case decisionAdopt:
+		mg.sendLog(ch, "Adopting existing v0.17.1 schema (rewriting migration history)…\n")
+		if err := mg.adopt(ctx); err != nil {
+			wrapped := fmt.Errorf("migrate: adopt: %w", err)
+			slog.ErrorContext(ctx, "migrate: adopt failed", logging.KeyErr, wrapped, logging.Cat(logging.CategoryDB))
+			mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", wrapped))
+			mg.TransitionToFailed(wrapped)
+			close(ch)
+			return wrapped
+		}
+		mg.sendLog(ch, "Adopt complete; checking for newer migrations…\n")
+	}
+	// decisionNormal and post-adopt both fall through to Migrate(), which now
+	// sees the baseline row applied and runs only post-baseline migrations.
 
 	group, err := mg.bunMig.Migrate(ctx)
 	if err != nil {

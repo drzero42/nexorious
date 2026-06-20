@@ -1,6 +1,10 @@
 package migrate
 
 import (
+	"context"
+	"fmt"
+
+	"github.com/uptrace/bun"
 	bunmigrate "github.com/uptrace/bun/migrate"
 )
 
@@ -38,6 +42,34 @@ const (
 	// not the exact manifest (older than v0.17.1, partial, or unknown).
 	decisionRefuse
 )
+
+// adopt rewrites a fully-migrated v0.17.1 bun_migrations (the 23 manifest rows)
+// to the single baseline row, in one transaction. Callers MUST hold the Bun
+// advisory lock and MUST have just re-confirmed classify()==decisionAdopt under
+// that lock. The baseline row uses GroupID 1 to match a fresh-install Migrate().
+func (mg *Migrator) adopt(ctx context.Context) error {
+	names := make([]string, 0, len(v0171Manifest))
+	for n := range v0171Manifest {
+		names = append(names, n)
+	}
+	return mg.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.NewDelete().
+			Model((*bunmigrate.Migration)(nil)).
+			ModelTableExpr("bun_migrations").
+			Where("name IN (?)", bun.List(names)).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("adopt: delete v0.17.1 rows: %w", err)
+		}
+		row := &bunmigrate.Migration{Name: baselineTimestamp, GroupID: 1}
+		if _, err := tx.NewInsert().
+			Model(row).
+			ModelTableExpr("bun_migrations").
+			Exec(ctx); err != nil {
+			return fmt.Errorf("adopt: insert baseline row: %w", err)
+		}
+		return nil
+	})
+}
 
 // classify decides how to treat a database from its raw bun_migrations rows.
 // applied is the result of (*bunmigrate.Migrator).AppliedMigrations — each
