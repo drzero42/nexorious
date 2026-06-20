@@ -34,6 +34,17 @@ var ErrNotFound = errors.New("backup not found")
 // backup directory via path traversal.
 var ErrInvalidBackupID = errors.New("invalid backup id")
 
+// IncompatibleBackupError indicates a backup cannot be restored by this binary
+// because of a version/compatibility mismatch — too old to adopt (predates
+// v0.17.1), created by a newer Nexorious, or an unknown archive format. Its
+// message is user-facing: restore handlers surface it verbatim with a 400 rather
+// than a generic "restore failed", because the operator can act on it (upgrade
+// the source, use a different backup, or export/import). Distinct from genuine
+// corruption/internal errors, which stay opaque 500s.
+type IncompatibleBackupError struct{ Msg string }
+
+func (e *IncompatibleBackupError) Error() string { return e.Msg }
+
 // Service handles backup create/list/delete/validate/restore operations.
 type Service struct {
 	db          *bun.DB
@@ -233,14 +244,14 @@ func (s *Service) ValidateArchive(archivePath string, verifyChecksums bool, maxM
 	}
 
 	if manifest.Version > MaxManifestVersion {
-		return nil, fmt.Errorf("unknown manifest version %d (max supported: %d)", manifest.Version, MaxManifestVersion)
+		return nil, &IncompatibleBackupError{Msg: fmt.Sprintf("unknown manifest version %d (max supported: %d)", manifest.Version, MaxManifestVersion)}
 	}
 
 	if maxMigrationVersion != "" && manifest.MigrationVersion > maxMigrationVersion {
-		return nil, fmt.Errorf(
+		return nil, &IncompatibleBackupError{Msg: fmt.Sprintf(
 			"backup was created by a newer version of Nexorious (migration %s); this binary only supports up to migration %s — upgrade before restoring",
 			manifest.MigrationVersion, maxMigrationVersion,
-		)
+		)}
 	}
 
 	// Migration floor: a backup older than the v0.17.1 stepping stone cannot be
@@ -249,10 +260,10 @@ func (s *Service) ValidateArchive(archivePath string, verifyChecksums bool, maxM
 	// it here — before any database mutation. The source must first be upgraded
 	// to v0.17.1 (or use export/import).
 	if minMigrationVersion != "" && manifest.MigrationVersion < minMigrationVersion {
-		return nil, fmt.Errorf(
+		return nil, &IncompatibleBackupError{Msg: fmt.Sprintf(
 			"backup predates v0.17.1 (migration %s); restore requires a backup at migration %s or later — upgrade the source instance to v0.17.1 first, or use export/import",
 			manifest.MigrationVersion, minMigrationVersion,
-		)
+		)}
 	}
 
 	// Always verify database.sql is present

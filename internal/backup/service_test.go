@@ -457,6 +457,13 @@ func TestValidateArchive_PredatesV0171Rejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for backup predating v0.17.1")
 	}
+	var incompat *backup.IncompatibleBackupError
+	if !errors.As(err, &incompat) {
+		t.Fatalf("expected *IncompatibleBackupError, got %T: %v", err, err)
+	}
+	if !strings.Contains(incompat.Error(), "v0.17.1") {
+		t.Errorf("error message should mention v0.17.1, got: %q", incompat.Error())
+	}
 }
 
 // TestValidateArchive_AdoptableAndBaselineAccepted confirms the floor does not

@@ -270,6 +270,10 @@ func (h *BackupHandler) HandleRestore(c *echo.Context) error {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
+		var incompat *backup.IncompatibleBackupError
+		if errors.As(err, &incompat) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
+		}
 		slog.ErrorContext(c.Request().Context(), "restore failed", "backup_id", id, logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
 	}
@@ -326,6 +330,10 @@ func (h *BackupHandler) HandleRestoreUpload(c *echo.Context) error {
 	if err != nil {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
+		}
+		var incompat *backup.IncompatibleBackupError
+		if errors.As(err, &incompat) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
 		}
 		slog.ErrorContext(c.Request().Context(), "restore from upload failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
@@ -398,6 +406,10 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 	if _, err := h.svc.RestoreFromUpload(tmpPath, opts); err != nil {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
+		}
+		var incompat *backup.IncompatibleBackupError
+		if errors.As(err, &incompat) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
 		}
 		slog.ErrorContext(c.Request().Context(), "setup restore failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
@@ -538,6 +550,10 @@ func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
 	if _, err := h.svc.RestoreFromArchive(fullPath, opts); err != nil {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
+		}
+		var incompat *backup.IncompatibleBackupError
+		if errors.As(err, &incompat) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
 		}
 		slog.ErrorContext(c.Request().Context(), "setup restore-from-disk failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
