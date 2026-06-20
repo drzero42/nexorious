@@ -401,6 +401,34 @@ func (mg *Migrator) InitNeedsSetup(ctx context.Context, db *bun.DB) error {
 	return nil
 }
 
+// ReinitAfterRestore re-detects migration state after a database restore and,
+// when the restored database is behind, brings it up to date so the restore
+// leaves the operator on a working schema rather than parking on the /migrate
+// page. A restored pre-baseline backup (e.g. a v0.17.1 dump: the 23 manifest
+// rows, no baseline) comes back AppStateNeedsAdopt; a backup older than this
+// binary may need catch-up migrations (AppStateNeedsMigration). Both are run
+// here (adopt and/or migrate, plus River). An un-adoptable database cannot
+// reach this point — the backup restore floor gate rejects it before applying —
+// so RunMigrations never refuses here. Intended to be the restore
+// orchestration's ReinitMigrator callback.
+func (mg *Migrator) ReinitAfterRestore(ctx context.Context, db *bun.DB) error {
+	if err := mg.determineState(); err != nil {
+		return err
+	}
+	switch mg.State() {
+	case AppStateNeedsAdopt, AppStateNeedsMigration:
+		if err := mg.RunMigrations(ctx); err != nil {
+			return err
+		}
+		// RunMigrations leaves state at AppStateMigrating; re-detect to settle
+		// on Ready (or surface a failure) before the setup check.
+		if err := mg.determineState(); err != nil {
+			return err
+		}
+	}
+	return mg.InitNeedsSetup(ctx, db)
+}
+
 func (mg *Migrator) LastUnavailableAt() time.Time {
 	v := mg.lastUnavailableAt.Load()
 	if v == nil {

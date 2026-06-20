@@ -236,3 +236,52 @@ func TestBaseline_SeedDataPresent(t *testing.T) {
 		}
 	}
 }
+
+// TestReinitAfterRestore_AdoptsV0171 is the regression test for the
+// restore-of-a-v0.17.1-backup UX: ReinitAfterRestore must adopt the restored
+// schema in place and settle on Ready, so the operator is not left on the
+// /migrate adopt page after a restore.
+func TestReinitAfterRestore_AdoptsV0171(t *testing.T) {
+	resetPublicSchema(t)
+	db := makeAdoptBunDB(t)
+	seedV0171(t, db) // simulates the just-restored v0.17.1 dump: 23 rows, no baseline
+
+	m := migrate.NewMigrator(db)
+	if err := m.ReinitAfterRestore(context.Background(), db); err != nil {
+		t.Fatalf("ReinitAfterRestore: %v", err)
+	}
+	if m.State() != migrate.AppStateReady {
+		t.Fatalf("state = %v, want Ready", m.State())
+	}
+	got := adoptNames(t, db)
+	if len(got) != 1 || got[0] != "20260620000001" {
+		t.Fatalf("bun_migrations = %v, want exactly [20260620000001]", got)
+	}
+}
+
+// TestReinitAfterRestore_BaselineNoOp confirms a same-version (baseline) restore
+// settles on Ready without changing migration history.
+func TestReinitAfterRestore_BaselineNoOp(t *testing.T) {
+	resetPublicSchema(t)
+	db := makeAdoptBunDB(t)
+	// Fresh baseline install (baseline row present).
+	m0 := migrate.NewMigrator(db)
+	if err := m0.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
+	if err := m0.RunMigrations(context.Background()); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	m := migrate.NewMigrator(db)
+	if err := m.ReinitAfterRestore(context.Background(), db); err != nil {
+		t.Fatalf("ReinitAfterRestore: %v", err)
+	}
+	if m.State() != migrate.AppStateReady {
+		t.Fatalf("state = %v, want Ready", m.State())
+	}
+	got := adoptNames(t, db)
+	if len(got) != 1 || got[0] != "20260620000001" {
+		t.Fatalf("bun_migrations = %v, want exactly [20260620000001]", got)
+	}
+}

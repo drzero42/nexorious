@@ -448,14 +448,14 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			return nil
 		},
 		ReinitMigrator: func(db *bun.DB) error {
-			// DetermineState re-classifies the restored schema. A restored
+			// Bring the restored database up to date in place. A restored
 			// fully-migrated v0.17.1 dump (23 bun_migrations rows, no baseline)
-			// lands in AppStateNeedsAdopt and is adopted via the /migrate flow
-			// (Gate 2 serves the page); a same-version dump comes back Ready.
-			if err := migrator.DetermineState(); err != nil {
-				return err
-			}
-			return migrator.InitNeedsSetup(context.Background(), db)
+			// comes back AppStateNeedsAdopt; ReinitAfterRestore adopts it (and
+			// runs any catch-up migrations) so the restore returns the operator
+			// to a working, Ready app rather than the /migrate adopt page. A
+			// same-version dump is a no-op. An un-adoptable backup can't reach
+			// here — the restore floor gate rejects it before applying.
+			return migrator.ReinitAfterRestore(context.Background(), db)
 		},
 		SetAppState: func(state string) {
 			if state == "db_unavailable" {
