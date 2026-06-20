@@ -138,6 +138,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	// initAppState runs determineState + InitNeedsSetup.
 	// Called once at startup (if DB is reachable) and as StartDBProbe's onRecovery.
+	// NeedsAdopt and MigrationRefused states are left in place; Gate 2 serves the /migrate page.
 	initAppState := func(ctx context.Context) error {
 		if err := migrator.DetermineState(); err != nil {
 			return fmt.Errorf("initAppState: determineState: %w", err)
@@ -543,10 +544,15 @@ func runStartupMigrations(ctx context.Context, db *bun.DB, migrator *migrate.Mig
 	if err := migrator.DetermineState(); err != nil {
 		return fmt.Errorf("serve --migrate: determine state: %w", err)
 	}
-	if migrator.State() != migrate.AppStateNeedsMigration {
+	switch migrator.State() {
+	case migrate.AppStateReady:
 		slog.Info("serve --migrate: no pending migrations")
 		return nil
+	case migrate.AppStateMigrationRefused:
+		return fmt.Errorf("serve --migrate: refused — database is not a clean v0.17.1 or baseline install; " +
+			"upgrade to v0.17.1 first then v0.90.0+, or export → fresh install → import")
 	}
+	// AppStateNeedsMigration and AppStateNeedsAdopt proceed.
 	migrator.SetLogWriter(slog.NewLogLogger(slog.Default().Handler(), slog.LevelInfo).Writer())
 	if err := migrator.RunMigrations(ctx); err != nil {
 		return fmt.Errorf("serve --migrate: run migrations: %w", err)
