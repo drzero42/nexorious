@@ -369,6 +369,10 @@ func (mg *Migrator) SetPrevStateForTest(s AppState) {
 	mg.prevState.Store(int32(s))
 }
 
+func (mg *Migrator) SetLastErrorForTest(msg string) {
+	mg.lastError.Store(msg)
+}
+
 func NewMigratorForTest(s AppState) *Migrator {
 	mg := &Migrator{}
 	mg.state.Store(int32(s))

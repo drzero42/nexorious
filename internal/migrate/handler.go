@@ -36,10 +36,19 @@ func (h *Handler) HandleMigrateUI(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get pending count")
 	}
 
+	state := h.migrator.State()
 	data := struct {
 		PendingCount int
+		State        string
+		Refused      bool
+		Adopt        bool
+		Error        string
 	}{
 		PendingCount: pending,
+		State:        state.String(),
+		Refused:      state == AppStateMigrationRefused,
+		Adopt:        state == AppStateNeedsAdopt,
+		Error:        h.migrator.LastError(),
 	}
 
 	c.Response().Header().Set(echo.HeaderContentType, "text/html; charset=utf-8")
@@ -48,6 +57,14 @@ func (h *Handler) HandleMigrateUI(c *echo.Context) error {
 
 func (h *Handler) HandleStatus(c *echo.Context) error {
 	state := h.migrator.State()
+
+	if state == AppStateMigrationRefused {
+		return c.JSON(http.StatusOK, map[string]any{
+			"pending_count": 0,
+			"state":         state.String(),
+			"error":         h.migrator.LastError(),
+		})
+	}
 
 	// In the failed state, try for a real pending count; fall back to 0 if
 	// PendingCount itself errors (e.g. DB closed during a Lock-acquire failure).
@@ -79,8 +96,12 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 		return c.JSON(http.StatusConflict, map[string]string{"error": "migration already in progress"})
 	case AppStateReady:
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "already up to date"})
+	case AppStateMigrationRefused:
+		return c.JSON(http.StatusConflict, map[string]string{
+			"error": "this database cannot be migrated automatically; see the page for upgrade instructions",
+		})
 	}
-	// Allowed: AppStateNeedsMigration and AppStateMigrationFailed.
+	// Allowed: AppStateNeedsMigration, AppStateMigrationFailed, and AppStateNeedsAdopt.
 	// (Gate 1 redirects callers away before AppStateDBUnavailable can reach here.)
 
 	go func() {
