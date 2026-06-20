@@ -199,6 +199,42 @@ Bringing in a large library isn't instant, and that's by design rather than a si
 
 So a first sync or import of hundreds of games can take a while to finish, and there's nothing on your side to fix. It all runs in the background — carry on using your library and watch the progress on the **Sync** or **Import / Export** page. Later syncs are usually much quicker, since only new purchases need looking up.
 
+## Using nexctl (the command-line client)
+
+Everything in this guide is reachable from a browser, but Nexorious also ships a command-line client, **`nexctl`**, that talks to the same server over its API. It's a separate program from the server itself: cataloguing games, managing pools and tags, running syncs, and importing or exporting all work from the terminal — handy for scripting, bulk edits, or driving Nexorious from a tool or an AI agent. The full surface is larger than what's shown here; run `nexctl --help`, or `nexctl <command> --help` for any group, to see all of it.
+
+### Getting nexctl
+
+`nexctl` is published with each release as its own download — a raw binary and `.deb` / `.rpm` packages for Linux. It is **not** part of the server container image or the Helm chart, so install it on whatever machine you want to run commands from. If you run the server yourself, see the [Admin Guide](admin-guide.md) for packaging details; otherwise ask whoever runs your server for the binary, or grab it from the project's releases.
+
+### Signing in
+
+Authenticate once and `nexctl` remembers it:
+
+```bash
+nexctl account login
+```
+
+It prompts for your server URL, username, and password, then stores an API key locally (under `~/.config/nexorious/`, or `$XDG_CONFIG_HOME`). After that, commands just work. `nexctl account whoami` shows who you're signed in as, and `nexctl account logout` clears the stored key.
+
+If you'd rather not log in interactively — for a script, a cron job, or a third-party tool — create an **API key** instead, either from your [Profile](#your-account) in the web UI or with `nexctl account api-key generate`. A **read** key is safe to hand to something that only needs to look at your data; a **write** key can change it too. List and revoke keys with `nexctl account api-key list` / `revoke`.
+
+You can point `nexctl` at more than one server using **profiles**: `nexctl profile add`, `nexctl profile list`, and `nexctl profile use <name>` switch between them, and `--profile <name>` targets one for a single command.
+
+Most commands accept a few shared flags: `--json` for machine-readable output (good for piping into other tools), `-q`/`--quiet` for just the bare ids or values, and `-y` to skip confirmation prompts on destructive actions.
+
+### The everyday commands
+
+The groups you'll reach for mirror the web UI:
+
+- **`nexctl game`** — your library: `list` (with filters), `show`, `add`, `edit`, `acquire` (move a wishlist game into your library), `rm`, plus `stats` and `filters` to see what you can filter on.
+- **`nexctl pool`** — [play-planning pools](#planning): `list`, `show`, `create`, `edit`, `add`/`remove` games, `queue` and `reorder` to manage the order.
+- **`nexctl tag`** — your [tags](#tags): `list`, `create`, `rename`, `rm`.
+- **`nexctl sync`** — [storefront sync](#syncing-your-storefront-libraries): `status`, `connect`/`disconnect` a service, `run` it, set its `config`, and `review`/`resolve`/`skip` the matches that need your attention.
+- **`nexctl import`** and **`nexctl export`** — the same [import and export](#importing-and-exporting) flows: export your whole library to JSON or CSV, and import from a Nexorious export, another tracker's CSV, or a migration source.
+
+You can also tune your own settings — deal region and notifications — with `nexctl config`. If you run the server, there are operator-only groups too (`admin`, `backup`) and a local MCP server (`nexctl mcp`) for connecting an AI agent; those are covered in the [Admin Guide](admin-guide.md#nexctl-the-api-client).
+
 ## Notifications
 
 Nexorious can let you know when something needs your attention — a sync's credentials have expired, a job finished, and so on. You set this up under **Notifications** on your profile in two parts:
