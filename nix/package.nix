@@ -2,7 +2,7 @@
 #
 # The Go vendorHash is supplied by flake.nix (goVendorHash) and shared with
 # nix/nexctl.nix — see that definition for how to refresh it.
-{ buildGoModule, makeWrapper, postgresql_18, legendary-gl, lib
+{ buildGoModule, makeWrapper, installShellFiles, stdenv, postgresql_18, legendary-gl, lib
 , src, version, commit, nexorious-frontend, vendorHash }:
 
 buildGoModule {
@@ -28,11 +28,16 @@ buildGoModule {
     cp -r ${nexorious-frontend}/. ui/frontend/dist/
   '';
 
-  nativeBuildInputs = [ makeWrapper ];
+  nativeBuildInputs = [ makeWrapper installShellFiles ];
 
   postInstall = ''
     wrapProgram $out/bin/nexorious \
       --prefix PATH : ${lib.makeBinPath [ postgresql_18 legendary-gl ]}
+  '' + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
+    installShellCompletion --cmd nexorious \
+      --bash <($out/bin/nexorious completion bash) \
+      --zsh  <($out/bin/nexorious completion zsh) \
+      --fish <($out/bin/nexorious completion fish)
   '';
 
   meta = {
