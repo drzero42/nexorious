@@ -361,7 +361,7 @@ These run on the server host. A `--config` flag on every command points at a `.e
 
 ### `nexctl`, the API client
 
-`nexctl` is a separate program that drives a running server over its API; authentication, profiles, and the everyday command groups (`game`, `pool`, `tag`, `sync`, `import`/`export`) are covered in the [User Guide](user-guide.md#using-nexctl-the-command-line-client). It ships with each release as its own raw binary plus `.deb` / `.rpm` packages — it is **not** in the server container image, the Helm chart, or the NixOS module, so install it wherever you run commands from (with the native packages it's a separate download from the server package).
+`nexctl` is a separate program that drives a running server over its API; authentication, profiles, and the everyday command groups (`game`, `pool`, `tag`, `sync`, `import`/`export`) are covered in the [User Guide](user-guide.md#using-nexctl-the-command-line-client). It ships with each release as its own raw binary plus `.deb` / `.rpm` packages, and it is **bundled in the server container image** (at `/usr/local/bin/nexctl`, so `docker exec`/`kubectl exec … nexctl …` works out of the box) — but it is **not** in the Helm chart or the NixOS module, so on those install it wherever you run commands from (with the native packages it's a separate download from the server package).
 
 Two command groups are operator-only and require an **admin** user's key — note that an API key carries no admin scope, so these need a key minted for an admin account (a non-admin key gets a `403` from the server):
 
