@@ -278,6 +278,80 @@ func TestBackupDownloadDefaultFilename(t *testing.T) {
 	}
 }
 
+func TestBackupDownloadLatest(t *testing.T) {
+	const payload = "newest-bytes"
+	mux := http.NewServeMux()
+	// Return the list deliberately oldest-first to prove the client sorts
+	// by created_at descending rather than trusting the array order.
+	mux.HandleFunc("/api/admin/backups", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"backups": []map[string]any{
+				{"id": "bk-old", "created_at": "2026-06-17T00:00:00Z", "backup_type": "full", "size_bytes": 1},
+				{"id": "bk-new", "created_at": "2026-06-18T00:00:00Z", "backup_type": "full", "size_bytes": 2},
+			},
+			"total": 2,
+		})
+	})
+	mux.HandleFunc("/api/admin/backups/bk-new/download", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, payload)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runBackup(t, srv.URL, "backup", "download", "--latest", "--out", "-")
+	if err != nil {
+		t.Fatalf("backup download --latest: %v\n%s", err, out)
+	}
+	if out != payload {
+		t.Errorf("stdout = %q, want %q (newest backup)", out, payload)
+	}
+}
+
+func TestBackupDownloadBothIDAndLatestErrors(t *testing.T) {
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	_, err := runBackup(t, srv.URL, "backup", "download", "bk-1", "--latest")
+	if err == nil {
+		t.Fatal("expected error when both id and --latest are given")
+	}
+	if !strings.Contains(err.Error(), "not both") {
+		t.Errorf("error = %v, want it to mention 'not both'", err)
+	}
+}
+
+func TestBackupDownloadNeitherIDNorLatestErrors(t *testing.T) {
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	_, err := runBackup(t, srv.URL, "backup", "download")
+	if err == nil {
+		t.Fatal("expected error when neither id nor --latest given")
+	}
+	if !strings.Contains(err.Error(), "--latest") {
+		t.Errorf("error = %v, want it to mention '--latest'", err)
+	}
+}
+
+func TestBackupDownloadLatestNoBackups(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/admin/backups", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"backups": []map[string]any{}, "total": 0})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	_, err := runBackup(t, srv.URL, "backup", "download", "--latest")
+	if err == nil {
+		t.Fatal("expected error when no backups exist")
+	}
+	if !strings.Contains(err.Error(), "no backups") {
+		t.Errorf("error = %v, want it to mention 'no backups'", err)
+	}
+}
+
 func TestBackupRestoreByIDConfirmed(t *testing.T) {
 	var restored bool
 	mux := http.NewServeMux()
