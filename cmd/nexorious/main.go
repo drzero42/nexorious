@@ -48,7 +48,6 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newMigrateCmd())
 	root.AddCommand(newResetPasswordCmd())
-	root.AddCommand(newSetupCmd())
 	root.AddCommand(newVersionCmd())
 
 	return root
