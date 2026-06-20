@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -25,7 +26,98 @@ func newSetupCmd() *cobra.Command {
 			"user, or restore from a backup (disaster recovery). Intended to run from\n" +
 			"a workstation or via `kubectl exec` into a fresh instance.",
 	}
-	cmd.AddCommand(newSetupAdminCmd())
+	cmd.AddCommand(newSetupAdminCmd(), newSetupBackupsCmd(), newSetupRestoreCmd())
+	return cmd
+}
+
+func newSetupBackupsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "backups",
+		Short: "List on-disk backups available for restore on a fresh instance",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := cmd.OutOrStdout()
+			entries, err := cliclient.New(resolveServerURL(cmd)).SetupListBackups()
+			if err != nil {
+				return fmt.Errorf("list setup backups: %w", err)
+			}
+			if flagBool(cmd, "json") {
+				return cliui.EncodeJSON(out, entries)
+			}
+			if flagBool(cmd, "quiet") {
+				for i := range entries {
+					fmt.Fprintln(out, entries[i].Filename)
+				}
+				return nil
+			}
+			if len(entries) == 0 {
+				fmt.Fprintln(out, "No backups found.")
+				return nil
+			}
+			tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
+			fmt.Fprintln(tw, "FILENAME\tSIZE\tMODIFIED\tRESTORABLE\tREASON")
+			for i := range entries {
+				e := &entries[i]
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n",
+					e.Filename, humanBackupBytes(e.SizeBytes), e.ModTime, e.Restorable, e.Reason)
+			}
+			return tw.Flush()
+		},
+	}
+	cmd.Flags().String("url", "", "Server URL (default "+cliauth.DefaultServerURL+")")
+	return cmd
+}
+
+func newSetupRestoreCmd() *cobra.Command {
+	var filePath string
+	cmd := &cobra.Command{
+		Use:   "restore [<name>]",
+		Short: "Restore a fresh instance from a backup (on-disk name or uploaded --file)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			in := bufio.NewReader(cmd.InOrStdin())
+			hasName := len(args) == 1
+			hasFile := cmd.Flags().Changed("file")
+			if hasName == hasFile {
+				return fmt.Errorf("specify exactly one of <name> or --file")
+			}
+
+			confirmMsg := "WARNING: Restoring will overwrite the database on this instance. Proceed?"
+			ok, err := cliui.Confirm(in, out, confirmMsg, flagBool(cmd, "yes"))
+			if err != nil {
+				return err
+			}
+			if !ok {
+				fmt.Fprintln(out, "Aborted.")
+				return nil
+			}
+
+			c := cliclient.New(resolveServerURL(cmd))
+			if hasFile {
+				f, err := os.Open(filePath) //nolint:gosec // operator-supplied restore archive path
+				if err != nil {
+					return fmt.Errorf("open file: %w", err)
+				}
+				defer func() { _ = f.Close() }()
+				filename := filePath
+				if idx := strings.LastIndexByte(filePath, '/'); idx >= 0 {
+					filename = filePath[idx+1:]
+				}
+				if err := c.SetupRestoreUpload(filename, f); err != nil {
+					return fmt.Errorf("setup restore upload: %w", err)
+				}
+				fmt.Fprintln(out, "Backup restored. Log in with your restored credentials.")
+				return nil
+			}
+			if err := c.SetupRestoreFromDisk(args[0]); err != nil {
+				return fmt.Errorf("setup restore: %w", err)
+			}
+			fmt.Fprintln(out, "Backup restored. Log in with your restored credentials.")
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&filePath, "file", "", "Path to a backup archive to upload and restore from")
+	cmd.Flags().String("url", "", "Server URL (default "+cliauth.DefaultServerURL+")")
 	return cmd
 }
 

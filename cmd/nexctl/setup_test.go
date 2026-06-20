@@ -157,3 +157,97 @@ func TestSetupAdminLoginStoresKey(t *testing.T) {
 		t.Fatalf("profile = %+v ok=%v", p, ok)
 	}
 }
+
+func TestSetupBackupsList(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/setup/backups", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"backups":[{"filename":"b.tar.gz","size_bytes":2048,"mtime":"2026-06-20T09:30:15Z","restorable":true}]}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runNexctl(t, "", "setup", "backups", "--url", srv.URL)
+	if err != nil {
+		t.Fatalf("setup backups: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "b.tar.gz") || !strings.Contains(out, "FILENAME") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestSetupBackupsQuiet(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/setup/backups", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"backups":[{"filename":"b.tar.gz","size_bytes":2048,"restorable":true}]}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runNexctl(t, "", "setup", "backups", "--url", srv.URL, "-q")
+	if err != nil {
+		t.Fatalf("setup backups -q: %v\n%s", err, out)
+	}
+	if strings.TrimSpace(out) != "b.tar.gz" {
+		t.Fatalf("out = %q; want bare filename", out)
+	}
+}
+
+func TestSetupRestoreRequiresExactlyOne(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	_, err := runNexctl(t, "y\n", "setup", "restore", "--url", "http://127.0.0.1:1")
+	if err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("err = %v; want exactly-one error (neither name nor --file)", err)
+	}
+	_, err = runNexctl(t, "y\n", "setup", "restore", "x.tar.gz", "--file", "/tmp/x.tar.gz", "--url", "http://127.0.0.1:1")
+	if err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("err = %v; want exactly-one error (both)", err)
+	}
+}
+
+func TestSetupRestoreFromDiskConfirmed(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	called := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/setup/restore/disk", func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		_, _ = w.Write([]byte(`{"success":true}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runNexctl(t, "", "setup", "restore", "b.tar.gz", "--url", srv.URL, "-y")
+	if err != nil {
+		t.Fatalf("setup restore: %v\n%s", err, out)
+	}
+	if !called {
+		t.Fatal("restore/disk endpoint was not called")
+	}
+	if !strings.Contains(out, "Backup restored") {
+		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestSetupRestoreAborted(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	called := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/setup/restore/disk", func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	// "n\n" declines the confirm prompt.
+	out, err := runNexctl(t, "n\n", "setup", "restore", "b.tar.gz", "--url", srv.URL)
+	if err != nil {
+		t.Fatalf("setup restore (declined): %v\n%s", err, out)
+	}
+	if called {
+		t.Fatal("restore must not call the server after the user declines")
+	}
+	if !strings.Contains(out, "Aborted.") {
+		t.Fatalf("out = %q; want Aborted.", out)
+	}
+}
