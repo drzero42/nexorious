@@ -205,7 +205,7 @@ Everything in this guide is reachable from a browser, but Nexorious also ships a
 
 ### Getting nexctl
 
-`nexctl` is published with each release as its own download — a raw binary and `.deb` / `.rpm` packages for Linux. It is **not** part of the server container image or the Helm chart, so install it on whatever machine you want to run commands from. If you run the server yourself, see the [Admin Guide](admin-guide.md) for packaging details; otherwise ask whoever runs your server for the binary, or grab it from the project's releases.
+`nexctl` is published with each release as its own download — a raw binary and `.deb` / `.rpm` packages for Linux. It also ships inside the server container image at `/usr/local/bin/nexctl`. To install it on a separate machine, see the [Admin Guide](admin-guide.md) for packaging details, or grab it from the project's releases.
 
 ### Signing in
 
@@ -234,6 +234,24 @@ The groups you'll reach for mirror the web UI:
 - **`nexctl import`** and **`nexctl export`** — the same [import and export](#importing-and-exporting) flows: export your whole library to JSON or CSV, and import from a Nexorious export, another tracker's CSV, or a migration source.
 
 You can also tune your own settings — deal region and notifications — with `nexctl config`. If you run the server, there are operator-only groups too (`admin`, `backup`) and a local MCP server (`nexctl mcp`) for connecting an AI agent; those are covered in the [Admin Guide](admin-guide.md#nexctl-the-api-client).
+
+### Bootstrapping a fresh instance
+
+These commands target the pre-authentication setup and migration zones, so they
+do not need an API key. They resolve the server URL from `--url`, then the
+current profile's stored URL, then the default (`http://localhost:8000`).
+
+- `nexctl setup admin [--username U] [--password-stdin] [--login]` — create the
+  first admin user on a fresh instance. Pending migrations are applied first.
+  `--login` also logs in and stores an API key.
+- `nexctl setup backups` — list on-disk backups available for restore.
+- `nexctl setup restore --file PATH` — upload a backup archive and restore from it.
+- `nexctl setup restore <name>` — restore from a named on-disk backup.
+- `nexctl migrate` — apply pending migrations on a running server (the web
+  migration UI's "Run migrations" button); `nexctl migrate status` shows state.
+
+`nexctl` ships inside the container image, so on a containerized deployment you
+can run these via `kubectl exec`/`docker exec` into a fresh instance.
 
 ## Notifications
 

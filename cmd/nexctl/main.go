@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/drzero42/nexorious/internal/cliauth"
 	"github.com/drzero42/nexorious/internal/clicfg"
 )
 
@@ -55,9 +56,27 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newAdminCmd())
 	root.AddCommand(newConfigCmd())
 	root.AddCommand(newMCPCmd())
+	root.AddCommand(newSetupCmd())
+	root.AddCommand(newMigrateCmd())
 	root.AddCommand(newLoginCmd(), newLogoutCmd()) // top-level aliases for `account login`/`logout`
 
 	return root
+}
+
+// resolveServerURL resolves the target server URL for unauthenticated
+// (setup/migrate) commands: the --url flag if set, else the current profile's
+// stored URL, else cliauth.DefaultServerURL. Unlike resolveProfile, no API key
+// is required — the setup and migration zones are pre-bootstrap.
+func resolveServerURL(cmd *cobra.Command) string {
+	if u, _ := cmd.Flags().GetString("url"); u != "" { //nolint:errcheck // absent flag yields ""
+		return u
+	}
+	if cfg, err := clicfg.Load(); err == nil {
+		if p, ok := cfg.ProfileNamed(profileName(cmd, cfg)); ok && p.URL != "" {
+			return p.URL
+		}
+	}
+	return cliauth.DefaultServerURL
 }
 
 // profileName returns the --profile value, defaulting to the current profile.

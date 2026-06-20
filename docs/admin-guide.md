@@ -249,7 +249,7 @@ The defaults are fine for most deployments — a typical setup only sets the dat
 
    For a package install you'll have set `DATABASE_URL` and run `systemctl enable --now nexorious` (see [Native packages](#native-packages-debianubuntu-rhelfedorarocky)); from there migrations work the same as any other deployment — `nexorious migrate` on the host, or the `/migrate` page the running service serves.
 
-2. **Create the first admin.** With no users yet, opening the site prompts you to create the first account, which is automatically an admin. You can also create it from the host with `nexorious setup` — handy for scripted or headless installs.
+2. **Create the first admin.** With no users yet, opening the site prompts you to create the first account, which is automatically an admin. You can also create it with `nexctl setup admin` — handy for scripted or headless installs. `nexctl` ships inside the container image, so you can run it via `kubectl exec`/`docker exec` on a fresh instance.
 
 3. **Configure IGDB.** Set `IGDB_CLIENT_ID` and `IGDB_CLIENT_SECRET` as part of your configuration, ideally before the first start — see [Setting up IGDB credentials](#setting-up-igdb-credentials) for how to obtain them. The app shows a banner while IGDB is unconfigured or its credentials are rejected, so an instance still runs without them; you just can't search or add games until they're set. IGDB is configured through these environment variables, not in the web interface, and they're read at startup — so if you add or change them on an already-running server, restart it to pick up the change.
 
@@ -355,13 +355,13 @@ These run on the server host. A `--config` flag on every command points at a `.e
 | `nexorious serve` | Start the HTTP server, background workers, and scheduler. This is the main run command. Add `--migrate` to apply any pending migrations on the way up — startup aborts if they fail, rather than serving against a broken schema. |
 | `nexorious migrate` | Apply any pending database migrations and exit. Useful as an init step in orchestrated deployments. |
 | `nexorious migrate status` | Show how many migrations are pending and the current schema version, without changing anything. |
-| `nexorious setup` | Create the first admin user against a running server — good for headless installs. Supports `--username` and reading the password from stdin (`--password-stdin`), and can store an API key for you with `--login`. |
+| `nexctl setup admin` | Create the first admin user against a running server — good for headless installs. Supports `--username` and reading the password from stdin (`--password-stdin`), runs pending migrations first, and can store an API key for you with `--login`. `nexctl` is available in the container image. |
 | `nexorious reset-password <username>` | Reset a user's password by talking to the database directly. Your recovery path if an admin is locked out and no other admin can help. |
 | `nexorious version` | Print version information. |
 
 ### `nexctl`, the API client
 
-`nexctl` is a separate program that drives a running server over its API; authentication, profiles, and the everyday command groups (`game`, `pool`, `tag`, `sync`, `import`/`export`) are covered in the [User Guide](user-guide.md#using-nexctl-the-command-line-client). It ships with each release as its own raw binary plus `.deb` / `.rpm` packages — it is **not** in the server container image, the Helm chart, or the NixOS module, so install it wherever you run commands from (with the native packages it's a separate download from the server package).
+`nexctl` is a separate program that drives a running server over its API; authentication, profiles, and the everyday command groups (`game`, `pool`, `tag`, `sync`, `import`/`export`) are covered in the [User Guide](user-guide.md#using-nexctl-the-command-line-client). It ships with each release as its own raw binary plus `.deb` / `.rpm` packages, and it is **bundled in the server container image** (at `/usr/local/bin/nexctl`, so `docker exec`/`kubectl exec … nexctl …` works out of the box) — but it is **not** in the Helm chart or the NixOS module, so on those install it wherever you run commands from (with the native packages it's a separate download from the server package).
 
 Two command groups are operator-only and require an **admin** user's key — note that an API key carries no admin scope, so these need a key minted for an admin account (a non-admin key gets a `403` from the server):
 
