@@ -131,3 +131,11 @@ func (c *Client) RestoreBackup(key, id string) error {
 func (c *Client) RestoreBackupUpload(key, filename string, body io.Reader) error {
 	return c.doBearerMultipart(http.MethodPost, "/api/admin/backups/restore/upload", key, filename, body, nil, nil)
 }
+
+// SetupRestoreUpload uploads a backup archive and restores a fresh instance
+// from it via POST /api/auth/setup/restore (multipart field "file"). The body
+// is streamed, so the caller can pass an *os.File directly. Unauthenticated
+// (pre-bootstrap), so no API key is sent.
+func (c *Client) SetupRestoreUpload(filename string, body io.Reader) error {
+	return c.doBearerMultipart(http.MethodPost, "/api/auth/setup/restore", "", filename, body, nil, nil)
+}

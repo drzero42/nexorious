@@ -135,7 +135,9 @@ func (c *Client) doBearerMultipart(method, path, key, filename string, body io.R
 		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("Authorization", "Bearer "+key)
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
 
 	resp, err := c.hc.Do(req)
 	if err != nil {

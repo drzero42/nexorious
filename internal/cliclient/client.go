@@ -478,7 +478,9 @@ func (c *Client) doBearer(method, path, key string, body, out any) error {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
@@ -1066,4 +1068,46 @@ type ExternalGame struct {
 	SyncStatus                 string   `json:"sync_status"`
 	FailedJobItemID            *string  `json:"failed_job_item_id"`
 	Platforms                  []string `json:"platforms"`
+}
+
+// SetupBackupManifest is the manifest sub-object of a setup-zone backup entry.
+type SetupBackupManifest struct {
+	CreatedAt        string `json:"created_at"`
+	AppVersion       string `json:"app_version"`
+	MigrationVersion string `json:"migration_version"`
+	BackupType       string `json:"backup_type"`
+	Stats            struct {
+		Users int `json:"users"`
+		Games int `json:"games"`
+		Tags  int `json:"tags"`
+	} `json:"stats"`
+}
+
+// SetupBackupEntry is one candidate archive from GET /api/auth/setup/backups.
+type SetupBackupEntry struct {
+	Filename   string               `json:"filename"`
+	SizeBytes  int64                `json:"size_bytes"`
+	ModTime    string               `json:"mtime"`
+	Restorable bool                 `json:"restorable"`
+	Reason     string               `json:"reason,omitempty"`
+	Manifest   *SetupBackupManifest `json:"manifest,omitempty"`
+}
+
+// SetupListBackups lists candidate on-disk backup archives during initial
+// setup via GET /api/auth/setup/backups. The endpoint is unauthenticated
+// (pre-bootstrap), so no API key is sent.
+func (c *Client) SetupListBackups() ([]SetupBackupEntry, error) {
+	var env struct {
+		Backups []SetupBackupEntry `json:"backups"`
+	}
+	if err := c.doBearer(http.MethodGet, "/api/auth/setup/backups", "", nil, &env); err != nil {
+		return nil, err
+	}
+	return env.Backups, nil
+}
+
+// SetupRestoreFromDisk restores a fresh instance from a named on-disk backup
+// via POST /api/auth/setup/restore/disk. Unauthenticated (pre-bootstrap).
+func (c *Client) SetupRestoreFromDisk(filename string) error {
+	return c.doBearer(http.MethodPost, "/api/auth/setup/restore/disk", "", map[string]string{"filename": filename}, nil)
 }
