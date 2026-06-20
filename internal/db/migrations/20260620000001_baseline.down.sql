@@ -1,0 +1,27 @@
+-- Baseline rollback: drop all Bun-managed objects (NOT River, NOT bun_migrations).
+-- Table list derived from: grep -E '^CREATE TABLE' internal/db/migrations/20260620000001_baseline.up.sql
+DROP TABLE IF EXISTS pool_games CASCADE;
+DROP TABLE IF EXISTS pools CASCADE;
+DROP TABLE IF EXISTS user_settings CASCADE;
+DROP TABLE IF EXISTS user_sync_configs CASCADE;
+DROP TABLE IF EXISTS notification_subscriptions CASCADE;
+DROP TABLE IF EXISTS notification_channels CASCADE;
+DROP TABLE IF EXISTS changes CASCADE;
+DROP TABLE IF EXISTS events CASCADE;
+DROP TABLE IF EXISTS external_game_platforms CASCADE;
+DROP TABLE IF EXISTS external_games CASCADE;
+DROP TABLE IF EXISTS user_game_platforms CASCADE;
+DROP TABLE IF EXISTS user_game_tags CASCADE;
+DROP TABLE IF EXISTS user_games CASCADE;
+DROP TABLE IF EXISTS tags CASCADE;
+DROP TABLE IF EXISTS games CASCADE;
+DROP TABLE IF EXISTS job_items CASCADE;
+DROP TABLE IF EXISTS jobs CASCADE;
+DROP TABLE IF EXISTS api_keys CASCADE;
+DROP TABLE IF EXISTS user_sessions CASCADE;
+DROP TABLE IF EXISTS rate_limiter_tokens CASCADE;
+DROP TABLE IF EXISTS platform_storefronts CASCADE;
+DROP TABLE IF EXISTS storefronts CASCADE;
+DROP TABLE IF EXISTS platforms CASCADE;
+DROP TABLE IF EXISTS backup_config CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
