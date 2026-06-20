@@ -36,7 +36,14 @@ func newSetupBackupsCmd() *cobra.Command {
 		Short: "List on-disk backups available for restore on a fresh instance",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			entries, err := cliclient.New(resolveServerURL(cmd)).SetupListBackups()
+			url := resolveServerURL(cmd)
+			client := cliclient.New(url)
+			// The setup zone is only reachable once the instance is Ready; bring a
+			// fresh instance up (running pending migrations) first, like setup admin.
+			if err := cliauth.Preflight(out, client, url); err != nil {
+				return err
+			}
+			entries, err := client.SetupListBackups()
 			if err != nil {
 				return fmt.Errorf("list setup backups: %w", err)
 			}
@@ -92,7 +99,16 @@ func newSetupRestoreCmd() *cobra.Command {
 				return nil
 			}
 
-			c := cliclient.New(resolveServerURL(cmd))
+			url := resolveServerURL(cmd)
+			c := cliclient.New(url)
+			// The setup zone is only reachable once the instance is Ready; bring a
+			// fresh instance up (running pending migrations) first, like setup admin.
+			// The restore then reaches the handler, so an incompatible archive (e.g.
+			// a pre-v0.17.1 backup) is rejected with a clear message instead of an
+			// opaque app-state 503.
+			if err := cliauth.Preflight(out, c, url); err != nil {
+				return err
+			}
 			if hasFile {
 				f, err := os.Open(filePath) //nolint:gosec // operator-supplied restore archive path
 				if err != nil {

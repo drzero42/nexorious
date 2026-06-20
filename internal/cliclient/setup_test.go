@@ -7,6 +7,23 @@ import (
 	"testing"
 )
 
+func TestHttpErrorSurfacesAppState(t *testing.T) {
+	// An app-state gate returns 503 with {"app_state":...} and no error/message
+	// field. httpError must render the state rather than a bare status code.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/setup/backups", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"app_state":"needs_migration"}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	_, err := New(srv.URL).SetupListBackups()
+	if err == nil || !strings.Contains(err.Error(), "needs_migration") || !strings.Contains(err.Error(), "not ready") {
+		t.Fatalf("err = %v; want a 'not ready (state: needs_migration)' message", err)
+	}
+}
+
 func TestSetupListBackups(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/auth/setup/backups", func(w http.ResponseWriter, r *http.Request) {

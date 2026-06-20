@@ -45,8 +45,9 @@ func New(baseURL string) *Client {
 // `{"message":"…"}` and the hand-written handlers' `{"error":"…"}` (backup,
 // admin, settings, notifications). msg() returns whichever is set.
 type errorBody struct {
-	Message string `json:"message"`
-	Error   string `json:"error"`
+	Message  string `json:"message"`
+	Error    string `json:"error"`
+	AppState string `json:"app_state"`
 }
 
 func (eb errorBody) msg() string {
@@ -64,8 +65,17 @@ func httpError(resp *http.Response) error {
 		return fmt.Errorf("server returned %d (failed reading body: %w)", resp.StatusCode, err)
 	}
 	var eb errorBody
-	if json.Unmarshal(body, &eb) == nil && eb.msg() != "" {
-		return fmt.Errorf("server returned %d: %s", resp.StatusCode, eb.msg())
+	if json.Unmarshal(body, &eb) == nil {
+		if m := eb.msg(); m != "" {
+			return fmt.Errorf("server returned %d: %s", resp.StatusCode, m)
+		}
+		// App-state gates (issue #771) answer with {"app_state":…} and no
+		// error/message field; surface the state so the operator knows the
+		// instance is not ready (e.g. migrations pending) rather than seeing a
+		// bare status code.
+		if eb.AppState != "" {
+			return fmt.Errorf("server returned %d: instance not ready (state: %s)", resp.StatusCode, eb.AppState)
+		}
 	}
 	return fmt.Errorf("server returned %d", resp.StatusCode)
 }

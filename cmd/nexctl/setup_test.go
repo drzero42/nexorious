@@ -11,6 +11,13 @@ import (
 	"github.com/drzero42/nexorious/internal/clicfg"
 )
 
+// okHealth answers GET /health with a Ready status, so cliauth.Preflight passes
+// through without triggering a migration (used by setup-zone command tests where
+// the instance is already migrated).
+func okHealth(w http.ResponseWriter, _ *http.Request) {
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
+}
+
 // runNexctl executes the given args with piped stdin and an isolated config home.
 func runNexctl(t *testing.T, stdin string, args ...string) (string, error) {
 	t.Helper()
@@ -161,6 +168,7 @@ func TestSetupAdminLoginStoresKey(t *testing.T) {
 func TestSetupBackupsList(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	mux := http.NewServeMux()
+	mux.HandleFunc("/health", okHealth)
 	mux.HandleFunc("/api/auth/setup/backups", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"backups":[{"filename":"b.tar.gz","size_bytes":2048,"mtime":"2026-06-20T09:30:15Z","restorable":true}]}`))
 	})
@@ -179,6 +187,7 @@ func TestSetupBackupsList(t *testing.T) {
 func TestSetupBackupsQuiet(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	mux := http.NewServeMux()
+	mux.HandleFunc("/health", okHealth)
 	mux.HandleFunc("/api/auth/setup/backups", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"backups":[{"filename":"b.tar.gz","size_bytes":2048,"restorable":true}]}`))
 	})
@@ -210,6 +219,7 @@ func TestSetupRestoreFromDiskConfirmed(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	called := false
 	mux := http.NewServeMux()
+	mux.HandleFunc("/health", okHealth)
 	mux.HandleFunc("/api/auth/setup/restore/disk", func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		_, _ = w.Write([]byte(`{"success":true}`))
@@ -226,6 +236,43 @@ func TestSetupRestoreFromDiskConfirmed(t *testing.T) {
 	}
 	if !strings.Contains(out, "Backup restored") {
 		t.Fatalf("out = %q", out)
+	}
+}
+
+// TestSetupRestoreMigratesFreshInstance covers the disaster-recovery flow on an
+// un-migrated instance: the command's preflight runs pending migrations (bringing
+// the instance to Ready so the setup zone is reachable) before the restore. Without
+// this, the app-state gate blocks /api/auth/setup/restore with an opaque 503.
+func TestSetupRestoreMigratesFreshInstance(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	migrated, restored := false, false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "needs_migration"})
+	})
+	mux.HandleFunc("/api/migrate/run", func(w http.ResponseWriter, _ *http.Request) {
+		migrated = true
+		w.WriteHeader(http.StatusAccepted)
+	})
+	mux.HandleFunc("/api/migrate/status", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"state": "ready"})
+	})
+	mux.HandleFunc("/api/auth/setup/restore/disk", func(w http.ResponseWriter, _ *http.Request) {
+		restored = true
+		_, _ = w.Write([]byte(`{"success":true}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	out, err := runNexctl(t, "", "setup", "restore", "b.tar.gz", "--url", srv.URL, "-y")
+	if err != nil {
+		t.Fatalf("setup restore (fresh instance): %v\n%s", err, out)
+	}
+	if !migrated {
+		t.Fatal("preflight did not run migrations on the un-migrated instance")
+	}
+	if !restored {
+		t.Fatal("restore endpoint was not reached after migrating to Ready")
 	}
 }
 

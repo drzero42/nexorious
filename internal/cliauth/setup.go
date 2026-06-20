@@ -31,7 +31,9 @@ func Preflight(out io.Writer, client *cliclient.Client, url string) error {
 		return nil
 	case "db_unavailable":
 		return fmt.Errorf("database is unavailable")
-	case "needs_migration", "migrating":
+	case "needs_migration", "migrating", "needs_adopt":
+		// needs_adopt (a v0.17.1 schema present, pending adoption) is resolved by
+		// the same migrate run, which performs adopt + catch-up server-side.
 		return RunMigrateAndWait(out, client)
 	case "migration_failed":
 		return MigrationFailedErr(client)

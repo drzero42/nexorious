@@ -52,6 +52,30 @@ func TestPreflightRunsMigrations(t *testing.T) {
 	}
 }
 
+func TestPreflightRunsMigrationsWhenNeedsAdopt(t *testing.T) {
+	ran := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "needs_adopt"})
+	})
+	mux.HandleFunc("/api/migrate/run", func(w http.ResponseWriter, _ *http.Request) {
+		ran = true
+		w.WriteHeader(http.StatusAccepted)
+	})
+	mux.HandleFunc("/api/migrate/status", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"state": "ready"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	if err := Preflight(&bytes.Buffer{}, cliclient.New(srv.URL), srv.URL); err != nil {
+		t.Fatalf("Preflight: %v", err)
+	}
+	if !ran {
+		t.Fatal("needs_adopt must trigger migrations (adopt+catch-up)")
+	}
+}
+
 func TestPreflightMigrationFailedSurfacesDetail(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
