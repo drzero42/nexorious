@@ -44,7 +44,10 @@ func Preflight(out io.Writer, client *cliclient.Client, url string) error {
 // migration_failed, surfacing the failure detail when available.
 func MigrationFailedErr(client *cliclient.Client) error {
 	_, detail, err := client.MigrationStatus()
-	if err == nil && detail != "" {
+	if err != nil {
+		return fmt.Errorf("migrations previously failed, and fetching the failure detail also failed: %w — check the server logs", err)
+	}
+	if detail != "" {
 		return fmt.Errorf("migrations previously failed: %s — resolve the underlying problem (check the server logs) before retrying", detail)
 	}
 	return fmt.Errorf("migrations previously failed — resolve the underlying problem (check the server logs) before retrying")

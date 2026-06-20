@@ -69,6 +69,23 @@ func TestPreflightMigrationFailedSurfacesDetail(t *testing.T) {
 	}
 }
 
+func TestPreflightMigrationFailedStatusUnreachable(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "migration_failed"})
+	})
+	mux.HandleFunc("/api/migrate/status", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	err := Preflight(&bytes.Buffer{}, cliclient.New(srv.URL), srv.URL)
+	if err == nil || !strings.Contains(err.Error(), "fetching the failure detail also failed") {
+		t.Fatalf("err = %v; want status-fetch-failure surfaced", err)
+	}
+}
+
 func TestReportSetupResultCreated(t *testing.T) {
 	var out bytes.Buffer
 	err := ReportSetupResult(&out, "admin", &cliclient.SetupResult{StatusCode: http.StatusCreated})
