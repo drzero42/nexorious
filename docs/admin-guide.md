@@ -344,7 +344,11 @@ The Maintenance page also has a **database reset** in its danger zone. It perman
 
 ## Command-line tools
 
-The same binary that serves the app is also a command-line tool for tasks you do from the host. Run `nexorious <command> --help` for the full details of any of them. A `--config` flag on every command points at a `.env` file if you keep your settings in one.
+Nexorious has two command-line programs. The **`nexorious`** binary is the server, and it doubles as a host-side tool for deployment tasks (running the server, applying migrations, bootstrapping the first admin). The separate **`nexctl`** client talks to a running server over its API and is what you use day-to-day — including for the operator tasks below. Run `<program> <command> --help` for the full details of any command.
+
+### The `nexorious` server binary
+
+These run on the server host. A `--config` flag on every command points at a `.env` file if you keep your settings in one.
 
 | Command | What it does |
 |---|---|
@@ -353,9 +357,23 @@ The same binary that serves the app is also a command-line tool for tasks you do
 | `nexorious migrate status` | Show how many migrations are pending and the current schema version, without changing anything. |
 | `nexorious setup` | Create the first admin user against a running server — good for headless installs. Supports `--username` and reading the password from stdin (`--password-stdin`), and can store an API key for you with `--login`. |
 | `nexorious reset-password <username>` | Reset a user's password by talking to the database directly. Your recovery path if an admin is locked out and no other admin can help. |
-| `nexorious login` / `logout` / `whoami` | Authenticate the CLI to a server and store an API key, revoke and clear it, or show who the stored key belongs to. |
-| `nexorious api-key generate \| list \| revoke` | Manage API keys from the command line: create one (with a name, scope, and optional expiry), list your keys, or revoke one by id or name. |
 | `nexorious version` | Print version information. |
+
+### `nexctl`, the API client
+
+`nexctl` is a separate program that drives a running server over its API; authentication, profiles, and the everyday command groups (`game`, `pool`, `tag`, `sync`, `import`/`export`) are covered in the [User Guide](user-guide.md#using-nexctl-the-command-line-client). It ships with each release as its own raw binary plus `.deb` / `.rpm` packages — it is **not** in the server container image, the Helm chart, or the NixOS module, so install it wherever you run commands from (with the native packages it's a separate download from the server package).
+
+Two command groups are operator-only and require an **admin** user's key — note that an API key carries no admin scope, so these need a key minted for an admin account (a non-admin key gets a `403` from the server):
+
+| Command | What it does |
+|---|---|
+| `nexctl admin user list \| show \| create \| enable \| disable \| set-admin \| passwd \| rm` | Manage users from the terminal — the same operations as the [User Management](#user-management) page. `user rm` shows the deletion impact before confirming. |
+| `nexctl admin reset` | The instance [database reset](#database-reset). The loudest confirmation in the client; mirrors the danger-zone action in the UI. |
+| `nexctl backup list \| create \| rm \| download \| restore \| schedule set` | Manage [backups](#backups-and-restore): create one synchronously, download or remove backups, restore from a backup id or an uploaded file (a loud destructive confirm), and set the backup schedule. |
+
+Per-user settings live under **`nexctl config`** (deal region, notification channels and subscriptions) — these aren't admin-only; any user manages their own.
+
+`nexctl` can also host a local **MCP server** so an AI agent can drive your collection: `nexctl mcp config` prints the agent-config stanza for the active profile, and `nexctl mcp serve` runs the server over stdio. The exposed tools mirror the `game`/`pool`/`tag`/`sync` command groups; operator groups are intentionally out of the MCP surface.
 
 ## Monitoring and operations
 
