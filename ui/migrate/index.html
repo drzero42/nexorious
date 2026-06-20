@@ -19,12 +19,24 @@
       <img src="/logo.svg" alt="">
       <h1 class="card-title">Database Migration Required</h1>
     </div>
+    {{if .Refused}}
     <p class="card-description">
-      {{.PendingCount}} migration{{if ne .PendingCount 1}}s{{end}} pending
+      This database can't be upgraded automatically.
+    </p>
+    <div class="log" id="log">{{.Error}}</div>
+    <p class="meta">
+      First upgrade to <strong>v0.17.1</strong> and let it migrate fully, then upgrade to
+      v0.90.0 or later. If the database is in an inconsistent state, the fallback is
+      export → fresh install → import (see the admin guide).
+    </p>
+    {{else}}
+    <p class="card-description">
+      {{if .Adopt}}Existing v0.17.1 schema detected — ready to adopt and bring up to date.{{else}}{{.PendingCount}} migration{{if ne .PendingCount 1}}s{{end}} pending{{end}}
     </p>
     <div class="log" id="log"></div>
-    <button class="btn btn-primary" id="btn" onclick="runMigrations()">Run Migrations</button>
+    <button class="btn btn-primary" id="btn" onclick="runMigrations()">{{if .Adopt}}Adopt &amp; Migrate{{else}}Run Migrations{{end}}</button>
     <p class="meta" id="status"></p>
+    {{end}}
   </div>
 
   <script>
@@ -63,6 +75,9 @@
           if (!data) return;
           if (data.state === 'ready') {
             window.location.href = '/';
+          } else if (data.state === 'migration_refused') {
+            stopPolling();
+            return; // page already shows the refusal; nothing to poll
           } else if (data.state === 'migration_failed') {
             showFailure(data.error);
           }

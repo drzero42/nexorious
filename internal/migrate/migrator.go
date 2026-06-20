@@ -26,6 +26,8 @@ const (
 	AppStateMigrating
 	AppStateReady
 	AppStateMigrationFailed
+	AppStateNeedsAdopt
+	AppStateMigrationRefused
 )
 
 func (s AppState) String() string {
@@ -40,6 +42,10 @@ func (s AppState) String() string {
 		return "ready"
 	case AppStateMigrationFailed:
 		return "migration_failed"
+	case AppStateNeedsAdopt:
+		return "needs_adopt"
+	case AppStateMigrationRefused:
+		return "migration_refused"
 	default:
 		return "unknown"
 	}
@@ -54,6 +60,7 @@ type Migrator struct {
 	migrateMu         sync.Mutex
 	probeInterval     time.Duration
 	db                *bun.DB
+	migrationSet      *bunmigrate.Migrations
 	bunMig            *bunmigrate.Migrator
 	logCh             chan string
 	logWriter         io.Writer
@@ -61,16 +68,36 @@ type Migrator struct {
 }
 
 func NewMigrator(db *bun.DB) *Migrator {
-	return &Migrator{db: db}
+	return NewMigratorWithMigrations(db, migrations.Migrations)
+}
+
+// NewMigratorWithMigrations is NewMigrator with an injectable migration set,
+// so tests can register a synthetic post-baseline migration and exercise the
+// adopt-then-catch-up path (which has no real second migration yet).
+func NewMigratorWithMigrations(db *bun.DB, set *bunmigrate.Migrations) *Migrator {
+	return &Migrator{db: db, migrationSet: set}
 }
 
 func (mg *Migrator) determineState() error {
 	if mg.bunMig == nil {
-		mg.bunMig = bunmigrate.NewMigrator(mg.db, migrations.Migrations)
+		mg.bunMig = bunmigrate.NewMigrator(mg.db, mg.migrationSet)
 		if err := mg.bunMig.Init(context.Background()); err != nil {
 			return fmt.Errorf("determine state: init: %w", err)
 		}
 	}
+	applied, err := mg.bunMig.AppliedMigrations(context.Background())
+	if err != nil {
+		return fmt.Errorf("determine state: applied: %w", err)
+	}
+	switch classify(applied) {
+	case decisionAdopt:
+		mg.state.Store(int32(AppStateNeedsAdopt))
+		return nil
+	case decisionRefuse:
+		mg.state.Store(int32(AppStateMigrationRefused))
+		return nil
+	}
+	// decisionNormal: existing logic.
 	ms, err := mg.bunMig.MigrationsWithStatus(context.Background())
 	if err != nil {
 		return fmt.Errorf("determine state: %w", err)
@@ -150,6 +177,17 @@ func (mg *Migrator) PendingCount() (int, error) {
 			return 0, fmt.Errorf("pending count: init: %w", err)
 		}
 	}
+	applied, err := mg.bunMig.AppliedMigrations(context.Background())
+	if err != nil {
+		return 0, fmt.Errorf("pending count: applied: %w", err)
+	}
+	switch classify(applied) {
+	case decisionAdopt:
+		return 1, nil
+	case decisionRefuse:
+		return 0, nil
+	}
+	// decisionNormal: fall through to the existing Unapplied()+river count.
 	ms, err := mg.bunMig.MigrationsWithStatus(context.Background())
 	if err != nil {
 		return 0, fmt.Errorf("pending count: %w", err)
@@ -171,20 +209,31 @@ func (mg *Migrator) PendingCount() (int, error) {
 // not mutate Migrator state.
 func (mg *Migrator) Status(ctx context.Context) (pending int, current string, err error) {
 	if mg.bunMig == nil {
-		mg.bunMig = bunmigrate.NewMigrator(mg.db, migrations.Migrations)
+		mg.bunMig = bunmigrate.NewMigrator(mg.db, mg.migrationSet)
 		if err := mg.bunMig.Init(ctx); err != nil {
 			return 0, "", fmt.Errorf("status: init: %w", err)
 		}
 	}
+	applied, err := mg.bunMig.AppliedMigrations(ctx)
+	if err != nil {
+		return 0, "", fmt.Errorf("status: applied: %w", err)
+	}
+	switch classify(applied) {
+	case decisionAdopt:
+		return 1, "v0.17.1 (adopt pending)", nil
+	case decisionRefuse:
+		return 0, "unknown (refused)", nil
+	}
+	// decisionNormal: fall through to existing Applied()/Unapplied() logic.
 	ms, err := mg.bunMig.MigrationsWithStatus(ctx)
 	if err != nil {
 		return 0, "", fmt.Errorf("status: %w", err)
 	}
-	applied := ms.Applied()
+	appliedMs := ms.Applied()
 	current = "none"
-	if len(applied) > 0 {
+	if len(appliedMs) > 0 {
 		// Applied is sorted in descending order; index 0 is the most recent.
-		current = applied[0].Name
+		current = appliedMs[0].Name
 	}
 	return len(ms.Unapplied()), current, nil
 }
@@ -221,6 +270,41 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 		return wrapped
 	}
 	defer mg.bunMig.Unlock(ctx) //nolint:errcheck
+
+	// Re-classify UNDER the lock: a concurrently-booting instance may have
+	// already adopted. Never trust the pre-lock determineState for the
+	// destructive adopt.
+	applied, err := mg.bunMig.AppliedMigrations(ctx)
+	if err != nil {
+		wrapped := fmt.Errorf("migrate: read applied: %w", err)
+		slog.ErrorContext(ctx, "migrate: read applied failed", logging.KeyErr, wrapped, logging.Cat(logging.CategoryDB))
+		mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", wrapped))
+		mg.TransitionToFailed(wrapped)
+		close(ch)
+		return wrapped
+	}
+	switch classify(applied) {
+	case decisionRefuse:
+		wrapped := fmt.Errorf("migrate: refusing to migrate a database that is not a clean v0.17.1 or baseline install")
+		mg.sendLog(ch, fmt.Sprintf("migration refused: %v\n", wrapped))
+		mg.state.Store(int32(AppStateMigrationRefused))
+		mg.lastError.Store(wrapped.Error())
+		close(ch)
+		return wrapped
+	case decisionAdopt:
+		mg.sendLog(ch, "Adopting existing v0.17.1 schema (rewriting migration history)…\n")
+		if err := mg.adopt(ctx); err != nil {
+			wrapped := fmt.Errorf("migrate: adopt: %w", err)
+			slog.ErrorContext(ctx, "migrate: adopt failed", logging.KeyErr, wrapped, logging.Cat(logging.CategoryDB))
+			mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", wrapped))
+			mg.TransitionToFailed(wrapped)
+			close(ch)
+			return wrapped
+		}
+		mg.sendLog(ch, "Adopt complete; checking for newer migrations…\n")
+	}
+	// decisionNormal and post-adopt both fall through to Migrate(), which now
+	// sees the baseline row applied and runs only post-baseline migrations.
 
 	group, err := mg.bunMig.Migrate(ctx)
 	if err != nil {
@@ -285,6 +369,10 @@ func (mg *Migrator) SetPrevStateForTest(s AppState) {
 	mg.prevState.Store(int32(s))
 }
 
+func (mg *Migrator) SetLastErrorForTest(msg string) {
+	mg.lastError.Store(msg)
+}
+
 func NewMigratorForTest(s AppState) *Migrator {
 	mg := &Migrator{}
 	mg.state.Store(int32(s))
@@ -311,6 +399,34 @@ func (mg *Migrator) InitNeedsSetup(ctx context.Context, db *bun.DB) error {
 	}
 	mg.SetNeedsSetup(count == 0)
 	return nil
+}
+
+// ReinitAfterRestore re-detects migration state after a database restore and,
+// when the restored database is behind, brings it up to date so the restore
+// leaves the operator on a working schema rather than parking on the /migrate
+// page. A restored pre-baseline backup (e.g. a v0.17.1 dump: the 23 manifest
+// rows, no baseline) comes back AppStateNeedsAdopt; a backup older than this
+// binary may need catch-up migrations (AppStateNeedsMigration). Both are run
+// here (adopt and/or migrate, plus River). An un-adoptable database cannot
+// reach this point — the backup restore floor gate rejects it before applying —
+// so RunMigrations never refuses here. Intended to be the restore
+// orchestration's ReinitMigrator callback.
+func (mg *Migrator) ReinitAfterRestore(ctx context.Context, db *bun.DB) error {
+	if err := mg.determineState(); err != nil {
+		return err
+	}
+	switch mg.State() {
+	case AppStateNeedsAdopt, AppStateNeedsMigration:
+		if err := mg.RunMigrations(ctx); err != nil {
+			return err
+		}
+		// RunMigrations leaves state at AppStateMigrating; re-detect to settle
+		// on Ready (or surface a failure) before the setup check.
+		if err := mg.determineState(); err != nil {
+			return err
+		}
+	}
+	return mg.InitNeedsSetup(ctx, db)
 }
 
 func (mg *Migrator) LastUnavailableAt() time.Time {

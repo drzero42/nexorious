@@ -298,3 +298,111 @@ func TestHandleStatus_MigrationFailedIncludesError(t *testing.T) {
 		t.Errorf("error = %q, want %q", body.Error, "boom: schema is haunted")
 	}
 }
+
+func TestHandleRun_409_WhenRefused(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateMigrationRefused)
+	m.SetLastErrorForTest("schema predates baseline; manual upgrade required")
+	h := migrate.NewHandler(m, nil)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/migrate/run", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.HandleRun(c); err != nil {
+		t.Fatalf("HandleRun: %v", err)
+	}
+	if rec.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d", rec.Code)
+	}
+
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Error == "" {
+		t.Errorf("expected non-empty error message in response body")
+	}
+}
+
+func TestHandleStatus_MigrationRefusedIncludesError(t *testing.T) {
+	const refusedMsg = "schema predates baseline; manual upgrade required"
+	m := migrate.NewMigratorForTest(migrate.AppStateMigrationRefused)
+	m.SetLastErrorForTest(refusedMsg)
+	h := migrate.NewHandler(m, nil)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/migrate/status", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.HandleStatus(c); err != nil {
+		t.Fatalf("HandleStatus: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+
+	var body struct {
+		PendingCount int    `json:"pending_count"`
+		State        string `json:"state"`
+		Error        string `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.State != "migration_refused" {
+		t.Errorf("state = %q, want migration_refused", body.State)
+	}
+	if body.Error != refusedMsg {
+		t.Errorf("error = %q, want %q", body.Error, refusedMsg)
+	}
+	if body.PendingCount != 0 {
+		t.Errorf("pending_count = %d, want 0", body.PendingCount)
+	}
+}
+
+func TestHandleStatus_NeedsAdopt_PendingCountOne(t *testing.T) {
+	// Set up a DB in adopt state: apply baseline schema, then rewrite
+	// bun_migrations to the exact v0.17.1 manifest (23 rows, no baseline row).
+	resetPublicSchema(t)
+	db := makeAdoptBunDB(t)
+	seedV0171(t, db)
+
+	m := migrate.NewMigrator(db)
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
+	if m.State() != migrate.AppStateNeedsAdopt {
+		t.Fatalf("setup error: state = %v, want NeedsAdopt", m.State())
+	}
+
+	h := migrate.NewHandler(m, nil)
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/migrate/status", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.HandleStatus(c); err != nil {
+		t.Fatalf("HandleStatus: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+
+	var body struct {
+		PendingCount int    `json:"pending_count"`
+		State        string `json:"state"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.State != "needs_adopt" {
+		t.Errorf("state = %q, want needs_adopt", body.State)
+	}
+	if body.PendingCount != 1 {
+		t.Errorf("pending_count = %d, want 1", body.PendingCount)
+	}
+}

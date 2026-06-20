@@ -33,6 +33,7 @@ type RestoreCallbacks struct {
 	ReinitMigrator   func(db *bun.DB) error
 	SetAppState      func(state string)
 	MaxMigration     string
+	MinMigration     string
 	RebuildBackupJob func(ctx context.Context, cron, retentionMode string, retentionValue int)
 }
 
@@ -269,6 +270,10 @@ func (h *BackupHandler) HandleRestore(c *echo.Context) error {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
+		var incompat *backup.IncompatibleBackupError
+		if errors.As(err, &incompat) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
+		}
 		slog.ErrorContext(c.Request().Context(), "restore failed", "backup_id", id, logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
 	}
@@ -325,6 +330,10 @@ func (h *BackupHandler) HandleRestoreUpload(c *echo.Context) error {
 	if err != nil {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
+		}
+		var incompat *backup.IncompatibleBackupError
+		if errors.As(err, &incompat) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
 		}
 		slog.ErrorContext(c.Request().Context(), "restore from upload failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
@@ -398,6 +407,10 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
+		var incompat *backup.IncompatibleBackupError
+		if errors.As(err, &incompat) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
+		}
 		slog.ErrorContext(c.Request().Context(), "setup restore failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
 	}
@@ -415,12 +428,13 @@ func (h *BackupHandler) HandleSetupListBackups(c *echo.Context) error {
 		return err
 	}
 
-	maxMigration := ""
+	maxMigration, minMigration := "", ""
 	if h.callbacks != nil {
 		maxMigration = h.callbacks.MaxMigration
+		minMigration = h.callbacks.MinMigration
 	}
 
-	infos, err := h.svc.ListAvailableArchives(c.Request().Context(), maxMigration)
+	infos, err := h.svc.ListAvailableArchives(c.Request().Context(), maxMigration, minMigration)
 	if err != nil {
 		slog.ErrorContext(c.Request().Context(), "setup list backups failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list backups"})
@@ -537,6 +551,10 @@ func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
 		if errors.Is(err, backup.ErrOperationInProgress) {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
 		}
+		var incompat *backup.IncompatibleBackupError
+		if errors.As(err, &incompat) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
+		}
 		slog.ErrorContext(c.Request().Context(), "setup restore-from-disk failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
 	}
@@ -563,5 +581,6 @@ func (h *BackupHandler) makeRestoreOpts(skipPreRestore bool) backup.RestoreOpts 
 		ReinitMigrator:  h.callbacks.ReinitMigrator,
 		SetAppState:     h.callbacks.SetAppState,
 		MaxMigration:    h.callbacks.MaxMigration,
+		MinMigration:    h.callbacks.MinMigration,
 	}
 }

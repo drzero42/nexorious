@@ -3,7 +3,9 @@ package api_test
 // Tests for backup API handlers.
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +29,85 @@ func newTestEchoBackup(t *testing.T, db *bun.DB, svc *backup.Service) interface 
 	cfg := testCfg()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	return api.New(testEncrypter, cfg, m, db, "", nil, svc, nil, "dev", "unknown", nil)
+}
+
+// newTestEchoBackupWithCallbacks is newTestEchoBackup with restore callbacks
+// wired (so the restore compatibility window — MinMigration/MaxMigration — is
+// active in the handler under test).
+func newTestEchoBackupWithCallbacks(t *testing.T, db *bun.DB, svc *backup.Service, cb *api.RestoreCallbacks) interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+} {
+	t.Helper()
+	cfg := testCfg()
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	return api.New(testEncrypter, cfg, m, db, "", nil, svc, cb, "dev", "unknown", nil)
+}
+
+// writeManifestArchive writes a minimal .tar.gz containing just a manifest.json
+// with the given migration_version. Enough to drive ValidateArchive's
+// version-compatibility checks (which run before the database.sql/checksum
+// checks).
+func writeManifestArchive(t *testing.T, dir, filename, migrationVersion string) {
+	t.Helper()
+	manifest := `{"version":1,"created_at":"2026-01-01T00:00:00Z","app_version":"0.15.0","migration_version":"` + migrationVersion + `","backup_type":"manual","database_file":"database.sql"}`
+	f, err := os.Create(filepath.Join(dir, filename))
+	if err != nil {
+		t.Fatalf("create archive: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	gw := gzip.NewWriter(f)
+	tw := tar.NewWriter(gw)
+	body := []byte(manifest)
+	if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: "backup-x/manifest.json", Mode: 0o644, Size: int64(len(body))}); err != nil {
+		t.Fatalf("write header: %v", err)
+	}
+	if _, err := tw.Write(body); err != nil {
+		t.Fatalf("write body: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("close gzip: %v", err)
+	}
+}
+
+// TestHandleSetupRestoreFromDisk_PreV0171ShowsMessage is the regression test for
+// the swallowed-message bug: a pre-v0.17.1 backup must be rejected with a clear,
+// actionable 400 (not a generic "restore failed"), and the database must be left
+// untouched so setup can be retried.
+func TestHandleSetupRestoreFromDisk_PreV0171ShowsMessage(t *testing.T) {
+	backup.CheckTools()
+	if !backup.PsqlAvailable() {
+		t.Skip("psql not available — setup restore-from-disk handler returns 503 before validation")
+	}
+	truncateAllTables(t) // no users → requireNoUsers gate open
+
+	backupDir := t.TempDir()
+	writeManifestArchive(t, backupDir, "old.tar.gz", "20260601000001") // below the floor
+
+	svc := backup.NewService(testDB, "", backupDir, "", "0.90.0")
+	cb := &api.RestoreCallbacks{
+		MaxMigration: "20260620000001",
+		MinMigration: "20260612000001",
+	}
+	e := newTestEchoBackupWithCallbacks(t, testDB, svc, cb)
+
+	body, _ := json.Marshal(map[string]string{"filename": "old.tar.gz"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup/restore/disk", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "v0.17.1") {
+		t.Errorf("body should explain the v0.17.1 requirement, got: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "restore failed") {
+		t.Errorf("body should not be the generic 'restore failed', got: %s", rec.Body.String())
+	}
 }
 
 // ---------------------------------------------------------------------------

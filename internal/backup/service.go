@@ -34,6 +34,17 @@ var ErrNotFound = errors.New("backup not found")
 // backup directory via path traversal.
 var ErrInvalidBackupID = errors.New("invalid backup id")
 
+// IncompatibleBackupError indicates a backup cannot be restored by this binary
+// because of a version/compatibility mismatch — too old to adopt (predates
+// v0.17.1), created by a newer Nexorious, or an unknown archive format. Its
+// message is user-facing: restore handlers surface it verbatim with a 400 rather
+// than a generic "restore failed", because the operator can act on it (upgrade
+// the source, use a different backup, or export/import). Distinct from genuine
+// corruption/internal errors, which stay opaque 500s.
+type IncompatibleBackupError struct{ Msg string }
+
+func (e *IncompatibleBackupError) Error() string { return e.Msg }
+
 // Service handles backup create/list/delete/validate/restore operations.
 type Service struct {
 	db          *bun.DB
@@ -226,21 +237,33 @@ func (s *Service) DeleteBackup(backupID string) error {
 
 // ValidateArchive opens an archive, reads the manifest, checks database.sql exists,
 // and optionally verifies SHA-256 checksums.
-func (s *Service) ValidateArchive(archivePath string, verifyChecksums bool, maxMigrationVersion string) (*Manifest, error) {
+func (s *Service) ValidateArchive(archivePath string, verifyChecksums bool, maxMigrationVersion, minMigrationVersion string) (*Manifest, error) {
 	manifest, err := readManifestFromArchive(archivePath)
 	if err != nil {
 		return nil, fmt.Errorf("read manifest: %w", err)
 	}
 
 	if manifest.Version > MaxManifestVersion {
-		return nil, fmt.Errorf("unknown manifest version %d (max supported: %d)", manifest.Version, MaxManifestVersion)
+		return nil, &IncompatibleBackupError{Msg: fmt.Sprintf("unknown manifest version %d (max supported: %d)", manifest.Version, MaxManifestVersion)}
 	}
 
 	if maxMigrationVersion != "" && manifest.MigrationVersion > maxMigrationVersion {
-		return nil, fmt.Errorf(
+		return nil, &IncompatibleBackupError{Msg: fmt.Sprintf(
 			"backup was created by a newer version of Nexorious (migration %s); this binary only supports up to migration %s — upgrade before restoring",
 			manifest.MigrationVersion, maxMigrationVersion,
-		)
+		)}
+	}
+
+	// Migration floor: a backup older than the v0.17.1 stepping stone cannot be
+	// adopted by this binary. Restoring it would replace the database with an
+	// un-adoptable schema and strand the instance in the refuse state, so reject
+	// it here — before any database mutation. The source must first be upgraded
+	// to v0.17.1 (or use export/import).
+	if minMigrationVersion != "" && manifest.MigrationVersion < minMigrationVersion {
+		return nil, &IncompatibleBackupError{Msg: fmt.Sprintf(
+			"backup predates v0.17.1 (migration %s); restore requires a backup at migration %s or later — upgrade the source instance to v0.17.1 first, or use export/import",
+			manifest.MigrationVersion, minMigrationVersion,
+		)}
 	}
 
 	// Always verify database.sql is present
@@ -287,7 +310,7 @@ func (s *Service) BackupPath() string {
 //
 // Returns an empty slice (not an error) when the directory is empty,
 // unreadable, or doesn't exist — listing is best-effort discovery.
-func (s *Service) ListAvailableArchives(ctx context.Context, maxMigrationVersion string) ([]ArchiveInfo, error) {
+func (s *Service) ListAvailableArchives(ctx context.Context, maxMigrationVersion, minMigrationVersion string) ([]ArchiveInfo, error) {
 	if s.backupPath == "" {
 		return nil, nil
 	}
@@ -337,6 +360,13 @@ func (s *Service) ListAvailableArchives(ctx context.Context, maxMigrationVersion
 			info.Reason = fmt.Sprintf(
 				"backup was created by a newer version of Nexorious (migration %s); this binary only supports up to migration %s — upgrade before restoring",
 				manifest.MigrationVersion, maxMigrationVersion,
+			)
+			info.Manifest = manifest
+		case minMigrationVersion != "" && manifest.MigrationVersion < minMigrationVersion:
+			info.Restorable = false
+			info.Reason = fmt.Sprintf(
+				"backup predates v0.17.1 (migration %s); upgrade the source instance to v0.17.1 before restoring, or use export/import",
+				manifest.MigrationVersion,
 			)
 			info.Manifest = manifest
 		default:
@@ -720,6 +750,7 @@ type RestoreOpts struct {
 	ReinitMigrator  func(db *bun.DB) error
 	SetAppState     func(state string)
 	MaxMigration    string
+	MinMigration    string
 }
 
 // RestoreBackup restores from a stored backup archive.
@@ -744,7 +775,7 @@ func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (stri
 	}
 	defer s.mu.Unlock()
 
-	_, err := s.ValidateArchive(uploadedPath, true, opts.MaxMigration)
+	_, err := s.ValidateArchive(uploadedPath, true, opts.MaxMigration, opts.MinMigration)
 	if err != nil {
 		return "", fmt.Errorf("validate uploaded archive: %w", err)
 	}
@@ -779,7 +810,7 @@ func (s *Service) RestoreFromArchive(archivePath string, opts RestoreOpts) (stri
 	}
 	defer s.mu.Unlock()
 
-	if _, err := s.ValidateArchive(archivePath, true, opts.MaxMigration); err != nil {
+	if _, err := s.ValidateArchive(archivePath, true, opts.MaxMigration, opts.MinMigration); err != nil {
 		return "", fmt.Errorf("validate archive: %w", err)
 	}
 
@@ -851,7 +882,7 @@ func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) erro
 		return fmt.Errorf("restore: parse DB URL: %w", err)
 	}
 
-	_, err = s.ValidateArchive(archivePath, false, opts.MaxMigration)
+	_, err = s.ValidateArchive(archivePath, false, opts.MaxMigration, opts.MinMigration)
 	if err != nil {
 		return fmt.Errorf("restore: validate: %w", err)
 	}

@@ -138,6 +138,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	// initAppState runs determineState + InitNeedsSetup.
 	// Called once at startup (if DB is reachable) and as StartDBProbe's onRecovery.
+	// NeedsAdopt and MigrationRefused states are left in place; Gate 2 serves the /migrate page.
 	initAppState := func(ctx context.Context) error {
 		if err := migrator.DetermineState(); err != nil {
 			return fmt.Errorf("initAppState: determineState: %w", err)
@@ -447,16 +448,26 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			return nil
 		},
 		ReinitMigrator: func(db *bun.DB) error {
-			if err := migrator.DetermineState(); err != nil {
-				return err
-			}
-			return migrator.InitNeedsSetup(context.Background(), db)
+			// Bring the restored database up to date in place. A restored
+			// fully-migrated v0.17.1 dump (23 bun_migrations rows, no baseline)
+			// comes back AppStateNeedsAdopt; ReinitAfterRestore adopts it (and
+			// runs any catch-up migrations) so the restore returns the operator
+			// to a working, Ready app rather than the /migrate adopt page. A
+			// same-version dump is a no-op. An un-adoptable backup can't reach
+			// here — the restore floor gate rejects it before applying.
+			return migrator.ReinitAfterRestore(context.Background(), db)
 		},
 		SetAppState: func(state string) {
 			if state == "db_unavailable" {
 				migrator.SetStateForTest(migrate.AppStateDBUnavailable)
 			}
 		},
+		// Restore compatibility window: reject backups newer than this binary
+		// (ceiling) and older than the v0.17.1 adopt stepping stone (floor).
+		// A pre-v0.17.1 backup is un-adoptable; restoring it would strand the
+		// instance in the refuse state, so it is rejected before any DB mutation.
+		MaxMigration:     migrate.LatestMigration(),
+		MinMigration:     migrate.MinRestorableMigration,
 		RebuildBackupJob: func(_ context.Context, _, _ string, _ int) {},
 	}
 
@@ -543,10 +554,15 @@ func runStartupMigrations(ctx context.Context, db *bun.DB, migrator *migrate.Mig
 	if err := migrator.DetermineState(); err != nil {
 		return fmt.Errorf("serve --migrate: determine state: %w", err)
 	}
-	if migrator.State() != migrate.AppStateNeedsMigration {
+	switch migrator.State() {
+	case migrate.AppStateReady:
 		slog.Info("serve --migrate: no pending migrations")
 		return nil
+	case migrate.AppStateMigrationRefused:
+		return fmt.Errorf("serve --migrate: refused — database is not a clean v0.17.1 or baseline install; " +
+			"upgrade to v0.17.1 first then v0.90.0+, or export → fresh install → import")
 	}
+	// AppStateNeedsMigration and AppStateNeedsAdopt proceed.
 	migrator.SetLogWriter(slog.NewLogLogger(slog.Default().Handler(), slog.LevelInfo).Writer())
 	if err := migrator.RunMigrations(ctx); err != nil {
 		return fmt.Errorf("serve --migrate: run migrations: %w", err)
