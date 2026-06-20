@@ -26,6 +26,8 @@ const (
 	AppStateMigrating
 	AppStateReady
 	AppStateMigrationFailed
+	AppStateNeedsAdopt
+	AppStateMigrationRefused
 )
 
 func (s AppState) String() string {
@@ -40,6 +42,10 @@ func (s AppState) String() string {
 		return "ready"
 	case AppStateMigrationFailed:
 		return "migration_failed"
+	case AppStateNeedsAdopt:
+		return "needs_adopt"
+	case AppStateMigrationRefused:
+		return "migration_refused"
 	default:
 		return "unknown"
 	}
@@ -54,6 +60,7 @@ type Migrator struct {
 	migrateMu         sync.Mutex
 	probeInterval     time.Duration
 	db                *bun.DB
+	migrationSet      *bunmigrate.Migrations
 	bunMig            *bunmigrate.Migrator
 	logCh             chan string
 	logWriter         io.Writer
@@ -61,12 +68,19 @@ type Migrator struct {
 }
 
 func NewMigrator(db *bun.DB) *Migrator {
-	return &Migrator{db: db}
+	return NewMigratorWithMigrations(db, migrations.Migrations)
+}
+
+// NewMigratorWithMigrations is NewMigrator with an injectable migration set,
+// so tests can register a synthetic post-baseline migration and exercise the
+// adopt-then-catch-up path (which has no real second migration yet).
+func NewMigratorWithMigrations(db *bun.DB, set *bunmigrate.Migrations) *Migrator {
+	return &Migrator{db: db, migrationSet: set}
 }
 
 func (mg *Migrator) determineState() error {
 	if mg.bunMig == nil {
-		mg.bunMig = bunmigrate.NewMigrator(mg.db, migrations.Migrations)
+		mg.bunMig = bunmigrate.NewMigrator(mg.db, mg.migrationSet)
 		if err := mg.bunMig.Init(context.Background()); err != nil {
 			return fmt.Errorf("determine state: init: %w", err)
 		}
@@ -171,7 +185,7 @@ func (mg *Migrator) PendingCount() (int, error) {
 // not mutate Migrator state.
 func (mg *Migrator) Status(ctx context.Context) (pending int, current string, err error) {
 	if mg.bunMig == nil {
-		mg.bunMig = bunmigrate.NewMigrator(mg.db, migrations.Migrations)
+		mg.bunMig = bunmigrate.NewMigrator(mg.db, mg.migrationSet)
 		if err := mg.bunMig.Init(ctx); err != nil {
 			return 0, "", fmt.Errorf("status: init: %w", err)
 		}
