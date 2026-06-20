@@ -6,6 +6,8 @@ import (
 
 	"github.com/uptrace/bun"
 	bunmigrate "github.com/uptrace/bun/migrate"
+
+	"github.com/drzero42/nexorious/internal/db/migrations"
 )
 
 // baselineTimestamp is the bun_migrations.name (14-digit timestamp) of the
@@ -27,6 +29,34 @@ var v0171Manifest = map[string]struct{}{
 	"20260604000003": {}, "20260604000004": {}, "20260605000001": {}, "20260605000002": {},
 	"20260605000003": {}, "20260608000001": {}, "20260608000002": {}, "20260608000003": {},
 	"20260608000004": {}, "20260609000001": {}, "20260612000001": {},
+}
+
+// MinRestorableMigration is the lowest backup migration version this binary can
+// restore: the highest v0.17.1 manifest timestamp (the adopt stepping stone). A
+// backup whose recorded migration version is below this predates v0.17.1, so it
+// cannot be adopted — restoring it would land the database in the refuse state
+// with no recovery path. Restore must reject such backups before touching the
+// database. Derived from v0171Manifest so it can never drift from the gate.
+var MinRestorableMigration = func() string {
+	highest := ""
+	for ts := range v0171Manifest {
+		if ts > highest {
+			highest = ts
+		}
+	}
+	return highest
+}()
+
+// LatestMigration returns the highest migration timestamp this binary ships (the
+// newest discovered migration). It is the restore ceiling: a backup recorded at
+// a newer migration than this was created by a newer Nexorious and cannot be
+// safely restored. Returns "" if no migrations are discovered (never expected).
+func LatestMigration() string {
+	sorted := migrations.Migrations.Sorted()
+	if len(sorted) == 0 {
+		return ""
+	}
+	return sorted[len(sorted)-1].Name
 }
 
 type adoptDecision int

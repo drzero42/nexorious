@@ -378,7 +378,7 @@ func TestValidateArchive_NonExistentFile(t *testing.T) {
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
 
-	_, err := svc.ValidateArchive("/nonexistent/archive.tar.gz", false, "")
+	_, err := svc.ValidateArchive("/nonexistent/archive.tar.gz", false, "", "")
 	if err == nil {
 		t.Fatal("expected error for non-existent archive")
 	}
@@ -394,7 +394,7 @@ func TestValidateArchive_NoManifest(t *testing.T) {
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
 
-	_, err := svc.ValidateArchive(archivePath, false, "")
+	_, err := svc.ValidateArchive(archivePath, false, "", "")
 	if err == nil {
 		t.Fatal("expected error for archive without manifest")
 	}
@@ -414,7 +414,7 @@ func TestValidateArchive_NoDatabaseSQL(t *testing.T) {
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
 
-	_, err := svc.ValidateArchive(archivePath, false, "")
+	_, err := svc.ValidateArchive(archivePath, false, "", "")
 	if err == nil {
 		t.Fatal("expected error for archive without database.sql")
 	}
@@ -433,9 +433,49 @@ func TestValidateArchive_UnknownManifestVersion(t *testing.T) {
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
 
-	_, err := svc.ValidateArchive(archivePath, false, "")
+	_, err := svc.ValidateArchive(archivePath, false, "", "")
 	if err == nil {
 		t.Fatal("expected error for unknown manifest version")
+	}
+}
+
+// TestValidateArchive_PredatesV0171Rejected exercises the migration-floor gate:
+// a backup recorded at a migration older than the v0.17.1 stepping stone cannot
+// be adopted, so restore must reject it before touching the database.
+func TestValidateArchive_PredatesV0171Rejected(t *testing.T) {
+	tmpDir := t.TempDir()
+	// migration_version 20260601000001 is below the floor 20260612000001.
+	manifest := `{"version":1,"created_at":"2026-01-01T00:00:00Z","app_version":"0.15.0","migration_version":"20260601000001","backup_type":"manual","database_file":"database.sql"}`
+	archivePath := createTarGzWithFiles(t, tmpDir, map[string]string{
+		"backup-20260101-120000/manifest.json": manifest,
+		"backup-20260101-120000/database.sql":  "-- sql",
+	})
+
+	svc := backup.NewService(nil, "", t.TempDir(), t.TempDir(), "0.90.0")
+
+	_, err := svc.ValidateArchive(archivePath, false, "20260620000001", "20260612000001")
+	if err == nil {
+		t.Fatal("expected error for backup predating v0.17.1")
+	}
+}
+
+// TestValidateArchive_AdoptableAndBaselineAccepted confirms the floor does not
+// over-reject: a fully-migrated v0.17.1 backup (== floor) and a baseline-or-later
+// backup are both restorable.
+func TestValidateArchive_AdoptableAndBaselineAccepted(t *testing.T) {
+	for _, mv := range []string{"20260612000001", "20260620000001"} {
+		t.Run(mv, func(t *testing.T) {
+			dir := t.TempDir()
+			manifest := `{"version":1,"created_at":"2026-01-01T00:00:00Z","app_version":"0.90.0","migration_version":"` + mv + `","backup_type":"manual","database_file":"database.sql"}`
+			archivePath := createTarGzWithFiles(t, dir, map[string]string{
+				"backup-x/manifest.json": manifest,
+				"backup-x/database.sql":  "-- sql",
+			})
+			svc := backup.NewService(nil, "", t.TempDir(), t.TempDir(), "0.90.0")
+			if _, err := svc.ValidateArchive(archivePath, false, "20260620000001", "20260612000001"); err != nil {
+				t.Fatalf("migration_version %s should be restorable, got: %v", mv, err)
+			}
+		})
 	}
 }
 
@@ -743,7 +783,7 @@ func TestValidateArchive_ChecksumMismatch(t *testing.T) {
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
 
-	_, err := svc.ValidateArchive(archivePath, true, "")
+	_, err := svc.ValidateArchive(archivePath, true, "", "")
 	if err == nil {
 		t.Fatal("expected checksum mismatch error")
 	}
@@ -775,7 +815,7 @@ func TestValidateArchive_CoverArtChecksumMismatch(t *testing.T) {
 	storageDir := t.TempDir()
 	svc := backup.NewService(nil, "", backupDir, storageDir, "0.1.0")
 
-	_, err := svc.ValidateArchive(archivePath, true, "")
+	_, err := svc.ValidateArchive(archivePath, true, "", "")
 	if err == nil {
 		t.Fatal("expected cover_art checksum mismatch error")
 	}
@@ -809,7 +849,7 @@ func TestValidateArchive_WithRealArchive(t *testing.T) {
 	}
 
 	// ValidateArchive with checksum verification.
-	manifest, err := svc.ValidateArchive(archivePath, true, "")
+	manifest, err := svc.ValidateArchive(archivePath, true, "", "")
 	if err != nil {
 		t.Fatalf("ValidateArchive with checksums: %v", err)
 	}
@@ -818,7 +858,7 @@ func TestValidateArchive_WithRealArchive(t *testing.T) {
 	}
 
 	// ValidateArchive with a newer migration version than the backup.
-	_, err = svc.ValidateArchive(archivePath, false, "00000000000000")
+	_, err = svc.ValidateArchive(archivePath, false, "00000000000000", "")
 	if err == nil {
 		t.Error("expected error for maxMigrationVersion too old")
 	}
@@ -846,7 +886,7 @@ func TestListAvailableArchives_EmptyResult(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := backup.NewService(nil, "", tt.dir(t), "", "0.1.0")
-			infos, err := svc.ListAvailableArchives(context.Background(), "")
+			infos, err := svc.ListAvailableArchives(context.Background(), "", "")
 			if err != nil {
 				t.Fatalf("ListAvailableArchives: unexpected error: %v", err)
 			}
@@ -915,6 +955,38 @@ func writeValidManifestArchive(t *testing.T, dir, filename, migrationVersion, ba
 	return path
 }
 
+// TestListAvailableArchives_PredatesV0171NotRestorable confirms the listing UI
+// marks a pre-v0.17.1 backup non-restorable with a clear reason, so the operator
+// never picks one that would strand the instance.
+func TestListAvailableArchives_PredatesV0171NotRestorable(t *testing.T) {
+	dir := t.TempDir()
+	// Below the floor (20260612000001) → not restorable.
+	writeValidManifestArchive(t, dir, "nexorious-backup-20260101-000000.tar.gz", "20260601000001", "manual")
+	// At the floor (fully-migrated v0.17.1) → restorable.
+	writeValidManifestArchive(t, dir, "nexorious-backup-20260102-000000.tar.gz", "20260612000001", "manual")
+
+	svc := backup.NewService(nil, "", dir, "", "0.90.0")
+	infos, err := svc.ListAvailableArchives(context.Background(), "20260620000001", "20260612000001")
+	if err != nil {
+		t.Fatalf("ListAvailableArchives: %v", err)
+	}
+	if len(infos) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(infos))
+	}
+	byMV := map[string]backup.ArchiveInfo{}
+	for _, i := range infos {
+		if i.Manifest != nil {
+			byMV[i.Manifest.MigrationVersion] = i
+		}
+	}
+	if old := byMV["20260601000001"]; old.Restorable || old.Reason == "" {
+		t.Errorf("pre-v0.17.1 backup should be non-restorable with a reason, got restorable=%v reason=%q", old.Restorable, old.Reason)
+	}
+	if ok := byMV["20260612000001"]; !ok.Restorable {
+		t.Errorf("v0.17.1 backup should be restorable, got reason=%q", ok.Reason)
+	}
+}
+
 func TestListAvailableArchives_MixedContents(t *testing.T) {
 	dir := t.TempDir()
 
@@ -950,7 +1022,7 @@ func TestListAvailableArchives_MixedContents(t *testing.T) {
 	mustChtime(t, validPath, now)
 
 	svc := backup.NewService(nil, "", dir, "", "0.1.0")
-	infos, err := svc.ListAvailableArchives(context.Background(), "20260518120000")
+	infos, err := svc.ListAvailableArchives(context.Background(), "20260518120000", "")
 	if err != nil {
 		t.Fatalf("ListAvailableArchives: unexpected error: %v", err)
 	}

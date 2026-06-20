@@ -462,6 +462,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				migrator.SetStateForTest(migrate.AppStateDBUnavailable)
 			}
 		},
+		// Restore compatibility window: reject backups newer than this binary
+		// (ceiling) and older than the v0.17.1 adopt stepping stone (floor).
+		// A pre-v0.17.1 backup is un-adoptable; restoring it would strand the
+		// instance in the refuse state, so it is rejected before any DB mutation.
+		MaxMigration:     migrate.LatestMigration(),
+		MinMigration:     migrate.MinRestorableMigration,
 		RebuildBackupJob: func(_ context.Context, _, _ string, _ int) {},
 	}
 

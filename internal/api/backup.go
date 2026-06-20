@@ -33,6 +33,7 @@ type RestoreCallbacks struct {
 	ReinitMigrator   func(db *bun.DB) error
 	SetAppState      func(state string)
 	MaxMigration     string
+	MinMigration     string
 	RebuildBackupJob func(ctx context.Context, cron, retentionMode string, retentionValue int)
 }
 
@@ -415,12 +416,13 @@ func (h *BackupHandler) HandleSetupListBackups(c *echo.Context) error {
 		return err
 	}
 
-	maxMigration := ""
+	maxMigration, minMigration := "", ""
 	if h.callbacks != nil {
 		maxMigration = h.callbacks.MaxMigration
+		minMigration = h.callbacks.MinMigration
 	}
 
-	infos, err := h.svc.ListAvailableArchives(c.Request().Context(), maxMigration)
+	infos, err := h.svc.ListAvailableArchives(c.Request().Context(), maxMigration, minMigration)
 	if err != nil {
 		slog.ErrorContext(c.Request().Context(), "setup list backups failed", logging.KeyErr, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list backups"})
@@ -563,5 +565,6 @@ func (h *BackupHandler) makeRestoreOpts(skipPreRestore bool) backup.RestoreOpts 
 		ReinitMigrator:  h.callbacks.ReinitMigrator,
 		SetAppState:     h.callbacks.SetAppState,
 		MaxMigration:    h.callbacks.MaxMigration,
+		MinMigration:    h.callbacks.MinMigration,
 	}
 }
