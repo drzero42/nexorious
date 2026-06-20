@@ -372,4 +372,31 @@ Schema changes ship as migrations, applied as a step separate from the running s
 
 With the `.deb`/`.rpm` packages, a normal `apt upgrade` / `dnf upgrade` replaces the binary and preserves your `/etc/nexorious/nexorious.env` — the env file is a conffile (`%config(noreplace)` on rpm), so your settings and the generated `DB_ENCRYPTION_KEY` survive the upgrade, and the service is restarted only if it was already running. Removal differs by family: `apt purge` deletes `/var/lib/nexorious` **including backups** and removes the `nexorious` user (a true clean uninstall), while a plain `apt remove` and any `dnf` uninstall leave config, key, and data in place for a later reinstall (rpm keeps a modified env file as `nexorious.env.rpmsave`).
 
+### Upgrading to v0.90.0+ (the migration squash)
+
+v0.90.0 collapses the early migration history into a single baseline. To upgrade
+safely you must first be on **v0.17.1** with its schema fully migrated, then move
+to v0.90.0 or any later version. On a fully-migrated v0.17.1 database the migrator
+**adopts** the existing schema in place — it rewrites the migration history to the
+baseline and applies anything newer, with **zero data loss** (collections, pools,
+users, API keys, sync connections and credentials, notification channels and
+subscriptions, and settings are all preserved).
+
+If the database is older than v0.17.1, partially migrated, or otherwise in an
+unrecognized state, the upgrade is **refused** rather than risking corruption:
+- The web `/migrate` page shows a refusal with these instructions instead of a run button.
+- `nexorious migrate` and `serve --migrate` exit non-zero (so a Helm `migrate`
+  initContainer fails loudly rather than starting against a broken schema).
+
+To recover a refused database, first upgrade it to v0.17.1 and let it migrate
+fully, then upgrade to v0.90.0+. If it's in an inconsistent state and can't reach
+v0.17.1, use the export/import fallback: export each user's collection (JSON
+export from Import / Export), start fresh with an empty database on v0.90.0+, and
+import. Export preserves **games** (status, rating, loved/wishlisted, notes,
+platforms, tags) and **pools** (filters + members). After a fresh install + import
+you must redo: users & passwords (re-run setup), API keys (re-mint), sync
+connections / storefront credentials (`sync connect`), notification channels &
+subscriptions, user settings (deal-region, etc.), the backup schedule, and sync
+state / external-game match history (rebuilt by re-running syncs).
+
 **The one big caveat is the 1.0.0 release.** The first stable release will be a deliberate clean break with **no automatic upgrade path** from the pre-1.0 versions. To move onto 1.0.0 you'll export each user's collection (JSON export from Import / Export), start fresh with an empty database, and import again. Until 1.0.0 lands, keep this in mind and don't treat a pre-1.0 instance as permanent storage — keep exports of anything you'd be sad to re-enter.
