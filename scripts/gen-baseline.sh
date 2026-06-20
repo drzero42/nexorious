@@ -42,7 +42,8 @@ dump_seed() {  # $1 = cid, $2 = db
   docker exec "$1" pg_dump -U t -d "$2" --data-only --no-owner --no-privileges \
     --inserts --rows-per-insert=1 "${args[@]}" \
   | grep -vE '^(SET|SELECT pg_catalog\.set_config|--|$)' \
-  | grep -vE '^\\(restrict|unrestrict) '
+  | grep -vE '^\\(restrict|unrestrict) ' \
+  | sed "s/^INSERT INTO public\.backup_config VALUES (\([0-9]*\), '\([^']*\)', '\([^']*\)', \([0-9]*\), .*);$/INSERT INTO public.backup_config (id, schedule_cron, retention_mode, retention_value) VALUES (\1, '\2', '\3', \4);/"
 }
 
 echo "==> Building v0.17.1 end-state DB"

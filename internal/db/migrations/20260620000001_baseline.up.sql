@@ -448,7 +448,7 @@ ALTER TABLE ONLY public.user_sync_configs
     ADD CONSTRAINT user_sync_configs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 -- Seed/reference data (platforms, storefronts, platform_storefronts, backup_config).
-INSERT INTO public.backup_config VALUES (1, '0 2 * * *', 'days', 30, NULL, '2026-06-20 05:19:03.337026+00', '2026-06-20 05:19:03.337026+00');
+INSERT INTO public.backup_config (id, schedule_cron, retention_mode, retention_value) VALUES (1, '0 2 * * *', 'days', 30);
 INSERT INTO public.storefronts VALUES ('steam', 'Steam', 'steam-icon-light.svg', 'https://store.steampowered.com');
 INSERT INTO public.storefronts VALUES ('epic-games-store', 'Epic Games Store', 'epic-games-store-icon-light.svg', 'https://store.epicgames.com');
 INSERT INTO public.storefronts VALUES ('gog', 'GOG', 'gog-icon-light.svg', 'https://www.gog.com');
