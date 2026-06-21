@@ -37,19 +37,42 @@ func makeAdoptBunDB(t *testing.T) *bun.DB {
 	return db
 }
 
-// seedV0171 builds the v0.17.1 end-state: baseline schema (applied via the
-// embedded baseline migration), then bun_migrations rewritten to exactly the 23
+// seedV0171 builds the v0.17.1 end-state: baseline schema (applied via ONLY
+// the baseline migration), then bun_migrations rewritten to exactly the 23
 // manifest rows (no baseline row).
+//
+// We must apply only the baseline file — not the full migrations.Migrations set
+// — because the full set now includes post-baseline migrations (e.g.
+// 20260621000001) whose DDL is already present in the baseline schema; applying
+// them again would error with "column already exists".
 func seedV0171(t *testing.T, db *bun.DB) {
 	t.Helper()
 	ctx := context.Background()
-	m := bunmigrate.NewMigrator(db, migrations.Migrations)
+
+	upSQL, err := migrations.FS.ReadFile("20260620000001_baseline.up.sql")
+	if err != nil {
+		t.Fatalf("read baseline up: %v", err)
+	}
+	downSQL, err := migrations.FS.ReadFile("20260620000001_baseline.down.sql")
+	if err != nil {
+		t.Fatalf("read baseline down: %v", err)
+	}
+	baselineOnly := fstest.MapFS{
+		"20260620000001_baseline.up.sql":   &fstest.MapFile{Data: upSQL},
+		"20260620000001_baseline.down.sql": &fstest.MapFile{Data: downSQL},
+	}
+	set := bunmigrate.NewMigrations()
+	if err := set.Discover(baselineOnly); err != nil {
+		t.Fatalf("discover baseline-only: %v", err)
+	}
+	m := bunmigrate.NewMigrator(db, set)
 	if err := m.Init(ctx); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if _, err := m.Migrate(ctx); err != nil { // applies baseline
+	if _, err := m.Migrate(ctx); err != nil {
 		t.Fatalf("apply baseline: %v", err)
 	}
+
 	if _, err := db.ExecContext(ctx, "DELETE FROM bun_migrations"); err != nil {
 		t.Fatalf("clear bun_migrations: %v", err)
 	}
@@ -100,8 +123,9 @@ func TestRunMigrations_AdoptRewritesHistory(t *testing.T) {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 	got := adoptNames(t, db)
-	if len(got) != 1 || got[0] != "20260620000001" {
-		t.Fatalf("bun_migrations = %v, want exactly [20260620000001]", got)
+	want := []string{"20260620000001", "20260621000001"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
 	}
 }
 
@@ -174,10 +198,10 @@ func TestRunMigrations_AdoptThenCatchUp(t *testing.T) {
 		t.Fatalf("discover baseline: %v", err)
 	}
 	synth := fstest.MapFS{
-		"20260621000001_test_addcol.up.sql": &fstest.MapFile{
+		"20260622000001_test_addcol.up.sql": &fstest.MapFile{
 			Data: []byte("ALTER TABLE platforms ADD COLUMN test_adopt_marker text;"),
 		},
-		"20260621000001_test_addcol.down.sql": &fstest.MapFile{
+		"20260622000001_test_addcol.down.sql": &fstest.MapFile{
 			Data: []byte("ALTER TABLE platforms DROP COLUMN test_adopt_marker;"),
 		},
 	}
@@ -196,10 +220,10 @@ func TestRunMigrations_AdoptThenCatchUp(t *testing.T) {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 
-	// bun_migrations is now exactly [baseline, synthetic].
+	// bun_migrations is now exactly [baseline, real post-baseline, synthetic].
 	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001"}
-	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+	want := []string{"20260620000001", "20260621000001", "20260622000001"}
+	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("bun_migrations = %v, want %v", got, want)
 	}
 	// And the synthetic migration's column actually exists.
@@ -254,8 +278,9 @@ func TestReinitAfterRestore_AdoptsV0171(t *testing.T) {
 		t.Fatalf("state = %v, want Ready", m.State())
 	}
 	got := adoptNames(t, db)
-	if len(got) != 1 || got[0] != "20260620000001" {
-		t.Fatalf("bun_migrations = %v, want exactly [20260620000001]", got)
+	want := []string{"20260620000001", "20260621000001"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
 	}
 }
 
@@ -281,7 +306,8 @@ func TestReinitAfterRestore_BaselineNoOp(t *testing.T) {
 		t.Fatalf("state = %v, want Ready", m.State())
 	}
 	got := adoptNames(t, db)
-	if len(got) != 1 || got[0] != "20260620000001" {
-		t.Fatalf("bun_migrations = %v, want exactly [20260620000001]", got)
+	want := []string{"20260620000001", "20260621000001"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
 	}
 }
