@@ -54,3 +54,24 @@ func TestIsValidVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestCompare(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+	}{
+		{"0.2.0", "0.1.0", 1},
+		{"0.1.0", "0.2.0", -1},
+		{"1.0.0", "1.0.0", 0},
+		{"v0.2.0", "0.1.0", 1}, // leading v tolerated on either side
+		{"0.90.0", "0.17.1", 1},
+		{"0.1.0", "", 1}, // valid sorts after invalid/empty
+		{"", "0.1.0", -1},
+		{"dev", "also-bad", 0}, // two invalid compare equal
+	}
+	for _, tc := range cases {
+		if got := Compare(tc.a, tc.b); got != tc.want {
+			t.Errorf("Compare(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
