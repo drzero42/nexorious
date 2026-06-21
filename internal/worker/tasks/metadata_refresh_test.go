@@ -726,3 +726,54 @@ func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
 		t.Errorf("after second item: job status want completed, got %s", jobStatus)
 	}
 }
+
+func TestMetadataRefreshDispatch_StalenessFilter(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+
+	// Admin owner required by the self-created dispatch path.
+	insertMetaRefreshAdminUser(t)
+
+	now := time.Now().UTC()
+	insertTestGame(t, 101, "Fresh", now.Add(-1*time.Hour))      // within 23h → excluded
+	insertTestGame(t, 102, "Stale", now.Add(-48*time.Hour))     // older than 23h → included
+	insertTestGame(t, 103, "Ancient", now.Add(-1000*time.Hour)) // very old (never refreshed) → included
+
+	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
+	igdbClient := newTestIGDBClient(t, srv)
+	rc := newTestMetadataRiverClient(t)
+	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc, MinAge: 23 * time.Hour}
+
+	if err := w.Work(ctx, &river.Job[tasks.MetadataRefreshDispatchArgs]{Args: tasks.MetadataRefreshDispatchArgs{}}); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+
+	var keys []string
+	if err := testDB.NewRaw(
+		`SELECT item_key FROM job_items ORDER BY item_key`,
+	).Scan(ctx, &keys); err != nil {
+		t.Fatalf("scan job_items: %v", err)
+	}
+	// 102 (stale) and 103 (ancient) enqueued; 101 (fresh) excluded.
+	want := []string{"102", "103"}
+	if len(keys) != len(want) || keys[0] != want[0] || keys[1] != want[1] {
+		t.Errorf("enqueued item_keys = %v; want %v", keys, want)
+	}
+}
+
+func TestMetadataRefreshItemArgs_InsertOptsQueue(t *testing.T) {
+	opts := tasks.MetadataRefreshItemArgs{}.InsertOpts()
+	if opts.Queue != tasks.QueueMetadataRefresh {
+		t.Errorf("Queue = %q; want %q", opts.Queue, tasks.QueueMetadataRefresh)
+	}
+	if tasks.QueueMetadataRefresh != "metadata_refresh" {
+		t.Errorf("QueueMetadataRefresh = %q; want \"metadata_refresh\"", tasks.QueueMetadataRefresh)
+	}
+	if opts.MaxAttempts != 5 {
+		t.Errorf("MaxAttempts = %d; want 5 (unchanged)", opts.MaxAttempts)
+	}
+	if opts.Priority != 3 {
+		t.Errorf("Priority = %d; want 3 (unchanged)", opts.Priority)
+	}
+}

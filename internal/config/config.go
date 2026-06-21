@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -99,6 +100,18 @@ type Config struct {
 	// The backup schedule is stored in the backup_config table, not here.
 	MetadataRefreshInterval string `env:"METADATA_REFRESH_INTERVAL" envDefault:"24h"`
 
+	// MetadataRefreshWorkers is the concurrency of the dedicated metadata_refresh
+	// River queue. Default 1 keeps the nightly refresh to ~half the IGDB rate
+	// budget so user-facing IGDB traffic stays responsive; raise it to finish
+	// faster at the cost of crowding user IGDB requests.
+	MetadataRefreshWorkers int `env:"METADATA_REFRESH_WORKERS" envDefault:"1"`
+
+	// MetadataRefreshMinAge is a Go duration string; a game is only re-refreshed
+	// once its last_updated is older than this. Set slightly below
+	// METADATA_REFRESH_INTERVAL (default 23h vs 24h) so a game refreshed
+	// yesterday is reliably eligible today despite scheduler jitter.
+	MetadataRefreshMinAge string `env:"METADATA_REFRESH_MIN_AGE" envDefault:"23h"`
+
 	// StaleJobThreshold is the minimum job age before CleanupStaleJobsTask marks
 	// a pending/processing metadata_refresh job as failed when it has no
 	// unfinished items. Default 4h matches the Phase 5 spec.
@@ -164,6 +177,16 @@ func Load() (*Config, error) {
 	}
 	cfg.resolveDatabaseURL()
 	return cfg, nil
+}
+
+// MetadataRefreshMinAgeDuration parses MetadataRefreshMinAge, falling back to
+// 23h on an empty/invalid value or a non-positive duration.
+func (c *Config) MetadataRefreshMinAgeDuration() time.Duration {
+	d, err := time.ParseDuration(c.MetadataRefreshMinAge)
+	if err != nil || d <= 0 {
+		return 23 * time.Hour
+	}
+	return d
 }
 
 // resolveDatabaseURL builds DatabaseURL from individual DB_* vars when

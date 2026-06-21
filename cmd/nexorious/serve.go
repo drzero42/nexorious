@@ -242,6 +242,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
 		IGDBClient: igdbClient,
+		MinAge:     cfg.MetadataRefreshMinAgeDuration(),
 	}
 	checkPendingSyncsWorker := &scheduler.CheckPendingSyncsWorker{DB: db}
 	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
@@ -295,9 +296,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	quietJobKinds = append(quietJobKinds, notify.PruneEventsArgs{}.Kind())
 
 	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
-		Logger:       logging.RiverLogger(),
-		Workers:      workers,
-		Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
+		Logger:  logging.RiverLogger(),
+		Workers: workers,
+		Queues: map[string]river.QueueConfig{
+			river.QueueDefault:         {MaxWorkers: cfg.WorkerCount},
+			tasks.QueueMetadataRefresh: {MaxWorkers: cfg.MetadataRefreshWorkers},
+		},
 		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
 		Middleware: []rivertype.Middleware{
 			otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
@@ -366,6 +370,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
 				DB:         newDB,
 				IGDBClient: igdbClient,
+				MinAge:     cfg.MetadataRefreshMinAgeDuration(),
 			}
 			newCheckSyncs := &scheduler.CheckPendingSyncsWorker{DB: newDB}
 			newRescueOrphaned := &scheduler.RescueOrphanedPendingItemsWorker{DB: newDB}
@@ -409,9 +414,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			})
 
 			newClient, err := river.NewClient(riverpgxv5.New(newPgxPool), &river.Config{
-				Logger:       logging.RiverLogger(),
-				Workers:      newWorkers,
-				Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.WorkerCount}},
+				Logger:  logging.RiverLogger(),
+				Workers: newWorkers,
+				Queues: map[string]river.QueueConfig{
+					river.QueueDefault:         {MaxWorkers: cfg.WorkerCount},
+					tasks.QueueMetadataRefresh: {MaxWorkers: cfg.MetadataRefreshWorkers},
+				},
 				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
 				Middleware: []rivertype.Middleware{
 					otelriver.NewMiddleware(&otelriver.MiddlewareConfig{

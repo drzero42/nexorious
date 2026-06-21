@@ -21,6 +21,13 @@ import (
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 )
 
+// QueueMetadataRefresh is the dedicated, low-concurrency River queue for
+// metadata_refresh_item jobs. Keeping refresh items off the default queue stops
+// the nightly batch from starving user-initiated syncs/imports; its low worker
+// count (config METADATA_REFRESH_WORKERS, default 1) also caps how much of the
+// shared IGDB rate budget the refresh consumes. Registered in cmd/nexorious/serve.go.
+const QueueMetadataRefresh = "metadata_refresh"
+
 // ─── Dispatch worker ─────────────────────────────────────────────────────────
 
 // MetadataRefreshDispatchArgs is the River job args type for "metadata_refresh_dispatch".
@@ -40,13 +47,16 @@ func (MetadataRefreshDispatchArgs) InsertOpts() river.InsertOpts {
 // MetadataRefreshDispatchWorker is a River worker that:
 //  1. Guards on IGDB configured and admin user present.
 //  2. Checks no active metadata_refresh job.
-//  3. Selects all games ordered by last_updated ASC.
+//  3. Selects games (optionally filtered by MinAge) ordered by last_updated ASC.
 //  4. Creates job + job_items and enqueues metadata_refresh_item River jobs in a single transaction.
 type MetadataRefreshDispatchWorker struct {
 	river.WorkerDefaults[MetadataRefreshDispatchArgs]
 	DB          *bun.DB
 	IGDBClient  *igdbsvc.Client
 	RiverClient *river.Client[pgx.Tx]
+	// MinAge, when > 0, restricts dispatch to games whose last_updated is older
+	// than the window. 0 means "all games" (back-compat for unset callers).
+	MinAge time.Duration
 }
 
 func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job[MetadataRefreshDispatchArgs]) error {
@@ -102,12 +112,25 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		jobID = uuid.NewString()
 	}
 
-	// Oldest-refreshed games first.
+	// Oldest-refreshed first; skip games refreshed within MinAge. last_updated is
+	// NOT NULL (DEFAULT now()), so a never-metadata-refreshed game carries its
+	// creation timestamp and ages into eligibility — no NULL handling needed.
 	var games []struct {
 		ID    int32  `bun:"id"`
 		Title string `bun:"title"`
 	}
-	if err := w.DB.NewRaw(`SELECT id, title FROM games ORDER BY last_updated ASC`).Scan(ctx, &games); err != nil {
+	var err error
+	if w.MinAge > 0 {
+		err = w.DB.NewRaw(
+			`SELECT id, title FROM games
+			 WHERE last_updated < now() - make_interval(secs => ?)
+			 ORDER BY last_updated ASC`,
+			w.MinAge.Seconds(),
+		).Scan(ctx, &games)
+	} else {
+		err = w.DB.NewRaw(`SELECT id, title FROM games ORDER BY last_updated ASC`).Scan(ctx, &games)
+	}
+	if err != nil {
 		slog.ErrorContext(ctx, "metadata_refresh_dispatch: query games", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}
@@ -188,7 +211,7 @@ type MetadataRefreshItemArgs struct {
 func (MetadataRefreshItemArgs) Kind() string { return "metadata_refresh_item" }
 
 func (MetadataRefreshItemArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 5, Priority: 3}
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3, Queue: QueueMetadataRefresh}
 }
 
 // MetadataRefreshItemWorker is a River worker that fetches fresh IGDB
