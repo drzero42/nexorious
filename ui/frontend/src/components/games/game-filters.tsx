@@ -9,7 +9,8 @@ import {
 } from '@/components/ui/select';
 import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
 import { useAllPlatforms, useAllStorefronts, useAllTags, useFilterOptions } from '@/hooks';
-import { PlayStatus, OwnershipStatus } from '@/types';
+import { OwnershipStatus } from '@/types';
+import { playStatusOptions, ownershipStatusOptions } from '@/lib/filter-labels';
 import {
   ArrowDownAZ,
   ArrowUpAZ,
@@ -49,25 +50,6 @@ export interface GameFiltersProps {
 }
 
 export type GameFiltersValue = GameFiltersProps['filters'];
-
-const statusOptions: { value: PlayStatus; label: string }[] = [
-  { value: PlayStatus.NOT_STARTED, label: 'Not Started' },
-  { value: PlayStatus.IN_PROGRESS, label: 'In Progress' },
-  { value: PlayStatus.COMPLETED, label: 'Completed' },
-  { value: PlayStatus.MASTERED, label: 'Mastered' },
-  { value: PlayStatus.DOMINATED, label: 'Dominated' },
-  { value: PlayStatus.SHELVED, label: 'Shelved' },
-  { value: PlayStatus.DROPPED, label: 'Dropped' },
-  { value: PlayStatus.REPLAY, label: 'Replay' },
-];
-
-const ownershipOptions: { value: OwnershipStatus; label: string }[] = [
-  { value: OwnershipStatus.OWNED, label: 'Owned' },
-  { value: OwnershipStatus.BORROWED, label: 'Borrowed' },
-  { value: OwnershipStatus.RENTED, label: 'Rented' },
-  { value: OwnershipStatus.SUBSCRIPTION, label: 'Subscription' },
-  { value: OwnershipStatus.NO_LONGER_OWNED, label: 'No Longer Owned' },
-];
 
 export function GameFilters({
   filters,
@@ -223,7 +205,7 @@ export function GameFilters({
         {/* Play Status filter (multi-select) */}
         <MultiSelectFilter
           label="Play Status"
-          options={statusOptions}
+          options={playStatusOptions}
           selected={filters.status ?? []}
           onChange={(selected) => onFiltersChange({ ...filters, status: selected })}
         />
@@ -243,7 +225,7 @@ export function GameFilters({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Ownership</SelectItem>
-            {ownershipOptions.map((option) => (
+            {ownershipStatusOptions.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>

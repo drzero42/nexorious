@@ -1,7 +1,9 @@
 import { createFileRoute, Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { Suspense, useMemo, useCallback, useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
-import { useUserGames, useUserGameIds } from '@/hooks';
+import { useUserGames, useUserGameIds, useAllPlatforms, useAllStorefronts } from '@/hooks';
+import { useDocumentTitleOverride } from '@/lib/document-title';
+import { buildLibraryTitle } from '@/lib/library-title';
 import {
   GameFilters,
   GameGrid,
@@ -104,6 +106,22 @@ function GamesPageContent() {
   const rawPage = parseInt(s['page'] ?? '1', 10);
   const currentPage = isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
   const currentPerPage = parsePerPage(s['perPage'] ?? '50');
+
+  // Reflect the active filters/sort in the browser tab title. Besides being
+  // informative, this keeps Firefox Android from reverting the tab to the URL
+  // after a filter change (see lib/document-title.tsx).
+  const { data: platforms } = useAllPlatforms();
+  const { data: storefronts } = useAllStorefronts();
+  const documentTitle = useMemo(() => {
+    const platformLabels = Object.fromEntries(
+      (platforms ?? []).map((p) => [p.name, p.display_name]),
+    );
+    const storefrontLabels = Object.fromEntries(
+      (storefronts ?? []).map((sf) => [sf.name, sf.display_name]),
+    );
+    return buildLibraryTitle(filters, sortBy, sortOrder, { platformLabels, storefrontLabels });
+  }, [filters, sortBy, sortOrder, platforms, storefronts]);
+  useDocumentTitleOverride(documentTitle);
 
   // Helper to update URL params
   const updateParams = useCallback(
