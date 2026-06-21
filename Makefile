@@ -24,6 +24,7 @@ frontend:
 	touch ui/frontend/dist/.gitkeep
 
 build:
+	cp CHANGELOG.md internal/changelog/data/CHANGELOG.md
 	go build $(LDFLAGS) -o nexorious ./cmd/nexorious
 	go build $(LDFLAGS) -o nexctl ./cmd/nexctl
 

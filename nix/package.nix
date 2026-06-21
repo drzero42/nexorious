@@ -26,6 +26,8 @@ buildGoModule {
     # Populate the embed directory with built frontend assets.
     # go:embed in ui/ui.go expects ui/frontend/dist/ to contain real files.
     cp -r ${nexorious-frontend}/. ui/frontend/dist/
+    # Populate the embedded changelog (go:embed all:data in internal/changelog).
+    cp CHANGELOG.md internal/changelog/data/CHANGELOG.md
   '';
 
   nativeBuildInputs = [ makeWrapper installShellFiles ];
