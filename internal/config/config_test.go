@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/drzero42/nexorious/internal/config"
 )
@@ -191,5 +192,33 @@ func TestLoad_TracingEndpointOverride(t *testing.T) {
 	}
 	if cfg.OTELExporterOTLPEndpoint != "http://localhost:4318" {
 		t.Errorf("OTELExporterOTLPEndpoint = %q; want %q", cfg.OTELExporterOTLPEndpoint, "http://localhost:4318")
+	}
+}
+
+func TestLoad_MetadataRefreshDefaults(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgresql://u:p@h/db")
+	t.Setenv("DB_ENCRYPTION_KEY", "test-db-encryption-key-32-bytes!!")
+	t.Setenv("IGDB_CLIENT_ID", "testclientid")
+	t.Setenv("IGDB_CLIENT_SECRET", "testclientsecret")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.MetadataRefreshWorkers != 1 {
+		t.Errorf("MetadataRefreshWorkers = %d; want 1", cfg.MetadataRefreshWorkers)
+	}
+	if cfg.MetadataRefreshMinAge != "23h" {
+		t.Errorf("MetadataRefreshMinAge = %q; want \"23h\"", cfg.MetadataRefreshMinAge)
+	}
+	if got := cfg.MetadataRefreshMinAgeDuration(); got != 23*time.Hour {
+		t.Errorf("MetadataRefreshMinAgeDuration() = %v; want 23h", got)
+	}
+}
+
+func TestMetadataRefreshMinAgeDuration_FallbackOnGarbage(t *testing.T) {
+	c := &config.Config{MetadataRefreshMinAge: "not-a-duration"}
+	if got := c.MetadataRefreshMinAgeDuration(); got != 23*time.Hour {
+		t.Errorf("fallback = %v; want 23h", got)
 	}
 }
