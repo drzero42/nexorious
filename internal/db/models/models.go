@@ -236,10 +236,11 @@ type JobChange struct {
 type UserSettings struct {
 	bun.BaseModel `bun:"table:user_settings"`
 
-	UserID     string    `bun:"user_id,pk"          json:"user_id"`
-	DealRegion string    `bun:"deal_region,notnull" json:"deal_region"`
-	CreatedAt  time.Time `bun:"created_at,notnull"  json:"created_at"`
-	UpdatedAt  time.Time `bun:"updated_at,notnull"  json:"updated_at"`
+	UserID                   string    `bun:"user_id,pk"                     json:"user_id"`
+	DealRegion               string    `bun:"deal_region,notnull"            json:"deal_region"`
+	LastSeenChangelogVersion *string   `bun:"last_seen_changelog_version"    json:"last_seen_changelog_version,omitempty"`
+	CreatedAt                time.Time `bun:"created_at,notnull"             json:"created_at"`
+	UpdatedAt                time.Time `bun:"updated_at,notnull"             json:"updated_at"`
 }
 
 // Pool is a Play Planning pool — a sibling of Tag with ordering, an optional
