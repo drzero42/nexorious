@@ -1,8 +1,10 @@
+import { GITHUB_REPO_URL } from './repo';
+
 // Base GitHub location for the repo's docs/ directory. Relative links inside a
 // guide are resolved against this so that sibling *.md files become in-app
 // /help routes and anything outside docs/ (e.g. ../DEV.md) becomes a GitHub
 // source link. See issue #887.
-const GITHUB_DOCS_BASE = 'https://github.com/drzero42/nexorious/blob/main/docs/';
+const GITHUB_DOCS_BASE = `${GITHUB_REPO_URL}/blob/main/docs/`;
 
 export type ResolvedDocHref =
   | { type: 'internal'; slug: string; hash: string | undefined }
