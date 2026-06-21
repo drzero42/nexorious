@@ -57,7 +57,7 @@ func (h *ChangelogHandler) HandleGet(c *echo.Context) error {
 
 	entries, ok := h.Source()
 	if !ok {
-		return c.JSON(http.StatusOK, changelogResponse{Available: false, Current: h.version})
+		return c.JSON(http.StatusOK, changelogResponse{Available: false, Current: h.version, Entries: []changelog.Entry{}})
 	}
 
 	lastSeen, err := h.readLastSeen(ctx, userID)
@@ -77,6 +77,10 @@ func (h *ChangelogHandler) HandleGet(c *echo.Context) error {
 		// since-last: empty (not full history) when no baseline captured yet.
 		slice = changelog.Newer(entries, lastSeen)
 		h.advanceSeen(ctx, userID, lastSeen)
+	}
+
+	if slice == nil {
+		slice = []changelog.Entry{}
 	}
 
 	return c.JSON(http.StatusOK, changelogResponse{

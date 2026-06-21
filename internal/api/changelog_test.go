@@ -285,3 +285,50 @@ func TestChangelog_DefaultMarksSeen(t *testing.T) {
 		t.Errorf("last_seen: want 0.90.0, got %q", *got)
 	}
 }
+
+// TestChangelog_EntriesNeverNull verifies that the entries field in the JSON
+// response is always a JSON array, never null. This is critical for web clients
+// that map over .entries.length.
+func TestChangelog_EntriesNeverNull(t *testing.T) {
+	truncateAllTables(t)
+	const userID = "cl-u7"
+	insertAuthTestUser(t, testDB, userID, "cl-user7", "pass", true, false)
+
+	h := api.NewChangelogHandler(testDB, "0.90.0")
+	h.Source = availableSource
+
+	// Request with last_seen=NULL (default since-last mode).
+	// Newer(...) returns nil when lastSeen is empty, which used to serialize
+	// as null. Verify it's an array instead.
+	c, rec := newChangelogCtx(http.MethodGet, "/api/changelog", userID)
+	if err := h.HandleGet(c); err != nil {
+		t.Fatalf("HandleGet: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// Entries must be present and be a JSON array, not null.
+	entries, ok := body["entries"]
+	if !ok {
+		t.Fatal("entries field missing from response")
+	}
+	if entries == nil {
+		t.Fatal("entries field is null; must be a JSON array")
+	}
+	entriesArr, isArr := entries.([]any)
+	if !isArr {
+		t.Fatalf("entries must be a JSON array, got %T", entries)
+	}
+	// Since last_seen is NULL and this is a since-last query, the result is
+	// empty (no new releases before baseline capture), but it must be [] not null.
+	if len(entriesArr) != 0 {
+		t.Errorf("entries: expected empty array for null last_seen, got %d items", len(entriesArr))
+	}
+}
