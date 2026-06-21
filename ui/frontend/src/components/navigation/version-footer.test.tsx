@@ -32,7 +32,25 @@ describe('VersionFooter', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
-  it('renders no link when no update is available', () => {
+  it('always renders the GitHub repository link', () => {
+    mockUseVersion.mockReturnValue({
+      data: {
+        version: '0.9.0',
+        commit: 'abc1234',
+        update_check_enabled: true,
+        update_available: false,
+        latest_version: '',
+        release_url: '',
+      },
+    });
+    render(<VersionFooter />);
+    const link = screen.getByRole('link', { name: /github/i });
+    expect(link).toHaveAttribute('href', 'https://github.com/drzero42/nexorious');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('renders no update link when no update is available', () => {
     mockUseVersion.mockReturnValue({
       data: {
         version: '0.9.0',
@@ -45,10 +63,12 @@ describe('VersionFooter', () => {
     });
     render(<VersionFooter />);
     expect(screen.getByText('Version: 0.9.0')).toBeInTheDocument();
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /a newer version is available/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it('renders no link when the release URL is missing', () => {
+  it('renders no update link when the release URL is missing', () => {
     mockUseVersion.mockReturnValue({
       data: {
         version: '0.9.0',
@@ -61,7 +81,9 @@ describe('VersionFooter', () => {
     });
     render(<VersionFooter />);
     expect(screen.getByText('Version: 0.9.0')).toBeInTheDocument();
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /a newer version is available/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders nothing while version data is missing', () => {
