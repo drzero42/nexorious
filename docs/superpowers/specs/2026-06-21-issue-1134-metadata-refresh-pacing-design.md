@@ -92,9 +92,13 @@ configured window":
 
 ```sql
 SELECT id, title FROM games
-WHERE last_updated IS NULL OR last_updated < now() - $interval
-ORDER BY last_updated ASC NULLS FIRST
+WHERE last_updated < now() - $interval
+ORDER BY last_updated ASC
 ```
+
+`games.last_updated` is `DEFAULT now() NOT NULL`, so it is never NULL: a game
+that has never had its metadata refreshed simply carries its creation timestamp
+and ages into eligibility on its own. There is no `IS NULL` branch.
 
 - New config field `MetadataRefreshMinAge string` (Go duration,
   `env:"METADATA_REFRESH_MIN_AGE"`, default `"23h"`), documented as "set slightly
@@ -110,8 +114,9 @@ ORDER BY last_updated ASC NULLS FIRST
   refreshes the whole library daily. Its job is purely to prevent a re-dispatch
   or overlapping run from pointlessly re-pulling the entire library and doubling
   IGDB load.
-- `last_updated IS NULL` games (never refreshed) are always eligible and sort
-  first.
+- A game that has never had its metadata refreshed carries its creation
+  timestamp in `last_updated` (the column is `NOT NULL`), so it becomes eligible
+  once that timestamp is older than the window — no special-casing required.
 - Parse the duration at dispatch time; on parse failure, fall back to a safe
   default (mirror the existing `MetadataRefreshInterval` fallback handling in
   `scheduler.go`) rather than refreshing nothing or everything unguarded.
@@ -149,13 +154,14 @@ change is warranted here.
 - Refresh items execute on the `metadata_refresh` queue at the configured
   concurrency (verified by test).
 - Games refreshed within `METADATA_REFRESH_MIN_AGE` are excluded from the next
-  dispatch; never-refreshed (`NULL`) games are always included.
+  dispatch; games whose `last_updated` is older than the window (including
+  never-metadata-refreshed games still at their creation timestamp) are included.
 
 ## Testing
 
 - **Dispatch selection** (`internal/worker/tasks`, real DB): seed games with
-  `last_updated` spanning the boundary (older than, newer than the min-age, and
-  `NULL`); assert only the eligible set gets `job_items` rows, ordered oldest
+  `last_updated` spanning the boundary (newer than the min-age, just older, and
+  very old); assert only the eligible set gets `job_items` rows, ordered oldest
   first.
 - **Queue routing**: assert `MetadataRefreshItemArgs.InsertOpts().Queue ==
   QueueMetadataRefresh`, and that the queue is registered in the River client so

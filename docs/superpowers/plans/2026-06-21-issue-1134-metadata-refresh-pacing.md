@@ -4,7 +4,7 @@
 
 **Goal:** Stop the nightly metadata-refresh batch from producing a transaction-abort burst by giving it a dedicated single-worker River queue and a staleness guard, while still refreshing the whole library daily.
 
-**Architecture:** Two independent levers. (1) Route `metadata_refresh_item` jobs onto a new `metadata_refresh` River queue with `MaxWorkers` default 1 — refresh can no longer starve the shared worker pool, and a single serial worker sips only ~half the IGDB rate budget so user IGDB traffic stays responsive. (2) The dispatch query gains a staleness filter (`last_updated IS NULL OR last_updated < now() - MinAge`) so a re-dispatch/overlap can't re-pull the whole library. No count cap, no schema change, no migration.
+**Architecture:** Two independent levers. (1) Route `metadata_refresh_item` jobs onto a new `metadata_refresh` River queue with `MaxWorkers` default 1 — refresh can no longer starve the shared worker pool, and a single serial worker sips only ~half the IGDB rate budget so user IGDB traffic stays responsive. (2) The dispatch query gains a staleness filter (`last_updated < now() - MinAge`) so a re-dispatch/overlap can't re-pull the whole library. No count cap, no schema change, no migration.
 
 **Tech Stack:** Go, River (`riverqueue/river`), Bun, `caarlos0/env` config, Postgres, testcontainers-based package tests.
 
@@ -215,7 +215,7 @@ git commit -m "fix(worker): run metadata-refresh items on a dedicated low-concur
 
 **Interfaces:**
 - Consumes: `config.Config.MetadataRefreshMinAgeDuration()` (Task 1).
-- Produces: `MetadataRefreshDispatchWorker.MinAge time.Duration` — when `> 0`, only games with `last_updated IS NULL OR last_updated < now() - MinAge` are enqueued; when `0`, all games (back-compat for any caller that leaves it unset).
+- Produces: `MetadataRefreshDispatchWorker.MinAge time.Duration` — when `> 0`, only games with `last_updated < now() - MinAge` are enqueued; when `0`, all games (back-compat for any caller that leaves it unset). NOTE: `games.last_updated` is `DEFAULT now() NOT NULL` (see baseline migration line 90 / `models.go` `LastUpdated time.Time notnull`), so it is never NULL — a "never metadata-refreshed" game simply carries its creation timestamp and ages into eligibility naturally. There is therefore no `IS NULL` branch and no `NULLS FIRST`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -230,17 +230,12 @@ func TestMetadataRefreshDispatch_StalenessFilter(t *testing.T) {
 	insertMetaRefreshAdminUser(t)
 
 	now := time.Now().UTC()
-	insertTestGame(t, 101, "Fresh", now.Add(-1*time.Hour))    // within 23h → excluded
-	insertTestGame(t, 102, "Stale", now.Add(-48*time.Hour))   // older than 23h → included
-	// Never-refreshed game (last_updated NULL) → always included.
-	if _, err := testDB.NewRaw(
-		`INSERT INTO games (id, title, last_updated, created_at) VALUES (?, ?, NULL, now())`,
-		int32(103), "NeverRefreshed",
-	).Exec(ctx); err != nil {
-		t.Fatalf("insert null game: %v", err)
-	}
+	insertTestGame(t, 101, "Fresh", now.Add(-1*time.Hour))      // within 23h → excluded
+	insertTestGame(t, 102, "Stale", now.Add(-48*time.Hour))     // older than 23h → included
+	insertTestGame(t, 103, "Ancient", now.Add(-1000*time.Hour)) // very old (never refreshed) → included
 
 	srv := igdbTestServer(t, `[]`)
+	defer srv.Close()
 	igdbClient := newTestIGDBClient(t, srv)
 	rc := newTestMetadataRiverClient(t)
 	w := &tasks.MetadataRefreshDispatchWorker{DB: testDB, IGDBClient: igdbClient, RiverClient: rc, MinAge: 23 * time.Hour}
@@ -255,7 +250,7 @@ func TestMetadataRefreshDispatch_StalenessFilter(t *testing.T) {
 	).Scan(ctx, &keys); err != nil {
 		t.Fatalf("scan job_items: %v", err)
 	}
-	// 102 (stale) and 103 (null) enqueued; 101 (fresh) excluded.
+	// 102 (stale) and 103 (ancient) enqueued; 101 (fresh) excluded.
 	want := []string{"102", "103"}
 	if len(keys) != len(want) || keys[0] != want[0] || keys[1] != want[1] {
 		t.Errorf("enqueued item_keys = %v; want %v", keys, want)
@@ -280,8 +275,8 @@ type MetadataRefreshDispatchWorker struct {
 	DB          *bun.DB
 	IGDBClient  *igdbsvc.Client
 	RiverClient *river.Client[pgx.Tx]
-	// MinAge, when > 0, restricts dispatch to games not refreshed within the
-	// window (or never refreshed). 0 means "all games" (back-compat).
+	// MinAge, when > 0, restricts dispatch to games whose last_updated is older
+	// than the window. 0 means "all games" (back-compat for unset callers).
 	MinAge time.Duration
 }
 ```
@@ -289,8 +284,9 @@ type MetadataRefreshDispatchWorker struct {
 Then replace the games-selection block (currently the single `w.DB.NewRaw(\`SELECT id, title FROM games ORDER BY last_updated ASC\`)` call ~line 110) with a conditional query that applies the staleness filter when `MinAge > 0`:
 
 ```go
-	// Oldest-refreshed first; skip games refreshed within MinAge (NULL = never
-	// refreshed, always eligible).
+	// Oldest-refreshed first; skip games refreshed within MinAge. last_updated is
+	// NOT NULL (DEFAULT now()), so a never-metadata-refreshed game carries its
+	// creation timestamp and ages into eligibility — no NULL handling needed.
 	var games []struct {
 		ID    int32  `bun:"id"`
 		Title string `bun:"title"`
@@ -299,12 +295,12 @@ Then replace the games-selection block (currently the single `w.DB.NewRaw(\`SELE
 	if w.MinAge > 0 {
 		err = w.DB.NewRaw(
 			`SELECT id, title FROM games
-			 WHERE last_updated IS NULL OR last_updated < now() - make_interval(secs => ?)
-			 ORDER BY last_updated ASC NULLS FIRST`,
+			 WHERE last_updated < now() - make_interval(secs => ?)
+			 ORDER BY last_updated ASC`,
 			w.MinAge.Seconds(),
 		).Scan(ctx, &games)
 	} else {
-		err = w.DB.NewRaw(`SELECT id, title FROM games ORDER BY last_updated ASC NULLS FIRST`).Scan(ctx, &games)
+		err = w.DB.NewRaw(`SELECT id, title FROM games ORDER BY last_updated ASC`).Scan(ctx, &games)
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "metadata_refresh_dispatch: query games", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
@@ -402,11 +398,11 @@ If Step 1 found nothing to change, skip this commit.
 **Spec coverage:**
 - Dedicated `metadata_refresh` queue, `MaxWorkers` default 1, configurable → Task 1 (config) + Task 2 (const, routing, both client registrations). ✓
 - Item jobs routed via `InsertOpts.Queue`; dispatch stays on default queue → Task 2 (dispatch's `MetadataRefreshDispatchArgs.InsertOpts()` is untouched). ✓
-- Staleness guard `last_updated IS NULL OR last_updated < now() - interval`, oldest-first, NULL always eligible → Task 3. ✓
+- Staleness guard `last_updated < now() - interval`, oldest-first (last_updated is NOT NULL; never-refreshed games age in via their creation timestamp) → Task 3. ✓
 - Config knobs `METADATA_REFRESH_WORKERS` (1) and `METADATA_REFRESH_MIN_AGE` ("23h"), safe duration fallback → Task 1. ✓
 - No count cap; retries (`MaxAttempts: 5`) unchanged → Task 2 asserts MaxAttempts==5; no cap added. ✓
 - No migration → none added. ✓
-- Acceptance: queue routing verified by test (Task 2); staleness selection + NULL inclusion verified by test (Task 3). ✓
+- Acceptance: queue routing verified by test (Task 2); staleness selection (fresh excluded, stale + very-old included) verified by test (Task 3). ✓
 - Docs/Helm sync → Task 4. ✓
 
 **Placeholder scan:** No TBD/TODO; every code step shows complete code. The two "verify first" steps (Task 3 admin-user helper name, Task 4 doc locations) are explicit grep-and-match instructions, not vague placeholders. ✓
