@@ -3,12 +3,29 @@ import { render, screen } from '@testing-library/react';
 import { VersionFooter } from './version-footer';
 
 const mockUseVersion = vi.fn();
+const mockUseChangelogUnseen = vi.fn();
+const mockUseChangelogContent = vi.fn();
 vi.mock('@/hooks', () => ({
   useVersion: () => mockUseVersion(),
+  useChangelogUnseen: () => mockUseChangelogUnseen(),
+  useChangelogContent: () => mockUseChangelogContent(),
+  changelogKeys: { unseen: () => ['changelog', 'unseen'] },
 }));
 
+vi.mock('@tanstack/react-query', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-query')>();
+  return {
+    ...actual,
+    useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  };
+});
+
 describe('VersionFooter', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseChangelogUnseen.mockReturnValue({ data: { has_unseen: false } });
+    mockUseChangelogContent.mockReturnValue({ data: undefined, isLoading: false });
+  });
 
   it('renders the update link when an update is available', () => {
     mockUseVersion.mockReturnValue({

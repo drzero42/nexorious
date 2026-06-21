@@ -1,11 +1,11 @@
 import { apiCall } from './client';
 
-export interface ChangelogGroup {
+interface ChangelogGroup {
   title: string;
   items: string[];
 }
 
-export interface ChangelogEntry {
+interface ChangelogEntry {
   version: string;
   date: string;
   groups: ChangelogGroup[];
