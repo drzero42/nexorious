@@ -5,6 +5,12 @@ import { useUserGames, useUserGameIds, useAllPlatforms, useAllStorefronts } from
 import { useDocumentTitleOverride } from '@/lib/document-title';
 import { buildLibraryTitle } from '@/lib/library-title';
 import {
+  saveLibraryPrefs,
+  loadLibraryPrefs,
+  isEmptySearch,
+  type LibrarySearch,
+} from '@/lib/library-prefs';
+import {
   GameFilters,
   GameGrid,
   GameList,
@@ -137,10 +143,24 @@ function GamesPageContent() {
         }
       });
 
+      saveLibraryPrefs(params);
       navigate({ to: '/games', search: params as Record<string, string>, replace: true });
     },
     [navigate, search],
   );
+
+  // On a fresh landing with no URL params (e.g. the sidebar "Library" link),
+  // restore the last-used view from localStorage. Explicit/deep-linked params
+  // always win — we only hydrate when the URL carries nothing. Runs once on
+  // mount, so it never fights a user's in-session navigation.
+  useEffect(() => {
+    if (!isEmptySearch(search as LibrarySearch)) return;
+    const saved = loadLibraryPrefs();
+    if (saved && !isEmptySearch(saved)) {
+      navigate({ to: '/games', search: saved as Record<string, string>, replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Shared filter fields — no pagination params
   const filterFields = useMemo(
