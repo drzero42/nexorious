@@ -308,6 +308,13 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 			return c.JSON(http.StatusOK, resp)
 		})
 
+		// Changelog — auth-protected. Owns parsing/slicing the embedded
+		// CHANGELOG.md and the per-user last_seen marker (issue #1137).
+		clh := NewChangelogHandler(db, version)
+		changelogGroup := e.Group("/api/changelog", auth.AuthMiddleware(db))
+		changelogGroup.GET("/unseen", clh.HandleUnseen) // static route before ""
+		changelogGroup.GET("", clh.HandleGet)
+
 		// Platform and storefront routes (all auth-protected)
 		ph := NewPlatformsHandler(db)
 		platformsGroup := e.Group("/api/platforms", auth.AuthMiddleware(db))
