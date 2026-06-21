@@ -54,6 +54,9 @@ type MetadataRefreshDispatchWorker struct {
 	DB          *bun.DB
 	IGDBClient  *igdbsvc.Client
 	RiverClient *river.Client[pgx.Tx]
+	// MinAge, when > 0, restricts dispatch to games whose last_updated is older
+	// than the window. 0 means "all games" (back-compat for unset callers).
+	MinAge time.Duration
 }
 
 func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job[MetadataRefreshDispatchArgs]) error {
@@ -109,12 +112,25 @@ func (w *MetadataRefreshDispatchWorker) Work(ctx context.Context, job *river.Job
 		jobID = uuid.NewString()
 	}
 
-	// Oldest-refreshed games first.
+	// Oldest-refreshed first; skip games refreshed within MinAge. last_updated is
+	// NOT NULL (DEFAULT now()), so a never-metadata-refreshed game carries its
+	// creation timestamp and ages into eligibility — no NULL handling needed.
 	var games []struct {
 		ID    int32  `bun:"id"`
 		Title string `bun:"title"`
 	}
-	if err := w.DB.NewRaw(`SELECT id, title FROM games ORDER BY last_updated ASC`).Scan(ctx, &games); err != nil {
+	var err error
+	if w.MinAge > 0 {
+		err = w.DB.NewRaw(
+			`SELECT id, title FROM games
+			 WHERE last_updated < now() - make_interval(secs => ?)
+			 ORDER BY last_updated ASC`,
+			w.MinAge.Seconds(),
+		).Scan(ctx, &games)
+	} else {
+		err = w.DB.NewRaw(`SELECT id, title FROM games ORDER BY last_updated ASC`).Scan(ctx, &games)
+	}
+	if err != nil {
 		slog.ErrorContext(ctx, "metadata_refresh_dispatch: query games", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return nil
 	}

@@ -242,6 +242,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
 		IGDBClient: igdbClient,
+		MinAge:     cfg.MetadataRefreshMinAgeDuration(),
 	}
 	checkPendingSyncsWorker := &scheduler.CheckPendingSyncsWorker{DB: db}
 	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
@@ -369,6 +370,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
 				DB:         newDB,
 				IGDBClient: igdbClient,
+				MinAge:     cfg.MetadataRefreshMinAgeDuration(),
 			}
 			newCheckSyncs := &scheduler.CheckPendingSyncsWorker{DB: newDB}
 			newRescueOrphaned := &scheduler.RescueOrphanedPendingItemsWorker{DB: newDB}
