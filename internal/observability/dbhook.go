@@ -33,5 +33,13 @@ func (dbErrorHook) AfterQuery(ctx context.Context, event *bun.QueryEvent) {
 	if errors.Is(event.Err, sql.ErrNoRows) || errors.Is(event.Err, context.Canceled) {
 		return
 	}
+	// A failed ROLLBACK is connection-teardown cleanup noise, not a DB fault:
+	// the transaction is already aborted (often because its context timed out,
+	// e.g. an upstream IGDB HTTP deadline firing mid-transaction) and the
+	// connection is being discarded anyway. Counting it pollutes the DB-error
+	// signal and trips NexoriousDBErrorsHigh while the database is healthy (#1135).
+	if event.Operation() == "ROLLBACK" {
+		return
+	}
 	RecordDBError(ctx, event.Operation())
 }

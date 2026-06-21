@@ -64,4 +64,13 @@ func TestDBErrorHook(t *testing.T) {
 	if got := collectDBErrors(t, reader); got != 1 {
 		t.Fatalf("after success: got %d, want 1 (unchanged)", got)
 	}
+
+	// A failed ROLLBACK is connection-teardown cleanup noise (e.g. the tx
+	// context already timed out), not a DB fault — must NOT increment. The
+	// carve-out is operation-scoped: the SELECT error above still counted.
+	rollback := &bun.QueryEvent{Query: "ROLLBACK", Err: context.DeadlineExceeded}
+	hook.AfterQuery(ctx, rollback)
+	if got := collectDBErrors(t, reader); got != 1 {
+		t.Fatalf("after failed ROLLBACK: got %d, want 1 (unchanged)", got)
+	}
 }
