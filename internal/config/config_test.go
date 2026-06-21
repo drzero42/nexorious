@@ -217,8 +217,12 @@ func TestLoad_MetadataRefreshDefaults(t *testing.T) {
 }
 
 func TestMetadataRefreshMinAgeDuration_FallbackOnGarbage(t *testing.T) {
-	c := &config.Config{MetadataRefreshMinAge: "not-a-duration"}
-	if got := c.MetadataRefreshMinAgeDuration(); got != 23*time.Hour {
-		t.Errorf("fallback = %v; want 23h", got)
+	// Every fallback trigger the helper guards against (parse error, zero, and
+	// negative) must resolve to the 23h default.
+	for _, in := range []string{"not-a-duration", "", "0s", "-1h"} {
+		c := &config.Config{MetadataRefreshMinAge: in}
+		if got := c.MetadataRefreshMinAgeDuration(); got != 23*time.Hour {
+			t.Errorf("MetadataRefreshMinAgeDuration(%q) = %v; want 23h", in, got)
+		}
 	}
 }

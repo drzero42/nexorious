@@ -773,4 +773,7 @@ func TestMetadataRefreshItemArgs_InsertOptsQueue(t *testing.T) {
 	if opts.MaxAttempts != 5 {
 		t.Errorf("MaxAttempts = %d; want 5 (unchanged)", opts.MaxAttempts)
 	}
+	if opts.Priority != 3 {
+		t.Errorf("Priority = %d; want 3 (unchanged)", opts.Priority)
+	}
 }
