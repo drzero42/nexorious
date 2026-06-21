@@ -726,3 +726,16 @@ func TestMetadataRefreshItem_JobCompletionPartial(t *testing.T) {
 		t.Errorf("after second item: job status want completed, got %s", jobStatus)
 	}
 }
+
+func TestMetadataRefreshItemArgs_InsertOptsQueue(t *testing.T) {
+	opts := tasks.MetadataRefreshItemArgs{}.InsertOpts()
+	if opts.Queue != tasks.QueueMetadataRefresh {
+		t.Errorf("Queue = %q; want %q", opts.Queue, tasks.QueueMetadataRefresh)
+	}
+	if tasks.QueueMetadataRefresh != "metadata_refresh" {
+		t.Errorf("QueueMetadataRefresh = %q; want \"metadata_refresh\"", tasks.QueueMetadataRefresh)
+	}
+	if opts.MaxAttempts != 5 {
+		t.Errorf("MaxAttempts = %d; want 5 (unchanged)", opts.MaxAttempts)
+	}
+}

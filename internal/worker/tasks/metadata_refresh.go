@@ -21,6 +21,13 @@ import (
 	igdbsvc "github.com/drzero42/nexorious/internal/services/igdb"
 )
 
+// QueueMetadataRefresh is the dedicated, low-concurrency River queue for
+// metadata_refresh_item jobs. Keeping refresh items off the default queue stops
+// the nightly batch from starving user-initiated syncs/imports; its low worker
+// count (config METADATA_REFRESH_WORKERS, default 1) also caps how much of the
+// shared IGDB rate budget the refresh consumes. Registered in cmd/nexorious/serve.go.
+const QueueMetadataRefresh = "metadata_refresh"
+
 // ─── Dispatch worker ─────────────────────────────────────────────────────────
 
 // MetadataRefreshDispatchArgs is the River job args type for "metadata_refresh_dispatch".
@@ -188,7 +195,7 @@ type MetadataRefreshItemArgs struct {
 func (MetadataRefreshItemArgs) Kind() string { return "metadata_refresh_item" }
 
 func (MetadataRefreshItemArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 5, Priority: 3}
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3, Queue: QueueMetadataRefresh}
 }
 
 // MetadataRefreshItemWorker is a River worker that fetches fresh IGDB
