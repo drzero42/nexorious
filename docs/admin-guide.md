@@ -215,6 +215,8 @@ All variables, grouped by area. Anything without a default is unset unless you p
 | Variable | Default | Description |
 |---|---|---|
 | `METADATA_REFRESH_INTERVAL` | `24h` | How often the automatic metadata refresh runs (a Go duration string, e.g. `24h`). |
+| `METADATA_REFRESH_WORKERS` | `1` | Concurrency of the dedicated metadata-refresh queue. 1 keeps the nightly refresh to ~half the IGDB rate budget so user-facing IGDB traffic stays responsive; raise to finish faster at the cost of crowding user IGDB requests. |
+| `METADATA_REFRESH_MIN_AGE` | `23h` | Go duration; a game is only re-refreshed once its `last_updated` is older than this. Set slightly below `METADATA_REFRESH_INTERVAL` (default 23h vs 24h) so a game refreshed yesterday is reliably eligible today. |
 | `STALE_JOB_THRESHOLD` | `4h` | How long a stuck metadata-refresh job may sit before housekeeping marks it failed. |
 | `SYNC_HISTORY_RETENTION_DAYS` | `90` | How long sync-history entries are kept before nightly pruning. |
 | `NOTIFY_EVENTS_RETENTION_DAYS` | `90` | How long notification events are kept. |

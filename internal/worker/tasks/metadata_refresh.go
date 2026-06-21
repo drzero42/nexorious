@@ -47,7 +47,7 @@ func (MetadataRefreshDispatchArgs) InsertOpts() river.InsertOpts {
 // MetadataRefreshDispatchWorker is a River worker that:
 //  1. Guards on IGDB configured and admin user present.
 //  2. Checks no active metadata_refresh job.
-//  3. Selects all games ordered by last_updated ASC.
+//  3. Selects games (optionally filtered by MinAge) ordered by last_updated ASC.
 //  4. Creates job + job_items and enqueues metadata_refresh_item River jobs in a single transaction.
 type MetadataRefreshDispatchWorker struct {
 	river.WorkerDefaults[MetadataRefreshDispatchArgs]

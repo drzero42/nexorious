@@ -54,7 +54,12 @@ ordered by staleness (least recently updated first). Covers description, cover
 art, genres, release date, developer, publisher, rating, platform names, game
 modes, themes, player perspectives, and HowLongToBeat times. The schedule is
 configurable via `METADATA_REFRESH_INTERVAL` (default: 24 hours) and can also be
-triggered manually by an admin.
+triggered manually by an admin. Two additional knobs tune the refresh behaviour:
+`METADATA_REFRESH_WORKERS` (default: `1`) controls how many item jobs run in
+parallel on the dedicated refresh queue — keeping it at 1 leaves roughly half the
+IGDB rate budget for user-facing requests; and `METADATA_REFRESH_MIN_AGE` (default:
+`23h`) sets the minimum age a game must reach before it is re-refreshed, set
+slightly below the interval so a game refreshed yesterday is reliably eligible today.
 
 The immediate per-game fetch (triggered at the end of sync Stage 3 — see
 [docs/sync.md](sync.md)) is the complement: it handles newly added games so they
