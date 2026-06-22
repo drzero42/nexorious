@@ -56,7 +56,10 @@ type Check struct {
 // Registry returns every check in epic display order.
 func Registry() []Check {
 	return []Check{
+		storefrontLessCheck,
 		orphanGameCheck,
+		missingOwnershipCheck,
+		invalidStorefrontCheck,
 	}
 }
 

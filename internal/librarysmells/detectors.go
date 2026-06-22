@@ -32,3 +32,86 @@ func detectOrphanGame(ctx context.Context, db *bun.DB, userID string) ([]Flagged
 	).Scan(ctx, &items)
 	return items, err
 }
+
+var storefrontLessCheck = Check{
+	ID:          "storefront-less-platform",
+	Title:       "Storefront-less platform",
+	Description: "A platform entry with no storefront recorded. Physical is a real choice — NULL means unknown provenance.",
+	Tier:        TierInconsistency,
+	Detect:      detectStorefrontLess,
+}
+
+func detectStorefrontLess(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
+	var items []FlaggedItem
+	err := db.NewRaw(
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
+		        p.id AS platform_row_id, p.platform, p.storefront,
+		        pl.default_storefront AS suggested_storefront
+		 FROM user_game_platforms p
+		 JOIN user_games ug ON ug.id = p.user_game_id
+		 JOIN games g ON g.id = ug.game_id
+		 LEFT JOIN platforms pl ON pl.name = p.platform
+		 WHERE ug.user_id = ?
+		   AND p.storefront IS NULL
+		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
+		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
+		 ORDER BY g.title`,
+		userID, "storefront-less-platform",
+	).Scan(ctx, &items)
+	return items, err
+}
+
+var missingOwnershipCheck = Check{
+	ID:          "missing-ownership-status",
+	Title:       "Missing ownership status",
+	Description: "A platform entry with no ownership status (owned, borrowed, …).",
+	Tier:        TierInconsistency,
+	Detect:      detectMissingOwnership,
+}
+
+func detectMissingOwnership(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
+	var items []FlaggedItem
+	err := db.NewRaw(
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
+		        p.id AS platform_row_id, p.platform, p.storefront
+		 FROM user_game_platforms p
+		 JOIN user_games ug ON ug.id = p.user_game_id
+		 JOIN games g ON g.id = ug.game_id
+		 WHERE ug.user_id = ?
+		   AND p.ownership_status IS NULL
+		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
+		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
+		 ORDER BY g.title`,
+		userID, "missing-ownership-status",
+	).Scan(ctx, &items)
+	return items, err
+}
+
+var invalidStorefrontCheck = Check{
+	ID:          "invalid-storefront-for-platform",
+	Title:       "Invalid storefront for platform",
+	Description: "The platform/storefront combination is not a recognised pairing.",
+	Tier:        TierInconsistency,
+	Detect:      detectInvalidStorefront,
+}
+
+func detectInvalidStorefront(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
+	var items []FlaggedItem
+	err := db.NewRaw(
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
+		        p.id AS platform_row_id, p.platform, p.storefront
+		 FROM user_game_platforms p
+		 JOIN user_games ug ON ug.id = p.user_game_id
+		 JOIN games g ON g.id = ug.game_id
+		 WHERE ug.user_id = ?
+		   AND p.platform IS NOT NULL
+		   AND p.storefront IS NOT NULL
+		   AND NOT EXISTS (SELECT 1 FROM platform_storefronts ps
+		                   WHERE ps.platform = p.platform AND ps.storefront = p.storefront)
+		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
+		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
+		 ORDER BY g.title`,
+		userID, "invalid-storefront-for-platform",
+	).Scan(ctx, &items)
+	return items, err
+}
