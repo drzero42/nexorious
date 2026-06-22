@@ -45,9 +45,15 @@ func TestDetectStorefrontLess(t *testing.T) {
 	userID := seedUser(t)
 
 	flagged := seedUserGame(t, userID, 1)
-	seedPlatform(t, flagged, "pc-windows", "") // storefront NULL → flags, suggests default
+	seedPlatform(t, flagged, "pc-windows", "") // storefront NULL → flags
 	clean := seedUserGame(t, userID, 2)
 	seedPlatform(t, clean, "pc-windows", "steam")
+	// A game with TWO storefront-less platform rows must still flag only once
+	// (dedupe per game) — distinct platforms to satisfy the (ug, platform,
+	// storefront) NULLS-NOT-DISTINCT unique index.
+	multi := seedUserGame(t, userID, 3)
+	seedPlatform(t, multi, "pc-windows", "")
+	seedPlatform(t, multi, "playstation-5", "")
 
 	items, err := detectStorefrontLess(ctx, testDB, userID)
 	if err != nil {
@@ -59,11 +65,14 @@ func TestDetectStorefrontLess(t *testing.T) {
 	if flaggedIDs(items)[clean] {
 		t.Fatal("platform with a storefront must not flag")
 	}
-	// suggested_storefront comes from platforms.default_storefront (pc-windows seeds one).
+	n := 0
 	for _, it := range items {
-		if it.UserGameID == flagged && it.SuggestedStorefront == nil {
-			t.Error("expected a suggested storefront for pc-windows")
+		if it.UserGameID == multi {
+			n++
 		}
+	}
+	if n != 1 {
+		t.Errorf("a game with two storefront-less platforms should appear once, got %d", n)
 	}
 }
 

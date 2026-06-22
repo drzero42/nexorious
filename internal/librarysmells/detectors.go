@@ -44,15 +44,12 @@ var storefrontLessCheck = Check{
 func detectStorefrontLess(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
 	var items []FlaggedItem
 	err := db.NewRaw(
-		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        p.id AS platform_row_id, p.platform, p.storefront,
-		        pl.default_storefront AS suggested_storefront
-		 FROM user_game_platforms p
-		 JOIN user_games ug ON ug.id = p.user_game_id
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url
+		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
-		 LEFT JOIN platforms pl ON pl.name = p.platform
 		 WHERE ug.user_id = ?
-		   AND p.storefront IS NULL
+		   AND EXISTS (SELECT 1 FROM user_game_platforms p
+		               WHERE p.user_game_id = ug.id AND p.storefront IS NULL)
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
@@ -72,13 +69,12 @@ var missingOwnershipCheck = Check{
 func detectMissingOwnership(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
 	var items []FlaggedItem
 	err := db.NewRaw(
-		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        p.id AS platform_row_id, p.platform, p.storefront
-		 FROM user_game_platforms p
-		 JOIN user_games ug ON ug.id = p.user_game_id
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url
+		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
 		 WHERE ug.user_id = ?
-		   AND p.ownership_status IS NULL
+		   AND EXISTS (SELECT 1 FROM user_game_platforms p
+		               WHERE p.user_game_id = ug.id AND p.ownership_status IS NULL)
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
@@ -99,18 +95,20 @@ func detectImpossibleAcquiredDate(ctx context.Context, db *bun.DB, userID string
 	var items []FlaggedItem
 	err := db.NewRaw(
 		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        p.id AS platform_row_id, p.platform, p.storefront,
 		        CASE
-		          WHEN p.acquired_date > now()::date THEN 'acquired date is in the future'
+		          WHEN EXISTS (SELECT 1 FROM user_game_platforms p
+		                       WHERE p.user_game_id = ug.id AND p.acquired_date > now()::date)
+		          THEN 'acquired date is in the future'
 		          ELSE 'acquired before the game was released'
 		        END AS detail
-		 FROM user_game_platforms p
-		 JOIN user_games ug ON ug.id = p.user_game_id
+		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
 		 WHERE ug.user_id = ?
-		   AND p.acquired_date IS NOT NULL
-		   AND (p.acquired_date > now()::date
-		        OR (g.release_date IS NOT NULL AND p.acquired_date < g.release_date))
+		   AND EXISTS (SELECT 1 FROM user_game_platforms p
+		               WHERE p.user_game_id = ug.id
+		                 AND p.acquired_date IS NOT NULL
+		                 AND (p.acquired_date > now()::date
+		                      OR (g.release_date IS NOT NULL AND p.acquired_date < g.release_date)))
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
@@ -157,16 +155,16 @@ var invalidStorefrontCheck = Check{
 func detectInvalidStorefront(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
 	var items []FlaggedItem
 	err := db.NewRaw(
-		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        p.id AS platform_row_id, p.platform, p.storefront
-		 FROM user_game_platforms p
-		 JOIN user_games ug ON ug.id = p.user_game_id
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url
+		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
 		 WHERE ug.user_id = ?
-		   AND p.platform IS NOT NULL
-		   AND p.storefront IS NOT NULL
-		   AND NOT EXISTS (SELECT 1 FROM platform_storefronts ps
-		                   WHERE ps.platform = p.platform AND ps.storefront = p.storefront)
+		   AND EXISTS (SELECT 1 FROM user_game_platforms p
+		               WHERE p.user_game_id = ug.id
+		                 AND p.platform IS NOT NULL
+		                 AND p.storefront IS NOT NULL
+		                 AND NOT EXISTS (SELECT 1 FROM platform_storefronts ps
+		                                 WHERE ps.platform = p.platform AND ps.storefront = p.storefront))
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,

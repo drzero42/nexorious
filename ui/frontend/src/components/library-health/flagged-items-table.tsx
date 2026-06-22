@@ -6,7 +6,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { FlaggedItem } from '@/api/library-health';
 
@@ -17,16 +16,6 @@ export interface FlaggedItemsTableProps {
   onApply: (userGameId: string) => void;
   onIgnore: (userGameId: string) => void;
   onOpenGame: (userGameId: string) => void;
-}
-
-function contextCell(item: FlaggedItem) {
-  if (item.detail) return <span className="text-muted-foreground">{item.detail}</span>;
-  if (item.suggested_storefront) {
-    return <Badge variant="secondary">Suggested: {item.suggested_storefront}</Badge>;
-  }
-  const parts = [item.platform, item.storefront].filter(Boolean);
-  if (parts.length > 0) return <span className="text-muted-foreground">{parts.join(' · ')}</span>;
-  return null;
 }
 
 export function FlaggedItemsTable({
@@ -48,7 +37,7 @@ export function FlaggedItemsTable({
       </TableHeader>
       <TableBody>
         {items.map((item) => (
-          <TableRow key={`${item.user_game_id}-${item.platform_row_id ?? ''}`}>
+          <TableRow key={item.user_game_id}>
             <TableCell>
               <button
                 type="button"
@@ -58,7 +47,9 @@ export function FlaggedItemsTable({
                 {item.title}
               </button>
             </TableCell>
-            <TableCell>{contextCell(item)}</TableCell>
+            <TableCell>
+              {item.detail ? <span className="text-muted-foreground">{item.detail}</span> : null}
+            </TableCell>
             <TableCell className="space-x-2 text-right">
               {autoFixable ? (
                 <Button size="sm" disabled={busy} onClick={() => onApply(item.user_game_id)}>

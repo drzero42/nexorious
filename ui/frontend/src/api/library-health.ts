@@ -21,10 +21,6 @@ export interface FlaggedItem {
   game_id: number;
   title: string;
   cover_art_url?: string;
-  platform_row_id?: string;
-  platform?: string;
-  storefront?: string;
-  suggested_storefront?: string;
   suggested_status?: string;
   detail?: string;
 }

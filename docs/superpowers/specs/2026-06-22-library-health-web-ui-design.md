@@ -31,16 +31,17 @@ Base group `/api/library/smells` (auth-gated, user-scoped). All listing endpoint
 | `DELETE` | `/api/library/smells/:checkID/ignore` | Body `{user_game_ids}` (≤200). Returns `{restored}`. |
 | `GET` | `/api/library/smells/:checkID/ignored` | Paginated dismissed items `{user_game_id, title, created_at}`. |
 
-`FlaggedItem` = `{user_game_id, game_id, title, cover_art_url?, platform_row_id?, platform?,
-storefront?, suggested_storefront?, suggested_status?, detail?}` (context fields omitempty; only the
-ones a given check needs are set).
+`FlaggedItem` = `{user_game_id, game_id, title, cover_art_url?, suggested_status?, detail?}`
+(context fields omitempty; only the ones a given check needs are set). **One item per game** — the
+platform-level checks dedupe across a game's platform rows (see *Refinement* below), so a check never
+counts the same game twice.
 
 **The 10 checks** (slug → tier, auto-fix):
 
-- Tier `inconsistency`: `storefront-less-platform` (deep-link; carries `suggested_storefront`),
-  `orphan-game` (deep-link), `wishlisted-yet-owned` (**auto-fix** → clear wishlist),
-  `missing-ownership-status` (deep-link), `impossible-acquired-date` (deep-link; `detail` text),
-  `invalid-storefront-for-platform` (deep-link).
+- Tier `inconsistency`: `storefront-less-platform` (deep-link), `orphan-game` (deep-link),
+  `wishlisted-yet-owned` (**auto-fix** → clear wishlist), `missing-ownership-status` (deep-link),
+  `impossible-acquired-date` (deep-link; `detail` text), `invalid-storefront-for-platform`
+  (deep-link).
 - Tier `nudge`: `beat-but-not-marked` (**auto-fix** → completed), `played-but-not-started`
   (**auto-fix** → in_progress), `in-progress-untouched` (**auto-fix** → not_started),
   `unrated-after-finishing` (deep-link).
@@ -98,9 +99,8 @@ const smellKeys = {
 - Expanding a check lazily fetches its listing (`useSmellItems`, `enabled` on open). Flagged items
   render in a compact **Table**:
   - Cover thumbnail + title, the title linking to `/games/$id/edit`.
-  - Check context column: `detail` when present (e.g. impossible-acquired-date), else
-    `platform`/`storefront`, else for `storefront-less-platform` the **suggested storefront** shown
-    as a Badge ("Suggested: Steam").
+  - Check context column: just `detail` when present (e.g. the impossible-acquired-date reason).
+    No per-platform context — see *Refinement*.
   - A per-row actions cell (see Interactions).
   - A leading Checkbox per row for multi-select is **out of scope** for v1 — actions are per-row
     plus a single section-level "apply to all". (Revisit if needed.)
@@ -118,10 +118,8 @@ const smellKeys = {
   `per_page=200`; loop pages only if `total > 200`) and POSTs in chunks of ≤200 to respect the API
   cap. On success: toast `applied`/`skipped` and invalidate. (Solo user / small libraries → in
   practice one page, one call.)
-- **Manual (deep-link) checks** — per-row **"Fix"** that navigates to `/games/$id/edit`, storing a
-  return URL (mirroring the games list's `sessionStorage` return-url pattern) so the edit page can
-  return to `/library-health`. The suggested storefront for `storefront-less-platform` is shown
-  **in-row only**; the edit page is not modified.
+- **Manual (deep-link) checks** — per-row **"Fix"** that navigates to `/games/$id/edit`. The user
+  fixes the game (all its platforms) there; the edit page is not modified.
 - **Ignore** — per-row **"Ignore"** on every check (reversible via restore, so no confirm). Removes
   the row from the active listing and decrements the summary count on invalidation.
 - **Restore** — in the per-section dismissed sub-view; re-runs detection so the item reappears in the
@@ -148,13 +146,35 @@ existing frontend test patterns — e.g. `game-card.test.tsx`):
 - Ignore → the row leaves the active listing; the dismissed toggle lists it; Restore calls the
   restore mutation.
 - "Fix" / title link targets `/games/$id/edit` with the correct id.
-- The suggested-storefront badge renders for `storefront-less-platform`.
+- A check renders one row per game even when a game has multiple offending platform rows
+  (dedupe regression test in `internal/librarysmells`).
+
+## Refinement (post-implementation)
+
+Two behaviours were adjusted after first use, against the originally-merged engine (#1144):
+
+- **Dedupe to one item per game.** The four platform-level checks (`storefront-less-platform`,
+  `missing-ownership-status`, `impossible-acquired-date`, `invalid-storefront-for-platform`)
+  originally emitted one `FlaggedItem` **per offending `user_game_platforms` row**, so a game with
+  several offending platforms was counted and listed multiple times (e.g. 2819 findings over 1823
+  games). They now select from `user_games` with an `EXISTS` over the platform rows, yielding one
+  item per game; the count is "distinct flagged games". All four are deep-link only, so no per-row
+  fix is lost — "Fix" opens the game's edit page where every platform is fixed together.
+- **Dropped per-platform context.** `platform_row_id`, `platform`, `storefront`, and
+  `suggested_storefront` were removed from `FlaggedItem` (Go + TS). The suggestion ("Suggested:
+  Steam") rendered without the platform name and — since the edit form is not pre-filled — added no
+  value. Rows now show just the game, plus `detail` where a check sets it (the
+  impossible-acquired-date reason). `suggested_status` is retained on the wire (unused by the UI).
+- **On-open re-run.** Because a fix made via the "Fix" deep-link mutates the games cache (not the
+  smells cache) and queries have a 5-min `staleTime`, the page invalidates the whole `smellKeys`
+  tree on mount and from the Refresh button, so returning from an edit reflects the fix.
 
 ## Out of scope
 
-- Any backend change (the API is complete). The `nexctl doctor` CLI + MCP tools are
-  [#1146](https://github.com/drzero42/nexorious/issues/1146), a separate child.
-- Editing the game edit page to consume a suggested-value query param (we show the suggestion in the
-  Health row instead).
+- The `nexctl doctor` CLI + MCP tools are [#1146](https://github.com/drzero42/nexorious/issues/1146),
+  a separate child. (The detector dedupe in *Refinement* is the only backend change here; the rest is
+  frontend.)
+- Editing the game edit page to pre-fill a suggested value (the suggestion was dropped entirely — see
+  *Refinement*).
 - Multi-select checkboxes on flagged rows (per-row + apply-all cover v1).
 - A cross-check "fix everything" — apply is always scoped to a single check (epic rule).

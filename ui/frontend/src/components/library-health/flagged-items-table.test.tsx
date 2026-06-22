@@ -42,14 +42,6 @@ describe('FlaggedItemsTable', () => {
     expect(props.onIgnore).toHaveBeenCalledWith('ug-1');
   });
 
-  it('shows the suggested storefront when present', () => {
-    renderTable({
-      autoFixable: false,
-      items: [{ ...item, suggested_storefront: 'Steam' }],
-    });
-    expect(screen.getByText(/suggested:\s*steam/i)).toBeInTheDocument();
-  });
-
   it('shows the detail text when present', () => {
     renderTable({ items: [{ ...item, detail: 'acquired 2031-04-01 (future)' }] });
     expect(screen.getByText('acquired 2031-04-01 (future)')).toBeInTheDocument();
