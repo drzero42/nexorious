@@ -17,6 +17,7 @@ import { Route as AuthenticatedWishlistRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedTagsRouteImport } from './routes/_authenticated/tags'
 import { Route as AuthenticatedReviewRouteImport } from './routes/_authenticated/review'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedLibraryHealthRouteImport } from './routes/_authenticated/library-health'
 import { Route as AuthenticatedImportExportRouteImport } from './routes/_authenticated/import-export'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedSyncIndexRouteImport } from './routes/_authenticated/sync/index'
@@ -79,6 +80,12 @@ const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedLibraryHealthRoute =
+  AuthenticatedLibraryHealthRouteImport.update({
+    id: '/library-health',
+    path: '/library-health',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedImportExportRoute =
   AuthenticatedImportExportRouteImport.update({
     id: '/import-export',
@@ -211,6 +218,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/import-export': typeof AuthenticatedImportExportRoute
+  '/library-health': typeof AuthenticatedLibraryHealthRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/review': typeof AuthenticatedReviewRoute
   '/tags': typeof AuthenticatedTagsRoute
@@ -242,6 +250,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/import-export': typeof AuthenticatedImportExportRoute
+  '/library-health': typeof AuthenticatedLibraryHealthRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/review': typeof AuthenticatedReviewRoute
   '/tags': typeof AuthenticatedTagsRoute
@@ -274,6 +283,7 @@ export interface FileRoutesById {
   '/_public': typeof PublicRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/import-export': typeof AuthenticatedImportExportRoute
+  '/_authenticated/library-health': typeof AuthenticatedLibraryHealthRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/review': typeof AuthenticatedReviewRoute
   '/_authenticated/tags': typeof AuthenticatedTagsRoute
@@ -307,6 +317,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/import-export'
+    | '/library-health'
     | '/profile'
     | '/review'
     | '/tags'
@@ -338,6 +349,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/import-export'
+    | '/library-health'
     | '/profile'
     | '/review'
     | '/tags'
@@ -369,6 +381,7 @@ export interface FileRouteTypes {
     | '/_public'
     | '/_authenticated/dashboard'
     | '/_authenticated/import-export'
+    | '/_authenticated/library-health'
     | '/_authenticated/profile'
     | '/_authenticated/review'
     | '/_authenticated/tags'
@@ -459,6 +472,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof AuthenticatedProfileRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/library-health': {
+      id: '/_authenticated/library-health'
+      path: '/library-health'
+      fullPath: '/library-health'
+      preLoaderRoute: typeof AuthenticatedLibraryHealthRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/import-export': {
@@ -656,6 +676,7 @@ const AuthenticatedGamesAddRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedImportExportRoute: typeof AuthenticatedImportExportRoute
+  AuthenticatedLibraryHealthRoute: typeof AuthenticatedLibraryHealthRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedReviewRoute: typeof AuthenticatedReviewRoute
   AuthenticatedTagsRoute: typeof AuthenticatedTagsRoute
@@ -682,6 +703,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedImportExportRoute: AuthenticatedImportExportRoute,
+  AuthenticatedLibraryHealthRoute: AuthenticatedLibraryHealthRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedReviewRoute: AuthenticatedReviewRoute,
   AuthenticatedTagsRoute: AuthenticatedTagsRoute,

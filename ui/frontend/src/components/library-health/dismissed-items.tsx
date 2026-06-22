@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { useIgnoredItems, useRestoreSmell } from '@/hooks';
+import type { IgnoredItem } from '@/api/library-health';
 
 export interface DismissedItemsProps {
   checkID: string;
@@ -18,7 +19,7 @@ export function DismissedItems({ checkID }: DismissedItemsProps) {
 
   return (
     <ul className="divide-y rounded-md border">
-      {items.map((it) => (
+      {items.map((it: IgnoredItem) => (
         <li key={it.user_game_id} className="flex items-center justify-between px-3 py-2">
           <span className="text-sm">{it.title}</span>
           <Button

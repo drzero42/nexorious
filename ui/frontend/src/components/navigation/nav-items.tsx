@@ -14,10 +14,11 @@ import {
   Activity,
   HelpCircle,
   BookOpen,
+  Stethoscope,
 } from 'lucide-react';
 import type { NavItem, NavSection } from './types';
 import { usePendingReviewCount } from '@/hooks/use-jobs';
-import { useImportSources } from '@/hooks';
+import { useImportSources, useSmellSummary } from '@/hooks';
 
 export function useNavItems() {
   const { data: reviewData } = usePendingReviewCount();
@@ -30,6 +31,11 @@ export function useNavItems() {
     0,
   );
   const syncReviewCount = Math.max(0, (reviewData?.pendingReviewCount ?? 0) - importReviewCount);
+
+  const { data: smellSummary } = useSmellSummary();
+  const inconsistencyCount = (smellSummary ?? [])
+    .filter((c) => c.tier === 'inconsistency')
+    .reduce((sum, c) => sum + c.count, 0);
 
   const mainItems: NavItem[] = [
     {
@@ -67,6 +73,12 @@ export function useNavItems() {
       href: '/pools',
       label: 'Planning',
       icon: <ListChecks className="h-4 w-4" />,
+    },
+    {
+      href: '/library-health',
+      label: 'Library Health',
+      icon: <Stethoscope className="h-4 w-4" />,
+      badge: inconsistencyCount,
     },
     {
       href: '/import-export',
