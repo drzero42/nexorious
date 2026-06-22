@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.91.0](https://github.com/drzero42/nexorious/compare/v0.90.0...v0.91.0) (2026-06-22)
+
+
+### Features
+
+* in-app changelog ("What's new") with per-user since-last-seen diff ([#1140](https://github.com/drzero42/nexorious/issues/1140)) ([b0fcfb1](https://github.com/drzero42/nexorious/commit/b0fcfb1a6f920d95a6c11970035162d321616a5e)), closes [#1137](https://github.com/drzero42/nexorious/issues/1137)
+* **ui:** add a GitHub repository link to the sidebar footer ([#1133](https://github.com/drzero42/nexorious/issues/1133)) ([a28062b](https://github.com/drzero42/nexorious/commit/a28062b7d7cd3776e621f13183ff59a8b650db22))
+* **ui:** remember library filters and sorting across sessions ([#1136](https://github.com/drzero42/nexorious/issues/1136)) ([1632d5c](https://github.com/drzero42/nexorious/commit/1632d5ce866bf63bf67d52c17ded5d63d980d14f))
+
+
+### Bug Fixes
+
+* **observability:** don't count failed ROLLBACK as a DB error ([#1139](https://github.com/drzero42/nexorious/issues/1139)) ([1fb8367](https://github.com/drzero42/nexorious/commit/1fb83671bf10836656c20428fa26ffbad9269b6e))
+* **ui:** keep the library tab title visible on Firefox Android ([#1131](https://github.com/drzero42/nexorious/issues/1131)) ([36a8540](https://github.com/drzero42/nexorious/commit/36a8540b6ba9dadfec0f91a395a681bd049d1774)), closes [#1130](https://github.com/drzero42/nexorious/issues/1130)
+* **worker:** pace metadata-refresh batch to the IGDB rate limit ([#1138](https://github.com/drzero42/nexorious/issues/1138)) ([c52e65a](https://github.com/drzero42/nexorious/commit/c52e65a1de8e812c46b07f8575d24def9ae7847a))
+
 ## [0.90.0](https://github.com/drzero42/nexorious/compare/v0.17.1...v0.90.0) (2026-06-20)
 
 
