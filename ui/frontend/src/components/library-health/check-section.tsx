@@ -54,13 +54,14 @@ export function CheckSection({ check, onOpenGame }: CheckSectionProps) {
   const handleApply = (userGameId: string) => {
     void apply
       .mutateAsync({ checkID: check.id, userGameIds: [userGameId] })
-      .then((r) => toast.success(`Applied (${r.applied}), skipped ${r.skipped}`))
+      .then((r) => toast.success(`Applied ${r.applied}, skipped ${r.skipped}`))
       .catch(() => toast.error('Apply failed'));
   };
 
   const handleIgnore = (userGameId: string) => {
     void ignore
       .mutateAsync({ checkID: check.id, userGameIds: [userGameId] })
+      .then(() => toast.success('Dismissed'))
       .catch(() => toast.error('Ignore failed'));
   };
 
