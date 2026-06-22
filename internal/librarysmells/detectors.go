@@ -124,7 +124,9 @@ var wishlistedYetOwnedCheck = Check{
 	Title:       "Wishlisted yet owned",
 	Description: "Still on your wishlist even though it's already in your library.",
 	Tier:        TierInconsistency,
+	AutoFixable: true,
 	Detect:      detectWishlistedYetOwned,
+	Apply:       applyClearWishlist,
 }
 
 func detectWishlistedYetOwned(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
@@ -178,7 +180,9 @@ var beatButNotMarkedCheck = Check{
 	Title:       "Beat but not marked",
 	Description: "You've played past its time-to-beat but it isn't marked completed.",
 	Tier:        TierNudge,
+	AutoFixable: true,
 	Detect:      detectBeatButNotMarked,
+	Apply:       applyBeatButNotMarked,
 }
 
 func detectBeatButNotMarked(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
@@ -206,7 +210,9 @@ var playedButNotStartedCheck = Check{
 	Title:       "Played but \"not started\"",
 	Description: "Marked not-started even though it has playtime.",
 	Tier:        TierNudge,
+	AutoFixable: true,
 	Detect:      detectPlayedButNotStarted,
+	Apply:       applyPlayedButNotStarted,
 }
 
 func detectPlayedButNotStarted(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
@@ -236,7 +242,9 @@ var inProgressUntouchedCheck = Check{
 	Title:       "In progress but never touched",
 	Description: "Marked in-progress but has no recorded playtime.",
 	Tier:        TierNudge,
+	AutoFixable: true,
 	Detect:      detectInProgressUntouched,
+	Apply:       applyInProgressUntouched,
 }
 
 func detectInProgressUntouched(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
