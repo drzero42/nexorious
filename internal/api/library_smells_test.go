@@ -108,6 +108,20 @@ func TestSmellsApplyNotAutoFixable(t *testing.T) {
 	}
 }
 
+func TestSmellsIgnoreOverCap(t *testing.T) {
+	truncateAllTables(t)
+	_, token, e := setupSmellsUser(t, "overcap")
+	ids := make([]string, 201)
+	for i := range ids {
+		ids[i] = "ug-fake"
+	}
+	rec := postJSONAuth(t, e, "/api/library/smells/wishlisted-yet-owned/ignore",
+		map[string]any{"user_game_ids": ids}, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for over-cap list, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSmellsIgnoreRestoreAndListDismissed(t *testing.T) {
 	truncateAllTables(t)
 	userID, token, e := setupSmellsUser(t, "ignore")

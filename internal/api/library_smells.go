@@ -14,6 +14,10 @@ import (
 	"github.com/drzero42/nexorious/internal/usergame"
 )
 
+// maxSmellIDsPerRequest caps the user_game_ids list accepted by mutating endpoints.
+// Mirrors the per_page upper bound of 200 used in pagination parsing.
+const maxSmellIDsPerRequest = 200
+
 // LibrarySmellsHandler serves the /api/library/smells endpoints.
 type LibrarySmellsHandler struct {
 	db *bun.DB
@@ -152,6 +156,9 @@ func (h *LibrarySmellsHandler) HandleApply(c *echo.Context) error {
 	if len(req.UserGameIDs) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "user_game_ids must be a non-empty array")
 	}
+	if len(req.UserGameIDs) > maxSmellIDsPerRequest {
+		return echo.NewHTTPError(http.StatusBadRequest, "too many user_game_ids (max 200)")
+	}
 	applied, skipped, err := check.Apply(c.Request().Context(), h.db, userID, req.UserGameIDs)
 	if err != nil {
 		if errors.Is(err, usergame.ErrValidation) {
@@ -178,6 +185,9 @@ func (h *LibrarySmellsHandler) HandleIgnore(c *echo.Context) error {
 	}
 	if len(req.UserGameIDs) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "user_game_ids must be a non-empty array")
+	}
+	if len(req.UserGameIDs) > maxSmellIDsPerRequest {
+		return echo.NewHTTPError(http.StatusBadRequest, "too many user_game_ids (max 200)")
 	}
 	ctx := c.Request().Context()
 	var ignored int
@@ -216,6 +226,9 @@ func (h *LibrarySmellsHandler) HandleRestore(c *echo.Context) error {
 	}
 	if len(req.UserGameIDs) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "user_game_ids must be a non-empty array")
+	}
+	if len(req.UserGameIDs) > maxSmellIDsPerRequest {
+		return echo.NewHTTPError(http.StatusBadRequest, "too many user_game_ids (max 200)")
 	}
 	res, err := h.db.NewRaw(
 		`DELETE FROM smell_ignores
