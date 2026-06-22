@@ -22,7 +22,7 @@
 - **bun raw-scan structs need explicit `bun:"column"` tags** on every scanned field, or the scan silently returns nil.
 - **Commits/PRs carry no AI-attribution** trailer or note.
 - **Check slugs (stable identifiers)**, in epic display order:
-  `storefront-less-platform`, `orphan-game`, `storefront-without-platform`, `wishlisted-yet-owned`, `missing-ownership-status`, `impossible-acquired-date`, `invalid-storefront-for-platform`, `beat-but-not-marked`, `played-but-not-started`, `in-progress-untouched`, `unrated-after-finishing`.
+  `storefront-less-platform`, `orphan-game`, `wishlisted-yet-owned`, `missing-ownership-status`, `impossible-acquired-date`, `invalid-storefront-for-platform`, `beat-but-not-marked`, `played-but-not-started`, `in-progress-untouched`, `unrated-after-finishing`. (Epic #3 `storefront-without-platform` is dropped — `user_game_platforms.platform` is NOT NULL, so `platform IS NULL` is unreachable; 10 checks total.)
 - **Tiers:** `inconsistency` (epic Tier 1) and `nudge` (epic Tier 2).
 - **Auto-fix set:** `wishlisted-yet-owned` (clear wishlist), `beat-but-not-marked` (→ completed), `played-but-not-started` (→ in_progress), `in-progress-untouched` (→ not_started). All others deep-link only.
 
@@ -659,7 +659,9 @@ git commit -m "feat(smells): engine registry + orphan-game detector"
 
 ### Task 4: Platform-row inconsistency detectors
 
-Adds `storefront-less-platform`, `storefront-without-platform`, `missing-ownership-status`, `invalid-storefront-for-platform`.
+Adds `storefront-less-platform`, `missing-ownership-status`, `invalid-storefront-for-platform`.
+
+> **Resolved during execution:** `storefront-without-platform` (epic #3) was **dropped** — `user_game_platforms.platform` is `NOT NULL`, so `platform IS NULL` is unreachable. The `detectStorefrontWithoutPlatform` func, its `Check` var, its test, and its `Registry()` entry below are **not** implemented; ignore them in this section. Net: this task ships 3 detectors, and the feature has 10 checks total.
 
 **Files:**
 - Modify: `internal/librarysmells/detectors.go` (4 vars + 4 funcs)
@@ -911,7 +913,6 @@ func Registry() []Check {
 	return []Check{
 		storefrontLessCheck,
 		orphanGameCheck,
-		storefrontWithoutPlatformCheck,
 		missingOwnershipCheck,
 		invalidStorefrontCheck,
 	}
@@ -1053,7 +1054,6 @@ func Registry() []Check {
 	return []Check{
 		storefrontLessCheck,
 		orphanGameCheck,
-		storefrontWithoutPlatformCheck,
 		missingOwnershipCheck,
 		impossibleAcquiredDateCheck,
 		invalidStorefrontCheck,
@@ -1166,14 +1166,13 @@ func detectWishlistedYetOwned(ctx context.Context, db *bun.DB, userID string) ([
 
 - [ ] **Step 4: Register it**
 
-In `internal/librarysmells/registry.go`, insert `wishlistedYetOwnedCheck` after `storefrontWithoutPlatformCheck` (epic order #4):
+In `internal/librarysmells/registry.go`, insert `wishlistedYetOwnedCheck` after `orphanGameCheck` (epic order #4; #3 was dropped):
 
 ```go
 func Registry() []Check {
 	return []Check{
 		storefrontLessCheck,
 		orphanGameCheck,
-		storefrontWithoutPlatformCheck,
 		wishlistedYetOwnedCheck,
 		missingOwnershipCheck,
 		impossibleAcquiredDateCheck,
@@ -1498,7 +1497,6 @@ func Registry() []Check {
 	return []Check{
 		storefrontLessCheck,
 		orphanGameCheck,
-		storefrontWithoutPlatformCheck,
 		wishlistedYetOwnedCheck,
 		missingOwnershipCheck,
 		impossibleAcquiredDateCheck,
@@ -1518,8 +1516,8 @@ Expected: PASS for all detector tests. Also add and run this guard test (append 
 
 ```go
 func TestRegistryComplete(t *testing.T) {
-	if len(Registry()) != 11 {
-		t.Fatalf("expected 11 checks, got %d", len(Registry()))
+	if len(Registry()) != 10 {
+		t.Fatalf("expected 10 checks, got %d", len(Registry()))
 	}
 	seen := map[string]bool{}
 	for _, c := range Registry() {
@@ -1895,8 +1893,8 @@ func TestSmellsSummary(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &summary); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(summary) != 11 {
-		t.Fatalf("expected 11 checks, got %d", len(summary))
+	if len(summary) != 10 {
+		t.Fatalf("expected 10 checks, got %d", len(summary))
 	}
 	for _, s := range summary {
 		if s["id"] == "orphan-game" {

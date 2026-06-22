@@ -8,7 +8,7 @@
 
 A "library smell" is a data-quality issue in a user's collection — accumulated from imports
 and manual adds. This issue builds the **shared backbone**: a `internal/librarysmells` package
-with a detector registry of all 11 checks, a `smell_ignores` table for per-game dismissals, and
+with a detector registry of 10 checks, a `smell_ignores` table for per-game dismissals, and
 a REST API (summary → per-check listing → apply → ignore/restore/list-dismissed).
 
 The concept, two-tier model, per-check fixability, and full rules table are settled in the epic
@@ -45,7 +45,13 @@ Relevant column types (all confirmed):
 `games.howlongtobeat_main *numeric`, `.release_date *date`;
 `platforms.default_storefront *text`; `platform_storefronts(platform, storefront)` composite PK.
 
-## The 11 checks (slug, tier, fix, predicate)
+## The 10 checks (slug, tier, fix, predicate)
+
+> **Epic check #3 "storefront without a platform" is dropped.** It required `platform IS NULL`,
+> but `user_game_platforms.platform` is `NOT NULL` in the schema (the baseline migration; the Bun
+> model's `*string` is defensive typing only). A platform row therefore always has a platform, so
+> #3 is unreachable by construction. The epic's rules table assumed the column was nullable. The
+> remaining 10 checks stand. (Filed back on epic #1143.)
 
 `hours(ug)` = `COALESCE(SUM(hours_played), 0)` over that game's `user_game_platforms` rows.
 Tier `inconsistency` = epic Tier 1; `nudge` = epic Tier 2.
@@ -54,7 +60,6 @@ Tier `inconsistency` = epic Tier 1; `nudge` = epic Tier 2.
 |---|---|---|---|
 | `storefront-less-platform` | inconsistency | ❌ deep-link | a `user_game_platforms` row with `storefront IS NULL`. Context carries the platform row + the platform's `default_storefront` as a pre-filled suggestion. |
 | `orphan-game` | inconsistency | ❌ deep-link | a `user_games` row with **zero** `user_game_platforms` rows **and `is_wishlisted = false`** (a wishlisted game legitimately has no platforms — that is the wishlist state, not an orphan). The mirror of `wishlisted-yet-owned`: a non-wishlisted game should have ≥1 platform row. |
-| `storefront-without-platform` | inconsistency | ❌ deep-link | a platform row with `storefront IS NOT NULL AND platform IS NULL`. |
 | `wishlisted-yet-owned` | inconsistency | ✅ clear `is_wishlisted` | `is_wishlisted = true` **and** ≥1 `user_game_platforms` row exists (see *“owned” semantics*). |
 | `missing-ownership-status` | inconsistency | ❌ deep-link | a platform row with `ownership_status IS NULL`. |
 | `impossible-acquired-date` | inconsistency | ❌ deep-link | a platform row whose `acquired_date > now()::date`, **or** `acquired_date < games.release_date` (only when both dates are non-null). |
@@ -127,7 +132,7 @@ type FlaggedItem struct {
 }
 ```
 
-- `Registry() []Check` returns the 11 checks in epic display order. `Lookup(slug) (Check, bool)`
+- `Registry() []Check` returns the 10 checks in epic display order. `Lookup(slug) (Check, bool)`
   resolves the URL param. The HTTP layer 404s an unknown slug.
 - Each detector's `Detect` is a single Bun query that **also** anti-joins `smell_ignores`
   (`NOT EXISTS (SELECT 1 FROM smell_ignores si WHERE si.user_id = ? AND si.user_game_id = ug.id AND si.check_id = ?)`).
@@ -162,7 +167,7 @@ so there is no sibling static-vs-param collision.
 
 | Method | Path | Behaviour |
 |---|---|---|
-| `GET` | `/api/library/smells` | **Summary.** Array of `{id, title, description, tier, auto_fixable, count}` for all 11 checks. `count` is the flagged count *after* ignores. (Runs every detector; counts only.) |
+| `GET` | `/api/library/smells` | **Summary.** Array of `{id, title, description, tier, auto_fixable, count}` for all 10 checks. `count` is the flagged count *after* ignores. (Runs every detector; counts only.) |
 | `GET` | `/api/library/smells/:checkID` | **Per-check listing**, paginated. 404 if `checkID` is not a registry slug. Honors ignores. Response envelope `{items: FlaggedItem[], total, page, per_page, pages}` (mirrors `UserGameListResponse`; `page` 1-indexed, `per_page` 1–200 default 25). |
 | `POST` | `/api/library/smells/:checkID/apply` | Body `{user_game_ids: [...]}`. **422** if the check is not auto-fixable. Re-validates against the predicate, applies the fix to the still-flagged subset via `internal/usergame`, returns `{applied, skipped}`. |
 | `POST` | `/api/library/smells/:checkID/ignore` | Body `{user_game_ids: [...]}`. Inserts `smell_ignores` rows (`ON CONFLICT DO NOTHING`); each game must belong to the user (else skipped). Returns `{ignored}`. |
@@ -206,7 +211,7 @@ platform/storefront names (`pc-windows`, `steam`, …) to satisfy the FK constra
   `acquired_date` after release and not future does not; NULL `release_date` suppresses the
   "before release" arm.
 - **#11:** an invalid `(platform, storefront)` pair flags; a valid seeded pair does not; a NULL
-  platform/storefront does not flag here (covered by #1/#3).
+  platform/storefront does not flag here (a NULL storefront is covered by #1; platform is never NULL).
 - **Apply path (the 4 auto-fix checks):** assert the `internal/usergame` mutation is invoked and the
   invariants hold (e.g. `beat-but-not-marked` → `completed` removes the game from pools); assert
   apply skips an id that is no longer flagged (TOCTOU); assert `played-but-not-started` does not
