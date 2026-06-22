@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"text/tabwriter"
 
@@ -124,9 +125,58 @@ func collectFlaggedIDs(c *cliclient.Client, key, checkID string) ([]string, erro
 	return ids, nil
 }
 
-// Replaced in Tasks 3 & 4.
 func newDoctorApplyCmd() *cobra.Command {
-	return &cobra.Command{Use: "apply", Hidden: true, RunE: func(*cobra.Command, []string) error { return nil }}
+	return &cobra.Command{
+		Use:   "apply <check> [refs...]",
+		Short: "Apply an auto-fix check's suggestion (all flagged games, or specific refs)",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			checkID := args[0]
+			refs := args[1:]
+
+			var ids []string
+			if len(refs) == 0 {
+				ids, err = collectFlaggedIDs(c, p.Key, checkID)
+				if err != nil {
+					return fmt.Errorf("list smell items failed: %w", err)
+				}
+			} else {
+				for _, ref := range refs {
+					u, rErr := resolveUserGameRef(cmd, c, p.Key, ref)
+					if rErr != nil {
+						return rErr
+					}
+					ids = append(ids, u.ID)
+				}
+			}
+			if len(ids) == 0 {
+				fmt.Fprintln(out, "Nothing to apply — no games flagged by this check.")
+				return nil
+			}
+
+			ok, err := cliui.Confirm(bufio.NewReader(cmd.InOrStdin()), out,
+				fmt.Sprintf("Apply %q suggestion to %d game(s)?", checkID, len(ids)), flagBool(cmd, "yes"))
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return fmt.Errorf("aborted")
+			}
+
+			res, err := c.ApplySmell(p.Key, checkID, ids)
+			if err != nil {
+				return fmt.Errorf("apply failed: %w", err)
+			}
+			fmt.Fprintf(out, "Applied %d, skipped %d.\n", res.Applied, res.Skipped)
+			return nil
+		},
+	}
 }
 func newDoctorIgnoreCmd() *cobra.Command {
 	return &cobra.Command{Use: "ignore", Hidden: true, RunE: func(*cobra.Command, []string) error { return nil }}

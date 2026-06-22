@@ -133,3 +133,73 @@ func TestCollectFlaggedIDsPaginates(t *testing.T) {
 		t.Fatalf("ids = %v, want [a b]", ids)
 	}
 }
+
+func TestDoctorApplyAll(t *testing.T) {
+	var gotIDs []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/library/smells/wishlisted-yet-owned", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				{"user_game_id": "u1", "game_id": 1, "title": "A"},
+				{"user_game_id": "u2", "game_id": 2, "title": "B"},
+			},
+			"total": 2, "page": 1, "per_page": 200, "pages": 1,
+		})
+	})
+	mux.HandleFunc("/api/library/smells/wishlisted-yet-owned/apply", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string][]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotIDs = body["user_game_ids"]
+		_ = json.NewEncoder(w).Encode(map[string]int{"applied": 2, "skipped": 0})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"doctor", "apply", "wishlisted-yet-owned", "-y"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("apply: %v\n%s", err, out.String())
+	}
+	if len(gotIDs) != 2 {
+		t.Fatalf("applied ids = %v", gotIDs)
+	}
+	if !bytes.Contains(out.Bytes(), []byte("Applied 2")) {
+		t.Fatalf("output = %s", out.String())
+	}
+}
+
+func TestDoctorApplyByRef(t *testing.T) {
+	var gotIDs []string
+	mux := http.NewServeMux()
+	// UUID ref → direct GET of the user-game.
+	mux.HandleFunc("/api/user-games/", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "11111111-1111-1111-1111-111111111111", "game": map[string]any{"id": 1, "title": "Halo"}})
+	})
+	mux.HandleFunc("/api/library/smells/wishlisted-yet-owned/apply", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string][]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotIDs = body["user_game_ids"]
+		_ = json.NewEncoder(w).Encode(map[string]int{"applied": 1, "skipped": 0})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"doctor", "apply", "wishlisted-yet-owned",
+		"11111111-1111-1111-1111-111111111111", "-y"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("apply by ref: %v\n%s", err, out.String())
+	}
+	if len(gotIDs) != 1 || gotIDs[0] != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("applied ids = %v", gotIDs)
+	}
+}
