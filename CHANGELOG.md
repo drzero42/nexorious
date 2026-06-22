@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.92.0](https://github.com/drzero42/nexorious/compare/v0.91.0...v0.92.0) (2026-06-22)
+
+
+### Features
+
+* Library Health page (web UI) ([#1150](https://github.com/drzero42/nexorious/issues/1150)) ([05e980f](https://github.com/drzero42/nexorious/commit/05e980fa5a961317826e8f6a9a62dd2dc76ca040)), closes [#1145](https://github.com/drzero42/nexorious/issues/1145)
+* library smells detection engine + REST API ([#1148](https://github.com/drzero42/nexorious/issues/1148)) ([6e6fd42](https://github.com/drzero42/nexorious/commit/6e6fd42c2a098e7483de79710de5ea23b1d968cb)), closes [#1144](https://github.com/drzero42/nexorious/issues/1144)
+* nexctl doctor command + library_smells MCP tools ([#1151](https://github.com/drzero42/nexorious/issues/1151)) ([c3dab97](https://github.com/drzero42/nexorious/commit/c3dab971f62c3649d23e1047573277dbc54af430)), closes [#1146](https://github.com/drzero42/nexorious/issues/1146)
+
 ## [0.91.0](https://github.com/drzero42/nexorious/compare/v0.90.0...v0.91.0) (2026-06-22)
 
 
