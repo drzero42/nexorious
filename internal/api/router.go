@@ -350,6 +350,17 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		poolsGroup.DELETE("/:id/games/:userGameId", poolsHandler.HandleRemovePoolGame)
 		poolsGroup.PUT("/:id/queue", poolsHandler.HandleSetQueue)
 
+		// Library Smells routes (#1144). Static "" before "/:checkID"; the
+		// /apply, /ignore, /ignored segments are children of :checkID.
+		smellsHandler := NewLibrarySmellsHandler(db)
+		smellsGroup := e.Group("/api/library/smells", auth.AuthMiddleware(db))
+		smellsGroup.GET("", smellsHandler.HandleSummary)
+		smellsGroup.GET("/:checkID", smellsHandler.HandleList)
+		smellsGroup.POST("/:checkID/apply", smellsHandler.HandleApply)
+		smellsGroup.POST("/:checkID/ignore", smellsHandler.HandleIgnore)
+		smellsGroup.DELETE("/:checkID/ignore", smellsHandler.HandleRestore)
+		smellsGroup.GET("/:checkID/ignored", smellsHandler.HandleListIgnored)
+
 		// Docs routes (auth-protected; admin-guide additionally gated in-handler)
 		dch := NewDocsHandler()
 		docsGroup := e.Group("/api/docs", auth.AuthMiddleware(db))
