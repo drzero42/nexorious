@@ -9,7 +9,7 @@ import (
 var orphanGameCheck = Check{
 	ID:          "orphan-game",
 	Title:       "Orphan game",
-	Description: "A game in your library with no platform or storefront recorded.",
+	Description: "This game is in your library but isn't listed on any platform.",
 	Tier:        TierInconsistency,
 	Detect:      detectOrphanGame,
 }
@@ -36,7 +36,7 @@ func detectOrphanGame(ctx context.Context, db *bun.DB, userID string) ([]Flagged
 var storefrontLessCheck = Check{
 	ID:          "storefront-less-platform",
 	Title:       "Storefront-less platform",
-	Description: "A platform entry with no storefront recorded. Physical is a real choice — NULL means unknown provenance.",
+	Description: "One of this game's platforms doesn't say which storefront it's from (Steam, GOG, Physical, …).",
 	Tier:        TierInconsistency,
 	Detect:      detectStorefrontLess,
 }
@@ -61,7 +61,7 @@ func detectStorefrontLess(ctx context.Context, db *bun.DB, userID string) ([]Fla
 var missingOwnershipCheck = Check{
 	ID:          "missing-ownership-status",
 	Title:       "Missing ownership status",
-	Description: "A platform entry with no ownership status (owned, borrowed, …).",
+	Description: "One of this game's platforms doesn't say whether you own it, borrowed it, and so on.",
 	Tier:        TierInconsistency,
 	Detect:      detectMissingOwnership,
 }
@@ -86,7 +86,7 @@ func detectMissingOwnership(ctx context.Context, db *bun.DB, userID string) ([]F
 var impossibleAcquiredDateCheck = Check{
 	ID:          "impossible-acquired-date",
 	Title:       "Impossible acquired date",
-	Description: "An acquired date in the future, or before the game was released.",
+	Description: "The date you got this game is in the future, or before the game was released.",
 	Tier:        TierInconsistency,
 	Detect:      detectImpossibleAcquiredDate,
 }
@@ -147,7 +147,7 @@ func detectWishlistedYetOwned(ctx context.Context, db *bun.DB, userID string) ([
 var invalidStorefrontCheck = Check{
 	ID:          "invalid-storefront-for-platform",
 	Title:       "Invalid storefront for platform",
-	Description: "The platform/storefront combination is not a recognised pairing.",
+	Description: "This game has a platform and storefront that don't go together (like a PlayStation game on Steam).",
 	Tier:        TierInconsistency,
 	Detect:      detectInvalidStorefront,
 }
@@ -176,7 +176,7 @@ func detectInvalidStorefront(ctx context.Context, db *bun.DB, userID string) ([]
 var beatButNotMarkedCheck = Check{
 	ID:          "beat-but-not-marked",
 	Title:       "Beat but not marked",
-	Description: "You've played past its time-to-beat but it isn't marked completed.",
+	Description: "You've played longer than it typically takes to finish, but it isn't marked completed.",
 	Tier:        TierNudge,
 	AutoFixable: true,
 	Detect:      detectBeatButNotMarked,
@@ -206,7 +206,7 @@ func detectBeatButNotMarked(ctx context.Context, db *bun.DB, userID string) ([]F
 var playedButNotStartedCheck = Check{
 	ID:          "played-but-not-started",
 	Title:       "Played but \"not started\"",
-	Description: "Marked not-started even though it has playtime.",
+	Description: "Marked as not started, but it already has playtime logged.",
 	Tier:        TierNudge,
 	AutoFixable: true,
 	Detect:      detectPlayedButNotStarted,
@@ -238,7 +238,7 @@ func detectPlayedButNotStarted(ctx context.Context, db *bun.DB, userID string) (
 var inProgressUntouchedCheck = Check{
 	ID:          "in-progress-untouched",
 	Title:       "In progress but never touched",
-	Description: "Marked in-progress but has no recorded playtime.",
+	Description: "Marked as in progress, but it has no playtime logged.",
 	Tier:        TierNudge,
 	AutoFixable: true,
 	Detect:      detectInProgressUntouched,
@@ -267,7 +267,7 @@ func detectInProgressUntouched(ctx context.Context, db *bun.DB, userID string) (
 var unratedAfterFinishingCheck = Check{
 	ID:          "unrated-after-finishing",
 	Title:       "Unrated after finishing",
-	Description: "Finished but you never gave it a personal rating.",
+	Description: "You finished this game but never gave it a rating.",
 	Tier:        TierNudge,
 	Detect:      detectUnratedAfterFinishing,
 }
