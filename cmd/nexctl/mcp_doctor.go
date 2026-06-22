@@ -19,7 +19,7 @@ type smellsDetailInput struct {
 
 type smellsRefsInput struct {
 	CheckID string   `json:"check_id" jsonschema:"check id (from library_smells_list)"`
-	Refs    []string `json:"refs" jsonschema:"one or more game ids (UUID) or title substrings"`
+	Refs    []string `json:"refs" jsonschema:"game ids (UUID) or title substrings; for apply, pass an empty array [] to fix every flagged game"`
 }
 
 // --- output projections ---
