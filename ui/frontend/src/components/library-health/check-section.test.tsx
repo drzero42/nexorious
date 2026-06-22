@@ -111,6 +111,38 @@ describe('CheckSection', () => {
     );
   });
 
+  it('paginates the flagged listing when there is more than one page', async () => {
+    const user = userEvent.setup();
+    const hooks = vi.mocked(await import('@/hooks'));
+    hooks.useSmellItems.mockReturnValue({
+      data: {
+        items: [{ user_game_id: 'ug-1', game_id: 1, title: 'A' }],
+        total: 60,
+        page: 1,
+        per_page: 25,
+        pages: 3,
+      },
+      isFetching: false,
+      isLoading: false,
+    } as unknown as ReturnType<typeof hooks.useSmellItems>);
+
+    renderInAccordion(autoCheck);
+    await user.click(screen.getByRole('button', { name: /wishlisted yet owned/i })); // expand
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /next/i }));
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    // The page advance re-runs the query for page 2.
+    expect(hooks.useSmellItems).toHaveBeenCalledWith('wishlisted-yet-owned', 2, true);
+  });
+
+  it('does not render pagination controls for a single page', async () => {
+    const user = userEvent.setup();
+    renderInAccordion(autoCheck);
+    await user.click(screen.getByRole('button', { name: /wishlisted yet owned/i }));
+    expect(screen.queryByRole('button', { name: /next/i })).not.toBeInTheDocument();
+  });
+
   it('does not fire applyAll when the confirm dialog is cancelled', async () => {
     const user = userEvent.setup();
     const mutateAsync = vi.fn();

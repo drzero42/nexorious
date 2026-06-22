@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import * as smellsApi from '@/api/library-health';
 import type {
   SmellSummaryItem,
@@ -6,6 +6,10 @@ import type {
   IgnoredListResponse,
   ApplyResult,
 } from '@/api/library-health';
+
+// Page size for the per-check flagged listing. Small enough to keep each
+// accordion section compact; the listing paginates beyond this.
+const SMELL_PAGE_SIZE = 25;
 
 export const smellKeys = {
   all: ['librarySmells'] as const,
@@ -21,11 +25,14 @@ export function useSmellSummary() {
   });
 }
 
-export function useSmellItems(checkID: string, enabled: boolean) {
+export function useSmellItems(checkID: string, page: number, enabled: boolean) {
   return useQuery<FlaggedListResponse, Error>({
-    queryKey: smellKeys.list(checkID),
-    queryFn: () => smellsApi.getSmellItems(checkID),
+    // Page is appended to the list key so each page caches separately while
+    // invalidating smellKeys.list(checkID) (the prefix) still clears them all.
+    queryKey: [...smellKeys.list(checkID), page],
+    queryFn: () => smellsApi.getSmellItems(checkID, SMELL_PAGE_SIZE, page),
     enabled,
+    placeholderData: keepPreviousData,
   });
 }
 
