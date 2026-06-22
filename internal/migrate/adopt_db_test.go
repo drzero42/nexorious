@@ -123,8 +123,8 @@ func TestRunMigrations_AdoptRewritesHistory(t *testing.T) {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	want := []string{"20260620000001", "20260621000001", "20260622000001"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
 	}
 }
@@ -278,8 +278,8 @@ func TestReinitAfterRestore_AdoptsV0171(t *testing.T) {
 		t.Fatalf("state = %v, want Ready", m.State())
 	}
 	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	want := []string{"20260620000001", "20260621000001", "20260622000001"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
 	}
 }
@@ -306,8 +306,8 @@ func TestReinitAfterRestore_BaselineNoOp(t *testing.T) {
 		t.Fatalf("state = %v, want Ready", m.State())
 	}
 	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	want := []string{"20260620000001", "20260621000001", "20260622000001"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
 	}
 }
