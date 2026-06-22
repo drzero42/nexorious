@@ -256,6 +256,8 @@ func TestDoctorIgnoreAndRestore(t *testing.T) {
 		case http.MethodDelete:
 			restoreIDs = body["user_game_ids"]
 			_ = json.NewEncoder(w).Encode(map[string]int{"restored": 1})
+		default:
+			t.Errorf("unexpected method %s", r.Method)
 		}
 	})
 	srv := httptest.NewServer(mux)
@@ -313,5 +315,47 @@ func TestDoctorIgnoredList(t *testing.T) {
 		if !bytes.Contains(out.Bytes(), []byte(want)) {
 			t.Fatalf("ignored list missing %q:\n%s", want, out.String())
 		}
+	}
+}
+
+func TestDoctorIgnoredQuietAndTruncation(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/library/smells/orphan-game/ignored", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{"user_game_id": "u9", "title": "Myst", "created_at": "x"}},
+			"total": 5, "page": 1, "per_page": 200, "pages": 1,
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	// quiet: bare ids only, no truncation notice
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"doctor", "ignored", "orphan-game", "-q"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("ignored -q: %v\n%s", err, out.String())
+	}
+	if !bytes.Contains(out.Bytes(), []byte("u9")) {
+		t.Fatalf("quiet missing id:\n%s", out.String())
+	}
+	if bytes.Contains(out.Bytes(), []byte("Showing first")) {
+		t.Fatalf("quiet must not print truncation notice:\n%s", out.String())
+	}
+
+	// table: truncation notice shown (total 5 > 1 item)
+	out.Reset()
+	root = newRootCmd()
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"doctor", "ignored", "orphan-game"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("ignored: %v\n%s", err, out.String())
+	}
+	if !bytes.Contains(out.Bytes(), []byte("Showing first 1 of 5")) {
+		t.Fatalf("truncation notice missing:\n%s", out.String())
 	}
 }

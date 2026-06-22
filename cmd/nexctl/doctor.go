@@ -90,7 +90,13 @@ func runDoctorDetail(cmd *cobra.Command, checkID string) error {
 	for i := range res.Items {
 		fmt.Fprintf(tw, "%s\t%s\t%s\n", res.Items[i].UserGameID, res.Items[i].Title, suggestionOf(res.Items[i]))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if res.Total > len(res.Items) {
+		fmt.Fprintf(out, "\nShowing first %d of %d flagged games.\n", len(res.Items), res.Total)
+	}
+	return nil
 }
 
 // suggestionOf renders the per-item hint: the suggested status (auto-fix
@@ -277,7 +283,13 @@ func newDoctorIgnoredCmd() *cobra.Command {
 			for i := range res.Items {
 				fmt.Fprintf(tw, "%s\t%s\t%s\n", res.Items[i].UserGameID, res.Items[i].Title, res.Items[i].CreatedAt)
 			}
-			return tw.Flush()
+			if err := tw.Flush(); err != nil {
+				return err
+			}
+			if res.Total > len(res.Items) {
+				fmt.Fprintf(out, "\nShowing first %d of %d dismissed games.\n", len(res.Items), res.Total)
+			}
+			return nil
 		},
 	}
 }
