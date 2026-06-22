@@ -75,7 +75,7 @@ export function WhatsNew() {
             </Suspense>
           )}
 
-          {!showAll && (
+          {!showAll && !isLoading && data?.available && (
             <div className="pt-2">
               <Button variant="ghost" size="sm" onClick={() => setShowAll(true)}>
                 View full changelog
