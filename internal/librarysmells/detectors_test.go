@@ -319,6 +319,9 @@ func TestDetectInProgressUntouched(t *testing.T) {
 	setStatus(t, touched, "in_progress")
 	platformWithHours(t, touched, 3)
 
+	noPlatform := seedUserGame(t, userID, 3) // in_progress, zero platform rows → SUM NULL → COALESCE 0 → flags
+	setStatus(t, noPlatform, "in_progress")
+
 	items, err := detectInProgressUntouched(ctx, testDB, userID)
 	if err != nil {
 		t.Fatalf("detect: %v", err)
@@ -329,6 +332,9 @@ func TestDetectInProgressUntouched(t *testing.T) {
 	}
 	if got[touched] {
 		t.Error("in_progress with hours must not flag")
+	}
+	if !got[noPlatform] {
+		t.Error("in_progress with no platform rows should flag (COALESCE(SUM)=0)")
 	}
 }
 
@@ -349,6 +355,12 @@ func TestDetectUnratedAfterFinishing(t *testing.T) {
 	dropped := seedUserGame(t, userID, 3) // dropped is NOT in this check's finished set → clean
 	setStatus(t, dropped, "dropped")
 
+	masteredUnrated := seedUserGame(t, userID, 4) // mastered, no rating → flags
+	setStatus(t, masteredUnrated, "mastered")
+
+	dominatedUnrated := seedUserGame(t, userID, 5) // dominated, no rating → flags
+	setStatus(t, dominatedUnrated, "dominated")
+
 	items, err := detectUnratedAfterFinishing(ctx, testDB, userID)
 	if err != nil {
 		t.Fatalf("detect: %v", err)
@@ -362,6 +374,12 @@ func TestDetectUnratedAfterFinishing(t *testing.T) {
 	}
 	if got[dropped] {
 		t.Error("dropped game must not flag (only completed/mastered/dominated)")
+	}
+	if !got[masteredUnrated] {
+		t.Error("mastered unrated game should flag")
+	}
+	if !got[dominatedUnrated] {
+		t.Error("dominated unrated game should flag")
 	}
 }
 

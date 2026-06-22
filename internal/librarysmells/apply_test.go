@@ -93,6 +93,9 @@ func TestApplyInProgressUntouched(t *testing.T) {
 	seedPlatform(t, flagged, "pc-windows", "steam") // 0 hours
 
 	check, _ := Lookup("in-progress-untouched")
+	if !check.AutoFixable || check.Apply == nil {
+		t.Fatal("in-progress-untouched must be auto-fixable")
+	}
 	applied, skipped, err := check.Apply(ctx, testDB, userID, []string{flagged})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
