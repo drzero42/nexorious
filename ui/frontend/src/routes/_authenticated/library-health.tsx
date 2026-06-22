@@ -1,10 +1,12 @@
+import { useEffect } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { Stethoscope, RefreshCw } from 'lucide-react';
 import { Accordion } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useSmellSummary } from '@/hooks';
+import { useSmellSummary, smellKeys } from '@/hooks';
 import type { SmellSummaryItem, SmellTier } from '@/api/library-health';
 import { CheckSection } from '@/components/library-health/check-section';
 
@@ -51,7 +53,21 @@ function TierBlock({
 
 function LibraryHealthPage() {
   const navigate = useNavigate();
-  const { data, isLoading, isError, error, refetch } = useSmellSummary();
+  const queryClient = useQueryClient();
+  const { data, isLoading, isFetching, isError, error } = useSmellSummary();
+
+  // Re-run every check (summary + per-check listings + dismissed) by invalidating
+  // the whole smells tree. Used by the Refresh button and the error retry.
+  const handleRefresh = () => {
+    void queryClient.invalidateQueries({ queryKey: smellKeys.all });
+  };
+
+  // Smells are an on-demand scan: re-run them whenever the page is opened so a
+  // fix made elsewhere (e.g. via the "Fix" deep-link to a game's edit page, which
+  // invalidates the games cache but not this one) is reflected on return.
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: smellKeys.all });
+  }, [queryClient]);
 
   const onOpenGame = (userGameId: string) => {
     void navigate({ to: '/games/$id/edit', params: { id: userGameId } });
@@ -67,8 +83,8 @@ function LibraryHealthPage() {
           </h1>
           <p className="text-muted-foreground">Data-quality checks across your collection.</p>
         </div>
-        <Button variant="outline" onClick={() => void refetch()} disabled={isLoading}>
-          <RefreshCw className="mr-2 h-4 w-4" />
+        <Button variant="outline" onClick={handleRefresh} disabled={isFetching}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>
@@ -86,7 +102,7 @@ function LibraryHealthPage() {
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <p className="font-semibold">Failed to load library health</p>
             <p className="text-sm text-muted-foreground">{error?.message}</p>
-            <Button onClick={() => void refetch()}>Try again</Button>
+            <Button onClick={handleRefresh}>Try again</Button>
           </CardContent>
         </Card>
       )}
