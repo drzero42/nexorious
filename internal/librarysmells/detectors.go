@@ -87,6 +87,38 @@ func detectMissingOwnership(ctx context.Context, db *bun.DB, userID string) ([]F
 	return items, err
 }
 
+var impossibleAcquiredDateCheck = Check{
+	ID:          "impossible-acquired-date",
+	Title:       "Impossible acquired date",
+	Description: "An acquired date in the future, or before the game was released.",
+	Tier:        TierInconsistency,
+	Detect:      detectImpossibleAcquiredDate,
+}
+
+func detectImpossibleAcquiredDate(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
+	var items []FlaggedItem
+	err := db.NewRaw(
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
+		        p.id AS platform_row_id, p.platform, p.storefront,
+		        CASE
+		          WHEN p.acquired_date > now()::date THEN 'acquired date is in the future'
+		          ELSE 'acquired before the game was released'
+		        END AS detail
+		 FROM user_game_platforms p
+		 JOIN user_games ug ON ug.id = p.user_game_id
+		 JOIN games g ON g.id = ug.game_id
+		 WHERE ug.user_id = ?
+		   AND p.acquired_date IS NOT NULL
+		   AND (p.acquired_date > now()::date
+		        OR (g.release_date IS NOT NULL AND p.acquired_date < g.release_date))
+		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
+		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
+		 ORDER BY g.title`,
+		userID, "impossible-acquired-date",
+	).Scan(ctx, &items)
+	return items, err
+}
+
 var invalidStorefrontCheck = Check{
 	ID:          "invalid-storefront-for-platform",
 	Title:       "Invalid storefront for platform",

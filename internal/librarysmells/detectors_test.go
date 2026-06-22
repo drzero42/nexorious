@@ -120,3 +120,56 @@ func TestDetectInvalidStorefront(t *testing.T) {
 		t.Error("NULL storefront must not flag here (covered by storefront-less)")
 	}
 }
+
+func TestDetectImpossibleAcquiredDate(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := seedUser(t)
+
+	setAcquired := func(platformID, date string) {
+		if _, err := testDB.NewRaw(`UPDATE user_game_platforms SET acquired_date = ?::date WHERE id = ?`, date, platformID).Exec(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setRelease := func(gameID int32, date string) {
+		if _, err := testDB.NewRaw(`UPDATE games SET release_date = ?::date WHERE id = ?`, date, gameID).Exec(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// future acquired date → flags
+	future := seedUserGame(t, userID, 1)
+	setAcquired(seedPlatform(t, future, "pc-windows", "steam"), "2099-01-01")
+
+	// acquired before release → flags
+	preRelease := seedUserGame(t, userID, 2)
+	setRelease(2, "2020-01-01")
+	setAcquired(seedPlatform(t, preRelease, "pc-windows", "steam"), "2019-01-01")
+
+	// acquired after release, not future → clean
+	ok := seedUserGame(t, userID, 3)
+	setRelease(3, "2020-01-01")
+	setAcquired(seedPlatform(t, ok, "pc-windows", "steam"), "2021-01-01")
+
+	// acquired before "now" but game has no release date → clean (only future arm applies)
+	noRelease := seedUserGame(t, userID, 4)
+	setAcquired(seedPlatform(t, noRelease, "pc-windows", "steam"), "2010-01-01")
+
+	items, err := detectImpossibleAcquiredDate(ctx, testDB, userID)
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	got := flaggedIDs(items)
+	if !got[future] {
+		t.Error("future acquired date should flag")
+	}
+	if !got[preRelease] {
+		t.Error("acquired-before-release should flag")
+	}
+	if got[ok] {
+		t.Error("valid acquired date must not flag")
+	}
+	if got[noRelease] {
+		t.Error("old date with no release_date must not flag")
+	}
+}
