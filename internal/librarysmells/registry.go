@@ -60,7 +60,6 @@ func Registry() []Check {
 		missingOwnershipCheck,
 		impossibleAcquiredDateCheck,
 		invalidStorefrontCheck,
-		beatButNotMarkedCheck,
 		playedButNotStartedCheck,
 		inProgressUntouchedCheck,
 		unratedAfterFinishingCheck,

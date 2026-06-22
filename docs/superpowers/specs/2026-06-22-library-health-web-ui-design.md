@@ -42,13 +42,13 @@ counts the same game twice.
   `wishlisted-yet-owned` (**auto-fix** → clear wishlist), `missing-ownership-status` (deep-link),
   `impossible-acquired-date` (deep-link; `detail` text), `invalid-storefront-for-platform`
   (deep-link).
-- Tier `nudge`: `beat-but-not-marked` (**auto-fix** → completed), `played-but-not-started`
-  (**auto-fix** → in_progress), `in-progress-untouched` (**auto-fix** → not_started),
-  `unrated-after-finishing` (deep-link).
+- Tier `nudge`: `played-but-not-started` (**auto-fix** → in_progress), `in-progress-untouched`
+  (**auto-fix** → not_started), `unrated-after-finishing` (deep-link). (`beat-but-not-marked` was
+  removed — see *Refinement*.)
 
-Auto-fixable set: `wishlisted-yet-owned`, `beat-but-not-marked`, `played-but-not-started`,
-`in-progress-untouched`. Tier display order: **Inconsistencies first, then Nudges** (registry
-order within each tier).
+Auto-fixable set: `wishlisted-yet-owned`, `played-but-not-started`, `in-progress-untouched`. Tier
+display order: **Inconsistencies first, then Nudges** (registry order within each tier). **Nine
+checks total** after removing `beat-but-not-marked`.
 
 ## Route, nav & page shell
 
@@ -165,9 +165,21 @@ Two behaviours were adjusted after first use, against the originally-merged engi
   Steam") rendered without the platform name and — since the edit form is not pre-filled — added no
   value. Rows now show just the game, plus `detail` where a check sets it (the
   impossible-acquired-date reason). `suggested_status` is retained on the wire (unused by the UI).
-- **On-open re-run.** Because a fix made via the "Fix" deep-link mutates the games cache (not the
-  smells cache) and queries have a 5-min `staleTime`, the page invalidates the whole `smellKeys`
-  tree on mount and from the Refresh button, so returning from an edit reflects the fix.
+- **On-open re-run.** Because editing a game mutates the games cache (not the smells cache) and
+  queries have a 5-min `staleTime`, the page invalidates the whole `smellKeys` tree on mount and from
+  the Refresh button, so returning from an edit reflects the fix.
+- **Honest row actions.** The game title opens the game's **details** page (styled as a link); the
+  manual-check button is **"Edit"** (opens the edit form), not "Fix" — a "Fix" button that only
+  navigated was misleading and duplicated the title. Only the truly-fixing auto-fix checks keep an
+  **"Apply"** button.
+- **Removed `beat-but-not-marked`.** It flagged `play_status ∈ {not_started, in_progress}` with
+  `SUM(hours_played) ≥ howlongtobeat_main` and auto-set `completed`. Inferring completion from
+  playtime is a category error — it false-positives on co-op / live-service / replayed / idle-inflated
+  games (hours accrue without finishing), and the auto-fix set a **terminal** status that also removed
+  the game from play-planning pools, making a wrong nudge costly. The other nudges are factual data
+  inconsistencies; this one guessed at intent, so it was dropped. With it gone, `played-but-not-started`
+  no longer needs its HLTB precedence guard — a `not_started` game with playtime now always nudges
+  toward `in_progress` (a safe, non-terminal status), regardless of HowLongToBeat.
 
 ## Out of scope
 

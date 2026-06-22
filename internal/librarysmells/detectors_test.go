@@ -243,56 +243,22 @@ func setHLTB(t *testing.T, gameID int32, hours float64) {
 	}
 }
 
-func TestDetectBeatButNotMarked(t *testing.T) {
+func TestDetectPlayedButNotStarted(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()
 	userID := seedUser(t)
 
-	beaten := seedUserGame(t, userID, 1) // 12h played, HLTB 10, in_progress → flags
-	setStatus(t, beaten, "in_progress")
-	setHLTB(t, 1, 10)
-	platformWithHours(t, beaten, 12)
-
-	noHLTB := seedUserGame(t, userID, 2) // lots of hours, HLTB NULL → silent
-	setStatus(t, noHLTB, "in_progress")
-	platformWithHours(t, noHLTB, 99)
-
-	finished := seedUserGame(t, userID, 3) // already completed → not flagged
-	setStatus(t, finished, "completed")
-	setHLTB(t, 3, 10)
-	platformWithHours(t, finished, 12)
-
-	items, err := detectBeatButNotMarked(ctx, testDB, userID)
-	if err != nil {
-		t.Fatalf("detect: %v", err)
-	}
-	got := flaggedIDs(items)
-	if !got[beaten] {
-		t.Error("beaten in-progress game should flag")
-	}
-	if got[noHLTB] {
-		t.Error("game with NULL howlongtobeat_main must stay silent")
-	}
-	if got[finished] {
-		t.Error("already-completed game must not flag")
-	}
-}
-
-func TestDetectPlayedButNotStarted_Precedence(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := seedUser(t)
-
-	// not_started, 2h, no HLTB → played-but-not-started
+	// not_started, 2h, no HLTB → flags
 	played := seedUserGame(t, userID, 1)
 	setStatus(t, played, "not_started")
 	platformWithHours(t, played, 2)
 
-	// not_started, 12h, HLTB 10 → belongs to beat-but-not-marked, NOT this check
-	beaten := seedUserGame(t, userID, 2)
-	setStatus(t, beaten, "not_started")
+	// not_started, 12h, HLTB 10 → still flags (playtime is the only signal now;
+	// HowLongToBeat no longer suppresses this check — beat-but-not-marked was removed).
+	heavy := seedUserGame(t, userID, 2)
+	setStatus(t, heavy, "not_started")
 	setHLTB(t, 2, 10)
-	platformWithHours(t, beaten, 12)
+	platformWithHours(t, heavy, 12)
 
 	// not_started, 0.2h → below threshold, clean
 	barely := seedUserGame(t, userID, 3)
@@ -307,8 +273,8 @@ func TestDetectPlayedButNotStarted_Precedence(t *testing.T) {
 	if !got[played] {
 		t.Error("played not_started game should flag")
 	}
-	if got[beaten] {
-		t.Error("beaten game must defer to beat-but-not-marked (precedence)")
+	if !got[heavy] {
+		t.Error("not_started game past HowLongToBeat should still flag (no HLTB suppression)")
 	}
 	if got[barely] {
 		t.Error("under-0.5h game must not flag")
@@ -393,8 +359,8 @@ func TestDetectUnratedAfterFinishing(t *testing.T) {
 }
 
 func TestRegistryComplete(t *testing.T) {
-	if len(Registry()) != 10 {
-		t.Fatalf("expected 10 checks, got %d", len(Registry()))
+	if len(Registry()) != 9 {
+		t.Fatalf("expected 9 checks, got %d", len(Registry()))
 	}
 	seen := map[string]bool{}
 	for _, c := range Registry() {

@@ -73,10 +73,6 @@ func applyClearWishlist(ctx context.Context, db *bun.DB, userID string, ids []st
 	return n, skipped, err
 }
 
-func applyBeatButNotMarked(ctx context.Context, db *bun.DB, userID string, ids []string) (int, int, error) {
-	return applyStatus(ctx, db, userID, ids, enum.PlayStatusCompleted, detectBeatButNotMarked)
-}
-
 func applyPlayedButNotStarted(ctx context.Context, db *bun.DB, userID string, ids []string) (int, int, error) {
 	return applyStatus(ctx, db, userID, ids, enum.PlayStatusInProgress, detectPlayedButNotStarted)
 }

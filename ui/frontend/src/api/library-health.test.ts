@@ -62,7 +62,7 @@ describe('applySmell', () => {
       .mockResolvedValueOnce({ applied: 200, skipped: 0 })
       .mockResolvedValueOnce({ applied: 200, skipped: 0 })
       .mockResolvedValueOnce({ applied: 40, skipped: 10 });
-    const res = await applySmell('beat-but-not-marked', ids);
+    const res = await applySmell('played-but-not-started', ids);
     expect(mockApi.post).toHaveBeenCalledTimes(3);
     expect(
       (mockApi.post.mock.calls[0][1] as { user_game_ids: string[] }).user_game_ids,

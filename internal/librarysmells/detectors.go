@@ -173,36 +173,6 @@ func detectInvalidStorefront(ctx context.Context, db *bun.DB, userID string) ([]
 	return items, err
 }
 
-var beatButNotMarkedCheck = Check{
-	ID:          "beat-but-not-marked",
-	Title:       "Beat but not marked",
-	Description: "You've played longer than it typically takes to finish, but it isn't marked completed.",
-	Tier:        TierNudge,
-	AutoFixable: true,
-	Detect:      detectBeatButNotMarked,
-	Apply:       applyBeatButNotMarked,
-}
-
-func detectBeatButNotMarked(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
-	var items []FlaggedItem
-	err := db.NewRaw(
-		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        'completed' AS suggested_status
-		 FROM user_games ug
-		 JOIN games g ON g.id = ug.game_id
-		 WHERE ug.user_id = ?
-		   AND g.howlongtobeat_main IS NOT NULL
-		   AND ug.play_status IN ('not_started', 'in_progress')
-		   AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
-		        WHERE p.user_game_id = ug.id) >= g.howlongtobeat_main
-		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
-		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
-		 ORDER BY g.title`,
-		userID, "beat-but-not-marked",
-	).Scan(ctx, &items)
-	return items, err
-}
-
 var playedButNotStartedCheck = Check{
 	ID:          "played-but-not-started",
 	Title:       "Played but \"not started\"",
@@ -224,9 +194,6 @@ func detectPlayedButNotStarted(ctx context.Context, db *bun.DB, userID string) (
 		   AND ug.play_status = 'not_started'
 		   AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
 		        WHERE p.user_game_id = ug.id) >= 0.5
-		   AND NOT (g.howlongtobeat_main IS NOT NULL
-		            AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
-		                 WHERE p.user_game_id = ug.id) >= g.howlongtobeat_main)
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
