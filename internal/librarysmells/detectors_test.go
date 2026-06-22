@@ -210,3 +210,179 @@ func TestDetectWishlistedYetOwned(t *testing.T) {
 		t.Error("owned non-wishlisted game must not flag")
 	}
 }
+
+// platformWithHours seeds a platform row carrying hours_played.
+func platformWithHours(t *testing.T, ugID string, hours float64) {
+	t.Helper()
+	id := seedPlatform(t, ugID, "pc-windows", "steam")
+	if _, err := testDB.NewRaw(`UPDATE user_game_platforms SET hours_played = ? WHERE id = ?`, hours, id).Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setStatus(t *testing.T, ugID, status string) {
+	t.Helper()
+	if _, err := testDB.NewRaw(`UPDATE user_games SET play_status = ? WHERE id = ?`, status, ugID).Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setHLTB(t *testing.T, gameID int32, hours float64) {
+	t.Helper()
+	if _, err := testDB.NewRaw(`UPDATE games SET howlongtobeat_main = ? WHERE id = ?`, hours, gameID).Exec(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDetectBeatButNotMarked(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := seedUser(t)
+
+	beaten := seedUserGame(t, userID, 1) // 12h played, HLTB 10, in_progress → flags
+	setStatus(t, beaten, "in_progress")
+	setHLTB(t, 1, 10)
+	platformWithHours(t, beaten, 12)
+
+	noHLTB := seedUserGame(t, userID, 2) // lots of hours, HLTB NULL → silent
+	setStatus(t, noHLTB, "in_progress")
+	platformWithHours(t, noHLTB, 99)
+
+	finished := seedUserGame(t, userID, 3) // already completed → not flagged
+	setStatus(t, finished, "completed")
+	setHLTB(t, 3, 10)
+	platformWithHours(t, finished, 12)
+
+	items, err := detectBeatButNotMarked(ctx, testDB, userID)
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	got := flaggedIDs(items)
+	if !got[beaten] {
+		t.Error("beaten in-progress game should flag")
+	}
+	if got[noHLTB] {
+		t.Error("game with NULL howlongtobeat_main must stay silent")
+	}
+	if got[finished] {
+		t.Error("already-completed game must not flag")
+	}
+}
+
+func TestDetectPlayedButNotStarted_Precedence(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := seedUser(t)
+
+	// not_started, 2h, no HLTB → played-but-not-started
+	played := seedUserGame(t, userID, 1)
+	setStatus(t, played, "not_started")
+	platformWithHours(t, played, 2)
+
+	// not_started, 12h, HLTB 10 → belongs to beat-but-not-marked, NOT this check
+	beaten := seedUserGame(t, userID, 2)
+	setStatus(t, beaten, "not_started")
+	setHLTB(t, 2, 10)
+	platformWithHours(t, beaten, 12)
+
+	// not_started, 0.2h → below threshold, clean
+	barely := seedUserGame(t, userID, 3)
+	setStatus(t, barely, "not_started")
+	platformWithHours(t, barely, 0.2)
+
+	items, err := detectPlayedButNotStarted(ctx, testDB, userID)
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	got := flaggedIDs(items)
+	if !got[played] {
+		t.Error("played not_started game should flag")
+	}
+	if got[beaten] {
+		t.Error("beaten game must defer to beat-but-not-marked (precedence)")
+	}
+	if got[barely] {
+		t.Error("under-0.5h game must not flag")
+	}
+}
+
+func TestDetectInProgressUntouched(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := seedUser(t)
+
+	untouched := seedUserGame(t, userID, 1) // in_progress, no platform hours → flags
+	setStatus(t, untouched, "in_progress")
+	seedPlatform(t, untouched, "pc-windows", "steam") // hours_played NULL
+
+	touched := seedUserGame(t, userID, 2) // in_progress, 3h → clean
+	setStatus(t, touched, "in_progress")
+	platformWithHours(t, touched, 3)
+
+	items, err := detectInProgressUntouched(ctx, testDB, userID)
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	got := flaggedIDs(items)
+	if !got[untouched] {
+		t.Error("in_progress with 0 hours should flag")
+	}
+	if got[touched] {
+		t.Error("in_progress with hours must not flag")
+	}
+}
+
+func TestDetectUnratedAfterFinishing(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := seedUser(t)
+
+	unrated := seedUserGame(t, userID, 1) // completed, no rating → flags
+	setStatus(t, unrated, "completed")
+
+	rated := seedUserGame(t, userID, 2) // completed, rated → clean
+	setStatus(t, rated, "completed")
+	if _, err := testDB.NewRaw(`UPDATE user_games SET personal_rating = 8 WHERE id = ?`, rated).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	dropped := seedUserGame(t, userID, 3) // dropped is NOT in this check's finished set → clean
+	setStatus(t, dropped, "dropped")
+
+	items, err := detectUnratedAfterFinishing(ctx, testDB, userID)
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	got := flaggedIDs(items)
+	if !got[unrated] {
+		t.Error("completed unrated game should flag")
+	}
+	if got[rated] {
+		t.Error("rated game must not flag")
+	}
+	if got[dropped] {
+		t.Error("dropped game must not flag (only completed/mastered/dominated)")
+	}
+}
+
+func TestRegistryComplete(t *testing.T) {
+	if len(Registry()) != 10 {
+		t.Fatalf("expected 10 checks, got %d", len(Registry()))
+	}
+	seen := map[string]bool{}
+	for _, c := range Registry() {
+		if c.ID == "" || c.Title == "" || c.Description == "" {
+			t.Errorf("check %q missing metadata", c.ID)
+		}
+		if seen[c.ID] {
+			t.Errorf("duplicate check id %q", c.ID)
+		}
+		seen[c.ID] = true
+		if c.Tier != TierInconsistency && c.Tier != TierNudge {
+			t.Errorf("check %q has invalid tier %q", c.ID, c.Tier)
+		}
+		if c.Detect == nil {
+			t.Errorf("check %q has nil Detect", c.ID)
+		}
+	}
+}

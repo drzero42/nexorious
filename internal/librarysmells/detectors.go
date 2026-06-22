@@ -172,3 +172,113 @@ func detectInvalidStorefront(ctx context.Context, db *bun.DB, userID string) ([]
 	).Scan(ctx, &items)
 	return items, err
 }
+
+var beatButNotMarkedCheck = Check{
+	ID:          "beat-but-not-marked",
+	Title:       "Beat but not marked",
+	Description: "You've played past its time-to-beat but it isn't marked completed.",
+	Tier:        TierNudge,
+	Detect:      detectBeatButNotMarked,
+}
+
+func detectBeatButNotMarked(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
+	var items []FlaggedItem
+	err := db.NewRaw(
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
+		        'completed' AS suggested_status
+		 FROM user_games ug
+		 JOIN games g ON g.id = ug.game_id
+		 WHERE ug.user_id = ?
+		   AND g.howlongtobeat_main IS NOT NULL
+		   AND ug.play_status IN ('not_started', 'in_progress')
+		   AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
+		        WHERE p.user_game_id = ug.id) >= g.howlongtobeat_main
+		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
+		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
+		 ORDER BY g.title`,
+		userID, "beat-but-not-marked",
+	).Scan(ctx, &items)
+	return items, err
+}
+
+var playedButNotStartedCheck = Check{
+	ID:          "played-but-not-started",
+	Title:       "Played but \"not started\"",
+	Description: "Marked not-started even though it has playtime.",
+	Tier:        TierNudge,
+	Detect:      detectPlayedButNotStarted,
+}
+
+func detectPlayedButNotStarted(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
+	var items []FlaggedItem
+	err := db.NewRaw(
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
+		        'in_progress' AS suggested_status
+		 FROM user_games ug
+		 JOIN games g ON g.id = ug.game_id
+		 WHERE ug.user_id = ?
+		   AND ug.play_status = 'not_started'
+		   AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
+		        WHERE p.user_game_id = ug.id) >= 0.5
+		   AND NOT (g.howlongtobeat_main IS NOT NULL
+		            AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
+		                 WHERE p.user_game_id = ug.id) >= g.howlongtobeat_main)
+		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
+		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
+		 ORDER BY g.title`,
+		userID, "played-but-not-started",
+	).Scan(ctx, &items)
+	return items, err
+}
+
+var inProgressUntouchedCheck = Check{
+	ID:          "in-progress-untouched",
+	Title:       "In progress but never touched",
+	Description: "Marked in-progress but has no recorded playtime.",
+	Tier:        TierNudge,
+	Detect:      detectInProgressUntouched,
+}
+
+func detectInProgressUntouched(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
+	var items []FlaggedItem
+	err := db.NewRaw(
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
+		        'not_started' AS suggested_status
+		 FROM user_games ug
+		 JOIN games g ON g.id = ug.game_id
+		 WHERE ug.user_id = ?
+		   AND ug.play_status = 'in_progress'
+		   AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
+		        WHERE p.user_game_id = ug.id) = 0
+		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
+		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
+		 ORDER BY g.title`,
+		userID, "in-progress-untouched",
+	).Scan(ctx, &items)
+	return items, err
+}
+
+var unratedAfterFinishingCheck = Check{
+	ID:          "unrated-after-finishing",
+	Title:       "Unrated after finishing",
+	Description: "Finished but you never gave it a personal rating.",
+	Tier:        TierNudge,
+	Detect:      detectUnratedAfterFinishing,
+}
+
+func detectUnratedAfterFinishing(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
+	var items []FlaggedItem
+	err := db.NewRaw(
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url
+		 FROM user_games ug
+		 JOIN games g ON g.id = ug.game_id
+		 WHERE ug.user_id = ?
+		   AND ug.play_status IN ('completed', 'mastered', 'dominated')
+		   AND ug.personal_rating IS NULL
+		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
+		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
+		 ORDER BY g.title`,
+		userID, "unrated-after-finishing",
+	).Scan(ctx, &items)
+	return items, err
+}
