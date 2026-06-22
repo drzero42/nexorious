@@ -168,6 +168,9 @@ Two behaviours were adjusted after first use, against the originally-merged engi
 - **On-open re-run.** Because editing a game mutates the games cache (not the smells cache) and
   queries have a 5-min `staleTime`, the page invalidates the whole `smellKeys` tree on mount and from
   the Refresh button, so returning from an edit reflects the fix.
+- **Renamed the Suggestions tier heading.** The nudge tier is displayed as **"Suggestions"** (was
+  "Nudges") — "nudge" carried a manipulative, steering-the-user connotation. Display-only: the API/code
+  tier value stays `"nudge"`.
 - **Honest row actions.** The game title opens the game's **details** page (styled as a link); the
   manual-check button is **"Edit"** (opens the edit form), not "Fix" — a "Fix" button that only
   navigated was misleading and duplicated the title. Only the truly-fixing auto-fix checks keep an

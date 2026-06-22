@@ -21,7 +21,7 @@ const TIER_ORDER: { tier: SmellTier; label: string; blurb: string }[] = [
     label: 'Inconsistencies',
     blurb: 'Something looks wrong and probably needs fixing.',
   },
-  { tier: 'nudge', label: 'Nudges', blurb: 'You might want to update these.' },
+  { tier: 'nudge', label: 'Suggestions', blurb: 'You might want to update these.' },
 ];
 
 function TierBlock({
