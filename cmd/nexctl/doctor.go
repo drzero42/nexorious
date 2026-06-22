@@ -112,8 +112,6 @@ func suggestionOf(it cliclient.FlaggedItem) string {
 }
 
 // collectFlaggedIDs returns every flagged user_game_id for a check, across pages.
-//
-//nolint:unused // used by Tasks 3 & 4
 func collectFlaggedIDs(c *cliclient.Client, key, checkID string) ([]string, error) {
 	var ids []string
 	for page := 1; ; page++ {
@@ -124,7 +122,7 @@ func collectFlaggedIDs(c *cliclient.Client, key, checkID string) ([]string, erro
 		for i := range res.Items {
 			ids = append(ids, res.Items[i].UserGameID)
 		}
-		if res.Pages <= page || res.Pages == 0 {
+		if res.Pages <= page {
 			break
 		}
 	}

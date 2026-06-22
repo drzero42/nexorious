@@ -13,7 +13,7 @@ import (
 
 type smellsDetailInput struct {
 	CheckID string `json:"check_id" jsonschema:"check id (from library_smells_list)"`
-	Page    int    `json:"page,omitempty"`
+	Page    int    `json:"page,omitempty" jsonschema:"page number (1-based)"`
 	PerPage int    `json:"per_page,omitempty" jsonschema:"page size, max 200"`
 }
 
