@@ -33,6 +33,9 @@ func TestListSmells(t *testing.T) {
 func TestListSmellItems(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/library/smells/played-but-not-started", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") != "1" {
+			t.Errorf("page = %q, want 1", r.URL.Query().Get("page"))
+		}
 		if r.URL.Query().Get("per_page") != "200" {
 			t.Errorf("per_page = %q, want 200", r.URL.Query().Get("per_page"))
 		}
@@ -60,6 +63,9 @@ func TestListSmellItems(t *testing.T) {
 func TestApplyIgnoreRestoreSmell(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/library/smells/wishlisted-yet-owned/apply", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
 		var body map[string][]string
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		if len(body["user_game_ids"]) != 2 {
@@ -97,7 +103,13 @@ func TestApplyIgnoreRestoreSmell(t *testing.T) {
 
 func TestListIgnoredSmells(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/library/smells/orphan-game/ignored", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/library/smells/orphan-game/ignored", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") != "1" {
+			t.Errorf("page = %q, want 1", r.URL.Query().Get("page"))
+		}
+		if r.URL.Query().Get("per_page") != "25" {
+			t.Errorf("per_page = %q, want 25", r.URL.Query().Get("per_page"))
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"items": []map[string]any{{"user_game_id": "u9", "title": "Tetris", "created_at": "2026-06-22T00:00:00Z"}},
 			"total": 1, "page": 1, "per_page": 25, "pages": 1,
