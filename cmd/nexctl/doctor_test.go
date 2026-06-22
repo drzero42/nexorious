@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/drzero42/nexorious/internal/cliclient"
 )
 
 // doctorServer stubs the summary + a couple of per-check listings.
@@ -95,5 +97,39 @@ func TestDoctorDetail(t *testing.T) {
 		if !bytes.Contains(out.Bytes(), []byte(want)) {
 			t.Fatalf("detail missing %q:\n%s", want, out.String())
 		}
+	}
+	if !bytes.Contains(out.Bytes(), []byte("-")) {
+		t.Fatalf("detail SUGGESTION fallback %q missing:\n%s", "-", out.String())
+	}
+}
+
+func TestCollectFlaggedIDsPaginates(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/library/smells/multi", func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		switch page {
+		case "1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{{"user_game_id": "a", "game_id": 1, "title": "A"}},
+				"total": 2, "page": 1, "per_page": 1, "pages": 2,
+			})
+		case "2":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{{"user_game_id": "b", "game_id": 2, "title": "B"}},
+				"total": 2, "page": 2, "per_page": 1, "pages": 2,
+			})
+		default:
+			t.Errorf("unexpected page %q", page)
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	ids, err := collectFlaggedIDs(cliclient.New(srv.URL), "k", "multi")
+	if err != nil {
+		t.Fatalf("collectFlaggedIDs: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
+		t.Fatalf("ids = %v, want [a b]", ids)
 	}
 }
