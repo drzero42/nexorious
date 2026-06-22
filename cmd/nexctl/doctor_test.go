@@ -202,4 +202,39 @@ func TestDoctorApplyByRef(t *testing.T) {
 	if len(gotIDs) != 1 || gotIDs[0] != "11111111-1111-1111-1111-111111111111" {
 		t.Fatalf("applied ids = %v", gotIDs)
 	}
+	if !bytes.Contains(out.Bytes(), []byte("Applied 1")) {
+		t.Fatalf("output = %s", out.String())
+	}
+}
+
+func TestDoctorApplyNothingFlagged(t *testing.T) {
+	var applyCalled bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/library/smells/wishlisted-yet-owned", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{}, "total": 0, "page": 1, "per_page": 200, "pages": 0,
+		})
+	})
+	mux.HandleFunc("/api/library/smells/wishlisted-yet-owned/apply", func(w http.ResponseWriter, _ *http.Request) {
+		applyCalled = true
+		_ = json.NewEncoder(w).Encode(map[string]int{"applied": 0, "skipped": 0})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"doctor", "apply", "wishlisted-yet-owned", "-y"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("apply: %v\n%s", err, out.String())
+	}
+	if applyCalled {
+		t.Fatal("apply endpoint should not be called when nothing is flagged")
+	}
+	if !bytes.Contains(out.Bytes(), []byte("Nothing to apply")) {
+		t.Fatalf("output = %s", out.String())
+	}
 }

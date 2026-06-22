@@ -178,6 +178,7 @@ func newDoctorApplyCmd() *cobra.Command {
 		},
 	}
 }
+
 func newDoctorIgnoreCmd() *cobra.Command {
 	return &cobra.Command{Use: "ignore", Hidden: true, RunE: func(*cobra.Command, []string) error { return nil }}
 }
