@@ -2,7 +2,6 @@ package api_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -154,5 +153,4 @@ func TestSmellsIgnoreRestoreAndListDismissed(t *testing.T) {
 	if l2.Total != 1 {
 		t.Fatalf("expected 1 flagged after restore, got %d", l2.Total)
 	}
-	_ = context.Background
 }
