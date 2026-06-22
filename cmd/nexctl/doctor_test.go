@@ -238,3 +238,80 @@ func TestDoctorApplyNothingFlagged(t *testing.T) {
 		t.Fatalf("output = %s", out.String())
 	}
 }
+
+func TestDoctorIgnoreAndRestore(t *testing.T) {
+	var ignoreIDs, restoreIDs []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games/", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "22222222-2222-2222-2222-222222222222", "game": map[string]any{"id": 1, "title": "Doom"}})
+	})
+	mux.HandleFunc("/api/library/smells/orphan-game/ignore", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string][]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		switch r.Method {
+		case http.MethodPost:
+			ignoreIDs = body["user_game_ids"]
+			_ = json.NewEncoder(w).Encode(map[string]int{"ignored": 1})
+		case http.MethodDelete:
+			restoreIDs = body["user_game_ids"]
+			_ = json.NewEncoder(w).Encode(map[string]int{"restored": 1})
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	ref := "22222222-2222-2222-2222-222222222222"
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"doctor", "ignore", "orphan-game", ref})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("ignore: %v\n%s", err, out.String())
+	}
+	if len(ignoreIDs) != 1 || ignoreIDs[0] != ref {
+		t.Fatalf("ignore ids = %v", ignoreIDs)
+	}
+
+	out.Reset()
+	root = newRootCmd()
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"doctor", "restore", "orphan-game", ref})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("restore: %v\n%s", err, out.String())
+	}
+	if len(restoreIDs) != 1 || restoreIDs[0] != ref {
+		t.Fatalf("restore ids = %v", restoreIDs)
+	}
+}
+
+func TestDoctorIgnoredList(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/library/smells/orphan-game/ignored", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{"user_game_id": "u9", "title": "Myst", "created_at": "2026-06-22T10:00:00Z"}},
+			"total": 1, "page": 1, "per_page": 25, "pages": 1,
+		})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, srv.URL)
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"doctor", "ignored", "orphan-game"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("ignored: %v\n%s", err, out.String())
+	}
+	for _, want := range []string{"u9", "Myst"} {
+		if !bytes.Contains(out.Bytes(), []byte(want)) {
+			t.Fatalf("ignored list missing %q:\n%s", want, out.String())
+		}
+	}
+}

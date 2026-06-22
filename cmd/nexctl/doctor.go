@@ -179,12 +179,105 @@ func newDoctorApplyCmd() *cobra.Command {
 	}
 }
 
+// resolveDoctorRefs resolves one-or-more game refs to user-game ids.
+func resolveDoctorRefs(cmd *cobra.Command, c *cliclient.Client, key string, refs []string) ([]string, error) {
+	ids := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		u, err := resolveUserGameRef(cmd, c, key, ref)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, u.ID)
+	}
+	return ids, nil
+}
+
 func newDoctorIgnoreCmd() *cobra.Command {
-	return &cobra.Command{Use: "ignore", Hidden: true, RunE: func(*cobra.Command, []string) error { return nil }}
+	return &cobra.Command{
+		Use:   "ignore <check> <ref> [refs...]",
+		Short: "Dismiss flagged games for a check",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			ids, err := resolveDoctorRefs(cmd, c, p.Key, args[1:])
+			if err != nil {
+				return err
+			}
+			n, err := c.IgnoreSmell(p.Key, args[0], ids)
+			if err != nil {
+				return fmt.Errorf("ignore failed: %w", err)
+			}
+			fmt.Fprintf(out, "Dismissed %d game(s) for %q.\n", n, args[0])
+			return nil
+		},
+	}
 }
+
 func newDoctorRestoreCmd() *cobra.Command {
-	return &cobra.Command{Use: "restore", Hidden: true, RunE: func(*cobra.Command, []string) error { return nil }}
+	return &cobra.Command{
+		Use:   "restore <check> <ref> [refs...]",
+		Short: "Un-dismiss previously ignored games for a check",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			c := cliclient.New(p.URL)
+			ids, err := resolveDoctorRefs(cmd, c, p.Key, args[1:])
+			if err != nil {
+				return err
+			}
+			n, err := c.RestoreSmell(p.Key, args[0], ids)
+			if err != nil {
+				return fmt.Errorf("restore failed: %w", err)
+			}
+			fmt.Fprintf(out, "Restored %d game(s) for %q.\n", n, args[0])
+			return nil
+		},
+	}
 }
+
 func newDoctorIgnoredCmd() *cobra.Command {
-	return &cobra.Command{Use: "ignored", Hidden: true, RunE: func(*cobra.Command, []string) error { return nil }}
+	return &cobra.Command{
+		Use:   "ignored <check>",
+		Short: "List dismissed games for a check",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			p, _, err := resolveProfile(cmd)
+			if err != nil {
+				return err
+			}
+			res, err := cliclient.New(p.URL).ListIgnoredSmells(p.Key, args[0], 1, 200)
+			if err != nil {
+				return fmt.Errorf("list dismissed failed: %w", err)
+			}
+			if flagBool(cmd, "json") {
+				return cliui.EncodeJSON(out, res)
+			}
+			if flagBool(cmd, "quiet") {
+				for i := range res.Items {
+					fmt.Fprintln(out, res.Items[i].UserGameID)
+				}
+				return nil
+			}
+			if len(res.Items) == 0 {
+				fmt.Fprintln(out, "No dismissed games for this check.")
+				return nil
+			}
+			tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
+			fmt.Fprintln(tw, "USER_GAME_ID\tTITLE\tDISMISSED_AT")
+			for i := range res.Items {
+				fmt.Fprintf(tw, "%s\t%s\t%s\n", res.Items[i].UserGameID, res.Items[i].Title, res.Items[i].CreatedAt)
+			}
+			return tw.Flush()
+		},
+	}
 }
