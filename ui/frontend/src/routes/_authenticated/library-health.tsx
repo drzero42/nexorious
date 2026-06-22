@@ -28,12 +28,14 @@ function TierBlock({
   label,
   blurb,
   checks,
-  onOpenGame,
+  onView,
+  onEdit,
 }: {
   label: string;
   blurb: string;
   checks: SmellSummaryItem[];
-  onOpenGame: (id: string) => void;
+  onView: (id: string) => void;
+  onEdit: (id: string) => void;
 }) {
   if (checks.length === 0) return null;
   return (
@@ -44,7 +46,7 @@ function TierBlock({
       </div>
       <Accordion type="multiple" className="space-y-2">
         {checks.map((check) => (
-          <CheckSection key={check.id} check={check} onOpenGame={onOpenGame} />
+          <CheckSection key={check.id} check={check} onView={onView} onEdit={onEdit} />
         ))}
       </Accordion>
     </section>
@@ -63,13 +65,17 @@ function LibraryHealthPage() {
   };
 
   // Smells are an on-demand scan: re-run them whenever the page is opened so a
-  // fix made elsewhere (e.g. via the "Fix" deep-link to a game's edit page, which
-  // invalidates the games cache but not this one) is reflected on return.
+  // fix made elsewhere (e.g. editing a game, which invalidates the games cache
+  // but not this one) is reflected on return.
   useEffect(() => {
     void queryClient.invalidateQueries({ queryKey: smellKeys.all });
   }, [queryClient]);
 
-  const onOpenGame = (userGameId: string) => {
+  // Title opens the game's details page; the Edit action opens its edit form.
+  const onView = (userGameId: string) => {
+    void navigate({ to: '/games/$id', params: { id: userGameId } });
+  };
+  const onEdit = (userGameId: string) => {
     void navigate({ to: '/games/$id/edit', params: { id: userGameId } });
   };
 
@@ -124,7 +130,8 @@ function LibraryHealthPage() {
               label={label}
               blurb={blurb}
               checks={data.filter((c) => c.tier === tier)}
-              onOpenGame={onOpenGame}
+              onView={onView}
+              onEdit={onEdit}
             />
           ))}
         </>

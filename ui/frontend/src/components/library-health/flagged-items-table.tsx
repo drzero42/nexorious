@@ -15,7 +15,8 @@ export interface FlaggedItemsTableProps {
   busy?: boolean;
   onApply: (userGameId: string) => void;
   onIgnore: (userGameId: string) => void;
-  onOpenGame: (userGameId: string) => void;
+  onView: (userGameId: string) => void;
+  onEdit: (userGameId: string) => void;
 }
 
 export function FlaggedItemsTable({
@@ -24,7 +25,8 @@ export function FlaggedItemsTable({
   busy = false,
   onApply,
   onIgnore,
-  onOpenGame,
+  onView,
+  onEdit,
 }: FlaggedItemsTableProps) {
   return (
     <Table>
@@ -40,8 +42,8 @@ export function FlaggedItemsTable({
             <TableCell>
               <button
                 type="button"
-                className="text-left font-medium hover:underline"
-                onClick={() => onOpenGame(item.user_game_id)}
+                className="text-left font-medium text-primary hover:underline"
+                onClick={() => onView(item.user_game_id)}
               >
                 {item.title}
               </button>
@@ -60,9 +62,9 @@ export function FlaggedItemsTable({
                   size="sm"
                   variant="outline"
                   disabled={busy}
-                  onClick={() => onOpenGame(item.user_game_id)}
+                  onClick={() => onEdit(item.user_game_id)}
                 >
-                  Fix
+                  Edit
                 </Button>
               )}
               <Button

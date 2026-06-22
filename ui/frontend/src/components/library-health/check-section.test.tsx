@@ -43,7 +43,7 @@ const mkMutation = (over = {}) => ({
 function renderInAccordion(check: SmellSummaryItem) {
   return render(
     <Accordion type="multiple">
-      <CheckSection check={check} onOpenGame={vi.fn()} />
+      <CheckSection check={check} onView={vi.fn()} onEdit={vi.fn()} />
     </Accordion>,
   );
 }

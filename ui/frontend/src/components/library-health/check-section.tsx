@@ -21,10 +21,11 @@ import { DismissedItems } from './dismissed-items';
 
 export interface CheckSectionProps {
   check: SmellSummaryItem;
-  onOpenGame: (userGameId: string) => void;
+  onView: (userGameId: string) => void;
+  onEdit: (userGameId: string) => void;
 }
 
-export function CheckSection({ check, onOpenGame }: CheckSectionProps) {
+export function CheckSection({ check, onView, onEdit }: CheckSectionProps) {
   const [expanded, setExpanded] = useState(false);
   const [confirmAll, setConfirmAll] = useState(false);
   const [showDismissed, setShowDismissed] = useState(false);
@@ -121,7 +122,8 @@ export function CheckSection({ check, onOpenGame }: CheckSectionProps) {
                 busy={busy}
                 onApply={handleApply}
                 onIgnore={handleIgnore}
-                onOpenGame={onOpenGame}
+                onView={onView}
+                onEdit={onEdit}
               />
               {pages > 1 && (
                 <div className="mt-2 flex items-center justify-between">

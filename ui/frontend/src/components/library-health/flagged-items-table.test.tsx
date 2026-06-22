@@ -12,7 +12,8 @@ function renderTable(over: Partial<React.ComponentProps<typeof FlaggedItemsTable
     autoFixable: true,
     onApply: vi.fn(),
     onIgnore: vi.fn(),
-    onOpenGame: vi.fn(),
+    onView: vi.fn(),
+    onEdit: vi.fn(),
     ...over,
   };
   render(<FlaggedItemsTable {...props} />);
@@ -27,12 +28,21 @@ describe('FlaggedItemsTable', () => {
     expect(props.onApply).toHaveBeenCalledWith('ug-1');
   });
 
-  it('renders a Fix button (not Apply) for manual checks and fires onOpenGame', async () => {
+  it('renders an Edit button (not Apply/Fix) for manual checks and fires onEdit', async () => {
     const user = userEvent.setup();
     const props = renderTable({ autoFixable: false });
     expect(screen.queryByRole('button', { name: /^apply$/i })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /fix/i }));
-    expect(props.onOpenGame).toHaveBeenCalledWith('ug-1');
+    expect(screen.queryByRole('button', { name: /^fix$/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^edit$/i }));
+    expect(props.onEdit).toHaveBeenCalledWith('ug-1');
+  });
+
+  it('the game title opens the details view (onView), not edit', async () => {
+    const user = userEvent.setup();
+    const props = renderTable({ autoFixable: false });
+    await user.click(screen.getByRole('button', { name: 'Celeste' }));
+    expect(props.onView).toHaveBeenCalledWith('ug-1');
+    expect(props.onEdit).not.toHaveBeenCalled();
   });
 
   it('fires onIgnore with the id', async () => {
