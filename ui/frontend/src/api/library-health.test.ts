@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { api } from './client';
-import { applySmell, fetchAllFlaggedIds, applyAllSmell } from './library-health';
+import {
+  applySmell,
+  fetchAllFlaggedIds,
+  applyAllSmell,
+  getSmellSummary,
+  getSmellItems,
+} from './library-health';
 import type { FlaggedListResponse } from './library-health';
 
 vi.mock('./client', () => ({
@@ -19,6 +25,24 @@ function page(ids: string[], pageNo: number, pages: number): FlaggedListResponse
   };
 }
 
+describe('request paths', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // Regression: the shared `api` client prepends config.apiUrl ('/api'), so a
+  // leading '/api' in BASE doubled to '/api/api/library/smells' (a 404).
+  it('targets /library/smells with no doubled /api prefix', async () => {
+    mockApi.get.mockResolvedValue([]);
+    await getSmellSummary();
+    expect(mockApi.get).toHaveBeenCalledWith('/library/smells');
+
+    mockApi.get.mockResolvedValue(page([], 1, 0));
+    await getSmellItems('orphan-game');
+    expect(mockApi.get).toHaveBeenCalledWith('/library/smells/orphan-game', {
+      params: { page: 1, per_page: 200 },
+    });
+  });
+});
+
 describe('applySmell', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -26,7 +50,7 @@ describe('applySmell', () => {
     mockApi.post.mockResolvedValue({ applied: 3, skipped: 1 });
     const res = await applySmell('wishlisted-yet-owned', ['a', 'b', 'c', 'd']);
     expect(mockApi.post).toHaveBeenCalledTimes(1);
-    expect(mockApi.post).toHaveBeenCalledWith('/api/library/smells/wishlisted-yet-owned/apply', {
+    expect(mockApi.post).toHaveBeenCalledWith('/library/smells/wishlisted-yet-owned/apply', {
       user_game_ids: ['a', 'b', 'c', 'd'],
     });
     expect(res).toEqual({ applied: 3, skipped: 1 });

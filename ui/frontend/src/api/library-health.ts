@@ -1,6 +1,8 @@
 import { api } from './client';
 
-const BASE = '/api/library/smells';
+// The shared `api` client prepends config.apiUrl ('/api'), so paths here are
+// relative to that — do NOT include a leading '/api' or it doubles to '/api/api'.
+const BASE = '/library/smells';
 const MAX_IDS = 200;
 
 export type SmellTier = 'inconsistency' | 'nudge';
