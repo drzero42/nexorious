@@ -63,6 +63,7 @@ func buildMCPServer(p clicfg.Profile) *mcp.Server {
 	registerPoolTools(srv, c, p.Key)
 	registerTagTools(srv, c, p.Key)
 	registerSyncTools(srv, c, p.Key)
+	registerDoctorTools(srv, c, p.Key)
 	return srv
 }
 
