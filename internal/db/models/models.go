@@ -142,6 +142,16 @@ type PlatformStorefront struct {
 	Storefront     *Storefront `bun:"rel:belongs-to,join:storefront=name"`
 }
 
+type SmellIgnore struct {
+	bun.BaseModel `bun:"table:smell_ignores"`
+
+	ID         string    `bun:"id,pk"                json:"id"`
+	UserID     string    `bun:"user_id,notnull"      json:"user_id"`
+	UserGameID string    `bun:"user_game_id,notnull" json:"user_game_id"`
+	CheckID    string    `bun:"check_id,notnull"     json:"check_id"`
+	CreatedAt  time.Time `bun:"created_at,notnull"   json:"created_at"`
+}
+
 type Tag struct {
 	bun.BaseModel `bun:"table:tags"`
 
