@@ -31,7 +31,6 @@ export function FlaggedItemsTable({
       <TableHeader>
         <TableRow>
           <TableHead>Game</TableHead>
-          <TableHead>Details</TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
@@ -46,9 +45,10 @@ export function FlaggedItemsTable({
               >
                 {item.title}
               </button>
-            </TableCell>
-            <TableCell>
-              {item.detail ? <span className="text-muted-foreground">{item.detail}</span> : null}
+              {/* Only impossible-acquired-date sets a detail; show it under the title. */}
+              {item.detail ? (
+                <div className="text-sm text-muted-foreground">{item.detail}</div>
+              ) : null}
             </TableCell>
             <TableCell className="space-x-2 text-right">
               {autoFixable ? (
