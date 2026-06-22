@@ -145,3 +145,15 @@ export {
   useRemovePoolGame,
   useSetQueue,
 } from './use-pools';
+
+// Library Health (smells) hooks
+export {
+  smellKeys,
+  useSmellSummary,
+  useSmellItems,
+  useIgnoredItems,
+  useApplySmell,
+  useApplyAllSmell,
+  useIgnoreSmell,
+  useRestoreSmell,
+} from './use-library-health';

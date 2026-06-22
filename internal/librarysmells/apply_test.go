@@ -17,41 +17,6 @@ func playStatusOf(t *testing.T, ugID string) string {
 	return *s
 }
 
-func TestApplyBeatButNotMarked(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := seedUser(t)
-
-	flagged := seedUserGame(t, userID, 1)
-	setStatus(t, flagged, "in_progress")
-	setHLTB(t, 1, 10)
-	platformWithHours(t, flagged, 12)
-
-	// Not flagged (under HLTB): apply must skip it, never touch its status.
-	notFlagged := seedUserGame(t, userID, 2)
-	setStatus(t, notFlagged, "in_progress")
-	setHLTB(t, 2, 100)
-	platformWithHours(t, notFlagged, 3)
-
-	check, _ := Lookup("beat-but-not-marked")
-	if !check.AutoFixable || check.Apply == nil {
-		t.Fatal("beat-but-not-marked must be auto-fixable")
-	}
-	applied, skipped, err := check.Apply(ctx, testDB, userID, []string{flagged, notFlagged})
-	if err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-	if applied != 1 || skipped != 1 {
-		t.Fatalf("expected applied=1 skipped=1, got applied=%d skipped=%d", applied, skipped)
-	}
-	if got := playStatusOf(t, flagged); got != "completed" {
-		t.Errorf("flagged game should be completed, got %q", got)
-	}
-	if got := playStatusOf(t, notFlagged); got != "in_progress" {
-		t.Errorf("stale id must be untouched, got %q", got)
-	}
-}
-
 func TestApplyClearWishlist(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()

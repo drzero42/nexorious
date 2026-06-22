@@ -19,7 +19,9 @@ const (
 	TierNudge Tier = "nudge"
 )
 
-// FlaggedItem is one flagged game for one check, with check-specific context.
+// FlaggedItem is one flagged game for one check. Checks report one item per
+// game (platform-level checks dedupe across a game's platform rows), so the
+// only check-specific context is an optional human detail / suggested status.
 // It carries bun tags (raw-scan target) and json tags (API response).
 type FlaggedItem struct {
 	UserGameID  string  `bun:"user_game_id"  json:"user_game_id"`
@@ -27,12 +29,8 @@ type FlaggedItem struct {
 	Title       string  `bun:"title"         json:"title"`
 	CoverArtURL *string `bun:"cover_art_url" json:"cover_art_url,omitempty"`
 
-	PlatformRowID       *string `bun:"platform_row_id"      json:"platform_row_id,omitempty"`
-	Platform            *string `bun:"platform"             json:"platform,omitempty"`
-	Storefront          *string `bun:"storefront"           json:"storefront,omitempty"`
-	SuggestedStorefront *string `bun:"suggested_storefront" json:"suggested_storefront,omitempty"`
-	SuggestedStatus     *string `bun:"suggested_status"     json:"suggested_status,omitempty"`
-	Detail              *string `bun:"detail"               json:"detail,omitempty"`
+	SuggestedStatus *string `bun:"suggested_status" json:"suggested_status,omitempty"`
+	Detail          *string `bun:"detail"           json:"detail,omitempty"`
 }
 
 // Check is one library-smell detector and its optional one-click fix.
@@ -62,7 +60,6 @@ func Registry() []Check {
 		missingOwnershipCheck,
 		impossibleAcquiredDateCheck,
 		invalidStorefrontCheck,
-		beatButNotMarkedCheck,
 		playedButNotStartedCheck,
 		inProgressUntouchedCheck,
 		unratedAfterFinishingCheck,

@@ -53,8 +53,8 @@ func TestSmellsSummary(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &summary); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(summary) != 10 {
-		t.Fatalf("expected 10 checks, got %d", len(summary))
+	if len(summary) != 9 {
+		t.Fatalf("expected 9 checks, got %d", len(summary))
 	}
 	for _, s := range summary {
 		if s["id"] == "orphan-game" {

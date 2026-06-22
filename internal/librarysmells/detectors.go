@@ -9,7 +9,7 @@ import (
 var orphanGameCheck = Check{
 	ID:          "orphan-game",
 	Title:       "Orphan game",
-	Description: "A game in your library with no platform or storefront recorded.",
+	Description: "This game is in your library but isn't listed on any platform.",
 	Tier:        TierInconsistency,
 	Detect:      detectOrphanGame,
 }
@@ -36,7 +36,7 @@ func detectOrphanGame(ctx context.Context, db *bun.DB, userID string) ([]Flagged
 var storefrontLessCheck = Check{
 	ID:          "storefront-less-platform",
 	Title:       "Storefront-less platform",
-	Description: "A platform entry with no storefront recorded. Physical is a real choice — NULL means unknown provenance.",
+	Description: "One of this game's platforms doesn't say which storefront it's from (Steam, GOG, Physical, …).",
 	Tier:        TierInconsistency,
 	Detect:      detectStorefrontLess,
 }
@@ -44,15 +44,12 @@ var storefrontLessCheck = Check{
 func detectStorefrontLess(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
 	var items []FlaggedItem
 	err := db.NewRaw(
-		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        p.id AS platform_row_id, p.platform, p.storefront,
-		        pl.default_storefront AS suggested_storefront
-		 FROM user_game_platforms p
-		 JOIN user_games ug ON ug.id = p.user_game_id
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url
+		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
-		 LEFT JOIN platforms pl ON pl.name = p.platform
 		 WHERE ug.user_id = ?
-		   AND p.storefront IS NULL
+		   AND EXISTS (SELECT 1 FROM user_game_platforms p
+		               WHERE p.user_game_id = ug.id AND p.storefront IS NULL)
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
@@ -64,7 +61,7 @@ func detectStorefrontLess(ctx context.Context, db *bun.DB, userID string) ([]Fla
 var missingOwnershipCheck = Check{
 	ID:          "missing-ownership-status",
 	Title:       "Missing ownership status",
-	Description: "A platform entry with no ownership status (owned, borrowed, …).",
+	Description: "One of this game's platforms doesn't say whether you own it, borrowed it, and so on.",
 	Tier:        TierInconsistency,
 	Detect:      detectMissingOwnership,
 }
@@ -72,13 +69,12 @@ var missingOwnershipCheck = Check{
 func detectMissingOwnership(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
 	var items []FlaggedItem
 	err := db.NewRaw(
-		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        p.id AS platform_row_id, p.platform, p.storefront
-		 FROM user_game_platforms p
-		 JOIN user_games ug ON ug.id = p.user_game_id
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url
+		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
 		 WHERE ug.user_id = ?
-		   AND p.ownership_status IS NULL
+		   AND EXISTS (SELECT 1 FROM user_game_platforms p
+		               WHERE p.user_game_id = ug.id AND p.ownership_status IS NULL)
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
@@ -90,7 +86,7 @@ func detectMissingOwnership(ctx context.Context, db *bun.DB, userID string) ([]F
 var impossibleAcquiredDateCheck = Check{
 	ID:          "impossible-acquired-date",
 	Title:       "Impossible acquired date",
-	Description: "An acquired date in the future, or before the game was released.",
+	Description: "The date you got this game is in the future, or before the game was released.",
 	Tier:        TierInconsistency,
 	Detect:      detectImpossibleAcquiredDate,
 }
@@ -99,18 +95,20 @@ func detectImpossibleAcquiredDate(ctx context.Context, db *bun.DB, userID string
 	var items []FlaggedItem
 	err := db.NewRaw(
 		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        p.id AS platform_row_id, p.platform, p.storefront,
 		        CASE
-		          WHEN p.acquired_date > now()::date THEN 'acquired date is in the future'
+		          WHEN EXISTS (SELECT 1 FROM user_game_platforms p
+		                       WHERE p.user_game_id = ug.id AND p.acquired_date > now()::date)
+		          THEN 'acquired date is in the future'
 		          ELSE 'acquired before the game was released'
 		        END AS detail
-		 FROM user_game_platforms p
-		 JOIN user_games ug ON ug.id = p.user_game_id
+		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
 		 WHERE ug.user_id = ?
-		   AND p.acquired_date IS NOT NULL
-		   AND (p.acquired_date > now()::date
-		        OR (g.release_date IS NOT NULL AND p.acquired_date < g.release_date))
+		   AND EXISTS (SELECT 1 FROM user_game_platforms p
+		               WHERE p.user_game_id = ug.id
+		                 AND p.acquired_date IS NOT NULL
+		                 AND (p.acquired_date > now()::date
+		                      OR (g.release_date IS NOT NULL AND p.acquired_date < g.release_date)))
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
@@ -149,7 +147,7 @@ func detectWishlistedYetOwned(ctx context.Context, db *bun.DB, userID string) ([
 var invalidStorefrontCheck = Check{
 	ID:          "invalid-storefront-for-platform",
 	Title:       "Invalid storefront for platform",
-	Description: "The platform/storefront combination is not a recognised pairing.",
+	Description: "This game has a platform and storefront that don't go together (like a PlayStation game on Steam).",
 	Tier:        TierInconsistency,
 	Detect:      detectInvalidStorefront,
 }
@@ -157,16 +155,16 @@ var invalidStorefrontCheck = Check{
 func detectInvalidStorefront(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
 	var items []FlaggedItem
 	err := db.NewRaw(
-		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        p.id AS platform_row_id, p.platform, p.storefront
-		 FROM user_game_platforms p
-		 JOIN user_games ug ON ug.id = p.user_game_id
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url
+		 FROM user_games ug
 		 JOIN games g ON g.id = ug.game_id
 		 WHERE ug.user_id = ?
-		   AND p.platform IS NOT NULL
-		   AND p.storefront IS NOT NULL
-		   AND NOT EXISTS (SELECT 1 FROM platform_storefronts ps
-		                   WHERE ps.platform = p.platform AND ps.storefront = p.storefront)
+		   AND EXISTS (SELECT 1 FROM user_game_platforms p
+		               WHERE p.user_game_id = ug.id
+		                 AND p.platform IS NOT NULL
+		                 AND p.storefront IS NOT NULL
+		                 AND NOT EXISTS (SELECT 1 FROM platform_storefronts ps
+		                                 WHERE ps.platform = p.platform AND ps.storefront = p.storefront))
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
@@ -175,40 +173,10 @@ func detectInvalidStorefront(ctx context.Context, db *bun.DB, userID string) ([]
 	return items, err
 }
 
-var beatButNotMarkedCheck = Check{
-	ID:          "beat-but-not-marked",
-	Title:       "Beat but not marked",
-	Description: "You've played past its time-to-beat but it isn't marked completed.",
-	Tier:        TierNudge,
-	AutoFixable: true,
-	Detect:      detectBeatButNotMarked,
-	Apply:       applyBeatButNotMarked,
-}
-
-func detectBeatButNotMarked(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
-	var items []FlaggedItem
-	err := db.NewRaw(
-		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url,
-		        'completed' AS suggested_status
-		 FROM user_games ug
-		 JOIN games g ON g.id = ug.game_id
-		 WHERE ug.user_id = ?
-		   AND g.howlongtobeat_main IS NOT NULL
-		   AND ug.play_status IN ('not_started', 'in_progress')
-		   AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
-		        WHERE p.user_game_id = ug.id) >= g.howlongtobeat_main
-		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
-		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
-		 ORDER BY g.title`,
-		userID, "beat-but-not-marked",
-	).Scan(ctx, &items)
-	return items, err
-}
-
 var playedButNotStartedCheck = Check{
 	ID:          "played-but-not-started",
 	Title:       "Played but \"not started\"",
-	Description: "Marked not-started even though it has playtime.",
+	Description: "Marked as not started, but it already has playtime logged.",
 	Tier:        TierNudge,
 	AutoFixable: true,
 	Detect:      detectPlayedButNotStarted,
@@ -226,9 +194,6 @@ func detectPlayedButNotStarted(ctx context.Context, db *bun.DB, userID string) (
 		   AND ug.play_status = 'not_started'
 		   AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
 		        WHERE p.user_game_id = ug.id) >= 0.5
-		   AND NOT (g.howlongtobeat_main IS NOT NULL
-		            AND (SELECT COALESCE(SUM(p.hours_played), 0) FROM user_game_platforms p
-		                 WHERE p.user_game_id = ug.id) >= g.howlongtobeat_main)
 		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
 		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
 		 ORDER BY g.title`,
@@ -240,7 +205,7 @@ func detectPlayedButNotStarted(ctx context.Context, db *bun.DB, userID string) (
 var inProgressUntouchedCheck = Check{
 	ID:          "in-progress-untouched",
 	Title:       "In progress but never touched",
-	Description: "Marked in-progress but has no recorded playtime.",
+	Description: "Marked as in progress, but it has no playtime logged.",
 	Tier:        TierNudge,
 	AutoFixable: true,
 	Detect:      detectInProgressUntouched,
@@ -269,7 +234,7 @@ func detectInProgressUntouched(ctx context.Context, db *bun.DB, userID string) (
 var unratedAfterFinishingCheck = Check{
 	ID:          "unrated-after-finishing",
 	Title:       "Unrated after finishing",
-	Description: "Finished but you never gave it a personal rating.",
+	Description: "You finished this game but never gave it a rating.",
 	Tier:        TierNudge,
 	Detect:      detectUnratedAfterFinishing,
 }
