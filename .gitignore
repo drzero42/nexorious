@@ -7,6 +7,10 @@ ui/frontend/dist/*
 !ui/frontend/dist/.gitkeep
 ui/frontend/node_modules/
 
+# Changelog embed data (populated by build steps)
+internal/changelog/data/*
+!internal/changelog/data/.gitkeep
+
 # devenv
 .devenv/
 .devenv.flake.nix

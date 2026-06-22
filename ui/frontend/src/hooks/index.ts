@@ -126,6 +126,9 @@ export { useSettings, useUpdateSettings } from './use-settings';
 // Docs hooks
 export { docKeys, useDoc } from './use-docs';
 
+// Changelog hooks
+export { useChangelogUnseen, useChangelogContent, changelogKeys } from './use-changelog';
+
 // Pool hooks
 export {
   poolKeys,
