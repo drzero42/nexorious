@@ -119,6 +119,31 @@ func detectImpossibleAcquiredDate(ctx context.Context, db *bun.DB, userID string
 	return items, err
 }
 
+var wishlistedYetOwnedCheck = Check{
+	ID:          "wishlisted-yet-owned",
+	Title:       "Wishlisted yet owned",
+	Description: "Still on your wishlist even though it's already in your library.",
+	Tier:        TierInconsistency,
+	Detect:      detectWishlistedYetOwned,
+}
+
+func detectWishlistedYetOwned(ctx context.Context, db *bun.DB, userID string) ([]FlaggedItem, error) {
+	var items []FlaggedItem
+	err := db.NewRaw(
+		`SELECT ug.id AS user_game_id, ug.game_id, g.title, g.cover_art_url
+		 FROM user_games ug
+		 JOIN games g ON g.id = ug.game_id
+		 WHERE ug.user_id = ?
+		   AND ug.is_wishlisted = true
+		   AND EXISTS (SELECT 1 FROM user_game_platforms p WHERE p.user_game_id = ug.id)
+		   AND NOT EXISTS (SELECT 1 FROM smell_ignores si
+		                   WHERE si.user_id = ug.user_id AND si.user_game_id = ug.id AND si.check_id = ?)
+		 ORDER BY g.title`,
+		userID, "wishlisted-yet-owned",
+	).Scan(ctx, &items)
+	return items, err
+}
+
 var invalidStorefrontCheck = Check{
 	ID:          "invalid-storefront-for-platform",
 	Title:       "Invalid storefront for platform",

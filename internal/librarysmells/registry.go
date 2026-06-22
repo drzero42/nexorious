@@ -58,6 +58,7 @@ func Registry() []Check {
 	return []Check{
 		storefrontLessCheck,
 		orphanGameCheck,
+		wishlistedYetOwnedCheck,
 		missingOwnershipCheck,
 		impossibleAcquiredDateCheck,
 		invalidStorefrontCheck,

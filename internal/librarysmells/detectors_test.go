@@ -173,3 +173,40 @@ func TestDetectImpossibleAcquiredDate(t *testing.T) {
 		t.Error("old date with no release_date must not flag")
 	}
 }
+
+func TestDetectWishlistedYetOwned(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := seedUser(t)
+
+	setWish := func(ugID string) {
+		if _, err := testDB.NewRaw(`UPDATE user_games SET is_wishlisted = true WHERE id = ?`, ugID).Exec(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	flagged := seedUserGame(t, userID, 1) // wishlisted + has a platform → flags
+	setWish(flagged)
+	seedPlatform(t, flagged, "pc-windows", "steam")
+
+	pureWish := seedUserGame(t, userID, 2) // wishlisted, no platform → clean
+	setWish(pureWish)
+
+	owned := seedUserGame(t, userID, 3) // owned, not wishlisted → clean
+	seedPlatform(t, owned, "pc-windows", "steam")
+
+	items, err := detectWishlistedYetOwned(ctx, testDB, userID)
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	got := flaggedIDs(items)
+	if !got[flagged] {
+		t.Error("wishlisted-yet-owned should flag")
+	}
+	if got[pureWish] {
+		t.Error("pure wishlist entry must not flag")
+	}
+	if got[owned] {
+		t.Error("owned non-wishlisted game must not flag")
+	}
+}
