@@ -43,8 +43,7 @@ func TestParseFlexibleDate(t *testing.T) {
 			}
 			if result == nil {
 				t.Fatalf("expected non-nil result for %q", *tc.input)
-			}
-			if result.Year() != tc.wantY || int(result.Month()) != tc.wantM || result.Day() != tc.wantD {
+			} else if result.Year() != tc.wantY || int(result.Month()) != tc.wantM || result.Day() != tc.wantD {
 				t.Errorf("unexpected date: got %v, want %d-%02d-%02d", result, tc.wantY, tc.wantM, tc.wantD)
 			}
 		})

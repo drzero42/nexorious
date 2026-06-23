@@ -19,12 +19,13 @@ func TestServeCmd_MigrateFlagRegistered(t *testing.T) {
 	f := cmd.Flags().Lookup("migrate")
 	if f == nil {
 		t.Fatal("expected `serve` to register a --migrate flag")
-	}
-	if f.Value.Type() != "bool" {
-		t.Errorf("--migrate flag type = %q, want bool", f.Value.Type())
-	}
-	if f.DefValue != "false" {
-		t.Errorf("--migrate default = %q, want false (opt-in)", f.DefValue)
+	} else {
+		if f.Value.Type() != "bool" {
+			t.Errorf("--migrate flag type = %q, want bool", f.Value.Type())
+		}
+		if f.DefValue != "false" {
+			t.Errorf("--migrate default = %q, want false (opt-in)", f.DefValue)
+		}
 	}
 }
 

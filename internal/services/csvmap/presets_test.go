@@ -11,12 +11,13 @@ func TestPresets_IncludesCompletionator(t *testing.T) {
 	}
 	if found == nil {
 		t.Fatal("expected a 'completionator' preset in the registry")
-	}
-	if found.DisplayName != "Completionator" {
-		t.Errorf("display name = %q, want Completionator", found.DisplayName)
-	}
-	if found.Config.Columns.Title != "Name" {
-		t.Errorf("preset Config not wired to Completionator() (title col = %q)", found.Config.Columns.Title)
+	} else {
+		if found.DisplayName != "Completionator" {
+			t.Errorf("display name = %q, want Completionator", found.DisplayName)
+		}
+		if found.Config.Columns.Title != "Name" {
+			t.Errorf("preset Config not wired to Completionator() (title col = %q)", found.Config.Columns.Title)
+		}
 	}
 }
 
