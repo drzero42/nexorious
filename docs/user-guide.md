@@ -53,7 +53,7 @@ At the bottom is a **Clear Library** action. It removes every game from your col
 
 Go to **Add Game** and search for a title. Results come from IGDB, so you get the canonical name, cover art, and details without typing them yourself. Each result tells you whether the game is already in your library or wishlist, so you don't add duplicates.
 
-If the title results don't surface the right game, you can search by **IGDB ID** instead. On a game's page at igdb.com there's an **"IGDB ID: nnnnn"** field — copy that number (not the page URL) and paste it into the search box. A bare number looks the game up by ID *and* searches by title, so a game whose name is itself a number still turns up; prefix it with `igdb:` (for example `igdb:1020`) to match only that exact ID. The same trick works in `nexctl` — just pass the ID to `game add`.
+If the title results don't surface the right game, you can search by **IGDB ID** instead. To find a game's ID, go to igdb.com and search for it there; open its page, and you'll find an **"IGDB ID: nnnnn"** field listing the number. Copy that number (not the page URL) and paste it into the Nexorious search box. A bare number looks the game up by ID *and* searches by title, so a game whose name is itself a number still turns up; prefix it with `igdb:` (for example `igdb:1020`) to match only that exact ID. The same trick works in `nexctl` — just pass the ID to `game add`.
 
 Pick a game and you'll see a preview — cover, developer, release date, the platforms IGDB knows about, and rough time-to-beat estimates. From here you:
 
