@@ -1069,6 +1069,7 @@ type ExternalGame struct {
 	SyncStatus                 string   `json:"sync_status"`
 	FailedJobItemID            *string  `json:"failed_job_item_id"`
 	Platforms                  []string `json:"platforms"`
+	StoreURL                   *string  `json:"store_url"`
 }
 
 // SetupBackupManifest is the manifest sub-object of a setup-zone backup entry.

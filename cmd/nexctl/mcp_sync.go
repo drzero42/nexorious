@@ -31,6 +31,7 @@ type externalGameBrief struct {
 	Platforms      []string `json:"platforms,omitempty"`
 	IgdbTitle      *string  `json:"igdb_title,omitempty"`
 	ResolvedIgdbID *int     `json:"resolved_igdb_id,omitempty"`
+	StoreURL       *string  `json:"store_url,omitempty"`
 }
 
 func externalBriefOf(eg *cliclient.ExternalGame) externalGameBrief {
@@ -41,6 +42,7 @@ func externalBriefOf(eg *cliclient.ExternalGame) externalGameBrief {
 		Platforms:      eg.Platforms,
 		IgdbTitle:      eg.IgdbTitle,
 		ResolvedIgdbID: eg.ResolvedIgdbID,
+		StoreURL:       eg.StoreURL,
 	}
 }
 
