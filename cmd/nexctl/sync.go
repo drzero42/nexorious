@@ -643,6 +643,9 @@ func newSyncReviewCmd() *cobra.Command {
 			for i := range pending {
 				eg := &pending[i]
 				fmt.Fprintf(out, "\n%s\n", eg.Title)
+				if eg.StoreURL != nil {
+					fmt.Fprintf(out, "  %s\n", *eg.StoreURL)
+				}
 				fmt.Fprint(out, "[s]earch IGDB / s[k]ip / [n]ext / [q]uit: ")
 				line, err := in.ReadString('\n')
 				if err != nil {
