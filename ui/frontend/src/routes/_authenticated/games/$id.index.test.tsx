@@ -80,7 +80,7 @@ describe('GameDetailPage — Back to Games navigation', () => {
       mutateAsync: vi.fn().mockResolvedValue(undefined),
     } as unknown as ReturnType<typeof useDeleteUserGame>);
     useSettings.mockReturnValue({
-      data: { dealRegion: 'us' },
+      data: { dealRegion: 'us', dateFormat: 'auto' },
     } as unknown as ReturnType<typeof useSettings>);
     useMoveToLibrary.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue(undefined),
@@ -250,7 +250,7 @@ describe('GameDetailPage — IGDB rating display', () => {
       mutateAsync: vi.fn().mockResolvedValue(undefined),
     } as unknown as ReturnType<typeof useDeleteUserGame>);
     useSettings.mockReturnValue({
-      data: { dealRegion: 'us' },
+      data: { dealRegion: 'us', dateFormat: 'auto' },
     } as unknown as ReturnType<typeof useSettings>);
     useMoveToLibrary.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue(undefined),
