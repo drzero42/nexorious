@@ -1063,6 +1063,40 @@ func TestListExternalGames_AggregatesChildPlatforms(t *testing.T) {
 	}
 }
 
+func TestListExternalGames_StoreURL(t *testing.T) {
+	// A row with a resolved store_link gets a computed store_url; a row without
+	// one (NULL store_link) gets a null store_url.
+	truncateAllTables(t)
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+	userID, token := setupTagUser(t, testDB, e, "list-store-url")
+
+	insertExternalGame(t, testDB, "eg-link", userID, "steam", "2520", "Alone in the Dark")
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE external_games SET store_link = '2520' WHERE id = 'eg-link'`); err != nil {
+		t.Fatalf("set store_link: %v", err)
+	}
+	insertExternalGame(t, testDB, "eg-nolink", userID, "steam", "9999", "Mystery Game")
+
+	rec := getAuth(t, e, "/api/sync/steam/external-games", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	byID := make(map[string]map[string]any, len(resp))
+	for _, g := range resp {
+		byID[g["id"].(string)] = g
+	}
+	if got := byID["eg-link"]["store_url"]; got != "https://store.steampowered.com/app/2520/" {
+		t.Errorf("eg-link store_url = %v, want steam app URL", got)
+	}
+	if got := byID["eg-nolink"]["store_url"]; got != nil {
+		t.Errorf("eg-nolink store_url = %v, want nil", got)
+	}
+}
+
 // ─── TestRematchExternalGame ──────────────────────────────────────────────────
 
 func insertUserGameAndPlatform(t *testing.T, db *bun.DB, ugID, userID, gameIDInt, ugpID, externalGameID string) {
