@@ -34,7 +34,7 @@ services:
           memory: 256m
 
   app:
-    image: ghcr.io/drzero42/nexorious:0.93.0 # x-release-please-version
+    image: ghcr.io/drzero42/nexorious:0.94.0 # x-release-please-version
     # Explicit for clarity/robustness; the image CMD already defaults to serve.
     command: ["serve"]
     ports:
