@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -72,6 +73,58 @@ func TestSteamAdapter_RateLimitExhausted_RetriesUntilSuccess(t *testing.T) {
 	}
 	if len(got) > 0 && got[0].ExternalID != "12345" {
 		t.Errorf("expected ExternalID 12345, got %s", got[0].ExternalID)
+	}
+}
+
+func TestGetLibrary_PopulatesAchievements(t *testing.T) {
+	var achHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "GetOwnedGames"):
+			_, _ = w.Write([]byte(`{"response":{"games":[
+				{"appid":10,"name":"Played","playtime_forever":120},
+				{"appid":20,"name":"Unplayed","playtime_forever":0}]}}`))
+		case strings.Contains(r.URL.Path, "GetPlayerAchievements"):
+			// Only the played game should reach here.
+			achHits.Add(1)
+			_, _ = w.Write([]byte(`{"playerstats":{"success":true,"achievements":[
+				{"apiname":"a","achieved":1},{"apiname":"b","achieved":0}]}}`))
+		case strings.Contains(r.URL.Path, "appdetails"):
+			_, _ = w.Write([]byte(`{"10":{"success":true,"data":{"platforms":{"windows":true}}},
+				"20":{"success":true,"data":{"platforms":{"windows":true}}}}`))
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
+	a := steam.NewAdapterForTests(c, "key", "steam123", 0)
+
+	var got []storefrontadapter.ExternalGameEntry
+	if err := a.GetLibrary(context.Background(), 10, func(b []storefrontadapter.ExternalGameEntry) error {
+		got = append(got, b...)
+		return nil
+	}); err != nil {
+		t.Fatalf("GetLibrary: %v", err)
+	}
+
+	if achHits.Load() != 1 {
+		t.Errorf("GetPlayerAchievements called %d times, want 1 (only the played game)", achHits.Load())
+	}
+
+	byID := map[string]storefrontadapter.ExternalGameEntry{}
+	for _, e := range got {
+		byID[e.ExternalID] = e
+	}
+	played := byID["10"]
+	if played.AchievementsTotal == nil || *played.AchievementsTotal != 2 ||
+		played.AchievementsUnlocked == nil || *played.AchievementsUnlocked != 1 {
+		t.Errorf("played game: got %v/%v, want 1/2", played.AchievementsUnlocked, played.AchievementsTotal)
+	}
+	if unplayed := byID["20"]; unplayed.AchievementsTotal != nil || unplayed.AchievementsUnlocked != nil {
+		t.Errorf("unplayed game should have nil achievements, got %v/%v",
+			unplayed.AchievementsUnlocked, unplayed.AchievementsTotal)
 	}
 }
 

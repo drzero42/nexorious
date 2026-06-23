@@ -218,3 +218,68 @@ func TestGetOwnedGames_AuthFailure_ReturnsErrAPIKeyRejected(t *testing.T) {
 		})
 	}
 }
+
+func TestGetPlayerAchievements(t *testing.T) {
+	cases := []struct {
+		name         string
+		statusCode   int
+		body         string
+		wantUnlocked int
+		wantTotal    int
+		wantOK       bool
+	}{
+		{
+			name:         "mixed",
+			statusCode:   http.StatusOK,
+			body:         `{"playerstats":{"success":true,"achievements":[{"apiname":"a","achieved":1},{"apiname":"b","achieved":0},{"apiname":"c","achieved":1}]}}`,
+			wantUnlocked: 2, wantTotal: 3, wantOK: true,
+		},
+		{
+			name:         "all locked",
+			statusCode:   http.StatusOK,
+			body:         `{"playerstats":{"success":true,"achievements":[{"apiname":"a","achieved":0},{"apiname":"b","achieved":0}]}}`,
+			wantUnlocked: 0, wantTotal: 2, wantOK: true,
+		},
+		{
+			name:       "private profile",
+			statusCode: http.StatusOK,
+			body:       `{"playerstats":{"error":"Profile is not public","success":false}}`,
+			wantOK:     false,
+		},
+		{
+			name:       "no stats",
+			statusCode: http.StatusOK,
+			body:       `{"playerstats":{"error":"Requested app has no stats","success":false}}`,
+			wantOK:     false,
+		},
+		{
+			name:       "http 403 forbidden",
+			statusCode: http.StatusForbidden,
+			wantOK:     false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.statusCode != http.StatusOK {
+					w.WriteHeader(tc.statusCode)
+					return
+				}
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			c := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
+
+			unlocked, total, ok, err := c.GetPlayerAchievements(context.Background(), "key", "steam123", 440)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if ok && (unlocked != tc.wantUnlocked || total != tc.wantTotal) {
+				t.Errorf("got %d/%d, want %d/%d", unlocked, total, tc.wantUnlocked, tc.wantTotal)
+			}
+		})
+	}
+}

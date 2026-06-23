@@ -389,6 +389,7 @@ All adapters implement the same interface. The differences below are the only pl
 - **Rate limiting:** A token bucket enforces a minimum delay between AppDetails calls. On a 429 response, the adapter backs off and retries. Rate limiting is handled consistently with the shared library's backoff interface
 - **Platforms:** `pc-windows`, `mac`, `pc-linux` as reported by AppDetails; all supported platforms are recorded as separate `external_game_platforms` rows
 - **Playtime:** Provided as a single total across all platforms. The adapter assigns this value to the `hours_played` of the highest-priority platform row in the order `pc-windows` → `mac` → `pc-linux`; all other platform rows for the same game receive 0
+- **Achievements:** For games with playtime > 0 the adapter fetches per-game achievement stats and records `achievements_unlocked` and `achievements_total` on the `user_game_platforms` row; games with no playtime or no achievement schema leave both fields null
 - **Store link:** `store_link` is the appid (the same value as `external_id`); enrichment copies it directly, no API call
 
 ### PSN

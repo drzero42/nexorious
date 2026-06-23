@@ -124,18 +124,23 @@ func upsertExternalGame(ctx context.Context, db *bun.DB, e ExternalGameEntry, p 
 	return row.ID, row.IsSkipped
 }
 
-func upsertPlatforms(ctx context.Context, db *bun.DB, egID string, platforms []string, playtimeHours float64) {
+func upsertPlatforms(ctx context.Context, db *bun.DB, egID string, platforms []string, playtimeHours float64, achievementsUnlocked, achievementsTotal *int) {
 	for i, platform := range platforms {
 		hours := 0.0
+		var unlocked, total *int
 		if i == 0 {
 			hours = playtimeHours
+			unlocked = achievementsUnlocked
+			total = achievementsTotal
 		}
 		if _, err := db.NewRaw(`
-			INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, created_at)
-			VALUES (?, ?, ?, ?, now())
+			INSERT INTO external_game_platforms (id, external_game_id, platform, hours_played, achievements_unlocked, achievements_total, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, now())
 			ON CONFLICT (external_game_id, platform) DO UPDATE SET
-				hours_played = GREATEST(EXCLUDED.hours_played, external_game_platforms.hours_played)`,
-			uuid.NewString(), egID, platform, hours,
+				hours_played = GREATEST(EXCLUDED.hours_played, external_game_platforms.hours_played),
+				achievements_unlocked = COALESCE(EXCLUDED.achievements_unlocked, external_game_platforms.achievements_unlocked),
+				achievements_total = COALESCE(EXCLUDED.achievements_total, external_game_platforms.achievements_total)`,
+			uuid.NewString(), egID, platform, hours, unlocked, total,
 		).Exec(ctx); err != nil {
 			slog.WarnContext(ctx, "dispatch_sync: upsert platform failed", logging.KeyErr, err, logging.KeyExternalGameID, egID, "platform", platform, logging.Cat(logging.CategoryDB))
 		}
@@ -222,7 +227,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				continue
 			}
 			seenPlatforms[egID] = append(seenPlatforms[egID], platforms...)
-			upsertPlatforms(ctx, w.DB, egID, platforms, e.PlaytimeHours)
+			upsertPlatforms(ctx, w.DB, egID, platforms, e.PlaytimeHours, e.AchievementsUnlocked, e.AchievementsTotal)
 			if isSkipped {
 				skippedInBatch++
 				slog.DebugContext(ctx, "dispatch_sync: game is user-skipped, not enqueuing for matching",
@@ -731,7 +736,9 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 			Platform: &egp.Platform, Storefront: &storefrontSlug,
 			HoursPlayed: &egp.HoursPlayed, OwnershipStatus: &ownership,
 			IsAvailable: boolptr(true), ExternalGameID: &eg.ID,
-			SyncFromSource: true,
+			SyncFromSource:       true,
+			AchievementsUnlocked: egp.AchievementsUnlocked,
+			AchievementsTotal:    egp.AchievementsTotal,
 		})
 	}
 	res, err := usergame.Acquire(ctx, w.DB, usergame.AcquireParams{

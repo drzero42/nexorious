@@ -1,5 +1,5 @@
 import { config } from '@/lib/env';
-import type { UserGame } from '@/types';
+import type { UserGame, UserGamePlatform } from '@/types';
 
 // Half-hour buckets below 10h, whole hours from 10h up. The display rule for
 // every hours value in the app — recorded playtime and HLTB times alike.
@@ -47,6 +47,21 @@ export function toDateInputValue(value: string | null | undefined): string {
   if (!value) return '';
   const match = /^\d{4}-\d{2}-\d{2}/.exec(value);
   return match ? match[0] : '';
+}
+
+export function bestAchievementProgress(
+  platforms?: UserGamePlatform[],
+): { unlocked: number; total: number } | null {
+  if (!platforms) return null;
+  let best: { unlocked: number; total: number } | null = null;
+  for (const p of platforms) {
+    if (p.achievements_total == null || p.achievements_total <= 0) continue;
+    const unlocked = p.achievements_unlocked ?? 0;
+    if (best === null || unlocked / p.achievements_total > best.unlocked / best.total) {
+      best = { unlocked, total: p.achievements_total };
+    }
+  }
+  return best;
 }
 
 export function formatPlatformLabel(p: {

@@ -8,6 +8,11 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 )
 
+// UpsertPlatformsForTest exposes upsertPlatforms for in-package white-box tests.
+func UpsertPlatformsForTest(ctx context.Context, db *bun.DB, egID string, platforms []string, playtimeHours float64, achievementsUnlocked, achievementsTotal *int) {
+	upsertPlatforms(ctx, db, egID, platforms, playtimeHours, achievementsUnlocked, achievementsTotal)
+}
+
 // BuildJSONDocForTest exposes buildJSONDoc for cross-package tests.
 func BuildJSONDocForTest(ugs []models.UserGame, pools []exportPoolJSON) exportDocJSON {
 	return buildJSONDoc(ugs, pools)

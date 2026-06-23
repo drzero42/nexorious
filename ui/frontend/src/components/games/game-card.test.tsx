@@ -449,6 +449,54 @@ describe('GameCard', () => {
     });
   });
 
+  describe('achievement badge', () => {
+    it('shows the achievement badge from the highest-progress platform', () => {
+      const game = createMockGame({
+        platforms: [
+          {
+            id: 'ugp-1',
+            platform: 'pc',
+            is_available: true,
+            hours_played: 0,
+            ownership_status: OwnershipStatus.OWNED,
+            created_at: '2024-01-01T00:00:00Z',
+            achievements_unlocked: 9,
+            achievements_total: 10,
+          },
+          {
+            id: 'ugp-2',
+            platform: 'ps5',
+            is_available: true,
+            hours_played: 0,
+            ownership_status: OwnershipStatus.OWNED,
+            created_at: '2024-01-01T00:00:00Z',
+            achievements_unlocked: 1,
+            achievements_total: 10,
+          },
+        ],
+      });
+      render(<GameCard game={game} />);
+      expect(screen.getByText('9/10')).toBeInTheDocument();
+    });
+
+    it('hides the achievement badge when no platform has achievements', () => {
+      const game = createMockGame({
+        platforms: [
+          {
+            id: 'ugp-1',
+            platform: 'pc',
+            is_available: true,
+            hours_played: 0,
+            ownership_status: OwnershipStatus.OWNED,
+            created_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      });
+      render(<GameCard game={game} />);
+      expect(screen.queryByText('9/10')).not.toBeInTheDocument();
+    });
+  });
+
   describe('time to beat display', () => {
     it('renders TTB row when main value is present', () => {
       const game = createMockGame({

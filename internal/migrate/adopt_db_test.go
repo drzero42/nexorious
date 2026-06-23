@@ -84,18 +84,6 @@ func seedV0171(t *testing.T, db *bun.DB) {
 	}
 }
 
-// adoptNames returns all bun_migrations.name values in ascending order.
-func adoptNames(t *testing.T, db *bun.DB) []string {
-	t.Helper()
-	var out []string
-	if err := db.NewSelect().ColumnExpr("name").
-		ModelTableExpr("bun_migrations").OrderExpr("name").
-		Scan(context.Background(), &out); err != nil {
-		t.Fatalf("read names: %v", err)
-	}
-	return out
-}
-
 func TestDetermineState_AdoptPending(t *testing.T) {
 	resetPublicSchema(t)
 	db := makeAdoptBunDB(t)
@@ -122,10 +110,17 @@ func TestRunMigrations_AdoptRewritesHistory(t *testing.T) {
 	if err := m.RunMigrations(context.Background()); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
-	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001", "20260622000001"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
-		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
+	// Adopt must have rewritten history so a fresh migrator settles on Ready:
+	// Ready is only reachable when bun_migrations exactly matches the embedded
+	// set, so this proves the 23 v0.17.1 rows were replaced by the baseline +
+	// post-baseline manifest. (That exact-match invariant is verified directly
+	// by TestDetermineState_PartialIsRefused / TestRunMigrations_RefusedReturnsError.)
+	m2 := migrate.NewMigrator(db)
+	if err := m2.DetermineState(); err != nil {
+		t.Fatalf("DetermineState after adopt: %v", err)
+	}
+	if m2.State() != migrate.AppStateReady {
+		t.Fatalf("post-adopt state = %v, want Ready", m2.State())
 	}
 }
 
@@ -198,10 +193,10 @@ func TestRunMigrations_AdoptThenCatchUp(t *testing.T) {
 		t.Fatalf("discover baseline: %v", err)
 	}
 	synth := fstest.MapFS{
-		"20260622000001_test_addcol.up.sql": &fstest.MapFile{
+		"20260622000003_test_addcol.up.sql": &fstest.MapFile{
 			Data: []byte("ALTER TABLE platforms ADD COLUMN test_adopt_marker text;"),
 		},
-		"20260622000001_test_addcol.down.sql": &fstest.MapFile{
+		"20260622000003_test_addcol.down.sql": &fstest.MapFile{
 			Data: []byte("ALTER TABLE platforms DROP COLUMN test_adopt_marker;"),
 		},
 	}
@@ -220,11 +215,15 @@ func TestRunMigrations_AdoptThenCatchUp(t *testing.T) {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 
-	// bun_migrations is now exactly [baseline, real post-baseline, synthetic].
-	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001", "20260622000001"}
-	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
-		t.Fatalf("bun_migrations = %v, want %v", got, want)
+	// A fresh migrator over the same set sees the catch-up as complete: the
+	// synthetic post-baseline migration was applied and recorded, so the
+	// manifest matches the set and the state settles on Ready.
+	m2 := migrate.NewMigratorWithMigrations(db, set)
+	if err := m2.DetermineState(); err != nil {
+		t.Fatalf("DetermineState after catch-up: %v", err)
+	}
+	if m2.State() != migrate.AppStateReady {
+		t.Fatalf("post-catch-up state = %v, want Ready", m2.State())
 	}
 	// And the synthetic migration's column actually exists.
 	var n int
@@ -277,11 +276,6 @@ func TestReinitAfterRestore_AdoptsV0171(t *testing.T) {
 	if m.State() != migrate.AppStateReady {
 		t.Fatalf("state = %v, want Ready", m.State())
 	}
-	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001", "20260622000001"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
-		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
-	}
 }
 
 // TestReinitAfterRestore_BaselineNoOp confirms a same-version (baseline) restore
@@ -304,10 +298,5 @@ func TestReinitAfterRestore_BaselineNoOp(t *testing.T) {
 	}
 	if m.State() != migrate.AppStateReady {
 		t.Fatalf("state = %v, want Ready", m.State())
-	}
-	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001", "20260622000001"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
-		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
 	}
 }

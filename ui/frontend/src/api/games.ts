@@ -60,6 +60,8 @@ interface UserGamePlatformApiResponse {
   storefront_details?: StorefrontApiResponse;
   is_available: boolean;
   hours_played: number;
+  achievements_unlocked?: number | null;
+  achievements_total?: number | null;
   ownership_status: OwnershipStatus;
   acquired_date?: string;
   store_url?: string;

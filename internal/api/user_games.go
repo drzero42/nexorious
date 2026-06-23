@@ -50,37 +50,41 @@ type createUserGameRequest struct {
 
 // userGamePlatformResponse is the API DTO for a user game platform entry with nested detail objects.
 type userGamePlatformResponse struct {
-	ID                string              `json:"id"`
-	UserGameID        string              `json:"user_game_id"`
-	Platform          *string             `json:"platform"`
-	Storefront        *string             `json:"storefront"`
-	IsAvailable       bool                `json:"is_available"`
-	HoursPlayed       *float64            `json:"hours_played"`
-	OwnershipStatus   *string             `json:"ownership_status"`
-	AcquiredDate      *time.Time          `json:"acquired_date"`
-	ExternalGameID    *string             `json:"external_game_id"`
-	SyncFromSource    bool                `json:"sync_from_source"`
-	CreatedAt         time.Time           `json:"created_at"`
-	UpdatedAt         time.Time           `json:"updated_at"`
-	PlatformDetails   *platformResponse   `json:"platform_details,omitempty"`
-	StorefrontDetails *storefrontResponse `json:"storefront_details,omitempty"`
-	StoreURL          *string             `json:"store_url,omitempty"`
+	ID                   string              `json:"id"`
+	UserGameID           string              `json:"user_game_id"`
+	Platform             *string             `json:"platform"`
+	Storefront           *string             `json:"storefront"`
+	IsAvailable          bool                `json:"is_available"`
+	HoursPlayed          *float64            `json:"hours_played"`
+	AchievementsUnlocked *int                `json:"achievements_unlocked"`
+	AchievementsTotal    *int                `json:"achievements_total"`
+	OwnershipStatus      *string             `json:"ownership_status"`
+	AcquiredDate         *time.Time          `json:"acquired_date"`
+	ExternalGameID       *string             `json:"external_game_id"`
+	SyncFromSource       bool                `json:"sync_from_source"`
+	CreatedAt            time.Time           `json:"created_at"`
+	UpdatedAt            time.Time           `json:"updated_at"`
+	PlatformDetails      *platformResponse   `json:"platform_details,omitempty"`
+	StorefrontDetails    *storefrontResponse `json:"storefront_details,omitempty"`
+	StoreURL             *string             `json:"store_url,omitempty"`
 }
 
 func toUserGamePlatformResponse(ugp models.UserGamePlatform) userGamePlatformResponse {
 	resp := userGamePlatformResponse{
-		ID:              ugp.ID,
-		UserGameID:      ugp.UserGameID,
-		Platform:        ugp.Platform,
-		Storefront:      ugp.Storefront,
-		IsAvailable:     ugp.IsAvailable,
-		HoursPlayed:     ugp.HoursPlayed,
-		OwnershipStatus: ugp.OwnershipStatus,
-		AcquiredDate:    ugp.AcquiredDate,
-		ExternalGameID:  ugp.ExternalGameID,
-		SyncFromSource:  ugp.SyncFromSource,
-		CreatedAt:       ugp.CreatedAt,
-		UpdatedAt:       ugp.UpdatedAt,
+		ID:                   ugp.ID,
+		UserGameID:           ugp.UserGameID,
+		Platform:             ugp.Platform,
+		Storefront:           ugp.Storefront,
+		IsAvailable:          ugp.IsAvailable,
+		HoursPlayed:          ugp.HoursPlayed,
+		AchievementsUnlocked: ugp.AchievementsUnlocked,
+		AchievementsTotal:    ugp.AchievementsTotal,
+		OwnershipStatus:      ugp.OwnershipStatus,
+		AcquiredDate:         ugp.AcquiredDate,
+		ExternalGameID:       ugp.ExternalGameID,
+		SyncFromSource:       ugp.SyncFromSource,
+		CreatedAt:            ugp.CreatedAt,
+		UpdatedAt:            ugp.UpdatedAt,
 	}
 	if ugp.PlatformRecord != nil {
 		pr := toPlatformResponse(*ugp.PlatformRecord)
