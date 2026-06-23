@@ -159,6 +159,8 @@ type externalGameResponse struct {
 	FailedJobItemID            *string  `bun:"failed_job_item_id"             json:"failed_job_item_id"`
 	PlatformsCSV               string   `bun:"platforms_csv"                  json:"-"`
 	Platforms                  []string `bun:"-"                              json:"platforms"`
+	StoreLink                  *string  `bun:"store_link"                     json:"-"`
+	StoreURL                   *string  `bun:"-"                              json:"store_url"`
 }
 
 type steamConnectResponse struct {
@@ -1147,7 +1149,8 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 				    )
 				),
 				''
-			) AS platforms_csv
+			) AS platforms_csv,
+			eg.store_link
 		FROM external_games eg
 		LEFT JOIN games g ON g.id = eg.resolved_igdb_id
 		WHERE eg.user_id = ? AND eg.storefront = ?
@@ -1171,6 +1174,11 @@ func (h *SyncHandler) HandleListExternalGames(c *echo.Context) error {
 			games[i].Platforms = strings.Split(games[i].PlatformsCSV, ",")
 		} else {
 			games[i].Platforms = []string{}
+		}
+		if games[i].StoreLink != nil {
+			if url, ok := buildStoreURL(games[i].Storefront, *games[i].StoreLink); ok {
+				games[i].StoreURL = &url
+			}
 		}
 	}
 	return c.JSON(http.StatusOK, games)

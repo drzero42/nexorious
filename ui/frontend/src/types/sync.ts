@@ -171,4 +171,5 @@ export interface ExternalGame {
   sync_status: 'needs_review' | 'failed' | 'matched' | 'skipped' | 'unmatched';
   failed_job_item_id: string | null;
   platforms: string[];
+  store_url: string | null;
 }

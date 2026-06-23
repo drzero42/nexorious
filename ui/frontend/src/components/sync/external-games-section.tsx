@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ExternalLink } from 'lucide-react';
 import { useRouterState } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,6 +44,26 @@ interface ExternalGamesSectionProps {
 interface PendingRematch {
   game: ExternalGame;
   candidate: IGDBGameCandidate;
+}
+
+// GameTitle renders the storefront title, linking to the game's store page when
+// a store URL is available so users can disambiguate same-named titles (e.g. the
+// 1993 vs 2024 "Alone in the Dark"). Falls back to plain text otherwise.
+function GameTitle({ game }: { game: ExternalGame }) {
+  if (game.store_url) {
+    return (
+      <a
+        href={game.store_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+      >
+        {game.title}
+        <ExternalLink className="h-3 w-3 text-muted-foreground" aria-hidden />
+      </a>
+    );
+  }
+  return <>{game.title}</>;
 }
 
 export function ExternalGamesSection({ storefront, isSyncing = false }: ExternalGamesSectionProps) {
@@ -113,7 +133,9 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
                 <TableBody>
                   {needsReview.map((game) => (
                     <TableRow key={game.id}>
-                      <TableCell>{game.title}</TableCell>
+                      <TableCell>
+                        <GameTitle game={game} />
+                      </TableCell>
                       <TableCell className="text-right space-x-2">
                         <Button
                           size="sm"
@@ -158,7 +180,9 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
                 <TableBody>
                   {failed.map((game) => (
                     <TableRow key={game.id}>
-                      <TableCell>{game.title}</TableCell>
+                      <TableCell>
+                        <GameTitle game={game} />
+                      </TableCell>
                       <TableCell className="text-right">
                         <Button
                           size="sm"
@@ -205,7 +229,9 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
                     <TableBody>
                       {matched.map((game) => (
                         <TableRow key={game.id}>
-                          <TableCell>{game.title}</TableCell>
+                          <TableCell>
+                            <GameTitle game={game} />
+                          </TableCell>
                           <TableCell className="text-muted-foreground">{game.igdb_title}</TableCell>
                           <TableCell className="text-muted-foreground">
                             {game.platforms.join(', ')}
@@ -250,7 +276,9 @@ export function ExternalGamesSection({ storefront, isSyncing = false }: External
                     <TableBody>
                       {skipped.map((game) => (
                         <TableRow key={game.id}>
-                          <TableCell>{game.title}</TableCell>
+                          <TableCell>
+                            <GameTitle game={game} />
+                          </TableCell>
                           <TableCell className="text-right">
                             <Button
                               size="sm"
