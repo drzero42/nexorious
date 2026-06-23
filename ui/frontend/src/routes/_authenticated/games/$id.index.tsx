@@ -34,6 +34,7 @@ import {
   ExternalLink,
   Gamepad2,
   Library,
+  Trophy,
 } from 'lucide-react';
 import { AddToPoolDialog } from '@/components/pools/add-to-pool-dialog';
 import { StarRating } from '@/components/ui/star-rating';
@@ -508,6 +509,12 @@ export function GameDetailPage() {
                             )}
                           </div>
                           <div className="flex items-center gap-2">
+                            {p.achievements_total != null && p.achievements_total > 0 && (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Trophy className="h-3 w-3" />
+                                {p.achievements_unlocked ?? 0}/{p.achievements_total}
+                              </span>
+                            )}
                             <Badge variant="outline">
                               {formatOwnershipStatus(p.ownership_status ?? OwnershipStatus.OWNED)}
                             </Badge>
