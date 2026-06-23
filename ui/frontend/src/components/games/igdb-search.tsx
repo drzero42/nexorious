@@ -190,6 +190,7 @@ export function IGDBSearch({
 
   return (
     <div className={cn('w-full', className)}>
+      <p className="mb-1.5 text-xs text-muted-foreground">Search by title or IGDB ID</p>
       <Command shouldFilter={false} className="rounded-lg border shadow-md">
         <CommandInput
           placeholder={placeholder}
