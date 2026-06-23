@@ -3395,3 +3395,47 @@ func TestUpsertExternalGame_PersistsSourceMetadata(t *testing.T) {
 		t.Fatalf("namespace = %q, want %q", ns, "ns-xyz")
 	}
 }
+
+func TestUpsertPlatforms_WritesAchievements(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	// Seed an external_games row to satisfy the external_game_platforms FK.
+	egID := insertTestExternalGame(t, userID, "steam", "ach-test-1", "Achievement Test Game", "pc-windows")
+
+	// Remove the pre-seeded platform row so upsertPlatforms starts clean.
+	_, _ = testDB.NewRaw(
+		`DELETE FROM external_game_platforms WHERE external_game_id = ?`, egID,
+	).Exec(ctx)
+
+	four, three := 4, 3
+	tasks.UpsertPlatformsForTest(ctx, testDB, egID, []string{"pc-windows", "pc-linux"}, 5.0, &three, &four)
+
+	// Index-0 platform (pc-windows) must receive the achievement counts.
+	var unlocked, total *int
+	if err := testDB.NewRaw(
+		`SELECT achievements_unlocked, achievements_total FROM external_game_platforms WHERE external_game_id = ? AND platform = 'pc-windows'`,
+		egID,
+	).Scan(ctx, &unlocked, &total); err != nil {
+		t.Fatalf("scan windows: %v", err)
+	}
+	if unlocked == nil || *unlocked != 3 || total == nil || *total != 4 {
+		t.Fatalf("index-0 row: got %v/%v, want 3/4", unlocked, total)
+	}
+
+	// Non-first platform row (pc-linux) must have NULL achievements.
+	// Reset pointers before re-use so a stale value from the previous scan doesn't
+	// mask a missing nil assignment from bun.
+	unlocked, total = nil, nil
+	if err := testDB.NewRaw(
+		`SELECT achievements_unlocked, achievements_total FROM external_game_platforms WHERE external_game_id = ? AND platform = 'pc-linux'`,
+		egID,
+	).Scan(ctx, &unlocked, &total); err != nil {
+		t.Fatalf("scan linux: %v", err)
+	}
+	if unlocked != nil || total != nil {
+		t.Fatalf("non-first row should be NULL, got %v/%v", unlocked, total)
+	}
+}
