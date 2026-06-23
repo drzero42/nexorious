@@ -546,15 +546,6 @@ func (c *Client) SearchIGDB(key, query string, limit int) (*IGDBSearchResponse, 
 	return &out, nil
 }
 
-// GetIGDBGame fetches a single IGDB game by id (response Total == 1).
-func (c *Client) GetIGDBGame(key string, igdbID int) (*IGDBSearchResponse, error) {
-	var out IGDBSearchResponse
-	if err := c.doBearer(http.MethodGet, fmt.Sprintf("/api/games/igdb/%d", igdbID), key, nil, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
 // ImportIGDBGame imports IGDB metadata for igdbID into the local DB, returning
 // the local game record.
 func (c *Client) ImportIGDBGame(key string, igdbID int) (*Game, error) {

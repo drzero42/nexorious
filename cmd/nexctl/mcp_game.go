@@ -346,7 +346,13 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 					return nil, gameAddOutput{}, mcpToolError("game_add", err)
 				}
 			}
-			cands, err := findIGDBCandidates(c, key, in.IgdbID, in.Title)
+			// The backend performs ID inference, so route the structured igdb_id
+			// field through the same query path as a title search.
+			query := in.Title
+			if in.IgdbID != 0 {
+				query = fmt.Sprintf("igdb:%d", in.IgdbID)
+			}
+			cands, err := findIGDBCandidates(c, key, query)
 			if err != nil {
 				return nil, gameAddOutput{}, mcpToolError("game_add", err)
 			}

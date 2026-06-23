@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -250,7 +251,7 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 		return h.mapIGDBError(c, igdb.ErrIGDBNotConfigured)
 	}
 
-	results, err := h.igdb.SearchGames(ctx, req.Query, req.Limit, platformIDs)
+	results, err := h.searchIGDBWithIDInference(ctx, req.Query, req.Limit, platformIDs)
 	if err != nil {
 		return h.mapIGDBError(c, err)
 	}
@@ -268,6 +269,81 @@ func (h *GamesHandler) HandleSearchIGDB(c *echo.Context) error {
 		Games: candidates,
 		Total: len(candidates),
 	})
+}
+
+// igdbIDQueryPattern matches the explicit "igdb:NNNN" ID-lookup form
+// (case-insensitive); the digits are captured in group 1.
+var igdbIDQueryPattern = regexp.MustCompile(`(?i)^igdb:(\d+)$`)
+
+// bareIDQueryPattern matches a query that is only digits, e.g. "1020".
+var bareIDQueryPattern = regexp.MustCompile(`^\d+$`)
+
+// searchIGDBWithIDInference runs the IGDB search with query-level ID inference,
+// mirroring the convenience the web search box used to implement client-side
+// (issue #1153) so every front-end behaves identically:
+//   - "igdb:NNNN" (case-insensitive) → pure ID lookup, no name search.
+//   - bare "NNNN" → ID lookup AND name search, merged & deduped by igdb_id with
+//     the ID match pinned first (keeps purely-numeric titles like "2048"
+//     discoverable by name).
+//   - anything else → ordinary name search.
+//
+// A not-found ID lookup is non-fatal: for the bare form it falls through to the
+// name results; for the explicit form it yields an empty list (search
+// semantics) rather than a 404.
+func (h *GamesHandler) searchIGDBWithIDInference(ctx context.Context, query string, limit int, platformIDs []int) ([]igdb.GameMetadata, error) {
+	if m := igdbIDQueryPattern.FindStringSubmatch(query); m != nil {
+		id, err := strconv.Atoi(m[1])
+		if err != nil {
+			// Overflowing id can never match a real game.
+			return nil, nil
+		}
+		md, err := h.igdb.GetGameByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, igdb.ErrGameNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return []igdb.GameMetadata{*md}, nil
+	}
+
+	if bareIDQueryPattern.MatchString(query) {
+		if id, err := strconv.Atoi(query); err == nil {
+			var idMatch *igdb.GameMetadata
+			switch md, lookupErr := h.igdb.GetGameByID(ctx, id); {
+			case lookupErr == nil:
+				idMatch = md
+			case errors.Is(lookupErr, igdb.ErrGameNotFound):
+				// No game at that id — keep only the name results below.
+			default:
+				return nil, lookupErr
+			}
+			nameResults, err := h.igdb.SearchGames(ctx, query, limit, platformIDs)
+			if err != nil {
+				return nil, err
+			}
+			return mergeIGDBByID(idMatch, nameResults), nil
+		}
+		// Numeric but overflows int — fall through to a plain name search.
+	}
+
+	return h.igdb.SearchGames(ctx, query, limit, platformIDs)
+}
+
+// mergeIGDBByID prepends an ID-lookup match (if any) to name-search results,
+// deduped by igdb_id so a game found both ways appears once, pinned first.
+func mergeIGDBByID(idMatch *igdb.GameMetadata, nameResults []igdb.GameMetadata) []igdb.GameMetadata {
+	if idMatch == nil {
+		return nameResults
+	}
+	merged := make([]igdb.GameMetadata, 0, len(nameResults)+1)
+	merged = append(merged, *idMatch)
+	for _, g := range nameResults {
+		if g.IgdbID != idMatch.IgdbID {
+			merged = append(merged, g)
+		}
+	}
+	return merged
 }
 
 // HandleGetIGDBGame handles GET /api/games/igdb/:igdb_id.

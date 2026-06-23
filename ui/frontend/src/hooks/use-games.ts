@@ -42,49 +42,14 @@ export function useUserGame(id: string | undefined) {
 }
 
 /**
- * Regex to detect the explicit IGDB ID lookup format: igdb:12345 (case-insensitive)
- */
-const IGDB_ID_PATTERN = /^igdb:(\d+)$/i;
-
-/**
- * Regex to detect a bare numeric query (e.g. 12345) — treated as an IGDB ID.
- */
-const BARE_ID_PATTERN = /^\d+$/;
-
-/**
- * Parse an IGDB ID from the explicit "igdb:12345" prefix format.
- * Returns the numeric ID or null if not a match.
- */
-function parseIGDBIdFromQuery(query: string): number | null {
-  const match = query.match(IGDB_ID_PATTERN);
-  if (match) {
-    return parseInt(match[1], 10);
-  }
-  return null;
-}
-
-/**
- * Merge an ID-lookup result (pinned first) with name-search results,
- * de-duplicating by igdb_id so a game found both ways appears once at the top.
- */
-function mergeIGDBResults(
-  idResults: IGDBGameCandidate[] | undefined,
-  nameResults: IGDBGameCandidate[] | undefined,
-): IGDBGameCandidate[] {
-  const pinned = idResults ?? [];
-  const pinnedIds = new Set(pinned.map((g) => g.igdb_id));
-  const rest = (nameResults ?? []).filter((g) => !pinnedIds.has(g.igdb_id));
-  return [...pinned, ...rest];
-}
-
-/**
- * Supports IGDB ID lookup and name search, which can run together:
- * 1. Explicit ID lookup: "igdb:12345" (case-insensitive) — pure ID lookup, no name search.
- * 2. Bare number: "12345" — fires BOTH an ID lookup and a name search, with the
- *    ID-lookup result pinned at the top of the merged, de-duped list. This keeps
- *    purely-numeric game titles (2048, 1942, …) discoverable by name while still
- *    honoring the inferred ID lookup.
- * 3. Name search: any other query (requires 3+ characters).
+ * Searches IGDB by name. The IGDB-ID query inference lives on the backend
+ * (issue #1153): the server treats "igdb:NNNN" (case-insensitive) as a pure ID
+ * lookup and a bare "NNNN" as an ID lookup merged with a name search (ID match
+ * pinned first), so every front-end behaves identically. The hook just forwards
+ * the query.
+ *
+ * Enabled for 3+ character queries, plus any purely-numeric query so a short
+ * bare IGDB id (e.g. "12") still triggers a lookup.
  */
 export function useSearchIGDB(
   query: string,
@@ -92,46 +57,13 @@ export function useSearchIGDB(
 ) {
   const limit = options?.limit;
   const externalGameId = options?.externalGameId;
+  const enabled = query.length >= 3 || /^\d+$/.test(query);
 
-  const prefixId = parseIGDBIdFromQuery(query);
-  const isPrefixLookup = prefixId !== null;
-  const bareId = BARE_ID_PATTERN.test(query) ? parseInt(query, 10) : null;
-  const igdbId = prefixId ?? bareId;
-
-  // ID lookup: any length (bare number or igdb: prefix).
-  const idEnabled = igdbId !== null;
-  // Name search: 3+ chars, but never for the pure igdb: prefix form.
-  const nameEnabled = !isPrefixLookup && query.length >= 3;
-
-  const idQuery = useQuery<IGDBGameCandidate[], Error>({
-    queryKey: gameKeys.igdbById(igdbId ?? 0),
-    queryFn: () => gamesApi.getGameByIGDBId(igdbId!),
-    enabled: idEnabled,
-  });
-
-  const nameQuery = useQuery<IGDBGameCandidate[], Error>({
+  return useQuery<IGDBGameCandidate[], Error>({
     queryKey: [...gameKeys.igdbSearch(query), externalGameId ?? null] as const,
     queryFn: () => gamesApi.searchIGDB(query, limit, externalGameId),
-    enabled: nameEnabled,
+    enabled,
   });
-
-  const activeQueries = [...(idEnabled ? [idQuery] : []), ...(nameEnabled ? [nameQuery] : [])];
-  const anyEnabled = activeQueries.length > 0;
-
-  return {
-    data: anyEnabled
-      ? mergeIGDBResults(
-          idEnabled ? idQuery.data : undefined,
-          nameEnabled ? nameQuery.data : undefined,
-        )
-      : undefined,
-    isLoading: activeQueries.some((q) => q.isLoading),
-    isFetching: activeQueries.some((q) => q.isFetching),
-    isError: activeQueries.some((q) => q.isError),
-    error: activeQueries.find((q) => q.error)?.error ?? null,
-    isSuccess: anyEnabled && activeQueries.every((q) => q.isSuccess),
-    isPending: !anyEnabled || activeQueries.some((q) => q.isPending),
-  };
 }
 
 /**
