@@ -7,8 +7,46 @@ import {
   resolveImageUrl,
   getCoverUrl,
   toDateInputValue,
+  bestAchievementProgress,
 } from './game-utils';
-import type { UserGame } from '@/types';
+import type { UserGame, UserGamePlatform } from '@/types';
+
+const plat = (over: Partial<UserGamePlatform>): UserGamePlatform =>
+  ({
+    id: 'x',
+    is_available: true,
+    hours_played: 0,
+    ownership_status: 'owned',
+    created_at: '',
+    ...over,
+  }) as UserGamePlatform;
+
+describe('bestAchievementProgress', () => {
+  it('returns null when undefined or empty', () => {
+    expect(bestAchievementProgress(undefined)).toBeNull();
+    expect(bestAchievementProgress([])).toBeNull();
+  });
+  it('ignores rows with null or zero total', () => {
+    expect(
+      bestAchievementProgress([
+        plat({}),
+        plat({ achievements_total: 0, achievements_unlocked: 0 }),
+      ]),
+    ).toBeNull();
+  });
+  it('returns the single qualifying row', () => {
+    expect(
+      bestAchievementProgress([plat({ achievements_unlocked: 3, achievements_total: 10 })]),
+    ).toEqual({ unlocked: 3, total: 10 });
+  });
+  it('picks the highest unlocked/total ratio', () => {
+    const result = bestAchievementProgress([
+      plat({ achievements_unlocked: 5, achievements_total: 10 }), // 0.5
+      plat({ achievements_unlocked: 9, achievements_total: 10 }), // 0.9
+    ]);
+    expect(result).toEqual({ unlocked: 9, total: 10 });
+  });
+});
 
 // config.staticUrl is '' in the test env (VITE_STATIC_URL unset), so the
 // origin prefix is empty and relative paths reduce to a leading-slash path.

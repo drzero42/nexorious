@@ -4,9 +4,15 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { PlatformIconList } from '@/components/ui/platform-icon';
 import type { UserGame } from '@/types';
 import type { ReactNode } from 'react';
-import { Timer, Gamepad2 } from 'lucide-react';
+import { Timer, Gamepad2, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatTtb, formatIgdbRating, formatHoursPlayed, getCoverUrl } from '@/lib/game-utils';
+import {
+  formatTtb,
+  formatIgdbRating,
+  formatHoursPlayed,
+  getCoverUrl,
+  bestAchievementProgress,
+} from '@/lib/game-utils';
 import { statusColors, statusLabels } from '@/lib/play-status';
 import { isBuyFirst } from '@/lib/game-flags';
 
@@ -31,6 +37,7 @@ export function GameCard({
 }: GameCardProps) {
   const coverUrl = getCoverUrl(game);
   const buyFirst = isBuyFirst(game);
+  const achievements = bestAchievementProgress(game.platforms);
 
   return (
     <Card
@@ -152,6 +159,14 @@ export function GameCard({
               {formatTtb(game.game?.howlongtobeat_main)} /{' '}
               {formatTtb(game.game?.howlongtobeat_extra)} /{' '}
               {formatTtb(game.game?.howlongtobeat_completionist)}
+            </span>
+          </div>
+        )}
+        {achievements && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+            <Trophy className="h-3 w-3" />
+            <span>
+              {achievements.unlocked}/{achievements.total}
             </span>
           </div>
         )}
