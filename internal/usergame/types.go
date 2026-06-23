@@ -42,6 +42,10 @@ type PlatformInput struct {
 	// SyncFromSource marks the platform row as storefront-synced. Set to true
 	// only in the sync worker; REST-create and import callers leave it false.
 	SyncFromSource bool
+	// AchievementsUnlocked / AchievementsTotal carry Steam achievement counts on
+	// the sync path. Nil leaves the columns NULL on insert and unchanged on update.
+	AchievementsUnlocked *int
+	AchievementsTotal    *int
 }
 
 type TagInput struct {

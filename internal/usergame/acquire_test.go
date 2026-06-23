@@ -231,6 +231,57 @@ func TestAcquire_MergeKeepsMaxHoursAndUpgradesOwnership(t *testing.T) {
 // then on a re-acquire (conflict) leaves the existing row — meta AND updated_at —
 // fully intact while still merging the new platform. This is the invariant the
 // import workers rely on now that row-creation routes through Acquire (#1068).
+func TestAcquire_PersistsAndRefreshesAchievements(t *testing.T) {
+	truncateAllTables(t)
+	u := seedUser(t)
+	seedGame(t, 700, "Hades II")
+
+	two, one := 2, 1
+	res, err := Acquire(context.Background(), testDB, AcquireParams{
+		UserID: u, GameID: 700, Mode: ModeUpsert,
+		Platforms: []PlatformInput{{
+			Platform: strptr("pc-windows"), Storefront: strptr("steam"),
+			HoursPlayed: fptr(3), SyncFromSource: true,
+			AchievementsUnlocked: &one, AchievementsTotal: &two,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+
+	var gotUnlocked, gotTotal *int
+	if err := testDB.NewRaw(
+		`SELECT achievements_unlocked, achievements_total FROM user_game_platforms WHERE user_game_id = ?`,
+		res.UserGameID,
+	).Scan(context.Background(), &gotUnlocked, &gotTotal); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if gotUnlocked == nil || *gotUnlocked != 1 || gotTotal == nil || *gotTotal != 2 {
+		t.Fatalf("after insert: got %v/%v, want 1/2", gotUnlocked, gotTotal)
+	}
+
+	// Re-sync with nil achievements (success=false this round) must preserve counts.
+	if _, err := Acquire(context.Background(), testDB, AcquireParams{
+		UserID: u, GameID: 700, Mode: ModeUpsert,
+		Platforms: []PlatformInput{{
+			Platform: strptr("pc-windows"), Storefront: strptr("steam"),
+			HoursPlayed: fptr(4), SyncFromSource: true,
+			AchievementsUnlocked: nil, AchievementsTotal: nil,
+		}},
+	}); err != nil {
+		t.Fatalf("re-acquire: %v", err)
+	}
+	if err := testDB.NewRaw(
+		`SELECT achievements_unlocked, achievements_total FROM user_game_platforms WHERE user_game_id = ?`,
+		res.UserGameID,
+	).Scan(context.Background(), &gotUnlocked, &gotTotal); err != nil {
+		t.Fatalf("scan after re-acquire: %v", err)
+	}
+	if gotUnlocked == nil || *gotUnlocked != 1 || gotTotal == nil || *gotTotal != 2 {
+		t.Fatalf("after nil re-sync: got %v/%v, want preserved 1/2", gotUnlocked, gotTotal)
+	}
+}
+
 func TestAcquire_ModeImportPersistsMetaAndPreservesOnConflict(t *testing.T) {
 	truncateAllTables(t)
 	u := seedUser(t)

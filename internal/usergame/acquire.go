@@ -165,12 +165,13 @@ func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformI
 		ch.Created = true
 		// Bind in.HoursPlayed (*float64) directly so nil → SQL NULL.
 		// Do NOT use the coerced `hours` local here (nil → 0 is wrong for INSERT).
+		// Bind in.AchievementsUnlocked / in.AchievementsTotal (*int) directly so nil → SQL NULL.
 		_, err := tx.NewRaw(
 			`INSERT INTO user_game_platforms
-			 (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, external_game_id, acquired_date, sync_from_source, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
+			 (id, user_game_id, platform, storefront, is_available, hours_played, ownership_status, external_game_id, acquired_date, sync_from_source, achievements_unlocked, achievements_total, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())
 			 ON CONFLICT (user_game_id, platform, storefront) DO NOTHING`,
-			uuid.NewString(), ugID, in.Platform, in.Storefront, available, in.HoursPlayed, ownership, in.ExternalGameID, in.AcquiredDate, in.SyncFromSource,
+			uuid.NewString(), ugID, in.Platform, in.Storefront, available, in.HoursPlayed, ownership, in.ExternalGameID, in.AcquiredDate, in.SyncFromSource, in.AchievementsUnlocked, in.AchievementsTotal,
 		).Exec(ctx)
 		if err != nil {
 			return ch, fmt.Errorf("insert platform: %w", err)
@@ -196,8 +197,8 @@ func mergeOnePlatform(ctx context.Context, tx bun.IDB, ugID string, in PlatformI
 			finalHours = *existingHours
 		}
 		_, err := tx.NewRaw(
-			`UPDATE user_game_platforms SET ownership_status = ?, hours_played = ?, external_game_id = COALESCE(?, external_game_id), updated_at = now() WHERE id = ?`,
-			finalOwnership, finalHours, in.ExternalGameID, existingID,
+			`UPDATE user_game_platforms SET ownership_status = ?, hours_played = ?, external_game_id = COALESCE(?, external_game_id), achievements_unlocked = COALESCE(?, achievements_unlocked), achievements_total = COALESCE(?, achievements_total), updated_at = now() WHERE id = ?`,
+			finalOwnership, finalHours, in.ExternalGameID, in.AchievementsUnlocked, in.AchievementsTotal, existingID,
 		).Exec(ctx)
 		if err != nil {
 			return ch, fmt.Errorf("update platform: %w", err)
