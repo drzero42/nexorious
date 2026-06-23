@@ -13,6 +13,11 @@ type ExternalGameEntry struct {
 	Platforms       []string // storefront-specific names; canonicalised to slugs by the worker
 	OwnershipStatus string   // "owned", "subscription", etc.
 	IsSubscription  bool
+	// AchievementsUnlocked / AchievementsTotal hold per-game achievement counts
+	// when the source provides them (Steam only in v1). Nil = not fetched / not
+	// available. Carried onto the first platform row, like PlaytimeHours.
+	AchievementsUnlocked *int
+	AchievementsTotal    *int
 	// SourceMetadata carries per-source resolution inputs captured at sync time
 	// (e.g. Epic's namespace). Persisted to external_games.source_metadata; never
 	// used to render store_link directly. Nil/empty for stores that need nothing.

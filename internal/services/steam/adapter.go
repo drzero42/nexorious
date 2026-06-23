@@ -102,13 +102,17 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 				platforms = []string{"pc-windows"}
 			}
 
+			unlocked, total := a.fetchAchievements(ctx, og)
+
 			entries = append(entries, storefrontadapter.ExternalGameEntry{
-				ExternalID:      fmt.Sprintf("%d", og.AppID),
-				Title:           og.Title,
-				PlaytimeHours:   og.PlaytimeHours,
-				Platforms:       platforms,
-				OwnershipStatus: "owned",
-				IsSubscription:  false,
+				ExternalID:           fmt.Sprintf("%d", og.AppID),
+				Title:                og.Title,
+				PlaytimeHours:        og.PlaytimeHours,
+				Platforms:            platforms,
+				OwnershipStatus:      "owned",
+				IsSubscription:       false,
+				AchievementsUnlocked: unlocked,
+				AchievementsTotal:    total,
 			})
 			processedCount++
 			if processedCount%50 == 0 {
@@ -133,6 +137,27 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		"steamid", a.steamID,
 	)
 	return nil
+}
+
+// fetchAchievements returns the unlocked/total achievement counts for one game,
+// or (nil, nil) when the game is unplayed, Steam has no public stats, or the
+// call errors. Achievement data must never fail the sync, so errors are logged
+// and swallowed.
+func (a *Adapter) fetchAchievements(ctx context.Context, og OwnedGame) (*int, *int) {
+	if og.PlaytimeHours <= 0 {
+		return nil, nil
+	}
+	unlocked, total, ok, err := a.client.GetPlayerAchievements(ctx, a.apiKey, a.steamID, og.AppID)
+	if err != nil {
+		slog.WarnContext(ctx, "steam: fetch achievements failed",
+			"appid", og.AppID, "title", og.Title, logging.KeyErr, err,
+			logging.Cat(logging.CategoryExternalAPI))
+		return nil, nil
+	}
+	if !ok {
+		return nil, nil
+	}
+	return &unlocked, &total
 }
 
 // fetchAppDetailsWithRetry calls GetAppDetailsPlatforms for one appid, retrying
