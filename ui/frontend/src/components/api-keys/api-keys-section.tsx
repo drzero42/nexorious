@@ -15,8 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { KeyRound, Plus, Trash2, Loader2 } from 'lucide-react';
-import { useApiKeys, useRevokeApiKey } from '@/hooks';
-import { formatRelativeTime } from '@/types/jobs';
+import { useApiKeys, useRevokeApiKey, useDateFormat } from '@/hooks';
 import type { ApiKey } from '@/api/auth';
 import { CreateApiKeyDialog } from './create-api-key-dialog';
 
@@ -25,6 +24,7 @@ function isExpired(key: ApiKey): boolean {
 }
 
 export function ApiKeysSection() {
+  const { formatRelativeTime, formatDate } = useDateFormat();
   const { data: keys, isLoading } = useApiKeys();
   const revokeApiKey = useRevokeApiKey();
   const [createOpen, setCreateOpen] = useState(false);
@@ -79,9 +79,9 @@ export function ApiKeysSection() {
                     {key.last_used_at
                       ? `Last used ${formatRelativeTime(key.last_used_at)}`
                       : 'Never used'}
-                    {' · '}Created {new Date(key.created_at).toLocaleDateString()}
+                    {' · '}Created {formatDate(key.created_at)}
                     {key.expires_at
-                      ? ` · Expires ${new Date(key.expires_at).toLocaleDateString()}`
+                      ? ` · Expires ${formatDate(key.expires_at)}`
                       : ' · Never expires'}
                   </p>
                 </div>

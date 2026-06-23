@@ -4,9 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { config as envConfig } from '@/lib/env';
-import { useStorefront } from '@/hooks';
+import { useStorefront, useDateFormat } from '@/hooks';
 import type { SyncConfig, SyncStatus } from '@/types';
-import { formatRelativeTime } from '@/types/jobs';
 
 interface SyncServiceCardProps {
   config: SyncConfig;
@@ -27,6 +26,7 @@ export function SyncServiceCard({
   isSyncing = false,
   externalGameCount,
 }: SyncServiceCardProps) {
+  const { formatRelativeTime } = useDateFormat();
   const { data: storefront } = useStorefront(config.storefront);
   const displayName = storefront?.display_name ?? config.storefront;
   const isCurrentlySyncing = isSyncing || status?.isSyncing;

@@ -31,6 +31,12 @@ vi.mock('@/hooks', () => ({
   useAddPoolGame: vi.fn(() => ({ mutate: vi.fn() })),
   useRemovePoolGame: vi.fn(() => ({ mutate: vi.fn() })),
   useCreatePool: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useDateFormat: vi.fn(() => ({
+    formatDate: (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString() : '-'),
+    formatDateTime: (v: string | null | undefined) => (v ? new Date(v).toLocaleString() : '-'),
+    formatRelativeTime: (v: string | null | undefined, fallback = '-') =>
+      v ? new Date(v).toLocaleString() : fallback,
+  })),
 }));
 
 // Minimal mock game — only the fields the component null-checks against

@@ -18,6 +18,12 @@ vi.mock('@/hooks', () => ({
           gog: 'GOG',
         }) as Record<string, string>
       )[source] ?? source,
+  useDateFormat: () => ({
+    formatDate: (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString() : '-'),
+    formatDateTime: (v: string | null | undefined) => (v ? new Date(v).toLocaleString() : '-'),
+    formatRelativeTime: (v: string | null | undefined, fallback = '-') =>
+      v ? new Date(v).toLocaleString() : fallback,
+  }),
 }));
 
 const mockJob: Job = {

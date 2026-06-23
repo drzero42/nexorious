@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useRecentJobs, useDownloadExport, useJobSourceLabel } from '@/hooks';
+import { useRecentJobs, useDownloadExport, useJobSourceLabel, useDateFormat } from '@/hooks';
 import { JobItemsDetails } from './job-items-details';
 import type { RecentJobDetail, SyncChangeItem, JobType as JobTypeEnum } from '@/types';
 import {
@@ -15,7 +15,6 @@ import {
   getJobTypeLabel,
   getJobStatusLabel,
   getJobStatusVariant,
-  formatRelativeTime,
 } from '@/types';
 import {
   ChevronDown,
@@ -193,6 +192,7 @@ function JobActivityItem({
 }) {
   const showBreakdown = hasChangeRows(job);
   const jobSourceLabel = useJobSourceLabel();
+  const { formatRelativeTime } = useDateFormat();
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <div className="rounded-lg border">
