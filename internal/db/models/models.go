@@ -246,12 +246,13 @@ type JobChange struct {
 }
 
 // UserSettings mirrors the user_settings table — one row per user, lazily
-// upserted. Holds typed per-user app preferences (e.g. deal_region).
+// upserted. Holds typed per-user app preferences (e.g. deal_region, date_format).
 type UserSettings struct {
 	bun.BaseModel `bun:"table:user_settings"`
 
 	UserID                   string    `bun:"user_id,pk"                     json:"user_id"`
 	DealRegion               string    `bun:"deal_region,notnull"            json:"deal_region"`
+	DateFormat               string    `bun:"date_format,notnull"            json:"date_format"`
 	LastSeenChangelogVersion *string   `bun:"last_seen_changelog_version"    json:"last_seen_changelog_version,omitempty"`
 	CreatedAt                time.Time `bun:"created_at,notnull"             json:"created_at"`
 	UpdatedAt                time.Time `bun:"updated_at,notnull"             json:"updated_at"`

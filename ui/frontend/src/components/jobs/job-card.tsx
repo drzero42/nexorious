@@ -12,7 +12,7 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react';
-import { useJobSourceLabel } from '@/hooks';
+import { useJobSourceLabel, useDateFormat } from '@/hooks';
 import type { Job } from '@/types';
 import {
   JobStatus,
@@ -20,7 +20,6 @@ import {
   getJobStatusLabel,
   getJobStatusVariant,
   formatDuration,
-  formatRelativeTime,
   canCancelJob,
   canDeleteJob,
   isJobInProgress,
@@ -46,6 +45,7 @@ export function JobCard({
   isDeleting,
 }: JobCardProps) {
   const jobSourceLabel = useJobSourceLabel();
+  const { formatRelativeTime } = useDateFormat();
   const showProgress = job.status === JobStatus.PROCESSING;
 
   if (compact) {

@@ -58,7 +58,7 @@ import {
   PlatformDetailFields,
   type PlatformDetail,
 } from '@/components/games/platform-detail-fields';
-import { useAllPlatforms, useSettings } from '@/hooks';
+import { useAllPlatforms, useSettings, useDateFormat } from '@/hooks';
 import { buildDealLinks } from '@/lib/deal-links';
 import type { UserGamePlatformData } from '@/api/games';
 
@@ -232,6 +232,7 @@ export function GameDetailPage() {
   const { data: game, isLoading, error } = useUserGame(gameId);
   const deleteGame = useDeleteUserGame();
   const { data: settings } = useSettings();
+  const { formatDate } = useDateFormat();
 
   const handleDelete = async () => {
     await deleteGame.mutateAsync(gameId);
@@ -384,9 +385,7 @@ export function GameDetailPage() {
                 {game.game.release_date && (
                   <div>
                     <dt className="font-medium text-muted-foreground">Release Date</dt>
-                    <dd className="mt-1">
-                      {new Date(game.game.release_date).toLocaleDateString()}
-                    </dd>
+                    <dd className="mt-1">{formatDate(game.game.release_date)}</dd>
                   </div>
                 )}
                 {game.game.game_modes && (
@@ -520,7 +519,7 @@ export function GameDetailPage() {
                             </Badge>
                             {p.acquired_date && (
                               <span className="text-xs text-muted-foreground">
-                                {new Date(p.acquired_date).toLocaleDateString()}
+                                {formatDate(p.acquired_date)}
                               </span>
                             )}
                           </div>

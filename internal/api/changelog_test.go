@@ -134,8 +134,7 @@ func TestChangelogUnseen_BaselineCapturedWhenNull(t *testing.T) {
 	got := queryLastSeen(t, userID)
 	if got == nil {
 		t.Fatal("last_seen should be set, got nil")
-	}
-	if *got != "0.90.0" {
+	} else if *got != "0.90.0" {
 		t.Errorf("last_seen: want 0.90.0, got %q", *got)
 	}
 }
@@ -205,8 +204,7 @@ func TestChangelogUnseen_HasUnseenWhenCurrentNewer(t *testing.T) {
 	got := queryLastSeen(t, userID)
 	if got == nil {
 		t.Fatal("last_seen should still exist, got nil")
-	}
-	if *got != "0.17.1" {
+	} else if *got != "0.17.1" {
 		t.Errorf("last_seen: want unchanged 0.17.1, got %q", *got)
 	}
 }
@@ -243,8 +241,7 @@ func TestChangelog_SinceParamIsPureRead(t *testing.T) {
 	got := queryLastSeen(t, userID)
 	if got == nil {
 		t.Fatal("last_seen should still exist, got nil")
-	}
-	if *got != "0.17.1" {
+	} else if *got != "0.17.1" {
 		t.Errorf("last_seen: want 0.17.1 unchanged, got %q", *got)
 	}
 }
@@ -280,8 +277,7 @@ func TestChangelog_DefaultMarksSeen(t *testing.T) {
 	got := queryLastSeen(t, userID)
 	if got == nil {
 		t.Fatal("last_seen should be set after default GET, got nil")
-	}
-	if *got != "0.90.0" {
+	} else if *got != "0.90.0" {
 		t.Errorf("last_seen: want 0.90.0, got %q", *got)
 	}
 }

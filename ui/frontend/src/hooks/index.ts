@@ -123,6 +123,9 @@ export { apiKeysKeys, useApiKeys, useCreateApiKey, useRevokeApiKey } from './use
 // Settings hooks
 export { useSettings, useUpdateSettings } from './use-settings';
 
+// Date format hook
+export { useDateFormat } from './use-date-format';
+
 // Docs hooks
 export { docKeys, useDoc } from './use-docs';
 

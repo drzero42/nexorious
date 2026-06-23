@@ -8,24 +8,28 @@ import type { SyncConfig, SyncStatus } from '@/types';
 // The card derives its name/icon from the storefronts catalog via useStorefront.
 // Mock it to deterministic catalog display names so render tests don't depend on
 // the network.
-vi.mock('@/hooks', () => ({
-  useStorefront: (name: string) => ({
-    data: {
-      name,
-      display_name:
-        (
-          {
-            steam: 'Steam',
-            gog: 'GOG',
-            'epic-games-store': 'Epic Games Store',
-            'playstation-store': 'PlayStation Store',
-            'humble-bundle': 'Humble Bundle',
-          } as Record<string, string>
-        )[name] ?? name,
-      icon_url: null,
-    },
-  }),
-}));
+vi.mock('@/hooks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks')>();
+  return {
+    ...actual,
+    useStorefront: (name: string) => ({
+      data: {
+        name,
+        display_name:
+          (
+            {
+              steam: 'Steam',
+              gog: 'GOG',
+              'epic-games-store': 'Epic Games Store',
+              'playstation-store': 'PlayStation Store',
+              'humble-bundle': 'Humble Bundle',
+            } as Record<string, string>
+          )[name] ?? name,
+        icon_url: null,
+      },
+    }),
+  };
+});
 
 const createMockConfig = (overrides: Partial<SyncConfig> = {}): SyncConfig => ({
   id: 'config-1',

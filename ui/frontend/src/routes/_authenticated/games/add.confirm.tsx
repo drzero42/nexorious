@@ -22,6 +22,7 @@ import {
   type PlatformDetail,
 } from '@/components/games/platform-detail-fields';
 import { useImportFromIGDB, useCreateUserGame, useIGDBGameByID } from '@/hooks/use-games';
+import { useDateFormat } from '@/hooks';
 import { useAllPlatforms } from '@/hooks/use-platforms';
 import type { IGDBGameCandidate } from '@/types';
 import type { Platform } from '@/types/platform';
@@ -44,20 +45,6 @@ interface GamePreviewProps {
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Format release date to readable format.
- */
-function formatReleaseDate(releaseDate?: string): string | null {
-  if (!releaseDate) return null;
-  const date = new Date(releaseDate);
-  if (isNaN(date.getTime())) return null;
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-}
 
 /**
  * Format playtime hours to readable string.
@@ -116,7 +103,8 @@ function getOtherPlatforms(
 // ============================================================================
 
 function GamePreviewCard({ game }: GamePreviewProps) {
-  const releaseDate = formatReleaseDate(game.release_date);
+  const { formatDate } = useDateFormat();
+  const releaseDate = formatDate(game.release_date, '');
   const mainPlaytime = formatPlaytime(game.howlongtobeat_main);
   const extraPlaytime = formatPlaytime(game.howlongtobeat_extra);
   const completionistPlaytime = formatPlaytime(game.howlongtobeat_completionist);

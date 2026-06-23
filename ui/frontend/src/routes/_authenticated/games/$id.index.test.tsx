@@ -31,6 +31,12 @@ vi.mock('@/hooks', () => ({
   useAddPoolGame: vi.fn(() => ({ mutate: vi.fn() })),
   useRemovePoolGame: vi.fn(() => ({ mutate: vi.fn() })),
   useCreatePool: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useDateFormat: vi.fn(() => ({
+    formatDate: (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString() : '-'),
+    formatDateTime: (v: string | null | undefined) => (v ? new Date(v).toLocaleString() : '-'),
+    formatRelativeTime: (v: string | null | undefined, fallback = '-') =>
+      v ? new Date(v).toLocaleString() : fallback,
+  })),
 }));
 
 // Minimal mock game — only the fields the component null-checks against
@@ -80,7 +86,7 @@ describe('GameDetailPage — Back to Games navigation', () => {
       mutateAsync: vi.fn().mockResolvedValue(undefined),
     } as unknown as ReturnType<typeof useDeleteUserGame>);
     useSettings.mockReturnValue({
-      data: { dealRegion: 'us' },
+      data: { dealRegion: 'us', dateFormat: 'auto' },
     } as unknown as ReturnType<typeof useSettings>);
     useMoveToLibrary.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue(undefined),
@@ -250,7 +256,7 @@ describe('GameDetailPage — IGDB rating display', () => {
       mutateAsync: vi.fn().mockResolvedValue(undefined),
     } as unknown as ReturnType<typeof useDeleteUserGame>);
     useSettings.mockReturnValue({
-      data: { dealRegion: 'us' },
+      data: { dealRegion: 'us', dateFormat: 'auto' },
     } as unknown as ReturnType<typeof useSettings>);
     useMoveToLibrary.mockReturnValue({
       mutateAsync: vi.fn().mockResolvedValue(undefined),

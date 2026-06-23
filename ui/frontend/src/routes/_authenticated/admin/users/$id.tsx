@@ -32,20 +32,11 @@ import {
 } from 'lucide-react';
 import * as adminApi from '@/api/admin';
 import type { AdminUser, UserDeletionImpact } from '@/types';
+import { useDateFormat } from '@/hooks';
 
 export const Route = createFileRoute('/_authenticated/admin/users/$id')({
   component: EditUserPage,
 });
-
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 function UserStatusBadges({ user }: { user: AdminUser }) {
   return (
@@ -88,6 +79,7 @@ function EditUserSkeleton() {
 }
 
 function EditUserPage() {
+  const { formatDateTime } = useDateFormat();
   const navigate = useNavigate();
   const { id: userId } = Route.useParams();
   const { user: currentUser } = useAuth();
@@ -317,7 +309,7 @@ function EditUserPage() {
           </h1>
           {user && (
             <p className="text-muted-foreground">
-              User ID: {user.id} - Created {formatDate(user.createdAt)}
+              User ID: {user.id} - Created {formatDateTime(user.createdAt)}
               {isEditingSelf && (
                 <span className="ml-2 text-primary font-medium">(This is you)</span>
               )}
@@ -368,7 +360,7 @@ function EditUserPage() {
                     <p className="font-medium text-lg">{user.username}</p>
                     <UserStatusBadges user={user} />
                     <p className="text-sm text-muted-foreground mt-1">
-                      Last updated {formatDate(user.updatedAt)}
+                      Last updated {formatDateTime(user.updatedAt)}
                     </p>
                   </div>
                 </div>

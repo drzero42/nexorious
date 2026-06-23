@@ -19,6 +19,7 @@ import {
   jobsKeys,
   useJobCompletionEffect,
   useStorefront,
+  useDateFormat,
 } from '@/hooks';
 import {
   SteamConnectionCard,
@@ -63,7 +64,6 @@ import {
 import { RefreshCw, Loader2, AlertCircle, Clock, ChevronDown } from 'lucide-react';
 import { config as envConfig } from '@/lib/env';
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
-import { formatRelativeTime } from '@/types/jobs';
 
 export const Route = createFileRoute('/_authenticated/sync/$storefront')({
   head: () => ({ meta: [{ title: 'Sync | Nexorious' }] }),
@@ -120,6 +120,7 @@ function SyncDetailPage() {
   const { storefront: storefrontParam } = Route.useParams();
   const storefront = storefrontParam as SyncStorefront;
   const queryClient = useQueryClient();
+  const { formatRelativeTime } = useDateFormat();
 
   // Local state for optimistic updates
   const [localFrequency, setLocalFrequency] = useState<SyncFrequency | null>(null);

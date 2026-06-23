@@ -9,21 +9,12 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Users, UserPlus, Shield, Gamepad2, CheckCircle, AlertCircle } from 'lucide-react';
 import * as adminApi from '@/api/admin';
 import type { AdminStatistics } from '@/types';
+import { useDateFormat } from '@/hooks';
 
 export const Route = createFileRoute('/_authenticated/admin/')({
   head: () => ({ meta: [{ title: 'Admin | Nexorious' }] }),
   component: AdminDashboardPage,
 });
-
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 function AdminDashboardSkeleton() {
   return (
@@ -44,6 +35,7 @@ function AdminDashboardSkeleton() {
 }
 
 function AdminDashboardPage() {
+  const { formatDateTime } = useDateFormat();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const [statistics, setStatistics] = useState<AdminStatistics | null>(null);
@@ -201,7 +193,7 @@ function AdminDashboardPage() {
                             {!user.isActive && <Badge variant="destructive">Inactive</Badge>}
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            Created {formatDate(user.createdAt)}
+                            Created {formatDateTime(user.createdAt)}
                           </p>
                         </div>
                       </div>

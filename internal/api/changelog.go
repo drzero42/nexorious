@@ -161,6 +161,7 @@ func (h *ChangelogHandler) setSeen(ctx context.Context, userID, version string) 
 	s := models.UserSettings{
 		UserID:                   userID,
 		DealRegion:               defaultDealRegion,
+		DateFormat:               defaultDateFormat,
 		LastSeenChangelogVersion: &version,
 		CreatedAt:                now,
 		UpdatedAt:                now,

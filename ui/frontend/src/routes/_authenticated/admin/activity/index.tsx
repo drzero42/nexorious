@@ -27,6 +27,7 @@ import {
 import { Activity, ChevronDown, ChevronRight } from 'lucide-react';
 import { dayRangeToUTC, isRangeInverted } from '@/lib/date-range';
 import type { AdminEventFilters } from '@/types';
+import { useDateFormat } from '@/hooks';
 
 export const Route = createFileRoute('/_authenticated/admin/activity/')({
   head: () => ({ meta: [{ title: 'Activity | Nexorious' }] }),
@@ -35,17 +36,8 @@ export const Route = createFileRoute('/_authenticated/admin/activity/')({
 
 const ALL = 'all';
 
-function formatWhen(iso: string): string {
-  return new Date(iso).toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 function AdminActivityPage() {
+  const { formatDateTime } = useDateFormat();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
 
@@ -269,7 +261,7 @@ function AdminActivityPage() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell title={e.occurredAt}>{formatWhen(e.occurredAt)}</TableCell>
+                      <TableCell title={e.occurredAt}>{formatDateTime(e.occurredAt)}</TableCell>
                       <TableCell>{e.actorUsername ?? '—'}</TableCell>
                       <TableCell className="max-w-md truncate">{e.body}</TableCell>
                     </TableRow>

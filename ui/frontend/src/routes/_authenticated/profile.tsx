@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DEAL_REGIONS } from '@/lib/deal-regions';
+import { DATE_FORMAT_OPTIONS, type DateFormatPref } from '@/lib/format-date';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -86,6 +87,29 @@ function PreferencesSection() {
               {DEAL_REGIONS.map((r) => (
                 <SelectItem key={r.code} value={r.code}>
                   {r.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="dateFormat">Date format</Label>
+          <p className="mb-2 text-sm text-muted-foreground">
+            How dates are displayed throughout the app. Auto follows your browser locale.
+          </p>
+          <Select
+            value={settings?.dateFormat ?? 'auto'}
+            onValueChange={(value) =>
+              updateSettings.mutate({ dateFormat: value as DateFormatPref })
+            }
+          >
+            <SelectTrigger id="dateFormat" className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DATE_FORMAT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
                 </SelectItem>
               ))}
             </SelectContent>

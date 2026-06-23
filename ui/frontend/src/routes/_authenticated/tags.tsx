@@ -39,7 +39,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { DEFAULT_TAG_COLOR } from '@/components/ui/tag-selector';
-import { useAllTags, useCreateTag, useUpdateTag, useDeleteTag } from '@/hooks';
+import { useAllTags, useCreateTag, useUpdateTag, useDeleteTag, useDateFormat } from '@/hooks';
 import type { Tag } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/tags')({
@@ -102,6 +102,7 @@ const initialFormData: TagFormData = {
 
 function TagsPage() {
   const navigate = useNavigate();
+  const { formatDate } = useDateFormat();
   const { data: tags, isLoading, error, refetch } = useAllTags();
   const createTagMutation = useCreateTag();
   const updateTagMutation = useUpdateTag();
@@ -463,7 +464,7 @@ function TagsPage() {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Created {new Date(tag.created_at).toLocaleDateString()}
+                        Created {formatDate(tag.created_at)}
                       </p>
                     </div>
                   </button>

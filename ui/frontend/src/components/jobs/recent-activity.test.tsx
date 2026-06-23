@@ -10,6 +10,12 @@ vi.mock('@/hooks', () => ({
   useRecentJobs: vi.fn(),
   useDownloadExport: () => ({ mutate: downloadExport, isPending: false }),
   useJobSourceLabel: () => (source: string) => source,
+  useDateFormat: () => ({
+    formatDate: (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString() : '-'),
+    formatDateTime: (v: string | null | undefined) => (v ? new Date(v).toLocaleString() : '-'),
+    formatRelativeTime: (v: string | null | undefined, fallback = '-') =>
+      v ? new Date(v).toLocaleString() : fallback,
+  }),
 }));
 // JobItemsDetails fetches on mount; stub it to a marker for the fallback case.
 vi.mock('./job-items-details', () => ({

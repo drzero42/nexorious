@@ -24,10 +24,12 @@ import {
   usePutSubscriptions,
   useResetSubscriptions,
 } from '@/hooks/use-notifications';
+import { useDateFormat } from '@/hooks';
 import { ChannelDialog } from './channel-dialog';
 import type { NotificationChannel } from '@/api/notifications';
 
 export function NotificationsSection() {
+  const { formatDate } = useDateFormat();
   const { data: channels, isLoading: channelsLoading } = useChannels();
   const { data: eventTypes, isLoading: eventTypesLoading } = useEventTypes();
   const { data: subscriptions, isLoading: subscriptionsLoading } = useSubscriptions();
@@ -141,7 +143,7 @@ export function NotificationsSection() {
                     <div>
                       <p className="text-sm font-medium">{ch.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        Added {new Date(ch.created_at).toLocaleDateString()}
+                        Added {formatDate(ch.created_at)}
                       </p>
                     </div>
                     <div className="flex items-center gap-1">
