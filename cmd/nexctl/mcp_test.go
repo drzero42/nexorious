@@ -96,7 +96,9 @@ func TestMCPGameAddAmbiguous(t *testing.T) {
 
 func TestMCPGameAddIgdbIDNotFound(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/games/igdb/999", func(w http.ResponseWriter, _ *http.Request) {
+	// The igdb_id field is routed through the unified search endpoint as
+	// "igdb:999"; the backend's ID inference returns no games.
+	mux.HandleFunc("/api/games/search/igdb", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"games": []map[string]any{}, "total": 0})
 	})
 	srv := httptest.NewServer(mux)
@@ -243,7 +245,7 @@ func TestMCPGameAddInvalidPlatform(t *testing.T) {
 			{"name": "pc-windows", "display_name": "PC (Windows)"},
 		})
 	})
-	mux.HandleFunc("/api/games/igdb/", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/games/search/igdb", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"games": []map[string]any{{"igdb_id": 2933, "title": "Kingdom Hearts III"}}, "total": 1})
 	})

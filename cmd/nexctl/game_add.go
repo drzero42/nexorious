@@ -13,7 +13,6 @@ import (
 
 func newGameAddCmd() *cobra.Command {
 	var (
-		igdbID                       int
 		status, platform, storefront string
 		notes                        string
 		wishlist, loved              bool
@@ -22,14 +21,15 @@ func newGameAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <title>",
 		Short: "Add a game to your collection (IGDB lookup)",
-		Args:  cobra.MaximumNArgs(1),
+		Long: "Add a game to your collection via IGDB lookup.\n\n" +
+			"The query supports backend ID inference: \"igdb:NNNN\" does an exact\n" +
+			"ID lookup, a bare \"NNNN\" does an ID lookup plus a name search, and\n" +
+			"anything else is a name search.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			if wishlist && platform != "" {
 				return fmt.Errorf("--wishlist and --platform are mutually exclusive")
-			}
-			if igdbID == 0 && len(args) == 0 {
-				return fmt.Errorf("provide a title or --igdb-id")
 			}
 			p, _, err := resolveProfile(cmd)
 			if err != nil {
@@ -37,7 +37,7 @@ func newGameAddCmd() *cobra.Command {
 			}
 			c := cliclient.New(p.URL)
 
-			cand, err := resolveIGDBCandidate(cmd, c, p.Key, igdbID, firstArg(args))
+			cand, err := resolveIGDBCandidate(cmd, c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
@@ -77,7 +77,6 @@ func newGameAddCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.IntVar(&igdbID, "igdb-id", 0, "Add by IGDB id (skips title search)")
 	f.StringVar(&status, "status", "not_started", "Initial play status")
 	f.StringVar(&platform, "platform", "", "Platform slug, optionally platform/storefront")
 	f.StringVar(&storefront, "storefront", "", "Storefront slug (overrides platform/storefront)")
@@ -86,13 +85,6 @@ func newGameAddCmd() *cobra.Command {
 	f.BoolVar(&loved, "loved", false, "Mark as loved")
 	f.IntVar(&rating, "rating", 0, "Personal rating 1–5")
 	return cmd
-}
-
-func firstArg(args []string) string {
-	if len(args) == 0 {
-		return ""
-	}
-	return args[0]
 }
 
 // splitPlatform splits "platform/storefront" into its parts; a bare value yields
@@ -104,39 +96,28 @@ func splitPlatform(s string) (string, string) {
 	return s, ""
 }
 
-// findIGDBCandidates returns the IGDB candidates for an id or title query. No
-// cmd, no picker — callers own disambiguation.
-func findIGDBCandidates(c *cliclient.Client, key string, igdbID int, title string) ([]cliclient.IGDBCandidate, error) {
-	if igdbID != 0 {
-		res, err := c.GetIGDBGame(key, igdbID)
-		if err != nil {
-			return nil, err
-		}
-		return res.Games, nil
-	}
-	res, err := c.SearchIGDB(key, title, 10)
+// findIGDBCandidates returns the IGDB candidates for a query. The backend
+// performs ID inference ("igdb:NNNN" / bare number), so callers just pass the
+// raw query. No cmd, no picker — callers own disambiguation.
+func findIGDBCandidates(c *cliclient.Client, key, query string) ([]cliclient.IGDBCandidate, error) {
+	res, err := c.SearchIGDB(key, query, 10)
 	if err != nil {
 		return nil, err
 	}
 	return res.Games, nil
 }
 
-// resolveIGDBCandidate finds the IGDB game to add: by id, or by title search with
-// a TTY picker / off-TTY candidate-list error.
-func resolveIGDBCandidate(cmd *cobra.Command, c *cliclient.Client, key string, igdbID int, title string) (*cliclient.IGDBCandidate, error) {
-	games, err := findIGDBCandidates(c, key, igdbID, title)
+// resolveIGDBCandidate finds the IGDB game to add by searching for the query
+// (backend ID inference included), with a TTY picker / off-TTY candidate-list
+// error when the search is ambiguous.
+func resolveIGDBCandidate(cmd *cobra.Command, c *cliclient.Client, key, query string) (*cliclient.IGDBCandidate, error) {
+	games, err := findIGDBCandidates(c, key, query)
 	if err != nil {
 		return nil, err
 	}
-	if igdbID != 0 {
-		if len(games) == 0 {
-			return nil, fmt.Errorf("no IGDB game with id %d", igdbID)
-		}
-		return &games[0], nil
-	}
 	switch len(games) {
 	case 0:
-		return nil, fmt.Errorf("no IGDB results for %q", title)
+		return nil, fmt.Errorf("no IGDB results for %q", query)
 	case 1:
 		return &games[0], nil
 	}
@@ -144,7 +125,7 @@ func resolveIGDBCandidate(cmd *cobra.Command, c *cliclient.Client, key string, i
 		return pickIGDB(cmd, games)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%q matches %d IGDB games; re-run with --igdb-id:", title, len(games))
+	fmt.Fprintf(&b, "%q matches %d IGDB games; re-run with igdb:<id>:", query, len(games))
 	for i := range games {
 		g := &games[i]
 		marker := ""

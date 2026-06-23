@@ -464,6 +464,189 @@ func TestSearchIGDB_AnnotatesLibraryMembership(t *testing.T) {
 	}
 }
 
+// igdbInferenceStub serves the IGDB /games endpoint, returning idGame for any
+// "where id =" lookup (GetGameByID) and nameGames for any other (name-search)
+// query. It records whether each kind of query was received so tests can assert
+// the inference fired (or didn't). Bodies for unrelated endpoints return empty.
+type igdbInferenceStub struct {
+	mu          sync.Mutex
+	idQueried   bool
+	nameQueried bool
+}
+
+func newIGDBInferenceServer(t *testing.T, idGame map[string]any, nameGames []map[string]any) (*httptest.Server, *igdbInferenceStub) {
+	t.Helper()
+	stub := &igdbInferenceStub{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/games") {
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		stub.mu.Lock()
+		if strings.Contains(string(body), "where id =") {
+			stub.idQueried = true
+			stub.mu.Unlock()
+			if idGame == nil {
+				_ = json.NewEncoder(w).Encode([]map[string]any{})
+				return
+			}
+			_ = json.NewEncoder(w).Encode([]map[string]any{idGame})
+			return
+		}
+		stub.nameQueried = true
+		stub.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(nameGames)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, stub
+}
+
+// TestSearchIGDB_ExplicitIDForm verifies "igdb:NNNN" performs a pure ID lookup
+// with no name search (issue #1153).
+func TestSearchIGDB_ExplicitIDForm(t *testing.T) {
+	truncateAllTables(t)
+	srv, stub := newIGDBInferenceServer(t,
+		map[string]any{"id": 1020, "name": "Grand Theft Auto V", "slug": "gta-v"},
+		[]map[string]any{{"id": 7777, "name": "should not be returned", "slug": "nope"}},
+	)
+	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
+	insertAuthTestUser(t, testDB, "u-inf-1", "infuser1", "pass123", true, false)
+	token := loginAndGetToken(t, e, "infuser1", "pass123")
+
+	rec := postAuth(t, e, "/api/games/search/igdb", token, `{"query": "igdb:1020", "limit": 10}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp api.IGDBSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Games) != 1 || resp.Games[0].IgdbID != 1020 {
+		t.Fatalf("expected single igdb 1020 result, got %+v", resp.Games)
+	}
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	if !stub.idQueried {
+		t.Errorf("expected an ID lookup to be performed")
+	}
+	if stub.nameQueried {
+		t.Errorf("explicit igdb: form must not run a name search")
+	}
+}
+
+// TestSearchIGDB_ExplicitIDForm_CaseInsensitive verifies the prefix match is
+// case-insensitive.
+func TestSearchIGDB_ExplicitIDForm_CaseInsensitive(t *testing.T) {
+	truncateAllTables(t)
+	srv, _ := newIGDBInferenceServer(t,
+		map[string]any{"id": 1020, "name": "Grand Theft Auto V", "slug": "gta-v"}, nil)
+	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
+	insertAuthTestUser(t, testDB, "u-inf-2", "infuser2", "pass123", true, false)
+	token := loginAndGetToken(t, e, "infuser2", "pass123")
+
+	rec := postAuth(t, e, "/api/games/search/igdb", token, `{"query": "IGDB:1020", "limit": 10}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp api.IGDBSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Games) != 1 || resp.Games[0].IgdbID != 1020 {
+		t.Fatalf("expected single igdb 1020 result, got %+v", resp.Games)
+	}
+}
+
+// TestSearchIGDB_ExplicitIDForm_NotFound verifies a non-existent explicit ID
+// yields an empty 200 (search semantics), not a 404.
+func TestSearchIGDB_ExplicitIDForm_NotFound(t *testing.T) {
+	truncateAllTables(t)
+	srv, _ := newIGDBInferenceServer(t, nil, nil)
+	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
+	insertAuthTestUser(t, testDB, "u-inf-3", "infuser3", "pass123", true, false)
+	token := loginAndGetToken(t, e, "infuser3", "pass123")
+
+	rec := postAuth(t, e, "/api/games/search/igdb", token, `{"query": "igdb:99999999", "limit": 10}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp api.IGDBSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Games) != 0 {
+		t.Fatalf("expected empty result for missing id, got %+v", resp.Games)
+	}
+}
+
+// TestSearchIGDB_BareNumber_MergesIDAndName verifies a bare numeric query fires
+// both an ID lookup and a name search, with the ID match pinned first and
+// de-duped against the name results — keeping purely-numeric titles discoverable.
+func TestSearchIGDB_BareNumber_MergesIDAndName(t *testing.T) {
+	truncateAllTables(t)
+	// ID 2048 is an unrelated game; the name search also surfaces a game titled
+	// "2048" (different id) plus the very same id-2048 game (dedup target).
+	srv, stub := newIGDBInferenceServer(t,
+		map[string]any{"id": 2048, "name": "Some Game At ID 2048", "slug": "id-2048"},
+		[]map[string]any{
+			{"id": 50001, "name": "2048", "slug": "the-2048-puzzle"},
+			{"id": 2048, "name": "Some Game At ID 2048", "slug": "id-2048"},
+		},
+	)
+	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
+	insertAuthTestUser(t, testDB, "u-inf-4", "infuser4", "pass123", true, false)
+	token := loginAndGetToken(t, e, "infuser4", "pass123")
+
+	rec := postAuth(t, e, "/api/games/search/igdb", token, `{"query": "2048", "limit": 10}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp api.IGDBSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	stub.mu.Lock()
+	idQ, nameQ := stub.idQueried, stub.nameQueried
+	stub.mu.Unlock()
+	if !idQ || !nameQ {
+		t.Fatalf("expected both id (%v) and name (%v) queries for a bare number", idQ, nameQ)
+	}
+	if len(resp.Games) != 2 {
+		t.Fatalf("expected 2 deduped results, got %d: %+v", len(resp.Games), resp.Games)
+	}
+	if resp.Games[0].IgdbID != 2048 {
+		t.Errorf("expected id-2048 match pinned first, got %d", resp.Games[0].IgdbID)
+	}
+	if resp.Games[1].IgdbID != 50001 {
+		t.Errorf("expected the name-only '2048' title second, got %d", resp.Games[1].IgdbID)
+	}
+}
+
+// TestSearchIGDB_BareNumber_IDNotFound_NameOnly verifies that when no game
+// exists at the bare-number id, the name results still come through.
+func TestSearchIGDB_BareNumber_IDNotFound_NameOnly(t *testing.T) {
+	truncateAllTables(t)
+	srv, _ := newIGDBInferenceServer(t, nil,
+		[]map[string]any{{"id": 50001, "name": "2048", "slug": "the-2048-puzzle"}},
+	)
+	e := newTestEchoWithLiveIGDB(t, testDB, srv.URL)
+	insertAuthTestUser(t, testDB, "u-inf-5", "infuser5", "pass123", true, false)
+	token := loginAndGetToken(t, e, "infuser5", "pass123")
+
+	rec := postAuth(t, e, "/api/games/search/igdb", token, `{"query": "2048", "limit": 10}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp api.IGDBSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Games) != 1 || resp.Games[0].IgdbID != 50001 {
+		t.Fatalf("expected the name-only '2048' result, got %+v", resp.Games)
+	}
+}
+
 // ─── newTestEchoWithLiveIGDB / EG helpers ────────────────────────────────────
 
 // newTestEchoWithLiveIGDB builds a test Echo instance with a configured IGDB

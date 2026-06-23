@@ -337,13 +337,18 @@ describe('use-games hooks', () => {
       });
     });
 
-    it('detects igdb: prefix and calls lookup endpoint (lowercase)', async () => {
+    it('forwards an "igdb:NNNN" query verbatim to the search endpoint (inference is server-side)', async () => {
+      let capturedQuery: string | null = null;
+      const idLookupSpy = vi.fn();
+
       server.use(
-        http.get(`${API_URL}/games/igdb/12345`, () => {
-          return HttpResponse.json({
-            games: [mockIGDBGameApi],
-            total: 1,
-          });
+        http.get(`${API_URL}/games/igdb/:id`, () => {
+          idLookupSpy();
+          return HttpResponse.json({ games: [], total: 0 });
+        }),
+        http.post(`${API_URL}/games/search/igdb`, async ({ request }) => {
+          capturedQuery = ((await request.json()) as { query: string }).query;
+          return HttpResponse.json({ games: [mockIGDBGameApi], total: 1 });
         }),
       );
 
@@ -355,112 +360,19 @@ describe('use-games hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data).toHaveLength(1);
-      expect(result.current.data?.[0].title).toBe('IGDB Game');
-    });
-
-    it('detects IGDB: prefix and calls lookup endpoint (uppercase)', async () => {
-      server.use(
-        http.get(`${API_URL}/games/igdb/99999`, () => {
-          return HttpResponse.json({
-            games: [mockIGDBGameApi],
-            total: 1,
-          });
-        }),
-      );
-
-      const { result } = renderHook(() => useSearchIGDB('IGDB:99999'), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
+      // The hook no longer parses the query; it posts it as-is and the backend
+      // performs the ID inference. The per-ID GET endpoint is never hit here.
+      expect(capturedQuery).toBe('igdb:12345');
+      expect(idLookupSpy).not.toHaveBeenCalled();
       expect(result.current.data).toHaveLength(1);
     });
 
-    it('does not apply 3-char minimum for IGDB ID lookup', async () => {
+    it('forwards a bare numeric query verbatim to the search endpoint', async () => {
+      let capturedQuery: string | null = null;
       server.use(
-        http.get(`${API_URL}/games/igdb/1`, () => {
-          return HttpResponse.json({
-            games: [mockIGDBGameApi],
-            total: 1,
-          });
-        }),
-      );
-
-      const { result } = renderHook(() => useSearchIGDB('igdb:1'), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toHaveLength(1);
-    });
-
-    it('returns empty array when IGDB ID not found', async () => {
-      server.use(
-        http.get(`${API_URL}/games/igdb/99999999`, () => {
-          return HttpResponse.json({
-            games: [],
-            total: 0,
-          });
-        }),
-      );
-
-      const { result } = renderHook(() => useSearchIGDB('igdb:99999999'), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toHaveLength(0);
-    });
-
-    it('treats invalid igdb: format as regular search', async () => {
-      const fetchSpy = vi.fn();
-
-      server.use(
-        http.post(`${API_URL}/games/search/igdb`, () => {
-          fetchSpy();
-          return HttpResponse.json({ games: [], total: 0 });
-        }),
-      );
-
-      // "igdb:abc" is not a valid ID format, should fall through to search
-      const { result } = renderHook(() => useSearchIGDB('igdb:abc'), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(fetchSpy).toHaveBeenCalled();
-    });
-  });
-
-  describe('useSearchIGDB bare numeric ID lookup', () => {
-    const idGame = { ...mockIGDBGameApi, igdb_id: 2048, title: 'ID Game 2048' };
-    const nameGame = { ...mockIGDBGameApi, igdb_id: 555, title: 'Name Match' };
-
-    it('fires both ID lookup and name search for a bare number, ID result pinned first', async () => {
-      let idLookupCalled = false;
-      let nameSearchCalled = false;
-
-      server.use(
-        http.get(`${API_URL}/games/igdb/2048`, () => {
-          idLookupCalled = true;
-          return HttpResponse.json({ games: [idGame], total: 1 });
-        }),
-        http.post(`${API_URL}/games/search/igdb`, () => {
-          nameSearchCalled = true;
-          return HttpResponse.json({ games: [nameGame], total: 1 });
+        http.post(`${API_URL}/games/search/igdb`, async ({ request }) => {
+          capturedQuery = ((await request.json()) as { query: string }).query;
+          return HttpResponse.json({ games: [mockIGDBGameApi], total: 1 });
         }),
       );
 
@@ -472,72 +384,15 @@ describe('use-games hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(idLookupCalled).toBe(true);
-      expect(nameSearchCalled).toBe(true);
-      expect(result.current.data).toHaveLength(2);
-      expect(result.current.data?.[0].igdb_id).toBe(2048);
-      expect(result.current.data?.[1].igdb_id).toBe(555);
+      expect(capturedQuery).toBe('2048');
     });
 
-    it('shows name results only when the bare number matches no IGDB ID', async () => {
+    it('enables a short purely-numeric query below the 3-char minimum', async () => {
+      let capturedQuery: string | null = null;
       server.use(
-        http.get(`${API_URL}/games/igdb/9999`, () => {
-          return HttpResponse.json({ games: [], total: 0 });
-        }),
-        http.post(`${API_URL}/games/search/igdb`, () => {
-          return HttpResponse.json({ games: [nameGame], total: 1 });
-        }),
-      );
-
-      const { result } = renderHook(() => useSearchIGDB('9999'), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toHaveLength(1);
-      expect(result.current.data?.[0].igdb_id).toBe(555);
-    });
-
-    it('de-dupes when the ID-lookup game also appears in the name results', async () => {
-      server.use(
-        http.get(`${API_URL}/games/igdb/2048`, () => {
-          return HttpResponse.json({ games: [idGame], total: 1 });
-        }),
-        http.post(`${API_URL}/games/search/igdb`, () => {
-          return HttpResponse.json({
-            games: [{ ...idGame, title: 'Dup' }, nameGame],
-            total: 2,
-          });
-        }),
-      );
-
-      const { result } = renderHook(() => useSearchIGDB('2048'), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toHaveLength(2);
-      expect(result.current.data?.[0].igdb_id).toBe(2048);
-      expect(result.current.data?.[0].title).toBe('ID Game 2048');
-      expect(result.current.data?.[1].igdb_id).toBe(555);
-    });
-
-    it('fires ID lookup only (no name search) for a bare number under 3 characters', async () => {
-      const nameSearchSpy = vi.fn();
-
-      server.use(
-        http.get(`${API_URL}/games/igdb/12`, () => {
-          return HttpResponse.json({ games: [{ ...idGame, igdb_id: 12 }], total: 1 });
-        }),
-        http.post(`${API_URL}/games/search/igdb`, () => {
-          nameSearchSpy();
-          return HttpResponse.json({ games: [], total: 0 });
+        http.post(`${API_URL}/games/search/igdb`, async ({ request }) => {
+          capturedQuery = ((await request.json()) as { query: string }).query;
+          return HttpResponse.json({ games: [mockIGDBGameApi], total: 1 });
         }),
       );
 
@@ -549,34 +404,7 @@ describe('use-games hooks', () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(result.current.data).toHaveLength(1);
-      expect(result.current.data?.[0].igdb_id).toBe(12);
-      expect(nameSearchSpy).not.toHaveBeenCalled();
-    });
-
-    it('keeps igdb: prefix as a pure ID lookup (no name search)', async () => {
-      const nameSearchSpy = vi.fn();
-
-      server.use(
-        http.get(`${API_URL}/games/igdb/12345`, () => {
-          return HttpResponse.json({ games: [mockIGDBGameApi], total: 1 });
-        }),
-        http.post(`${API_URL}/games/search/igdb`, () => {
-          nameSearchSpy();
-          return HttpResponse.json({ games: [], total: 0 });
-        }),
-      );
-
-      const { result } = renderHook(() => useSearchIGDB('igdb:12345'), {
-        wrapper: QueryWrapper,
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toHaveLength(1);
-      expect(nameSearchSpy).not.toHaveBeenCalled();
+      expect(capturedQuery).toBe('12');
     });
   });
 
