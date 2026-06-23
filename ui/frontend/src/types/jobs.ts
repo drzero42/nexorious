@@ -3,6 +3,8 @@
  * Jobs include sync, import, and export operations.
  */
 
+import { formatDate, type DateFormatPref } from '@/lib/format-date';
+
 // ============================================================================
 // Enums
 // ============================================================================
@@ -295,7 +297,11 @@ export function formatDuration(seconds: number | null): string {
  * placeholder returned for a missing date (e.g. '-' for activity, 'Never' for
  * last-sync timestamps).
  */
-export function formatRelativeTime(dateStr: string | null, nullLabel = '-'): string {
+export function formatRelativeTime(
+  dateStr: string | null,
+  nullLabel = '-',
+  pref: DateFormatPref = 'auto',
+): string {
   if (!dateStr) return nullLabel;
   const date = new Date(dateStr);
   const now = new Date();
@@ -308,7 +314,7 @@ export function formatRelativeTime(dateStr: string | null, nullLabel = '-'): str
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  return formatDate(date, pref);
 }
 
 /**
