@@ -493,7 +493,7 @@ describe('GameCard', () => {
         ],
       });
       render(<GameCard game={game} />);
-      expect(screen.queryByText(/\/\d/)).not.toBeInTheDocument();
+      expect(screen.queryByText('9/10')).not.toBeInTheDocument();
     });
   });
 

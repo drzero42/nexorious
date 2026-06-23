@@ -77,6 +77,7 @@ func TestSteamAdapter_RateLimitExhausted_RetriesUntilSuccess(t *testing.T) {
 }
 
 func TestGetLibrary_PopulatesAchievements(t *testing.T) {
+	var achHits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(r.URL.Path, "GetOwnedGames"):
@@ -85,6 +86,7 @@ func TestGetLibrary_PopulatesAchievements(t *testing.T) {
 				{"appid":20,"name":"Unplayed","playtime_forever":0}]}}`))
 		case strings.Contains(r.URL.Path, "GetPlayerAchievements"):
 			// Only the played game should reach here.
+			achHits.Add(1)
 			_, _ = w.Write([]byte(`{"playerstats":{"success":true,"achievements":[
 				{"apiname":"a","achieved":1},{"apiname":"b","achieved":0}]}}`))
 		case strings.Contains(r.URL.Path, "appdetails"):
@@ -105,6 +107,10 @@ func TestGetLibrary_PopulatesAchievements(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatalf("GetLibrary: %v", err)
+	}
+
+	if achHits.Load() != 1 {
+		t.Errorf("GetPlayerAchievements called %d times, want 1 (only the played game)", achHits.Load())
 	}
 
 	byID := map[string]storefrontadapter.ExternalGameEntry{}

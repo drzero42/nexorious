@@ -101,8 +101,8 @@ type UserGamePlatform struct {
 	Storefront           *string    `bun:"storefront"                   json:"storefront"`
 	IsAvailable          bool       `bun:"is_available,notnull"         json:"is_available"`
 	HoursPlayed          *float64   `bun:"hours_played"                 json:"hours_played"`
-	AchievementsUnlocked *int       `bun:"achievements_unlocked" json:"achievements_unlocked"`
-	AchievementsTotal    *int       `bun:"achievements_total"    json:"achievements_total"`
+	AchievementsUnlocked *int       `bun:"achievements_unlocked"        json:"achievements_unlocked"`
+	AchievementsTotal    *int       `bun:"achievements_total"           json:"achievements_total"`
 	OwnershipStatus      *string    `bun:"ownership_status"             json:"ownership_status"`
 	AcquiredDate         *time.Time `bun:"acquired_date"                json:"acquired_date"`
 	ExternalGameID       *string    `bun:"external_game_id"             json:"external_game_id"`
@@ -208,9 +208,9 @@ type ExternalGamePlatform struct {
 	ExternalGameID       string    `bun:"external_game_id,notnull" json:"external_game_id"`
 	Platform             string    `bun:"platform,notnull"         json:"platform"`
 	HoursPlayed          float64   `bun:"hours_played,notnull"     json:"hours_played"`
-	AchievementsUnlocked *int      `bun:"achievements_unlocked" json:"achievements_unlocked"`
-	AchievementsTotal    *int      `bun:"achievements_total"    json:"achievements_total"`
-	CreatedAt            time.Time `bun:"created_at,notnull"       json:"created_at"`
+	AchievementsUnlocked *int      `bun:"achievements_unlocked"     json:"achievements_unlocked"`
+	AchievementsTotal    *int      `bun:"achievements_total"        json:"achievements_total"`
+	CreatedAt            time.Time `bun:"created_at,notnull"        json:"created_at"`
 }
 
 // UserSyncConfig mirrors the user_sync_configs table.

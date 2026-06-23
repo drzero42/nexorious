@@ -227,10 +227,6 @@ func TestAcquire_MergeKeepsMaxHoursAndUpgradesOwnership(t *testing.T) {
 	}
 }
 
-// ModeImport persists the caller-supplied meta and timestamps on a fresh insert,
-// then on a re-acquire (conflict) leaves the existing row — meta AND updated_at —
-// fully intact while still merging the new platform. This is the invariant the
-// import workers rely on now that row-creation routes through Acquire (#1068).
 func TestAcquire_PersistsAndRefreshesAchievements(t *testing.T) {
 	truncateAllTables(t)
 	u := seedUser(t)
@@ -282,6 +278,10 @@ func TestAcquire_PersistsAndRefreshesAchievements(t *testing.T) {
 	}
 }
 
+// ModeImport persists the caller-supplied meta and timestamps on a fresh insert,
+// then on a re-acquire (conflict) leaves the existing row — meta AND updated_at —
+// fully intact while still merging the new platform. This is the invariant the
+// import workers rely on now that row-creation routes through Acquire (#1068).
 func TestAcquire_ModeImportPersistsMetaAndPreservesOnConflict(t *testing.T) {
 	truncateAllTables(t)
 	u := seedUser(t)
