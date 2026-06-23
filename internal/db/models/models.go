@@ -252,6 +252,7 @@ type UserSettings struct {
 
 	UserID                   string    `bun:"user_id,pk"                     json:"user_id"`
 	DealRegion               string    `bun:"deal_region,notnull"            json:"deal_region"`
+	DateFormat               string    `bun:"date_format,notnull"            json:"date_format"`
 	LastSeenChangelogVersion *string   `bun:"last_seen_changelog_version"    json:"last_seen_changelog_version,omitempty"`
 	CreatedAt                time.Time `bun:"created_at,notnull"             json:"created_at"`
 	UpdatedAt                time.Time `bun:"updated_at,notnull"             json:"updated_at"`

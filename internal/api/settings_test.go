@@ -93,4 +93,37 @@ func TestSettings_GetDefaultAndPatch(t *testing.T) {
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("want 422 for invalid region, got %d: %s", rec.Code, rec.Body.String())
 	}
+
+	// date_format defaults to "auto" on a fresh GET.
+	rec = doGetSettings(t)
+	got = decodeResp(t, rec)
+	if got["date_format"] != "auto" {
+		t.Fatalf("default date_format want auto, got %v", got["date_format"])
+	}
+
+	// PATCH date_format round-trips and does not disturb deal_region.
+	rec = doPatchSettings(t, `{"date_format":"dmy"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH date_format want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got = decodeResp(t, rec)
+	if got["date_format"] != "dmy" {
+		t.Fatalf("PATCH response want date_format=dmy, got %v", got["date_format"])
+	}
+	if got["deal_region"] != "gb" {
+		t.Fatalf("PATCH date_format must preserve deal_region=gb, got %v", got["deal_region"])
+	}
+
+	// GET reflects the persisted date_format.
+	rec = doGetSettings(t)
+	got = decodeResp(t, rec)
+	if got["date_format"] != "dmy" {
+		t.Fatalf("GET after PATCH want date_format=dmy, got %v", got["date_format"])
+	}
+
+	// Invalid date_format is rejected with 422.
+	rec = doPatchSettings(t, `{"date_format":"bogus"}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422 for invalid date_format, got %d: %s", rec.Code, rec.Body.String())
+	}
 }
