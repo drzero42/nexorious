@@ -3,6 +3,7 @@ package migrate_test
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -123,8 +124,8 @@ func TestRunMigrations_AdoptRewritesHistory(t *testing.T) {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001", "20260622000001"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+	want := []string{"20260620000001", "20260621000001", "20260622000001", "20260622000002"}
+	if !slices.Equal(got, want) {
 		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
 	}
 }
@@ -198,10 +199,10 @@ func TestRunMigrations_AdoptThenCatchUp(t *testing.T) {
 		t.Fatalf("discover baseline: %v", err)
 	}
 	synth := fstest.MapFS{
-		"20260622000001_test_addcol.up.sql": &fstest.MapFile{
+		"20260622000003_test_addcol.up.sql": &fstest.MapFile{
 			Data: []byte("ALTER TABLE platforms ADD COLUMN test_adopt_marker text;"),
 		},
-		"20260622000001_test_addcol.down.sql": &fstest.MapFile{
+		"20260622000003_test_addcol.down.sql": &fstest.MapFile{
 			Data: []byte("ALTER TABLE platforms DROP COLUMN test_adopt_marker;"),
 		},
 	}
@@ -220,10 +221,10 @@ func TestRunMigrations_AdoptThenCatchUp(t *testing.T) {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 
-	// bun_migrations is now exactly [baseline, real post-baseline, synthetic].
+	// bun_migrations is now exactly [baseline, real post-baseline migrations, synthetic].
 	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001", "20260622000001"}
-	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+	want := []string{"20260620000001", "20260621000001", "20260622000001", "20260622000002", "20260622000003"}
+	if !slices.Equal(got, want) {
 		t.Fatalf("bun_migrations = %v, want %v", got, want)
 	}
 	// And the synthetic migration's column actually exists.
@@ -278,8 +279,8 @@ func TestReinitAfterRestore_AdoptsV0171(t *testing.T) {
 		t.Fatalf("state = %v, want Ready", m.State())
 	}
 	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001", "20260622000001"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+	want := []string{"20260620000001", "20260621000001", "20260622000001", "20260622000002"}
+	if !slices.Equal(got, want) {
 		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
 	}
 }
@@ -306,8 +307,8 @@ func TestReinitAfterRestore_BaselineNoOp(t *testing.T) {
 		t.Fatalf("state = %v, want Ready", m.State())
 	}
 	got := adoptNames(t, db)
-	want := []string{"20260620000001", "20260621000001", "20260622000001"}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+	want := []string{"20260620000001", "20260621000001", "20260622000001", "20260622000002"}
+	if !slices.Equal(got, want) {
 		t.Fatalf("bun_migrations = %v, want exactly %v", got, want)
 	}
 }
