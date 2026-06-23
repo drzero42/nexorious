@@ -18,19 +18,21 @@ import (
 
 // Client is an HTTP client for the Steam Web API.
 type Client struct {
-	http           *http.Client
-	limiter        *rate.Limiter
-	ownedGamesBase string // default "https://api.steampowered.com"
-	appDetailsBase string // default "https://store.steampowered.com"
+	http                *http.Client
+	limiter             *rate.Limiter
+	achievementsLimiter *rate.Limiter
+	ownedGamesBase      string // default "https://api.steampowered.com"
+	appDetailsBase      string // default "https://store.steampowered.com"
 }
 
 // NewClient creates a new Steam API client.
 func NewClient() *Client {
 	return &Client{
-		http:           &http.Client{Transport: observability.HTTPTransport()},
-		limiter:        rate.NewLimiter(rate.Every(200*time.Millisecond), 1),
-		ownedGamesBase: "https://api.steampowered.com",
-		appDetailsBase: "https://store.steampowered.com",
+		http:                &http.Client{Transport: observability.HTTPTransport()},
+		limiter:             rate.NewLimiter(rate.Every(200*time.Millisecond), 1),
+		achievementsLimiter: rate.NewLimiter(rate.Every(200*time.Millisecond), 1),
+		ownedGamesBase:      "https://api.steampowered.com",
+		appDetailsBase:      "https://store.steampowered.com",
 	}
 }
 
@@ -38,10 +40,11 @@ func NewClient() *Client {
 // and base URLs. Only for use in tests.
 func NewClientForTests(httpClient *http.Client, limiter *rate.Limiter, ownedGamesBase, appDetailsBase string) *Client {
 	return &Client{
-		http:           httpClient,
-		limiter:        limiter,
-		ownedGamesBase: ownedGamesBase,
-		appDetailsBase: appDetailsBase,
+		http:                httpClient,
+		limiter:             limiter,
+		achievementsLimiter: rate.NewLimiter(rate.Inf, 1),
+		ownedGamesBase:      ownedGamesBase,
+		appDetailsBase:      appDetailsBase,
 	}
 }
 
@@ -268,4 +271,58 @@ func steamSleepCtx(ctx context.Context, d time.Duration) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// GetPlayerAchievements fetches per-game achievement state for the given appID.
+// Returns (unlocked, total, ok=true, nil) on a success=true response, where
+// total = number of achievements and unlocked = number with achieved == 1.
+// Returns (0, 0, false, nil) when Steam responds success=false (private profile
+// OR the app has no achievements — indistinguishable without parsing the error
+// string, and both map to "no badge"). Returns a non-nil error only on a
+// transport, HTTP, or decode failure.
+func (c *Client) GetPlayerAchievements(ctx context.Context, apiKey, steamID string, appID int) (int, int, bool, error) {
+	if err := c.achievementsLimiter.Wait(ctx); err != nil {
+		return 0, 0, false, err
+	}
+	url := fmt.Sprintf(
+		"%s/ISteamUserStats/GetPlayerAchievements/v0001/?appid=%d&key=%s&steamid=%s&format=json",
+		c.ownedGamesBase, appID, apiKey, steamID,
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("steam achievements: build request: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("steam achievements network error: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// 400/403 are Steam's response for private profiles on some apps; treat any
+	// non-200 as "no data" rather than failing the sync.
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, false, nil
+	}
+
+	var body struct {
+		PlayerStats struct {
+			Success      bool `json:"success"`
+			Achievements []struct {
+				Achieved int `json:"achieved"`
+			} `json:"achievements"`
+		} `json:"playerstats"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return 0, 0, false, fmt.Errorf("steam achievements decode error: %w", err)
+	}
+	if !body.PlayerStats.Success {
+		return 0, 0, false, nil
+	}
+	total := len(body.PlayerStats.Achievements)
+	unlocked := 0
+	for _, a := range body.PlayerStats.Achievements {
+		if a.Achieved == 1 {
+			unlocked++
+		}
+	}
+	return unlocked, total, true, nil
 }
