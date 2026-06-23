@@ -59,6 +59,7 @@ import {
 import * as backupApi from '@/api/backup';
 import { triggerBlobDownload } from '@/api/import-export';
 import type { BackupConfig, BackupInfo, BackupSchedule, RetentionMode } from '@/types';
+import { useDateFormat } from '@/hooks';
 
 export const Route = createFileRoute('/_authenticated/admin/backups')({
   head: () => ({ meta: [{ title: 'Backups | Nexorious' }] }),
@@ -71,10 +72,6 @@ function formatBytes(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
-
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleString();
 }
 
 function getBackupTypeBadge(type: string) {
@@ -111,6 +108,7 @@ function BackupPageSkeleton() {
 }
 
 function BackupPage() {
+  const { formatDateTime } = useDateFormat();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const [config, setConfig] = useState<BackupConfig | null>(null);
@@ -524,7 +522,9 @@ function BackupPage() {
               <TableBody>
                 {backups.map((backup) => (
                   <TableRow key={backup.id}>
-                    <TableCell className="font-medium">{formatDate(backup.createdAt)}</TableCell>
+                    <TableCell className="font-medium">
+                      {formatDateTime(backup.createdAt)}
+                    </TableCell>
                     <TableCell>{getBackupTypeBadge(backup.backupType)}</TableCell>
                     <TableCell>{formatBytes(backup.sizeBytes)}</TableCell>
                     <TableCell>
@@ -605,7 +605,7 @@ function BackupPage() {
             <div className="space-y-4">
               <div className="rounded-lg bg-muted p-4 text-sm">
                 <p>
-                  <strong>Backup:</strong> {formatDate(restoreBackup.createdAt)}
+                  <strong>Backup:</strong> {formatDateTime(restoreBackup.createdAt)}
                 </p>
                 <p>
                   <strong>Type:</strong> {restoreBackup.backupType}

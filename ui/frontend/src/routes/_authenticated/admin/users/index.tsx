@@ -26,6 +26,7 @@ import { toast } from 'sonner';
 import { Search, UserPlus, Users, AlertCircle, Loader2 } from 'lucide-react';
 import * as adminApi from '@/api/admin';
 import type { AdminUser } from '@/types';
+import { useDateFormat } from '@/hooks';
 
 export const Route = createFileRoute('/_authenticated/admin/users/')({
   head: () => ({ meta: [{ title: 'Users | Nexorious' }] }),
@@ -33,16 +34,6 @@ export const Route = createFileRoute('/_authenticated/admin/users/')({
 });
 
 type StatusFilter = 'all' | 'active' | 'inactive' | 'admin';
-
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 function UserStatusBadges({ user }: { user: AdminUser }) {
   return (
@@ -88,6 +79,7 @@ function UsersTableSkeleton() {
 }
 
 function AdminUsersPage() {
+  const { formatDateTime } = useDateFormat();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -299,7 +291,7 @@ function AdminUsersPage() {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground mt-3">
-                      Created {formatDate(user.createdAt)}
+                      Created {formatDateTime(user.createdAt)}
                     </p>
                   </div>
                 ))}
@@ -339,10 +331,10 @@ function AdminUsersPage() {
                           <UserStatusBadges user={user} />
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {formatDate(user.createdAt)}
+                          {formatDateTime(user.createdAt)}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {formatDate(user.updatedAt)}
+                          {formatDateTime(user.updatedAt)}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
