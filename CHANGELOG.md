@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.94.0](https://github.com/drzero42/nexorious/compare/v0.93.0...v0.94.0) (2026-06-23)
+
+
+### Features
+
+* move IGDB-ID query inference into the backend search endpoint ([#1160](https://github.com/drzero42/nexorious/issues/1160)) ([0a4e214](https://github.com/drzero42/nexorious/commit/0a4e214156fe0e7a921d13d06f7ca6724bc2e4ba)), closes [#1153](https://github.com/drzero42/nexorious/issues/1153)
+* respect user locale for dates; add date-format preference ([#1163](https://github.com/drzero42/nexorious/issues/1163)) ([fa22719](https://github.com/drzero42/nexorious/commit/fa2271901bc77ba03950defb5896e5a69c8f3edc)), closes [#1155](https://github.com/drzero42/nexorious/issues/1155)
+* surface storefront link in CLI/MCP sync review flow ([#1164](https://github.com/drzero42/nexorious/issues/1164)) ([ad66811](https://github.com/drzero42/nexorious/commit/ad668116260044547ac72a96cbb2bd9723b668e9)), closes [#1158](https://github.com/drzero42/nexorious/issues/1158)
+
 ## [0.93.0](https://github.com/drzero42/nexorious/compare/v0.92.0...v0.93.0) (2026-06-23)
 
 
