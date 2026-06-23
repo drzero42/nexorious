@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.93.0](https://github.com/drzero42/nexorious/compare/v0.92.0...v0.93.0) (2026-06-23)
+
+
+### Features
+
+* link Needs Review games to their storefront page ([#1159](https://github.com/drzero42/nexorious/issues/1159)) ([9cf2d15](https://github.com/drzero42/nexorious/commit/9cf2d15bc67683ce9a3b0ca57999621ed5f16bb3)), closes [#1152](https://github.com/drzero42/nexorious/issues/1152)
+* show Steam achievement progress ("X of Y") on user-games ([#1156](https://github.com/drzero42/nexorious/issues/1156)) ([d84f74c](https://github.com/drzero42/nexorious/commit/d84f74c1e01700a58a02da8f8a49470315a72d9f)), closes [#1142](https://github.com/drzero42/nexorious/issues/1142)
+
 ## [0.92.0](https://github.com/drzero42/nexorious/compare/v0.91.0...v0.92.0) (2026-06-22)
 
 
