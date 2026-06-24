@@ -1,0 +1,20 @@
+Telltale Games Storefront Logo
+==============================
+
+Source: Recreated from the official Telltale site icon (the three-dot mark).
+URL: https://telltale.com/wp-content/uploads/2019/08/tt_site_icon.png
+Downloaded: 2026-06-24
+
+Description: Telltale's "three dots" brand mark — two circles above a single
+circle, in a triangular arrangement. The original site icon is only a 16x16
+PNG, so the SVGs here are a clean geometric recreation of that mark (not a
+traced copy of the bitmap).
+
+Files:
+- telltale-icon-light.svg: Light variant (black circles) for light backgrounds
+- telltale-icon-dark.svg:  Dark variant (white circles) for dark backgrounds
+
+Both variants keep the brand-red bottom circle (#cc0000); only the two upper
+circles flip between black and white per theme. This matches how other
+brand-coloured storefront icons (e.g. playstation-store) retain their accent
+colour across themes.

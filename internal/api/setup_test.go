@@ -336,4 +336,23 @@ func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
 	if amazonIcon != nil {
 		t.Errorf("expected amazon-games icon=NULL, got %q", *amazonIcon)
 	}
+
+	// Telltale Games: manual-only PC storefront with its three-dot icon and a
+	// pc-windows association.
+	var telltaleIcon *string
+	if err := testDB.QueryRowContext(context.Background(),
+		"SELECT icon FROM storefronts WHERE name = 'telltale'").Scan(&telltaleIcon); err != nil {
+		t.Fatalf("query telltale storefront: %v", err)
+	}
+	if telltaleIcon == nil || *telltaleIcon != "telltale-icon-light.svg" {
+		t.Errorf("expected telltale icon=telltale-icon-light.svg, got %v", telltaleIcon)
+	}
+	var telltaleAssoc int
+	if err := testDB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM platform_storefronts WHERE storefront = 'telltale' AND platform = 'pc-windows'").Scan(&telltaleAssoc); err != nil {
+		t.Fatalf("query telltale association: %v", err)
+	}
+	if telltaleAssoc != 1 {
+		t.Errorf("expected telltale<->pc-windows association, got %d rows", telltaleAssoc)
+	}
 }
