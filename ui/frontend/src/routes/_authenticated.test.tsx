@@ -24,6 +24,8 @@ vi.mock('@/components/navigation', () => ({
 vi.mock('@/hooks', () => ({
   useJobTypeStatus: () => ({ data: undefined }),
   useJobCompletionEffect: () => {},
+  useSettings: () => ({ data: undefined }),
+  useThemePreference: () => ({ pref: 'system', setPref: () => {} }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
