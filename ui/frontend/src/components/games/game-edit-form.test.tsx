@@ -263,7 +263,9 @@ describe('GameEditForm', () => {
 
     await user.click(screen.getByRole('button', { name: /add platform/i }));
     await user.click(screen.getByRole('combobox', { name: /select platform/i }));
-    await user.click(screen.getByRole('option', { name: /^PC$/ }));
+    // The platform option's accessible name now includes BrandIcon's
+    // first-letter fallback badge ("P PC"); match the trailing name only.
+    await user.click(screen.getByRole('option', { name: /PC$/ }));
     await user.click(screen.getAllByRole('button', { name: /save changes/i })[0]);
 
     // The only free slot for a second PC copy is "No storefront".
