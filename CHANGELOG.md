@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.96.0](https://github.com/drzero42/nexorious/compare/v0.95.0...v0.96.0) (2026-06-24)
+
+
+### Features
+
+* source missing platform & storefront icons ([#1183](https://github.com/drzero42/nexorious/issues/1183)) ([ca01d22](https://github.com/drzero42/nexorious/commit/ca01d225c720075a24343661a7f0ca9bf60803e3)), closes [#1173](https://github.com/drzero42/nexorious/issues/1173)
+* surface platform & storefront icons across the UI ([#1181](https://github.com/drzero42/nexorious/issues/1181)) ([b7c3759](https://github.com/drzero42/nexorious/commit/b7c37598305713555accf048f194bbf82a3e3138)), closes [#1172](https://github.com/drzero42/nexorious/issues/1172)
+* user-selectable light/dark/system theme ([#1180](https://github.com/drzero42/nexorious/issues/1180)) ([6a96609](https://github.com/drzero42/nexorious/commit/6a966090e9197213db865dcc0319d0073d65185e)), closes [#1171](https://github.com/drzero42/nexorious/issues/1171)
+
+
+### Bug Fixes
+
+* dark-mode contrast/legibility audit across all pages ([#1184](https://github.com/drzero42/nexorious/issues/1184)) ([14b3dcf](https://github.com/drzero42/nexorious/commit/14b3dcf713013c51bf01c56230d0feb5cee32f79)), closes [#1179](https://github.com/drzero42/nexorious/issues/1179)
+* game detail Back button returns to where you came from ([#1177](https://github.com/drzero42/nexorious/issues/1177)) ([9ee42bf](https://github.com/drzero42/nexorious/commit/9ee42bf83650b487a02ae2a638f6441b024f1064)), closes [#1176](https://github.com/drzero42/nexorious/issues/1176)
+* hide decorative brand icons from screen readers ([#1185](https://github.com/drzero42/nexorious/issues/1185)) ([e4dbcff](https://github.com/drzero42/nexorious/commit/e4dbcfff7aceada3a9f601cd5c080c71636f6a8e)), closes [#1182](https://github.com/drzero42/nexorious/issues/1182)
+
 ## [0.95.0](https://github.com/drzero42/nexorious/compare/v0.94.1...v0.95.0) (2026-06-24)
 
 
