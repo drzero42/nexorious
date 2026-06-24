@@ -174,8 +174,7 @@ func TestSetupAdmin_ConcurrentRace(t *testing.T) {
 			c := e.NewContext(req, rec)
 			var code int
 			if err := sh.HandleSetupAdmin(c); err != nil {
-				var he *echo.HTTPError
-				if errors.As(err, &he) {
+				if he, ok := errors.AsType[*echo.HTTPError](err); ok {
 					code = he.Code
 				} else {
 					code = http.StatusInternalServerError
