@@ -71,6 +71,29 @@ Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
 });
 
+// Mock sessionStorage — Map-backed so it behaves like real storage (some tests
+// round-trip values through it, e.g. games_list_return_url), while still being
+// vi.fn() spies that tests can assert on or override per-call.
+const sessionStore = new Map<string, string>();
+const sessionStorageMock = {
+  getItem: vi.fn((key: string) => sessionStore.get(key) ?? null),
+  setItem: vi.fn((key: string, value: string) => {
+    sessionStore.set(key, value);
+  }),
+  removeItem: vi.fn((key: string) => {
+    sessionStore.delete(key);
+  }),
+  clear: vi.fn(() => {
+    sessionStore.clear();
+  }),
+  length: 0,
+  key: vi.fn(),
+};
+
+Object.defineProperty(window, 'sessionStorage', {
+  value: sessionStorageMock,
+});
+
 // Mock matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -144,5 +167,5 @@ Element.prototype.hasPointerCapture = vi.fn(() => false);
 Element.prototype.setPointerCapture = vi.fn();
 Element.prototype.releasePointerCapture = vi.fn();
 
-// Export the localStorage mock for test access
-export { localStorageMock };
+// Export the storage mocks for test access
+export { localStorageMock, sessionStorageMock };

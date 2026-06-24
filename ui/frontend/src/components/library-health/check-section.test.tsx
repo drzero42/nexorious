@@ -40,10 +40,10 @@ const mkMutation = (over = {}) => ({
   ...over,
 });
 
-function renderInAccordion(check: SmellSummaryItem) {
+function renderInAccordion(check: SmellSummaryItem, expanded = true) {
   return render(
     <Accordion type="multiple">
-      <CheckSection check={check} onView={vi.fn()} onEdit={vi.fn()} />
+      <CheckSection check={check} expanded={expanded} onView={vi.fn()} onEdit={vi.fn()} />
     </Accordion>,
   );
 }
