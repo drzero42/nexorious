@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.95.0](https://github.com/drzero42/nexorious/compare/v0.94.1...v0.95.0) (2026-06-24)
+
+
+### Features
+
+* add Telltale PC storefront ([#1174](https://github.com/drzero42/nexorious/issues/1174)) ([9df3f6b](https://github.com/drzero42/nexorious/commit/9df3f6bcc8141c4b60c01c3da51bd2763d8af6d6))
+
 ## [0.94.1](https://github.com/drzero42/nexorious/compare/v0.94.0...v0.94.1) (2026-06-24)
 
 
