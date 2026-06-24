@@ -5,25 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
+import { getGameReturn, navigateToGameReturn } from '@/lib/game-return';
 
 export const Route = createFileRoute('/_authenticated/games/$id/edit')({
   head: () => ({ meta: [{ title: 'Edit Game | Nexorious' }] }),
   component: GameEditPage,
 });
-
-function navigateToReturnUrl(navigate: ReturnType<typeof useNavigate>): void {
-  const stored = sessionStorage.getItem('games_list_return_url');
-  if (!stored) {
-    navigate({ to: '/games' });
-    return;
-  }
-  try {
-    const search = JSON.parse(stored) as Record<string, string>;
-    navigate({ to: '/games', search });
-  } catch {
-    navigate({ to: '/games' });
-  }
-}
 
 export function GameEditPage() {
   const { id: gameId } = Route.useParams();
@@ -44,9 +31,9 @@ export function GameEditPage() {
             The requested game could not be found in your collection.
           </p>
           <div className="mt-6">
-            <Button onClick={() => navigateToReturnUrl(navigate)}>
+            <Button onClick={() => navigateToGameReturn(navigate)}>
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Games
+              Back to {getGameReturn().label}
             </Button>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react';
 import { useUserGames, useUserGameIds, useAllPlatforms, useAllStorefronts } from '@/hooks';
 import { useDocumentTitleOverride } from '@/lib/document-title';
 import { buildLibraryTitle } from '@/lib/library-title';
+import { setGameReturn } from '@/lib/game-return';
 import {
   saveLibraryPrefs,
   loadLibraryPrefs,
@@ -342,7 +343,7 @@ function GamesPageContent() {
   );
 
   const handleClickGame = (game: UserGame) => {
-    sessionStorage.setItem('games_list_return_url', JSON.stringify(search));
+    setGameReturn({ to: '/games', search, label: 'Games' });
     navigate({ to: '/games/$id', params: { id: game.id } });
   };
 

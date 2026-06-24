@@ -35,6 +35,7 @@ import { SuggestionsGrid } from '@/components/pools/suggestions-grid';
 import { PoolSortControl } from '@/components/pools/pool-sort-control';
 import { PoolFilterEditor } from '@/components/pools/pool-filter-editor';
 import { promoteToQueue, reorderQueue } from '@/lib/pool-queue';
+import { setGameReturn } from '@/lib/game-return';
 import { resolveZone, planTransition, type PoolZone } from '@/lib/pool-dnd';
 import {
   applyQueueOrder,
@@ -123,8 +124,10 @@ function PoolDetailPage() {
     }
   }, [isLoading, error, pool, navigate]);
 
-  const openGame = (userGameId: string) =>
+  const openGame = (userGameId: string) => {
+    setGameReturn({ to: '/pools/$id', params: { id }, label: 'Pool' });
     navigate({ to: '/games/$id', params: { id: userGameId } });
+  };
 
   // --- Optimistic cache helpers -------------------------------------------
   // Each handler edits the React Query cache immediately so a drag/button feels

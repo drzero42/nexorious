@@ -25,7 +25,7 @@ vi.mock('@/components/games/game-edit-form', () => ({
   GameEditForm: () => <div data-testid="game-edit-form" />,
 }));
 
-describe('GameEditPage — error state Back to Games navigation', () => {
+describe('GameEditPage — error state Back navigation', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     sessionStorage.clear();
@@ -42,9 +42,12 @@ describe('GameEditPage — error state Back to Games navigation', () => {
     } as ReturnType<typeof useUserGame>);
   });
 
-  it('navigates to stored return URL when Back to Games is clicked in error state', async () => {
+  it('navigates to the stored referrer (with filters) when Back is clicked in error state', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem('games_list_return_url', JSON.stringify({ q: 'zelda', sort: 'title' }));
+    sessionStorage.setItem(
+      'game_return',
+      JSON.stringify({ to: '/games', label: 'Games', search: { q: 'zelda', sort: 'title' } }),
+    );
 
     const { GameEditPage } = await import('./$id.edit');
     render(<GameEditPage />);
@@ -57,7 +60,22 @@ describe('GameEditPage — error state Back to Games navigation', () => {
     });
   });
 
-  it('navigates to bare /games when no return URL is stored', async () => {
+  it('reflects the referrer label and target (Library Health)', async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem(
+      'game_return',
+      JSON.stringify({ to: '/library-health', label: 'Library Health' }),
+    );
+
+    const { GameEditPage } = await import('./$id.edit');
+    render(<GameEditPage />);
+
+    await user.click(screen.getByRole('button', { name: /back to library health/i }));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/library-health' });
+  });
+
+  it('falls back to "Back to Games" → bare /games when no referrer is stored', async () => {
     const user = userEvent.setup();
 
     const { GameEditPage } = await import('./$id.edit');

@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { useUserGames } from '@/hooks';
 import { GameGrid } from '@/components/games';
 import { Button } from '@/components/ui/button';
+import { setGameReturn } from '@/lib/game-return';
 import type { UserGame } from '@/types';
 
 export const Route = createFileRoute('/_authenticated/wishlist')({
@@ -16,6 +17,7 @@ function WishlistPageContent() {
   const games = data?.items ?? [];
 
   const handleClickGame = (game: UserGame) => {
+    setGameReturn({ to: '/wishlist', label: 'Wishlist' });
     navigate({ to: '/games/$id', params: { id: game.id } });
   };
 
