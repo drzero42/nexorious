@@ -11,6 +11,13 @@ export interface BrandIconProps {
   size?: 'sm' | 'md' | 'lg';
   showTooltip?: boolean;
   showLabel?: boolean;
+  /**
+   * Mark the icon as decorative so screen readers ignore it. Use when a visible
+   * text label is adjacent (the label carries the meaning); otherwise the icon's
+   * accessible name doubles up with the label (e.g. "PC PC"). The `showLabel`
+   * path is always decorative since it renders its own label.
+   */
+  decorative?: boolean;
   className?: string;
 }
 
@@ -29,9 +36,14 @@ export function BrandIcon({
   size = 'md',
   showTooltip = false,
   showLabel = false,
+  decorative = false,
   className,
 }: BrandIconProps) {
   const { resolvedTheme } = useTheme();
+
+  // The showLabel path renders its own adjacent label, so the icon is always
+  // decorative there; otherwise honour the explicit prop.
+  const hideFromScreenReaders = decorative || showLabel;
 
   const basePath = iconUrl ? `${config.staticUrl}${iconUrl}` : null;
   const themedPath =
@@ -68,7 +80,7 @@ export function BrandIcon({
   const icon = showImage ? (
     <img
       src={src}
-      alt={displayName}
+      alt={hideFromScreenReaders ? '' : displayName}
       width={24}
       height={24}
       className={cn(brandIconSizeClasses[size], 'object-contain', className)}
@@ -76,7 +88,10 @@ export function BrandIcon({
       onError={handleError}
     />
   ) : (
-    <span className={cn('text-muted-foreground', brandIconSizeClasses[size], className)}>
+    <span
+      aria-hidden={hideFromScreenReaders || undefined}
+      className={cn('text-muted-foreground', brandIconSizeClasses[size], className)}
+    >
       {displayName.charAt(0)}
     </span>
   );

@@ -24,7 +24,11 @@ describe('StorefrontLabel', () => {
     expect(link).toHaveAttribute('href', 'https://store.steampowered.com/app/440/');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-    expect(screen.getByRole('img', { name: 'Steam' })).toBeInTheDocument();
+    // The icon sits next to the visible "Steam" label, so it is decorative
+    // (alt="") — the label carries the accessible name.
+    const icon = link.querySelector('img[src="/logos/storefronts/steam/steam-icon-light.svg"]');
+    expect(icon).toBeInTheDocument();
+    expect(icon).toHaveAttribute('alt', '');
   });
 
   it('renders a plain label (no parens) when store_url is absent', () => {

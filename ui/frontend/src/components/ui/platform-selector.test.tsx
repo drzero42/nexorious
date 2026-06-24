@@ -168,7 +168,7 @@ describe('PlatformSelector', () => {
     );
 
     await user.click(screen.getByRole('combobox', { name: /select platform/i }));
-    await user.click(screen.getByRole('option', { name: /PC$/ }));
+    await user.click(screen.getByRole('option', { name: /^PC$/ }));
 
     expect(handleChange).toHaveBeenCalledWith([
       { key: 'new-1', platform: 'pc', storefront: 'steam' },
@@ -188,7 +188,7 @@ describe('PlatformSelector', () => {
     );
 
     await user.click(screen.getByRole('combobox', { name: /select platform/i }));
-    await user.click(screen.getByRole('option', { name: /PC$/ }));
+    await user.click(screen.getByRole('option', { name: /^PC$/ }));
 
     expect(handleChange).toHaveBeenCalledWith([
       { key: 'k-1', platform: 'pc', storefront: 'steam' },
@@ -215,8 +215,8 @@ describe('PlatformSelector', () => {
 
     await user.click(screen.getByRole('combobox', { name: /select platform/i }));
 
-    expect(screen.getByRole('option', { name: /PC$/ })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('option', { name: /PlayStation 5$/ })).not.toHaveAttribute(
+    expect(screen.getByRole('option', { name: /^PC$/ })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('option', { name: /^PlayStation 5$/ })).not.toHaveAttribute(
       'aria-disabled',
       'true',
     );
@@ -492,15 +492,19 @@ describe('StorefrontSelector (via PlatformSelector row editor)', () => {
   });
 
   it('renders the storefront icon in the combobox trigger when a storefront is selected', () => {
-    render(
+    const { container } = render(
       <PlatformSelector
         selectedPlatforms={[sel('pc', 'steam')]}
         availablePlatforms={mockPlatforms}
         onChange={vi.fn()}
       />,
     );
-    // Steam has an icon_url — the trigger should render an img with the steam icon.
-    const steamIcon = screen.getByRole('img', { name: 'Steam' });
+    // Steam has an icon_url — the trigger renders the steam icon. It sits next to
+    // a visible label, so it is decorative (alt="") to avoid a doubled-up name.
+    const steamIcon = container.querySelector(
+      'img[src="/logos/storefronts/steam/steam-icon-light.svg"]',
+    );
     expect(steamIcon).toBeInTheDocument();
+    expect(steamIcon).toHaveAttribute('alt', '');
   });
 });

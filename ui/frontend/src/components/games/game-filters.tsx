@@ -75,7 +75,7 @@ export function GameFilters({
     ...(platforms?.map((p) => ({
       value: p.name,
       label: p.display_name,
-      icon: <PlatformIcon platform={p} size="sm" />,
+      icon: <PlatformIcon platform={p} size="sm" decorative />,
     })) ?? []),
     { value: 'unknown', label: 'Unknown' },
   ].sort((a, b) => a.label.localeCompare(b.label));
@@ -84,7 +84,7 @@ export function GameFilters({
     ...(storefronts?.map((s) => ({
       value: s.name,
       label: s.display_name,
-      icon: <StorefrontIcon storefront={s} size="sm" />,
+      icon: <StorefrontIcon storefront={s} size="sm" decorative />,
     })) ?? []),
     { value: 'unknown', label: 'Unknown' },
   ].sort((a, b) => a.label.localeCompare(b.label));

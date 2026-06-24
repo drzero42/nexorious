@@ -337,8 +337,12 @@ describe('GameList', () => {
       ];
       render(<GameList games={games} />);
 
-      // List view shows icon with text label
-      expect(screen.getByAltText('PC')).toBeInTheDocument();
+      // List view shows the icon (decorative — alt="") with its text label.
+      expect(
+        document.querySelector(
+          'img[src="http://localhost:8000/logos/platforms/pc/pc-icon-light.svg"]',
+        ),
+      ).toBeInTheDocument();
       expect(screen.getByText('PC')).toBeInTheDocument();
     });
 
@@ -385,9 +389,17 @@ describe('GameList', () => {
       ];
       render(<GameList games={games} />);
 
-      // List view shows icons with text labels
-      expect(screen.getByAltText('PC')).toBeInTheDocument();
-      expect(screen.getByAltText('PlayStation 5')).toBeInTheDocument();
+      // List view shows the icons (decorative — alt="") with their text labels.
+      expect(
+        document.querySelector(
+          'img[src="http://localhost:8000/logos/platforms/pc/pc-icon-light.svg"]',
+        ),
+      ).toBeInTheDocument();
+      expect(
+        document.querySelector(
+          'img[src="http://localhost:8000/logos/platforms/ps5/ps5-icon-light.svg"]',
+        ),
+      ).toBeInTheDocument();
       expect(screen.getByText('PC')).toBeInTheDocument();
       expect(screen.getByText('PlayStation 5')).toBeInTheDocument();
     });
@@ -467,8 +479,12 @@ describe('GameList', () => {
       ];
       render(<GameList games={games} />);
 
-      // Should only show PC icon and label, not crash or show empty string
-      expect(screen.getByAltText('PC')).toBeInTheDocument();
+      // Should only show PC icon (decorative — alt="") and label, not crash or show empty string
+      expect(
+        document.querySelector(
+          'img[src="http://localhost:8000/logos/platforms/pc/pc-icon-light.svg"]',
+        ),
+      ).toBeInTheDocument();
       expect(screen.getByText('PC')).toBeInTheDocument();
     });
   });
