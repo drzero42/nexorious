@@ -1,0 +1,16 @@
+Game Boy Color Logo
+===================
+
+Source: Original geometric recreation (hand-created for this project).
+Downloaded: 2026-06-24
+
+Description: Game Boy Color handheld silhouette: a more compact, symmetric body dominated by a large screen, with a d-pad and two buttons.
+
+This is an original, clean geometric drawing made for this project — not a
+trace or copy of any brand asset file (the same approach as the Telltale mark
+in ui/frontend/public/logos/storefronts/telltale/). It is free to use here.
+
+The mark is a single fill-rule=evenodd path so inner details (screen, buttons,
+counters) are theme-safe knock-outs:
+- nintendo-game-boy-color-icon-light.svg: black mark (#000000) for light backgrounds
+- nintendo-game-boy-color-icon-dark.svg:  white mark (#ffffff) for dark backgrounds

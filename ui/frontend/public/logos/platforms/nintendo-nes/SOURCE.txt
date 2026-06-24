@@ -1,0 +1,16 @@
+Nintendo Entertainment System Logo
+==================================
+
+Source: Original geometric recreation (hand-created for this project).
+Downloaded: 2026-06-24
+
+Description: NES controller silhouette: the rectangular brick controller with a d-pad, Select/Start pills and two round A/B buttons.
+
+This is an original, clean geometric drawing made for this project — not a
+trace or copy of any brand asset file (the same approach as the Telltale mark
+in ui/frontend/public/logos/storefronts/telltale/). It is free to use here.
+
+The mark is a single fill-rule=evenodd path so inner details (screen, buttons,
+counters) are theme-safe knock-outs:
+- nintendo-nes-icon-light.svg: black mark (#000000) for light backgrounds
+- nintendo-nes-icon-dark.svg:  white mark (#ffffff) for dark backgrounds

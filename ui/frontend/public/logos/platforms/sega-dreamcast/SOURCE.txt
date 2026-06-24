@@ -1,0 +1,16 @@
+Sega Dreamcast Logo
+===================
+
+Source: Original geometric recreation (hand-created for this project).
+Downloaded: 2026-06-24
+
+Description: A tapering spiral 'swirl', evoking the Sega Dreamcast swirl mark.
+
+This is an original, clean geometric drawing made for this project — not a
+trace or copy of any brand asset file (the same approach as the Telltale mark
+in ui/frontend/public/logos/storefronts/telltale/). It is free to use here.
+
+The mark is a single fill-rule=evenodd path so inner details (screen, buttons,
+counters) are theme-safe knock-outs:
+- sega-dreamcast-icon-light.svg: black mark (#000000) for light backgrounds
+- sega-dreamcast-icon-dark.svg:  white mark (#ffffff) for dark backgrounds
