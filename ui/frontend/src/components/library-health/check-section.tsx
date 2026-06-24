@@ -42,7 +42,7 @@ export function CheckSection({ check, onView, onEdit }: CheckSectionProps) {
     return (
       <div className="flex items-center justify-between rounded-md border border-dashed px-4 py-3 text-muted-foreground">
         <span className="flex items-center gap-2">
-          <Check className="h-4 w-4 text-green-600" aria-hidden />
+          <Check className="h-4 w-4 text-green-600 dark:text-green-400" aria-hidden />
           {check.title}
         </span>
         <span className="text-sm">All clear</span>

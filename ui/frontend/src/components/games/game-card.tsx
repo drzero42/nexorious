@@ -111,7 +111,7 @@ export function GameCard({
         {/* Loved indicator */}
         {game.is_loved && (
           <div className="absolute top-2 right-2 z-10">
-            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 text-sm">
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400 text-sm">
               &#9829;
             </span>
           </div>

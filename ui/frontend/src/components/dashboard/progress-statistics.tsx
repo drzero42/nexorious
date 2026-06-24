@@ -36,14 +36,14 @@ const statusOrder: PlayStatus[] = [
 
 // Background colors for journey icons
 const statusBgColors: Record<PlayStatus, string> = {
-  [PlayStatus.NOT_STARTED]: 'bg-gray-100',
-  [PlayStatus.IN_PROGRESS]: 'bg-blue-100',
-  [PlayStatus.COMPLETED]: 'bg-green-100',
-  [PlayStatus.MASTERED]: 'bg-purple-100',
-  [PlayStatus.DOMINATED]: 'bg-yellow-100',
-  [PlayStatus.SHELVED]: 'bg-orange-100',
-  [PlayStatus.DROPPED]: 'bg-red-100',
-  [PlayStatus.REPLAY]: 'bg-cyan-100',
+  [PlayStatus.NOT_STARTED]: 'bg-gray-100 dark:bg-gray-800',
+  [PlayStatus.IN_PROGRESS]: 'bg-blue-100 dark:bg-blue-950',
+  [PlayStatus.COMPLETED]: 'bg-green-100 dark:bg-green-950',
+  [PlayStatus.MASTERED]: 'bg-purple-100 dark:bg-purple-950',
+  [PlayStatus.DOMINATED]: 'bg-yellow-100 dark:bg-yellow-950',
+  [PlayStatus.SHELVED]: 'bg-orange-100 dark:bg-orange-950',
+  [PlayStatus.DROPPED]: 'bg-red-100 dark:bg-red-950',
+  [PlayStatus.REPLAY]: 'bg-cyan-100 dark:bg-cyan-950',
 };
 
 // Journey statuses (main progression)
@@ -101,7 +101,7 @@ export function ProgressStatistics({ stats, className }: ProgressStatisticsProps
         <Card>
           <CardContent className="p-4">
             <div className="text-sm font-medium text-muted-foreground">Completion Rate</div>
-            <div className="mt-1 text-2xl font-bold text-green-600">
+            <div className="mt-1 text-2xl font-bold text-green-600 dark:text-green-400">
               {completionRate.toFixed(1)}%
             </div>
           </CardContent>
@@ -109,7 +109,7 @@ export function ProgressStatistics({ stats, className }: ProgressStatisticsProps
         <Card>
           <CardContent className="p-4">
             <div className="text-sm font-medium text-muted-foreground">Total Hours</div>
-            <div className="mt-1 text-2xl font-bold text-blue-600">
+            <div className="mt-1 text-2xl font-bold text-blue-600 dark:text-blue-400">
               {formatHoursPlayed(totalHoursPlayed)}
             </div>
           </CardContent>
@@ -117,13 +117,17 @@ export function ProgressStatistics({ stats, className }: ProgressStatisticsProps
         <Card>
           <CardContent className="p-4">
             <div className="text-sm font-medium text-muted-foreground">Active Games</div>
-            <div className="mt-1 text-2xl font-bold text-purple-600">{activeGames}</div>
+            <div className="mt-1 text-2xl font-bold text-purple-600 dark:text-purple-400">
+              {activeGames}
+            </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <div className="text-sm font-medium text-muted-foreground">Pile of Shame</div>
-            <div className="mt-1 text-2xl font-bold text-amber-600">{pileOfShame}</div>
+            <div className="mt-1 text-2xl font-bold text-amber-600 dark:text-amber-400">
+              {pileOfShame}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -186,19 +190,19 @@ export function ProgressStatistics({ stats, className }: ProgressStatisticsProps
           <CardContent>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="text-center">
-                <div className="text-3xl font-bold text-blue-600">
+                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
                   {formatHoursPlayed(totalHoursPlayed)}
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">Total Hours Played</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-green-600">
+                <div className="text-3xl font-bold text-green-600 dark:text-green-400">
                   {averageHoursPerGame.toFixed(1)}
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">Average Hours per Game</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-purple-600">
+                <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
                   {averageCompletionTime.toFixed(1)}
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">Average Completion Time</div>

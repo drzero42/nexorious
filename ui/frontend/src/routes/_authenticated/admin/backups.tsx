@@ -82,7 +82,7 @@ function getBackupTypeBadge(type: string) {
       return <Badge variant="secondary">Manual</Badge>;
     case 'pre_restore':
       return (
-        <Badge variant="outline" className="border-orange-500 text-orange-600">
+        <Badge variant="outline" className="border-orange-500 text-orange-600 dark:text-orange-400">
           Pre-restore
         </Badge>
       );

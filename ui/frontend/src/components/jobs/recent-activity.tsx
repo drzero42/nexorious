@@ -114,7 +114,7 @@ function ChangeBreakdown({ job }: { job: RecentJobDetail }) {
       <ChangeList
         items={job.addedItems}
         label="Added to library"
-        icon={<CheckCircle className="h-4 w-4 text-green-600" />}
+        icon={<CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />}
       />
       <ChangeList
         items={job.updatedItems}
@@ -214,12 +214,16 @@ function JobActivityItem({
                 {job.jobType === JobType.EXPORT ? (
                   // Export jobs create no job_items, so a "completed" count is
                   // always 0; show the number of games exported instead.
-                  <span className="text-green-600">{job.totalItems} games</span>
+                  <span className="text-green-600 dark:text-green-400">{job.totalItems} games</span>
                 ) : (
                   <>
-                    <span className="text-green-600">{job.completedCount} completed</span>
+                    <span className="text-green-600 dark:text-green-400">
+                      {job.completedCount} completed
+                    </span>
                     {job.failedCount > 0 && (
-                      <span className="text-red-600">{job.failedCount} failed</span>
+                      <span className="text-red-600 dark:text-red-400">
+                        {job.failedCount} failed
+                      </span>
                     )}
                   </>
                 )}

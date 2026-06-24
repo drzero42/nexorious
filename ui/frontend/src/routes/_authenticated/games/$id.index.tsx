@@ -72,16 +72,16 @@ export const Route = createFileRoute('/_authenticated/games/$id/')({
 // Get status color classes
 function getStatusColor(status: PlayStatus): string {
   const colors: Record<PlayStatus, string> = {
-    not_started: 'bg-gray-100 text-gray-800',
-    in_progress: 'bg-blue-100 text-blue-800',
-    completed: 'bg-green-100 text-green-800',
-    mastered: 'bg-purple-100 text-purple-800',
-    dominated: 'bg-yellow-100 text-yellow-800',
-    shelved: 'bg-orange-100 text-orange-800',
-    dropped: 'bg-red-100 text-red-800',
-    replay: 'bg-cyan-100 text-cyan-800',
+    not_started: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
+    in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200',
+    completed: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200',
+    mastered: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-200',
+    dominated: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-200',
+    shelved: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200',
+    dropped: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200',
+    replay: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200',
   };
-  return colors[status] || 'bg-gray-100 text-gray-800';
+  return colors[status] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
 }
 
 // Format ownership status for display
@@ -404,7 +404,7 @@ export function GameDetailPage() {
                         href={`https://www.igdb.com/games/${game.game.igdb_slug}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
+                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 inline-flex items-center gap-1"
                       >
                         View
                         <ExternalLink className="h-3 w-3" />
