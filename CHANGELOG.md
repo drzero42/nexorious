@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.94.1](https://github.com/drzero42/nexorious/compare/v0.94.0...v0.94.1) (2026-06-24)
+
+
+### Bug Fixes
+
+* order platforms and storefronts case-insensitively ([#1168](https://github.com/drzero42/nexorious/issues/1168)) ([c7591e2](https://github.com/drzero42/nexorious/commit/c7591e245328120d1944ac38af26dfd6baad210b))
+
 ## [0.94.0](https://github.com/drzero42/nexorious/compare/v0.93.0...v0.94.0) (2026-06-23)
 
 
