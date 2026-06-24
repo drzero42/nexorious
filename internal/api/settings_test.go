@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -54,6 +55,11 @@ func TestSettings_GetDefaultAndPatch(t *testing.T) {
 	got := decodeResp(t, rec)
 	if got["deal_region"] != "us" {
 		t.Fatalf("default deal_region want us, got %v", got["deal_region"])
+	}
+
+	// GET with no row returns the default theme "system".
+	if got["theme"] != "system" {
+		t.Fatalf("default theme want system, got %v", got["theme"])
 	}
 
 	// PATCH to a valid region round-trips.
@@ -125,5 +131,48 @@ func TestSettings_GetDefaultAndPatch(t *testing.T) {
 	rec = doPatchSettings(t, `{"date_format":"bogus"}`)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("want 422 for invalid date_format, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSettings_PatchTheme(t *testing.T) {
+	truncateAllTables(t)
+	userID := "u-settings-theme-user"
+	insertAuthTestUser(t, testDB, userID, "settings-theme-user", "pass123", true, false)
+
+	e := newTestEcho(t, testDB, testCfg())
+	sessionID := insertAuthTestSession(t, testDB, userID)
+
+	doPatchSettings := func(t *testing.T, bodyJSON string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPatch, "/api/settings", bytes.NewBufferString(bodyJSON))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: "session_id", Value: sessionID})
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// Valid theme persists.
+	rec := doPatchSettings(t, `{"theme":"dark"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH theme: got %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"theme":"dark"`) {
+		t.Fatalf("PATCH theme: body missing theme=dark: %s", rec.Body.String())
+	}
+
+	// Invalid theme → 422.
+	rec = doPatchSettings(t, `{"theme":"hotpink"}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("PATCH invalid theme: got %d, want 422; body=%s", rec.Code, rec.Body.String())
+	}
+
+	// PATCH of deal_region preserves the previously-set theme.
+	rec = doPatchSettings(t, `{"deal_region":"gb"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH deal_region: got %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"theme":"dark"`) {
+		t.Fatalf("PATCH deal_region clobbered theme: %s", rec.Body.String())
 	}
 }
