@@ -486,7 +486,9 @@ describe('StorefrontSelector (via PlatformSelector row editor)', () => {
     // Open the storefront combobox (the row's second combobox) and pick Epic Games Store.
     await user.click(triggers[triggers.length - 1]);
     await user.click(screen.getByText('Epic Games Store'));
-    expect(handleChange).toHaveBeenCalled();
+    expect(handleChange).toHaveBeenCalledWith([
+      { key: 'k-pc', platform: 'pc', storefront: 'epic-games-store' },
+    ]);
   });
 
   it('renders the storefront icon in the combobox trigger when a storefront is selected', () => {
