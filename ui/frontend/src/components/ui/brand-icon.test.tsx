@@ -65,4 +65,31 @@ describe('BrandIcon', () => {
     render(<BrandIcon iconUrl="/logos/x/x-icon-light.svg" displayName="Epic" showLabel />);
     expect(screen.getByText('Epic')).toBeInTheDocument();
   });
+
+  it('hides the image from screen readers when decorative', () => {
+    render(
+      <BrandIcon iconUrl="/logos/platforms/pc/pc-icon-light.svg" displayName="PC" decorative />,
+    );
+    // alt="" makes the image presentational — no accessible name to double up with the label.
+    expect(screen.queryByRole('img', { name: 'PC' })).toBeNull();
+    expect(screen.getByRole('presentation', { hidden: true })).toHaveAttribute('alt', '');
+  });
+
+  it('hides the first-letter badge from screen readers when decorative', () => {
+    render(<BrandIcon displayName="Steam" decorative />);
+    expect(screen.getByText('S')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('hides the icon from screen readers when showLabel is set (label carries the name)', () => {
+    render(<BrandIcon iconUrl="/logos/x/x-icon-light.svg" displayName="Epic" showLabel />);
+    expect(screen.queryByRole('img', { name: 'Epic' })).toBeNull();
+    expect(screen.getByText('Epic')).toBeInTheDocument();
+  });
+
+  it('keeps the icon accessible name when standalone (not decorative)', () => {
+    render(
+      <BrandIcon iconUrl="/logos/platforms/pc/pc-icon-light.svg" displayName="PC" showTooltip />,
+    );
+    expect(screen.getByRole('img', { name: 'PC' })).toBeInTheDocument();
+  });
 });

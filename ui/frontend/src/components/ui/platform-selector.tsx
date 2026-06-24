@@ -93,7 +93,7 @@ function StorefrontSelector({
           className={cn('h-8 w-full justify-between text-xs', !selected && 'text-muted-foreground')}
         >
           <span className="flex items-center gap-1.5 min-w-0">
-            {selected && <StorefrontIcon storefront={selected} size="sm" />}
+            {selected && <StorefrontIcon storefront={selected} size="sm" decorative />}
             <span className="truncate">{selected?.display_name ?? 'Select storefront'}</span>
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -138,7 +138,7 @@ function StorefrontSelector({
                     <Check
                       className={cn('mr-2 h-4 w-4', isCurrent ? 'opacity-100' : 'opacity-0')}
                     />
-                    <StorefrontIcon storefront={storefront} size="sm" className="mr-2" />
+                    <StorefrontIcon storefront={storefront} size="sm" className="mr-2" decorative />
                     <span className="truncate">{storefront.display_name}</span>
                   </CommandItem>
                 );
@@ -226,7 +226,7 @@ function PlatformRowEditor({
           >
             <span className="flex items-center gap-2 min-w-0">
               {platform ? (
-                <PlatformIcon platform={platform} size="sm" />
+                <PlatformIcon platform={platform} size="sm" decorative />
               ) : (
                 <Monitor className="h-4 w-4 shrink-0" />
               )}
@@ -264,7 +264,7 @@ function PlatformRowEditor({
                         <Check
                           className={cn('mr-2 h-4 w-4', isCurrent ? 'opacity-100' : 'opacity-0')}
                         />
-                        <PlatformIcon platform={p} size="sm" className="mr-2" />
+                        <PlatformIcon platform={p} size="sm" className="mr-2" decorative />
                         <span className="truncate">{p.display_name}</span>
                       </CommandItem>
                     );
@@ -479,7 +479,7 @@ export function PlatformSelectorCompact({
                 onChange={() => handleToggle(platform)}
                 disabled={disabled}
               />
-              <PlatformIcon platform={platform} size="sm" className="flex-shrink-0" />
+              <PlatformIcon platform={platform} size="sm" className="flex-shrink-0" decorative />
               <span className="font-medium flex-1">{platform.display_name}</span>
             </label>
 

@@ -489,7 +489,7 @@ export function GameDetailPage() {
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center gap-1.5 font-medium">
                               {p.platform_details && (
-                                <PlatformIcon platform={p.platform_details} size="sm" />
+                                <PlatformIcon platform={p.platform_details} size="sm" decorative />
                               )}
                               {p.platform_details?.display_name || p.platform || 'Unknown'}
                             </span>

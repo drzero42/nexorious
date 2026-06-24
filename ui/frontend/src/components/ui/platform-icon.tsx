@@ -7,6 +7,7 @@ interface PlatformIconProps {
   size?: 'sm' | 'md' | 'lg';
   showTooltip?: boolean;
   showLabel?: boolean;
+  decorative?: boolean;
   className?: string;
 }
 
@@ -15,6 +16,7 @@ function PlatformIcon({
   size = 'md',
   showTooltip = false,
   showLabel = false,
+  decorative = false,
   className,
 }: PlatformIconProps) {
   return (
@@ -24,6 +26,7 @@ function PlatformIcon({
       size={size}
       showTooltip={showTooltip}
       showLabel={showLabel}
+      decorative={decorative}
       className={className}
     />
   );
@@ -70,6 +73,7 @@ interface StorefrontIconProps {
   size?: 'sm' | 'md' | 'lg';
   showTooltip?: boolean;
   showLabel?: boolean;
+  decorative?: boolean;
   className?: string;
 }
 
@@ -78,6 +82,7 @@ export function StorefrontIcon({
   size = 'md',
   showTooltip = false,
   showLabel = false,
+  decorative = false,
   className,
 }: StorefrontIconProps) {
   return (
@@ -87,6 +92,7 @@ export function StorefrontIcon({
       size={size}
       showTooltip={showTooltip}
       showLabel={showLabel}
+      decorative={decorative}
       className={className}
     />
   );

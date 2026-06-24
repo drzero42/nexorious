@@ -9,7 +9,7 @@ interface StorefrontLabelProps {
 export function StorefrontLabel({ storefront, storeUrl }: StorefrontLabelProps) {
   const inner = (
     <span className="inline-flex items-center gap-1">
-      <StorefrontIcon storefront={storefront} size="sm" />
+      <StorefrontIcon storefront={storefront} size="sm" decorative />
       {storefront.display_name}
     </span>
   );
