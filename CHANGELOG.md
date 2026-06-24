@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.97.0](https://github.com/drzero42/nexorious/compare/v0.96.0...v0.97.0) (2026-06-24)
+
+
+### Features
+
+* remember expanded Library Health checks across navigation ([#1186](https://github.com/drzero42/nexorious/issues/1186)) ([fd89f32](https://github.com/drzero42/nexorious/commit/fd89f32a0a195bfe0798576cae7fe632553a42ac))
+
 ## [0.96.0](https://github.com/drzero42/nexorious/compare/v0.95.0...v0.96.0) (2026-06-24)
 
 
