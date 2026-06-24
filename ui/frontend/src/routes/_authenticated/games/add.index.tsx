@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { IGDBSearch } from '@/components/games/igdb-search';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useHealthStatus } from '@/hooks/use-health-status';
+import { setGameReturn } from '@/lib/game-return';
 import type { IGDBGameCandidate } from '@/types';
 
 export const SELECTED_GAME_STORAGE_KEY = 'nexorious_selected_game';
@@ -24,6 +25,9 @@ export function AddGamePage() {
     // duplicate (#856). For wishlisted entries the detail page hosts the
     // wishlist UI; for library entries it lets the user navigate to edit.
     if (game.user_game_id) {
+      // Reset the back-referrer so a stale prior referrer doesn't leak into
+      // the existing game's detail page.
+      setGameReturn({ to: '/games', label: 'Games' });
       navigate({ to: '/games/$id', params: { id: game.user_game_id } });
       return;
     }

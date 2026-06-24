@@ -60,26 +60,13 @@ import {
 } from '@/components/games/platform-detail-fields';
 import { useAllPlatforms, useSettings, useDateFormat } from '@/hooks';
 import { buildDealLinks } from '@/lib/deal-links';
+import { getGameReturn, navigateToGameReturn } from '@/lib/game-return';
 import type { UserGamePlatformData } from '@/api/games';
 
 export const Route = createFileRoute('/_authenticated/games/$id/')({
   head: () => ({ meta: [{ title: 'Game Details | Nexorious' }] }),
   component: GameDetailPage,
 });
-
-function navigateToReturnUrl(navigate: ReturnType<typeof useNavigate>): void {
-  const stored = sessionStorage.getItem('games_list_return_url');
-  if (!stored) {
-    navigate({ to: '/games' });
-    return;
-  }
-  try {
-    const search = JSON.parse(stored) as Record<string, string>;
-    navigate({ to: '/games', search });
-  } catch {
-    navigate({ to: '/games' });
-  }
-}
 
 // Get status color classes
 function getStatusColor(status: PlayStatus): string {
@@ -234,9 +221,11 @@ export function GameDetailPage() {
   const { data: settings } = useSettings();
   const { formatDate } = useDateFormat();
 
+  const gameReturn = getGameReturn();
+
   const handleDelete = async () => {
     await deleteGame.mutateAsync(gameId);
-    navigateToReturnUrl(navigate);
+    navigateToGameReturn(navigate);
   };
 
   if (isLoading) {
@@ -252,9 +241,9 @@ export function GameDetailPage() {
             The requested game could not be found in your collection.
           </p>
           <div className="mt-6">
-            <Button onClick={() => navigateToReturnUrl(navigate)}>
+            <Button onClick={() => navigateToGameReturn(navigate)}>
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Games
+              Back to {gameReturn.label}
             </Button>
           </div>
         </div>
@@ -268,9 +257,9 @@ export function GameDetailPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={() => navigateToReturnUrl(navigate)}>
+        <Button variant="outline" onClick={() => navigateToGameReturn(navigate)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Games
+          Back to {gameReturn.label}
         </Button>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setShowPoolDialog(true)}>

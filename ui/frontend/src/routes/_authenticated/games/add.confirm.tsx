@@ -27,6 +27,7 @@ import { useAllPlatforms } from '@/hooks/use-platforms';
 import type { IGDBGameCandidate } from '@/types';
 import type { Platform } from '@/types/platform';
 import { OwnershipStatus, toGameId } from '@/types';
+import { setGameReturn } from '@/lib/game-return';
 import { SELECTED_GAME_STORAGE_KEY } from './add';
 
 export const Route = createFileRoute('/_authenticated/games/add/confirm')({
@@ -572,7 +573,10 @@ function GameConfirmPage() {
 
         toast.success(`Added "${resolvedGame.title}" to your library!`);
 
-        // Navigate to the newly created user game
+        // Navigate to the newly created user game. Reset the back-referrer to
+        // the games list so a stale prior referrer doesn't leak into the new
+        // game's detail page.
+        setGameReturn({ to: '/games', label: 'Games' });
         navigate({ to: '/games/$id', params: { id: userGame.id } });
       }
     } catch (error) {

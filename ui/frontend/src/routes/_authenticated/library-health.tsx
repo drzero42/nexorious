@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSmellSummary, smellKeys } from '@/hooks';
+import { setGameReturn } from '@/lib/game-return';
 import type { SmellSummaryItem, SmellTier } from '@/api/library-health';
 import { CheckSection } from '@/components/library-health/check-section';
 
@@ -72,10 +73,14 @@ function LibraryHealthPage() {
   }, [queryClient]);
 
   // Title opens the game's details page; the Edit action opens its edit form.
+  // Both record Library Health as the referrer so the game's back button (and
+  // edit → detail → back) returns here rather than to the games library.
   const onView = (userGameId: string) => {
+    setGameReturn({ to: '/library-health', label: 'Library Health' });
     void navigate({ to: '/games/$id', params: { id: userGameId } });
   };
   const onEdit = (userGameId: string) => {
+    setGameReturn({ to: '/library-health', label: 'Library Health' });
     void navigate({ to: '/games/$id/edit', params: { id: userGameId } });
   };
 

@@ -98,11 +98,11 @@ describe('GameDetailPage — Back to Games navigation', () => {
     } as unknown as ReturnType<typeof useAllPlatforms>);
   });
 
-  it('navigates to stored return URL when Back to Games is clicked', async () => {
+  it('navigates to the stored referrer (with filters) when Back is clicked', async () => {
     const user = userEvent.setup();
     sessionStorage.setItem(
-      'games_list_return_url',
-      JSON.stringify({ q: 'foo', status: 'completed' }),
+      'game_return',
+      JSON.stringify({ to: '/games', label: 'Games', search: { q: 'foo', status: 'completed' } }),
     );
 
     const { GameDetailPage } = await import('./$id.index');
@@ -116,7 +116,22 @@ describe('GameDetailPage — Back to Games navigation', () => {
     });
   });
 
-  it('navigates to bare /games when no return URL is stored', async () => {
+  it('reflects the referrer label and target (Library Health)', async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem(
+      'game_return',
+      JSON.stringify({ to: '/library-health', label: 'Library Health' }),
+    );
+
+    const { GameDetailPage } = await import('./$id.index');
+    render(<GameDetailPage />);
+
+    await user.click(screen.getByRole('button', { name: /back to library health/i }));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/library-health' });
+  });
+
+  it('navigates to bare /games when no referrer is stored', async () => {
     const user = userEvent.setup();
     // sessionStorage is empty (cleared in beforeEach)
 
@@ -128,9 +143,12 @@ describe('GameDetailPage — Back to Games navigation', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/games' });
   });
 
-  it('error state Back to Games uses stored return URL', async () => {
+  it('error state Back uses the stored referrer', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem('games_list_return_url', JSON.stringify({ status: 'in_progress' }));
+    sessionStorage.setItem(
+      'game_return',
+      JSON.stringify({ to: '/games', label: 'Games', search: { status: 'in_progress' } }),
+    );
 
     const { useUserGame } = vi.mocked(await import('@/hooks'));
     useUserGame.mockReturnValue({
@@ -150,7 +168,7 @@ describe('GameDetailPage — Back to Games navigation', () => {
     });
   });
 
-  it('error state Back to Games falls back to /games when no URL stored', async () => {
+  it('error state Back falls back to /games when no referrer stored', async () => {
     const user = userEvent.setup();
 
     const { useUserGame } = vi.mocked(await import('@/hooks'));
@@ -168,9 +186,12 @@ describe('GameDetailPage — Back to Games navigation', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/games' });
   });
 
-  it('navigates to stored return URL after deleting a game', async () => {
+  it('navigates to the stored referrer after deleting a game', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem('games_list_return_url', JSON.stringify({ q: 'rpg' }));
+    sessionStorage.setItem(
+      'game_return',
+      JSON.stringify({ to: '/games', label: 'Games', search: { q: 'rpg' } }),
+    );
 
     const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
     const { useDeleteUserGame } = vi.mocked(await import('@/hooks'));
@@ -202,8 +223,8 @@ describe('GameDetailPage — Back to Games navigation', () => {
   it('restores page number without double-encoding (regression: page="2" not page="\\"2\\"")', async () => {
     const user = userEvent.setup();
     sessionStorage.setItem(
-      'games_list_return_url',
-      JSON.stringify({ page: '2', status: 'completed' }),
+      'game_return',
+      JSON.stringify({ to: '/games', label: 'Games', search: { page: '2', status: 'completed' } }),
     );
 
     const { GameDetailPage } = await import('./$id.index');
