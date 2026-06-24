@@ -162,6 +162,7 @@ func (h *ChangelogHandler) setSeen(ctx context.Context, userID, version string) 
 		UserID:                   userID,
 		DealRegion:               defaultDealRegion,
 		DateFormat:               defaultDateFormat,
+		Theme:                    defaultTheme,
 		LastSeenChangelogVersion: &version,
 		CreatedAt:                now,
 		UpdatedAt:                now,

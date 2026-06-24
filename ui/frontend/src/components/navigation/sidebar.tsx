@@ -10,6 +10,7 @@ import {
 import { useAuth } from '@/providers';
 import { useNavItems, NavLink, NavSectionCollapsible } from './index';
 import { VersionFooter } from './version-footer';
+import { ThemeToggle } from '@/components/theme/theme-toggle';
 
 export function Sidebar() {
   const { user, logout } = useAuth();
@@ -44,10 +45,10 @@ export function Sidebar() {
       </nav>
 
       {/* User menu at bottom */}
-      <div className="p-4 border-t">
+      <div className="p-4 border-t flex items-center gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="w-full justify-between">
+            <Button variant="ghost" className="flex-1 justify-between">
               <span className="flex items-center gap-2">
                 <User className="h-4 w-4" />
                 <span className="truncate">{user?.username}</span>
@@ -68,6 +69,7 @@ export function Sidebar() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <ThemeToggle />
       </div>
 
       {/* Version */}

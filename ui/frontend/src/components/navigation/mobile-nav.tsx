@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/providers';
 import { useNavItems, NavLink, NavSectionCollapsible } from './index';
+import { ThemeToggle } from '@/components/theme/theme-toggle';
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
@@ -100,12 +101,15 @@ export function MobileNav() {
         </Link>
       </div>
 
-      {/* Avatar on right */}
-      <Link to="/profile">
-        <Avatar className="h-8 w-8">
-          <AvatarFallback>{user?.username?.charAt(0).toUpperCase()}</AvatarFallback>
-        </Avatar>
-      </Link>
+      {/* Right-hand controls */}
+      <div className="flex items-center gap-1">
+        <ThemeToggle />
+        <Link to="/profile">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback>{user?.username?.charAt(0).toUpperCase()}</AvatarFallback>
+          </Avatar>
+        </Link>
+      </div>
     </div>
   );
 }

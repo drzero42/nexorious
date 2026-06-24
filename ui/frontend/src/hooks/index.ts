@@ -126,6 +126,9 @@ export { useSettings, useUpdateSettings } from './use-settings';
 // Date format hook
 export { useDateFormat } from './use-date-format';
 
+// Theme preference hook
+export { useThemePreference } from './use-theme-preference';
+
 // Docs hooks
 export { docKeys, useDoc } from './use-docs';
 
