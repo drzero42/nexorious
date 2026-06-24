@@ -1,0 +1,16 @@
+Super Nintendo (SNES) Logo
+==========================
+
+Source: Original geometric recreation (hand-created for this project).
+Downloaded: 2026-06-24
+
+Description: SNES controller silhouette: the rounded oblong controller with a d-pad, Select/Start pills and the four-button (Y/X/B/A) diamond.
+
+This is an original, clean geometric drawing made for this project — not a
+trace or copy of any brand asset file (the same approach as the Telltale mark
+in ui/frontend/public/logos/storefronts/telltale/). It is free to use here.
+
+The mark is a single fill-rule=evenodd path so inner details (screen, buttons,
+counters) are theme-safe knock-outs:
+- nintendo-snes-icon-light.svg: black mark (#000000) for light backgrounds
+- nintendo-snes-icon-dark.svg:  white mark (#ffffff) for dark backgrounds

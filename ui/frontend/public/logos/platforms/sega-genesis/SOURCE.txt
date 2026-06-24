@@ -1,0 +1,15 @@
+Sega Logo
+=========
+
+Source: Simple Icons
+URL: https://simpleicons.org/?q=sega
+File: https://github.com/simple-icons/simple-icons/blob/16.24.0/icons/sega.svg
+Version: simple-icons 16.24.0
+License: CC0-1.0 (public domain dedication, no attribution required)
+Downloaded: 2026-06-24
+
+Description: Official Sega brand mark from the Simple Icons set
+(single-path monochrome). The upstream icon carries no fill, so the two
+variants here set it explicitly:
+- sega-genesis-icon-light.svg: black mark (#000000) for light backgrounds
+- sega-genesis-icon-dark.svg:  white mark (#ffffff) for dark backgrounds

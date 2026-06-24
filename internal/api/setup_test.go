@@ -174,8 +174,7 @@ func TestSetupAdmin_ConcurrentRace(t *testing.T) {
 			c := e.NewContext(req, rec)
 			var code int
 			if err := sh.HandleSetupAdmin(c); err != nil {
-				var he *echo.HTTPError
-				if errors.As(err, &he) {
+				if he, ok := errors.AsType[*echo.HTTPError](err); ok {
 					code = he.Code
 				} else {
 					code = http.StatusInternalServerError
@@ -282,25 +281,12 @@ func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
 		t.Errorf("expected pc-windows default_storefront='steam', got %v", defaultSF)
 	}
 
-	// Spot-check: steam icon uses light-variant filename, no path prefix
-	var icon *string
-	if err := testDB.QueryRowContext(context.Background(),
-		"SELECT icon FROM storefronts WHERE name = 'steam'").Scan(&icon); err != nil {
-		t.Fatalf("query steam icon: %v", err)
-	}
-	if icon == nil || *icon != "steam-icon-light.svg" {
-		t.Errorf("expected steam icon='steam-icon-light.svg', got %v", icon)
-	}
-
-	// Spot-check: platforms with no logo have NULL icon
-	var vitaIcon *string
-	if err := testDB.QueryRowContext(context.Background(),
-		"SELECT icon FROM platforms WHERE name = 'playstation-vita'").Scan(&vitaIcon); err != nil {
-		t.Fatalf("query playstation-vita icon: %v", err)
-	}
-	if vitaIcon != nil {
-		t.Errorf("expected playstation-vita icon=NULL, got %q", *vitaIcon)
-	}
+	// NOTE: icon-filename values are intentionally NOT asserted here. They mirror
+	// the migration literals (tautological) and forced a churn edit on every icon
+	// migration. The icon contract that actually matters — a bare filename in the
+	// DB resolving to a /logos/.../<name>-icon-light.svg URL — is covered for real
+	// in platforms_test.go (TestListPlatforms_* / TestListStorefronts_HasIconURL).
+	// This test guards only the non-obvious seed *decisions* below.
 
 	// Spot-check #818 Part A: original Xbox seeds physical-only with IGDB id 11.
 	var xboxIGDB *int
@@ -327,26 +313,7 @@ func TestMigration_PlatformStorefrontSeedData(t *testing.T) {
 		t.Errorf("expected uplay<->pc-windows association, got %d rows", uplayAssoc)
 	}
 
-	// Spot-check #818 Part C: amazon-games storefront exists with NULL icon.
-	var amazonIcon *string
-	if err := testDB.QueryRowContext(context.Background(),
-		"SELECT icon FROM storefronts WHERE name = 'amazon-games'").Scan(&amazonIcon); err != nil {
-		t.Fatalf("query amazon-games storefront: %v", err)
-	}
-	if amazonIcon != nil {
-		t.Errorf("expected amazon-games icon=NULL, got %q", *amazonIcon)
-	}
-
-	// Telltale Games: manual-only PC storefront with its three-dot icon and a
-	// pc-windows association.
-	var telltaleIcon *string
-	if err := testDB.QueryRowContext(context.Background(),
-		"SELECT icon FROM storefronts WHERE name = 'telltale'").Scan(&telltaleIcon); err != nil {
-		t.Fatalf("query telltale storefront: %v", err)
-	}
-	if telltaleIcon == nil || *telltaleIcon != "telltale-icon-light.svg" {
-		t.Errorf("expected telltale icon=telltale-icon-light.svg, got %v", telltaleIcon)
-	}
+	// Telltale Games: manual-only PC storefront with a pc-windows association.
 	var telltaleAssoc int
 	if err := testDB.QueryRowContext(context.Background(),
 		"SELECT COUNT(*) FROM platform_storefronts WHERE storefront = 'telltale' AND platform = 'pc-windows'").Scan(&telltaleAssoc); err != nil {
