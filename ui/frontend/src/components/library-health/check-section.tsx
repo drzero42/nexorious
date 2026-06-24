@@ -21,12 +21,15 @@ import { DismissedItems } from './dismissed-items';
 
 export interface CheckSectionProps {
   check: SmellSummaryItem;
+  // Whether this check's flagged-item list is expanded. Owned by the page (and
+  // persisted to sessionStorage) so it survives navigation; also gates the
+  // lazy item fetch below.
+  expanded: boolean;
   onView: (userGameId: string) => void;
   onEdit: (userGameId: string) => void;
 }
 
-export function CheckSection({ check, onView, onEdit }: CheckSectionProps) {
-  const [expanded, setExpanded] = useState(false);
+export function CheckSection({ check, expanded, onView, onEdit }: CheckSectionProps) {
   const [confirmAll, setConfirmAll] = useState(false);
   const [showDismissed, setShowDismissed] = useState(false);
   const [page, setPage] = useState(1);
@@ -87,7 +90,7 @@ export function CheckSection({ check, onView, onEdit }: CheckSectionProps) {
   return (
     <>
       <AccordionItem value={check.id}>
-        <AccordionTrigger onClick={() => setExpanded(true)}>
+        <AccordionTrigger>
           <span className="flex flex-1 items-center justify-between gap-3 pr-2 text-left">
             <span className="flex items-center gap-2">
               <span className="font-medium">{check.title}</span>
