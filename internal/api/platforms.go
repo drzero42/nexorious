@@ -27,13 +27,16 @@ func NewPlatformsHandler(db *bun.DB) *PlatformsHandler {
 }
 
 // HandleListPlatforms handles GET /api/platforms.
-// Returns all platforms with their storefronts, ordered by display_name.
+// Returns all platforms with their storefronts, ordered case-insensitively by
+// display_name (both the platforms and each platform's nested storefronts).
 func (h *PlatformsHandler) HandleListPlatforms(c *echo.Context) error {
 	var platforms []models.Platform
 	err := h.db.NewSelect().
 		Model(&platforms).
-		Relation("Storefronts").
-		OrderExpr("\"platform\".display_name ASC").
+		Relation("Storefronts", func(q *bun.SelectQuery) *bun.SelectQuery {
+			return q.OrderExpr("lower(display_name) ASC")
+		}).
+		OrderExpr("lower(\"platform\".display_name) ASC").
 		Scan(context.Background())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list platforms")
@@ -122,7 +125,7 @@ func (h *PlatformsHandler) HandleSimpleList(c *echo.Context) error {
 	err := h.db.NewSelect().
 		TableExpr("platforms").
 		ColumnExpr("name, display_name").
-		OrderExpr("display_name ASC").
+		OrderExpr("lower(display_name) ASC").
 		Scan(context.Background(), &items)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list platforms")
@@ -171,7 +174,7 @@ func (h *PlatformsHandler) HandlePlatformStorefronts(c *echo.Context) error {
 		Model(&storefronts).
 		Join("JOIN platform_storefronts ps ON ps.storefront = \"storefront\".name").
 		Where("ps.platform = ?", name).
-		OrderExpr("\"storefront\".display_name ASC").
+		OrderExpr("lower(\"storefront\".display_name) ASC").
 		Scan(context.Background())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list storefronts")
@@ -235,7 +238,7 @@ func (h *PlatformsHandler) HandleListStorefronts(c *echo.Context) error {
 	var storefronts []models.Storefront
 	err := h.db.NewSelect().
 		Model(&storefronts).
-		OrderExpr("\"storefront\".display_name ASC").
+		OrderExpr("lower(\"storefront\".display_name) ASC").
 		Scan(context.Background())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list storefronts")
@@ -261,7 +264,7 @@ func (h *PlatformsHandler) HandleStorefrontSimpleList(c *echo.Context) error {
 	err := h.db.NewSelect().
 		TableExpr("storefronts").
 		ColumnExpr("name, display_name").
-		OrderExpr("display_name ASC").
+		OrderExpr("lower(display_name) ASC").
 		Scan(context.Background(), &items)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list storefronts")
