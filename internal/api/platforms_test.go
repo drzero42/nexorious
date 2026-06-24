@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/uptrace/bun"
@@ -69,6 +71,62 @@ func TestListPlatforms(t *testing.T) {
 			if _, ok := sf["icon_url"].(string); !ok {
 				t.Fatalf("storefront %v has icon but missing icon_url", sf["name"])
 			}
+		}
+	}
+}
+
+// TestListPlatforms_CaseInsensitiveOrder guards the fix for case-sensitive
+// display_name ordering: "iOS" (the only seeded platform whose display name
+// starts with a lowercase letter) must sort among the I's, not last, and each
+// platform's nested storefronts must come back alphabetically rather than in
+// insertion order.
+func TestListPlatforms_CaseInsensitiveOrder(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	token := loginAndGetToken(t, e, setupUser(t, testDB), "pass123")
+
+	rec := getAuth(t, e, "/api/platforms", token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Platforms []struct {
+			DisplayName string `json:"display_name"`
+			Storefronts []struct {
+				DisplayName string `json:"display_name"`
+			} `json:"storefronts"`
+		} `json:"platforms"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Platforms) == 0 {
+		t.Fatal("expected platforms")
+	}
+
+	names := make([]string, len(resp.Platforms))
+	for i, p := range resp.Platforms {
+		names[i] = p.DisplayName
+	}
+	if !sort.SliceIsSorted(names, func(i, j int) bool {
+		return strings.ToLower(names[i]) < strings.ToLower(names[j])
+	}) {
+		t.Fatalf("platforms not in case-insensitive order: %v", names)
+	}
+	if names[len(names)-1] == "iOS" {
+		t.Fatalf("iOS sorted to the end (case-sensitive ordering): %v", names)
+	}
+
+	// Nested storefronts of each platform must also be case-insensitively sorted.
+	for _, p := range resp.Platforms {
+		sfNames := make([]string, len(p.Storefronts))
+		for i, sf := range p.Storefronts {
+			sfNames[i] = sf.DisplayName
+		}
+		if !sort.SliceIsSorted(sfNames, func(i, j int) bool {
+			return strings.ToLower(sfNames[i]) < strings.ToLower(sfNames[j])
+		}) {
+			t.Fatalf("storefronts for %q not in case-insensitive order: %v", p.DisplayName, sfNames)
 		}
 	}
 }
