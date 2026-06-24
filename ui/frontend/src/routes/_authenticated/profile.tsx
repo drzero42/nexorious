@@ -2,7 +2,13 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/providers';
-import { useCollectionStats, gameKeys, useSettings, useUpdateSettings } from '@/hooks';
+import {
+  useCollectionStats,
+  gameKeys,
+  useSettings,
+  useUpdateSettings,
+  useThemePreference,
+} from '@/hooks';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   Select,
@@ -13,6 +19,7 @@ import {
 } from '@/components/ui/select';
 import { DEAL_REGIONS } from '@/lib/deal-regions';
 import { DATE_FORMAT_OPTIONS, type DateFormatPref } from '@/lib/format-date';
+import { THEME_OPTIONS, type ThemePref } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -63,6 +70,7 @@ function calculatePasswordStrength(password: string): PasswordStrength {
 function PreferencesSection() {
   const { data: settings } = useSettings();
   const updateSettings = useUpdateSettings();
+  const { pref: themePref, setPref: setThemePref } = useThemePreference();
 
   return (
     <Card>
@@ -108,6 +116,24 @@ function PreferencesSection() {
             </SelectTrigger>
             <SelectContent>
               {DATE_FORMAT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="theme">Theme</Label>
+          <p className="mb-2 text-sm text-muted-foreground">
+            System follows your operating system's light/dark setting.
+          </p>
+          <Select value={themePref} onValueChange={(value) => setThemePref(value as ThemePref)}>
+            <SelectTrigger id="theme" className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THEME_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
                 </SelectItem>
