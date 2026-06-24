@@ -502,7 +502,7 @@ export function TagSelectorCompact({
           {selectedTags.length > 0 && (
             <div>
               <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                <Check className="w-4 h-4 text-green-600" />
+                <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
                 Selected ({selectedTags.length})
               </h4>
               <div className="space-y-2">

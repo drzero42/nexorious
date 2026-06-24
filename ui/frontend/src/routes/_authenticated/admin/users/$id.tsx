@@ -42,12 +42,16 @@ function UserStatusBadges({ user }: { user: AdminUser }) {
   return (
     <div className="flex flex-wrap gap-1">
       {user.isAdmin && (
-        <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-200">Admin</Badge>
+        <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50">
+          Admin
+        </Badge>
       )}
       {!user.isActive ? (
         <Badge variant="destructive">Inactive</Badge>
       ) : !user.isAdmin ? (
-        <Badge className="bg-green-100 text-green-800 hover:bg-green-200">User</Badge>
+        <Badge className="bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300 dark:hover:bg-green-900/50">
+          User
+        </Badge>
       ) : null}
     </div>
   );
@@ -333,7 +337,7 @@ function EditUserPage() {
 
       {/* Success Alert */}
       {successMessage && (
-        <Alert className="border-green-500 bg-green-50 text-green-800">
+        <Alert className="border-green-500 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/30 dark:text-green-300">
           <Check className="h-4 w-4" />
           <AlertDescription>{successMessage}</AlertDescription>
         </Alert>

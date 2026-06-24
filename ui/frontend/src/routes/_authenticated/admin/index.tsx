@@ -108,8 +108,8 @@ function AdminDashboardPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-4">
-                  <div className="rounded-lg bg-blue-100 p-3">
-                    <Users className="h-6 w-6 text-blue-600" />
+                  <div className="rounded-lg bg-blue-100 p-3 dark:bg-blue-900/30">
+                    <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Total Users</p>
@@ -122,8 +122,8 @@ function AdminDashboardPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-4">
-                  <div className="rounded-lg bg-purple-100 p-3">
-                    <Shield className="h-6 w-6 text-purple-600" />
+                  <div className="rounded-lg bg-purple-100 p-3 dark:bg-purple-900/30">
+                    <Shield className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Admin Users</p>
@@ -136,8 +136,8 @@ function AdminDashboardPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-4">
-                  <div className="rounded-lg bg-green-100 p-3">
-                    <Gamepad2 className="h-6 w-6 text-green-600" />
+                  <div className="rounded-lg bg-green-100 p-3 dark:bg-green-900/30">
+                    <Gamepad2 className="h-6 w-6 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Total Games</p>
@@ -152,12 +152,12 @@ function AdminDashboardPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-4">
-                  <div className="rounded-lg bg-emerald-100 p-3">
-                    <CheckCircle className="h-6 w-6 text-emerald-600" />
+                  <div className="rounded-lg bg-emerald-100 p-3 dark:bg-emerald-900/30">
+                    <CheckCircle className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">System Status</p>
-                    <p className="text-xl font-bold text-green-600">Healthy</p>
+                    <p className="text-xl font-bold text-green-600 dark:text-green-400">Healthy</p>
                   </div>
                 </div>
               </CardContent>
@@ -188,7 +188,9 @@ function AdminDashboardPage() {
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{user.username}</span>
                             {user.isAdmin && (
-                              <Badge className="bg-purple-100 text-purple-800">Admin</Badge>
+                              <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+                                Admin
+                              </Badge>
                             )}
                             {!user.isActive && <Badge variant="destructive">Inactive</Badge>}
                           </div>

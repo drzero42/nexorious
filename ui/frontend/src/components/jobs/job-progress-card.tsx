@@ -69,11 +69,13 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
             <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-5">
               <div>
                 <div className="text-muted-foreground">Matched</div>
-                <div className="text-lg font-semibold text-green-600">{job.progress.completed}</div>
+                <div className="text-lg font-semibold text-green-600 dark:text-green-400">
+                  {job.progress.completed}
+                </div>
               </div>
               <div>
                 <div className="text-muted-foreground">Needs Review</div>
-                <div className="text-lg font-semibold text-yellow-600">
+                <div className="text-lg font-semibold text-yellow-600 dark:text-yellow-400">
                   {job.progress.pendingReview}
                 </div>
               </div>
@@ -83,7 +85,9 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
               </div>
               <div>
                 <div className="text-muted-foreground">Failed</div>
-                <div className="text-lg font-semibold text-red-600">{job.progress.failed}</div>
+                <div className="text-lg font-semibold text-red-600 dark:text-red-400">
+                  {job.progress.failed}
+                </div>
               </div>
               <div>
                 <div className="text-muted-foreground">Processing</div>
@@ -107,7 +111,7 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
                 size="sm"
                 onClick={() => setConfirmCancel(true)}
                 disabled={isCancelling}
-                className="text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                className="text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-950 dark:hover:text-amber-300"
               >
                 {isCancelling ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

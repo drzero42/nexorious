@@ -134,10 +134,14 @@ function StatusSection({
   const iconMap: Record<JobItemStatus, React.ReactNode> = {
     [JobItemStatus.PENDING]: <Clock className="h-4 w-4 text-muted-foreground" />,
     [JobItemStatus.PROCESSING]: <Loader2 className="h-4 w-4 animate-spin text-blue-500" />,
-    [JobItemStatus.COMPLETED]: <CheckCircle className="h-4 w-4 text-green-600" />,
-    [JobItemStatus.PENDING_REVIEW]: <AlertCircle className="h-4 w-4 text-yellow-600" />,
+    [JobItemStatus.COMPLETED]: (
+      <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+    ),
+    [JobItemStatus.PENDING_REVIEW]: (
+      <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+    ),
     [JobItemStatus.SKIPPED]: <Clock className="h-4 w-4 text-muted-foreground" />,
-    [JobItemStatus.FAILED]: <AlertCircle className="h-4 w-4 text-red-600" />,
+    [JobItemStatus.FAILED]: <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />,
   };
 
   return (
@@ -203,7 +207,9 @@ function StatusSection({
                       </div>
                     )}
                     {item.errorMessage && (
-                      <div className="text-xs mt-1 text-red-600">{item.errorMessage}</div>
+                      <div className="text-xs mt-1 text-red-600 dark:text-red-400">
+                        {item.errorMessage}
+                      </div>
                     )}
                   </div>
                   {canRetryItem && (
