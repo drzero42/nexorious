@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { createFileRoute, Outlet } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { RouteGuard } from '@/components/route-guard';
+import { ThemeSync } from '@/components/theme/theme-sync';
 import { Sidebar, MobileNav } from '@/components/navigation';
 import { useHealthStatus } from '@/hooks/use-health-status';
 import { useJobTypeStatus, useJobCompletionEffect } from '@/hooks';
@@ -29,6 +30,7 @@ export function AuthenticatedLayout() {
 
   return (
     <RouteGuard>
+      <ThemeSync />
       <div className="flex h-screen flex-col md:flex-row">
         <MobileNav />
         <Sidebar />
