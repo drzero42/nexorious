@@ -254,4 +254,18 @@ describe('MultiSelectFilter', () => {
     await user.click(screen.getByText('Strategy'));
     expect(handleChange).toHaveBeenLastCalledWith(['strategy']);
   });
+
+  it('renders an option icon before its label when provided', async () => {
+    const user = userEvent.setup();
+    render(
+      <MultiSelectFilter
+        label="Platforms"
+        options={[{ value: 'pc', label: 'PC', icon: <span data-testid="opt-icon" /> }]}
+        selected={[]}
+        onChange={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole('combobox'));
+    expect(screen.getByTestId('opt-icon')).toBeInTheDocument();
+  });
 });

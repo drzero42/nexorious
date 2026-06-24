@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 export interface MultiSelectOption {
   value: string;
   label: string;
+  icon?: React.ReactNode;
 }
 
 export interface MultiSelectFilterProps {
@@ -85,6 +86,7 @@ export function MultiSelectFilter({
                       checked={isSelected}
                       onCheckedChange={() => handleToggle(option.value)}
                     />
+                    {option.icon}
                     <span className="text-sm">{option.label}</span>
                   </label>
                 );

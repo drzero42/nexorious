@@ -8,6 +8,8 @@ import {
 } from './platform-selector';
 import type { Platform, Storefront } from '@/types';
 
+vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
+
 // Helper: build a PlatformSelection with the now-required `key`.
 // NOTE: pass an explicit `key` when the same platform appears twice (the default collides).
 const sel = (platform: string, storefront?: string, key = `k-${platform}`): PlatformSelection => ({
@@ -24,6 +26,7 @@ const mockStorefronts: Storefront[] = [
   {
     name: 'steam',
     display_name: 'Steam',
+    icon_url: '/logos/storefronts/steam/steam-icon-light.svg',
     is_active: true,
     source: 'official',
     created_at: '2024-01-01T00:00:00Z',
@@ -165,7 +168,7 @@ describe('PlatformSelector', () => {
     );
 
     await user.click(screen.getByRole('combobox', { name: /select platform/i }));
-    await user.click(screen.getByRole('option', { name: /^PC$/ }));
+    await user.click(screen.getByRole('option', { name: /PC$/ }));
 
     expect(handleChange).toHaveBeenCalledWith([
       { key: 'new-1', platform: 'pc', storefront: 'steam' },
@@ -185,7 +188,7 @@ describe('PlatformSelector', () => {
     );
 
     await user.click(screen.getByRole('combobox', { name: /select platform/i }));
-    await user.click(screen.getByRole('option', { name: /^PC$/ }));
+    await user.click(screen.getByRole('option', { name: /PC$/ }));
 
     expect(handleChange).toHaveBeenCalledWith([
       { key: 'k-1', platform: 'pc', storefront: 'steam' },
@@ -212,8 +215,8 @@ describe('PlatformSelector', () => {
 
     await user.click(screen.getByRole('combobox', { name: /select platform/i }));
 
-    expect(screen.getByRole('option', { name: /^PC$/ })).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('option', { name: /PlayStation 5/ })).not.toHaveAttribute(
+    expect(screen.getByRole('option', { name: /PC$/ })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('option', { name: /PlayStation 5$/ })).not.toHaveAttribute(
       'aria-disabled',
       'true',
     );
@@ -460,5 +463,44 @@ describe('PlatformSelectorCompact', () => {
 
     const pcCard = screen.getByText('PC').closest('.rounded-lg') as HTMLElement;
     expect(within(pcCard).getAllByText('Storefront:')).toHaveLength(2);
+  });
+});
+
+// ============================================================================
+// StorefrontSelector (combobox)
+// ============================================================================
+
+describe('StorefrontSelector (via PlatformSelector row editor)', () => {
+  it('renders a searchable combobox and selects a storefront with an icon', async () => {
+    const user = userEvent.setup();
+    const handleChange = vi.fn();
+    render(
+      <PlatformSelector
+        selectedPlatforms={[sel('pc', 'steam')]}
+        availablePlatforms={mockPlatforms}
+        onChange={handleChange}
+      />,
+    );
+    // The storefront trigger is a combobox button, not a native <select>.
+    const triggers = screen.getAllByRole('combobox');
+    // Open the storefront combobox (the row's second combobox) and pick Epic Games Store.
+    await user.click(triggers[triggers.length - 1]);
+    await user.click(screen.getByText('Epic Games Store'));
+    expect(handleChange).toHaveBeenCalledWith([
+      { key: 'k-pc', platform: 'pc', storefront: 'epic-games-store' },
+    ]);
+  });
+
+  it('renders the storefront icon in the combobox trigger when a storefront is selected', () => {
+    render(
+      <PlatformSelector
+        selectedPlatforms={[sel('pc', 'steam')]}
+        availablePlatforms={mockPlatforms}
+        onChange={vi.fn()}
+      />,
+    );
+    // Steam has an icon_url — the trigger should render an img with the steam icon.
+    const steamIcon = screen.getByRole('img', { name: 'Steam' });
+    expect(steamIcon).toBeInTheDocument();
   });
 });

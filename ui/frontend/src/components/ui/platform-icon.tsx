@@ -1,7 +1,6 @@
-import { config } from '@/lib/env';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { BrandIcon } from '@/components/ui/brand-icon';
 import { cn } from '@/lib/utils';
-import type { Platform } from '@/types';
+import type { Platform, Storefront } from '@/types';
 
 interface PlatformIconProps {
   platform: Platform;
@@ -11,12 +10,6 @@ interface PlatformIconProps {
   className?: string;
 }
 
-const sizeClasses = {
-  sm: 'h-4 w-4',
-  md: 'h-5 w-5',
-  lg: 'h-6 w-6',
-};
-
 function PlatformIcon({
   platform,
   size = 'md',
@@ -24,48 +17,16 @@ function PlatformIcon({
   showLabel = false,
   className,
 }: PlatformIconProps) {
-  const iconUrl = platform.icon_url ? `${config.staticUrl}${platform.icon_url}` : null;
-
-  const icon = iconUrl ? (
-    <img
-      src={iconUrl}
-      alt={platform.display_name}
-      width={24}
-      height={24}
-      className={cn(sizeClasses[size], 'object-contain', className)}
-      loading="lazy"
+  return (
+    <BrandIcon
+      iconUrl={platform.icon_url}
+      displayName={platform.display_name}
+      size={size}
+      showTooltip={showTooltip}
+      showLabel={showLabel}
+      className={className}
     />
-  ) : (
-    <span className={cn('text-muted-foreground', sizeClasses[size], className)}>
-      {platform.display_name.charAt(0)}
-    </span>
   );
-
-  const content = showLabel ? (
-    <span className="inline-flex items-center gap-1.5">
-      {icon}
-      <span className="text-sm text-muted-foreground">{platform.display_name}</span>
-    </span>
-  ) : (
-    icon
-  );
-
-  if (showTooltip && !showLabel) {
-    return (
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex">{content}</span>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{platform.display_name}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  }
-
-  return content;
 }
 
 export interface PlatformIconListProps {
@@ -103,3 +64,32 @@ export function PlatformIconList({
     </span>
   );
 }
+
+interface StorefrontIconProps {
+  storefront: Storefront;
+  size?: 'sm' | 'md' | 'lg';
+  showTooltip?: boolean;
+  showLabel?: boolean;
+  className?: string;
+}
+
+export function StorefrontIcon({
+  storefront,
+  size = 'md',
+  showTooltip = false,
+  showLabel = false,
+  className,
+}: StorefrontIconProps) {
+  return (
+    <BrandIcon
+      iconUrl={storefront.icon_url}
+      displayName={storefront.display_name}
+      size={size}
+      showTooltip={showTooltip}
+      showLabel={showLabel}
+      className={className}
+    />
+  );
+}
+
+export { PlatformIcon };

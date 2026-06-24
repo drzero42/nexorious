@@ -1,20 +1,30 @@
+import { StorefrontIcon } from '@/components/ui/platform-icon';
+import type { Storefront } from '@/types';
+
 interface StorefrontLabelProps {
-  displayName: string;
+  storefront: Storefront;
   storeUrl?: string;
 }
 
-export function StorefrontLabel({ displayName, storeUrl }: StorefrontLabelProps) {
+export function StorefrontLabel({ storefront, storeUrl }: StorefrontLabelProps) {
+  const inner = (
+    <span className="inline-flex items-center gap-1">
+      <StorefrontIcon storefront={storefront} size="sm" />
+      {storefront.display_name}
+    </span>
+  );
+
   if (storeUrl) {
     return (
       <a
         href={storeUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-sm text-muted-foreground underline-offset-2 hover:underline"
+        className="inline-flex items-center text-sm text-muted-foreground underline-offset-2 hover:underline"
       >
-        ({displayName})
+        {inner}
       </a>
     );
   }
-  return <span className="text-sm text-muted-foreground">({displayName})</span>;
+  return <span className="text-sm text-muted-foreground">{inner}</span>;
 }

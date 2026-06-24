@@ -11,13 +11,6 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import {
   availableStorefronts,
@@ -25,6 +18,7 @@ import {
   isPlatformExhausted,
   usedStorefronts,
 } from '@/components/ui/platform-options';
+import { PlatformIcon, StorefrontIcon } from '@/components/ui/platform-icon';
 import type { Platform, Storefront } from '@/types';
 
 // ============================================================================
@@ -81,27 +75,79 @@ function StorefrontSelector({
   allowNone = true,
   disabled = false,
 }: StorefrontSelectorProps) {
-  // Keep the current value showable even when its slot would otherwise be hidden.
+  const [open, setOpen] = React.useState(false);
   const showNone = allowNone || selectedStorefront == null;
+  const selected = storefronts.find((s) => s.name === selectedStorefront);
 
   return (
-    <Select
-      value={selectedStorefront ?? 'none'}
-      onValueChange={(value) => onStorefrontChange(value === 'none' ? undefined : value)}
-      disabled={disabled}
-    >
-      <SelectTrigger className="h-8 text-xs">
-        <SelectValue placeholder="Select storefront" />
-      </SelectTrigger>
-      <SelectContent>
-        {showNone && <SelectItem value="none">No storefront</SelectItem>}
-        {storefronts.map((storefront) => (
-          <SelectItem key={storefront.name} value={storefront.name}>
-            {storefront.display_name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          aria-label={
+            selected ? `Change storefront: ${selected.display_name}` : 'Select storefront'
+          }
+          disabled={disabled}
+          className={cn('h-8 w-full justify-between text-xs', !selected && 'text-muted-foreground')}
+        >
+          <span className="flex items-center gap-1.5 min-w-0">
+            {selected && <StorefrontIcon storefront={selected} size="sm" />}
+            <span className="truncate">{selected?.display_name ?? 'Select storefront'}</span>
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[220px] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search storefronts..." />
+          <CommandList>
+            <CommandEmpty>No storefronts found</CommandEmpty>
+            <CommandGroup>
+              {showNone && (
+                <CommandItem
+                  value="No storefront"
+                  onSelect={() => {
+                    onStorefrontChange(undefined);
+                    setOpen(false);
+                  }}
+                  className="cursor-pointer"
+                >
+                  <Check
+                    className={cn(
+                      'mr-2 h-4 w-4',
+                      selectedStorefront == null ? 'opacity-100' : 'opacity-0',
+                    )}
+                  />
+                  No storefront
+                </CommandItem>
+              )}
+              {storefronts.map((storefront) => {
+                const isCurrent = storefront.name === selectedStorefront;
+                return (
+                  <CommandItem
+                    key={storefront.name}
+                    value={storefront.display_name}
+                    onSelect={() => {
+                      onStorefrontChange(storefront.name);
+                      setOpen(false);
+                    }}
+                    className="cursor-pointer"
+                  >
+                    <Check
+                      className={cn('mr-2 h-4 w-4', isCurrent ? 'opacity-100' : 'opacity-0')}
+                    />
+                    <StorefrontIcon storefront={storefront} size="sm" className="mr-2" />
+                    <span className="truncate">{storefront.display_name}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -179,7 +225,11 @@ function PlatformRowEditor({
             className={cn('flex-1 justify-between min-w-0', !platform && 'text-muted-foreground')}
           >
             <span className="flex items-center gap-2 min-w-0">
-              <Monitor className="h-4 w-4 shrink-0" />
+              {platform ? (
+                <PlatformIcon platform={platform} size="sm" />
+              ) : (
+                <Monitor className="h-4 w-4 shrink-0" />
+              )}
               <span className="truncate">{platform?.display_name ?? placeholder}</span>
             </span>
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -214,7 +264,7 @@ function PlatformRowEditor({
                         <Check
                           className={cn('mr-2 h-4 w-4', isCurrent ? 'opacity-100' : 'opacity-0')}
                         />
-                        <Monitor className="mr-2 h-4 w-4 text-muted-foreground" />
+                        <PlatformIcon platform={p} size="sm" className="mr-2" />
                         <span className="truncate">{p.display_name}</span>
                       </CommandItem>
                     );
@@ -429,7 +479,7 @@ export function PlatformSelectorCompact({
                 onChange={() => handleToggle(platform)}
                 disabled={disabled}
               />
-              <Monitor className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <PlatformIcon platform={platform} size="sm" className="flex-shrink-0" />
               <span className="font-medium flex-1">{platform.display_name}</span>
             </label>
 

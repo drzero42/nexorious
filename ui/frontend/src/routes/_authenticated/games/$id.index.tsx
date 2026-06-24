@@ -39,6 +39,7 @@ import {
 import { AddToPoolDialog } from '@/components/pools/add-to-pool-dialog';
 import { StarRating } from '@/components/ui/star-rating';
 import { StorefrontLabel } from '@/components/storefront-link';
+import { PlatformIcon } from '@/components/ui/platform-icon';
 import {
   formatIgdbRating,
   formatHoursPlayed,
@@ -486,12 +487,15 @@ export function GameDetailPage() {
                           className="flex items-center justify-between bg-muted/50 px-3 py-2 rounded-lg"
                         >
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">
+                            <span className="inline-flex items-center gap-1.5 font-medium">
+                              {p.platform_details && (
+                                <PlatformIcon platform={p.platform_details} size="sm" />
+                              )}
                               {p.platform_details?.display_name || p.platform || 'Unknown'}
                             </span>
                             {p.storefront_details && (
                               <StorefrontLabel
-                                displayName={p.storefront_details.display_name}
+                                storefront={p.storefront_details}
                                 storeUrl={p.store_url}
                               />
                             )}

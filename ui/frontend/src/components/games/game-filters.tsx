@@ -7,7 +7,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MultiSelectFilter } from '@/components/ui/multi-select-filter';
+import { MultiSelectFilter, type MultiSelectOption } from '@/components/ui/multi-select-filter';
+import { PlatformIcon, StorefrontIcon } from '@/components/ui/platform-icon';
 import { useAllPlatforms, useAllStorefronts, useAllTags, useFilterOptions } from '@/hooks';
 import { OwnershipStatus } from '@/types';
 import { playStatusOptions, ownershipStatusOptions } from '@/lib/filter-labels';
@@ -70,13 +71,21 @@ export function GameFilters({
 
   // Convert data to MultiSelectFilter options
   // Add "Unknown" option and sort alphabetically
-  const platformOptions = [
-    ...(platforms?.map((p) => ({ value: p.name, label: p.display_name })) ?? []),
+  const platformOptions: MultiSelectOption[] = [
+    ...(platforms?.map((p) => ({
+      value: p.name,
+      label: p.display_name,
+      icon: <PlatformIcon platform={p} size="sm" />,
+    })) ?? []),
     { value: 'unknown', label: 'Unknown' },
   ].sort((a, b) => a.label.localeCompare(b.label));
 
-  const storefrontOptions = [
-    ...(storefronts?.map((s) => ({ value: s.name, label: s.display_name })) ?? []),
+  const storefrontOptions: MultiSelectOption[] = [
+    ...(storefronts?.map((s) => ({
+      value: s.name,
+      label: s.display_name,
+      icon: <StorefrontIcon storefront={s} size="sm" />,
+    })) ?? []),
     { value: 'unknown', label: 'Unknown' },
   ].sort((a, b) => a.label.localeCompare(b.label));
   const genreOptions = filterOptions?.genres?.map((g) => ({ value: g, label: g })) ?? [];

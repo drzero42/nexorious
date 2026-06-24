@@ -940,10 +940,12 @@ describe('GameFilters', () => {
       const platformsButton = screen.getByText('Platforms').closest('button')!;
       await user.click(platformsButton);
 
-      // Get all option labels
+      // Get all option labels (query the text-sm span to exclude icon fallback characters)
       const options = screen
         .getAllByRole('checkbox')
-        .map((checkbox) => checkbox.closest('label')?.textContent || '');
+        .map(
+          (checkbox) => checkbox.closest('label')?.querySelector('span.text-sm')?.textContent || '',
+        );
 
       // Verify options are sorted alphabetically
       // Expected order: PC, PlayStation 5, Unknown, Xbox Series X
@@ -961,10 +963,12 @@ describe('GameFilters', () => {
       const storefrontsButton = screen.getByText('Storefronts').closest('button')!;
       await user.click(storefrontsButton);
 
-      // Get all option labels
+      // Get all option labels (query the text-sm span to exclude icon fallback characters)
       const options = screen
         .getAllByRole('checkbox')
-        .map((checkbox) => checkbox.closest('label')?.textContent || '');
+        .map(
+          (checkbox) => checkbox.closest('label')?.querySelector('span.text-sm')?.textContent || '',
+        );
 
       // Verify options are sorted alphabetically
       // Expected order: Epic Games Store, Steam, Unknown
