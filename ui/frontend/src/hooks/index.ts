@@ -129,6 +129,9 @@ export { useDateFormat } from './use-date-format';
 // Theme preference hook
 export { useThemePreference } from './use-theme-preference';
 
+// Responsive / media-query hook
+export { useMediaQuery } from './use-media-query';
+
 // Docs hooks
 export { docKeys, useDoc } from './use-docs';
 

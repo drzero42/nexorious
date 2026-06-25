@@ -256,29 +256,38 @@ export function GameDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={() => navigateToGameReturn(navigate)}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to {gameReturn.label}
+      {/* Header — labels collapse to icons below sm: so the row never overflows on mobile */}
+      <div className="flex items-center justify-between gap-2">
+        <Button
+          variant="outline"
+          aria-label={`Back to ${gameReturn.label}`}
+          onClick={() => navigateToGameReturn(navigate)}
+        >
+          <ArrowLeft className="h-4 w-4 sm:mr-2" />
+          <span className="hidden sm:inline">Back to {gameReturn.label}</span>
         </Button>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setShowPoolDialog(true)}>
-            <ListPlus className="mr-2 h-4 w-4" />
-            Add to pool
+          <Button
+            variant="outline"
+            aria-label="Add to pool"
+            onClick={() => setShowPoolDialog(true)}
+          >
+            <ListPlus className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Add to pool</span>
           </Button>
           <Button
             variant="outline"
+            aria-label="Edit"
             onClick={() => navigate({ to: '/games/$id/edit', params: { id: gameId } })}
           >
-            <Edit className="mr-2 h-4 w-4" />
-            Edit
+            <Edit className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Edit</span>
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive">
-                <Trash2 className="mr-2 h-4 w-4" />
-                Remove
+              <Button variant="destructive" aria-label="Remove">
+                <Trash2 className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Remove</span>
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>

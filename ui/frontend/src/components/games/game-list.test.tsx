@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@/test/test-utils';
 import userEvent from '@testing-library/user-event';
 import { GameList } from './game-list';
@@ -864,6 +864,102 @@ describe('GameList', () => {
 
       // Game 2 should not be selected
       expect(checkboxes[1]).not.toBeChecked();
+    });
+  });
+
+  describe('mobile card layout', () => {
+    const originalMatchMedia = window.matchMedia;
+
+    beforeEach(() => {
+      // Force the compact media query to match so the card layout renders.
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }));
+    });
+
+    afterEach(() => {
+      window.matchMedia = originalMatchMedia;
+    });
+
+    it('renders cards instead of a table on narrow viewports', () => {
+      render(<GameList games={[createMockGame()]} />);
+
+      expect(screen.queryByRole('table')).not.toBeInTheDocument();
+      expect(screen.queryByRole('columnheader')).not.toBeInTheDocument();
+      expect(screen.getByText('Test Game')).toBeInTheDocument();
+      expect(screen.getByText('In Progress')).toBeInTheDocument();
+    });
+
+    it('renders a checkbox per game and toggles selection', async () => {
+      const user = userEvent.setup();
+      const onSelectGame = vi.fn();
+      render(
+        <GameList
+          games={[createMockGame({ id: 'game-1' as UserGameId })]}
+          onSelectGame={onSelectGame}
+        />,
+      );
+
+      await user.click(screen.getByRole('checkbox'));
+      expect(onSelectGame).toHaveBeenCalledWith('game-1');
+    });
+
+    it('calls onClickGame when a card is clicked', async () => {
+      const user = userEvent.setup();
+      const game = createMockGame({ id: 'game-1' as UserGameId });
+      const onClickGame = vi.fn();
+      render(<GameList games={[game]} onClickGame={onClickGame} />);
+
+      await user.click(screen.getByText('Test Game'));
+      expect(onClickGame).toHaveBeenCalledWith(game);
+    });
+
+    it('does not trigger onClickGame when the card checkbox is clicked', async () => {
+      const user = userEvent.setup();
+      const onSelectGame = vi.fn();
+      const onClickGame = vi.fn();
+      render(
+        <GameList
+          games={[createMockGame({ id: 'game-1' as UserGameId })]}
+          onSelectGame={onSelectGame}
+          onClickGame={onClickGame}
+        />,
+      );
+
+      await user.click(screen.getByRole('checkbox'));
+      expect(onSelectGame).toHaveBeenCalled();
+      expect(onClickGame).not.toHaveBeenCalled();
+    });
+
+    it('shows the N/A placeholder when cover art is missing', () => {
+      render(
+        <GameList
+          games={[
+            createMockGame({
+              game: { ...createMockGame().game, cover_art_url: undefined },
+            }),
+          ]}
+        />,
+      );
+
+      expect(screen.getByText('N/A')).toBeInTheDocument();
+    });
+
+    it('renders card skeletons (not a table) while loading', () => {
+      render(<GameList games={[]} isLoading={true} />);
+
+      expect(screen.queryByRole('table')).not.toBeInTheDocument();
+      const skeletons = screen
+        .getAllByRole('generic')
+        .filter((el) => el.className.includes('animate-pulse'));
+      expect(skeletons.length).toBeGreaterThanOrEqual(10);
     });
   });
 });
