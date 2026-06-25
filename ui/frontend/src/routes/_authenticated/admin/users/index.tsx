@@ -26,7 +26,7 @@ import { toast } from 'sonner';
 import { Search, UserPlus, Users, AlertCircle, Loader2 } from 'lucide-react';
 import * as adminApi from '@/api/admin';
 import type { AdminUser } from '@/types';
-import { useDateFormat } from '@/hooks';
+import { useDateFormat, useMediaQuery } from '@/hooks';
 
 export const Route = createFileRoute('/_authenticated/admin/users/')({
   head: () => ({ meta: [{ title: 'Users | Nexorious' }] }),
@@ -86,6 +86,9 @@ function AdminUsersPage() {
   const { formatDateTime } = useDateFormat();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
+  // Switch between card and table layouts in JS (single tree) rather than
+  // mounting both and toggling with CSS — matches the `sm` (640px) breakpoint.
+  const isMobile = useMediaQuery('(max-width: 639px)');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -270,13 +273,51 @@ function AdminUsersPage() {
                 </Button>
               )}
             </div>
+          ) : isMobile ? (
+            /* Mobile Card View */
+            <div className="space-y-4">
+              {filteredUsers.map((user) => (
+                <div key={user.id} className="bg-muted/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                        <span className="text-sm font-medium">
+                          {user.username.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="font-medium">{user.username}</p>
+                        <UserStatusBadges user={user} />
+                      </div>
+                    </div>
+                    <Button variant="link" asChild>
+                      <Link to="/admin/users/$id" params={{ id: user.id }}>
+                        View
+                      </Link>
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Created {formatDateTime(user.createdAt)}
+                  </p>
+                </div>
+              ))}
+            </div>
           ) : (
-            <>
-              {/* Mobile Card View */}
-              <div className="block sm:hidden space-y-4">
+            /* Desktop Table View */
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Last Updated</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filteredUsers.map((user) => (
-                  <div key={user.id} className="bg-muted/50 rounded-lg p-4">
-                    <div className="flex items-center justify-between">
+                  <TableRow key={user.id}>
+                    <TableCell>
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
                           <span className="text-sm font-medium">
@@ -285,90 +326,48 @@ function AdminUsersPage() {
                         </div>
                         <div>
                           <p className="font-medium">{user.username}</p>
-                          <UserStatusBadges user={user} />
+                          <p className="text-xs text-muted-foreground">
+                            ID: {user.id.substring(0, 8)}...
+                          </p>
                         </div>
                       </div>
-                      <Button variant="link" asChild>
-                        <Link to="/admin/users/$id" params={{ id: user.id }}>
-                          View
-                        </Link>
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-3">
-                      Created {formatDateTime(user.createdAt)}
-                    </p>
-                  </div>
+                    </TableCell>
+                    <TableCell>
+                      <UserStatusBadges user={user} />
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDateTime(user.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatDateTime(user.updatedAt)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button variant="link" size="sm" asChild>
+                          <Link to="/admin/users/$id" params={{ id: user.id }}>
+                            View
+                          </Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleToggleUserStatus(user)}
+                          disabled={togglingUserId === user.id || user.id === currentUser?.id}
+                        >
+                          {togglingUserId === user.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : user.isActive ? (
+                            'Deactivate'
+                          ) : (
+                            'Activate'
+                          )}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </div>
-
-              {/* Desktop Table View */}
-              <div className="hidden sm:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead>Last Updated</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredUsers.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
-                              <span className="text-sm font-medium">
-                                {user.username.charAt(0).toUpperCase()}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="font-medium">{user.username}</p>
-                              <p className="text-xs text-muted-foreground">
-                                ID: {user.id.substring(0, 8)}...
-                              </p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <UserStatusBadges user={user} />
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatDateTime(user.createdAt)}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatDateTime(user.updatedAt)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button variant="link" size="sm" asChild>
-                              <Link to="/admin/users/$id" params={{ id: user.id }}>
-                                View
-                              </Link>
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleToggleUserStatus(user)}
-                              disabled={togglingUserId === user.id || user.id === currentUser?.id}
-                            >
-                              {togglingUserId === user.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : user.isActive ? (
-                                'Deactivate'
-                              ) : (
-                                'Activate'
-                              )}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </>
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
