@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.97.1](https://github.com/drzero42/nexorious/compare/v0.97.0...v0.97.1) (2026-06-25)
+
+
+### Bug Fixes
+
+* make game list and detail actions usable on mobile ([#1188](https://github.com/drzero42/nexorious/issues/1188)) ([29b74cc](https://github.com/drzero42/nexorious/commit/29b74cc47bbeb8fa8e17ecdb59925e2109f9f03f))
+
 ## [0.97.0](https://github.com/drzero42/nexorious/compare/v0.96.0...v0.97.0) (2026-06-24)
 
 
