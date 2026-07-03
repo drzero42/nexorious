@@ -14,7 +14,6 @@ import {
   bestAchievementProgress,
 } from '@/lib/game-utils';
 import { statusColors, statusLabels } from '@/lib/play-status';
-import { isBuyFirst } from '@/lib/game-flags';
 
 export interface GameCardProps {
   game: UserGame;
@@ -25,6 +24,12 @@ export interface GameCardProps {
   actionsSlot?: ReactNode;
   /** Extra classes merged onto the card root (e.g. a grab cursor for drag zones). */
   className?: string;
+  /**
+   * Suppress the "Wishlisted" badge. Set on the Wishlist page, where every card
+   * is wishlisted so the badge is redundant noise; pools leave it on to mark
+   * wishlisted-unowned members among owned games.
+   */
+  hideWishlistBadge?: boolean;
 }
 
 export function GameCard({
@@ -34,9 +39,9 @@ export function GameCard({
   onClick,
   actionsSlot,
   className,
+  hideWishlistBadge,
 }: GameCardProps) {
   const coverUrl = getCoverUrl(game);
-  const buyFirst = isBuyFirst(game);
   const achievements = bestAchievementProgress(game.platforms);
 
   return (
@@ -90,22 +95,23 @@ export function GameCard({
           </div>
         )}
 
-        {/* Bottom-left badge: play status, or "Buy first" for wishlisted-unowned
-            entries (which carry the badge instead of a play affordance). */}
-        {buyFirst ? (
-          <div className="absolute bottom-2 left-2">
-            <Badge variant="secondary" className="text-xs">
-              Buy first
-            </Badge>
-          </div>
-        ) : (
-          !game.is_wishlisted && (
+        {/* Bottom-left badge: a "Wishlisted" marker for wishlisted entries (shown
+            in pools among owned games; hidden on the Wishlist page), otherwise the
+            play status. */}
+        {game.is_wishlisted ? (
+          !hideWishlistBadge && (
             <div className="absolute bottom-2 left-2">
-              <Badge className={cn('text-white border-0', statusColors[game.play_status])}>
-                {statusLabels[game.play_status]}
+              <Badge variant="secondary" className="text-xs">
+                Wishlisted
               </Badge>
             </div>
           )
+        ) : (
+          <div className="absolute bottom-2 left-2">
+            <Badge className={cn('text-white border-0', statusColors[game.play_status])}>
+              {statusLabels[game.play_status]}
+            </Badge>
+          </div>
         )}
 
         {/* Loved indicator */}

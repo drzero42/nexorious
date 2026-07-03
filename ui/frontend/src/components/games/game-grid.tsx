@@ -10,6 +10,8 @@ export interface GameGridProps {
   selectedIds?: Set<string>;
   onSelectGame?: (id: string) => void;
   onClickGame?: (game: UserGame) => void;
+  /** Forwarded to each card; set on the Wishlist page to drop the redundant badge. */
+  hideWishlistBadge?: boolean;
 }
 
 function GameCardSkeleton() {
@@ -28,6 +30,7 @@ export function GameGrid({
   selectedIds,
   onSelectGame,
   onClickGame,
+  hideWishlistBadge,
 }: GameGridProps) {
   if (isLoading) {
     return (
@@ -57,6 +60,7 @@ export function GameGrid({
           selected={selectedIds?.has(game.id)}
           onSelect={onSelectGame}
           onClick={() => onClickGame?.(game)}
+          hideWishlistBadge={hideWishlistBadge}
         />
       ))}
     </div>
