@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.97.2](https://github.com/drzero42/nexorious/compare/v0.97.1...v0.97.2) (2026-07-03)
+
+
+### Bug Fixes
+
+* show Wishlisted badge on pool cards, drop Buy first ([#1195](https://github.com/drzero42/nexorious/issues/1195)) ([04e1e1c](https://github.com/drzero42/nexorious/commit/04e1e1cf09c55e1b31144fce4e426396a2432d46))
+
 ## [0.97.1](https://github.com/drzero42/nexorious/compare/v0.97.0...v0.97.1) (2026-06-25)
 
 
