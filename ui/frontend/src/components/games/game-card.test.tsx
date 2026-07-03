@@ -278,6 +278,29 @@ describe('GameCard', () => {
     });
   });
 
+  describe('wishlist badge', () => {
+    it('renders "Wishlisted" badge for a wishlisted game by default', () => {
+      const game = createMockGame({ is_wishlisted: true });
+      render(<GameCard game={game} />);
+
+      expect(screen.getByText('Wishlisted')).toBeInTheDocument();
+    });
+
+    it('hides the "Wishlisted" badge when hideWishlistBadge is set', () => {
+      const game = createMockGame({ is_wishlisted: true });
+      render(<GameCard game={game} hideWishlistBadge />);
+
+      expect(screen.queryByText('Wishlisted')).not.toBeInTheDocument();
+    });
+
+    it('does not render a "Wishlisted" badge for a non-wishlisted game', () => {
+      const game = createMockGame({ is_wishlisted: false });
+      render(<GameCard game={game} />);
+
+      expect(screen.queryByText('Wishlisted')).not.toBeInTheDocument();
+    });
+  });
+
   describe('loved indicator', () => {
     it('renders loved indicator when is_loved is true', () => {
       const game = createMockGame({ is_loved: true });

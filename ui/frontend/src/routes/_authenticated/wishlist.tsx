@@ -49,7 +49,12 @@ function WishlistPageContent() {
           </p>
         </div>
       ) : (
-        <GameGrid games={games} isLoading={isLoading} onClickGame={handleClickGame} />
+        <GameGrid
+          games={games}
+          isLoading={isLoading}
+          onClickGame={handleClickGame}
+          hideWishlistBadge
+        />
       )}
     </div>
   );
