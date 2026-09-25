@@ -33,6 +33,10 @@ jobs:
           # On pull_request events, check out the actual PR branch HEAD (not the
           # synthetic merge commit) so we can commit a hash fix and push it back.
           ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+          # Push the hash fix with the PAT so the new head triggers Test / CI
+          # Gate (GITHUB_TOKEN pushes do not trigger workflow runs). Fork PRs
+          # get no secrets and fall back to GITHUB_TOKEN.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
