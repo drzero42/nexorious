@@ -624,3 +624,21 @@ func TestMetricsEndpoint_404WhenDisabled(t *testing.T) {
 		t.Errorf("/metrics returned HTML (SPA fall-through), content-type %q", ct)
 	}
 }
+
+// Echo v5.3 groups auto-register catch-all 404 routes that run the group's
+// middleware; the empty-prefix admin group then 401'd the SPA root "/".
+func TestUnauthenticatedUnmatchedRoutes_NotAuthGated(t *testing.T) {
+	truncateAllTables(t)
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	e := api.New(testEncrypter, testCfg(), m, testDB, "", nil, nil, nil, "dev", "unknown", nil)
+
+	for path, want := range map[string]int{"/": 0, "/api/sync/no-such-route": http.StatusNotFound} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		if rec.Code == http.StatusUnauthorized || (want != 0 && rec.Code != want) {
+			t.Errorf("GET %s: got %d, want %d (not 401)", path, rec.Code, want)
+		}
+	}
+}
