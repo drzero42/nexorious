@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.97.5](https://github.com/drzero42/nexorious/compare/v0.97.4...v0.97.5) (2026-09-25)
+
+
+### Bug Fixes
+
+* disable Echo group auto 404 routes so / serves the SPA ([#1214](https://github.com/drzero42/nexorious/issues/1214)) ([d61bb6f](https://github.com/drzero42/nexorious/commit/d61bb6fda4333c977fef2d0fd7c6cce14e3acbeb))
+
 ## [0.97.4](https://github.com/drzero42/nexorious/compare/v0.97.3...v0.97.4) (2026-09-25)
 
 
