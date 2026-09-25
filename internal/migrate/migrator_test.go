@@ -184,8 +184,6 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"river_queue",
 		"river_job",
 		"river_leader",
-		"river_client",
-		"river_client_queue",
 		"backup_config",
 		"rate_limiter_tokens",
 	}
