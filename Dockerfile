@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.25
+# syntax=docker/dockerfile:1.27
 
 # ─── Stage 1: build the React SPA ────────────────────────────────────────────
 FROM docker.io/library/node:24-alpine AS frontend-build
