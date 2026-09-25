@@ -24,9 +24,10 @@ jobs:
           # Full history is required so git can compute merge bases when merging
           # PR branches that diverged from an older main commit.
           fetch-depth: 0
-          # Do not store GITHUB_TOKEN credentials in .git/config; we inject the
-          # PAT below so there is no credential conflict on push.
-          persist-credentials: false
+          # Push with the PAT so downstream workflows are triggered (GITHUB_TOKEN
+          # pushes do not trigger workflow runs). checkout stores it as a masked
+          # extraheader, never in the remote URL.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
@@ -41,13 +42,6 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Inject the PAT into the remote URL. persist-credentials: false on
-          # checkout ensures no GITHUB_TOKEN extraheader conflicts with this.
-          # Pushes use the PAT so downstream workflows are triggered
-          # (GITHUB_TOKEN pushes do not trigger workflow runs).
-          git remote set-url origin \
-            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
 
           # Find open PRs whose branch names start with renovate/.
           pr_json=$(gh pr list --state open --json number,headRefName --limit 100)
