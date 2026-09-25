@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.97.3](https://github.com/drzero42/nexorious/compare/v0.97.2...v0.97.3) (2026-09-25)
+
+
+### Bug Fixes
+
+* **deps:** update npm non-major ([#1192](https://github.com/drzero42/nexorious/issues/1192)) ([f0f4285](https://github.com/drzero42/nexorious/commit/f0f428593b961eded231eaef477e2b28cd5ec48c))
+* drop river_client dependency ahead of River 0.40 schema migration ([#1206](https://github.com/drzero42/nexorious/issues/1206)) ([f96380f](https://github.com/drzero42/nexorious/commit/f96380fc0ae0b396def535e80904110b394d3dcc))
+
 ## [0.97.2](https://github.com/drzero42/nexorious/compare/v0.97.1...v0.97.2) (2026-07-03)
 
 
