@@ -57,8 +57,8 @@
       });
 
       overlays.default = final: _prev: {
-        nexorious = self.packages.${final.system}.nexorious;
-        nexctl = self.packages.${final.system}.nexctl;
+        nexorious = self.packages.${final.stdenv.hostPlatform.system}.nexorious;
+        nexctl = self.packages.${final.stdenv.hostPlatform.system}.nexctl;
       };
 
       nixosModules = {
