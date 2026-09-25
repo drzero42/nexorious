@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.97.4](https://github.com/drzero42/nexorious/compare/v0.97.3...v0.97.4) (2026-09-25)
+
+
+### Bug Fixes
+
+* **nix:** use stdenv.hostPlatform.system in overlay ([#1209](https://github.com/drzero42/nexorious/issues/1209)) ([d2ce524](https://github.com/drzero42/nexorious/commit/d2ce524a37f6b643d84ab972afc2579fb76222c4))
+
 ## [0.97.3](https://github.com/drzero42/nexorious/compare/v0.97.2...v0.97.3) (2026-09-25)
 
 
