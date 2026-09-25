@@ -108,7 +108,7 @@ jobs:
           done
 
       - name: Generate source SBOM (Go + npm)
-        uses: anchore/sbom-action@v0.24.0
+        uses: anchore/sbom-action@v0.24.2
         with:
           path: .
           format: spdx-json
@@ -335,7 +335,7 @@ jobs:
       # diverge in their dependency set.
       - name: Generate image SBOM
         if: github.event_name == 'release'
-        uses: anchore/sbom-action@v0.24.0
+        uses: anchore/sbom-action@v0.24.2
         with:
           image: ghcr.io/drzero42/nexorious@${{ steps.build.outputs.digest }}
           format: spdx-json
