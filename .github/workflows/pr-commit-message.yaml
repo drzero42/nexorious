@@ -43,4 +43,5 @@ jobs:
         run: |
           # Pin the exact parser release-please depends on (^0.4.1; latest 0.4.1).
           npm install --no-save --no-audit --no-fund @conventional-commits/parser@0.4.1
+          node --test .github/scripts/check-pr-commit-message.test.mjs
           node .github/scripts/check-pr-commit-message.mjs

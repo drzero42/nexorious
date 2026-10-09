@@ -11,32 +11,78 @@
 // bug is googleapis/release-please#2564, open).
 //
 // Because the repo sets squash_merge_commit_message=PR_BODY, the message
-// release-please parses is "<PR title> (#<number>)\n\n<PR body>". We reconstruct
-// that here and run the exact same parser, so an unparseable message fails the
-// PR loudly instead of vanishing silently after merge.
+// release-please parses is "<PR title> (#<number>)\n\n<PR body>" — but GitHub
+// hard-wraps the body at 72 columns when it builds the squash commit, so we
+// must parse the *wrapped* text. #1221 passed this check on its raw body, then
+// wrapping moved `echo.Foo(echo.Bar(x), …)` from an indented line to column 0,
+// where the parser throws, and the fix was dropped from v0.97.6's changelog.
+// We reconstruct that message and run the exact same parser, so an unparseable
+// message fails the PR loudly instead of vanishing silently after merge.
 import { parser } from '@conventional-commits/parser';
 
-const title = process.env.PR_TITLE ?? '';
-const body = process.env.PR_BODY ?? '';
-const number = process.env.PR_NUMBER ?? '';
+// GitHub's squash-body wrap (verified line-for-line against #1221's squash
+// commit): lines ≤72 chars (code points) are kept verbatim; longer lines are
+// greedily re-filled at 72 on whitespace, losing their indentation. A single
+// word longer than 72 is never split.
+const WRAP = 72;
+const len = (s) => [...s].length;
 
-const subject = number ? `${title} (#${number})` : title;
-const message = body.trim() ? `${subject}\n\n${body}` : subject;
+export function wrapLikeGitHub(text) {
+  return text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .flatMap((line) => {
+      if (len(line) <= WRAP) return [line];
+      const out = [];
+      let cur = '';
+      for (const word of line.trim().split(/\s+/)) {
+        if (!cur) cur = word;
+        else if (len(cur) + 1 + len(word) <= WRAP) cur += ` ${word}`;
+        else {
+          out.push(cur);
+          cur = word;
+        }
+      }
+      if (cur) out.push(cur);
+      return out;
+    })
+    .join('\n');
+}
 
-try {
-  parser(message);
-  console.log('Squash commit message parses cleanly.');
-} catch (e) {
-  const first = String(e?.message ?? e).split('\n')[0];
-  console.error(
-    "::error::release-please cannot parse this PR's squash commit message and " +
-      'would silently drop it from the changelog after merge.',
+// The message release-please will parse for this PR. A BEGIN_COMMIT_OVERRIDE
+// block in the PR body replaces the commit message entirely (release-please
+// reads merged PR bodies), so honour it — it's also the escape hatch for
+// generated bodies (e.g. Renovate release notes) that can't easily be reworded.
+export function squashMessage(title, body, number) {
+  const override = body.match(/BEGIN_COMMIT_OVERRIDE\r?\n([\s\S]*?)\r?\nEND_COMMIT_OVERRIDE/);
+  if (override) return override[1].trim();
+  const subject = number ? `${title} (#${number})` : title;
+  return body.trim() ? `${subject}\n\n${wrapLikeGitHub(body)}` : subject;
+}
+
+if (import.meta.main) {
+  const message = squashMessage(
+    process.env.PR_TITLE ?? '',
+    process.env.PR_BODY ?? '',
+    process.env.PR_NUMBER ?? '',
   );
-  console.error(`Parser error: ${first}`);
-  console.error(
-    'Most common cause: attached nested call-syntax in the body, e.g. ' +
-      '`foo(bar(baz))`. Reword that line (add a space, rephrase, or split the ' +
-      'parentheses) so the parser accepts it, then re-check.',
-  );
-  process.exit(1);
+  try {
+    parser(message);
+    console.log('Squash commit message parses cleanly.');
+  } catch (e) {
+    const first = String(e?.message ?? e).split('\n')[0];
+    console.error(
+      "::error::release-please cannot parse this PR's squash commit message and " +
+        'would silently drop it from the changelog after merge.',
+    );
+    console.error(`Parser error (line numbers are after GitHub's 72-column wrap): ${first}`);
+    console.error(
+      'Most common cause: attached nested call-syntax in the body, e.g. ' +
+        '`foo(bar(baz))`, landing at the start of a wrapped line. Reword that ' +
+        'line (add a space, rephrase, or split the parentheses), or put ' +
+        '"BEGIN_COMMIT_OVERRIDE\\n<conventional commit message>\\nEND_COMMIT_OVERRIDE" ' +
+        'at the top of the PR body, then re-check.',
+    );
+    process.exit(1);
+  }
 }
