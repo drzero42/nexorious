@@ -168,7 +168,7 @@ func (h *GamesHandler) HandleListGames(c *echo.Context) error {
 	offset := (page - 1) * perPage
 
 	var games []models.Game
-	err = query.OrderExpr(orderExpr).Offset(offset).Limit(perPage).Scan(ctx, &games)
+	err = query.OrderExpr(orderExpr).Offset(int64(offset)).Limit(int64(perPage)).Scan(ctx, &games)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
@@ -176,11 +176,11 @@ func (h *GamesHandler) HandleListGames(c *echo.Context) error {
 		games = []models.Game{}
 	}
 
-	pages := (total + perPage - 1) / perPage
+	pages := (int(total) + perPage - 1) / perPage
 
 	return c.JSON(http.StatusOK, GameListResponse{
 		Games:   games,
-		Total:   total,
+		Total:   int(total),
 		Page:    page,
 		PerPage: perPage,
 		Pages:   pages,
