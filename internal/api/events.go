@@ -116,7 +116,7 @@ func (h *EventsHandler) HandleList(c *echo.Context) error {
 		TableExpr("events AS e").
 		Join("LEFT JOIN users AS u ON u.id = e.actor_user_id").
 		OrderExpr("e.occurred_at DESC, e.id DESC").
-		Limit(limit + 1)
+		Limit(int64(limit + 1))
 
 	if t := c.QueryParam("type"); t != "" {
 		q = q.Where("e.type = ?", t)
