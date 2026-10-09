@@ -149,7 +149,6 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 	}
 
 	// Count total.
-	var total int
 	countQ := h.db.NewSelect().TableExpr("jobs").Where("user_id = ?", userID)
 	if jt := c.QueryParam("job_type"); jt != "" {
 		countQ = countQ.Where("job_type = ?", jt)
@@ -167,7 +166,7 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 
 	offset := (page - 1) * perPage
 	q = q.OrderExpr(fmt.Sprintf("%s %s", sortBy, sortOrder)).
-		Limit(perPage).Offset(offset)
+		Limit(int64(perPage)).Offset(int64(offset))
 
 	var jobs []models.Job
 	err = q.Scan(context.Background(), &jobs)
@@ -364,7 +363,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 		Where("status IN ('completed', 'failed')").
 		Where("created_at >= now() - make_interval(days => ?)", daysBack).
 		Order("created_at DESC").
-		Limit(limit)
+		Limit(int64(limit))
 	if source != "" {
 		q = q.Where("source = ?", source)
 	}
@@ -534,7 +533,7 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 		countQ = countQ.Where("status = ?", statusParam)
 	}
 
-	var total int
+	var total int64
 	if statusParam == "pending_review" {
 		if err := h.db.NewRaw(
 			`SELECT COUNT(DISTINCT source_title) FROM job_items WHERE job_id = ? AND status = 'pending_review'`,
@@ -560,7 +559,7 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
 		}
 	} else {
-		if err := q.OrderExpr("created_at ASC").Limit(perPage).Offset(offset).Scan(context.Background(), &items); err != nil {
+		if err := q.OrderExpr("created_at ASC").Limit(int64(perPage)).Offset(int64(offset)).Scan(context.Background(), &items); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
 		}
 	}
