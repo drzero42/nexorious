@@ -60,12 +60,27 @@ export function squashMessage(title, body, number) {
   return body.trim() ? `${subject}\n\n${wrapLikeGitHub(body)}` : subject;
 }
 
-if (import.meta.main) {
-  const message = squashMessage(
-    process.env.PR_TITLE ?? '',
-    process.env.PR_BODY ?? '',
-    process.env.PR_NUMBER ?? '',
+// Whether release-please dropping this commit would change a release. With the
+// default changelog sections only feat/fix/perf/revert are user-facing; any
+// other type is hidden, so losing it is harmless — unless the commit carries a
+// breaking-change marker or a Release-As trailer, which only take effect if the
+// message parses.
+export function releaseRelevant(title, body) {
+  return (
+    /^(feat|fix|perf|revert)(\(.*?\))?!?:/.test(title) ||
+    /^\w+(\(.*?\))?!:/.test(title) ||
+    /^(BREAKING[ -]CHANGE|Release-As):/im.test(body)
   );
+}
+
+if (import.meta.main) {
+  const title = process.env.PR_TITLE ?? '';
+  const body = process.env.PR_BODY ?? '';
+  if (!releaseRelevant(title, body)) {
+    console.log('Not a release-relevant commit (no feat/fix/perf/revert, breaking change or Release-As); skipping.');
+    process.exit(0);
+  }
+  const message = squashMessage(title, body, process.env.PR_NUMBER ?? '');
   try {
     parser(message);
     console.log('Squash commit message parses cleanly.');
