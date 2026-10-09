@@ -13,7 +13,7 @@
 
       # release-please keeps this in sync with Chart.yaml etc.
       # On the release branch a CI-created nix/release-version.txt overrides it.
-      _releaseVersion = "0.97.4"; # x-release-please-version
+      _releaseVersion = "0.97.5"; # x-release-please-version
       version =
         if builtins.pathExists ./nix/release-version.txt
         then builtins.readFile ./nix/release-version.txt
@@ -26,7 +26,7 @@
       # changes, the Nix Build workflow rebuilds both packages and patches this
       # line; to refresh by hand set it to lib.fakeHash, run `nix build .#nexorious`,
       # and copy the "got:" hash.
-      goVendorHash = "sha256-D0LUuT6J+jr2t97LrMWzCadAsGVBuLRxfUrbG5P8rvw=";
+      goVendorHash = "sha256-P4i7d1ZDwQqCVyrfravLBcRW7Y56NNxKUqT5U8lqyyQ=";
     in
     {
       packages = forEachSystem (pkgs: rec {

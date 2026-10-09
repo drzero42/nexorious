@@ -96,7 +96,9 @@ func registerObservabilityMiddleware(e *echo.Echo) {
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
 func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, updateState *updatecheck.State, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
-	e := echo.New()
+	// Echo v5.3 groups auto-register catch-all 404 routes that run the group's
+	// middleware; the empty-prefix admin group would then auth-gate "/" (the SPA).
+	e := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
 
 	var rc *river.Client[pgx.Tx]
 	if len(riverClient) > 0 {

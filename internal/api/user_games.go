@@ -302,8 +302,8 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	}
 	// stable secondary sort
 	idQ = idQ.OrderExpr("ug.created_at DESC").
-		Offset((page - 1) * perPage).
-		Limit(perPage)
+		Offset(int64((page - 1) * perPage)).
+		Limit(int64(perPage))
 
 	// Wrap in subquery to get only IDs.
 	var ids []string
@@ -1539,7 +1539,7 @@ func (h *UserGamesHandler) HandleCollectionStats(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "database error")
 	}
-	resp.TotalGames = total
+	resp.TotalGames = int(total)
 
 	// completion_stats
 	type statusCount struct {
