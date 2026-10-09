@@ -22,7 +22,7 @@ func TestReplaceUserGameTags(t *testing.T) {
 		if err != nil {
 			t.Fatalf("count links: %v", err)
 		}
-		return n
+		return int(n)
 	}
 	newUG := func(t *testing.T, id, title string) {
 		t.Helper()

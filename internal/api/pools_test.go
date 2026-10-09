@@ -52,7 +52,7 @@ func poolGameCount(t *testing.T, db *bun.DB, userGameID string) int {
 	if err != nil {
 		t.Fatalf("poolGameCount: %v", err)
 	}
-	return n
+	return int(n)
 }
 
 func TestCompletionRemovesFromPools(t *testing.T) {
