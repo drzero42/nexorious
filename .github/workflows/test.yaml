@@ -154,7 +154,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9.3.0
         with:
-          version: v2.12.2
+          version: v2.14.0
 
   frontend-tests:
     name: Frontend Tests
