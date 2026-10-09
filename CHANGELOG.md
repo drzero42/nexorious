@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.97.6](https://github.com/drzero42/nexorious/compare/v0.97.5...v0.97.6) (2026-10-09)
+
+
+### Bug Fixes
+
+* **deps:** update go non-major ([354c2ca](https://github.com/drzero42/nexorious/commit/354c2ca06fb578d7fd8d5f1de33d32a002076fa1))
+
 ## [0.97.5](https://github.com/drzero42/nexorious/compare/v0.97.4...v0.97.5) (2026-09-25)
 
 
