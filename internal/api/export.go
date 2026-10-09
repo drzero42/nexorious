@@ -62,7 +62,7 @@ func (h *ExportHandler) handleExport(c *echo.Context, source string, taskType st
 		Source:           source,
 		Status:           models.JobStatusPending,
 		Priority:         models.JobPriorityNormal,
-		TotalItems:       count,
+		TotalItems:       int(count),
 		DispatchComplete: true, // not a streaming sync; the completion gate is N/A
 		CreatedAt:        time.Now().UTC(),
 	}
