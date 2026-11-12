@@ -58,7 +58,7 @@ Judge the size and risk of the **verified** work (not the issue's framing) and p
 
 This is a judgment call, not a formula. If it's borderline, ask the user which they'd prefer.
 
-Either lane still follows the project's mandatory workflow (feature branch, migrations as new files, tests, quality gates) from CLAUDE.md.
+Either lane still follows the project's mandatory workflow (feature branch, migrations as new files, tests, quality gates) from AGENTS.md.
 
 ## Step 6 — Get the user's approval before making any changes
 
