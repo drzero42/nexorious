@@ -1,11 +1,12 @@
 ---
-# Guards against a release-please footgun: its strict conventional-commit parser
-# throws on some legal free-form commit bodies (e.g. attached nested call-syntax
-# like `foo(bar(baz))`) and then silently drops the commit from the changelog
-# while its own run stays green (see #985 / v0.14.0, upstream
-# googleapis/release-please#2564). Since squash_merge_commit_message=PR_BODY, the
-# squash message is the PR title + body — so we parse the prospective message
-# here and fail the PR if release-please could not.
+# Guards against release-please silently dropping a PR from the changelog. Its
+# strict conventional-commit parser throws on some messages and then skips the
+# commit while its own run stays green (#985, upstream
+# googleapis/release-please#2564). Squash commits are "<PR title> (#N)" with a
+# BLANK body (squash_merge_commit_message=BLANK, #1208), unless the PR
+# description has a BEGIN_COMMIT_OVERRIDE block, which release-please reads
+# instead. We parse whichever release-please will use, and flag Release-As /
+# BREAKING CHANGE lines left outside an override (they would be ignored).
 #
 # Runs on `edited` too, so editing the PR title/body re-validates (a new commit
 # is not required). Kept out of test.yaml to avoid re-running the heavy suites on
@@ -34,12 +35,13 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Validate squash commit message parses
+      - name: Validate release commit message
         env:
           # Pass via env (never inline ${{ }}) to avoid script injection.
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
         run: |
           # Pin the exact parser release-please depends on (^0.4.1; latest 0.4.1).
           npm install --no-save --no-audit --no-fund @conventional-commits/parser@0.4.1
