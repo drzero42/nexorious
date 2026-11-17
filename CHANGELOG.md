@@ -26,6 +26,7 @@
 
 ### Bug Fixes
 
+* **deps:** update go non-major ([#1194](https://github.com/drzero42/nexorious/issues/1194)) ([613bdc8](https://github.com/drzero42/nexorious/commit/613bdc816025ff5efd515d2c8cd0f86370815e86))
 * **deps:** update npm non-major ([#1192](https://github.com/drzero42/nexorious/issues/1192)) ([f0f4285](https://github.com/drzero42/nexorious/commit/f0f428593b961eded231eaef477e2b28cd5ec48c))
 * drop river_client dependency ahead of River 0.40 schema migration ([#1206](https://github.com/drzero42/nexorious/issues/1206)) ([f96380f](https://github.com/drzero42/nexorious/commit/f96380fc0ae0b396def535e80904110b394d3dcc))
 

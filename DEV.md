@@ -13,16 +13,19 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 
 ### Forcing a specific version
 
-If you want the next release to be a specific version (e.g. bump minor instead of patch), add a `Release-As: X.Y.Z` line to the **PR description** before squash-merging. The repo uses `squash_merge_commit_message=PR_BODY`, so GitHub includes the PR description in the commit body and release-please picks up the trailer automatically.
+If you want the next release to be a specific version (e.g. bump minor instead of patch), put a `BEGIN_COMMIT_OVERRIDE` block in the **PR description** before squash-merging. It must hold the full commit message (the title line, a blank line, then the trailer):
 
-Alternatively, push an empty commit directly to `main`:
+```
+BEGIN_COMMIT_OVERRIDE
+fix: whatever the PR title is
 
-```bash
-git commit --allow-empty -m "chore: release 0.2.0" -m "Release-As: 0.2.0"
-git push origin main
+Release-As: 0.2.0
+END_COMMIT_OVERRIDE
 ```
 
-Either way, release-please will update the open Release PR to propose the specified version.
+Squash commits carry only the PR title (`squash_merge_commit_message=BLANK`), so a bare `Release-As:` line in the description would never reach the commit. release-please reads the override block from the merged PR instead. The `PR Commit Message` check fails a PR that has a `Release-As:` line outside such a block. (Pushing an empty commit straight to `main` no longer works; `main` is protected.)
+
+release-please will then update the open Release PR to propose the specified version.
 
 ### Version bump rules (pre-1.0)
 
