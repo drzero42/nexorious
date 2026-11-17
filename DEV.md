@@ -305,7 +305,7 @@ The route handlers in `internal/api/` are the source of truth for available API 
 
 ## Tech Stack
 
-- **Backend**: Go 1.26, Echo v5, Bun ORM, River job queue, pgx/v5
+- **Backend**: Go 1.27, Echo v5, Bun ORM, River job queue, pgx/v5
 - **Frontend**: React 19, Vite 8, TypeScript, TanStack Router + Query, Tailwind CSS v4, shadcn/ui
 - **Database**: PostgreSQL 16+
 - **Testing**: stdlib `testing` + testcontainers-go (Go); Vitest + @testing-library/react (frontend)
