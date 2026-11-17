@@ -312,7 +312,7 @@ fix: <the PR title>
 Release-As: X.Y.Z
 END_COMMIT_OVERRIDE
 ```
-A bare `Release-As:` line in the description does nothing (squash commits have no body) and fails the `PR Commit Message` check. An empty override block is ignored by release-please. (The old "push an empty commit directly to `main`" shortcut no longer works — `main` is protected; route the override through any PR.)
+A bare `Release-As:` line in the description does nothing (squash commits have no body) and fails the `PR Commit Message` check. An empty override block is ignored by release-please. **Never write the literal word `BEGIN_COMMIT_OVERRIDE` in a PR description unless you mean it** — release-please splits on the bare token, so even a mention in prose or backticks turns the rest of the description into the commit message (the `PR Commit Message` check catches this). (The old "push an empty commit directly to `main`" shortcut no longer works — `main` is protected; route the override through any PR.)
 
 To skip a release after an unwanted `feat:` / `fix:` lands: close the Release PR; release-please reopens it on the next push to main, so a true skip requires absorbing the change into the next legitimate release.
 

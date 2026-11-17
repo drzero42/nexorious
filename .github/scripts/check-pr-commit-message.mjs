@@ -89,8 +89,11 @@ if (import.meta.main) {
     );
     console.error(`Parser error: ${first}`);
     console.error(
-      'Fix the PR title, or the BEGIN_COMMIT_OVERRIDE block in the description if there is one, ' +
-        'then re-check.',
+      commitOverride(body)
+        ? 'Parsed the BEGIN_COMMIT_OVERRIDE text in the description. release-please treats ANY ' +
+            'occurrence of that word as the start of an override, even in prose or backticks — ' +
+            'rephrase the description if you only meant to mention it.'
+        : 'Fix the PR title, then re-check.',
     );
     process.exit(1);
   }
