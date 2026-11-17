@@ -23,7 +23,7 @@
     jq
     legendary-gl
     librsvg
-    nodejs_24
+    nodejs_26
     procps
     uv
     yamllint
