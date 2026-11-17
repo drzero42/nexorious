@@ -13,7 +13,7 @@
     "constraints.npm: keep Renovate's lockfile updates on npm 11, the major CI (Node 24) and local dev use. npm 12 fails `npm install --package-lock-only` with EALLOWREMOTE on registry tarballs when the tree has a package with bundleDependencies (Tailwind 4's @tailwindcss/oxide-wasm32-wasi): npm/cli#9800. Remove once that is fixed and we move to npm 12."
   ],
   "constraints": {
-    "npm": "^11"
+    "npm": "^12.0.0"
   },
   "packageRules": [
     {
