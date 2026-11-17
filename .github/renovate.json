@@ -9,6 +9,12 @@
   "gitIgnoredAuthors": [
     "github-actions[bot]@users.noreply.github.com"
   ],
+  "description": [
+    "prBodyNotes: pin the message release-please parses to just the PR title. Renovate bodies embed upstream release notes, and release-please's parser throws on some free-form lines (googleapis/release-please#2564), silently dropping the whole fix(deps) commit from the changelog (#1208). release-please reads BEGIN_COMMIT_OVERRIDE from the merged PR body, so the release notes stay visible for review."
+  ],
+  "prBodyNotes": [
+    "BEGIN_COMMIT_OVERRIDE\n{{{prTitle}}}\nEND_COMMIT_OVERRIDE"
+  ],
   "packageRules": [
     {
       "description": "Group all non-major npm updates into a single PR (shares package-lock.json + npmDepsHash, so separate PRs conflict).",
