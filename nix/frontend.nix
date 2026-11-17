@@ -11,7 +11,7 @@ buildNpmPackage {
   # src is the flake root (self); we reference the frontend subdirectory.
   src = "${src}/ui/frontend";
 
-  npmDepsHash = "sha256-zd+DDgdJerm4+6m5ua8S9p8IVCGgr5Fq78y+VFGc04s=";
+  npmDepsHash = "sha256-j3ZDbwKwuM3lNhG0a4ut51ynLgwpEIo55lSS9wEF87k=";
 
   installPhase = ''
     runHook preInstall
