@@ -44,7 +44,13 @@ jobs:
           # curl and ca-certificates are preinstalled on ubuntu-latest, so we
           # skip an apt install for them.
           sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          # Retry the key download: postgresql.org occasionally stalls and
+          # drops the TLS connection (curl exit 55), which failed CI with no
+          # code at fault (#1241). --max-time bounds each stalled attempt.
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
+            --connect-timeout 10 --max-time 30 \
+            --retry 5 --retry-delay 3 --retry-all-errors \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
           sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           # Refresh only the PGDG source list, not every Ubuntu mirror — the
           # base package lists already present on the runner image satisfy the
@@ -84,6 +90,7 @@ jobs:
           fi
 
       - name: Run Go tests with the race detector
+        id: race
         env:
           # Tests use testcontainers to spin up their own PostgreSQL container.
           # Point testcontainers at the Docker daemon available on GitHub-hosted runners.
@@ -97,23 +104,30 @@ jobs:
           # `go test` exit non-zero, but only a race prints "DATA RACE".
           go test -race -timeout 600s ./... 2>&1 | tee race-output.log
 
-      - name: Classify failure (data race vs. plain test failure)
+      - name: Classify failure (data race vs. test failure vs. setup failure)
         id: classify
         if: failure()
+        env:
+          RACE_OUTCOME: ${{ steps.race.outcome }}
         run: |
+          # If the test step itself didn't fail, an earlier setup step did
+          # (e.g. a network blip installing the Postgres client, #1241) and no
+          # test ran — don't report that as a test failure.
+          if [ "$RACE_OUTCOME" != "failure" ]; then
+            echo "kind=setup" >> "$GITHUB_OUTPUT"
           # The race detector prints "WARNING: DATA RACE" only when it actually
           # detects a race. Absent that marker, a non-zero exit is just a
           # failing/flaky test — don't mislabel it as a data race.
-          if grep -q "DATA RACE" race-output.log; then
-            echo "is_race=true" >> "$GITHUB_OUTPUT"
+          elif grep -q "DATA RACE" race-output.log; then
+            echo "kind=race" >> "$GITHUB_OUTPUT"
           else
-            echo "is_race=false" >> "$GITHUB_OUTPUT"
+            echo "kind=test" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Open or update a failure issue
         if: failure()
         env:
-          IS_RACE: ${{ steps.classify.outputs.is_race }}
+          FAILURE_KIND: ${{ steps.classify.outputs.kind }}
         uses: actions/github-script@v9
         with:
           script: |
@@ -124,17 +138,23 @@ jobs:
             // A genuine data race and a plain (e.g. flaky) test failure are
             // different problems with different fixes, so they get distinct
             // dedup labels, titles, and bodies — never conflated onto one issue.
-            const isRace = process.env.IS_RACE === 'true';
+            const kind = process.env.FAILURE_KIND;
+            const isRace = kind === 'race';
+            const isSetup = kind === 'setup';
             const label = isRace ? 'race-detector' : 'race-lane-failure';
             const labelMeta = isRace
               ? { color: 'd73a4a', description: 'Data race detected by the -race CI lane' }
               : { color: 'fbca04', description: 'Test failure (not a data race) in the -race CI lane' };
             const title = isRace
               ? '`-race` CI lane detected a data race on main'
-              : '`-race` CI lane failed on main (test failure, not a data race)';
+              : isSetup
+                ? '`-race` CI lane failed on main (setup step, tests did not run)'
+                : '`-race` CI lane failed on main (test failure, not a data race)';
             const summary = isRace
               ? `The race detector reported a **data race** on \`${context.sha}\`.`
-              : `The \`-race\` lane **failed without reporting a data race** on \`${context.sha}\` — a test failure (possibly flaky) rather than a race.`;
+              : isSetup
+                ? `The \`-race\` lane **failed in a setup step before the tests ran** on \`${context.sha}\` — likely infrastructure (network, runner), not the code. See the failing step in the run.`
+                : `The \`-race\` lane **failed without reporting a data race** on \`${context.sha}\` — a test failure (possibly flaky) rather than a race.`;
 
             // Ensure the dedicated dedup label exists (created on first failure).
             try {
