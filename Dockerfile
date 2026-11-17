@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.29
 
 # ─── Stage 1: build the React SPA ────────────────────────────────────────────
-FROM docker.io/library/node:24-alpine AS frontend-build
+FROM docker.io/library/node:26-alpine AS frontend-build
 WORKDIR /src
 COPY ui/frontend/package.json ui/frontend/package-lock.json ./ui/frontend/
 RUN cd ui/frontend && npm ci
