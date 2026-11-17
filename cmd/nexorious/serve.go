@@ -21,6 +21,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/api"
 	"github.com/drzero42/nexorious/internal/backup"
+	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/logging"
@@ -295,24 +296,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	quietJobKinds = append(quietJobKinds, tasks.PerItemJobKinds()...)
 	quietJobKinds = append(quietJobKinds, notify.PruneEventsArgs{}.Kind())
 
-	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), &river.Config{
-		Logger:  logging.RiverLogger(),
-		Workers: workers,
-		Queues: map[string]river.QueueConfig{
-			river.QueueDefault:         {MaxWorkers: cfg.WorkerCount},
-			tasks.QueueMetadataRefresh: {MaxWorkers: cfg.MetadataRefreshWorkers},
-		},
-		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
-		Middleware: []rivertype.Middleware{
-			otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
-				MeterProvider:  obs.MeterProvider,
-				TracerProvider: obs.TracerProvider,
-				DurationUnit:   "s",
-			}),
-			logging.NewWorkerMiddleware(quietJobKinds...),
-		},
-		ErrorHandler: &logging.WorkerErrorHandler{},
-	})
+	riverClient, err := river.NewClient(riverpgxv5.New(pgxPool), newRiverConfig(cfg, obs, workers, staleThreshold, quietJobKinds))
 	if err != nil {
 		slog.ErrorContext(ctx, "serve: river client init failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return fmt.Errorf("river.NewClient: %w", err)
@@ -413,24 +397,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 				Enabled:        cfg.UpdateCheckEnabled,
 			})
 
-			newClient, err := river.NewClient(riverpgxv5.New(newPgxPool), &river.Config{
-				Logger:  logging.RiverLogger(),
-				Workers: newWorkers,
-				Queues: map[string]river.QueueConfig{
-					river.QueueDefault:         {MaxWorkers: cfg.WorkerCount},
-					tasks.QueueMetadataRefresh: {MaxWorkers: cfg.MetadataRefreshWorkers},
-				},
-				PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
-				Middleware: []rivertype.Middleware{
-					otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
-						MeterProvider:  obs.MeterProvider,
-						TracerProvider: obs.TracerProvider,
-						DurationUnit:   "s",
-					}),
-					logging.NewWorkerMiddleware(quietJobKinds...),
-				},
-				ErrorHandler: &logging.WorkerErrorHandler{},
-			})
+			newClient, err := river.NewClient(riverpgxv5.New(newPgxPool), newRiverConfig(cfg, obs, newWorkers, staleThreshold, quietJobKinds))
 			if err != nil {
 				slog.ErrorContext(ctx, "serve: river client init failed (rebuild)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				return fmt.Errorf("RebuildServices: river.NewClient: %w", err)
@@ -555,6 +522,37 @@ func runServe(cmd *cobra.Command, _ []string) error {
 // the database (retrying like the `migrate` subcommand), then apply any
 // pending application and River migrations. A non-nil error means startup must
 // abort — serving with pending or half-applied migrations is never safe.
+// newRiverConfig builds the River client config shared by the startup client
+// and the client rebuilt after a restore, so the two cannot drift.
+//
+// otelriver goes in Plugins, not Middleware: River installs Middleware entries
+// only as middleware, so otelriver's MetricEmit hook (producer fetch metrics)
+// would never run. River places Plugins ahead of Middleware in the chain, so
+// otelriver still wraps the logging middleware and job logs keep the span's
+// trace context.
+func newRiverConfig(cfg *config.Config, obs *observability.Providers, workers *river.Workers, staleThreshold time.Duration, quietJobKinds []string) *river.Config {
+	return &river.Config{
+		Logger:  logging.RiverLogger(),
+		Workers: workers,
+		Queues: map[string]river.QueueConfig{
+			river.QueueDefault:         {MaxWorkers: cfg.WorkerCount},
+			tasks.QueueMetadataRefresh: {MaxWorkers: cfg.MetadataRefreshWorkers},
+		},
+		PeriodicJobs: scheduler.BuildPeriodicJobs(cfg, staleThreshold),
+		Plugins: []rivertype.Plugin{
+			otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
+				MeterProvider:  obs.MeterProvider,
+				TracerProvider: obs.TracerProvider,
+				DurationUnit:   "s",
+			}),
+		},
+		Middleware: []rivertype.Middleware{
+			logging.NewWorkerMiddleware(quietJobKinds...),
+		},
+		ErrorHandler: &logging.WorkerErrorHandler{},
+	}
+}
+
 func runStartupMigrations(ctx context.Context, db *bun.DB, migrator *migrate.Migrator, waitTimeout time.Duration) error {
 	if err := waitForDB(ctx, db, waitTimeout); err != nil {
 		return fmt.Errorf("serve --migrate: %w", err)
