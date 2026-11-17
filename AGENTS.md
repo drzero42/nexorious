@@ -25,14 +25,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Environment Validation
 ```bash
-go version   # expect go 1.26+
+go version   # expect go 1.27+
 make --version
 ```
 
 ## Setup & Development
 
 ### Development Environment
-Uses devenv for a reproducible shell (Go 1.26, golangci-lint, make, Node 26, TypeScript).
+Uses devenv for a reproducible shell (Go 1.27, golangci-lint, make, Node 26, TypeScript).
 
 > **Run commands directly** — `go`, `make`, `npm`, etc. are all on PATH in the devenv-activated shell. Only use `devenv shell -- <command>` when a tool is genuinely not available in the current environment. Never use `devenv shell --command`; the correct separator is `--`.
 

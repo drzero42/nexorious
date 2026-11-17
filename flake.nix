@@ -26,17 +26,20 @@
       # changes, the Nix Build workflow rebuilds both packages and patches this
       # line; to refresh by hand set it to lib.fakeHash, run `nix build .#nexorious`,
       # and copy the "got:" hash.
-      goVendorHash = "sha256-jM1KTTYmg99Jwg9vnQEJjwnSILAwIX8QqeSTkph7Jkw=";
+      goVendorHash = "sha256-bLC6cIA3Mke4IpiJjy3FRCMjTnoL1uUgk+xjrleNMlk=";
     in
     {
-      packages = forEachSystem (pkgs: rec {
+      packages = forEachSystem (pkgs: let
+        # nixpkgs' default go trails go.mod's minimum; pin the matching minor.
+        buildGoModule = pkgs.buildGoModule.override { go = pkgs.go_1_27; };
+      in rec {
         nexorious-frontend = pkgs.callPackage ./nix/frontend.nix {
           src = self;
           inherit version;
         };
 
         nexorious = pkgs.callPackage ./nix/package.nix {
-          inherit nexorious-frontend;
+          inherit buildGoModule nexorious-frontend;
           src = self;
           inherit version;
           commit = self.shortRev or "dirty";
@@ -47,6 +50,7 @@
         # but is intentionally NOT pulled in by the nexorious NixOS module — the
         # client stays opt-in (add packages.nexctl to environment.systemPackages).
         nexctl = pkgs.callPackage ./nix/nexctl.nix {
+          inherit buildGoModule;
           src = self;
           inherit version;
           commit = self.shortRev or "dirty";

@@ -33,7 +33,7 @@
   languages = {
     go = {
       enable = true;
-      package = pkgs.go_1_26;
+      package = pkgs.go_1_27;
     };
     nix = {
       enable = true;
