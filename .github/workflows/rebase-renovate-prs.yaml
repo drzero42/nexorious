@@ -76,16 +76,40 @@ jobs:
             # Check out a local copy of the PR branch.
             git checkout -B "${branch}" "origin/${branch}"
 
-            # Merge main. -X theirs resolves any conflict (including the
-            # npmDepsHash / vendorHash line both this PR and main modified) by
-            # taking main's version. W1 will replace it with the correct hash
-            # for the combined lockfile immediately after this push.
-            if ! git merge origin/main -X theirs --no-edit \
+            # Merge main. A conflict on the npmDepsHash / goVendorHash line
+            # (both this PR and main changed it) is expected: redo the merge
+            # with -X theirs to take main's line, and nix.yaml re-patches the
+            # correct hash right after the push. -X theirs only touches
+            # conflicting hunks, so it is safe once we know the hash files are
+            # the only conflicts. Any other conflict (package-lock.json,
+            # go.sum, ...) must not be resolved textually — that yields a
+            # lockfile out of sync with package.json / go.mod (#1242). Skip
+            # the PR instead; Renovate rebases conflicted branches on its next
+            # run and regenerates the lockfile properly.
+            if ! git merge origin/main --no-edit \
                 -m "chore: merge main into ${branch}"; then
-              echo "  Unresolvable conflict for PR #${pr_number}; skipping."
-              git merge --abort 2>/dev/null || true
-              git checkout -f main
-              continue
+              mapfile -t conflicted < <(git diff --name-only --diff-filter=U)
+              git merge --abort
+              non_hash=()
+              for f in "${conflicted[@]}"; do
+                case "$f" in
+                  flake.nix|nix/frontend.nix) ;;
+                  *) non_hash+=("$f") ;;
+                esac
+              done
+              if [ "${#conflicted[@]}" -eq 0 ] || [ "${#non_hash[@]}" -gt 0 ]; then
+                echo "  Conflict outside the Nix hash files for PR #${pr_number} (${non_hash[*]:-unknown}); skipping — Renovate will rebase it."
+                git checkout -f main
+                continue
+              fi
+              echo "  Only Nix hash files conflict (${conflicted[*]}); merging with -X theirs."
+              if ! git merge origin/main -X theirs --no-edit \
+                  -m "chore: merge main into ${branch}"; then
+                echo "  Merge with -X theirs failed for PR #${pr_number}; skipping."
+                git merge --abort 2>/dev/null || true
+                git checkout -f main
+                continue
+              fi
             fi
 
             # Update flake inputs so the PR picks up the latest nixpkgs
