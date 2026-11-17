@@ -205,12 +205,12 @@ Cross-repo: `Closes owner/repo#123`. The keyword must be in the **PR body**, not
 
 Non-major npm and Go updates arrive **pre-grouped** — one "npm non-major" PR (`package-lock.json` + `npmDepsHash`) and one "go non-major" PR (`go.sum` + `vendorHash`), configured via `packageRules` in `.github/renovate.json`. These two group PRs touch disjoint files, so they do **not** conflict with each other — merge them independently.
 
-The conflict mechanism still exists within a single ecosystem: a **major** PR and its same-ecosystem **group** PR both touch the same lockfile + hash, so merging one invalidates the other. `rebase-renovate-prs.yaml` auto-rebases open `renovate/` branches onto main (with `nix flake update`) on every push to main that touches `go.sum`/`package-lock.json`, and `nix.yaml` auto-patches the `npmDepsHash`/`vendorHash` on each PR — so in most cases the rebase is handled for you.
+The conflict mechanism still exists within a single ecosystem: a **major** PR and its same-ecosystem **group** PR both touch the same lockfile + hash, so merging one invalidates the other. `rebase-renovate-prs.yaml` merges main into open `renovate/` branches (with `nix flake update`) on every push to main that touches `go.sum`/`package-lock.json`, and `nix.yaml` auto-patches the `npmDepsHash`/`vendorHash` on each PR. The workflow only auto-resolves a conflict on the hash lines (`flake.nix`, `nix/frontend.nix`); if a lockfile or manifest conflicts — exactly the major + group case — it skips the PR rather than resolve it textually (#1242), and the PR is fixed by Renovate's own rebase on its next run.
 
 When you do need to merge two same-ecosystem PRs (major + group) by hand:
 1. Verify all CI checks pass on the target PR (use `gh run list --branch <branch>` — the GitHub API's `statusCheckRollup` field lags and often shows stale/empty data)
 2. Merge **one PR** with `gh pr merge <n> --squash --delete-branch`
-3. The other PR now conflicts — wait for `rebase-renovate-prs.yaml` to rebase it, or tick the "rebase/retry" checkbox at the bottom of the PR description. Renovate is self-hosted (`cloudzero-renovate-operator`), not the Mend app, so `@renovatebot` comments do nothing; the checkbox is picked up on its next run
+3. The other PR now conflicts. If only the hash lines conflict, `rebase-renovate-prs.yaml` merges main in for you; if its lockfile conflicts, the workflow skips it and Renovate rebases it on its next run. Renovate is self-hosted (`cloudzero-renovate-operator`, a few runs a day), not the Mend app, so `@renovatebot` comments do nothing — ask the user to trigger a run rather than wait for the schedule (ticking the "rebase/retry" checkbox also only takes effect on the next run)
 4. Wait for the rebase to land (~1–2 min) and CI to pass (~4 min) before merging it
 
 ### Code Style
