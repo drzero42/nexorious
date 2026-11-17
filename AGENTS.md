@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -199,7 +199,7 @@ When you do create an issue, **label it** at creation (`gh issue create --label 
 Closes #846
 Closes #847
 ```
-Cross-repo: `Closes owner/repo#123`. The keyword must be in the **PR body** (the squash commit body is the PR body via `squash_merge_commit_message=PR_BODY`), not only the title. After merging a multi-issue PR, verify every referenced issue actually closed (`gh issue view <n> --json state`) and close any stragglers manually with a comment linking the PR.
+Cross-repo: `Closes owner/repo#123`. The keyword must be in the **PR body**, not only the title (GitHub links and closes issues from the PR description; the squash commit itself carries only the title, see [Commit message convention](#commit-message-convention-mandatory)). After merging a multi-issue PR, verify every referenced issue actually closed (`gh issue view <n> --json state`) and close any stragglers manually with a comment linking the PR.
 
 ### Merging Renovate PRs
 
@@ -210,7 +210,7 @@ The conflict mechanism still exists within a single ecosystem: a **major** PR an
 When you do need to merge two same-ecosystem PRs (major + group) by hand:
 1. Verify all CI checks pass on the target PR (use `gh run list --branch <branch>` — the GitHub API's `statusCheckRollup` field lags and often shows stale/empty data)
 2. Merge **one PR** with `gh pr merge <n> --squash --delete-branch`
-3. The other PR now conflicts — wait for `rebase-renovate-prs.yaml` to rebase it, or trigger it manually with `gh pr comment <n> --body "@renovatebot rebase"`
+3. The other PR now conflicts — wait for `rebase-renovate-prs.yaml` to rebase it, or tick the "rebase/retry" checkbox at the bottom of the PR description. Renovate is self-hosted (`cloudzero-renovate-operator`), not the Mend app, so `@renovatebot` comments do nothing; the checkbox is picked up on its next run
 4. Wait for the rebase to land (~1–2 min) and CI to pass (~4 min) before merging it
 
 ### Code Style
@@ -266,19 +266,33 @@ The `nix/` directory contains the Nix package and NixOS module. Two hashes must 
 
 The `version` field in `flake.nix` is managed automatically by release-please (same as `Chart.yaml`). The flake exposes two packages, `nexorious` (server) and `nexctl` (CLI client); both are also in `overlays.default`. The `nexorious` NixOS module (`nix/module.nix`) installs only the server — `nexctl` is opt-in (add `packages.nexctl` to `environment.systemPackages`).
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues on `drzero42/nexorious` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `GLOSSARY.md` + `docs/adr/` (created lazily). See `docs/agents/domain.md`.
+
 ## Release Process
 
 Releases are produced by [release-please](https://github.com/googleapis/release-please) from the Conventional Commits on `main`. The full design is in [docs/superpowers/specs/2026-05-20-release-process-design.md](docs/superpowers/specs/2026-05-20-release-process-design.md).
 
 ### Commit message convention (MANDATORY)
 
-All commits on `main` must follow [Conventional Commits](https://www.conventionalcommits.org/). PRs are squash-merged, so the **PR title** is the commit message release-please parses.
+All commits on `main` must follow [Conventional Commits](https://www.conventionalcommits.org/). PRs are squash-merged with `squash_merge_commit_title=PR_TITLE` and `squash_merge_commit_message=BLANK`, so every commit on `main` is exactly `<PR title> (#N)` with no body, and the **PR title** is what release-please parses. The PR description never reaches the commit (#1208: Renovate's release-notes descriptions broke release-please's parser and silently dropped commits from the changelog); follow `(#N)` to the PR for context. The only way to give release-please more than the title is a `BEGIN_COMMIT_OVERRIDE` … `END_COMMIT_OVERRIDE` block in the PR description, which release-please reads from the merged PR (see [Overrides](#overrides)). The `PR Commit Message` workflow parses whichever message release-please will use, and fails a PR with a `Release-As:` / `BREAKING CHANGE:` line outside an override block.
 
 | Prefix | Effect |
 |---|---|
 | `feat: …` | minor bump |
 | `fix: …` | patch bump |
-| `feat!: …` or `BREAKING CHANGE:` footer | **major bump** |
+| `feat!: …` (or a `BREAKING CHANGE:` footer inside an override block) | **major bump** |
 | `chore:`, `ci:`, `docs:`, `refactor:`, `test:` | no release |
 
 ### Cutting a release
@@ -290,7 +304,15 @@ All commits on `main` must follow [Conventional Commits](https://www.conventiona
 
 ### Overrides
 
-To force the next release to a specific version, add a `Release-As: X.Y.Z` line to the **PR description** before squash-merging. The repo is configured with `squash_merge_commit_message=PR_BODY`, so GitHub uses the PR description as the commit body — release-please will find the trailer there. (The old "push an empty commit directly to `main`" shortcut no longer works — `main` is protected; route a `Release-As:` trailer through any PR instead.)
+To force the next release to a specific version, put a `BEGIN_COMMIT_OVERRIDE` block in the **PR description** before squash-merging, holding the full commit message — title line, blank line, `Release-As: X.Y.Z`:
+```
+BEGIN_COMMIT_OVERRIDE
+fix: <the PR title>
+
+Release-As: X.Y.Z
+END_COMMIT_OVERRIDE
+```
+A bare `Release-As:` line in the description does nothing (squash commits have no body) and fails the `PR Commit Message` check. An empty override block is ignored by release-please. **Never write the literal word `BEGIN_COMMIT_OVERRIDE` in a PR description unless you mean it** — release-please splits on the bare token, so even a mention in prose or backticks turns the rest of the description into the commit message (the `PR Commit Message` check catches this). (The old "push an empty commit directly to `main`" shortcut no longer works — `main` is protected; route the override through any PR.)
 
 To skip a release after an unwanted `feat:` / `fix:` lands: close the Release PR; release-please reopens it on the next push to main, so a true skip requires absorbing the change into the next legitimate release.
 
