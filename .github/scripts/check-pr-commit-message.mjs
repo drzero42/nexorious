@@ -1,102 +1,96 @@
-// Validate that the squash commit message release-please will see on merge can
-// be parsed by its conventional-commit parser.
+// Validate the commit message release-please will see for this PR on merge.
 //
-// Why this exists: release-please 17.x uses the strict @conventional-commits
-// parser, which THROWS on some perfectly legal free-form commit bodies — e.g.
-// attached, nested call-syntax like `foo(bar(baz))`. When it throws,
-// release-please logs "commit could not be parsed", counts the commit as
-// non-existent, and SILENTLY drops it from the changelog while its own workflow
-// run stays green. PR #985 hit exactly this and never appeared in any release's
-// notes. There is no upstream fix (parser is pinned at its latest, 0.4.1; the
-// bug is googleapis/release-please#2564, open).
+// The repo squash-merges with squash_merge_commit_title=PR_TITLE and
+// squash_merge_commit_message=BLANK, so the squash commit is just
+// "<PR title> (#<number>)" — the PR description never reaches the commit
+// (#1208: Renovate's release-notes bodies broke release-please's parser).
+// release-please parses that commit, unless the merged PR's description has a
+// non-empty BEGIN_COMMIT_OVERRIDE … END_COMMIT_OVERRIDE block, which it reads
+// from the PR (not the commit) and uses instead.
 //
-// Because the repo sets squash_merge_commit_message=PR_BODY, the message
-// release-please parses is "<PR title> (#<number>)\n\n<PR body>" — but GitHub
-// hard-wraps the body at 72 columns when it builds the squash commit, so we
-// must parse the *wrapped* text. #1221 passed this check on its raw body, then
-// wrapping moved `echo.Foo(echo.Bar(x), …)` from an indented line to column 0,
-// where the parser throws, and the fix was dropped from v0.97.6's changelog.
-// We reconstruct that message and run the exact same parser, so an unparseable
-// message fails the PR loudly instead of vanishing silently after merge.
+// Two ways this can go wrong silently, both caught here:
+//
+// 1. The message doesn't parse. release-please 17.x uses the strict
+//    @conventional-commits parser; when it throws, release-please logs "commit
+//    could not be parsed" and drops the commit from the changelog while its own
+//    run stays green (#985, upstream googleapis/release-please#2564, open).
+// 2. A Release-As: or BREAKING CHANGE: line sits in the PR description outside
+//    an override block. With a BLANK squash body it never reaches the commit,
+//    so it has no effect.
 import { parser } from '@conventional-commits/parser';
 
-// GitHub's squash-body wrap (verified line-for-line against #1221's squash
-// commit): lines ≤72 chars (code points) are kept verbatim; longer lines are
-// greedily re-filled at 72 on whitespace, losing their indentation. A single
-// word longer than 72 is never split.
-const WRAP = 72;
-const len = (s) => [...s].length;
-
-export function wrapLikeGitHub(text) {
-  return text
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .flatMap((line) => {
-      if (len(line) <= WRAP) return [line];
-      const out = [];
-      let cur = '';
-      for (const word of line.trim().split(/\s+/)) {
-        if (!cur) cur = word;
-        else if (len(cur) + 1 + len(word) <= WRAP) cur += ` ${word}`;
-        else {
-          out.push(cur);
-          cur = word;
-        }
-      }
-      if (cur) out.push(cur);
-      return out;
-    })
-    .join('\n');
+// The override text release-please would use, mirroring its
+// preprocessCommitMessage (src/commit.ts, v17.11.2): text between the first
+// BEGIN_COMMIT_OVERRIDE and the following END_COMMIT_OVERRIDE, trimmed. An
+// empty override is ignored and the commit message is used.
+export function commitOverride(body) {
+  return (body.split('BEGIN_COMMIT_OVERRIDE')[1] || '').split('END_COMMIT_OVERRIDE')[0].trim();
 }
 
-// The message release-please will parse for this PR. A BEGIN_COMMIT_OVERRIDE
-// block in the PR body replaces the commit message entirely (release-please
-// reads merged PR bodies), so honour it — it's also the escape hatch for
-// generated bodies (e.g. Renovate release notes) that can't easily be reworded.
-export function squashMessage(title, body, number) {
-  const override = body.match(/BEGIN_COMMIT_OVERRIDE\r?\n([\s\S]*?)\r?\nEND_COMMIT_OVERRIDE/);
-  if (override) return override[1].trim();
-  const subject = number ? `${title} (#${number})` : title;
-  return body.trim() ? `${subject}\n\n${wrapLikeGitHub(body)}` : subject;
+// The message release-please will parse for this PR.
+export function releaseMessage(title, body, number) {
+  return commitOverride(body) || (number ? `${title} (#${number})` : title);
+}
+
+// Release-As / BREAKING CHANGE lines in the description that are outside an
+// override block, and so would be ignored.
+export function strandedTrailers(body) {
+  const outside = commitOverride(body)
+    ? body.replace(/BEGIN_COMMIT_OVERRIDE[\s\S]*?END_COMMIT_OVERRIDE/, '')
+    : body;
+  return outside.match(/^(BREAKING[ -]CHANGE|Release-As):.*$/gim) ?? [];
 }
 
 // Whether release-please dropping this commit would change a release. With the
 // default changelog sections only feat/fix/perf/revert are user-facing; any
-// other type is hidden, so losing it is harmless — unless the commit carries a
-// breaking-change marker or a Release-As trailer, which only take effect if the
-// message parses.
+// other type is hidden, so losing it is harmless — unless it is a breaking
+// change, or an override block (which can carry Release-As or a breaking-change
+// footer) is present.
 export function releaseRelevant(title, body) {
   return (
     /^(feat|fix|perf|revert)(\(.*?\))?!?:/.test(title) ||
     /^\w+(\(.*?\))?!:/.test(title) ||
-    /^(BREAKING[ -]CHANGE|Release-As):/im.test(body)
+    commitOverride(body) !== ''
   );
 }
 
 if (import.meta.main) {
   const title = process.env.PR_TITLE ?? '';
   const body = process.env.PR_BODY ?? '';
+
+  // Bot PRs (Renovate) embed upstream release notes, which may legitimately
+  // contain such lines; they are inert there, not a mistake to flag.
+  const stranded = process.env.PR_AUTHOR_TYPE === 'Bot' ? [] : strandedTrailers(body);
+  if (stranded.length) {
+    console.error(
+      '::error::The PR description has a Release-As: / BREAKING CHANGE: line outside a ' +
+        'BEGIN_COMMIT_OVERRIDE block. Squash commits carry only the PR title, so it would be ' +
+        'ignored. Put the full commit message (title line, blank line, trailer) in ' +
+        '"BEGIN_COMMIT_OVERRIDE\\n…\\nEND_COMMIT_OVERRIDE" in the description, or use `!` in the ' +
+        'title for a breaking change.',
+    );
+    for (const line of stranded) console.error(`  ${line}`);
+    process.exit(1);
+  }
+
   if (!releaseRelevant(title, body)) {
-    console.log('Not a release-relevant commit (no feat/fix/perf/revert, breaking change or Release-As); skipping.');
+    console.log('Not a release-relevant commit (no feat/fix/perf/revert, breaking change or override); skipping.');
     process.exit(0);
   }
-  const message = squashMessage(title, body, process.env.PR_NUMBER ?? '');
+  const message = releaseMessage(title, body, process.env.PR_NUMBER ?? '');
   try {
     parser(message);
-    console.log('Squash commit message parses cleanly.');
+    console.log('Release commit message parses cleanly.');
   } catch (e) {
     const first = String(e?.message ?? e).split('\n')[0];
     console.error(
-      "::error::release-please cannot parse this PR's squash commit message and " +
-        'would silently drop it from the changelog after merge.',
+      '::error::release-please cannot parse the commit message for this PR and would ' +
+        'silently drop it from the changelog after merge.',
     );
-    console.error(`Parser error (line numbers are after GitHub's 72-column wrap): ${first}`);
+    console.error(`Parser error: ${first}`);
     console.error(
-      'Most common cause: attached nested call-syntax in the body, e.g. ' +
-        '`foo(bar(baz))`, landing at the start of a wrapped line. Reword that ' +
-        'line (add a space, rephrase, or split the parentheses), or put ' +
-        '"BEGIN_COMMIT_OVERRIDE\\n<conventional commit message>\\nEND_COMMIT_OVERRIDE" ' +
-        'at the top of the PR body, then re-check.',
+      'Fix the PR title, or the BEGIN_COMMIT_OVERRIDE block in the description if there is one, ' +
+        'then re-check.',
     );
     process.exit(1);
   }
