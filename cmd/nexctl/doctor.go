@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"text/tabwriter"
 
@@ -38,7 +39,7 @@ func runDoctorSummary(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	checks, err := cliclient.New(p.URL).ListSmells(p.Key)
+	checks, err := cliclient.New(p.URL).ListSmells(cmd.Context(), p.Key)
 	if err != nil {
 		return fmt.Errorf("list smells failed: %w", err)
 	}
@@ -68,7 +69,7 @@ func runDoctorDetail(cmd *cobra.Command, checkID string) error {
 	if err != nil {
 		return err
 	}
-	res, err := cliclient.New(p.URL).ListSmellItems(p.Key, checkID, 1, 200)
+	res, err := cliclient.New(p.URL).ListSmellItems(cmd.Context(), p.Key, checkID, 1, 200)
 	if err != nil {
 		return fmt.Errorf("list smell items failed: %w", err)
 	}
@@ -112,10 +113,10 @@ func suggestionOf(it cliclient.FlaggedItem) string {
 }
 
 // collectFlaggedIDs returns every flagged user_game_id for a check, across pages.
-func collectFlaggedIDs(c *cliclient.Client, key, checkID string) ([]string, error) {
+func collectFlaggedIDs(ctx context.Context, c *cliclient.Client, key, checkID string) ([]string, error) {
 	var ids []string
 	for page := 1; ; page++ {
-		res, err := c.ListSmellItems(key, checkID, page, 200)
+		res, err := c.ListSmellItems(ctx, key, checkID, page, 200)
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +147,7 @@ func newDoctorApplyCmd() *cobra.Command {
 
 			var ids []string
 			if len(refs) == 0 {
-				ids, err = collectFlaggedIDs(c, p.Key, checkID)
+				ids, err = collectFlaggedIDs(cmd.Context(), c, p.Key, checkID)
 				if err != nil {
 					return fmt.Errorf("list smell items failed: %w", err)
 				}
@@ -173,7 +174,7 @@ func newDoctorApplyCmd() *cobra.Command {
 				return fmt.Errorf("aborted")
 			}
 
-			res, err := c.ApplySmell(p.Key, checkID, ids)
+			res, err := c.ApplySmell(cmd.Context(), p.Key, checkID, ids)
 			if err != nil {
 				return fmt.Errorf("apply failed: %w", err)
 			}
@@ -212,7 +213,7 @@ func newDoctorIgnoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := c.IgnoreSmell(p.Key, args[0], ids)
+			n, err := c.IgnoreSmell(cmd.Context(), p.Key, args[0], ids)
 			if err != nil {
 				return fmt.Errorf("ignore failed: %w", err)
 			}
@@ -238,7 +239,7 @@ func newDoctorRestoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := c.RestoreSmell(p.Key, args[0], ids)
+			n, err := c.RestoreSmell(cmd.Context(), p.Key, args[0], ids)
 			if err != nil {
 				return fmt.Errorf("restore failed: %w", err)
 			}
@@ -259,7 +260,7 @@ func newDoctorIgnoredCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := cliclient.New(p.URL).ListIgnoredSmells(p.Key, args[0], 1, 200)
+			res, err := cliclient.New(p.URL).ListIgnoredSmells(cmd.Context(), p.Key, args[0], 1, 200)
 			if err != nil {
 				return fmt.Errorf("list dismissed failed: %w", err)
 			}

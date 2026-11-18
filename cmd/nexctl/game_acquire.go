@@ -32,14 +32,14 @@ func newGameAcquireCmd() *cobra.Command {
 			if storefront != "" {
 				sf = storefront
 			}
-			if err := validatePlatform(c, p.Key, pl); err != nil {
+			if err := validatePlatform(cmd.Context(), c, p.Key, pl); err != nil {
 				return err
 			}
 			own := ownership
 			if own == "" {
 				own = "owned"
 			}
-			if _, err := c.MoveToLibrary(p.Key, u.ID, []cliclient.PlatformInput{{Platform: pl, Storefront: sf, OwnershipStatus: own}}); err != nil {
+			if _, err := c.MoveToLibrary(cmd.Context(), p.Key, u.ID, []cliclient.PlatformInput{{Platform: pl, Storefront: sf, OwnershipStatus: own}}); err != nil {
 				return fmt.Errorf("acquire failed: %w", err)
 			}
 			fmt.Fprintf(out, "Moved %q to your library.\n", u.Title())

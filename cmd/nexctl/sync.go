@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -53,8 +54,8 @@ func newSyncCmd() *cobra.Command {
 // the sync config list. Matching is case-insensitive. On success the canonical
 // Storefront string is returned; on failure a descriptive error listing valid
 // options is returned.
-func resolveStorefront(c *cliclient.Client, key, arg string) (string, error) {
-	configs, err := c.ListSyncConfigs(key)
+func resolveStorefront(ctx context.Context, c *cliclient.Client, key, arg string) (string, error) {
+	configs, err := c.ListSyncConfigs(ctx, key)
 	if err != nil {
 		return "", fmt.Errorf("list sync configs failed: %w", err)
 	}
@@ -117,7 +118,7 @@ Flag reference by storefront:
 				return err
 			}
 			c := cliclient.New(p.URL)
-			sf, err := resolveStorefront(c, p.Key, args[0])
+			sf, err := resolveStorefront(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
@@ -148,7 +149,7 @@ Flag reference by storefront:
 				body[f.bodyKey] = val
 			}
 
-			resp, err := c.ConnectStorefront(p.Key, sf, body)
+			resp, err := c.ConnectStorefront(cmd.Context(), p.Key, sf, body)
 			if err != nil {
 				return fmt.Errorf("connect failed: %w", err)
 			}
@@ -193,7 +194,7 @@ func newSyncDisconnectCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			sf, err := resolveStorefront(c, p.Key, args[0])
+			sf, err := resolveStorefront(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
@@ -208,7 +209,7 @@ func newSyncDisconnectCmd() *cobra.Command {
 				return nil
 			}
 
-			if err := c.DisconnectStorefront(p.Key, sf); err != nil {
+			if err := c.DisconnectStorefront(cmd.Context(), p.Key, sf); err != nil {
 				return fmt.Errorf("disconnect failed: %w", err)
 			}
 			fmt.Fprintf(out, "disconnected %s\n", sf)
@@ -232,7 +233,7 @@ func newSyncStatusCmd() *cobra.Command {
 			c := cliclient.New(p.URL)
 
 			if len(args) == 0 {
-				configs, err := c.ListSyncConfigs(p.Key)
+				configs, err := c.ListSyncConfigs(cmd.Context(), p.Key)
 				if err != nil {
 					return fmt.Errorf("list sync configs failed: %w", err)
 				}
@@ -266,11 +267,11 @@ func newSyncStatusCmd() *cobra.Command {
 			}
 
 			// One arg: resolve storefront then show its status.
-			storefront, err := resolveStorefront(c, p.Key, args[0])
+			storefront, err := resolveStorefront(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
-			status, err := c.GetSyncStatus(p.Key, storefront)
+			status, err := c.GetSyncStatus(cmd.Context(), p.Key, storefront)
 			if err != nil {
 				return fmt.Errorf("get sync status failed: %w", err)
 			}
@@ -311,7 +312,7 @@ func newSyncConfigCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			sf, err := resolveStorefront(c, p.Key, args[0])
+			sf, err := resolveStorefront(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
@@ -321,7 +322,7 @@ func newSyncConfigCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				cfg, err := c.UpdateSyncConfig(p.Key, sf, freq)
+				cfg, err := c.UpdateSyncConfig(cmd.Context(), p.Key, sf, freq)
 				if err != nil {
 					return fmt.Errorf("update sync config failed: %w", err)
 				}
@@ -332,7 +333,7 @@ func newSyncConfigCmd() *cobra.Command {
 				return nil
 			}
 
-			cfg, err := c.GetSyncConfig(p.Key, sf)
+			cfg, err := c.GetSyncConfig(cmd.Context(), p.Key, sf)
 			if err != nil {
 				return fmt.Errorf("get sync config failed: %w", err)
 			}
@@ -370,11 +371,11 @@ func newSyncRunCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			sf, err := resolveStorefront(c, p.Key, args[0])
+			sf, err := resolveStorefront(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
-			result, err := c.TriggerSync(p.Key, sf)
+			result, err := c.TriggerSync(cmd.Context(), p.Key, sf)
 			if err != nil {
 				return fmt.Errorf("trigger sync failed: %w", err)
 			}
@@ -399,7 +400,7 @@ func newSyncResetCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			sf, err := resolveStorefront(c, p.Key, args[0])
+			sf, err := resolveStorefront(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
@@ -414,7 +415,7 @@ func newSyncResetCmd() *cobra.Command {
 				return nil
 			}
 
-			if err := c.ResetSyncData(p.Key, sf); err != nil {
+			if err := c.ResetSyncData(cmd.Context(), p.Key, sf); err != nil {
 				return fmt.Errorf("reset sync data failed: %w", err)
 			}
 			fmt.Fprintf(out, "reset %s sync data\n", sf)
@@ -427,8 +428,8 @@ func newSyncResetCmd() *cobra.Command {
 // storefront: a UUID is matched exactly (one element or error); a title is
 // matched case-insensitively (zero or more). No cmd, no picker — callers own
 // disambiguation.
-func findExternalGamesByRef(c *cliclient.Client, key, sf, ref string) ([]cliclient.ExternalGame, error) {
-	games, err := c.ListExternalGames(key, sf)
+func findExternalGamesByRef(ctx context.Context, c *cliclient.Client, key, sf, ref string) ([]cliclient.ExternalGame, error) {
+	games, err := c.ListExternalGames(ctx, key, sf)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +456,7 @@ func findExternalGamesByRef(c *cliclient.Client, key, sf, ref string) ([]cliclie
 // returns an error listing candidates; on an interactive session it presents a
 // numbered picker.
 func resolveExternalRef(cmd *cobra.Command, c *cliclient.Client, key, sf, ref string) (*cliclient.ExternalGame, error) {
-	games, err := findExternalGamesByRef(c, key, sf, ref)
+	games, err := findExternalGamesByRef(cmd.Context(), c, key, sf, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +512,7 @@ func newSyncResolveCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			sf, err := resolveStorefront(c, p.Key, args[0])
+			sf, err := resolveStorefront(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
@@ -530,7 +531,7 @@ func newSyncResolveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := c.RematchExternalGame(p.Key, eg.ID, igdbID, orphanAction); err != nil {
+			if err := c.RematchExternalGame(cmd.Context(), p.Key, eg.ID, igdbID, orphanAction); err != nil {
 				return fmt.Errorf("resolve failed: %w", err)
 			}
 			fmt.Fprintf(out, "resolved %s -> igdb %d\n", eg.Title, igdbID)
@@ -554,7 +555,7 @@ func newSyncSkipCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			sf, err := resolveStorefront(c, p.Key, args[0])
+			sf, err := resolveStorefront(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
@@ -571,7 +572,7 @@ func newSyncSkipCmd() *cobra.Command {
 				fmt.Fprintln(out, "Aborted.")
 				return nil
 			}
-			if err := c.SkipExternalGame(p.Key, eg.ID); err != nil {
+			if err := c.SkipExternalGame(cmd.Context(), p.Key, eg.ID); err != nil {
 				return fmt.Errorf("skip failed: %w", err)
 			}
 			fmt.Fprintf(out, "skipped %s\n", eg.Title)
@@ -593,11 +594,11 @@ func newSyncRetryCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			sf, err := resolveStorefront(c, p.Key, args[0])
+			sf, err := resolveStorefront(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
-			if err := c.RetryFailedExternalGames(p.Key, sf); err != nil {
+			if err := c.RetryFailedExternalGames(cmd.Context(), p.Key, sf); err != nil {
 				return fmt.Errorf("retry failed: %w", err)
 			}
 			fmt.Fprintf(out, "re-queued failed %s games\n", sf)
@@ -621,11 +622,11 @@ func newSyncReviewCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			sf, err := resolveStorefront(c, p.Key, args[0])
+			sf, err := resolveStorefront(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
-			all, err := c.ListExternalGames(p.Key, sf)
+			all, err := c.ListExternalGames(cmd.Context(), p.Key, sf)
 			if err != nil {
 				return fmt.Errorf("list external games failed: %w", err)
 			}
@@ -654,7 +655,7 @@ func newSyncReviewCmd() *cobra.Command {
 				}
 				switch strings.TrimSpace(line) {
 				case "s":
-					results, err := c.SearchIGDB(p.Key, eg.Title, 10)
+					results, err := c.SearchIGDB(cmd.Context(), p.Key, eg.Title, 10)
 					if err != nil {
 						fmt.Fprintf(out, "search failed: %v\n", err)
 						continue
@@ -685,13 +686,13 @@ func newSyncReviewCmd() *cobra.Command {
 						sel = n
 					}
 					chosen := results.Games[sel-1]
-					if rematchErr := c.RematchExternalGame(p.Key, eg.ID, chosen.IgdbID, ""); rematchErr != nil {
+					if rematchErr := c.RematchExternalGame(cmd.Context(), p.Key, eg.ID, chosen.IgdbID, ""); rematchErr != nil {
 						fmt.Fprintf(out, "rematch error: %v (use 'sync resolve --orphan-action' to handle this)\n", rematchErr)
 						continue
 					}
 					fmt.Fprintf(out, "resolved %s -> igdb %d\n", eg.Title, chosen.IgdbID)
 				case "k":
-					if skipErr := c.SkipExternalGame(p.Key, eg.ID); skipErr != nil {
+					if skipErr := c.SkipExternalGame(cmd.Context(), p.Key, eg.ID); skipErr != nil {
 						fmt.Fprintf(out, "skip error: %v\n", skipErr)
 						continue
 					}

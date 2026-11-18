@@ -82,7 +82,7 @@ func TestLoginReturnsSessionCookie(t *testing.T) {
 	srv := newTestServer(t, &cap)
 	c := New(srv.URL)
 
-	sess, err := c.Login("alice", "pw")
+	sess, err := c.Login(t.Context(), "alice", "pw")
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestLoginBadCredsReturnsServerMessage(t *testing.T) {
 	srv := newTestServer(t, &cap)
 	c := New(srv.URL)
 
-	_, err := c.Login("alice", "wrong")
+	_, err := c.Login(t.Context(), "alice", "wrong")
 	if err == nil {
 		t.Fatal("expected error for bad creds")
 	}
@@ -110,7 +110,7 @@ func TestCreateAPIKeySendsCookieReturnsKey(t *testing.T) {
 	srv := newTestServer(t, &cap)
 	c := New(srv.URL)
 
-	key, id, err := c.CreateAPIKey("sess-123", "cli@host")
+	key, id, err := c.CreateAPIKey(t.Context(), "sess-123", "cli@host")
 	if err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestRevokeWithCookie(t *testing.T) {
 	srv := newTestServer(t, &cap)
 	c := New(srv.URL)
 
-	if err := c.RevokeAPIKeyWithCookie("sess-123", "key-id-1"); err != nil {
+	if err := c.RevokeAPIKeyWithCookie(t.Context(), "sess-123", "key-id-1"); err != nil {
 		t.Fatalf("RevokeAPIKeyWithCookie: %v", err)
 	}
 	if cap.revokeID != "key-id-1" {
@@ -143,7 +143,7 @@ func TestRevokeWithBearer(t *testing.T) {
 	srv := newTestServer(t, &cap)
 	c := New(srv.URL)
 
-	if err := c.RevokeAPIKeyWithBearer("nxr_rawkey", "key-id-1"); err != nil {
+	if err := c.RevokeAPIKeyWithBearer(t.Context(), "nxr_rawkey", "key-id-1"); err != nil {
 		t.Fatalf("RevokeAPIKeyWithBearer: %v", err)
 	}
 	if cap.revokeAuth != "Bearer nxr_rawkey" {
@@ -156,7 +156,7 @@ func TestLogoutSendsCookie(t *testing.T) {
 	srv := newTestServer(t, &cap)
 	c := New(srv.URL)
 
-	if err := c.Logout("sess-123"); err != nil {
+	if err := c.Logout(t.Context(), "sess-123"); err != nil {
 		t.Fatalf("Logout: %v", err)
 	}
 	if cap.logoutCookie != "sess-123" {
@@ -169,7 +169,7 @@ func TestMeReturnsUsername(t *testing.T) {
 	srv := newTestServer(t, &cap)
 	c := New(srv.URL)
 
-	user, err := c.Me("nxr_rawkey")
+	user, err := c.Me(t.Context(), "nxr_rawkey")
 	if err != nil {
 		t.Fatalf("Me: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestMeUnauthorized(t *testing.T) {
 	srv := newTestServer(t, &cap)
 	c := New(srv.URL)
 
-	_, err := c.Me("nxr_wrong")
+	_, err := c.Me(t.Context(), "nxr_wrong")
 	if err == nil {
 		t.Fatal("expected error for bad key")
 	}
@@ -206,7 +206,7 @@ func errServer(t *testing.T, status int) *httptest.Server {
 
 func TestCreateAPIKeyServerError(t *testing.T) {
 	c := New(errServer(t, http.StatusInternalServerError).URL)
-	_, _, err := c.CreateAPIKey("sess-123", "cli@host")
+	_, _, err := c.CreateAPIKey(t.Context(), "sess-123", "cli@host")
 	if err == nil {
 		t.Fatal("expected error on 500")
 	}
@@ -218,14 +218,14 @@ func TestCreateAPIKeyServerError(t *testing.T) {
 func TestRevokeWithBearerServerError(t *testing.T) {
 	// A non-204 (here 404) must surface as an error: the key was not found.
 	c := New(errServer(t, http.StatusNotFound).URL)
-	if err := c.RevokeAPIKeyWithBearer("nxr_rawkey", "missing"); err == nil {
+	if err := c.RevokeAPIKeyWithBearer(t.Context(), "nxr_rawkey", "missing"); err == nil {
 		t.Fatal("expected error on 404 revoke")
 	}
 }
 
 func TestLogoutServerError(t *testing.T) {
 	c := New(errServer(t, http.StatusInternalServerError).URL)
-	if err := c.Logout("sess-123"); err == nil {
+	if err := c.Logout(t.Context(), "sess-123"); err == nil {
 		t.Fatal("expected error on 500 logout")
 	}
 }
@@ -241,7 +241,7 @@ func TestListAPIKeys(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	keys, err := New(srv.URL).ListAPIKeys("nxr_secret")
+	keys, err := New(srv.URL).ListAPIKeys(t.Context(), "nxr_secret")
 	if err != nil {
 		t.Fatalf("ListAPIKeys: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestCreateAPIKeyWithBearer(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	key, err := New(srv.URL).CreateAPIKeyWithBearer("nxr_secret", "ci", "read", nil)
+	key, err := New(srv.URL).CreateAPIKeyWithBearer(t.Context(), "nxr_secret", "ci", "read", nil)
 	if err != nil {
 		t.Fatalf("CreateAPIKeyWithBearer: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestCreateAPIKeyWithBearerSendsExpiry(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	exp := "2027-01-01T00:00:00Z"
-	if _, err := New(srv.URL).CreateAPIKeyWithBearer("nxr_secret", "temp", "write", &exp); err != nil {
+	if _, err := New(srv.URL).CreateAPIKeyWithBearer(t.Context(), "nxr_secret", "temp", "write", &exp); err != nil {
 		t.Fatalf("CreateAPIKeyWithBearer: %v", err)
 	}
 	if gotBody["expires_at"] != exp {
@@ -316,7 +316,7 @@ func TestHealthReturnsStatus(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	status, err := New(srv.URL).Health()
+	status, err := New(srv.URL).Health(t.Context())
 	if err != nil {
 		t.Fatalf("Health: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestSetupAdminCreated(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	res, err := New(srv.URL).SetupAdmin("admin", "supersecret")
+	res, err := New(srv.URL).SetupAdmin(t.Context(), "admin", "supersecret")
 	if err != nil {
 		t.Fatalf("SetupAdmin: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestSetupAdminRedirectIsObservable(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	res, err := New(srv.URL).SetupAdmin("admin", "supersecret")
+	res, err := New(srv.URL).SetupAdmin(t.Context(), "admin", "supersecret")
 	if err != nil {
 		t.Fatalf("SetupAdmin: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestSetupAdminForbiddenMessage(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	res, err := New(srv.URL).SetupAdmin("admin", "supersecret")
+	res, err := New(srv.URL).SetupAdmin(t.Context(), "admin", "supersecret")
 	if err != nil {
 		t.Fatalf("SetupAdmin: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestRunMigrationsAcceptsStarted(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if err := New(srv.URL).RunMigrations(); err != nil {
+	if err := New(srv.URL).RunMigrations(t.Context()); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 }
@@ -413,7 +413,7 @@ func TestRunMigrationsAcceptsAlreadyUpToDate(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if err := New(srv.URL).RunMigrations(); err != nil {
+	if err := New(srv.URL).RunMigrations(t.Context()); err != nil {
 		t.Fatalf("RunMigrations(already up to date) should be nil, got: %v", err)
 	}
 }
@@ -427,7 +427,7 @@ func TestMigrationStatusReturnsState(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	state, detail, err := New(srv.URL).MigrationStatus()
+	state, detail, err := New(srv.URL).MigrationStatus(t.Context())
 	if err != nil {
 		t.Fatalf("MigrationStatus: %v", err)
 	}
@@ -450,7 +450,7 @@ func TestMigrationStatusReturnsFailureDetail(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	state, detail, err := New(srv.URL).MigrationStatus()
+	state, detail, err := New(srv.URL).MigrationStatus(t.Context())
 	if err != nil {
 		t.Fatalf("MigrationStatus: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestRunMigrationsAcceptsInProgress(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if err := New(srv.URL).RunMigrations(); err != nil {
+	if err := New(srv.URL).RunMigrations(t.Context()); err != nil {
 		t.Fatalf("RunMigrations(in progress) should be nil, got: %v", err)
 	}
 }
@@ -490,7 +490,7 @@ func TestServerVersionReturnsInfo(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	info, err := New(srv.URL).ServerVersion("nxr_rawkey")
+	info, err := New(srv.URL).ServerVersion(t.Context(), "nxr_rawkey")
 	if err != nil {
 		t.Fatalf("ServerVersion: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestServerVersionNoKeyOmitsAuthHeader(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if _, err := New(srv.URL).ServerVersion(""); err != nil {
+	if _, err := New(srv.URL).ServerVersion(t.Context(), ""); err != nil {
 		t.Fatalf("ServerVersion: %v", err)
 	}
 	if gotAuth != "" {
@@ -533,7 +533,7 @@ func TestServerVersionErrorOnNon200(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	_, err := New(srv.URL).ServerVersion("")
+	_, err := New(srv.URL).ServerVersion(t.Context(), "")
 	if err == nil {
 		t.Fatal("expected error on 401")
 	}

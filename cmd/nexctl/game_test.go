@@ -37,6 +37,7 @@ func TestResolveUserGameRefUniqueTitle(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cmd := newGameCmd()
+	cmd.SetContext(t.Context())
 	cmd.SetOut(&bytes.Buffer{})
 	ug, err := resolveUserGameRef(cmd, cliclient.New(srv.URL), "k", "hollow")
 	if err != nil {
@@ -62,6 +63,7 @@ func TestResolveUserGameRefAmbiguousOffTTYErrors(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cmd := newGameCmd()
+	cmd.SetContext(t.Context())
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetIn(bytes.NewReader(nil)) // non-TTY

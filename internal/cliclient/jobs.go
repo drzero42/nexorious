@@ -1,6 +1,7 @@
 package cliclient
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 )
@@ -81,22 +82,22 @@ type RetryResult struct {
 
 // ListJobs returns a paged list of jobs filtered by the given query params.
 // Supported params: page, per_page, sort_by, sort_order, job_type, source, status.
-func (c *Client) ListJobs(key string, params url.Values) (*JobsPage, error) {
+func (c *Client) ListJobs(ctx context.Context, key string, params url.Values) (*JobsPage, error) {
 	path := "/api/jobs"
 	if enc := params.Encode(); enc != "" {
 		path += "?" + enc
 	}
 	var out JobsPage
-	if err := c.doBearer(http.MethodGet, path, key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, path, key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
 // GetJob fetches a single job by id.
-func (c *Client) GetJob(key, id string) (*Job, error) {
+func (c *Client) GetJob(ctx context.Context, key, id string) (*Job, error) {
 	var out Job
-	if err := c.doBearer(http.MethodGet, "/api/jobs/"+url.PathEscape(id), key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, "/api/jobs/"+url.PathEscape(id), key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -104,41 +105,41 @@ func (c *Client) GetJob(key, id string) (*Job, error) {
 
 // GetJobItems returns the paged items for a job, filtered by the given query params.
 // Supported params: page, per_page, status.
-func (c *Client) GetJobItems(key, id string, params url.Values) (*JobItemsPage, error) {
+func (c *Client) GetJobItems(ctx context.Context, key, id string, params url.Values) (*JobItemsPage, error) {
 	path := "/api/jobs/" + url.PathEscape(id) + "/items"
 	if enc := params.Encode(); enc != "" {
 		path += "?" + enc
 	}
 	var out JobItemsPage
-	if err := c.doBearer(http.MethodGet, path, key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, path, key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
 // RetryFailedJob re-enqueues all failed items for a job.
-func (c *Client) RetryFailedJob(key, id string) (*RetryResult, error) {
+func (c *Client) RetryFailedJob(ctx context.Context, key, id string) (*RetryResult, error) {
 	var out RetryResult
-	if err := c.doBearer(http.MethodPost, "/api/jobs/"+url.PathEscape(id)+"/retry-failed", key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodPost, "/api/jobs/"+url.PathEscape(id)+"/retry-failed", key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
 // CancelJob cancels a running job.
-func (c *Client) CancelJob(key, id string) error {
-	return c.doBearer(http.MethodPost, "/api/jobs/"+url.PathEscape(id)+"/cancel", key, nil, nil)
+func (c *Client) CancelJob(ctx context.Context, key, id string) error {
+	return c.doBearer(ctx, http.MethodPost, "/api/jobs/"+url.PathEscape(id)+"/cancel", key, nil, nil)
 }
 
 // ResolveJobItem sets the resolved IGDB game for a pending-review job item.
 // The server returns {"status":"ok"} which is not surfaced to the caller.
-func (c *Client) ResolveJobItem(key, id string, igdbID int) error {
-	return c.doBearer(http.MethodPost, "/api/job-items/"+url.PathEscape(id)+"/resolve", key,
+func (c *Client) ResolveJobItem(ctx context.Context, key, id string, igdbID int) error {
+	return c.doBearer(ctx, http.MethodPost, "/api/job-items/"+url.PathEscape(id)+"/resolve", key,
 		map[string]any{"igdb_id": igdbID}, nil)
 }
 
 // SkipJobItem marks a pending-review job item as skipped.
 // The server returns {"status":"ok"} which is not surfaced to the caller.
-func (c *Client) SkipJobItem(key, id string) error {
-	return c.doBearer(http.MethodPost, "/api/job-items/"+url.PathEscape(id)+"/skip", key, nil, nil)
+func (c *Client) SkipJobItem(ctx context.Context, key, id string) error {
+	return c.doBearer(ctx, http.MethodPost, "/api/job-items/"+url.PathEscape(id)+"/skip", key, nil, nil)
 }

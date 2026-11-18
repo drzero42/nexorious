@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -57,7 +58,7 @@ func newBackupListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			backups, err := cliclient.New(p.URL).ListBackups(p.Key)
+			backups, err := cliclient.New(p.URL).ListBackups(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list backups: %w", err)
 			}
@@ -98,7 +99,7 @@ func newBackupCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := cliclient.New(p.URL).CreateBackup(p.Key)
+			res, err := cliclient.New(p.URL).CreateBackup(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("create backup: %w", err)
 			}
@@ -135,7 +136,7 @@ func newBackupRmCmd() *cobra.Command {
 				fmt.Fprintln(out, "Aborted.")
 				return nil
 			}
-			if err := cliclient.New(p.URL).DeleteBackup(p.Key, args[0]); err != nil {
+			if err := cliclient.New(p.URL).DeleteBackup(cmd.Context(), p.Key, args[0]); err != nil {
 				return fmt.Errorf("delete backup: %w", err)
 			}
 			fmt.Fprintf(out, "removed backup %s\n", args[0])
@@ -171,13 +172,13 @@ func newBackupDownloadCmd() *cobra.Command {
 			if hasID {
 				id = args[0]
 			} else {
-				id, err = latestBackupID(c, p.Key)
+				id, err = latestBackupID(cmd.Context(), c, p.Key)
 				if err != nil {
 					return err
 				}
 			}
 
-			serverName, body, err := c.OpenBackupDownload(p.Key, id)
+			serverName, body, err := c.OpenBackupDownload(cmd.Context(), p.Key, id)
 			if err != nil {
 				return fmt.Errorf("download backup: %w", err)
 			}
@@ -222,8 +223,8 @@ func newBackupDownloadCmd() *cobra.Command {
 // latestBackupID returns the id of the newest backup, resolving "latest" by
 // sorting the list by created_at descending client-side rather than trusting
 // the server's array order.
-func latestBackupID(c *cliclient.Client, key string) (string, error) {
-	backups, err := c.ListBackups(key)
+func latestBackupID(ctx context.Context, c *cliclient.Client, key string) (string, error) {
+	backups, err := c.ListBackups(ctx, key)
 	if err != nil {
 		return "", fmt.Errorf("list backups: %w", err)
 	}
@@ -286,14 +287,14 @@ func newBackupRestoreCmd() *cobra.Command {
 				if idx := strings.LastIndexByte(filePath, '/'); idx >= 0 {
 					filename = filePath[idx+1:]
 				}
-				if err := c.RestoreBackupUpload(p.Key, filename, f); err != nil {
+				if err := c.RestoreBackupUpload(cmd.Context(), p.Key, filename, f); err != nil {
 					return fmt.Errorf("restore upload: %w", err)
 				}
 				fmt.Fprintln(out, "restore initiated from uploaded file")
 				return nil
 			}
 
-			if err := c.RestoreBackup(p.Key, args[0]); err != nil {
+			if err := c.RestoreBackup(cmd.Context(), p.Key, args[0]); err != nil {
 				return fmt.Errorf("restore: %w", err)
 			}
 			fmt.Fprintf(out, "restore initiated from backup %s\n", args[0])
@@ -314,7 +315,7 @@ func newBackupScheduleCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cfg, err := cliclient.New(p.URL).GetBackupConfig(p.Key)
+			cfg, err := cliclient.New(p.URL).GetBackupConfig(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("get backup config: %w", err)
 			}
@@ -351,7 +352,7 @@ func newBackupScheduleSetCmd() *cobra.Command {
 			// Fetch the current config and overlay only the changed flags. Sending
 			// the full struct keeps the unspecified fields (incl. retention) at
 			// their current, server-validated values.
-			current, err := c.GetBackupConfig(p.Key)
+			current, err := c.GetBackupConfig(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("get backup config: %w", err)
 			}
@@ -373,7 +374,7 @@ func newBackupScheduleSetCmd() *cobra.Command {
 				updated.RetentionValue = retentionValue
 			}
 
-			saved, err := c.UpdateBackupConfig(p.Key, updated)
+			saved, err := c.UpdateBackupConfig(cmd.Context(), p.Key, updated)
 			if err != nil {
 				return fmt.Errorf("update backup config: %w", err)
 			}

@@ -27,7 +27,7 @@ func TestListSyncConfigs(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	configs, err := c.ListSyncConfigs("k")
+	configs, err := c.ListSyncConfigs(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("ListSyncConfigs: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestUpdateSyncConfig(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	cfg, err := c.UpdateSyncConfig("k", "steam", "daily")
+	cfg, err := c.UpdateSyncConfig(t.Context(), "k", "steam", "daily")
 	if err != nil {
 		t.Fatalf("UpdateSyncConfig: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestGetSyncConfig(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	cfg, err := c.GetSyncConfig("k", "gog")
+	cfg, err := c.GetSyncConfig(t.Context(), "k", "gog")
 	if err != nil {
 		t.Fatalf("GetSyncConfig: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestGetSyncStatus(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	status, err := c.GetSyncStatus("k", "steam")
+	status, err := c.GetSyncStatus(t.Context(), "k", "steam")
 	if err != nil {
 		t.Fatalf("GetSyncStatus: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestTriggerSync(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	result, err := c.TriggerSync("k", "steam")
+	result, err := c.TriggerSync(t.Context(), "k", "steam")
 	if err != nil {
 		t.Fatalf("TriggerSync: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestConnectStorefront(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	resp, err := c.ConnectStorefront("k", "steam", map[string]string{"steam_id": "76561198000000001"})
+	resp, err := c.ConnectStorefront(t.Context(), "k", "steam", map[string]string{"steam_id": "76561198000000001"})
 	if err != nil {
 		t.Fatalf("ConnectStorefront: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestDisconnectStorefront(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.DisconnectStorefront("k", "steam"); err != nil {
+	if err := c.DisconnectStorefront(t.Context(), "k", "steam"); err != nil {
 		t.Fatalf("DisconnectStorefront: %v", err)
 	}
 }
@@ -223,7 +223,7 @@ func TestResetSyncData(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.ResetSyncData("k", "steam"); err != nil {
+	if err := c.ResetSyncData(t.Context(), "k", "steam"); err != nil {
 		t.Fatalf("ResetSyncData: %v", err)
 	}
 }

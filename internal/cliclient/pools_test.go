@@ -29,15 +29,15 @@ func TestPoolMutations(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	p, err := c.CreatePool("k", "New", nil, nil)
+	p, err := c.CreatePool(t.Context(), "k", "New", nil, nil)
 	if err != nil || p.ID != "p-9" {
 		t.Fatalf("CreatePool: %v %+v", err, p)
 	}
-	n, err := c.BulkAddPoolGames("k", "p-9", []string{"ug-1", "ug-2"})
+	n, err := c.BulkAddPoolGames(t.Context(), "k", "p-9", []string{"ug-1", "ug-2"})
 	if err != nil || n != 2 {
 		t.Fatalf("BulkAddPoolGames: %v %d", err, n)
 	}
-	if err := c.SetQueue("k", "p-9", []string{"ug-2", "ug-1"}); err != nil {
+	if err := c.SetQueue(t.Context(), "k", "p-9", []string{"ug-2", "ug-1"}); err != nil {
 		t.Fatalf("SetQueue: %v", err)
 	}
 	if len(queueIDs) != 2 || queueIDs[0] != "ug-2" {
@@ -63,11 +63,11 @@ func TestListAndGetPool(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	pools, err := c.ListPools("k")
+	pools, err := c.ListPools(t.Context(), "k")
 	if err != nil || len(pools) != 1 || pools[0].Name != "Backlog" || pools[0].QueueCount != 2 {
 		t.Fatalf("ListPools: %v %+v", err, pools)
 	}
-	d, err := c.GetPool("k", "p-1")
+	d, err := c.GetPool(t.Context(), "k", "p-1")
 	if err != nil || len(d.Queue) != 1 || d.Queue[0].Title() != "A" || len(d.Candidates) != 1 {
 		t.Fatalf("GetPool: %v %+v", err, d)
 	}

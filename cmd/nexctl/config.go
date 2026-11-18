@@ -32,7 +32,7 @@ func newConfigGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := cliclient.New(p.URL).GetSettings(p.Key)
+			s, err := cliclient.New(p.URL).GetSettings(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("get config: %w", err)
 			}
@@ -56,7 +56,7 @@ func newConfigSetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := cliclient.New(p.URL).UpdateSettings(p.Key, dealRegion)
+			s, err := cliclient.New(p.URL).UpdateSettings(cmd.Context(), p.Key, dealRegion)
 			if err != nil {
 				return fmt.Errorf("set config: %w", err)
 			}

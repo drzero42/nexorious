@@ -2,6 +2,7 @@ package cliclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -98,7 +99,7 @@ type CSVInspect struct {
 // fully buffered in memory: a goroutine writes the parts while http.Client
 // reads them incrementally (chunked transfer encoding). This lets large
 // uploads (e.g. backup restore) stream straight from a file.
-func (c *Client) doBearerMultipart(method, path, key, filename string, body io.Reader, fields map[string]string, out any) error {
+func (c *Client) doBearerMultipart(ctx context.Context, method, path, key, filename string, body io.Reader, fields map[string]string, out any) error {
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
 
@@ -130,7 +131,7 @@ func (c *Client) doBearerMultipart(method, path, key, filename string, body io.R
 		_ = pw.Close()
 	}()
 
-	req, err := http.NewRequest(method, c.baseURL+path, pr)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, pr)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
@@ -158,9 +159,9 @@ func (c *Client) doBearerMultipart(method, path, key, filename string, body io.R
 
 // ListImportSources returns the registered mapper-based import sources from
 // GET /api/import/sources (bare JSON array).
-func (c *Client) ListImportSources(key string) ([]ImportSource, error) {
+func (c *Client) ListImportSources(ctx context.Context, key string) ([]ImportSource, error) {
 	var out []ImportSource
-	if err := c.doBearer(http.MethodGet, "/api/import/sources", key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, "/api/import/sources", key, nil, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -168,9 +169,9 @@ func (c *Client) ListImportSources(key string) ([]ImportSource, error) {
 
 // ImportNexorious uploads a Nexorious export file via
 // POST /api/import/nexorious and returns the created import job.
-func (c *Client) ImportNexorious(key, filename string, data []byte) (*ImportResult, error) {
+func (c *Client) ImportNexorious(ctx context.Context, key, filename string, data []byte) (*ImportResult, error) {
 	var out ImportResult
-	if err := c.doBearerMultipart(http.MethodPost, "/api/import/nexorious", key, filename, bytes.NewReader(data), nil, &out); err != nil {
+	if err := c.doBearerMultipart(ctx, http.MethodPost, "/api/import/nexorious", key, filename, bytes.NewReader(data), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -179,9 +180,9 @@ func (c *Client) ImportNexorious(key, filename string, data []byte) (*ImportResu
 // InspectCSV uploads a CSV file via POST /api/import/csv/inspect and returns
 // the inspection envelope (headers, row count, per-column metadata, and a
 // suggested mapping).
-func (c *Client) InspectCSV(key, filename string, data []byte) (*CSVInspect, error) {
+func (c *Client) InspectCSV(ctx context.Context, key, filename string, data []byte) (*CSVInspect, error) {
 	var out CSVInspect
-	if err := c.doBearerMultipart(http.MethodPost, "/api/import/csv/inspect", key, filename, bytes.NewReader(data), nil, &out); err != nil {
+	if err := c.doBearerMultipart(ctx, http.MethodPost, "/api/import/csv/inspect", key, filename, bytes.NewReader(data), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -190,7 +191,7 @@ func (c *Client) InspectCSV(key, filename string, data []byte) (*CSVInspect, err
 // ImportCSV uploads a CSV file via POST /api/import/csv with an optional
 // format preset slug and/or a JSON mapping blob. format is omitted when empty;
 // mapping is omitted when nil/empty.
-func (c *Client) ImportCSV(key, filename string, data []byte, format string, mapping json.RawMessage) (*ImportResult, error) {
+func (c *Client) ImportCSV(ctx context.Context, key, filename string, data []byte, format string, mapping json.RawMessage) (*ImportResult, error) {
 	fields := make(map[string]string)
 	if format != "" {
 		fields["format"] = format
@@ -199,7 +200,7 @@ func (c *Client) ImportCSV(key, filename string, data []byte, format string, map
 		fields["mapping"] = string(mapping)
 	}
 	var out ImportResult
-	if err := c.doBearerMultipart(http.MethodPost, "/api/import/csv", key, filename, bytes.NewReader(data), fields, &out); err != nil {
+	if err := c.doBearerMultipart(ctx, http.MethodPost, "/api/import/csv", key, filename, bytes.NewReader(data), fields, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -207,10 +208,10 @@ func (c *Client) ImportCSV(key, filename string, data []byte, format string, map
 
 // ImportSource uploads a file for a registered import source via
 // POST /api/import/:slug and returns the created import job.
-func (c *Client) ImportSource(key, slug, filename string, data []byte) (*ImportResult, error) {
+func (c *Client) ImportSource(ctx context.Context, key, slug, filename string, data []byte) (*ImportResult, error) {
 	var out ImportResult
 	path := "/api/import/" + url.PathEscape(slug)
-	if err := c.doBearerMultipart(http.MethodPost, path, key, filename, bytes.NewReader(data), nil, &out); err != nil {
+	if err := c.doBearerMultipart(ctx, http.MethodPost, path, key, filename, bytes.NewReader(data), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

@@ -1,6 +1,7 @@
 package cliclient
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,9 +43,9 @@ type CreateBackupResult struct {
 
 // GetBackupConfig returns the current backup schedule and retention settings
 // from GET /api/admin/backups/config.
-func (c *Client) GetBackupConfig(key string) (*BackupConfig, error) {
+func (c *Client) GetBackupConfig(ctx context.Context, key string) (*BackupConfig, error) {
 	var out BackupConfig
-	if err := c.doBearer(http.MethodGet, "/api/admin/backups/config", key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, "/api/admin/backups/config", key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -53,9 +54,9 @@ func (c *Client) GetBackupConfig(key string) (*BackupConfig, error) {
 // UpdateBackupConfig updates the backup schedule and retention settings via
 // PUT /api/admin/backups/config and returns the saved configuration. The
 // UpdatedAt field of cfg is ignored by the server.
-func (c *Client) UpdateBackupConfig(key string, cfg BackupConfig) (*BackupConfig, error) {
+func (c *Client) UpdateBackupConfig(ctx context.Context, key string, cfg BackupConfig) (*BackupConfig, error) {
 	var out BackupConfig
-	if err := c.doBearer(http.MethodPut, "/api/admin/backups/config", key, cfg, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodPut, "/api/admin/backups/config", key, cfg, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -68,9 +69,9 @@ type backupListEnvelope struct {
 }
 
 // ListBackups returns all stored backups from GET /api/admin/backups.
-func (c *Client) ListBackups(key string) ([]Backup, error) {
+func (c *Client) ListBackups(ctx context.Context, key string) ([]Backup, error) {
 	var env backupListEnvelope
-	if err := c.doBearer(http.MethodGet, "/api/admin/backups", key, nil, &env); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, "/api/admin/backups", key, nil, &env); err != nil {
 		return nil, err
 	}
 	return env.Backups, nil
@@ -78,9 +79,9 @@ func (c *Client) ListBackups(key string) ([]Backup, error) {
 
 // CreateBackup triggers a manual backup via POST /api/admin/backups and
 // returns the new backup's ID and a status message.
-func (c *Client) CreateBackup(key string) (*CreateBackupResult, error) {
+func (c *Client) CreateBackup(ctx context.Context, key string) (*CreateBackupResult, error) {
 	var out CreateBackupResult
-	if err := c.doBearer(http.MethodPost, "/api/admin/backups", key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodPost, "/api/admin/backups", key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -88,8 +89,8 @@ func (c *Client) CreateBackup(key string) (*CreateBackupResult, error) {
 
 // DeleteBackup removes the backup with the given id via
 // DELETE /api/admin/backups/:id (expects 204).
-func (c *Client) DeleteBackup(key, id string) error {
-	return c.doBearer(http.MethodDelete, "/api/admin/backups/"+url.PathEscape(id), key, nil, nil)
+func (c *Client) DeleteBackup(ctx context.Context, key, id string) error {
+	return c.doBearer(ctx, http.MethodDelete, "/api/admin/backups/"+url.PathEscape(id), key, nil, nil)
 }
 
 // OpenBackupDownload opens the backup archive for id via
@@ -98,8 +99,8 @@ func (c *Client) DeleteBackup(key, id string) error {
 // (parsed from Content-Disposition, "" when absent) and the open body, which
 // the caller must Close. On a non-2xx response the body is consumed/closed and
 // a nil body is returned alongside the error.
-func (c *Client) OpenBackupDownload(key, id string) (filename string, body io.ReadCloser, err error) {
-	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/admin/backups/"+url.PathEscape(id)+"/download", nil)
+func (c *Client) OpenBackupDownload(ctx context.Context, key, id string) (filename string, body io.ReadCloser, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/admin/backups/"+url.PathEscape(id)+"/download", nil)
 	if err != nil {
 		return "", nil, fmt.Errorf("build request: %w", err)
 	}
@@ -120,22 +121,22 @@ func (c *Client) OpenBackupDownload(key, id string) (filename string, body io.Re
 // RestoreBackup restores the server's database from the backup with the given
 // id via POST /api/admin/backups/:id/restore. The {success,message} body is
 // discarded; any non-2xx response is returned as an error.
-func (c *Client) RestoreBackup(key, id string) error {
-	return c.doBearer(http.MethodPost, "/api/admin/backups/"+url.PathEscape(id)+"/restore", key, map[string]any{"confirm": true}, nil)
+func (c *Client) RestoreBackup(ctx context.Context, key, id string) error {
+	return c.doBearer(ctx, http.MethodPost, "/api/admin/backups/"+url.PathEscape(id)+"/restore", key, map[string]any{"confirm": true}, nil)
 }
 
 // RestoreBackupUpload uploads a backup archive and restores from it via
 // POST /api/admin/backups/restore/upload (multipart field "file"). body is
 // streamed into the request, so the caller can pass an *os.File directly
 // instead of reading a (potentially multi-GB) archive into memory.
-func (c *Client) RestoreBackupUpload(key, filename string, body io.Reader) error {
-	return c.doBearerMultipart(http.MethodPost, "/api/admin/backups/restore/upload", key, filename, body, nil, nil)
+func (c *Client) RestoreBackupUpload(ctx context.Context, key, filename string, body io.Reader) error {
+	return c.doBearerMultipart(ctx, http.MethodPost, "/api/admin/backups/restore/upload", key, filename, body, nil, nil)
 }
 
 // SetupRestoreUpload uploads a backup archive and restores a fresh instance
 // from it via POST /api/auth/setup/restore (multipart field "file"). The body
 // is streamed, so the caller can pass an *os.File directly. Unauthenticated
 // (pre-bootstrap), so no API key is sent.
-func (c *Client) SetupRestoreUpload(filename string, body io.Reader) error {
-	return c.doBearerMultipart(http.MethodPost, "/api/auth/setup/restore", "", filename, body, nil, nil)
+func (c *Client) SetupRestoreUpload(ctx context.Context, filename string, body io.Reader) error {
+	return c.doBearerMultipart(ctx, http.MethodPost, "/api/auth/setup/restore", "", filename, body, nil, nil)
 }

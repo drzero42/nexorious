@@ -30,7 +30,7 @@ func newChangelogCmd() *cobra.Command {
 			}
 
 			c := cliclient.New(p.URL)
-			res, err := c.GetChangelog(p.Key, all, since)
+			res, err := c.GetChangelog(cmd.Context(), p.Key, all, since)
 			if err != nil {
 				return fmt.Errorf("get changelog failed: %w", err)
 			}

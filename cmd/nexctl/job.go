@@ -38,7 +38,7 @@ func newJobRetryCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := cliclient.New(p.URL).RetryFailedJob(p.Key, args[0])
+			res, err := cliclient.New(p.URL).RetryFailedJob(cmd.Context(), p.Key, args[0])
 			if err != nil {
 				return fmt.Errorf("retry failed: %w", err)
 			}
@@ -68,7 +68,7 @@ func newJobCancelCmd() *cobra.Command {
 				fmt.Fprintln(out, "Aborted.")
 				return nil
 			}
-			if err := cliclient.New(p.URL).CancelJob(p.Key, args[0]); err != nil {
+			if err := cliclient.New(p.URL).CancelJob(cmd.Context(), p.Key, args[0]); err != nil {
 				return fmt.Errorf("cancel failed: %w", err)
 			}
 			fmt.Fprintf(out, "cancelled job %s\n", args[0])
@@ -106,7 +106,7 @@ func newJobListCmd() *cobra.Command {
 				params.Set("page", strconv.Itoa(page))
 			}
 
-			res, err := cliclient.New(p.URL).ListJobs(p.Key, params)
+			res, err := cliclient.New(p.URL).ListJobs(cmd.Context(), p.Key, params)
 			if err != nil {
 				return fmt.Errorf("list jobs failed: %w", err)
 			}
@@ -160,7 +160,7 @@ func newJobShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			job, err := cliclient.New(p.URL).GetJob(p.Key, args[0])
+			job, err := cliclient.New(p.URL).GetJob(cmd.Context(), p.Key, args[0])
 			if err != nil {
 				return fmt.Errorf("get job failed: %w", err)
 			}

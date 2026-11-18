@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -68,7 +69,7 @@ func newGameListCmd() *cobra.Command {
 				params.Set("page", strconv.Itoa(page))
 			}
 			if tag != "" {
-				id, err := resolveTagID(c, p.Key, tag)
+				id, err := resolveTagID(cmd.Context(), c, p.Key, tag)
 				if err != nil {
 					return err
 				}
@@ -82,7 +83,7 @@ func newGameListCmd() *cobra.Command {
 				params.Set("pool", ref.ID)
 			}
 
-			res, err := c.ListUserGames(p.Key, params)
+			res, err := c.ListUserGames(cmd.Context(), p.Key, params)
 			if err != nil {
 				return fmt.Errorf("list games failed: %w", err)
 			}
@@ -151,8 +152,8 @@ func max1(n int) int {
 }
 
 // resolveTagID maps a tag name to its id (case-insensitive), erroring if unknown.
-func resolveTagID(c *cliclient.Client, key, name string) (string, error) {
-	tags, err := c.ListTags(key)
+func resolveTagID(ctx context.Context, c *cliclient.Client, key, name string) (string, error) {
+	tags, err := c.ListTags(ctx, key)
 	if err != nil {
 		return "", fmt.Errorf("resolve tag %q: %w", name, err)
 	}

@@ -26,7 +26,7 @@ func TestFindUserGamesByRefTitleMany(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	got, err := findUserGamesByRef(cliclient.New(srv.URL), "k", "halo")
+	got, err := findUserGamesByRef(t.Context(), cliclient.New(srv.URL), "k", "halo")
 	if err != nil {
 		t.Fatalf("find: %v", err)
 	}

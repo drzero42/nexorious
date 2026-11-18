@@ -29,7 +29,7 @@ func TestTriggerExport(t *testing.T) {
 			t.Cleanup(srv.Close)
 			c := New(srv.URL)
 
-			result, err := c.TriggerExport("k", format)
+			result, err := c.TriggerExport(t.Context(), "k", format)
 			if err != nil {
 				t.Fatalf("TriggerExport(%q): %v", format, err)
 			}
@@ -54,7 +54,7 @@ func TestTriggerExport(t *testing.T) {
 
 func TestTriggerExportUnsupportedFormat(t *testing.T) {
 	c := New("http://localhost")
-	_, err := c.TriggerExport("k", "xml")
+	_, err := c.TriggerExport(t.Context(), "k", "xml")
 	if err == nil {
 		t.Fatal("expected error for unsupported format, got nil")
 	}
@@ -84,7 +84,7 @@ func TestOpenExportDownload(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	name, body, err := c.OpenExportDownload("k", "exp-7")
+	name, body, err := c.OpenExportDownload(t.Context(), "k", "exp-7")
 	if err != nil {
 		t.Fatalf("OpenExportDownload: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestOpenExportDownloadNonOK(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	name, body, err := c.OpenExportDownload("k", "exp-missing")
+	name, body, err := c.OpenExportDownload(t.Context(), "k", "exp-missing")
 	if err == nil {
 		if body != nil {
 			_ = body.Close()
@@ -138,7 +138,7 @@ func TestOpenExportDownloadPathEscaping(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	_, body, err := c.OpenExportDownload("k", "exp 7")
+	_, body, err := c.OpenExportDownload(t.Context(), "k", "exp 7")
 	if err != nil {
 		t.Fatalf("OpenExportDownload: %v", err)
 	}

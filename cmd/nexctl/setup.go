@@ -40,10 +40,10 @@ func newSetupBackupsCmd() *cobra.Command {
 			client := cliclient.New(url)
 			// The setup zone is only reachable once the instance is Ready; bring a
 			// fresh instance up (running pending migrations) first, like setup admin.
-			if err := cliauth.Preflight(out, client, url); err != nil {
+			if err := cliauth.Preflight(cmd.Context(), out, client, url); err != nil {
 				return err
 			}
-			entries, err := client.SetupListBackups()
+			entries, err := client.SetupListBackups(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("list setup backups: %w", err)
 			}
@@ -106,7 +106,7 @@ func newSetupRestoreCmd() *cobra.Command {
 			// The restore then reaches the handler, so an incompatible archive (e.g.
 			// a pre-v0.17.1 backup) is rejected with a clear message instead of an
 			// opaque app-state 503.
-			if err := cliauth.Preflight(out, c, url); err != nil {
+			if err := cliauth.Preflight(cmd.Context(), out, c, url); err != nil {
 				return err
 			}
 			if hasFile {
@@ -119,13 +119,13 @@ func newSetupRestoreCmd() *cobra.Command {
 				if idx := strings.LastIndexByte(filePath, '/'); idx >= 0 {
 					filename = filePath[idx+1:]
 				}
-				if err := c.SetupRestoreUpload(filename, f); err != nil {
+				if err := c.SetupRestoreUpload(cmd.Context(), filename, f); err != nil {
 					return fmt.Errorf("setup restore upload: %w", err)
 				}
 				fmt.Fprintln(out, "Backup restored. Log in with your restored credentials.")
 				return nil
 			}
-			if err := c.SetupRestoreFromDisk(args[0]); err != nil {
+			if err := c.SetupRestoreFromDisk(cmd.Context(), args[0]); err != nil {
 				return fmt.Errorf("setup restore: %w", err)
 			}
 			fmt.Fprintln(out, "Backup restored. Log in with your restored credentials.")
@@ -176,7 +176,7 @@ func runSetupAdmin(cmd *cobra.Command, username string, passwordStdin, login boo
 	url := resolveServerURL(cmd)
 	client := cliclient.New(url)
 
-	if err := cliauth.Preflight(out, client, url); err != nil {
+	if err := cliauth.Preflight(cmd.Context(), out, client, url); err != nil {
 		return err
 	}
 
@@ -196,7 +196,7 @@ func runSetupAdmin(cmd *cobra.Command, username string, passwordStdin, login boo
 		return err
 	}
 
-	res, err := client.SetupAdmin(username, password)
+	res, err := client.SetupAdmin(cmd.Context(), username, password)
 	if err != nil {
 		return fmt.Errorf("could not reach server at %s — is it running? (%w)", url, err)
 	}
@@ -209,7 +209,7 @@ func runSetupAdmin(cmd *cobra.Command, username string, passwordStdin, login boo
 		if err != nil {
 			return fmt.Errorf("admin created, but loading CLI config for --login failed (run \"nexctl account login\"): %w", err)
 		}
-		if err := cliauth.LoginAndStoreKey(out, client, cfg, profileName(cmd, cfg), url, username, password); err != nil {
+		if err := cliauth.LoginAndStoreKey(cmd.Context(), out, client, cfg, profileName(cmd, cfg), url, username, password); err != nil {
 			return fmt.Errorf("admin created, but --login failed (run \"nexctl account login\"): %w", err)
 		}
 	}

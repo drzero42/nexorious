@@ -38,7 +38,7 @@ func newExportCmd() *cobra.Command {
 			// Format is validated by cliclient.TriggerExport (before any network
 			// call), so the command layer does not re-check it.
 			c := cliclient.New(p.URL)
-			res, err := c.TriggerExport(p.Key, format)
+			res, err := c.TriggerExport(cmd.Context(), p.Key, format)
 			if err != nil {
 				return fmt.Errorf("trigger export: %w", err)
 			}
@@ -58,7 +58,7 @@ func newExportCmd() *cobra.Command {
 			// Poll until the job reaches a terminal state.
 			var job *cliclient.Job
 			for {
-				job, err = c.GetJob(p.Key, res.JobID)
+				job, err = c.GetJob(cmd.Context(), p.Key, res.JobID)
 				if err != nil {
 					return fmt.Errorf("poll job: %w", err)
 				}
@@ -76,7 +76,7 @@ func newExportCmd() *cobra.Command {
 			}
 
 			// Resolve the destination writer / path.
-			serverName, body, err := c.OpenExportDownload(p.Key, res.JobID)
+			serverName, body, err := c.OpenExportDownload(cmd.Context(), p.Key, res.JobID)
 			if err != nil {
 				return fmt.Errorf("download export: %w", err)
 			}

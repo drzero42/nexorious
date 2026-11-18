@@ -18,7 +18,7 @@ func TestHttpErrorSurfacesAppState(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	_, err := New(srv.URL).SetupListBackups()
+	_, err := New(srv.URL).SetupListBackups(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "needs_migration") || !strings.Contains(err.Error(), "not ready") {
 		t.Fatalf("err = %v; want a 'not ready (state: needs_migration)' message", err)
 	}
@@ -36,7 +36,7 @@ func TestSetupListBackups(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	entries, err := New(srv.URL).SetupListBackups()
+	entries, err := New(srv.URL).SetupListBackups(t.Context())
 	if err != nil {
 		t.Fatalf("SetupListBackups: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestSetupListBackupsForbidden(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	_, err := New(srv.URL).SetupListBackups()
+	_, err := New(srv.URL).SetupListBackups(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "no users exist") {
 		t.Fatalf("err = %v; want forbidden message", err)
 	}
@@ -79,7 +79,7 @@ func TestSetupRestoreFromDisk(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if err := New(srv.URL).SetupRestoreFromDisk("b.tar.gz"); err != nil {
+	if err := New(srv.URL).SetupRestoreFromDisk(t.Context(), "b.tar.gz"); err != nil {
 		t.Fatalf("SetupRestoreFromDisk: %v", err)
 	}
 	if !strings.Contains(gotBody, `"filename":"b.tar.gz"`) {
@@ -109,7 +109,7 @@ func TestSetupRestoreUpload(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if err := New(srv.URL).SetupRestoreUpload("b.tar.gz", strings.NewReader("ARCHIVE-BYTES")); err != nil {
+	if err := New(srv.URL).SetupRestoreUpload(t.Context(), "b.tar.gz", strings.NewReader("ARCHIVE-BYTES")); err != nil {
 		t.Fatalf("SetupRestoreUpload: %v", err)
 	}
 }

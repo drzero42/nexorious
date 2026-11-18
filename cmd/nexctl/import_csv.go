@@ -84,7 +84,7 @@ func newImportCSVCmd() *cobra.Command {
 
 			// --inspect: print server inspection and return.
 			if inspect {
-				info, err := c.InspectCSV(p.Key, filename, data)
+				info, err := c.InspectCSV(cmd.Context(), p.Key, filename, data)
 				if err != nil {
 					return fmt.Errorf("inspect CSV failed: %w", err)
 				}
@@ -166,7 +166,7 @@ func newImportCSVCmd() *cobra.Command {
 
 			// Preset path.
 			if preset != "" {
-				res, err := c.ImportCSV(p.Key, filename, data, preset, nil)
+				res, err := c.ImportCSV(cmd.Context(), p.Key, filename, data, preset, nil)
 				if err != nil {
 					return fmt.Errorf("import CSV failed: %w", err)
 				}
@@ -176,7 +176,7 @@ func newImportCSVCmd() *cobra.Command {
 			// Auto path: no preset and no manual flags -> let the server detect
 			// a preset or guess the mapping in one call.
 			if !anyManual {
-				res, err := c.ImportCSV(p.Key, filename, data, "", nil)
+				res, err := c.ImportCSV(cmd.Context(), p.Key, filename, data, "", nil)
 				if err != nil {
 					return fmt.Errorf("import CSV failed: %w", err)
 				}
@@ -260,7 +260,7 @@ func newImportCSVCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("marshal mapping: %w", err)
 			}
-			res, err := c.ImportCSV(p.Key, filename, data, "", json.RawMessage(mappingJSON))
+			res, err := c.ImportCSV(cmd.Context(), p.Key, filename, data, "", json.RawMessage(mappingJSON))
 			if err != nil {
 				return fmt.Errorf("import CSV failed: %w", err)
 			}

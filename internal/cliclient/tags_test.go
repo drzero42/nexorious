@@ -31,11 +31,11 @@ func TestCreateAndDeleteTag(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	tag, err := c.CreateTag("k", "RPG", nil)
+	tag, err := c.CreateTag(t.Context(), "k", "RPG", nil)
 	if err != nil || tag.ID != "t-1" {
 		t.Fatalf("CreateTag: %v %+v", err, tag)
 	}
-	if err := c.DeleteTag("k", "t-1"); err != nil {
+	if err := c.DeleteTag(t.Context(), "k", "t-1"); err != nil {
 		t.Fatalf("DeleteTag: %v", err)
 	}
 }

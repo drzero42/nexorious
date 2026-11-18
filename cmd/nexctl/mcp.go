@@ -1,8 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"strings"
+	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -80,8 +81,7 @@ func mcpToolError(action string, err error) error {
 }
 
 // isForbidden reports whether err is an HTTP 403 from cliclient.
-// cliclient.httpError produces plain fmt.Errorf strings ("server returned 403…");
-// there is no typed error to unwrap, so we match on the message directly.
 func isForbidden(err error) bool {
-	return strings.Contains(err.Error(), "server returned 403")
+	var he *cliclient.HTTPError
+	return errors.As(err, &he) && he.Status == http.StatusForbidden
 }

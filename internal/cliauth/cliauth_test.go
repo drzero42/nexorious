@@ -29,7 +29,7 @@ func TestLoginAndStoreKeyWritesNamedProfile(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cfg := &clicfg.Config{}
-	if err := LoginAndStoreKey(&bytes.Buffer{}, cliclient.New(srv.URL), cfg, "work", srv.URL, "alice", "pw"); err != nil {
+	if err := LoginAndStoreKey(t.Context(), &bytes.Buffer{}, cliclient.New(srv.URL), cfg, "work", srv.URL, "alice", "pw"); err != nil {
 		t.Fatalf("LoginAndStoreKey: %v", err)
 	}
 	p, ok := cfg.ProfileNamed("work")
@@ -67,7 +67,7 @@ func TestLoginAndStoreKeyRotatesExistingKey(t *testing.T) {
 	cfg := &clicfg.Config{}
 	cfg.SetProfile("work", clicfg.Profile{URL: srv.URL, Username: "alice", KeyName: "cli@old", KeyID: "key-old", Key: "nxr_old"})
 
-	if err := LoginAndStoreKey(&bytes.Buffer{}, cliclient.New(srv.URL), cfg, "work", srv.URL, "alice", "pw"); err != nil {
+	if err := LoginAndStoreKey(t.Context(), &bytes.Buffer{}, cliclient.New(srv.URL), cfg, "work", srv.URL, "alice", "pw"); err != nil {
 		t.Fatalf("LoginAndStoreKey: %v", err)
 	}
 	if revoked != "key-old" {

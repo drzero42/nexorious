@@ -3,6 +3,7 @@
 package cliauth
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -17,27 +18,27 @@ const DefaultServerURL = "http://localhost:8000"
 // LoginAndStoreKey logs in with the given credentials, rotates out any key
 // already stored under profileName, mints a fresh CLI key, drops the throwaway
 // session, and saves the key to the named profile (marking it current).
-func LoginAndStoreKey(out io.Writer, client *cliclient.Client, cfg *clicfg.Config, profileName, url, username, password string) error {
-	sessionID, err := client.Login(username, password)
+func LoginAndStoreKey(ctx context.Context, out io.Writer, client *cliclient.Client, cfg *clicfg.Config, profileName, url, username, password string) error {
+	sessionID, err := client.Login(ctx, username, password)
 	if err != nil {
 		return fmt.Errorf("login failed: %w", err)
 	}
 
 	// Rotate: revoke a previously stored key for this profile before minting a new one.
 	if existing, _ := cfg.ProfileNamed(profileName); existing.KeyID != "" {
-		if err := client.RevokeAPIKeyWithCookie(sessionID, existing.KeyID); err != nil {
+		if err := client.RevokeAPIKeyWithCookie(ctx, sessionID, existing.KeyID); err != nil {
 			fmt.Fprintf(out, "warning: could not revoke previous key %s: %v\n", existing.KeyID, err)
 		}
 	}
 
 	keyName := "cli@" + hostname()
-	key, keyID, err := client.CreateAPIKey(sessionID, keyName)
+	key, keyID, err := client.CreateAPIKey(ctx, sessionID, keyName)
 	if err != nil {
 		return fmt.Errorf("create API key failed: %w", err)
 	}
 
 	// Drop the throwaway session; failure here is non-fatal.
-	if err := client.Logout(sessionID); err != nil {
+	if err := client.Logout(ctx, sessionID); err != nil {
 		fmt.Fprintf(out, "warning: could not close bootstrap session: %v\n", err)
 	}
 

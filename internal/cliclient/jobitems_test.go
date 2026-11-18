@@ -21,7 +21,7 @@ func TestResolveJobItem(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.ResolveJobItem("k", "ji-42", 9999); err != nil {
+	if err := c.ResolveJobItem(t.Context(), "k", "ji-42", 9999); err != nil {
 		t.Fatalf("ResolveJobItem: %v", err)
 	}
 	if gotMethod != http.MethodPost {
@@ -46,7 +46,7 @@ func TestResolveJobItemPathEscaping(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.ResolveJobItem("k", "id with spaces", 1); err != nil {
+	if err := c.ResolveJobItem(t.Context(), "k", "id with spaces", 1); err != nil {
 		t.Fatalf("ResolveJobItem path escape: %v", err)
 	}
 	if gotRequestURI != "/api/job-items/id%20with%20spaces/resolve" {
@@ -66,7 +66,7 @@ func TestSkipJobItem(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.SkipJobItem("k", "ji-7"); err != nil {
+	if err := c.SkipJobItem(t.Context(), "k", "ji-7"); err != nil {
 		t.Fatalf("SkipJobItem: %v", err)
 	}
 	if gotMethod != http.MethodPost {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"strings"
 
@@ -61,7 +62,7 @@ func newGameEditCmd() *cobra.Command {
 			ch := cmd.Flags().Changed
 			for i := range games {
 				u := &games[i]
-				if err := editOne(c, p.Key, u, editOpts{
+				if err := editOne(cmd.Context(), c, p.Key, u, editOpts{
 					status: status, statusSet: ch("status"),
 					rating: rating, ratingSet: ch("rating"),
 					loved: loved, noLoved: noLoved,
@@ -112,36 +113,36 @@ type editOpts struct {
 	addTags, rmTags         []string
 }
 
-func editOne(c *cliclient.Client, key string, u *cliclient.UserGame, o editOpts) error {
+func editOne(ctx context.Context, c *cliclient.Client, key string, u *cliclient.UserGame, o editOpts) error {
 	if o.addPlatform != "" {
 		pl, sf := splitPlatform(o.addPlatform)
-		if err := validatePlatform(c, key, pl); err != nil {
+		if err := validatePlatform(ctx, c, key, pl); err != nil {
 			return err
 		}
-		if err := c.AddPlatform(key, u.ID, cliclient.PlatformInput{Platform: pl, Storefront: sf, OwnershipStatus: "owned"}); err != nil {
+		if err := c.AddPlatform(ctx, key, u.ID, cliclient.PlatformInput{Platform: pl, Storefront: sf, OwnershipStatus: "owned"}); err != nil {
 			return fmt.Errorf("add platform: %w", err)
 		}
 	}
 	if o.rmPlatform != "" {
-		pid, err := platformIDBySlug(c, key, u, o.rmPlatform)
+		pid, err := platformIDBySlug(ctx, c, key, u, o.rmPlatform)
 		if err != nil {
 			return err
 		}
-		if err := c.DeletePlatform(key, u.ID, pid); err != nil {
+		if err := c.DeletePlatform(ctx, key, u.ID, pid); err != nil {
 			return fmt.Errorf("remove platform: %w", err)
 		}
 	}
 	if o.hoursSet {
-		pid, err := targetPlatformID(c, key, u, o.hoursPlatform)
+		pid, err := targetPlatformID(ctx, c, key, u, o.hoursPlatform)
 		if err != nil {
 			return err
 		}
-		if err := c.UpdatePlatform(key, u.ID, pid, map[string]any{"hours_played": o.hours}); err != nil {
+		if err := c.UpdatePlatform(ctx, key, u.ID, pid, map[string]any{"hours_played": o.hours}); err != nil {
 			return fmt.Errorf("set hours: %w", err)
 		}
 	}
 	if o.statusSet {
-		if _, err := c.UpdateProgress(key, u.ID, o.status); err != nil {
+		if _, err := c.UpdateProgress(ctx, key, u.ID, o.status); err != nil {
 			return fmt.Errorf("set status: %w", err)
 		}
 	}
@@ -159,12 +160,12 @@ func editOne(c *cliclient.Client, key string, u *cliclient.UserGame, o editOpts)
 		fields["personal_notes"] = o.notes
 	}
 	if len(fields) > 0 {
-		if _, err := c.UpdateUserGame(key, u.ID, fields); err != nil {
+		if _, err := c.UpdateUserGame(ctx, key, u.ID, fields); err != nil {
 			return fmt.Errorf("update fields: %w", err)
 		}
 	}
 	if len(o.addTags) > 0 || len(o.rmTags) > 0 {
-		if err := applyTagEdits(c, key, u, o.addTags, o.rmTags); err != nil {
+		if err := applyTagEdits(ctx, c, key, u, o.addTags, o.rmTags); err != nil {
 			return err
 		}
 	}
@@ -172,8 +173,8 @@ func editOne(c *cliclient.Client, key string, u *cliclient.UserGame, o editOpts)
 }
 
 // platformIDBySlug finds the platform row id whose platform slug matches.
-func platformIDBySlug(c *cliclient.Client, key string, u *cliclient.UserGame, slug string) (string, error) {
-	cur, err := c.GetUserGame(key, u.ID)
+func platformIDBySlug(ctx context.Context, c *cliclient.Client, key string, u *cliclient.UserGame, slug string) (string, error) {
+	cur, err := c.GetUserGame(ctx, key, u.ID)
 	if err != nil {
 		return "", err
 	}
@@ -187,8 +188,8 @@ func platformIDBySlug(c *cliclient.Client, key string, u *cliclient.UserGame, sl
 
 // targetPlatformID picks the platform row for --hours: the named slug, else the
 // sole platform, else an error asking which.
-func targetPlatformID(c *cliclient.Client, key string, u *cliclient.UserGame, slug string) (string, error) {
-	cur, err := c.GetUserGame(key, u.ID)
+func targetPlatformID(ctx context.Context, c *cliclient.Client, key string, u *cliclient.UserGame, slug string) (string, error) {
+	cur, err := c.GetUserGame(ctx, key, u.ID)
 	if err != nil {
 		return "", err
 	}
@@ -207,8 +208,8 @@ func targetPlatformID(c *cliclient.Client, key string, u *cliclient.UserGame, sl
 }
 
 // applyTagEdits computes current ∪ add \ remove and replaces the tag set.
-func applyTagEdits(c *cliclient.Client, key string, u *cliclient.UserGame, add, remove []string) error {
-	cur, err := c.GetUserGame(key, u.ID)
+func applyTagEdits(ctx context.Context, c *cliclient.Client, key string, u *cliclient.UserGame, add, remove []string) error {
+	cur, err := c.GetUserGame(ctx, key, u.ID)
 	if err != nil {
 		return err
 	}
@@ -226,7 +227,7 @@ func applyTagEdits(c *cliclient.Client, key string, u *cliclient.UserGame, add, 
 	for _, disp := range set {
 		names = append(names, disp)
 	}
-	if _, err := c.ReplaceTags(key, u.ID, names); err != nil {
+	if _, err := c.ReplaceTags(ctx, key, u.ID, names); err != nil {
 		return fmt.Errorf("update tags: %w", err)
 	}
 	return nil

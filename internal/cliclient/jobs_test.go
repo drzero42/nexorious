@@ -40,7 +40,7 @@ func TestListJobs(t *testing.T) {
 	c := New(srv.URL)
 
 	params := url.Values{"status": {"completed"}}
-	page, err := c.ListJobs("k", params)
+	page, err := c.ListJobs(t.Context(), "k", params)
 	if err != nil {
 		t.Fatalf("ListJobs: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestListJobsEmptyParams(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if _, err := c.ListJobs("k", url.Values{}); err != nil {
+	if _, err := c.ListJobs(t.Context(), "k", url.Values{}); err != nil {
 		t.Fatalf("ListJobs empty params: %v", err)
 	}
 	if gotRawQuery != "" {
@@ -114,7 +114,7 @@ func TestGetJob(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	job, err := c.GetJob("k", "j-42")
+	job, err := c.GetJob(t.Context(), "k", "j-42")
 	if err != nil {
 		t.Fatalf("GetJob: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestGetJobNullableFields(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	job, err := c.GetJob("k", "j-9")
+	job, err := c.GetJob(t.Context(), "k", "j-9")
 	if err != nil {
 		t.Fatalf("GetJob nullable: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestGetJobItems(t *testing.T) {
 	c := New(srv.URL)
 
 	params := url.Values{"status": {"completed"}}
-	page, err := c.GetJobItems("k", "j-1", params)
+	page, err := c.GetJobItems(t.Context(), "k", "j-1", params)
 	if err != nil {
 		t.Fatalf("GetJobItems: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestRetryFailedJob(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	result, err := c.RetryFailedJob("k", "j-5")
+	result, err := c.RetryFailedJob(t.Context(), "k", "j-5")
 	if err != nil {
 		t.Fatalf("RetryFailedJob: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestCancelJob(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.CancelJob("k", "j-7"); err != nil {
+	if err := c.CancelJob(t.Context(), "k", "j-7"); err != nil {
 		t.Fatalf("CancelJob: %v", err)
 	}
 	if gotMethod != http.MethodPost {
@@ -304,7 +304,7 @@ func TestGetJobPathEscaping(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if _, err := c.GetJob("k", "id with spaces"); err != nil {
+	if _, err := c.GetJob(t.Context(), "k", "id with spaces"); err != nil {
 		t.Fatalf("GetJob path escape: %v", err)
 	}
 	if gotRequestURI != "/api/jobs/id%20with%20spaces" {
