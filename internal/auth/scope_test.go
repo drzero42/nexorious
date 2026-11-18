@@ -37,3 +37,24 @@ func TestScopeAllowsRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestIsSelfRevoke(t *testing.T) {
+	cases := []struct {
+		name                         string
+		method, route, target, keyID string
+		want                         bool
+	}{
+		{"own key", http.MethodDelete, selfRevokeRoute, "k1", "k1", true},
+		{"other key", http.MethodDelete, selfRevokeRoute, "k2", "k1", false},
+		{"cookie auth has no key id", http.MethodDelete, selfRevokeRoute, "", "", false},
+		{"not a DELETE", http.MethodPost, selfRevokeRoute, "k1", "k1", false},
+		{"other route with matching id", http.MethodDelete, "/api/tags/:id", "k1", "k1", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isSelfRevoke(tc.method, tc.route, tc.target, tc.keyID); got != tc.want {
+				t.Errorf("isSelfRevoke(%q,%q,%q,%q) = %v, want %v", tc.method, tc.route, tc.target, tc.keyID, got, tc.want)
+			}
+		})
+	}
+}

@@ -209,7 +209,7 @@ func runSetupAdmin(cmd *cobra.Command, username string, passwordStdin, login boo
 		if err != nil {
 			return fmt.Errorf("admin created, but loading CLI config for --login failed (run \"nexctl account login\"): %w", err)
 		}
-		if err := cliauth.LoginAndStoreKey(cmd.Context(), out, client, cfg, profileName(cmd, cfg), url, username, password); err != nil {
+		if err := cliauth.LoginAndStoreKey(cmd.Context(), out, client, cfg, profileName(cmd, cfg), url, username, password, "write"); err != nil {
 			return fmt.Errorf("admin created, but --login failed (run \"nexctl account login\"): %w", err)
 		}
 	}

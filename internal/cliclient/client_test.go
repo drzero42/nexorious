@@ -110,7 +110,7 @@ func TestCreateAPIKeySendsCookieReturnsKey(t *testing.T) {
 	srv := newTestServer(t, &cap)
 	c := New(srv.URL)
 
-	key, id, err := c.CreateAPIKey(t.Context(), "sess-123", "cli@host")
+	key, id, err := c.CreateAPIKey(t.Context(), "sess-123", "cli@host", "write")
 	if err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
@@ -206,7 +206,7 @@ func errServer(t *testing.T, status int) *httptest.Server {
 
 func TestCreateAPIKeyServerError(t *testing.T) {
 	c := New(errServer(t, http.StatusInternalServerError).URL)
-	_, _, err := c.CreateAPIKey(t.Context(), "sess-123", "cli@host")
+	_, _, err := c.CreateAPIKey(t.Context(), "sess-123", "cli@host", "write")
 	if err == nil {
 		t.Fatal("expected error on 500")
 	}

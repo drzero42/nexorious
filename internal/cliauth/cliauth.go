@@ -16,9 +16,10 @@ import (
 const DefaultServerURL = "http://localhost:8000"
 
 // LoginAndStoreKey logs in with the given credentials, rotates out any key
-// already stored under profileName, mints a fresh CLI key, drops the throwaway
-// session, and saves the key to the named profile (marking it current).
-func LoginAndStoreKey(ctx context.Context, out io.Writer, client *cliclient.Client, cfg *clicfg.Config, profileName, url, username, password string) error {
+// already stored under profileName, mints a fresh CLI key with the given scope
+// ("read" or "write"), drops the throwaway session, and saves the key to the
+// named profile. The current profile only changes when there was none.
+func LoginAndStoreKey(ctx context.Context, out io.Writer, client *cliclient.Client, cfg *clicfg.Config, profileName, url, username, password, scope string) error {
 	sessionID, err := client.Login(ctx, username, password)
 	if err != nil {
 		return fmt.Errorf("login failed: %w", err)
@@ -32,7 +33,7 @@ func LoginAndStoreKey(ctx context.Context, out io.Writer, client *cliclient.Clie
 	}
 
 	keyName := "cli@" + hostname()
-	key, keyID, err := client.CreateAPIKey(ctx, sessionID, keyName)
+	key, keyID, err := client.CreateAPIKey(ctx, sessionID, keyName, scope)
 	if err != nil {
 		return fmt.Errorf("create API key failed: %w", err)
 	}
@@ -42,7 +43,7 @@ func LoginAndStoreKey(ctx context.Context, out io.Writer, client *cliclient.Clie
 		fmt.Fprintf(out, "warning: could not close bootstrap session: %v\n", err)
 	}
 
-	cfg.SetProfile(profileName, clicfg.Profile{
+	cfg.StoreProfile(profileName, clicfg.Profile{
 		URL:      url,
 		Username: username,
 		KeyName:  keyName,
@@ -54,7 +55,7 @@ func LoginAndStoreKey(ctx context.Context, out io.Writer, client *cliclient.Clie
 			"revoke it from the web UI to avoid an orphaned key: %w", keyName, keyID, err)
 	}
 
-	fmt.Fprintf(out, "Logged in to %s as %s.\nStored API key %q (%s)", url, username, keyName, maskKey(key))
+	fmt.Fprintf(out, "Logged in to %s as %s.\nStored %s-scoped API key %q (%s)", url, username, scope, keyName, maskKey(key))
 	if path, err := clicfg.Path(); err == nil {
 		fmt.Fprintf(out, " in %s", path)
 	}
