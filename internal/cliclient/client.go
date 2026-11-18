@@ -547,6 +547,52 @@ func (c *Client) doBearer(ctx context.Context, method, path, key string, body, o
 	return nil
 }
 
+// mcpTimeout bounds one MCP exchange. A tool call fans out into several REST
+// sub-calls server-side (each under the server's own 30s client timeout), so
+// the default per-request timeout would cut off calls the server is still
+// serving; the MCP client keeps its own timeout on top.
+const mcpTimeout = 5 * time.Minute
+
+// MCPResponse is the successful (2xx) answer to one PostMCP exchange. Body is
+// empty for a 202 (the reply to a JSON-RPC notification).
+type MCPResponse struct {
+	Status      int
+	ContentType string
+	Body        []byte
+}
+
+// PostMCP POSTs one raw JSON-RPC message to /api/mcp with the caller's key and
+// returns the response untouched, so callers stay protocol-version-agnostic.
+// Non-2xx responses become an *HTTPError.
+func (c *Client) PostMCP(ctx context.Context, key string, msg []byte) (*MCPResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/mcp", bytes.NewReader(msg))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+
+	hc := *c.hc
+	hc.Timeout = mcpTimeout
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, httpError(resp)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	return &MCPResponse{Status: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), Body: body}, nil
+}
+
 // IGDBCandidate is one IGDB search hit. UserGameID is non-nil when the game is
 // already in the caller's library.
 type IGDBCandidate struct {
