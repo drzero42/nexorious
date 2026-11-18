@@ -21,6 +21,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   parse:
     name: Parse squash commit message
@@ -30,11 +34,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "26"
-
       - name: Validate release commit message
         env:
           # Pass via env (never inline ${{ }}) to avoid script injection.
@@ -42,6 +41,8 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+        # The runner's preinstalled Node/npm is enough for node:test + one ESM
+        # dependency, so no setup-node.
         run: |
           # Pin the exact parser release-please depends on (^0.4.1; latest 0.4.1).
           npm install --no-save --no-audit --no-fund @conventional-commits/parser@0.4.1

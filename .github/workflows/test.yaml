@@ -6,14 +6,19 @@ on:
     branches: [main]
   push:
     branches: [main]
-  workflow_call:
+
+# A new push to a PR supersedes the run for the previous commit; runs on main
+# always finish so every squash commit gets a full result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Detect which areas a pull request touches so the heavy suites below only
-  # run when relevant. On push-to-main, workflow_call (release) or any non-PR
-  # event we validate everything. The `CI Gate` job aggregates the results and
-  # is the single required status check — individual suites report "skipped"
-  # for untouched areas, which the gate treats as a pass.
+  # run when relevant. On push-to-main we validate everything. The `CI Gate`
+  # job aggregates the results and is the single required status check —
+  # individual suites report "skipped" for untouched areas, which the gate
+  # treats as a pass.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -36,7 +41,7 @@ jobs:
           frontend=false
           helm=false
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            # push to main, workflow_call (release) or manual run — validate all.
+            # push to main — validate all.
             go=true
             frontend=true
             helm=true
@@ -63,77 +68,20 @@ jobs:
             echo "helm=$helm"
           } >> "$GITHUB_OUTPUT"
 
+  # PR-only: on push to main, race.yaml runs the same suite under -race (and
+  # opens an issue on failure), so running the plain suite too is redundant.
   go-tests:
     name: Go Tests
     needs: changes
-    if: needs.changes.outputs.go == 'true'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-
-      - name: Cache PostgreSQL 18 client packages
-        uses: actions/cache@v6
-        with:
-          path: ${{ github.workspace }}/apt-archives
-          key: apt-pgclient18-${{ runner.os }}
-
-      - name: Install PostgreSQL 18 client
-        run: |
-          set -euo pipefail
-          # curl and ca-certificates are preinstalled on ubuntu-latest, so we
-          # skip an apt install for them.
-          sudo install -d /usr/share/postgresql-common/pgdg
-          # Retry the key download: postgresql.org occasionally stalls and
-          # drops the TLS connection (curl exit 55), which failed CI with no
-          # code at fault (#1241). --max-time bounds each stalled attempt.
-          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
-            --connect-timeout 10 --max-time 30 \
-            --retry 5 --retry-delay 3 --retry-all-errors \
-            https://www.postgresql.org/media/keys/ACCC4CF8.asc
-          sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-          # Refresh only the PGDG source list, not every Ubuntu mirror — the
-          # base package lists already present on the runner image satisfy the
-          # transitive dependencies. A full `apt-get update` here costs ~10s.
-          sudo apt-get update \
-            -o Dir::Etc::sourcelist="sources.list.d/pgdg.list" \
-            -o Dir::Etc::sourceparts="-" \
-            -o APT::Get::List-Cleanup="0"
-          # Use a workspace-local archive dir so actions/cache can persist the
-          # downloaded .deb files (and their dependencies) between runs.
-          ARCHIVES="$GITHUB_WORKSPACE/apt-archives"
-          mkdir -p "$ARCHIVES/partial"
-          sudo apt-get install -y \
-            -o Dir::Cache::archives="$ARCHIVES" \
-            postgresql-client-18
-          # Make the cached debs readable by the (non-root) runner user so the
-          # cache save step can pack them.
-          sudo chown -R "$(id -u):$(id -g)" "$ARCHIVES"
-
-      - name: Cache Postgres test image
-        id: pg-image
-        uses: actions/cache@v6
-        with:
-          path: ${{ github.workspace }}/.docker-cache/postgres-18-alpine.tar
-          key: docker-postgres-18-alpine
-
-      - name: Load or pull Postgres test image
-        run: |
-          set -euo pipefail
-          TAR="$GITHUB_WORKSPACE/.docker-cache/postgres-18-alpine.tar"
-          if [ -f "$TAR" ]; then
-            docker load -i "$TAR"
-          else
-            docker pull postgres:18-alpine
-            mkdir -p "$(dirname "$TAR")"
-            docker save postgres:18-alpine -o "$TAR"
-          fi
+      - name: Set up Go and Postgres test dependencies
+        uses: ./.github/actions/go-pg-setup
 
       - name: Run Go tests
         env:
