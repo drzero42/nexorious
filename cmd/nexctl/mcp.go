@@ -48,7 +48,10 @@ func newMCPServeCmd() *cobra.Command {
 				return err
 			}
 			key := func(context.Context) string { return p.Key }
-			srv := mcptools.NewServer(cliclient.New(p.URL), key, version)
+			// The profile's key scope is not known locally: serve every tool
+			// and let the REST scope check 403 a write sub-call (#1262 replaces
+			// this with a bridge to the scope-aware /api/mcp).
+			srv := mcptools.NewServer(cliclient.New(p.URL), key, version, mcptools.ScopeWrite)
 			return srv.Run(cmd.Context(), &mcp.StdioTransport{})
 		},
 	}

@@ -300,13 +300,19 @@ func TestMCPGameFiltersIncludesPlatforms(t *testing.T) {
 	}
 }
 
-// mcpSession spins up NewServer pointed at restURL (fixed key "test-key") and
-// returns a connected in-memory client session.
+// mcpSession spins up a write-scoped NewServer pointed at restURL (fixed key
+// "test-key") and returns a connected in-memory client session.
 func mcpSession(t *testing.T, restURL string) *mcp.ClientSession {
+	t.Helper()
+	return mcpSessionScoped(t, restURL, ScopeWrite)
+}
+
+// mcpSessionScoped is mcpSession for a server built for scope.
+func mcpSessionScoped(t *testing.T, restURL string, scope Scope) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
-	srv := NewServer(cliclient.New(restURL), func(context.Context) string { return "test-key" }, "test")
+	srv := NewServer(cliclient.New(restURL), func(context.Context) string { return "test-key" }, "test", scope)
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatalf("server connect: %v", err)

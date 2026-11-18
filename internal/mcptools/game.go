@@ -233,8 +233,8 @@ func mcpResolveEditTargets(ctx context.Context, c *cliclient.Client, key string,
 	return all, nil, "", nil
 }
 
-func registerGameTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
-	mcp.AddTool(s, &mcp.Tool{Name: "game_list", Description: "List/search the collection (concise projection)."},
+func registerGameTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
+	addTool(s, &mcp.Tool{Name: "game_list", Description: "List/search the collection (concise projection)."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameListInput) (*mcp.CallToolResult, gameListOutput, error) {
 			key := apiKey(ctx)
 			params := url.Values{}
@@ -266,7 +266,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, out, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "game_show", Description: "Show full detail for one game (by id or title). If the title matches multiple games, returns candidates to disambiguate."},
+	addTool(s, &mcp.Tool{Name: "game_show", Description: "Show full detail for one game (by id or title). If the title matches multiple games, returns candidates to disambiguate."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameShowInput) (*mcp.CallToolResult, gameShowOutput, error) {
 			key := apiKey(ctx)
 			games, err := clientops.FindUserGamesByRef(ctx, c, key, in.Ref)
@@ -291,7 +291,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
 			}
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "game_stats", Description: "Return aggregate collection statistics (total games, completion rate, hours, rating, breakdown by status/platform/genre)."},
+	addTool(s, &mcp.Tool{Name: "game_stats", Description: "Return aggregate collection statistics (total games, completion rate, hours, rating, breakdown by status/platform/genre)."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, *cliclient.CollectionStats, error) {
 			key := apiKey(ctx)
 			stats, err := c.GetCollectionStats(ctx, key)
@@ -301,7 +301,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, stats, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "game_filters", Description: "Return valid values for every game_list filter and the platform slugs accepted by game_add/edit/acquire: play/ownership statuses, platforms, storefronts, and library-derived genre/game-mode/theme/perspective facets."},
+	addTool(s, &mcp.Tool{Name: "game_filters", Description: "Return valid values for every game_list filter and the platform slugs accepted by game_add/edit/acquire: play/ownership statuses, platforms, storefronts, and library-derived genre/game-mode/theme/perspective facets."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, gameFiltersOutput, error) {
 			key := apiKey(ctx)
 			opts, err := c.GetFilterOptions(ctx, key)
@@ -337,7 +337,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, out, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "game_add", Description: "Add a game to the collection via IGDB lookup. Provide title or igdb_id. If title matches multiple IGDB games, returns candidates with igdb_id — call again with igdb_id to proceed."},
+	addTool(s, &mcp.Tool{Name: "game_add", Description: "Add a game to the collection via IGDB lookup. Provide title or igdb_id. If title matches multiple IGDB games, returns candidates with igdb_id — call again with igdb_id to proceed."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameAddInput) (*mcp.CallToolResult, gameAddOutput, error) {
 			key := apiKey(ctx)
 			if in.IgdbID == 0 && in.Title == "" {
@@ -408,7 +408,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, gameAddOutput{Game: &b}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "game_edit", Description: "Edit one or more games in the collection (status, rating, notes, platforms, tags). Use refs (ids/title substrings) or filter. Ambiguous refs return candidates — call again with the id."},
+	addTool(s, &mcp.Tool{Name: "game_edit", Description: "Edit one or more games in the collection (status, rating, notes, platforms, tags). Use refs (ids/title substrings) or filter. Ambiguous refs return candidates — call again with the id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameEditInput) (*mcp.CallToolResult, gameWriteOutput, error) {
 			key := apiKey(ctx)
 			if len(in.Refs) == 0 && in.Filter == nil {
@@ -460,7 +460,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, gameWriteOutput{Updated: updated}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "game_acquire", Description: "Promote a wishlisted game to the library with a platform. Ref is a game id or title substring."},
+	addTool(s, &mcp.Tool{Name: "game_acquire", Description: "Promote a wishlisted game to the library with a platform. Ref is a game id or title substring."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameAcquireInput) (*mcp.CallToolResult, gameWriteOutput, error) {
 			key := apiKey(ctx)
 			if in.Platform == "" {
@@ -506,7 +506,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
 			return nil, gameWriteOutput{Updated: []gameBrief{b}}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "game_rm", Description: "Remove games from the collection. Use refs (ids/title substrings) or filter. No confirmation is required — the call is the intent."},
+	addTool(s, &mcp.Tool{Name: "game_rm", Description: "Remove games from the collection. Use refs (ids/title substrings) or filter. No confirmation is required — the call is the intent."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameRmInput) (*mcp.CallToolResult, gameWriteOutput, error) {
 			key := apiKey(ctx)
 			if len(in.Refs) == 0 && in.Filter == nil {
