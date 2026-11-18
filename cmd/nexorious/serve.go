@@ -23,6 +23,7 @@ import (
 	"github.com/drzero42/nexorious/internal/backup"
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/crypto"
+	nexdb "github.com/drzero42/nexorious/internal/db"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/logging"
 	maint "github.com/drzero42/nexorious/internal/middleware"
@@ -113,7 +114,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// timing but no error signal (#913). No-op when metrics are disabled.
 	db = db.WithQueryHook(observability.NewDBErrorHook())
 	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
+	db.SetMaxIdleConns(nexdb.MaxIdleConns)
 	defer func() { _ = db.Close() }()
 
 	// Tool detection for backup/restore
@@ -334,6 +335,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			return nil
 		},
 		ReconnectDB: func() (*bun.DB, error) {
+			// The restore terminated every backend, including this pool's idle
+			// connections. Drop them before anything queries the restored DB, or
+			// each fails its next query with 57P01 (#1284).
+			nexdb.DropIdleConns(db)
 			backupSvc.SetDB(db)
 			return db, nil
 		},
