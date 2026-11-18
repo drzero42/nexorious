@@ -175,8 +175,10 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 			AllowOrigins:     cfg.CORSOrigins,
 			AllowCredentials: true,
-			AllowHeaders:     []string{"Content-Type", "Authorization"},
-			AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+			// Browser MCP clients send Mcp-Protocol-Version on /api/mcp. The
+			// endpoint is stateless, so Mcp-Session-Id is never used.
+			AllowHeaders: []string{"Content-Type", "Authorization", "Mcp-Protocol-Version"},
+			AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		}))
 	}
 
