@@ -80,7 +80,7 @@ export DB_ENCRYPTION_KEY="<random-secret>"  # required; generate: openssl rand -
 - `internal/middleware/` — Echo middleware (state gate, auth bridge, etc.)
 - `internal/backup/` — backup orchestration (invoked from scheduler)
 - `ui/` — contains `ui/frontend/` (React SPA source + build output), `ui/migrate/` (migration HTML), `ui/db-error/`, `ui/setup/`
-- `docs/` — Markdown guides and reference docs. Only `user-guide.md` and `admin-guide.md` are embedded (`docs/embed.go`, explicit `//go:embed user-guide.md admin-guide.md`) and served in-app by `internal/api/docs.go` at `/api/docs/:slug`, rendered at `/help/:slug` (`admin-guide` is admin-gated). The reference docs (`sync.md`, `maintenance.md`, `import-export-format.md`, `darkadia-import.md`, `logging-conventions.md`) and the `docs/superpowers/` subtree (specs + plans) stay in the repo for GitHub viewing but are **not** embedded/served. `ui/frontend/src/lib/doc-links.ts` (issue #887) resolves any relative link to a `docs/*.md` sibling into an in-app `/help/:slug` route, and anything outside `docs/` (e.g. `../DEV.md`) into a GitHub source URL — so if you add an in-app link to a reference doc you must also embed it, or it will 404. The two guides currently cross-link only to each other.
+- `docs/` — Markdown guides and reference docs. Only `user-guide.md` and `admin-guide.md` are embedded (`docs/embed.go`, explicit `//go:embed user-guide.md admin-guide.md`) and served in-app by `internal/api/docs.go` at `/api/docs/:slug`, rendered at `/help/:slug` (`admin-guide` is admin-gated). The reference docs (`sync.md`, `maintenance.md`, `import-export-format.md`, `darkadia-import.md`, `logging-conventions.md`) stay in the repo for GitHub viewing but are **not** embedded/served. `ui/frontend/src/lib/doc-links.ts` (issue #887) resolves any relative link to a `docs/*.md` sibling into an in-app `/help/:slug` route, and anything outside `docs/` (e.g. `../DEV.md`) into a GitHub source URL — so if you add an in-app link to a reference doc you must also embed it, or it will 404. The two guides currently cross-link only to each other.
 
 ## Architecture
 
@@ -170,11 +170,11 @@ Each package that needs a real database uses a shared PostgreSQL container via `
 > **Always ask questions if you are uncertain about something!**
 
 ### Essential Workflow
-1. **Planning**: Check `docs/superpowers/{specs,plans}/` (listing only) for a doc covering the task at hand — read it if one exists; don't read docs for unrelated/completed work, the landed code is the authority
-2. **Branching**: Create a feature branch before starting any task
-3. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using the naming convention `YYYYMMDD<nnnnnn>_name.up.sql` where `<nnnnnn>` is a zero-padded running number (e.g. `20260503000001_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
-4. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)) — format/lint on every edit, build + typecheck when a turn ends, and the full suites at `git push`. You don't need to re-run the whole suites by hand; do run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.
-5. **Plan files**: `docs/superpowers/plans/` is tracked — always commit the plan file on the feature branch
+1. **Planning**: Design decisions and plans are recorded in GitHub issues (and their epics), not in repo docs — read the issue and its epic before starting; the landed code is the authority. Domain terms live in `GLOSSARY.md`
+2. **Working on an issue**: When asked to work on an issue ("work on #825"), read it with `gh issue view <n> --comments` — later comments often correct the original — and treat every claim in it (diagnosis, proposed fix, file/function references) as a hypothesis to verify against the code; tell the user when the issue is wrong or stale instead of implementing against a false premise. Then present what you found and the change you intend, and **wait for explicit approval before making any change** — creating the branch and writing the first test count as changes. Verified ≠ approved; an explicit "just fix it" in the session overrides this.
+3. **Branching**: Create a feature branch before starting any task
+4. **Migrations**: Add new `.up.sql` / `.down.sql` files in `internal/db/migrations/` using the naming convention `YYYYMMDD<nnnnnn>_name.up.sql` where `<nnnnnn>` is a zero-padded running number (e.g. `20260503000001_name.up.sql`); Bun discovers them automatically via `Migrations.Discover(FS)`
+5. **Testing**: The mechanical gates run automatically via hooks (see [Automated Checks](#automated-checks)) — format/lint on every edit, build + typecheck when a turn ends, and the full suites at `git push`. You don't need to re-run the whole suites by hand; do run targeted tests (e.g. `go test ./internal/api/... -run TestX -v`) for the logic you're actively changing.
 6. **Dead code**: After a Go change that **removes or renames a caller, deletes a code path, or refactors across package boundaries**, run `make deadcode` (`go run golang.org/x/tools/cmd/deadcode@latest -test ./...`) and reconcile any *new* entries against your diff — `staticcheck`'s `unused` only flags unexported symbols, so a newly-orphaned **exported** method slips past CI. Pure additions don't need it. `-test` is mandatory (or the legitimate `*ForTest` helpers report as false positives); the tool can't see reflection / `//go:embed` / interface-dispatch-only calls, so verify before deleting.
 
 ### Out-of-Scope Findings
@@ -282,7 +282,7 @@ Single-context: one root `GLOSSARY.md` + `docs/adr/` (created lazily). See `docs
 
 ## Release Process
 
-Releases are produced by [release-please](https://github.com/googleapis/release-please) from the Conventional Commits on `main`. The full design is in [docs/superpowers/specs/2026-05-20-release-process-design.md](docs/superpowers/specs/2026-05-20-release-process-design.md).
+Releases are produced by [release-please](https://github.com/googleapis/release-please) from the Conventional Commits on `main`.
 
 ### Commit message convention (MANDATORY)
 

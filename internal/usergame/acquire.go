@@ -15,7 +15,7 @@ import (
 
 // Acquire ensures the user owns the game on the supplied platforms, running the
 // full acquire invariant set (clear-wishlist, promote-if-played, optional tag
-// reconcile) atomically. See docs/superpowers/specs/2026-06-17-issue-1056-*.
+// reconcile) atomically (#1056).
 func Acquire(ctx context.Context, db *bun.DB, p AcquireParams) (Result, error) {
 	var res Result
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {

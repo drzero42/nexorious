@@ -1,6 +1,5 @@
 /* Shared stylesheet for /migrate, /db-error, /setup.
-   Tokens mirror the light theme in ui/frontend/src/styles/globals.css (:root).
-   Spec: docs/superpowers/specs/2026-05-19-pre-spa-pages-redesign-design.md */
+   Tokens mirror the light theme in ui/frontend/src/styles/globals.css (:root). */
 
 :root {
   /* Light theme OKLCH tokens, mirrored from ui/frontend/src/styles/globals.css */

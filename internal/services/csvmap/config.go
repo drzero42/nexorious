@@ -3,7 +3,7 @@
 // optional header Signature), not a hand-written mapper. The engine implements
 // the full Config feature range — the simple per-row mappings and the advanced
 // (Darkadia-era) status-flag / platform-table / note-assembly / copy-row-grouping
-// behaviour. See docs/superpowers/specs/2026-06-14-issue-1014-csvmap-engine-design.md.
+// behaviour (#1014).
 package csvmap
 
 // ColumnFormat selects how a configured column's cell is read.
