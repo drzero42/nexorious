@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.98.0](https://github.com/drzero42/nexorious/compare/v0.97.6...v0.98.0) (2026-11-18)
+
+
+### Features
+
+* **mcp:** filter and enforce MCP tools by API key scope ([#1280](https://github.com/drzero42/nexorious/issues/1280)) ([0541bb8](https://github.com/drzero42/nexorious/commit/0541bb85d4a25bd90521f7ab2bcd093a3b2aa843))
+* **mcp:** MCP server now available over HTTP — AI agents can connect directly to /api/mcp to browse and manage your library, no nexctl needed (disable with MCP_ENABLED=false) ([#1279](https://github.com/drzero42/nexorious/issues/1279)) ([0233d04](https://github.com/drzero42/nexorious/commit/0233d042fbf679496b42bb6da403c3f8482f6fa4))
+* **nexctl:** bridge stdio MCP clients to the server's HTTP endpoint ([#1281](https://github.com/drzero42/nexorious/issues/1281)) ([c37a5fe](https://github.com/drzero42/nexorious/commit/c37a5fecfa075edcb02e66ee928efd50bd414f0f))
+* **nexctl:** cancel in-flight requests on Ctrl-C/SIGTERM ([#1298](https://github.com/drzero42/nexorious/issues/1298)) ([2491aee](https://github.com/drzero42/nexorious/commit/2491aeee53b31a142ba010b84a0650aa51708027))
+* **nexctl:** let account login store a read-scoped key ([#1287](https://github.com/drzero42/nexorious/issues/1287)) ([5c632a3](https://github.com/drzero42/nexorious/commit/5c632a34e9cf53ebf4a6208ef86aeb85cf5bb3a0))
+
+
+### Bug Fixes
+
+* allow MCP headers in CORS preflight for /api/mcp ([#1291](https://github.com/drzero42/nexorious/issues/1291)) ([73a7e33](https://github.com/drzero42/nexorious/commit/73a7e33c8b1af3cfe3b7ac52a28a526313c1ea1c))
+* **backup:** drop stale pool connections after restore ([#1296](https://github.com/drzero42/nexorious/issues/1296)) ([7429025](https://github.com/drzero42/nexorious/commit/7429025faac90eae6e8b1c5d00fff5ea96ebfbec))
+* **deps:** build with Go 1.27 ([#1248](https://github.com/drzero42/nexorious/issues/1248)) ([f8b5ee5](https://github.com/drzero42/nexorious/commit/f8b5ee5bd4b1a51ad3a8f1255d79c6e4104843dc))
+* **deps:** update dependency @hookform/resolvers to v7 ([#1246](https://github.com/drzero42/nexorious/issues/1246)) ([54014a8](https://github.com/drzero42/nexorious/commit/54014a8ce29aca64f0ab7d240465422dc0056719))
+* **deps:** update go non-major ([#1227](https://github.com/drzero42/nexorious/issues/1227)) ([c391e80](https://github.com/drzero42/nexorious/commit/c391e8026ad0a13b17ba2c42dc8ede7dffe3c36c))
+* **deps:** update npm non-major ([#1228](https://github.com/drzero42/nexorious/issues/1228)) ([915e9f6](https://github.com/drzero42/nexorious/commit/915e9f69c9680d723ee632065620adac94149e12))
+* **mcp:** accept object filter in pool_create/pool_edit ([#1294](https://github.com/drzero42/nexorious/issues/1294)) ([7c0c845](https://github.com/drzero42/nexorious/commit/7c0c8455dc5b0ee279d2e47e22719cb579ea4030))
+* **mcp:** don't register /api/mcp when MCP_ENABLED=false ([#1282](https://github.com/drzero42/nexorious/issues/1282)) ([60897cd](https://github.com/drzero42/nexorious/commit/60897cdd99ce5dedb0019b020e62e097e75c1dae))
+* **mcp:** reject refs with filter and refuse truncated filter edits ([#1295](https://github.com/drzero42/nexorious/issues/1295)) ([fba501a](https://github.com/drzero42/nexorious/commit/fba501a9c0fbca434fa25a3671a7e021b7db3330))
+* **mcp:** report post-edit state from game_edit ([#1290](https://github.com/drzero42/nexorious/issues/1290)) ([090e934](https://github.com/drzero42/nexorious/commit/090e934ae0516b588c725676532be1f1624a3dfb))
+* **mcp:** report post-mutation pool state from pool write tools ([#1292](https://github.com/drzero42/nexorious/issues/1292)) ([cabe976](https://github.com/drzero42/nexorious/commit/cabe976fa58079e4987f082374d54639609c2916))
+* **nexctl:** don't leave partial files when export/backup download fails ([#1299](https://github.com/drzero42/nexorious/issues/1299)) ([98bebcf](https://github.com/drzero42/nexorious/commit/98bebcf405e3fcd6ec068a504703f4d33a353a41))
+* register otelriver as a River plugin so its MetricEmit hook runs ([#1236](https://github.com/drzero42/nexorious/issues/1236)) ([acd8c55](https://github.com/drzero42/nexorious/commit/acd8c55f9e84cd485799b52bb73e8938d58e15d2)), closes [#1216](https://github.com/drzero42/nexorious/issues/1216)
+* **sync:** make external-game rematch transactional ([#1300](https://github.com/drzero42/nexorious/issues/1300)) ([e7f6733](https://github.com/drzero42/nexorious/commit/e7f6733cfe62fa65a77095bc22f20396a76687d5))
+
 ## [0.97.6](https://github.com/drzero42/nexorious/compare/v0.97.5...v0.97.6) (2026-10-09)
 
 
