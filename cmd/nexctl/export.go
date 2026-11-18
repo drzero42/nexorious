@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -106,13 +105,7 @@ func newExportCmd() *cobra.Command {
 				destPath = fmt.Sprintf("nexorious_export_%s.%s", res.JobID, format)
 			}
 
-			f, err := os.Create(destPath) //nolint:gosec // path is --out, a basename-sanitized server name, or a fixed fallback
-			if err != nil {
-				return fmt.Errorf("create output file: %w", err)
-			}
-			defer func() { _ = f.Close() }()
-
-			if _, err := io.Copy(f, body); err != nil {
+			if err := writeFileAtomic(destPath, body); err != nil {
 				return fmt.Errorf("download export: %w", err)
 			}
 			fmt.Fprintf(outW, "exported to %s\n", destPath)

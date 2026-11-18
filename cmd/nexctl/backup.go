@@ -202,13 +202,7 @@ func newBackupDownloadCmd() *cobra.Command {
 				destPath = fmt.Sprintf("backup-%s.tar.gz", id)
 			}
 
-			f, err := os.Create(destPath) //nolint:gosec // path is --out, a basename-sanitized server name, or a fixed fallback
-			if err != nil {
-				return fmt.Errorf("create output file: %w", err)
-			}
-			defer func() { _ = f.Close() }()
-
-			if _, err := io.Copy(f, body); err != nil {
+			if err := writeFileAtomic(destPath, body); err != nil {
 				return fmt.Errorf("download backup: %w", err)
 			}
 			fmt.Fprintf(outW, "downloaded to %s\n", destPath)
