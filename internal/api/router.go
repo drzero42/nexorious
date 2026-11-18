@@ -497,6 +497,10 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		synch := NewSyncHandler(encrypter, db, riverClient, &steamClientAdapter{c: steamSvc}, &playstationStoreClientAdapter{c: psnSvc}, &epicGamesStoreClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc}, &humbleClientAdapter{c: humbleSvc})
 		syncGroup := e.Group("/api/sync", auth.AuthMiddleware(db))
 		synch.RegisterRoutes(syncGroup)
+
+		// MCP over Streamable HTTP. Tools dispatch their REST sub-calls back
+		// into e in-process, so every sub-call runs the full middleware chain.
+		registerMCPRoutes(e, db, cfg.MCPEnabled, cfg.CORSOrigins, version)
 	}
 
 	// Static cover art files from disk

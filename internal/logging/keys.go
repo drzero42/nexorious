@@ -26,4 +26,5 @@ const (
 	KeyStack          = "stack"
 	KeyTraceID        = "trace_id"
 	KeySpanID         = "span_id"
+	KeyTool           = "tool"
 )

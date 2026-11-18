@@ -88,6 +88,15 @@ in
       description = "Log verbosity. Use `debug` to troubleshoot sync or migration issues.";
     };
 
+    mcp.enable = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Serve MCP for AI chats and agents at `POST /api/mcp`
+        (Bearer API key only). When `false`, the endpoint answers 404.
+      '';
+    };
+
     environmentFile = mkOption {
       type = types.nullOr types.path;
       default = null;
@@ -174,6 +183,7 @@ in
         STORAGE_PATH       = cfg.storagePath;
         BACKUP_PATH        = cfg.backupPath;
         WORKER_COUNT       = toString cfg.workerCount;
+        MCP_ENABLED        = lib.boolToString cfg.mcp.enable;
         LEGENDARY_WORK_DIR = "/var/lib/nexorious/legendary";
       }
       // optionalAttrs cfg.database.createLocally {

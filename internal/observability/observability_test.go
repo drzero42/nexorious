@@ -47,6 +47,7 @@ func TestInit_EnabledExposesBusinessMetrics(t *testing.T) {
 	observability.RecordSyncOutcome(context.Background(), "steam", "completed")
 	observability.RecordSyncItems(context.Background(), "steam", "completed", 3)
 	observability.RecordSyncItems(context.Background(), "steam", "failed", 1)
+	observability.RecordMCPToolCall(context.Background(), "game_list", "ok", 25*time.Millisecond)
 
 	body := scrape(t, h)
 
@@ -62,6 +63,12 @@ func TestInit_EnabledExposesBusinessMetrics(t *testing.T) {
 	}
 	if !strings.Contains(body, `outcome="failed"`) {
 		t.Errorf("scrape missing items outcome label:\n%s", body)
+	}
+	if !strings.Contains(body, "nexorious_mcp_tool_calls_total") || !strings.Contains(body, `tool="game_list"`) {
+		t.Errorf("scrape missing nexorious_mcp_tool_calls_total with tool label:\n%s", body)
+	}
+	if !strings.Contains(body, "nexorious_mcp_tool_duration_seconds_bucket") {
+		t.Errorf("scrape missing nexorious_mcp_tool_duration_seconds histogram:\n%s", body)
 	}
 	// Cardinality guard: never label by user_id.
 	if strings.Contains(body, "user_id=") {

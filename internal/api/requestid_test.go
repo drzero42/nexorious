@@ -17,7 +17,7 @@ func TestRequestIDMiddleware_GeneratesAndPropagates(t *testing.T) {
 
 	var seenInCtx, seenHeader string
 	e.GET("/x", func(c *echo.Context) error {
-		seenInCtx = logging.RequestIDForTest(c.Request().Context())
+		seenInCtx = logging.RequestID(c.Request().Context())
 		seenHeader = c.Response().Header().Get(echo.HeaderXRequestID)
 		return c.NoContent(http.StatusOK)
 	})
@@ -40,7 +40,7 @@ func TestRequestIDMiddleware_HonorsInbound(t *testing.T) {
 
 	var seen string
 	e.GET("/x", func(c *echo.Context) error {
-		seen = logging.RequestIDForTest(c.Request().Context())
+		seen = logging.RequestID(c.Request().Context())
 		return c.NoContent(http.StatusOK)
 	})
 
@@ -60,7 +60,7 @@ func TestRequestIDMiddleware_RejectsUntrustworthyInbound(t *testing.T) {
 
 	var seen string
 	e.GET("/x", func(c *echo.Context) error {
-		seen = logging.RequestIDForTest(c.Request().Context())
+		seen = logging.RequestID(c.Request().Context())
 		return c.NoContent(http.StatusOK)
 	})
 
@@ -101,7 +101,7 @@ func TestRequestIDMiddleware_HonorsAcceptableInbound(t *testing.T) {
 
 	var seen string
 	e.GET("/x", func(c *echo.Context) error {
-		seen = logging.RequestIDForTest(c.Request().Context())
+		seen = logging.RequestID(c.Request().Context())
 		return c.NoContent(http.StatusOK)
 	})
 

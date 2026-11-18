@@ -83,7 +83,13 @@ type Config struct {
 	// Set false to disable the check entirely (no outbound GitHub requests).
 	UpdateCheckEnabled bool `env:"UPDATE_CHECK_ENABLED" envDefault:"true"`
 
+	// MCPEnabled serves the MCP tools at POST /api/mcp (Bearer API key only).
+	// When false the route answers 404, which nexctl's stdio bridge reports as
+	// "MCP is disabled on this server".
+	MCPEnabled bool `env:"MCP_ENABLED" envDefault:"true"`
+
 	// CORSOrigins is only needed in development; production is same-origin.
+	// /api/mcp also trusts these origins in its cross-origin check.
 	CORSOrigins []string `env:"CORS_ORIGINS" envSeparator:","`
 
 	// -------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -42,6 +43,8 @@ var (
 	syncTotal      otelmetric.Int64Counter
 	syncItemsTotal otelmetric.Int64Counter
 	dbErrors       otelmetric.Int64Counter
+	mcpToolCalls   otelmetric.Int64Counter
+	mcpToolSeconds otelmetric.Float64Histogram
 
 	// Set by Init; read by HTTPTransport (transport.go). instrumentHTTP is
 	// true when metrics or tracing is enabled — otelhttp emits client metrics
@@ -187,6 +190,37 @@ func initInstruments(mp otelmetric.MeterProvider) {
 	)
 	if err != nil {
 		slog.Error("observability: failed to create nexorious_db_errors counter", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
+	}
+	mcpToolCalls, err = m.Int64Counter(
+		"nexorious_mcp_tool_calls",
+		otelmetric.WithDescription("Count of MCP tool calls served at /api/mcp by tool and outcome (ok, error)."),
+	)
+	if err != nil {
+		slog.Error("observability: failed to create nexorious_mcp_tool_calls counter", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
+	}
+	mcpToolSeconds, err = m.Float64Histogram(
+		"nexorious_mcp_tool_duration",
+		otelmetric.WithUnit("s"),
+		otelmetric.WithDescription("Duration of MCP tool calls served at /api/mcp by tool and outcome (ok, error)."),
+	)
+	if err != nil {
+		slog.Error("observability: failed to create nexorious_mcp_tool_duration histogram", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
+	}
+}
+
+// RecordMCPToolCall records one MCP tool call. tool is a registered tool name
+// (a fixed set, so cardinality is bounded); outcome is "ok" or "error". Never
+// label by user_id or arguments. A nil instrument (metrics disabled) is a no-op.
+func RecordMCPToolCall(ctx context.Context, tool, outcome string, d time.Duration) {
+	attrs := otelmetric.WithAttributes(
+		attribute.String("tool", tool),
+		attribute.String("outcome", outcome),
+	)
+	if mcpToolCalls != nil {
+		mcpToolCalls.Add(ctx, 1, attrs)
+	}
+	if mcpToolSeconds != nil {
+		mcpToolSeconds.Record(ctx, d.Seconds(), attrs)
 	}
 }
 
