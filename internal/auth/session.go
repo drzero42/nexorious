@@ -149,8 +149,9 @@ func authMiddleware(db *bun.DB, allowCookie bool) echo.MiddlewareFunc {
 			// Session-cookie auth implies full (write) access; only API keys
 			// can carry a restricted scope.
 			scope := ScopeWrite
+			var keyID string
 			if userID == "" {
-				apiUserID, apiScope, apiErr := tryAPIKey(c, db)
+				apiUserID, apiScope, apiKeyID, apiErr := tryAPIKey(c, db)
 				if apiErr != nil {
 					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid or expired api key"})
 				}
@@ -159,12 +160,14 @@ func authMiddleware(db *bun.DB, allowCookie bool) echo.MiddlewareFunc {
 				}
 				userID = apiUserID
 				scope = apiScope
+				keyID = apiKeyID
 			}
 
 			// Enforce the key scope before doing any work. The matched route
 			// pattern is available here because AuthMiddleware runs after routing
 			// for every authenticated group.
-			if !scopeAllowsRequest(scope, c.Request().Method, c.RouteInfo().Path) {
+			if !scopeAllowsRequest(scope, c.Request().Method, c.RouteInfo().Path) &&
+				!isSelfRevoke(c.Request().Method, c.RouteInfo().Path, c.Param("id"), keyID) {
 				return c.JSON(http.StatusForbidden, map[string]string{"error": "api key has read-only scope; write operations are not permitted"})
 			}
 
@@ -232,27 +235,27 @@ func trySessionCookie(c *echo.Context, db *bun.DB) (userID, sessionHash string, 
 // tryAPIKey checks for a Bearer API key. Returns ("", "", nil) when no Bearer
 // header is present. Returns an error when a key is present but invalid. On
 // success it returns the owning user id and the key's scope.
-func tryAPIKey(c *echo.Context, db *bun.DB) (userID, scope string, err error) {
+func tryAPIKey(c *echo.Context, db *bun.DB) (userID, scope, keyID string, err error) {
 	authHeader := c.Request().Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return "", "", nil
+		return "", "", "", nil
 	}
 	raw := strings.TrimPrefix(authHeader, "Bearer ")
 	if raw == "" {
-		return "", "", errors.New("invalid or expired api key")
+		return "", "", "", errors.New("invalid or expired api key")
 	}
 	hash := HashToken(raw)
 	err = db.QueryRowContext(c.Request().Context(),
-		`SELECT user_id, scopes FROM api_keys
+		`SELECT id, user_id, scopes FROM api_keys
 		 WHERE key_hash = ? AND revoked_at IS NULL
 		   AND (expires_at IS NULL OR expires_at > now())`,
 		hash,
-	).Scan(&userID, &scope)
+	).Scan(&keyID, &userID, &scope)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", "", errors.New("invalid or expired api key")
+			return "", "", "", errors.New("invalid or expired api key")
 		}
-		return "", "", err
+		return "", "", "", err
 	}
 	go func() {
 		if _, err := db.ExecContext(context.Background(),
@@ -262,5 +265,5 @@ func tryAPIKey(c *echo.Context, db *bun.DB) (userID, scope string, err error) {
 			slog.WarnContext(context.Background(), "auth: update api key last_used_at", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
 	}()
-	return userID, scope, nil
+	return userID, scope, keyID, nil
 }

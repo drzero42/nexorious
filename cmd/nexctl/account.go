@@ -22,20 +22,28 @@ func newAccountCmd() *cobra.Command {
 }
 
 func newLoginCmd() *cobra.Command {
-	var urlFlag, usernameFlag string
+	var urlFlag, usernameFlag, scopeFlag string
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Authenticate to a Nexorious server and store an API key",
+		Long: "Log in with your password and store a fresh API key in the profile.\n\n" +
+			"--scope read stores a read-only key: the profile can list and show but\n" +
+			"not change anything. Use a separate profile for it (e.g. --profile agent)\n" +
+			"to run an MCP agent through `nexctl mcp serve` read-only.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runLogin(cmd, urlFlag, usernameFlag)
+			if scopeFlag != "read" && scopeFlag != "write" {
+				return fmt.Errorf("--scope must be 'read' or 'write'")
+			}
+			return runLogin(cmd, urlFlag, usernameFlag, scopeFlag)
 		},
 	}
 	cmd.Flags().StringVar(&urlFlag, "url", "", "Server URL (prompted if omitted)")
 	cmd.Flags().StringVar(&usernameFlag, "username", "", "Username (prompted if omitted)")
+	cmd.Flags().StringVar(&scopeFlag, "scope", "write", "Scope of the stored key: read or write")
 	return cmd
 }
 
-func runLogin(cmd *cobra.Command, urlFlag, usernameFlag string) error {
+func runLogin(cmd *cobra.Command, urlFlag, usernameFlag, scope string) error {
 	cfg, err := clicfg.Load()
 	if err != nil {
 		return err
@@ -75,7 +83,7 @@ func runLogin(cmd *cobra.Command, urlFlag, usernameFlag string) error {
 		return fmt.Errorf("password is required")
 	}
 
-	return cliauth.LoginAndStoreKey(cmd.Context(), out, cliclient.New(url), cfg, name, url, username, password)
+	return cliauth.LoginAndStoreKey(cmd.Context(), out, cliclient.New(url), cfg, name, url, username, password, scope)
 }
 
 func newLogoutCmd() *cobra.Command {
@@ -125,7 +133,7 @@ func newWhoamiCmd() *cobra.Command {
 func clearStoredKey(cfg *clicfg.Config, name string) error {
 	p, _ := cfg.ProfileNamed(name)
 	p.Key, p.KeyID, p.KeyName = "", "", ""
-	cfg.SetProfile(name, p)
+	cfg.StoreProfile(name, p)
 	if err := clicfg.Save(cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}

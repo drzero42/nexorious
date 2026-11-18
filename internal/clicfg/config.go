@@ -141,6 +141,24 @@ func (c *Config) SetProfile(name string, p Profile) {
 	c.Current = name
 }
 
+// StoreProfile stores a profile without switching to it: the current profile
+// stays as it is unless there is none yet, in which case this one becomes
+// current. Login and logout use it so `--profile <name>` only targets <name>
+// for that command.
+func (c *Config) StoreProfile(name string, p Profile) {
+	if name == "" {
+		name = defaultProfile
+	}
+	_, hasCurrent := c.CurrentProfile()
+	if c.Profiles == nil {
+		c.Profiles = map[string]Profile{}
+	}
+	c.Profiles[name] = p
+	if !hasCurrent {
+		c.Current = name
+	}
+}
+
 // ProfileNamed returns the named profile (defaulting "" to the default
 // profile). It is named to avoid shadowing the Profile type.
 func (c *Config) ProfileNamed(name string) (Profile, bool) {

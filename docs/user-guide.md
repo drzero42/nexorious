@@ -217,7 +217,7 @@ Authenticate once and `nexctl` remembers it:
 nexctl account login
 ```
 
-It prompts for your server URL, username, and password, then stores an API key locally (under `~/.config/nexorious/`, or `$XDG_CONFIG_HOME`). After that, commands just work. `nexctl account whoami` shows who you're signed in as, and `nexctl account logout` clears the stored key.
+It prompts for your server URL, username, and password, then stores an API key locally (under `~/.config/nexorious/`, or `$XDG_CONFIG_HOME`). After that, commands just work. The key can change your data; add `--scope read` for a profile that can only look. `nexctl account whoami` shows who you're signed in as, and `nexctl account logout` clears the stored key.
 
 If you'd rather not log in interactively — for a script, a cron job, or a third-party tool — create an **API key** instead, either from your [Profile](#your-account) in the web UI or with `nexctl account api-key generate`. A **read** key is safe to hand to something that only needs to look at your data; a **write** key can change it too. List and revoke keys with `nexctl account api-key list` / `revoke`.
 
@@ -293,7 +293,16 @@ For clients configured with an `mcpServers` JSON file, the entry looks like this
 
 ### Connecting a stdio-only client
 
-Some clients can only launch a local program and talk to it over stdin/stdout. For those, `nexctl mcp serve` forwards each message to the server's `/api/mcp` using your signed-in [nexctl profile](#signing-in). `nexctl mcp config` prints ready-made entries for both routes: a stdio one that runs `nexctl mcp serve`, and the HTTP one above, filled in with your server URL and key. That output contains your API key, so keep it private.
+Some clients can only launch a local program and talk to it over stdin/stdout. For those, `nexctl mcp serve` forwards each message to the server's `/api/mcp` using the API key of your [nexctl profile](#signing-in). `nexctl mcp config` prints ready-made entries for both routes: a stdio one that runs `nexctl mcp serve`, and the HTTP one above, filled in with your server URL and key. That output contains your API key, so keep it private.
+
+`nexctl account login` stores a write key by default. To run an agent read-only, sign in to a separate profile with a read key and generate the config from it:
+
+```bash
+nexctl --profile agent account login --scope read
+nexctl --profile agent mcp config
+```
+
+The stdio entry then runs `nexctl mcp serve --profile agent`, so the agent gets only the read tools while your own profile keeps its write key. `nexctl --profile agent account logout` revokes the agent's key.
 
 ### What's not available
 

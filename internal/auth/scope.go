@@ -42,6 +42,19 @@ var selfScopedRoutes = map[string]bool{
 	"/api/mcp": true,
 }
 
+// selfRevokeRoute is the key-revocation route. Any API key may revoke itself
+// there whatever its scope: revoking only removes access, and it lets
+// `nexctl account logout` revoke a read-scoped key with that same key.
+const selfRevokeRoute = "/api/auth/api-keys/:id"
+
+// isSelfRevoke reports whether the request revokes the API key that
+// authenticated it. keyID is empty for session-cookie auth, which never needs
+// the exemption.
+func isSelfRevoke(method, routePath, targetID, keyID string) bool {
+	return method == http.MethodDelete && routePath == selfRevokeRoute &&
+		keyID != "" && targetID == keyID
+}
+
 // isMutatingMethod reports whether m is a write HTTP method.
 func isMutatingMethod(m string) bool {
 	switch m {

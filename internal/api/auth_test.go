@@ -1110,3 +1110,96 @@ func TestAPIKeyScope_NonAdminKeyBlockedOnAdminGet(t *testing.T) {
 		t.Fatalf("non-admin write key GET /api/admin/events: status = %d, want 403; body: %s", rec.Code, rec.Body)
 	}
 }
+
+// createAPIKeyWithScopeAndID is createAPIKeyWithScope that also returns the
+// key's server-side id.
+func createAPIKeyWithScopeAndID(t *testing.T, e interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, sessionID, scope string) (id, key string) {
+	t.Helper()
+	rec := postJSONSession(t, e, "/api/auth/api-keys", map[string]any{
+		"name":   "key-" + scope,
+		"scopes": scope,
+	}, sessionID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create %s key: status = %d; body: %s", scope, rec.Code, rec.Body)
+	}
+	var resp struct {
+		ID  string `json:"id"`
+		Key string `json:"key"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode create-key resp: %v", err)
+	}
+	if resp.ID == "" || resp.Key == "" {
+		t.Fatalf("create %s key: empty id or key in response", scope)
+	}
+	return resp.ID, resp.Key
+}
+
+// apiKeyRevoked reports whether the key with the given id is revoked.
+func apiKeyRevoked(t *testing.T, id string) bool {
+	t.Helper()
+	var revoked bool
+	if err := testDB.QueryRowContext(context.Background(),
+		"SELECT revoked_at IS NOT NULL FROM api_keys WHERE id = ?", id,
+	).Scan(&revoked); err != nil {
+		t.Fatalf("read api key %s: %v", id, err)
+	}
+	return revoked
+}
+
+// A read key may revoke itself (nexctl account logout on a read profile, #1286):
+// revoking only removes access, so it is exempt from the read-scope DELETE ban.
+func TestAPIKeyScope_ReadKeyMayRevokeItself(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-self", "scopeself", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "scope-self")
+	readID, readKey := createAPIKeyWithScopeAndID(t, e, sessionID, "read")
+
+	rec := bearerReq(t, e, http.MethodDelete, "/api/auth/api-keys/"+readID, nil, readKey)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("read key revoking itself: status = %d, want 204; body: %s", rec.Code, rec.Body)
+	}
+	if !apiKeyRevoked(t, readID) {
+		t.Error("read key not revoked after self-revoke")
+	}
+}
+
+// The self-revoke exemption covers only the key's own id: a read key must not
+// revoke any other key, even one of the same user.
+func TestAPIKeyScope_ReadKeyCannotRevokeOtherKey(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-other", "scopeother", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "scope-other")
+	_, readKey := createAPIKeyWithScopeAndID(t, e, sessionID, "read")
+	writeID, _ := createAPIKeyWithScopeAndID(t, e, sessionID, "write")
+
+	rec := bearerReq(t, e, http.MethodDelete, "/api/auth/api-keys/"+writeID, nil, readKey)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("read key revoking another key: status = %d, want 403; body: %s", rec.Code, rec.Body)
+	}
+	if apiKeyRevoked(t, writeID) {
+		t.Error("other key revoked by a read key")
+	}
+}
+
+// A write key keeps revoking any of the user's keys.
+func TestAPIKeyScope_WriteKeyMayRevokeOtherKey(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	insertAuthTestUser(t, testDB, "scope-wrev", "scopewrev", "pw", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "scope-wrev")
+	readID, _ := createAPIKeyWithScopeAndID(t, e, sessionID, "read")
+	_, writeKey := createAPIKeyWithScopeAndID(t, e, sessionID, "write")
+
+	rec := bearerReq(t, e, http.MethodDelete, "/api/auth/api-keys/"+readID, nil, writeKey)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("write key revoking another key: status = %d, want 204; body: %s", rec.Code, rec.Body)
+	}
+	if !apiKeyRevoked(t, readID) {
+		t.Error("read key not revoked by write key")
+	}
+}
