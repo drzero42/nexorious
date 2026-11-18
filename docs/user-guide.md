@@ -44,7 +44,7 @@ Open **Profile** from the user menu to manage your own account.
 - **Username** — you can change it. The page checks as you type whether the new name is free. Changing it signs you out, so you'll log back in with the new name.
 - **Password** — change it by entering your current password and a new one (at least 8 characters). A strength indicator gives you a rough sense of how good the new password is. Changing your password also signs you out.
 - **Deal region** — sets the region used for the price and deal links shown on wishlisted games, so the prices you see match where you actually buy.
-- **API keys** — create keys here if you want to talk to Nexorious from a script or the command-line tool. Each key has a name, a scope, and an optional expiry. A **read** key can only read your data — any attempt to create, change, or delete is rejected — which makes it safe to hand to a script or third-party tool that only needs to look. A **write** key has full access. A key's full value is shown only once when you create it, so copy it then. You can revoke a key at any time.
+- **API keys** — create keys here if you want to talk to Nexorious from a script or the command-line tool. Each key has a name, a scope, and an optional expiry. A **read** key can only read your data — any attempt to create, change, or delete is rejected — which makes it safe to hand to a script or third-party tool that only needs to look. (It can still search IGDB, which only reads, and connect an [AI agent](#connecting-ai-chats-and-agents) that gets only the read tools.) A **write** key has full access. A key's full value is shown only once when you create it, so copy it then. You can revoke a key at any time.
 - **Notifications** — set up where you want to be notified and what about (see [Notifications](#notifications) below).
 
 At the bottom is a **Clear Library** action. It removes every game from your collection in one go and can't be undone, so it asks you to type a confirmation first. It clears your games — it doesn't delete your account.
@@ -235,7 +235,7 @@ The groups you'll reach for mirror the web UI:
 - **`nexctl sync`** — [storefront sync](#syncing-your-storefront-libraries): `status`, `connect`/`disconnect` a service, `run` it, set its `config`, and `review`/`resolve`/`skip` the matches that need your attention.
 - **`nexctl import`** and **`nexctl export`** — the same [import and export](#importing-and-exporting) flows: export your whole library to JSON or CSV, and import from a Nexorious export, another tracker's CSV, or a migration source.
 
-You can also tune your own settings — deal region and notifications — with `nexctl config`. If you run the server, there are operator-only groups too (`admin`, `backup`) and a local MCP server (`nexctl mcp`) for connecting an AI agent; those are covered in the [Admin Guide](admin-guide.md#nexctl-the-api-client).
+You can also tune your own settings — deal region and notifications — with `nexctl config`. If you run the server, there are operator-only groups too (`admin`, `backup`), covered in the [Admin Guide](admin-guide.md#nexctl-the-api-client). `nexctl mcp` connects an AI chat or agent to your collection; see [Connecting AI chats and agents](#connecting-ai-chats-and-agents).
 
 ### Bootstrapping a fresh instance
 
@@ -254,6 +254,51 @@ current profile's stored URL, then the default (`http://localhost:8000`).
 
 `nexctl` ships inside the container image, so on a containerized deployment you
 can run these via `kubectl exec`/`docker exec` into a fresh instance.
+
+## Connecting AI chats and agents
+
+Nexorious speaks the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), so an AI chat or agent can browse and manage your collection for you: list and look up games, add or edit them, plan pools, manage tags, review sync matches, and find and fix inconsistencies in your library (say, a wishlisted game you already own). The tools it gets mirror the `nexctl` `game`, `pool`, `tag`, `sync`, and `doctor` commands.
+
+Every connection authenticates with an **API key**. Create one on your [Profile](#your-account) or with `nexctl account api-key generate`, and pick its scope deliberately:
+
+- A **read** key lets the agent see your collection but change nothing. The agent is only offered the read tools; if it tries to change something anyway, it's told it needs a write-scoped key.
+- A **write** key lets it make changes too: adding and editing games, editing pools and tags, running syncs, and so on.
+
+Start with a read key if you only want answers about your library, and give each agent its own key so you can revoke it on its own.
+
+Your server administrator can turn MCP off. If a client reports that the server has no MCP endpoint, ask them.
+
+### Connecting over HTTP
+
+Most MCP clients can connect straight to the server:
+
+- **URL:** `https://<your-nexorious-host>/api/mcp`
+- **Header:** `Authorization: Bearer <your API key>`
+
+For clients configured with an `mcpServers` JSON file, the entry looks like this (the exact shape varies a little between clients):
+
+```json
+{
+  "mcpServers": {
+    "nexorious": {
+      "type": "http",
+      "url": "https://nexorious.example.com/api/mcp",
+      "headers": { "Authorization": "Bearer nxr_your_key_here" }
+    }
+  }
+}
+```
+
+**Open WebUI** (an admin sets this up): under **Settings → Admin → Integrations → External Tool Servers**, add a connection with type **MCP (Streamable HTTP)**, the URL above, auth **Bearer**, and your API key in the **Key** field. Every Open WebUI user who enables the tool acts as the owner of that key, so use a key from an account whose collection they should see.
+
+### Connecting a stdio-only client
+
+Some clients can only launch a local program and talk to it over stdin/stdout. For those, `nexctl mcp serve` forwards each message to the server's `/api/mcp` using your signed-in [nexctl profile](#signing-in). `nexctl mcp config` prints ready-made entries for both routes: a stdio one that runs `nexctl mcp serve`, and the HTTP one above, filled in with your server URL and key. That output contains your API key, so keep it private.
+
+### What's not available
+
+- **Connecting a storefront** (`sync connect`), and the **import/export, backup, admin, and settings** commands, aren't offered to agents. Connecting a storefront means handing over passwords or tokens, which shouldn't pass through an AI chat. Do these in the web UI or with `nexctl`.
+- **Clients that only support OAuth sign-in**, such as claude.ai custom connectors, can't connect. Nexorious authenticates MCP with API keys only.
 
 ## Notifications
 

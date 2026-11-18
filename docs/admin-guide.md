@@ -206,7 +206,8 @@ All variables, grouped by area. Anything without a default is unset unless you p
 | `PORT` | `8000` | HTTP port to listen on. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 | `DEBUG` | `false` | Extra debug behaviour; leave off in production. |
-| `CORS_ORIGINS` | — | Comma-separated allowed origins. Only needed for split-origin development; production is same-origin and needs nothing here. |
+| `CORS_ORIGINS` | — | Comma-separated allowed origins. Only needed for split-origin development; production is same-origin and needs nothing here. The MCP endpoint also trusts these origins (see [MCP endpoint](#mcp-endpoint-for-ai-agents)). |
+| `MCP_ENABLED` | `true` | Serve the MCP endpoint for AI chats and agents at `/api/mcp`. Set `false` to turn it off; see [MCP endpoint](#mcp-endpoint-for-ai-agents). |
 | `WORKER_COUNT` | `4` | How many background jobs (syncs, imports, metadata refreshes) run at once. |
 | `UPDATE_CHECK_ENABLED` | `true` | Periodically check GitHub for a newer release. When one exists, the sidebar shows an update notice and admins receive a one-time notification per release. The check runs server-side (one request to the GitHub API every 6 hours); set `false` to disable it entirely, which also disables the check performed by the `version` subcommand (one-off skips: `nexorious version --no-check`). |
 
@@ -282,6 +283,15 @@ Getting `legendary` in place depends on how you deploy:
 - **Native package (`.deb`/`.rpm`)** — `legendary` is **not** bundled in the packages (it is a pip tool with no distro package). Install it yourself (`pipx install legendary-gl` or `pip install --user legendary-gl`) so `legendary` is on the service's `PATH`, then set `LEGENDARY_WORK_DIR`. Epic sync degrades gracefully — everything else works — while it is absent.
 
 Either way, point `LEGENDARY_WORK_DIR` at a writable, persistent directory and restart the server. Steam, PlayStation, GOG, and Humble Bundle sync have no such requirement.
+
+## MCP endpoint for AI agents
+
+The server serves the [Model Context Protocol](https://modelcontextprotocol.io) at `/api/mcp`, so users can connect AI chats and agents to their collection. The [User Guide](user-guide.md#connecting-ai-chats-and-agents) covers the client side: connection settings, key scopes, and what agents can and can't do.
+
+- **Authentication.** Requests must carry a user's API key as `Authorization: Bearer <key>`. The login cookie is never accepted here. A read-scoped key is only offered the read tools; any change needs a write-scoped key.
+- **Turning it off.** Set `MCP_ENABLED=false` (Helm: under `controllers.nexorious.containers.main.env` in your values; NixOS: `services.nexorious.mcp.enable = false`). The route is then not registered at all, and the server sends no MCP-specific reply: a `POST /api/mcp` gets a generic `405` and a `GET` gets `404`. `nexctl mcp serve` reports either one as "this server has no MCP endpoint (disabled via MCP_ENABLED=false, or the server is too old)".
+- **Browser origins.** Browser-based clients send an `Origin` header. The server accepts the request only if that origin's host matches the request's `Host`, or the origin is listed in `CORS_ORIGINS`; anything else gets `403`. Desktop and command-line clients send no `Origin` and aren't affected.
+- **Reverse proxies.** The endpoint is plain, stateless request/response JSON (no long-lived streams), so a proxy needs no special timeouts or buffering settings. It must pass the original `Host` header through (in nginx, `proxy_set_header Host $host;`). A proxy that rewrites `Host` makes the origin check fail for browser-based clients, unless their origin is in `CORS_ORIGINS`.
 
 ## Why sync and import take a while
 
@@ -375,7 +385,7 @@ Two command groups are operator-only and require an **admin** user's key — not
 
 Per-user settings live under **`nexctl config`** (deal region, notification channels and subscriptions) — these aren't admin-only; any user manages their own.
 
-`nexctl` can also host a local **MCP server** so an AI agent can drive your collection: `nexctl mcp config` prints the agent-config stanza for the active profile, and `nexctl mcp serve` runs the server over stdio. The exposed tools mirror the `game`/`pool`/`tag`/`sync` command groups; operator groups are intentionally out of the MCP surface.
+`nexctl mcp serve` connects AI clients that only speak stdio to the server's [MCP endpoint](#mcp-endpoint-for-ai-agents): it relays each message to `/api/mcp` with the active profile's API key and hosts no tools of its own. `nexctl mcp config` prints ready-made client entries for both the stdio route and a direct HTTP connection. The operator groups (`admin`, `backup`) are deliberately not exposed over MCP.
 
 ## Monitoring and operations
 
