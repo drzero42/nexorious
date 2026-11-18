@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 )
 
 func newGameAddCmd() *cobra.Command {
@@ -59,11 +59,11 @@ func newGameAddCmd() *cobra.Command {
 				in.PersonalNotes = &notes
 			}
 			if platform != "" {
-				pl, sf := splitPlatform(platform)
+				pl, sf := clientops.SplitPlatform(platform)
 				if storefront != "" {
 					sf = storefront
 				}
-				if err := validatePlatform(cmd.Context(), c, p.Key, pl); err != nil {
+				if err := clientops.ValidatePlatform(cmd.Context(), c, p.Key, pl); err != nil {
 					return err
 				}
 				in.Platforms = []cliclient.PlatformInput{{Platform: pl, Storefront: sf, OwnershipStatus: "owned"}}
@@ -88,31 +88,11 @@ func newGameAddCmd() *cobra.Command {
 	return cmd
 }
 
-// splitPlatform splits "platform/storefront" into its parts; a bare value yields
-// an empty storefront.
-func splitPlatform(s string) (string, string) {
-	if i := strings.IndexByte(s, '/'); i >= 0 {
-		return s[:i], s[i+1:]
-	}
-	return s, ""
-}
-
-// findIGDBCandidates returns the IGDB candidates for a query. The backend
-// performs ID inference ("igdb:NNNN" / bare number), so callers just pass the
-// raw query. No cmd, no picker — callers own disambiguation.
-func findIGDBCandidates(ctx context.Context, c *cliclient.Client, key, query string) ([]cliclient.IGDBCandidate, error) {
-	res, err := c.SearchIGDB(ctx, key, query, 10)
-	if err != nil {
-		return nil, err
-	}
-	return res.Games, nil
-}
-
 // resolveIGDBCandidate finds the IGDB game to add by searching for the query
 // (backend ID inference included), with a TTY picker / off-TTY candidate-list
 // error when the search is ambiguous.
 func resolveIGDBCandidate(cmd *cobra.Command, c *cliclient.Client, key, query string) (*cliclient.IGDBCandidate, error) {
-	games, err := findIGDBCandidates(cmd.Context(), c, key, query)
+	games, err := clientops.FindIGDBCandidates(cmd.Context(), c, key, query)
 	if err != nil {
 		return nil, err
 	}

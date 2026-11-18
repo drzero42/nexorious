@@ -2,13 +2,13 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 	"github.com/drzero42/nexorious/internal/cliui"
 )
 
@@ -112,24 +112,6 @@ func suggestionOf(it cliclient.FlaggedItem) string {
 	return "-"
 }
 
-// collectFlaggedIDs returns every flagged user_game_id for a check, across pages.
-func collectFlaggedIDs(ctx context.Context, c *cliclient.Client, key, checkID string) ([]string, error) {
-	var ids []string
-	for page := 1; ; page++ {
-		res, err := c.ListSmellItems(ctx, key, checkID, page, 200)
-		if err != nil {
-			return nil, err
-		}
-		for i := range res.Items {
-			ids = append(ids, res.Items[i].UserGameID)
-		}
-		if res.Pages <= page {
-			break
-		}
-	}
-	return ids, nil
-}
-
 func newDoctorApplyCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "apply <check> [refs...]",
@@ -147,7 +129,7 @@ func newDoctorApplyCmd() *cobra.Command {
 
 			var ids []string
 			if len(refs) == 0 {
-				ids, err = collectFlaggedIDs(cmd.Context(), c, p.Key, checkID)
+				ids, err = clientops.CollectFlaggedIDs(cmd.Context(), c, p.Key, checkID)
 				if err != nil {
 					return fmt.Errorf("list smell items failed: %w", err)
 				}

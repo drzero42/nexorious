@@ -1,4 +1,4 @@
-package main
+package mcptools
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 )
 
 type poolBrief struct {
@@ -109,9 +110,9 @@ type poolReorderInput struct {
 
 // resolvePoolForWrite resolves a single pool from ref; returns candidates output if ambiguous.
 func resolvePoolForWrite(ctx context.Context, c *cliclient.Client, key, ref, tool string) (*cliclient.PoolListItem, *poolWriteOutput, error) {
-	pools, err := findPoolsByRef(ctx, c, key, ref)
+	pools, err := clientops.FindPoolsByRef(ctx, c, key, ref)
 	if err != nil {
-		return nil, nil, mcpToolError(tool, err)
+		return nil, nil, toolError(tool, err)
 	}
 	switch len(pools) {
 	case 0:
@@ -135,9 +136,9 @@ func resolvePoolForWrite(ctx context.Context, c *cliclient.Client, key, ref, too
 func resolveGamesForPool(ctx context.Context, c *cliclient.Client, key string, refs []string, tool string) (ids []string, cands []gameBrief, msg string, err error) {
 	var resolved []string
 	for _, ref := range refs {
-		matches, err := findUserGamesByRef(ctx, c, key, ref)
+		matches, err := clientops.FindUserGamesByRef(ctx, c, key, ref)
 		if err != nil {
-			return nil, nil, "", mcpToolError(tool, err)
+			return nil, nil, "", toolError(tool, err)
 		}
 		switch len(matches) {
 		case 0:
@@ -155,12 +156,13 @@ func resolveGamesForPool(ctx context.Context, c *cliclient.Client, key string, r
 	return resolved, nil, "", nil
 }
 
-func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
+func registerPoolTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
 	mcp.AddTool(s, &mcp.Tool{Name: "pool_list", Description: "List all play-planning pools with queue and candidate counts."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, poolListOutput, error) {
+			key := apiKey(ctx)
 			pools, err := c.ListPools(ctx, key)
 			if err != nil {
-				return nil, poolListOutput{}, mcpToolError("pool_list", err)
+				return nil, poolListOutput{}, toolError("pool_list", err)
 			}
 			out := poolListOutput{Pools: make([]poolBrief, len(pools))}
 			for i, p := range pools {
@@ -171,9 +173,10 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "pool_show", Description: "Show a pool's full detail including its ordered queue and candidates. If the name matches multiple pools, returns candidates to disambiguate."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolShowInput) (*mcp.CallToolResult, poolShowOutput, error) {
-			pools, err := findPoolsByRef(ctx, c, key, in.Ref)
+			key := apiKey(ctx)
+			pools, err := clientops.FindPoolsByRef(ctx, c, key, in.Ref)
 			if err != nil {
-				return nil, poolShowOutput{}, mcpToolError("pool_show", err)
+				return nil, poolShowOutput{}, toolError("pool_show", err)
 			}
 			switch len(pools) {
 			case 0:
@@ -181,7 +184,7 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 			case 1:
 				detail, err := c.GetPool(ctx, key, pools[0].ID)
 				if err != nil {
-					return nil, poolShowOutput{}, mcpToolError("pool_show", err)
+					return nil, poolShowOutput{}, toolError("pool_show", err)
 				}
 				return nil, poolShowOutput{Pool: detail}, nil
 			default:
@@ -198,9 +201,10 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "pool_create", Description: "Create a new play-planning pool."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolCreateInput) (*mcp.CallToolResult, poolWriteOutput, error) {
+			key := apiKey(ctx)
 			pool, err := c.CreatePool(ctx, key, in.Name, in.Color, in.Filter)
 			if err != nil {
-				return nil, poolWriteOutput{}, mcpToolError("pool_create", err)
+				return nil, poolWriteOutput{}, toolError("pool_create", err)
 			}
 			brief := poolBrief{ID: pool.ID, Name: pool.Name, Color: pool.Color}
 			return nil, poolWriteOutput{Pool: &brief, Message: fmt.Sprintf("Created pool %q (%s).", pool.Name, pool.ID)}, nil
@@ -208,6 +212,7 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "pool_edit", Description: "Edit a pool's name, color, or saved filter. Ambiguous name matches return candidates — call again with the id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolEditInput) (*mcp.CallToolResult, poolWriteOutput, error) {
+			key := apiKey(ctx)
 			ref, cands, err := resolvePoolForWrite(ctx, c, key, in.Ref, "pool_edit")
 			if err != nil {
 				return nil, poolWriteOutput{}, err
@@ -232,7 +237,7 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 			}
 			updated, err := c.UpdatePool(ctx, key, ref.ID, fields)
 			if err != nil {
-				return nil, poolWriteOutput{}, mcpToolError("pool_edit", err)
+				return nil, poolWriteOutput{}, toolError("pool_edit", err)
 			}
 			brief := poolBrief{ID: updated.ID, Name: updated.Name, Color: updated.Color}
 			return nil, poolWriteOutput{Pool: &brief, Message: fmt.Sprintf("Updated pool %q.", updated.Name)}, nil
@@ -240,6 +245,7 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "pool_rm", Description: "Delete a pool. Ambiguous name matches return candidates — call again with the id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolRmInput) (*mcp.CallToolResult, poolWriteOutput, error) {
+			key := apiKey(ctx)
 			ref, cands, err := resolvePoolForWrite(ctx, c, key, in.Ref, "pool_rm")
 			if err != nil {
 				return nil, poolWriteOutput{}, err
@@ -248,13 +254,14 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 				return nil, *cands, nil
 			}
 			if err := c.DeletePool(ctx, key, ref.ID); err != nil {
-				return nil, poolWriteOutput{}, mcpToolError("pool_rm", err)
+				return nil, poolWriteOutput{}, toolError("pool_rm", err)
 			}
 			return nil, poolWriteOutput{Message: fmt.Sprintf("Deleted pool %q (%s).", ref.Name, ref.ID)}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "pool_add", Description: "Add games to a pool as candidates. Ambiguous pool/game refs return candidates — call again with ids."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolAddInput) (*mcp.CallToolResult, poolGamesOutput, error) {
+			key := apiKey(ctx)
 			if len(in.Games) == 0 {
 				return nil, poolGamesOutput{}, fmt.Errorf("pool_add: provide at least one game")
 			}
@@ -277,19 +284,20 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 			pb := poolBriefOf(*pool)
 			if len(ids) == 1 {
 				if err := c.AddPoolGame(ctx, key, pool.ID, ids[0]); err != nil {
-					return nil, poolGamesOutput{}, mcpToolError("pool_add", err)
+					return nil, poolGamesOutput{}, toolError("pool_add", err)
 				}
 				return nil, poolGamesOutput{Pool: &pb, Count: 1, Message: fmt.Sprintf("Added 1 game to %q.", pool.Name)}, nil
 			}
 			n, err := c.BulkAddPoolGames(ctx, key, pool.ID, ids)
 			if err != nil {
-				return nil, poolGamesOutput{}, mcpToolError("pool_add", err)
+				return nil, poolGamesOutput{}, toolError("pool_add", err)
 			}
 			return nil, poolGamesOutput{Pool: &pb, Count: n, Message: fmt.Sprintf("Added %d game(s) to %q.", n, pool.Name)}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "pool_remove", Description: "Remove games from a pool. Ambiguous pool/game refs return candidates — call again with ids."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolRemoveInput) (*mcp.CallToolResult, poolGamesOutput, error) {
+			key := apiKey(ctx)
 			if len(in.Games) == 0 {
 				return nil, poolGamesOutput{}, fmt.Errorf("pool_remove: provide at least one game")
 			}
@@ -311,7 +319,7 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 			pb := poolBriefOf(*pool)
 			for _, id := range ids {
 				if err := c.RemovePoolGame(ctx, key, pool.ID, id); err != nil {
-					return nil, poolGamesOutput{}, mcpToolError(fmt.Sprintf("pool_remove %s", id), err)
+					return nil, poolGamesOutput{}, toolError(fmt.Sprintf("pool_remove %s", id), err)
 				}
 			}
 			return nil, poolGamesOutput{Pool: &pb, Count: int64(len(ids)), Message: fmt.Sprintf("Removed %d game(s) from %q.", len(ids), pool.Name)}, nil
@@ -319,6 +327,7 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "pool_queue", Description: "Set a pool's ordered queue (declarative — BulkAdd then SetQueue). Ambiguous pool/game refs return candidates — call again with ids."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolQueueInput) (*mcp.CallToolResult, poolGamesOutput, error) {
+			key := apiKey(ctx)
 			pool, cands, err := resolvePoolForWrite(ctx, c, key, in.Pool, "pool_queue")
 			if err != nil {
 				return nil, poolGamesOutput{}, err
@@ -337,11 +346,11 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 			pb := poolBriefOf(*pool)
 			if len(ids) > 0 {
 				if _, err := c.BulkAddPoolGames(ctx, key, pool.ID, ids); err != nil {
-					return nil, poolGamesOutput{}, mcpToolError("pool_queue (bulk-add)", err)
+					return nil, poolGamesOutput{}, toolError("pool_queue (bulk-add)", err)
 				}
 			}
 			if err := c.SetQueue(ctx, key, pool.ID, ids); err != nil {
-				return nil, poolGamesOutput{}, mcpToolError("pool_queue (set-queue)", err)
+				return nil, poolGamesOutput{}, toolError("pool_queue (set-queue)", err)
 			}
 			if len(ids) == 0 {
 				return nil, poolGamesOutput{Pool: &pb, Message: fmt.Sprintf("Cleared the queue for %q.", pool.Name)}, nil
@@ -351,6 +360,7 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "pool_reorder", Description: "Reorder pools — positions follow argument order. Ambiguous pool refs return candidates — call again with ids."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolReorderInput) (*mcp.CallToolResult, poolWriteOutput, error) {
+			key := apiKey(ctx)
 			if len(in.Pools) == 0 {
 				return nil, poolWriteOutput{}, fmt.Errorf("pool_reorder: provide at least one pool")
 			}
@@ -368,7 +378,7 @@ func registerPoolTools(s *mcp.Server, c *cliclient.Client, key string) {
 				briefs = append(briefs, poolBriefOf(*pool))
 			}
 			if err := c.ReorderPools(ctx, key, ids); err != nil {
-				return nil, poolWriteOutput{}, mcpToolError("pool_reorder", err)
+				return nil, poolWriteOutput{}, toolError("pool_reorder", err)
 			}
 			return nil, poolWriteOutput{Pools: briefs, Message: fmt.Sprintf("Reordered %d pool(s).", len(ids))}, nil
 		})

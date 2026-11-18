@@ -10,7 +10,7 @@ import (
 )
 
 // serveSyncConfigs registers the GET /api/sync/config handler that
-// resolveStorefront relies on, advertising the given storefront slugs.
+// clientops.ResolveStorefront relies on, advertising the given storefront slugs.
 func serveSyncConfigs(mux *http.ServeMux, slugs ...string) {
 	mux.HandleFunc("/api/sync/config", func(w http.ResponseWriter, _ *http.Request) {
 		configs := make([]map[string]any, len(slugs))

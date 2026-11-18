@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 )
 
 // doctorServer stubs the summary + a couple of per-check listings.
@@ -125,9 +126,9 @@ func TestCollectFlaggedIDsPaginates(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ids, err := collectFlaggedIDs(t.Context(), cliclient.New(srv.URL), "k", "multi")
+	ids, err := clientops.CollectFlaggedIDs(t.Context(), cliclient.New(srv.URL), "k", "multi")
 	if err != nil {
-		t.Fatalf("collectFlaggedIDs: %v", err)
+		t.Fatalf("clientops.CollectFlaggedIDs: %v", err)
 	}
 	if len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
 		t.Fatalf("ids = %v, want [a b]", ids)

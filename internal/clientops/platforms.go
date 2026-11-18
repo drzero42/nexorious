@@ -1,4 +1,4 @@
-package main
+package clientops
 
 import (
 	"context"
@@ -9,13 +9,13 @@ import (
 	"github.com/drzero42/nexorious/internal/cliclient"
 )
 
-// validatePlatform checks that slug is a seeded platform name, returning an
+// ValidatePlatform checks that slug is a seeded platform name, returning an
 // actionable error that lists the valid slugs when it is not. An empty slug is
 // allowed (callers that require a platform enforce that separately) — the
 // platform column is a NOT-NULL FK to platforms(name), so an invalid value
 // would otherwise surface as an opaque 500. Shared by the CLI commands and the
 // MCP tools so the two front-ends validate identically.
-func validatePlatform(ctx context.Context, c *cliclient.Client, key, slug string) error {
+func ValidatePlatform(ctx context.Context, c *cliclient.Client, key, slug string) error {
 	if slug == "" {
 		return nil
 	}

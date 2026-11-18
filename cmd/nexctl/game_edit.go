@@ -2,13 +2,12 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 	"github.com/drzero42/nexorious/internal/cliui"
 )
 
@@ -37,9 +36,9 @@ func newGameEditCmd() *cobra.Command {
 			}
 			c := cliclient.New(p.URL)
 
-			games, err := gamesForRefsOrFilter(cmd, c, p.Key, args, gameFilter{
-				use: useFilter, status: filterStatus, tag: filterTag, platform: filterPlatform,
-				wishlist: filterWishlist, wishlistSet: cmd.Flags().Changed("filter-wishlist"),
+			games, err := gamesForRefsOrFilter(cmd, c, p.Key, args, useFilter, clientops.GameFilter{
+				Status: filterStatus, Tag: filterTag, Platform: filterPlatform,
+				Wishlist: filterWishlist, WishlistSet: cmd.Flags().Changed("filter-wishlist"),
 			})
 			if err != nil {
 				return err
@@ -62,14 +61,14 @@ func newGameEditCmd() *cobra.Command {
 			ch := cmd.Flags().Changed
 			for i := range games {
 				u := &games[i]
-				if err := editOne(cmd.Context(), c, p.Key, u, editOpts{
-					status: status, statusSet: ch("status"),
-					rating: rating, ratingSet: ch("rating"),
-					loved: loved, noLoved: noLoved,
-					notes: notes, notesSet: ch("notes"),
-					addPlatform: addPlatform, rmPlatform: rmPlatform,
-					hours: hours, hoursSet: ch("hours"), hoursPlatform: hoursPlatform,
-					addTags: addTags, rmTags: rmTags,
+				if err := clientops.EditOne(cmd.Context(), c, p.Key, u, clientops.EditOpts{
+					Status: status, StatusSet: ch("status"),
+					Rating: rating, RatingSet: ch("rating"),
+					Loved: loved, NoLoved: noLoved,
+					Notes: notes, NotesSet: ch("notes"),
+					AddPlatform: addPlatform, RmPlatform: rmPlatform,
+					Hours: hours, HoursSet: ch("hours"), HoursPlatform: hoursPlatform,
+					AddTags: addTags, RmTags: rmTags,
 				}); err != nil {
 					return fmt.Errorf("edit %q (%s): %w", u.Title(), u.ID, err)
 				}
@@ -96,139 +95,4 @@ func newGameEditCmd() *cobra.Command {
 	f.StringVar(&filterPlatform, "filter-platform", "", "Filter: platform slug")
 	f.BoolVar(&filterWishlist, "filter-wishlist", false, "Filter: only wishlisted")
 	return cmd
-}
-
-type editOpts struct {
-	status                  string
-	statusSet               bool
-	rating                  int
-	ratingSet               bool
-	loved, noLoved          bool
-	notes                   string
-	notesSet                bool
-	addPlatform, rmPlatform string
-	hours                   float64
-	hoursSet                bool
-	hoursPlatform           string
-	addTags, rmTags         []string
-}
-
-func editOne(ctx context.Context, c *cliclient.Client, key string, u *cliclient.UserGame, o editOpts) error {
-	if o.addPlatform != "" {
-		pl, sf := splitPlatform(o.addPlatform)
-		if err := validatePlatform(ctx, c, key, pl); err != nil {
-			return err
-		}
-		if err := c.AddPlatform(ctx, key, u.ID, cliclient.PlatformInput{Platform: pl, Storefront: sf, OwnershipStatus: "owned"}); err != nil {
-			return fmt.Errorf("add platform: %w", err)
-		}
-	}
-	if o.rmPlatform != "" {
-		pid, err := platformIDBySlug(ctx, c, key, u, o.rmPlatform)
-		if err != nil {
-			return err
-		}
-		if err := c.DeletePlatform(ctx, key, u.ID, pid); err != nil {
-			return fmt.Errorf("remove platform: %w", err)
-		}
-	}
-	if o.hoursSet {
-		pid, err := targetPlatformID(ctx, c, key, u, o.hoursPlatform)
-		if err != nil {
-			return err
-		}
-		if err := c.UpdatePlatform(ctx, key, u.ID, pid, map[string]any{"hours_played": o.hours}); err != nil {
-			return fmt.Errorf("set hours: %w", err)
-		}
-	}
-	if o.statusSet {
-		if _, err := c.UpdateProgress(ctx, key, u.ID, o.status); err != nil {
-			return fmt.Errorf("set status: %w", err)
-		}
-	}
-	fields := map[string]any{}
-	if o.ratingSet {
-		fields["personal_rating"] = o.rating
-	}
-	if o.loved {
-		fields["is_loved"] = true
-	}
-	if o.noLoved {
-		fields["is_loved"] = false
-	}
-	if o.notesSet {
-		fields["personal_notes"] = o.notes
-	}
-	if len(fields) > 0 {
-		if _, err := c.UpdateUserGame(ctx, key, u.ID, fields); err != nil {
-			return fmt.Errorf("update fields: %w", err)
-		}
-	}
-	if len(o.addTags) > 0 || len(o.rmTags) > 0 {
-		if err := applyTagEdits(ctx, c, key, u, o.addTags, o.rmTags); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// platformIDBySlug finds the platform row id whose platform slug matches.
-func platformIDBySlug(ctx context.Context, c *cliclient.Client, key string, u *cliclient.UserGame, slug string) (string, error) {
-	cur, err := c.GetUserGame(ctx, key, u.ID)
-	if err != nil {
-		return "", err
-	}
-	for i := range cur.Platforms {
-		if cur.Platforms[i].Platform != nil && *cur.Platforms[i].Platform == slug {
-			return cur.Platforms[i].ID, nil
-		}
-	}
-	return "", fmt.Errorf("no platform %q on this game", slug)
-}
-
-// targetPlatformID picks the platform row for --hours: the named slug, else the
-// sole platform, else an error asking which.
-func targetPlatformID(ctx context.Context, c *cliclient.Client, key string, u *cliclient.UserGame, slug string) (string, error) {
-	cur, err := c.GetUserGame(ctx, key, u.ID)
-	if err != nil {
-		return "", err
-	}
-	if slug != "" {
-		for i := range cur.Platforms {
-			if cur.Platforms[i].Platform != nil && *cur.Platforms[i].Platform == slug {
-				return cur.Platforms[i].ID, nil
-			}
-		}
-		return "", fmt.Errorf("no platform %q on this game", slug)
-	}
-	if len(cur.Platforms) == 1 {
-		return cur.Platforms[0].ID, nil
-	}
-	return "", fmt.Errorf("game has %d platforms; specify which with --platform", len(cur.Platforms))
-}
-
-// applyTagEdits computes current ∪ add \ remove and replaces the tag set.
-func applyTagEdits(ctx context.Context, c *cliclient.Client, key string, u *cliclient.UserGame, add, remove []string) error {
-	cur, err := c.GetUserGame(ctx, key, u.ID)
-	if err != nil {
-		return err
-	}
-	set := map[string]string{} // lower -> display
-	for _, t := range cur.Tags {
-		set[strings.ToLower(t.Name)] = t.Name
-	}
-	for _, t := range add {
-		set[strings.ToLower(t)] = t
-	}
-	for _, t := range remove {
-		delete(set, strings.ToLower(t))
-	}
-	names := make([]string, 0, len(set))
-	for _, disp := range set {
-		names = append(names, disp)
-	}
-	if _, err := c.ReplaceTags(ctx, key, u.ID, names); err != nil {
-		return fmt.Errorf("update tags: %w", err)
-	}
-	return nil
 }

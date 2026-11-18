@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 )
 
 func newGameAcquireCmd() *cobra.Command {
@@ -28,11 +29,11 @@ func newGameAcquireCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pl, sf := splitPlatform(platform)
+			pl, sf := clientops.SplitPlatform(platform)
 			if storefront != "" {
 				sf = storefront
 			}
-			if err := validatePlatform(cmd.Context(), c, p.Key, pl); err != nil {
+			if err := clientops.ValidatePlatform(cmd.Context(), c, p.Key, pl); err != nil {
 				return err
 			}
 			own := ownership
