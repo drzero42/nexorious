@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -46,6 +47,70 @@ func TestMCPGameEditStatus(t *testing.T) {
 	}
 	if gotStatus != "completed" {
 		t.Fatalf("play_status sent = %q", gotStatus)
+	}
+}
+
+// TestMCPGameEditReportsPostEditState guards #1285: game_edit must report the
+// game as it is after the edit, not the snapshot loaded during ref resolution.
+func TestMCPGameEditReportsPostEditState(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	var mu sync.Mutex
+	status := "not_started"
+	tags := []string{"old"}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/user-games/", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/progress"):
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			status, _ = body["play_status"].(string)
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/tags"):
+			var body struct {
+				Tags []string `json:"tags"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			tags = body.Tags
+		}
+		tagObjs := make([]map[string]any, len(tags))
+		for i, name := range tags {
+			tagObjs[i] = map[string]any{"id": "t" + name, "name": name}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": id, "play_status": status, "tags": tagObjs,
+			"game": map[string]any{"id": 1, "title": "Halo"}})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cs := mcpSession(t, srv.URL)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "game_edit",
+		Arguments: map[string]any{
+			"refs":        []string{id},
+			"play_status": "completed",
+			"add_tags":    []string{"new"},
+			"rm_tags":     []string{"old"},
+		},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("edit: err=%v res=%+v", err, res)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	var out gameWriteOutput
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, b)
+	}
+	if len(out.Updated) != 1 {
+		t.Fatalf("expected 1 updated game, got %s", b)
+	}
+	got := out.Updated[0]
+	if got.PlayStatus != "completed" {
+		t.Errorf("play_status = %q, want completed (post-edit)", got.PlayStatus)
+	}
+	if len(got.Tags) != 1 || got.Tags[0] != "new" {
+		t.Errorf("tags = %v, want [new] (post-edit)", got.Tags)
 	}
 }
 

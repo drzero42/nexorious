@@ -455,7 +455,12 @@ func registerGameTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 				if err := clientops.EditOne(ctx, c, key, u, opts); err != nil {
 					return nil, gameWriteOutput{}, toolError(fmt.Sprintf("game_edit %q", u.Title()), err)
 				}
-				updated = append(updated, briefOf(u))
+				// u is the pre-edit snapshot; report the game as it is now.
+				fresh, err := c.GetUserGame(ctx, key, u.ID)
+				if err != nil {
+					return nil, gameWriteOutput{}, toolError(fmt.Sprintf("game_edit %q (edit applied; re-reading it failed)", u.Title()), err)
+				}
+				updated = append(updated, briefOf(fresh))
 			}
 			return nil, gameWriteOutput{Updated: updated}, nil
 		})
