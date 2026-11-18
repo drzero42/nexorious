@@ -2,6 +2,7 @@ package mcptools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -119,7 +120,7 @@ type gameFiltersOutput struct {
 // gameEditInput is the input schema for game_edit.
 type gameEditInput struct {
 	Refs          []string        `json:"refs,omitempty" jsonschema:"one or more game titles or ids"`
-	Filter        *gameEditFilter `json:"filter,omitempty" jsonschema:"select games by filter instead of refs"`
+	Filter        *gameEditFilter `json:"filter,omitempty" jsonschema:"select games by filter instead of refs (not both); refused with nothing changed if it matches more than 200 games"`
 	PlayStatus    string          `json:"play_status,omitempty"`
 	Rating        *int            `json:"rating,omitempty"`
 	Loved         *bool           `json:"loved,omitempty"`
@@ -188,12 +189,18 @@ type gameAcquireInput struct {
 // gameRmInput is the input schema for game_rm.
 type gameRmInput struct {
 	Refs   []string        `json:"refs,omitempty" jsonschema:"one or more game titles or ids"`
-	Filter *gameEditFilter `json:"filter,omitempty" jsonschema:"select games by filter instead of refs"`
+	Filter *gameEditFilter `json:"filter,omitempty" jsonschema:"select games by filter instead of refs (not both); refused with nothing changed if it matches more than 200 games"`
 }
 
 // mcpResolveEditTargets resolves game targets from refs or filter for edit/rm tools.
-// Returns candidates (no mutation) if any ref is ambiguous or zero.
+// Returns candidates (no mutation) if any ref is ambiguous or zero. A filter
+// matching more than one page of games returns a message and no games: unlike
+// the CLI's warning, an agent told to "re-run for the rest" would loop on the
+// same first page whenever the edit doesn't move games out of the filter (#1252).
 func mcpResolveEditTargets(ctx context.Context, c *cliclient.Client, key string, refs []string, filter *gameEditFilter) (games []cliclient.UserGame, candidates []gameBrief, msg string, err error) {
+	if filter != nil && len(refs) > 0 {
+		return nil, nil, "", errors.New("pass refs or filter, not both")
+	}
 	if filter != nil {
 		f := clientops.GameFilter{
 			Status:   filter.PlayStatus,
@@ -204,9 +211,12 @@ func mcpResolveEditTargets(ctx context.Context, c *cliclient.Client, key string,
 			f.Wishlist = *filter.Wishlist
 			f.WishlistSet = true
 		}
-		gs, _, err := clientops.GamesByFilter(ctx, c, key, f)
+		gs, total, err := clientops.GamesByFilter(ctx, c, key, f)
 		if err != nil {
 			return nil, nil, "", err
+		}
+		if total > len(gs) {
+			return nil, nil, fmt.Sprintf("filter matches %d games, more than the %d one call can change; nothing was changed. Narrow the filter (or pass refs) and call again", total, len(gs)), nil
 		}
 		return gs, nil, "", nil
 	}
