@@ -120,11 +120,31 @@ func AdminMiddleware() echo.MiddlewareFunc {
 
 // AuthMiddleware tries cookie-based session auth first, then Bearer API key.
 func AuthMiddleware(db *bun.DB) echo.MiddlewareFunc {
+	return authMiddleware(db, true)
+}
+
+// APIKeyMiddleware authenticates by Bearer API key only and never reads the
+// session cookie: a request without a valid key gets 401 even when it carries a
+// valid session. Otherwise it behaves exactly like AuthMiddleware (scope check,
+// user load, context values).
+//
+// /api/mcp relies on this for DNS-rebinding protection (the SDK's own loopback
+// check is disabled there): a rebound browser page can send the user's cookie
+// but cannot know their API key. Never put cookie auth in front of that route.
+func APIKeyMiddleware(db *bun.DB) echo.MiddlewareFunc {
+	return authMiddleware(db, false)
+}
+
+func authMiddleware(db *bun.DB, allowCookie bool) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
-			userID, sessionHash, cookieErr := trySessionCookie(c, db)
-			if cookieErr != nil {
-				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "session expired or not found"})
+			var userID, sessionHash string
+			if allowCookie {
+				var cookieErr error
+				userID, sessionHash, cookieErr = trySessionCookie(c, db)
+				if cookieErr != nil {
+					return c.JSON(http.StatusUnauthorized, map[string]string{"error": "session expired or not found"})
+				}
 			}
 			// Session-cookie auth implies full (write) access; only API keys
 			// can carry a restricted scope.

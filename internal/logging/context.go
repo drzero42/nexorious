@@ -41,5 +41,6 @@ func jobID(ctx context.Context) string      { s, _ := ctx.Value(jobIDKey).(strin
 func riverJobID(ctx context.Context) string { s, _ := ctx.Value(riverJobIDKey).(string); return s }
 func userID(ctx context.Context) string     { s, _ := ctx.Value(userIDKey).(string); return s }
 
-// RequestIDForTest exposes the ctx-carried request id for tests in other packages.
-func RequestIDForTest(ctx context.Context) string { return requestID(ctx) }
+// RequestID returns the ctx-carried HTTP request id, or "" if none. The
+// in-process MCP transport uses it to forward the id to its sub-calls.
+func RequestID(ctx context.Context) string { return requestID(ctx) }

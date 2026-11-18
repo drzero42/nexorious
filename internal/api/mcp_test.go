@@ -1,0 +1,280 @@
+package api_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/uptrace/bun"
+
+	"github.com/drzero42/nexorious/internal/auth"
+	"github.com/drzero42/nexorious/internal/config"
+	"github.com/drzero42/nexorious/internal/logging"
+)
+
+const mcpInitializeBody = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`
+
+// insertMCPTestKey inserts an API key with the given scope for userID and
+// returns the raw key.
+func insertMCPTestKey(t *testing.T, db *bun.DB, userID, scope string) string {
+	t.Helper()
+	raw, err := auth.GenerateAPIKey()
+	if err != nil {
+		t.Fatalf("GenerateAPIKey: %v", err)
+	}
+	if _, err := db.ExecContext(context.Background(),
+		`INSERT INTO api_keys (id, user_id, name, key_hash, scopes) VALUES (gen_random_uuid()::text, ?, 'mcp-test', ?, ?)`,
+		userID, auth.HashToken(raw), scope,
+	); err != nil {
+		t.Fatalf("insert api key: %v", err)
+	}
+	return raw
+}
+
+func mcpTestCfg(enabled bool, corsOrigins ...string) *config.Config {
+	cfg := testCfg()
+	cfg.MCPEnabled = enabled
+	cfg.CORSOrigins = corsOrigins
+	return cfg
+}
+
+// headerTransport adds fixed headers to every request.
+type headerTransport struct {
+	headers map[string]string
+}
+
+func (h headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	for k, v := range h.headers {
+		r.Header.Set(k, v)
+	}
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+func connectMCP(t *testing.T, url string, headers map[string]string) *mcp.ClientSession {
+	t.Helper()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
+		Endpoint:   url + "/api/mcp",
+		HTTPClient: &http.Client{Transport: headerTransport{headers: headers}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	return session
+}
+
+// rawMCPPost sends one initialize request and returns the status code.
+func rawMCPPost(t *testing.T, handler http.Handler, headers map[string]string) int {
+	t.Helper()
+	return rawMCPPostReq(t, handler, httptest.NewRequest(http.MethodPost, "/api/mcp", strings.NewReader(mcpInitializeBody)), headers)
+}
+
+func rawMCPPostReq(t *testing.T, handler http.Handler, req *http.Request, headers map[string]string) int {
+	t.Helper()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec.Code
+}
+
+// syncBuffer is a goroutine-safe log sink.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestMCP_WriteKeyRoundTrip(t *testing.T) {
+	truncateAllTables(t)
+	insertAuthTestUser(t, testDB, "u-mcp", "mcpuser", "password123", true, false)
+	key := insertMCPTestKey(t, testDB, "u-mcp", "write")
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO tags (id, user_id, name) VALUES (gen_random_uuid()::text, 'u-mcp', 'Seeded')`); err != nil {
+		t.Fatalf("seed tag: %v", err)
+	}
+
+	logs := &syncBuffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(logging.NewContextHandler(slog.NewJSONHandler(logs, nil))))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	srv := httptest.NewServer(newTestEcho(t, testDB, mcpTestCfg(true)))
+	t.Cleanup(srv.Close)
+	const reqID = "mcp-test-request-id"
+	session := connectMCP(t, srv.URL, map[string]string{
+		"Authorization": "Bearer " + key,
+		"X-Request-Id":  reqID,
+	})
+	ctx := context.Background()
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	names := map[string]bool{}
+	for _, tl := range tools.Tools {
+		names[tl.Name] = true
+	}
+	for _, want := range []string{"tag_list", "tag_create", "game_list"} {
+		if !names[want] {
+			t.Errorf("tools/list missing %q", want)
+		}
+	}
+
+	// Read tool: sees the seeded row through an in-process REST sub-call.
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "tag_list"})
+	if err != nil || res.IsError {
+		t.Fatalf("tag_list: err=%v result=%+v", err, res)
+	}
+	out, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(out), `"Seeded"`) {
+		t.Errorf("tag_list output missing seeded tag: %s", out)
+	}
+
+	// Write tool: the row lands in the DB under the key's user.
+	res, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "tag_create", Arguments: map[string]any{"name": "FromMCP"}})
+	if err != nil || res.IsError {
+		t.Fatalf("tag_create: err=%v result=%+v", err, res)
+	}
+	var n int
+	if err := testDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM tags WHERE user_id = 'u-mcp' AND name = 'FromMCP'`).Scan(&n); err != nil {
+		t.Fatalf("count tags: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("tag rows = %d; want 1", n)
+	}
+
+	// Correlation: the sub-call's access-log line carries the MCP request's
+	// request_id, and the tool call itself is logged once with its outcome.
+	var subCallLogged, toolLogged bool
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		var rec map[string]any
+		if json.Unmarshal([]byte(line), &rec) != nil {
+			continue
+		}
+		if rec["msg"] == "request" && rec["route"] == "/api/tags" && rec["request_id"] == reqID {
+			subCallLogged = true
+		}
+		if rec["msg"] == "mcp tool call" && rec["tool"] == "tag_create" && rec["outcome"] == "ok" && rec["request_id"] == reqID {
+			toolLogged = true
+		}
+	}
+	if !subCallLogged {
+		t.Errorf("no /api/tags sub-call log line with request_id %q:\n%s", reqID, logs.String())
+	}
+	if !toolLogged {
+		t.Errorf("no 'mcp tool call' line for tag_create with request_id %q:\n%s", reqID, logs.String())
+	}
+}
+
+func TestMCP_SessionCookieWithoutKeyIs401(t *testing.T) {
+	truncateAllTables(t)
+	insertAuthTestUser(t, testDB, "u-mcp", "mcpuser", "password123", true, false)
+	sessionID := insertAuthTestSession(t, testDB, "u-mcp")
+	e := newTestEcho(t, testDB, mcpTestCfg(true))
+
+	if got := rawMCPPost(t, e, map[string]string{"Cookie": "session=" + sessionID}); got != http.StatusUnauthorized {
+		t.Errorf("cookie-only status = %d; want 401", got)
+	}
+}
+
+func TestMCP_OriginCheck(t *testing.T) {
+	truncateAllTables(t)
+	insertAuthTestUser(t, testDB, "u-mcp", "mcpuser", "password123", true, false)
+	key := insertMCPTestKey(t, testDB, "u-mcp", "write")
+	e := newTestEcho(t, testDB, mcpTestCfg(true, "https://trusted.example"))
+	bearer := "Bearer " + key
+
+	tests := []struct {
+		name   string
+		origin string
+		want   int
+	}{
+		{"no origin", "", http.StatusOK},
+		// httptest.NewRequest uses Host example.com; the scheme is ignored.
+		{"same host", "https://example.com", http.StatusOK},
+		{"listed in CORS_ORIGINS", "https://trusted.example", http.StatusOK},
+		{"foreign origin", "https://evil.example", http.StatusForbidden},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := map[string]string{"Authorization": bearer}
+			if tc.origin != "" {
+				h["Origin"] = tc.origin
+			}
+			if got := rawMCPPost(t, e, h); got != tc.want {
+				t.Errorf("status = %d; want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// A reverse proxy on the same host connects to the loopback listener but
+// forwards the public Host. The SDK's default DNS-rebinding check 403s exactly
+// that; the endpoint must accept it.
+func TestMCP_SameHostReverseProxyAllowed(t *testing.T) {
+	truncateAllTables(t)
+	insertAuthTestUser(t, testDB, "u-mcp", "mcpuser", "password123", true, false)
+	key := insertMCPTestKey(t, testDB, "u-mcp", "write")
+	e := newTestEcho(t, testDB, mcpTestCfg(true))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/mcp", strings.NewReader(mcpInitializeBody))
+	req.Host = "games.example.com"
+	req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey,
+		&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8000}))
+	if got := rawMCPPostReq(t, e, req, map[string]string{"Authorization": "Bearer " + key}); got != http.StatusOK {
+		t.Errorf("proxied request status = %d; want 200", got)
+	}
+}
+
+func TestMCP_DisabledIs404(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, mcpTestCfg(false))
+	if got := rawMCPPost(t, e, nil); got != http.StatusNotFound {
+		t.Errorf("POST /api/mcp with MCP disabled = %d; want 404", got)
+	}
+}
+
+func TestMCP_GetIs405(t *testing.T) {
+	truncateAllTables(t)
+	insertAuthTestUser(t, testDB, "u-mcp", "mcpuser", "password123", true, false)
+	key := insertMCPTestKey(t, testDB, "u-mcp", "write")
+	e := newTestEcho(t, testDB, mcpTestCfg(true))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		body, _ := io.ReadAll(rec.Body)
+		t.Errorf("GET /api/mcp = %d; want 405 (body %s)", rec.Code, body)
+	}
+}
