@@ -205,13 +205,13 @@ Cross-repo: `Closes owner/repo#123`. The keyword must be in the **PR body**, not
 
 Non-major npm and Go updates arrive **pre-grouped** — one "npm non-major" PR (`package-lock.json`) and one "go non-major" PR (`go.sum` + `goVendorHash` in `flake.nix`), configured via `packageRules` in `.github/renovate.json`. These two group PRs touch disjoint files, so they do **not** conflict with each other — merge them independently. `flake.lock` updates come from Renovate's nix manager as their own weekly lockfile-maintenance PR (Monday morning), never bundled into an unrelated PR.
 
-The conflict mechanism still exists within a single ecosystem: a **major** PR and its same-ecosystem **group** PR both touch the same lockfile (and, for Go, `goVendorHash`), so merging one invalidates the other. Nothing in CI rebases Renovate branches — Renovate rebases a conflicted branch itself on its next run (`gitIgnoredAuthors` lets it rebase over the bot's `goVendorHash` commit), and `nix.yaml` then re-patches `goVendorHash` on the new head. Branches don't need to be up to date with `main` to merge (the ruleset's required check is not strict).
+The conflict mechanism still exists within a single ecosystem: a **major** PR and its same-ecosystem **group** PR both touch the same lockfile (and, for Go, `goVendorHash`), so merging one invalidates the other. Nothing in CI rebases Renovate branches — Renovate rebases a conflicted branch itself on its next run, recomputing `goVendorHash` in the same commit (a `postUpgradeTasks` entry runs `nix/update-go-vendor-hash.sh` on every gomod update). No workflow pushes to Renovate branches; `nix.yaml` only verifies. Branches don't need to be up to date with `main` to merge (the ruleset's required check is not strict).
 
 When you do need to merge two same-ecosystem PRs (major + group) by hand:
 1. Verify all CI checks pass on the target PR (use `gh run list --branch <branch>` — the GitHub API's `statusCheckRollup` field lags and often shows stale/empty data)
 2. Merge **one PR** with `gh pr merge <n> --squash --delete-branch`
 3. The other PR now conflicts and is fixed by Renovate's rebase on its next run. Renovate is self-hosted (`cloudzero-renovate-operator`, a few runs a day), not the Mend app, so `@renovatebot` comments do nothing — ask the user to trigger a run rather than wait for the schedule (ticking the "rebase/retry" checkbox also only takes effect on the next run)
-4. Wait for the rebase to land and CI to pass (~4 min, plus a `goVendorHash` fix-up commit for Go PRs) before merging it
+4. Wait for the rebase to land and CI to pass (~4 min) before merging it
 
 ### Code Style
 
@@ -253,11 +253,9 @@ The `nix/` directory contains the Nix package and NixOS module. npm dependencies
 
 - **`goVendorHash` in `flake.nix`** — update after any `go.mod` / `go.sum` change:
   ```bash
-  # Set goVendorHash = pkgs.lib.fakeHash; in flake.nix, then:
-  nix build .#nexorious 2>&1 | grep "got:"
-  # paste the "got:" hash into flake.nix → goVendorHash
+  ./nix/update-go-vendor-hash.sh   # builds only .#nexctl.goModules and rewrites the line
   ```
-  Server (`nix/package.nix`) and client (`nix/nexctl.nix`) build from the same `go.mod`/`go.sum`, and `buildGoModule`'s `vendorHash` is independent of `subPackages`, so the two are **always identical**. They share **one** value — `goVendorHash` in `flake.nix`, passed to both via `callPackage` — so there is no second hash to keep in sync. The `Nix Build` workflow (`nix.yaml`) builds **both** `.#nexorious` and `.#nexctl` and auto-patches this one line on a hash mismatch.
+  Server (`nix/package.nix`) and client (`nix/nexctl.nix`) build from the same `go.mod`/`go.sum`, and `buildGoModule`'s `vendorHash` is independent of `subPackages`, so the two are **always identical**. They share **one** value — `goVendorHash` in `flake.nix`, passed to both via `callPackage` — so there is no second hash to keep in sync. Renovate runs the same script as a `postUpgradeTasks` command on Go dependency PRs (this needs `nix` in the Renovate runner and the script in the self-hosted `allowedCommands`). The `Nix Build` workflow (`nix.yaml`) builds **both** `.#nexorious` and `.#nexctl` and **only verifies**: a stale hash fails it, and a hand-made `go.mod`/`go.sum` change needs the script run and `flake.nix` committed.
 
 The `version` field in `flake.nix` is managed automatically by release-please (same as `Chart.yaml`). The flake exposes two packages, `nexorious` (server) and `nexctl` (CLI client); both are also in `overlays.default`. The `nexorious` NixOS module (`nix/module.nix`) installs only the server — `nexctl` is opt-in (add `packages.nexctl` to `environment.systemPackages`).
 

@@ -23,9 +23,8 @@
       # and client (nexctl) build from the same go.mod/go.sum, and buildGoModule's
       # vendorHash is independent of subPackages, so the two are always identical
       # — sharing one value here makes drift impossible. When go.mod/go.sum
-      # changes, the Nix Build workflow rebuilds both packages and patches this
-      # line; to refresh by hand set it to lib.fakeHash, run `nix build .#nexorious`,
-      # and copy the "got:" hash.
+      # changes, run ./nix/update-go-vendor-hash.sh (Renovate runs it on Go
+      # dependency PRs); the Nix Build workflow only verifies.
       goVendorHash = "sha256-bLC6cIA3Mke4IpiJjy3FRCMjTnoL1uUgk+xjrleNMlk=";
     in
     {
