@@ -1,17 +1,23 @@
 # nix/frontend.nix
 #
-# Hash update: when package-lock.json changes, regenerate npmDepsHash with:
-#   nix run nixpkgs#prefetch-npm-deps -- ui/frontend/package-lock.json
-{ buildNpmPackage, lib, src, version }:
+# npm dependencies come from importNpmLock, which fetches each package from the
+# `resolved` URL + `integrity` hash already recorded in package-lock.json. There
+# is no fixed-output npmDepsHash to keep in sync: a package-lock.json change
+# needs no edit here.
+{ buildNpmPackage, importNpmLock, lib, src, version }:
 
+let
+  # src is the flake root (self); we build the frontend subdirectory.
+  npmRoot = "${src}/ui/frontend";
+in
 buildNpmPackage {
   pname = "nexorious-frontend";
   inherit version;
 
-  # src is the flake root (self); we reference the frontend subdirectory.
-  src = "${src}/ui/frontend";
+  src = npmRoot;
 
-  npmDepsHash = "sha256-6lBFz7YIX++2i1tFDc+eSToak08yFt8Zteh+3GB8mXI=";
+  npmDeps = importNpmLock { inherit npmRoot; };
+  npmConfigHook = importNpmLock.npmConfigHook;
 
   installPhase = ''
     runHook preInstall

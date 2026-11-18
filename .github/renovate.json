@@ -15,15 +15,26 @@
   "constraints": {
     "npm": "^11"
   },
+  "timezone": "Europe/Copenhagen",
+  "nix": {
+    "description": [
+      "Opt in to the (beta) nix manager so flake.lock updates arrive as their own PRs instead of riding along in unrelated ones. Requires nix in the Renovate runner. Lockfile maintenance is enabled only for this manager, so npm/Go lockfiles are not refreshed by it."
+    ],
+    "enabled": true,
+    "lockFileMaintenance": {
+      "enabled": true,
+      "schedule": ["before 9am on monday"]
+    }
+  },
   "packageRules": [
     {
-      "description": "Group all non-major npm updates into a single PR (shares package-lock.json + npmDepsHash, so separate PRs conflict).",
+      "description": "Group all non-major npm updates into a single PR (they share package-lock.json, so separate PRs conflict).",
       "matchManagers": ["npm"],
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "groupName": "npm non-major"
     },
     {
-      "description": "Group all non-major Go module updates into a single PR (shares go.sum + vendorHash, so separate PRs conflict).",
+      "description": "Group all non-major Go module updates into a single PR (they share go.sum + the flake.nix goVendorHash, so separate PRs conflict).",
       "matchManagers": ["gomod"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "go non-major"

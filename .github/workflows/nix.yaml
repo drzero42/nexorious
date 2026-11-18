@@ -19,6 +19,12 @@ on:
       - 'flake.nix'
       - 'flake.lock'
 
+# Cancel a superseded PR run before it can push a hash fix for a stale head;
+# runs on main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   nix-build:
     name: Nix Build
@@ -44,6 +50,11 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build packages
+        env:
+          # Via env, never inline ${{ }}: a branch name is attacker-controlled
+          # on fork PRs and would otherwise be spliced into the script.
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           set +e
           # Build both the server and the client. They share one vendorHash
@@ -59,12 +70,15 @@ jobs:
 
           # On push-to-main or non-hash failures, fail immediately — we cannot
           # commit directly to a protected branch.
-          if [ "${{ github.event_name }}" != "pull_request" ] || ! grep -q "hash mismatch" /tmp/nix-build.log; then
+          if [ "$EVENT_NAME" != "pull_request" ] || ! grep -q "hash mismatch" /tmp/nix-build.log; then
             echo "Build failed (not a hash mismatch or not a PR)."
             exit "$BUILD_EXIT"
           fi
 
-          echo "Hash mismatch detected — patching nix files..."
+          # The only fixed-output hash left is the shared Go vendorHash
+          # (flake.nix → goVendorHash, used by server and client). npm deps
+          # come from importNpmLock (nix/frontend.nix) and need no hash.
+          echo "Hash mismatch detected — patching goVendorHash in flake.nix..."
 
           mapfile -t old_hashes < <(grep "specified:" /tmp/nix-build.log | awk '{print $NF}')
           mapfile -t new_hashes < <(grep -E "^\s+got:" /tmp/nix-build.log | awk '{print $NF}')
@@ -74,19 +88,17 @@ jobs:
             exit "$BUILD_EXIT"
           fi
 
-          # npmDepsHash lives in nix/frontend.nix; the shared Go vendorHash
-          # lives in flake.nix (goVendorHash, used by both server and client).
           for i in "${!old_hashes[@]}"; do
             echo "  ${old_hashes[$i]} → ${new_hashes[$i]}"
-            sed -i "s|${old_hashes[$i]}|${new_hashes[$i]}|g" nix/frontend.nix flake.nix
+            sed -i "s|${old_hashes[$i]}|${new_hashes[$i]}|g" flake.nix
           done
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add nix/frontend.nix flake.nix
+          git add flake.nix
           git diff --cached --quiet && { echo "No hash changes to commit."; exit 1; }
-          git commit -m "chore(nix): update hashes for ${{ github.head_ref }}"
-          git push origin HEAD:${{ github.head_ref }}
+          git commit -m "chore(nix): update goVendorHash for ${HEAD_REF}"
+          git push origin "HEAD:${HEAD_REF}"
 
-          echo "Hashes fixed. Re-running build..."
+          echo "goVendorHash fixed. Re-running build..."
           nix build .#nexorious .#nexctl

@@ -1,0 +1,82 @@
+---
+name: Go + Postgres test setup
+description: >-
+  Set up Go from go.mod, install the PostgreSQL 18 client and load the
+  postgres:18-alpine image the testcontainers-based Go tests use. Shared by
+  test.yaml (Go Tests) and race.yaml (Go Tests -race).
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: go.mod
+
+    # Rolls weekly so the cached .debs and image pick up new 18.x patch
+    # releases instead of pinning whatever was first cached.
+    - name: Compute cache week
+      id: week
+      shell: bash
+      run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache PostgreSQL 18 client packages
+      uses: actions/cache@v6
+      with:
+        path: ${{ github.workspace }}/apt-archives
+        key: apt-pgclient18-${{ runner.os }}-${{ steps.week.outputs.week }}
+        restore-keys: apt-pgclient18-${{ runner.os }}-
+
+    - name: Install PostgreSQL 18 client
+      shell: bash
+      run: |
+        set -euo pipefail
+        # curl and ca-certificates are preinstalled on ubuntu-latest, so we
+        # skip an apt install for them.
+        sudo install -d /usr/share/postgresql-common/pgdg
+        # Retry the key download: postgresql.org occasionally stalls and
+        # drops the TLS connection (curl exit 55), which failed CI with no
+        # code at fault (#1241). --max-time bounds each stalled attempt.
+        sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
+          --connect-timeout 10 --max-time 30 \
+          --retry 5 --retry-delay 3 --retry-all-errors \
+          https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+        # Refresh only the PGDG source list, not every Ubuntu mirror — the
+        # base package lists already present on the runner image satisfy the
+        # transitive dependencies. A full `apt-get update` here costs ~10s.
+        sudo apt-get update \
+          -o Dir::Etc::sourcelist="sources.list.d/pgdg.list" \
+          -o Dir::Etc::sourceparts="-" \
+          -o APT::Get::List-Cleanup="0"
+        # Use a workspace-local archive dir so actions/cache can persist the
+        # downloaded .deb files (and their dependencies) between runs.
+        ARCHIVES="$GITHUB_WORKSPACE/apt-archives"
+        mkdir -p "$ARCHIVES/partial"
+        sudo apt-get install -y \
+          -o Dir::Cache::archives="$ARCHIVES" \
+          postgresql-client-18
+        # Make the cached debs readable by the (non-root) runner user so the
+        # cache save step can pack them.
+        sudo chown -R "$(id -u):$(id -g)" "$ARCHIVES"
+
+    # No restore-keys: a stale tar would always load and the fresh pull below
+    # would never run, defeating the weekly refresh.
+    - name: Cache Postgres test image
+      uses: actions/cache@v6
+      with:
+        path: ${{ github.workspace }}/.docker-cache/postgres-18-alpine.tar
+        key: docker-postgres-18-alpine-${{ steps.week.outputs.week }}
+
+    - name: Load or pull Postgres test image
+      shell: bash
+      run: |
+        set -euo pipefail
+        TAR="$GITHUB_WORKSPACE/.docker-cache/postgres-18-alpine.tar"
+        if [ -f "$TAR" ]; then
+          docker load -i "$TAR"
+        else
+          docker pull postgres:18-alpine
+          mkdir -p "$(dirname "$TAR")"
+          docker save postgres:18-alpine -o "$TAR"
+        fi

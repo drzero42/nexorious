@@ -203,15 +203,15 @@ Cross-repo: `Closes owner/repo#123`. The keyword must be in the **PR body**, not
 
 ### Merging Renovate PRs
 
-Non-major npm and Go updates arrive **pre-grouped** — one "npm non-major" PR (`package-lock.json` + `npmDepsHash`) and one "go non-major" PR (`go.sum` + `vendorHash`), configured via `packageRules` in `.github/renovate.json`. These two group PRs touch disjoint files, so they do **not** conflict with each other — merge them independently.
+Non-major npm and Go updates arrive **pre-grouped** — one "npm non-major" PR (`package-lock.json`) and one "go non-major" PR (`go.sum` + `goVendorHash` in `flake.nix`), configured via `packageRules` in `.github/renovate.json`. These two group PRs touch disjoint files, so they do **not** conflict with each other — merge them independently. `flake.lock` updates come from Renovate's nix manager as their own weekly lockfile-maintenance PR (Monday morning), never bundled into an unrelated PR.
 
-The conflict mechanism still exists within a single ecosystem: a **major** PR and its same-ecosystem **group** PR both touch the same lockfile + hash, so merging one invalidates the other. `rebase-renovate-prs.yaml` merges main into open `renovate/` branches (with `nix flake update`) on every push to main that touches `go.sum`/`package-lock.json`, and `nix.yaml` auto-patches the `npmDepsHash`/`vendorHash` on each PR. The workflow only auto-resolves a conflict on the hash lines (`flake.nix`, `nix/frontend.nix`); if a lockfile or manifest conflicts — exactly the major + group case — it skips the PR rather than resolve it textually (#1242), and the PR is fixed by Renovate's own rebase on its next run.
+The conflict mechanism still exists within a single ecosystem: a **major** PR and its same-ecosystem **group** PR both touch the same lockfile (and, for Go, `goVendorHash`), so merging one invalidates the other. Nothing in CI rebases Renovate branches — Renovate rebases a conflicted branch itself on its next run (`gitIgnoredAuthors` lets it rebase over the bot's `goVendorHash` commit), and `nix.yaml` then re-patches `goVendorHash` on the new head. Branches don't need to be up to date with `main` to merge (the ruleset's required check is not strict).
 
 When you do need to merge two same-ecosystem PRs (major + group) by hand:
 1. Verify all CI checks pass on the target PR (use `gh run list --branch <branch>` — the GitHub API's `statusCheckRollup` field lags and often shows stale/empty data)
 2. Merge **one PR** with `gh pr merge <n> --squash --delete-branch`
-3. The other PR now conflicts. If only the hash lines conflict, `rebase-renovate-prs.yaml` merges main in for you; if its lockfile conflicts, the workflow skips it and Renovate rebases it on its next run. Renovate is self-hosted (`cloudzero-renovate-operator`, a few runs a day), not the Mend app, so `@renovatebot` comments do nothing — ask the user to trigger a run rather than wait for the schedule (ticking the "rebase/retry" checkbox also only takes effect on the next run)
-4. Wait for the rebase to land (~1–2 min) and CI to pass (~4 min) before merging it
+3. The other PR now conflicts and is fixed by Renovate's rebase on its next run. Renovate is self-hosted (`cloudzero-renovate-operator`, a few runs a day), not the Mend app, so `@renovatebot` comments do nothing — ask the user to trigger a run rather than wait for the schedule (ticking the "rebase/retry" checkbox also only takes effect on the next run)
+4. Wait for the rebase to land and CI to pass (~4 min, plus a `goVendorHash` fix-up commit for Go PRs) before merging it
 
 ### Code Style
 
@@ -249,13 +249,8 @@ Config lives in `.claude/settings.json` (Claude Code hooks) and `devenv.nix` →
 
 ### Nix Flake Maintenance
 
-The `nix/` directory contains the Nix package and NixOS module. Two hashes must be kept in sync with their respective lock files:
+The `nix/` directory contains the Nix package and NixOS module. npm dependencies need no hash: `nix/frontend.nix` uses `importNpmLock`, which fetches each package from the `resolved` URL + `integrity` already in `ui/frontend/package-lock.json`. One hash must be kept in sync with its lock file:
 
-- **`npmDepsHash` in `nix/frontend.nix`** — update after any `ui/frontend/package-lock.json` change:
-  ```bash
-  nix run nixpkgs#prefetch-npm-deps -- ui/frontend/package-lock.json
-  # paste the output hash into nix/frontend.nix → npmDepsHash
-  ```
 - **`goVendorHash` in `flake.nix`** — update after any `go.mod` / `go.sum` change:
   ```bash
   # Set goVendorHash = pkgs.lib.fakeHash; in flake.nix, then:
@@ -300,7 +295,7 @@ All commits on `main` must follow [Conventional Commits](https://www.conventiona
 1. Wait until there is a `feat:` or `fix:` on `main` since the last release (otherwise release-please's Release PR will be empty).
 2. Find the open PR titled `chore(main): release X.Y.Z` (opened by `release-please-action`).
 3. Review the proposed `CHANGELOG.md` diff, `Chart.yaml` / `docker-compose.yml` version bumps.
-4. Merge the Release PR. release-please creates the `vX.Y.Z` tag and publishes a GitHub Release; `release-artifacts.yaml` then builds — for amd64 and arm64, from one per-arch binary — the raw binary, `.deb`, `.rpm`, and a multi-arch container image, smoke-tests the packages, uploads the release assets, pushes the image (semver tag + `latest`) and Helm chart, and advances the `release` branch. The **`nexctl`** client ships the same way minus server-only pieces: per-arch raw binary + `.deb`/`.rpm` (via `deploy/packaging/nfpm-nexctl.yaml`, smoke-tested by the `smoke-test-nexctl` job using `deploy/packaging/smoke-test-nexctl.sh`), but **no container image or Helm chart**. Both binaries share one repo version. There is no nightly/dev build flow (`build-push.yaml` was removed); non-release artifacts no longer exist.
+4. Merge the Release PR. release-please creates the `vX.Y.Z` tag and publishes a GitHub Release; `release-artifacts.yaml` then builds — for amd64 and arm64, from one per-arch binary — the raw binary, `.deb`, `.rpm`, and a multi-arch container image, smoke-tests the packages, uploads the release assets, pushes the image (semver tag + `latest`) and Helm chart, and advances the `release` branch. The **`nexctl`** client ships the same way minus server-only pieces: per-arch raw binary + `.deb`/`.rpm` (via `deploy/packaging/nfpm-nexctl.yaml`, smoke-tested by the `smoke-test` job's `nexctl` matrix leg using `deploy/packaging/smoke-test-nexctl.sh`), but **no container image or Helm chart**. Both binaries share one repo version. There is no nightly/dev build flow (`build-push.yaml` was removed); non-release artifacts no longer exist.
 
 ### Overrides
 
