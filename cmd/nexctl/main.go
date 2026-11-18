@@ -1,14 +1,20 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/drzero42/nexorious/internal/cliauth"
 	"github.com/drzero42/nexorious/internal/clicfg"
+	"github.com/drzero42/nexorious/internal/cliui"
 )
 
 // Injected at build time via -ldflags.
@@ -111,11 +117,81 @@ func flagBool(cmd *cobra.Command, name string) bool {
 	return v
 }
 
+// exitInterrupted is the exit status for an interrupt whose signal is unknown:
+// the SIGINT convention (128 + 2). A known signal exits 128 + its number, so
+// SIGTERM gives 143.
+const exitInterrupted = 130
+
+// interruptGrace is how long main waits, after a signal, for the command to
+// return on its own before force-exiting. Requests and poll waits honour ctx
+// and return well within it; reads blocked on stdin (prompts) never do.
+const interruptGrace = time.Second
+
+// signalCause is the context.Cause of a run cancelled by a signal. It records
+// which signal arrived so the exit status can follow the 128+N convention
+// (signal.NotifyContext's cause is unexported and only carries a message).
+type signalCause struct{ sig os.Signal }
+
+func (c signalCause) Error() string { return c.sig.String() + " signal received" }
+
 func main() {
-	if err := newRootCmd().Execute(); err != nil {
-		if !errors.Is(err, errNoSubcommand) {
-			fmt.Fprintln(os.Stderr, "error:", err)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	go func() { cancel(signalCause{<-sigs}) }()
+	stop := func() { signal.Stop(sigs) }
+
+	code := runRoot(ctx, stop, newRootCmd(), os.Stderr, interruptGrace)
+	stop() // os.Exit skips deferred calls
+	os.Exit(code)
+}
+
+// interruptedExitCode maps the signal that cancelled ctx to 128 + its number.
+func interruptedExitCode(ctx context.Context) int {
+	var sc signalCause
+	if errors.As(context.Cause(ctx), &sc) {
+		if n, ok := sc.sig.(syscall.Signal); ok {
+			return 128 + int(n)
 		}
-		os.Exit(1)
+	}
+	return exitInterrupted
+}
+
+// runRoot executes root under ctx and returns the process exit code. Once ctx
+// is cancelled (a signal arrived) it calls stop, so a second signal gets the
+// default behaviour and kills the process, then waits up to grace for the
+// command to return before giving up on it. An interrupted run reports a bare
+// "interrupted" rather than a wrapped "… context canceled" error.
+func runRoot(ctx context.Context, stop func(), root *cobra.Command, stderr io.Writer, grace time.Duration) int {
+	done := make(chan error, 1)
+	go func() { done <- root.ExecuteContext(ctx) }()
+
+	var err error
+	select {
+	case err = <-done:
+	case <-ctx.Done():
+		stop()
+		select {
+		case err = <-done:
+		case <-time.After(grace):
+			// Still blocked, e.g. in a prompt: don't leave echo off.
+			cliui.RestoreTerminal(stderr)
+			fmt.Fprintln(stderr, "interrupted")
+			return interruptedExitCode(ctx)
+		}
+	}
+
+	switch {
+	case err == nil:
+		return 0
+	case ctx.Err() != nil || errors.Is(err, context.Canceled):
+		// Any failure after a signal is a consequence of it.
+		fmt.Fprintln(stderr, "interrupted")
+		return interruptedExitCode(ctx)
+	case errors.Is(err, errNoSubcommand):
+		return 1
+	default:
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
 	}
 }

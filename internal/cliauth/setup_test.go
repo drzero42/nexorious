@@ -2,11 +2,14 @@ package cliauth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
 )
@@ -132,5 +135,33 @@ func TestReportSetupResultForbidden(t *testing.T) {
 	err := ReportSetupResult(&bytes.Buffer{}, "admin", &cliclient.SetupResult{StatusCode: http.StatusForbidden})
 	if err == nil || !strings.Contains(err.Error(), "already complete") {
 		t.Fatalf("err = %v; want already-complete", err)
+	}
+}
+
+// A cancelled ctx must end the migration poll promptly with context.Canceled,
+// not sleep out the poll interval (or the 5-minute timeout) — this is what
+// lets Ctrl-C interrupt `nexctl migrate run`/`setup`.
+func TestRunMigrateAndWaitCancelledDuringPoll(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/migrate/run", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+	mux.HandleFunc("/api/migrate/status", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"state": "migrating"})
+		// Cancel once the client has read this reply and entered the poll wait.
+		time.AfterFunc(50*time.Millisecond, cancel)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	start := time.Now()
+	err := RunMigrateAndWait(ctx, &bytes.Buffer{}, cliclient.New(srv.URL))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if d := time.Since(start); d >= migratePollInterval {
+		t.Fatalf("returned after %s, want before the %s poll interval elapsed", d, migratePollInterval)
 	}
 }
