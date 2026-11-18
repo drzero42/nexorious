@@ -349,11 +349,21 @@ func TestMCP_SameHostReverseProxyAllowed(t *testing.T) {
 	}
 }
 
-func TestMCP_DisabledIs404(t *testing.T) {
+// With MCP disabled the route is not registered: the SPA catch-all GET /*
+// matches the path, so a POST gets Echo's generic 405 with nothing
+// MCP-specific in the body (nexctl's bridge maps 404/405 to "no endpoint").
+func TestMCP_DisabledIsUnregistered(t *testing.T) {
 	truncateAllTables(t)
 	e := newTestEcho(t, testDB, mcpTestCfg(false))
-	if got := rawMCPPost(t, e, nil); got != http.StatusNotFound {
-		t.Errorf("POST /api/mcp with MCP disabled = %d; want 404", got)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/mcp", strings.NewReader(mcpInitializeBody))
+	req.Header.Set("Content-Type", "application/json")
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /api/mcp with MCP disabled = %d; want 405", rec.Code)
+	}
+	if strings.Contains(strings.ToLower(rec.Body.String()), "mcp") {
+		t.Errorf("disabled response mentions MCP: %s", rec.Body.String())
 	}
 }
 

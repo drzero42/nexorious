@@ -84,8 +84,7 @@ type Config struct {
 	UpdateCheckEnabled bool `env:"UPDATE_CHECK_ENABLED" envDefault:"true"`
 
 	// MCPEnabled serves the MCP tools at POST /api/mcp (Bearer API key only).
-	// When false the route answers 404, which nexctl's stdio bridge reports as
-	// "MCP is disabled on this server".
+	// When false the route is not registered.
 	MCPEnabled bool `env:"MCP_ENABLED" envDefault:"true"`
 
 	// CORSOrigins is only needed in development; production is same-origin.
