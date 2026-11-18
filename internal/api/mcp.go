@@ -30,18 +30,11 @@ const inProcessBaseURL = "http://nexorious.in-process"
 // maxLoggedToolName caps the client-chosen tool name on the log line.
 const maxLoggedToolName = 64
 
-// registerMCPRoutes mounts the MCP endpoint, or an explicit 404 when MCP is
-// disabled. The explicit 404 matters: with no route, the SPA catch-all GET /*
-// matches the path and Echo answers a POST with 405, and nexctl's stdio bridge
-// relies on 404 to report "MCP is disabled".
+// registerMCPRoutes mounts the MCP endpoint. When MCP is disabled the route is
+// not registered at all, so the server says nothing MCP-specific; because the
+// SPA catch-all GET /* matches the path, Echo then answers a POST with 405.
 func registerMCPRoutes(e *echo.Echo, db *bun.DB, enabled bool, corsOrigins []string, version string) {
 	if !enabled {
-		disabled := func(c *echo.Context) error {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "MCP is disabled on this server (MCP_ENABLED=false)"})
-		}
-		e.POST(mcpPath, disabled)
-		e.GET(mcpPath, disabled)
-		e.DELETE(mcpPath, disabled)
 		return
 	}
 

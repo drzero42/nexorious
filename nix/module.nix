@@ -93,7 +93,7 @@ in
       default = true;
       description = ''
         Serve MCP for AI chats and agents at `POST /api/mcp`
-        (Bearer API key only). When `false`, the endpoint answers 404.
+        (Bearer API key only). When `false`, the endpoint is not registered.
       '';
     };
 

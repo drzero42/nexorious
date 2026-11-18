@@ -495,7 +495,7 @@ controllers:
           DEBUG: "false"
           RATE_LIMITER_BACKEND: postgres
           # MCP for AI agents at POST /api/mcp (Bearer API key only). Set
-          # "false" to turn it off; the endpoint then answers 404.
+          # "false" to turn it off; the endpoint is then not registered.
           MCP_ENABLED: "true"
           # Observability. Prometheus metrics are exposed at /metrics (on by
           # default; see the ServiceMonitor work in #912). pprof stays off and
