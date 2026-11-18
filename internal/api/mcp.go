@@ -45,8 +45,10 @@ func registerMCPRoutes(e *echo.Echo, db *bun.DB, enabled bool, corsOrigins []str
 		return
 	}
 
-	srv := newMCPServer(e, version)
-	sdk := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, &mcp.StreamableHTTPOptions{
+	// One server per key scope, chosen per request: the endpoint is stateless,
+	// so tools/list for a read key must come from a server that never
+	// registered the write tools.
+	opts := &mcp.StreamableHTTPOptions{
 		Stateless:    true,
 		JSONResponse: true,
 		// Only takes effect for clients on protocol >= 2026-07-28; older ones
@@ -58,13 +60,22 @@ func registerMCPRoutes(e *echo.Echo, db *bun.DB, enabled bool, corsOrigins []str
 		// APIKeyMiddleware (a rebound page can't know the API key), with
 		// mcpOriginCheck refusing cross-origin browser requests.
 		DisableLocalhostProtection: true,
-	})
+	}
+	sdkFor := func(scope mcptools.Scope) http.Handler {
+		srv := newMCPServer(e, version, scope)
+		return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, opts)
+	}
+	sdkRead, sdkWrite := sdkFor(mcptools.ScopeRead), sdkFor(mcptools.ScopeWrite)
 
 	h := func(c *echo.Context) error {
 		req := c.Request()
 		// APIKeyMiddleware has already validated the key; tools reuse it on
 		// every REST sub-call so each one is re-authenticated and re-scoped.
 		key := strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer ")
+		sdk := sdkRead
+		if auth.ScopeFromContext(c) == auth.ScopeWrite {
+			sdk = sdkWrite
+		}
 		sdk.ServeHTTP(c.Response(), req.WithContext(withMCPKey(req.Context(), key)))
 		return nil
 	}
@@ -76,11 +87,12 @@ func registerMCPRoutes(e *echo.Echo, db *bun.DB, enabled bool, corsOrigins []str
 	e.DELETE(mcpPath, h, mws...)
 }
 
-// newMCPServer builds the MCP server whose tools call the REST API in-process
-// through e, with the caller's key, and observes every tool call.
-func newMCPServer(e http.Handler, version string) *mcp.Server {
+// newMCPServer builds the MCP server for one key scope, whose tools call the
+// REST API in-process through e, with the caller's key, and observes every
+// tool call.
+func newMCPServer(e http.Handler, version string, scope mcptools.Scope) *mcp.Server {
 	c := cliclient.NewWithTransport(inProcessBaseURL, inProcessTransport{h: e})
-	srv := mcptools.NewServer(c, mcpKeyFromContext, version)
+	srv := mcptools.NewServer(c, mcpKeyFromContext, version, scope)
 	srv.AddReceivingMiddleware(observeMCPToolCalls)
 	return srv
 }

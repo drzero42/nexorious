@@ -24,17 +24,20 @@ import (
 // multi-user caller (the server) reads the caller's key from ctx.
 type KeyFunc func(ctx context.Context) string
 
-// NewServer registers every tool against a server whose handlers call the REST
-// API through c with the key that apiKey resolves per call. version is
-// reported as the MCP implementation version. The transport is bound by the
-// caller.
-func NewServer(c *cliclient.Client, apiKey KeyFunc, version string) *mcp.Server {
+// NewServer builds a server whose handlers call the REST API through c with
+// the key that apiKey resolves per call. It registers the tools scope allows
+// (see toolScopes) and refuses calls to any other tool, so a read-scoped
+// server neither lists nor runs a write tool. version is reported as the MCP
+// implementation version. The transport is bound by the caller.
+func NewServer(c *cliclient.Client, apiKey KeyFunc, version string, scope Scope) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "nexorious", Version: version}, nil)
-	registerGameTools(srv, c, apiKey)
-	registerPoolTools(srv, c, apiKey)
-	registerTagTools(srv, c, apiKey)
-	registerSyncTools(srv, c, apiKey)
-	registerDoctorTools(srv, c, apiKey)
+	ts := &toolSet{srv: srv, scope: scope}
+	registerGameTools(ts, c, apiKey)
+	registerPoolTools(ts, c, apiKey)
+	registerTagTools(ts, c, apiKey)
+	registerSyncTools(ts, c, apiKey)
+	registerDoctorTools(ts, c, apiKey)
+	srv.AddReceivingMiddleware(enforceToolScope(scope))
 	return srv
 }
 

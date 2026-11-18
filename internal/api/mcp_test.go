@@ -194,6 +194,101 @@ func TestMCP_WriteKeyRoundTrip(t *testing.T) {
 	}
 }
 
+// A read-scoped key reaches /api/mcp (every MCP message is a POST), lists only
+// the read tools, runs them, and is refused a write tool without the DB
+// changing.
+func TestMCP_ReadKeyScope(t *testing.T) {
+	truncateAllTables(t)
+	insertAuthTestUser(t, testDB, "u-mcp", "mcpuser", "password123", true, false)
+	key := insertMCPTestKey(t, testDB, "u-mcp", "read")
+	if _, err := testDB.ExecContext(context.Background(),
+		`INSERT INTO tags (id, user_id, name) VALUES (gen_random_uuid()::text, 'u-mcp', 'Seeded')`); err != nil {
+		t.Fatalf("seed tag: %v", err)
+	}
+
+	srv := httptest.NewServer(newTestEcho(t, testDB, mcpTestCfg(true)))
+	t.Cleanup(srv.Close)
+	session := connectMCP(t, srv.URL, map[string]string{"Authorization": "Bearer " + key})
+	ctx := context.Background()
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	names := map[string]bool{}
+	for _, tl := range tools.Tools {
+		names[tl.Name] = true
+	}
+	for _, want := range []string{"tag_list", "game_list", "pool_list", "sync_status", "library_smells_list"} {
+		if !names[want] {
+			t.Errorf("read key tools/list missing read tool %q", want)
+		}
+	}
+	for _, unwanted := range []string{"tag_create", "tag_rm", "game_add", "game_edit", "game_rm", "pool_create", "sync_run", "sync_reset", "library_smells_apply"} {
+		if names[unwanted] {
+			t.Errorf("read key tools/list includes write tool %q", unwanted)
+		}
+	}
+
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "tag_list"})
+	if err != nil || res.IsError {
+		t.Fatalf("tag_list with read key: err=%v result=%+v", err, res)
+	}
+	out, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(out), `"Seeded"`) {
+		t.Errorf("tag_list output missing seeded tag: %s", out)
+	}
+
+	for _, call := range []*mcp.CallToolParams{
+		{Name: "tag_create", Arguments: map[string]any{"name": "FromReadKey"}},
+		{Name: "tag_rm", Arguments: map[string]any{"ref": "Seeded"}},
+	} {
+		res, err := session.CallTool(ctx, call)
+		if err != nil {
+			t.Fatalf("%s: %v", call.Name, err)
+		}
+		if !res.IsError {
+			t.Errorf("%s with read key: want tool error, got %+v", call.Name, res)
+			continue
+		}
+		if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, "write-scoped key") {
+			t.Errorf("%s error = %q; want a hint to mint a write-scoped key", call.Name, text)
+		}
+	}
+	var tagNames []string
+	if err := testDB.NewSelect().Table("tags").Column("name").Where("user_id = 'u-mcp'").Scan(ctx, &tagNames); err != nil {
+		t.Fatalf("list tags: %v", err)
+	}
+	if len(tagNames) != 1 || tagNames[0] != "Seeded" {
+		t.Errorf("tags after refused writes = %v; want [Seeded]", tagNames)
+	}
+}
+
+// A write key is served the full tool set, including every write tool.
+func TestMCP_WriteKeyListsWriteTools(t *testing.T) {
+	truncateAllTables(t)
+	insertAuthTestUser(t, testDB, "u-mcp", "mcpuser", "password123", true, false)
+	key := insertMCPTestKey(t, testDB, "u-mcp", "write")
+
+	srv := httptest.NewServer(newTestEcho(t, testDB, mcpTestCfg(true)))
+	t.Cleanup(srv.Close)
+	session := connectMCP(t, srv.URL, map[string]string{"Authorization": "Bearer " + key})
+
+	tools, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	names := map[string]bool{}
+	for _, tl := range tools.Tools {
+		names[tl.Name] = true
+	}
+	for _, want := range []string{"tag_list", "tag_create", "game_add", "game_rm", "pool_reorder", "sync_disconnect", "library_smells_apply"} {
+		if !names[want] {
+			t.Errorf("write key tools/list missing %q", want)
+		}
+	}
+}
+
 func TestMCP_SessionCookieWithoutKeyIs401(t *testing.T) {
 	truncateAllTables(t)
 	insertAuthTestUser(t, testDB, "u-mcp", "mcpuser", "password123", true, false)

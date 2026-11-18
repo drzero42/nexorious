@@ -148,7 +148,7 @@ func authMiddleware(db *bun.DB, allowCookie bool) echo.MiddlewareFunc {
 			}
 			// Session-cookie auth implies full (write) access; only API keys
 			// can carry a restricted scope.
-			scope := scopeWrite
+			scope := ScopeWrite
 			if userID == "" {
 				apiUserID, apiScope, apiErr := tryAPIKey(c, db)
 				if apiErr != nil {
@@ -187,6 +187,7 @@ func authMiddleware(db *bun.DB, allowCookie bool) echo.MiddlewareFunc {
 			c.Set("is_admin", user.IsAdmin)
 			c.Set("user", &user)
 			c.Set("session_hash", sessionHash)
+			c.Set(scopeContextKey, scope)
 			c.SetRequest(c.Request().WithContext(logging.WithUserID(c.Request().Context(), user.ID)))
 
 			if sessionHash != "" {
