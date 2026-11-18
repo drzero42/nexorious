@@ -331,6 +331,32 @@ func TestMCP_OriginCheck(t *testing.T) {
 	}
 }
 
+// A browser MCP client on a CORS_ORIGINS origin sends Mcp-Protocol-Version,
+// so its preflight must allow that header or the POST is never sent (#1278).
+func TestMCP_CORSPreflightAllowsProtocolVersionHeader(t *testing.T) {
+	truncateAllTables(t)
+	insertAuthTestUser(t, testDB, "u-mcp", "mcpuser", "password123", true, false)
+	e := newTestEcho(t, testDB, mcpTestCfg(true, "https://trusted.example"))
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/mcp", nil)
+	req.Header.Set("Origin", "https://trusted.example")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "authorization,content-type,mcp-protocol-version")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("preflight status = %d; want 204 (body %q)", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://trusted.example" {
+		t.Errorf("Access-Control-Allow-Origin = %q; want the trusted origin", got)
+	}
+	allowed := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers"))
+	if !strings.Contains(allowed, "mcp-protocol-version") {
+		t.Errorf("Access-Control-Allow-Headers = %q; want it to include Mcp-Protocol-Version", allowed)
+	}
+}
+
 // A reverse proxy on the same host connects to the loopback listener but
 // forwards the public Host. The SDK's default DNS-rebinding check 403s exactly
 // that; the endpoint must accept it.
