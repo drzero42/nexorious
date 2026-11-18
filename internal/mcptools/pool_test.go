@@ -18,6 +18,8 @@ import (
 type poolStub struct {
 	mu    sync.Mutex
 	pools map[string]map[string]any
+	// filters records the raw "filter" body of each create/update, in order.
+	filters []string
 }
 
 func (s *poolStub) list() []map[string]any {
@@ -51,6 +53,7 @@ func newPoolStub(t *testing.T, games ...string) (*poolStub, string) {
 			Filter json.RawMessage `json:"filter"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		s.filters = append(s.filters, string(body.Filter))
 		id := "33333333-3333-3333-3333-333333333333"
 		s.pools[id] = map[string]any{"id": id, "name": body.Name, "position": len(s.pools) + 1,
 			"has_filter": len(body.Filter) > 0, "queue_count": 0, "candidate_count": 0}
@@ -59,10 +62,12 @@ func newPoolStub(t *testing.T, games ...string) (*poolStub, string) {
 	mux.HandleFunc("PUT /api/pools/{id}", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		var body map[string]any
+		var body map[string]json.RawMessage
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		s.filters = append(s.filters, string(body["filter"]))
 		p := s.pools[r.PathValue("id")]
-		if name, ok := body["name"].(string); ok {
+		var name string
+		if json.Unmarshal(body["name"], &name) == nil {
 			p["name"] = name
 		}
 		write(w, map[string]any{"id": p["id"], "name": p["name"]})
@@ -220,4 +225,31 @@ func TestMCPPoolWriteToolsReportPostMutationState(t *testing.T) {
 			t.Errorf("pool = %+v; want new pool at position 2", out.Pool)
 		}
 	})
+}
+
+// TestMCPPoolFilterAcceptsObject guards #1293: a json.RawMessage input made
+// the SDK infer filter as null|array, so the documented object was rejected.
+func TestMCPPoolFilterAcceptsObject(t *testing.T) {
+	const filter = `{"filters":[{"genre":["RPG"]}]}`
+	s, url := newPoolStub(t)
+	s.add(stubPoolA, "Backlog", 1, 0, 0)
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(filter), &obj); err != nil {
+		t.Fatal(err)
+	}
+	callPoolTool[poolWriteOutput](t, url, "pool_create", map[string]any{"name": "RPGs", "filter": obj})
+	callPoolTool[poolWriteOutput](t, url, "pool_edit", map[string]any{"ref": stubPoolA, "filter": obj})
+	callPoolTool[poolWriteOutput](t, url, "pool_edit", map[string]any{"ref": stubPoolA, "clear_filter": true})
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	want := []string{filter, filter, "null"}
+	if len(s.filters) != len(want) {
+		t.Fatalf("filters sent = %q; want %q", s.filters, want)
+	}
+	for i := range want {
+		if s.filters[i] != want[i] {
+			t.Errorf("call %d sent filter %s; want %s", i, s.filters[i], want[i])
+		}
+	}
 }
