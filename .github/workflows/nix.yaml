@@ -19,42 +19,31 @@ on:
       - 'flake.nix'
       - 'flake.lock'
 
-# Cancel a superseded PR run before it can push a hash fix for a stale head;
-# runs on main always finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   nix-build:
     name: Nix Build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-        with:
-          # On pull_request events, check out the actual PR branch HEAD (not the
-          # synthetic merge commit) so we can commit a hash fix and push it back.
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
-          # Push the hash fix with the PAT so the new head triggers Test / CI
-          # Gate (GITHUB_TOKEN pushes do not trigger workflow runs). Fork PRs
-          # get no secrets and fall back to GITHUB_TOKEN.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Verify only: nothing here pushes to the PR branch. Renovate updates
+      # goVendorHash itself (postUpgradeTasks → nix/update-go-vendor-hash.sh);
+      # for a hand-made go.mod/go.sum change, run that script and commit.
       - name: Build packages
-        env:
-          # Via env, never inline ${{ }}: a branch name is attacker-controlled
-          # on fork PRs and would otherwise be spliced into the script.
-          EVENT_NAME: ${{ github.event_name }}
-          HEAD_REF: ${{ github.head_ref }}
         run: |
           set +e
           # Build both the server and the client. They share one vendorHash
@@ -63,42 +52,7 @@ jobs:
           nix build .#nexorious .#nexctl 2>&1 | tee /tmp/nix-build.log
           BUILD_EXIT=${PIPESTATUS[0]}
           set -e
-
-          if [ "$BUILD_EXIT" -eq 0 ]; then
-            exit 0
+          if [ "$BUILD_EXIT" -ne 0 ] && grep -q "hash mismatch" /tmp/nix-build.log; then
+            echo "::error file=flake.nix::goVendorHash is stale. Run ./nix/update-go-vendor-hash.sh and commit flake.nix."
           fi
-
-          # On push-to-main or non-hash failures, fail immediately — we cannot
-          # commit directly to a protected branch.
-          if [ "$EVENT_NAME" != "pull_request" ] || ! grep -q "hash mismatch" /tmp/nix-build.log; then
-            echo "Build failed (not a hash mismatch or not a PR)."
-            exit "$BUILD_EXIT"
-          fi
-
-          # The only fixed-output hash left is the shared Go vendorHash
-          # (flake.nix → goVendorHash, used by server and client). npm deps
-          # come from importNpmLock (nix/frontend.nix) and need no hash.
-          echo "Hash mismatch detected — patching goVendorHash in flake.nix..."
-
-          mapfile -t old_hashes < <(grep "specified:" /tmp/nix-build.log | awk '{print $NF}')
-          mapfile -t new_hashes < <(grep -E "^\s+got:" /tmp/nix-build.log | awk '{print $NF}')
-
-          if [ "${#old_hashes[@]}" -eq 0 ] || [ "${#old_hashes[@]}" -ne "${#new_hashes[@]}" ]; then
-            echo "Hash extraction produced mismatched or empty arrays — bailing out."
-            exit "$BUILD_EXIT"
-          fi
-
-          for i in "${!old_hashes[@]}"; do
-            echo "  ${old_hashes[$i]} → ${new_hashes[$i]}"
-            sed -i "s|${old_hashes[$i]}|${new_hashes[$i]}|g" flake.nix
-          done
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add flake.nix
-          git diff --cached --quiet && { echo "No hash changes to commit."; exit 1; }
-          git commit -m "chore(nix): update goVendorHash for ${HEAD_REF}"
-          git push origin "HEAD:${HEAD_REF}"
-
-          echo "goVendorHash fixed. Re-running build..."
-          nix build .#nexorious .#nexctl
+          exit "$BUILD_EXIT"

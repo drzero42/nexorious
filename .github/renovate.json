@@ -6,9 +6,6 @@
   "labels": [
     "dependencies"
   ],
-  "gitIgnoredAuthors": [
-    "github-actions[bot]@users.noreply.github.com"
-  ],
   "description": [
     "constraints.npm: keep Renovate's lockfile updates on npm 11, the major CI and local dev use (Node 26 bundles npm 11). npm 12 fails `npm install --package-lock-only` with EALLOWREMOTE on registry tarballs when the tree has a package with bundleDependencies (Tailwind 4's @tailwindcss/oxide-wasm32-wasi): npm/cli#9800. Remove once that is fixed and we move to npm 12."
   ],
@@ -38,6 +35,15 @@
       "matchManagers": ["gomod"],
       "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "go non-major"
+    },
+    {
+      "description": "Recompute goVendorHash in flake.nix on every Go module update (majors included), so the PR arrives with a buildable flake in Renovate's own commit. Requires the self-hosted allowedCommands to permit this script and nix in the Renovate runner (drzero42/cloudzero#895).",
+      "matchManagers": ["gomod"],
+      "postUpgradeTasks": {
+        "commands": ["./nix/update-go-vendor-hash.sh"],
+        "fileFilters": ["flake.nix"],
+        "executionMode": "branch"
+      }
     }
   ]
 }
