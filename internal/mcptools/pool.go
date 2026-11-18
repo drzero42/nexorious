@@ -64,20 +64,25 @@ type poolGamesOutput struct {
 	Message    string      `json:"message,omitempty"`
 }
 
+// poolFilter is a pool's saved filter as an MCP input. It must be a map, not
+// json.RawMessage: the SDK infers a []byte as null|array and rejects the
+// object agents send (#1293). The server validates the contents.
+type poolFilter map[string]any
+
 // poolCreateInput is the input schema for pool_create.
 type poolCreateInput struct {
-	Name   string          `json:"name" jsonschema:"pool name"`
-	Color  *string         `json:"color,omitempty" jsonschema:"hex color e.g. #6B7280"`
-	Filter json.RawMessage `json:"filter,omitempty" jsonschema:"saved filter as JSON e.g. {\"filters\":[{\"genre\":[\"RPG\"]}]}"`
+	Name   string     `json:"name" jsonschema:"pool name"`
+	Color  *string    `json:"color,omitempty" jsonschema:"hex color e.g. #6B7280"`
+	Filter poolFilter `json:"filter,omitempty" jsonschema:"saved filter object e.g. {\"filters\":[{\"genre\":[\"RPG\"]}]}"`
 }
 
 // poolEditInput is the input schema for pool_edit.
 type poolEditInput struct {
-	Ref         string          `json:"ref" jsonschema:"pool id (UUID) or name"`
-	Name        *string         `json:"name,omitempty" jsonschema:"new pool name"`
-	Color       *string         `json:"color,omitempty" jsonschema:"new hex color"`
-	Filter      json.RawMessage `json:"filter,omitempty" jsonschema:"new saved filter as JSON"`
-	ClearFilter bool            `json:"clear_filter,omitempty" jsonschema:"set true to remove the saved filter"`
+	Ref         string     `json:"ref" jsonschema:"pool id (UUID) or name"`
+	Name        *string    `json:"name,omitempty" jsonschema:"new pool name"`
+	Color       *string    `json:"color,omitempty" jsonschema:"new hex color"`
+	Filter      poolFilter `json:"filter,omitempty" jsonschema:"new saved filter object e.g. {\"filters\":[{\"genre\":[\"RPG\"]}]}"`
+	ClearFilter bool       `json:"clear_filter,omitempty" jsonschema:"set true to remove the saved filter"`
 }
 
 // poolRmInput is the input schema for pool_rm.
@@ -235,7 +240,15 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 	addTool(s, &mcp.Tool{Name: "pool_create", Description: "Create a new play-planning pool."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in poolCreateInput) (*mcp.CallToolResult, poolWriteOutput, error) {
 			key := apiKey(ctx)
-			pool, err := c.CreatePool(ctx, key, in.Name, in.Color, in.Filter)
+			var filter json.RawMessage
+			if len(in.Filter) > 0 {
+				b, err := json.Marshal(in.Filter)
+				if err != nil {
+					return nil, poolWriteOutput{}, fmt.Errorf("pool_create: encode filter: %w", err)
+				}
+				filter = b
+			}
+			pool, err := c.CreatePool(ctx, key, in.Name, in.Color, filter)
 			if err != nil {
 				return nil, poolWriteOutput{}, toolError("pool_create", err)
 			}
