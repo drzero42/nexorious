@@ -65,7 +65,13 @@ func newExportCmd() *cobra.Command {
 				if job.IsTerminal {
 					break
 				}
-				time.Sleep(exportPollInterval)
+				t := time.NewTimer(exportPollInterval)
+				select {
+				case <-cmd.Context().Done():
+					t.Stop()
+					return cmd.Context().Err()
+				case <-t.C:
+				}
 			}
 
 			if job.Status != "completed" {

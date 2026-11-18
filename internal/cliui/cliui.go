@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"golang.org/x/term"
 )
@@ -48,7 +49,9 @@ func ReadPassword(in *bufio.Reader, src io.Reader, out io.Writer, label string) 
 	if f, ok := src.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		fd := int(f.Fd())
 		fmt.Fprint(out, label)
+		trackTerminal(fd)
 		b, err := term.ReadPassword(fd)
+		untrackTerminal()
 		fmt.Fprintln(out)
 		if err != nil {
 			return "", fmt.Errorf("read password: %w", err)
@@ -60,6 +63,47 @@ func ReadPassword(in *bufio.Reader, src io.Reader, out io.Writer, label string) 
 		return "", fmt.Errorf("read password: %w", err)
 	}
 	return strings.TrimSpace(line), nil
+}
+
+// pendingTerm is the terminal a no-echo read is in progress on, with the state
+// to put back. term.ReadPassword restores echo itself when it returns, but a
+// process that exits mid-read (nexctl's forced exit after an interrupt) would
+// leave the terminal with echo off; RestoreTerminal covers that path.
+var pendingTerm struct {
+	sync.Mutex
+	fd    int
+	state *term.State
+}
+
+func trackTerminal(fd int) {
+	st, err := term.GetState(fd)
+	if err != nil {
+		return // best effort: without a state there is nothing to restore
+	}
+	pendingTerm.Lock()
+	pendingTerm.fd, pendingTerm.state = fd, st
+	pendingTerm.Unlock()
+}
+
+func untrackTerminal() {
+	pendingTerm.Lock()
+	pendingTerm.state = nil
+	pendingTerm.Unlock()
+}
+
+// RestoreTerminal puts back the terminal state saved by an in-progress no-echo
+// read, if any, and ends the prompt line. Call it before exiting the process
+// while a read may still be blocked; it is a no-op otherwise.
+func RestoreTerminal(out io.Writer) {
+	pendingTerm.Lock()
+	defer pendingTerm.Unlock()
+	if pendingTerm.state == nil {
+		return
+	}
+	if err := term.Restore(pendingTerm.fd, pendingTerm.state); err == nil {
+		fmt.Fprintln(out)
+	}
+	pendingTerm.state = nil
 }
 
 // Confirm asks a yes/no question. When assumeYes is true it returns true without

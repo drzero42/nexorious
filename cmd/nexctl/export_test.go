@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -290,3 +292,42 @@ func TestExportDefaultFilename(t *testing.T) {
 
 // Ensure the package-level var is the right type (compile-time check).
 var _ time.Duration = exportPollInterval
+
+// Ctrl-C while waiting on the export job must abort the poll wait promptly
+// with context.Canceled (main maps that to "interrupted", exit 130).
+func TestExportPollCancelled(t *testing.T) {
+	prev := exportPollInterval
+	exportPollInterval = time.Hour
+	t.Cleanup(func() { exportPollInterval = prev })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	mux := http.NewServeMux()
+	serveExportTrigger(mux, "json", "ex-c", 1)
+	mux.HandleFunc("/api/jobs/ex-c", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "ex-c", "status": "processing", "is_terminal": false,
+			"job_type": "export", "created_at": "2026-06-18T00:00:00Z",
+		})
+		// Cancel once the command has read this reply and entered the poll wait.
+		time.AfterFunc(50*time.Millisecond, cancel)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	seedProfile(t, srv.URL)
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"export"})
+	done := make(chan error, 1)
+	go func() { done <- root.ExecuteContext(ctx) }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("export did not return after its context was cancelled")
+	}
+}

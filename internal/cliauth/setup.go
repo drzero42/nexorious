@@ -83,7 +83,13 @@ func RunMigrateAndWait(ctx context.Context, out io.Writer, client *cliclient.Cli
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out after %s waiting for migrations (last state: %s)", migrateTimeout, state)
 		}
-		time.Sleep(migratePollInterval)
+		t := time.NewTimer(migratePollInterval)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return ctx.Err()
+		case <-t.C:
+		}
 	}
 }
 

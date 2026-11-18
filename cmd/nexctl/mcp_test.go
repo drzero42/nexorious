@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
 )
@@ -215,6 +217,29 @@ func TestMCPPumpFailedNotificationGoesToStderr(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "invalid or expired API key") {
 		t.Fatalf("stderr = %q", errOut)
+	}
+}
+
+// The bridge must exit when its ctx is cancelled (SIGTERM from the MCP client,
+// or Ctrl-C) even while stdin is open and silent; a blocked stdin read used to
+// keep it alive until the next line arrived.
+func TestMCPPumpReturnsOnCancelWhileStdinIdle(t *testing.T) {
+	stdinR, stdinW := io.Pipe()
+	t.Cleanup(func() { _ = stdinW.Close() })
+	ctx, cancel := context.WithCancel(t.Context())
+	var out, errOut bytes.Buffer
+	p := mcpPump{client: cliclient.New("http://127.0.0.1:0"), key: "k", out: &out, errOut: &errOut}
+	done := make(chan error, 1)
+	go func() { done <- p.run(ctx, stdinR) }()
+
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("pump did not return after its context was cancelled")
 	}
 }
 

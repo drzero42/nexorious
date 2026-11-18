@@ -95,21 +95,42 @@ type mcpPump struct {
 }
 
 func (p mcpPump) run(ctx context.Context, in io.Reader) error {
-	sc := bufio.NewScanner(in)
-	sc.Buffer(make([]byte, 0, 64*1024), mcpMaxMessage)
-	for sc.Scan() {
-		msg := bytes.TrimSpace(sc.Bytes())
-		if len(msg) == 0 {
-			continue
+	// Read stdin on its own goroutine: a blocked Read never sees ctx, and the
+	// bridge must still exit when its client sends SIGTERM (or on Ctrl-C).
+	// The reader is left blocked on return; the process is about to exit.
+	lines := make(chan []byte)
+	readDone := make(chan error, 1)
+	go func() {
+		sc := bufio.NewScanner(in)
+		sc.Buffer(make([]byte, 0, 64*1024), mcpMaxMessage)
+		for sc.Scan() {
+			msg := bytes.TrimSpace(sc.Bytes())
+			if len(msg) == 0 {
+				continue
+			}
+			select {
+			case lines <- bytes.Clone(msg): // the scanner reuses its buffer
+			case <-ctx.Done():
+				return
+			}
 		}
-		if err := p.relay(ctx, msg); err != nil {
-			return err
+		readDone <- sc.Err()
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case msg := <-lines:
+			if err := p.relay(ctx, msg); err != nil {
+				return err
+			}
+		case err := <-readDone:
+			if err != nil {
+				return fmt.Errorf("read stdin: %w", err)
+			}
+			return nil
 		}
 	}
-	if err := sc.Err(); err != nil {
-		return fmt.Errorf("read stdin: %w", err)
-	}
-	return nil
 }
 
 // relay forwards one message and writes its reply. Only a stdout write
@@ -117,6 +138,9 @@ func (p mcpPump) run(ctx context.Context, in io.Reader) error {
 func (p mcpPump) relay(ctx context.Context, msg []byte) error {
 	resp, err := p.client.PostMCP(ctx, p.key, msg)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err() // shutting down: no reply for a request we abandoned
+		}
 		id, needsReply := messageID(msg)
 		text := p.failureMessage(err)
 		if !needsReply {
