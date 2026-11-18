@@ -1,6 +1,6 @@
 // Library view preferences (filters, sort, view mode, per-page, search, page)
 // mirrored to localStorage so the library view is restored across browser
-// sessions. See docs/superpowers/specs/2026-06-21-remember-library-view-design.md.
+// sessions.
 
 const KEY = 'nexorious:library-view:v1';
 

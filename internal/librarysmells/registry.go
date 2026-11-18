@@ -1,6 +1,5 @@
 // Package librarysmells detects data-quality issues ("library smells") in a
-// user's game collection and, for a subset, applies one-click fixes. See
-// docs/superpowers/specs/2026-06-22-library-smells-engine-design.md.
+// user's game collection and, for a subset, applies one-click fixes (#1144).
 package librarysmells
 
 import (

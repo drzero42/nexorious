@@ -1,7 +1,7 @@
 // Which Library Health checks have their flagged-item lists expanded, mirrored
 // to sessionStorage so the expansion survives navigating away and back (e.g.
 // editing a game) within the same browser session. Cleared when the browser
-// closes. See docs/superpowers/specs — companion of lib/library-prefs.ts.
+// closes. Companion of lib/library-prefs.ts.
 
 const KEY = 'nexorious:library-health-expanded:v1';
 
