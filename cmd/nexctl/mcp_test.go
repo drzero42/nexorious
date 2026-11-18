@@ -170,7 +170,8 @@ func TestMCPPumpHTTPFailures(t *testing.T) {
 	}{
 		{"unauthorized", http.StatusUnauthorized, `{"message":"invalid api key"}`, `invalid or expired API key for profile "default"`},
 		{"forbidden", http.StatusForbidden, `{"error":"cross-origin request refused"}`, "cross-origin request refused"},
-		{"disabled", http.StatusNotFound, `{"error":"whatever"}`, "MCP is disabled on this server (MCP_ENABLED=false)"},
+		{"no endpoint 404", http.StatusNotFound, `{"message":"not found"}`, "no MCP endpoint"},
+		{"no endpoint 405", http.StatusMethodNotAllowed, `{"message":"Method Not Allowed"}`, "no MCP endpoint"},
 		{"server error", http.StatusBadGateway, ``, "502"},
 	}
 	for _, tc := range cases {

@@ -152,8 +152,10 @@ func (p mcpPump) failureMessage(err error) string {
 			return he.Message
 		}
 		return "forbidden"
-	case http.StatusNotFound:
-		return "MCP is disabled on this server (MCP_ENABLED=false)"
+	case http.StatusNotFound, http.StatusMethodNotAllowed:
+		// No /api/mcp route: with it unregistered, the SPA catch-all GET /*
+		// makes Echo answer a POST with 405 rather than 404.
+		return "this server has no MCP endpoint (disabled via MCP_ENABLED=false, or the server is too old)"
 	default:
 		return he.Error()
 	}
