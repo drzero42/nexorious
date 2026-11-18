@@ -18,7 +18,8 @@ type DeleteParams struct {
 // Delete removes a single user_game row scoped to the caller's user_id.
 // Returns ErrNotFound when the row does not exist or belongs to another user.
 // Cascades handle user_game_platforms, user_game_tags, and pool_games.
-func Delete(ctx context.Context, db *bun.DB, p DeleteParams) error {
+// Accepts bun.IDB so a caller can run it inside its own transaction.
+func Delete(ctx context.Context, db bun.IDB, p DeleteParams) error {
 	res, err := db.NewDelete().
 		Model((*models.UserGame)(nil)).
 		Where("user_game.id = ?", p.UserGameID).
@@ -33,6 +34,23 @@ func Delete(ctx context.Context, db *bun.DB, p DeleteParams) error {
 	}
 	if rows == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// UnlinkExternalGame deletes every user_game_platforms row linked to the given
+// external game, scoped to the caller's user_id. A single external game can
+// back several platform rows (e.g. Steam Windows + Linux). Removing zero rows
+// is not an error. Accepts bun.IDB so a caller can run it inside its own
+// transaction (sync rematch, #1253).
+func UnlinkExternalGame(ctx context.Context, db bun.IDB, userID, externalGameID string) error {
+	_, err := db.NewDelete().
+		TableExpr("user_game_platforms").
+		Where("external_game_id = ?", externalGameID).
+		Where("user_game_id IN (SELECT id FROM user_games WHERE user_id = ?)", userID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("unlink external game: %w", err)
 	}
 	return nil
 }

@@ -2647,3 +2647,76 @@ func TestConnect_ClearsCredentialsErrorFlag(t *testing.T) {
 		})
 	}
 }
+
+// TestRematchExternalGame_RollsBackOnMidSequenceFailure (#1253) injects a DB
+// failure at the very last write of a rematch (creating the child external
+// game's job_item) and asserts that none of the earlier writes committed: the
+// platform link and the orphaned user game survive, and neither external game
+// was re-resolved.
+func TestRematchExternalGame_RollsBackOnMidSequenceFailure(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	e := newSyncTestApp(t, testDB, &stubSteamClient{}, &stubPlaystationStoreClient{})
+	userID, token := setupTagUser(t, testDB, e, "rm-rollback")
+	insertExternalGame(t, testDB, "eg-rb-parent", userID, "playstation-store", "PPSA-RB1", "Rollback Game")
+	insertChildExternalGame(t, testDB, "eg-rb-child", userID, "playstation-store", "PPSA-RB2", "Rollback Game", "eg-rb-parent")
+	insertUserGameAndPlatform(t, testDB, "ug-rb", userID, "4242", "ugp-rb", "eg-rb-parent")
+	insertJob(t, testDB, "job-rb", userID, "sync", "playstation-store", "processing")
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO games (id, title, last_updated, created_at) VALUES (8888, 'New Match', now(), now()) ON CONFLICT DO NOTHING`); err != nil {
+		t.Fatalf("insert games row: %v", err)
+	}
+
+	// Fail the child's job_item insert — the last DB write of the rematch.
+	if _, err := testDB.ExecContext(ctx, `
+		CREATE OR REPLACE FUNCTION test_fail_rematch_child() RETURNS trigger AS $$
+		BEGIN
+			IF NEW.external_game_id = 'eg-rb-child' THEN
+				RAISE EXCEPTION 'injected failure';
+			END IF;
+			RETURN NEW;
+		END $$ LANGUAGE plpgsql;
+		CREATE TRIGGER test_fail_rematch_child BEFORE INSERT ON job_items
+			FOR EACH ROW EXECUTE FUNCTION test_fail_rematch_child();`); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := testDB.ExecContext(context.Background(), `
+			DROP TRIGGER IF EXISTS test_fail_rematch_child ON job_items;
+			DROP FUNCTION IF EXISTS test_fail_rematch_child();`); err != nil {
+			t.Errorf("drop failure trigger: %v", err)
+		}
+	})
+
+	rec := postJSONAuth(t, e, "/api/sync/external-games/eg-rb-parent/rematch",
+		map[string]any{"igdb_id": 8888, "orphan_action": "remove"}, token)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var ugCount, platformCount, jobItemCount, resolvedCount int
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_games WHERE id = 'ug-rb'`).Scan(ctx, &ugCount); err != nil {
+		t.Fatalf("count user_games: %v", err)
+	}
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM user_game_platforms WHERE id = 'ugp-rb' AND external_game_id = 'eg-rb-parent'`).Scan(ctx, &platformCount); err != nil {
+		t.Fatalf("count platforms: %v", err)
+	}
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM job_items WHERE external_game_id IN ('eg-rb-parent', 'eg-rb-child')`).Scan(ctx, &jobItemCount); err != nil {
+		t.Fatalf("count job_items: %v", err)
+	}
+	if err := testDB.NewRaw(`SELECT COUNT(*) FROM external_games WHERE resolved_igdb_id = 8888`).Scan(ctx, &resolvedCount); err != nil {
+		t.Fatalf("count resolved external_games: %v", err)
+	}
+	if ugCount != 1 {
+		t.Errorf("user_game deleted despite rollback (count=%d)", ugCount)
+	}
+	if platformCount != 1 {
+		t.Errorf("platform link removed despite rollback (count=%d)", platformCount)
+	}
+	if jobItemCount != 0 {
+		t.Errorf("expected no job_items committed, got %d", jobItemCount)
+	}
+	if resolvedCount != 0 {
+		t.Errorf("expected no external_game re-resolved, got %d", resolvedCount)
+	}
+}
