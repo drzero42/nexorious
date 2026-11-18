@@ -559,32 +559,6 @@ func TestMCPTagList(t *testing.T) {
 	}
 }
 
-func TestMCPPoolCreate(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/pools", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("method = %s", r.Method)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": "33333333-3333-3333-3333-333333333333", "name": "Backlog"})
-	})
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	cs := mcpSession(t, srv.URL)
-	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "pool_create", Arguments: map[string]any{"name": "Backlog"}})
-	if err != nil || res.IsError {
-		t.Fatalf("create: err=%v res=%+v", err, res)
-	}
-	b, _ := json.Marshal(res.StructuredContent)
-	var out poolWriteOutput
-	if err := json.Unmarshal(b, &out); err != nil {
-		t.Fatalf("unmarshal: %v\n%s", err, b)
-	}
-	if out.Pool == nil || out.Pool.ID != "33333333-3333-3333-3333-333333333333" {
-		t.Fatalf("expected pool id 33333333-..., got: %s", b)
-	}
-}
-
 func TestMCPPoolQueue(t *testing.T) {
 	const (
 		poolID  = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"

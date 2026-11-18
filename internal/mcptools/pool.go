@@ -132,6 +132,39 @@ func resolvePoolForWrite(ctx context.Context, c *cliclient.Client, key, ref, too
 	}
 }
 
+// freshPoolBriefs re-reads the pool list after a successful mutation and
+// returns the current brief for each id, in the given order. Only the list
+// endpoint carries position/queue_count/candidate_count, so the pool resolved
+// before the mutation (or the Pool a write returns) can't be projected.
+func freshPoolBriefs(ctx context.Context, c *cliclient.Client, key, tool string, ids ...string) ([]poolBrief, error) {
+	pools, err := c.ListPools(ctx, key)
+	if err != nil {
+		return nil, toolError(tool+" (change applied; re-reading the pool failed)", err)
+	}
+	byID := make(map[string]cliclient.PoolListItem, len(pools))
+	for _, p := range pools {
+		byID[p.ID] = p
+	}
+	out := make([]poolBrief, 0, len(ids))
+	for _, id := range ids {
+		p, ok := byID[id]
+		if !ok {
+			return nil, fmt.Errorf("%s: change applied, but pool %s is missing when re-reading the pool list", tool, id)
+		}
+		out = append(out, poolBriefOf(p))
+	}
+	return out, nil
+}
+
+// freshPoolBrief is freshPoolBriefs for a single pool.
+func freshPoolBrief(ctx context.Context, c *cliclient.Client, key, tool, id string) (*poolBrief, error) {
+	briefs, err := freshPoolBriefs(ctx, c, key, tool, id)
+	if err != nil {
+		return nil, err
+	}
+	return &briefs[0], nil
+}
+
 // resolveGamesForPool resolves each game ref to a user-game; returns game candidates if any are ambiguous.
 func resolveGamesForPool(ctx context.Context, c *cliclient.Client, key string, refs []string, tool string) (ids []string, cands []gameBrief, msg string, err error) {
 	var resolved []string
@@ -206,8 +239,11 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			if err != nil {
 				return nil, poolWriteOutput{}, toolError("pool_create", err)
 			}
-			brief := poolBrief{ID: pool.ID, Name: pool.Name, Color: pool.Color}
-			return nil, poolWriteOutput{Pool: &brief, Message: fmt.Sprintf("Created pool %q (%s).", pool.Name, pool.ID)}, nil
+			brief, err := freshPoolBrief(ctx, c, key, "pool_create", pool.ID)
+			if err != nil {
+				return nil, poolWriteOutput{}, err
+			}
+			return nil, poolWriteOutput{Pool: brief, Message: fmt.Sprintf("Created pool %q (%s).", pool.Name, pool.ID)}, nil
 		})
 
 	addTool(s, &mcp.Tool{Name: "pool_edit", Description: "Edit a pool's name, color, or saved filter. Ambiguous name matches return candidates — call again with the id."},
@@ -239,8 +275,11 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			if err != nil {
 				return nil, poolWriteOutput{}, toolError("pool_edit", err)
 			}
-			brief := poolBrief{ID: updated.ID, Name: updated.Name, Color: updated.Color}
-			return nil, poolWriteOutput{Pool: &brief, Message: fmt.Sprintf("Updated pool %q.", updated.Name)}, nil
+			brief, err := freshPoolBrief(ctx, c, key, "pool_edit", updated.ID)
+			if err != nil {
+				return nil, poolWriteOutput{}, err
+			}
+			return nil, poolWriteOutput{Pool: brief, Message: fmt.Sprintf("Updated pool %q.", updated.Name)}, nil
 		})
 
 	addTool(s, &mcp.Tool{Name: "pool_rm", Description: "Delete a pool. Ambiguous name matches return candidates — call again with the id."},
@@ -281,18 +320,21 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 				brief := poolBriefOf(*pool)
 				return nil, poolGamesOutput{Pool: &brief, GameCands: gameCands, Message: msg}, nil
 			}
-			pb := poolBriefOf(*pool)
+			var n int64 = 1
 			if len(ids) == 1 {
 				if err := c.AddPoolGame(ctx, key, pool.ID, ids[0]); err != nil {
 					return nil, poolGamesOutput{}, toolError("pool_add", err)
 				}
-				return nil, poolGamesOutput{Pool: &pb, Count: 1, Message: fmt.Sprintf("Added 1 game to %q.", pool.Name)}, nil
+			} else {
+				if n, err = c.BulkAddPoolGames(ctx, key, pool.ID, ids); err != nil {
+					return nil, poolGamesOutput{}, toolError("pool_add", err)
+				}
 			}
-			n, err := c.BulkAddPoolGames(ctx, key, pool.ID, ids)
+			pb, err := freshPoolBrief(ctx, c, key, "pool_add", pool.ID)
 			if err != nil {
-				return nil, poolGamesOutput{}, toolError("pool_add", err)
+				return nil, poolGamesOutput{}, err
 			}
-			return nil, poolGamesOutput{Pool: &pb, Count: n, Message: fmt.Sprintf("Added %d game(s) to %q.", n, pool.Name)}, nil
+			return nil, poolGamesOutput{Pool: pb, Count: n, Message: fmt.Sprintf("Added %d game(s) to %q.", n, pool.Name)}, nil
 		})
 
 	addTool(s, &mcp.Tool{Name: "pool_remove", Description: "Remove games from a pool. Ambiguous pool/game refs return candidates — call again with ids."},
@@ -316,13 +358,16 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 				brief := poolBriefOf(*pool)
 				return nil, poolGamesOutput{Pool: &brief, GameCands: gameCands, Message: msg}, nil
 			}
-			pb := poolBriefOf(*pool)
 			for _, id := range ids {
 				if err := c.RemovePoolGame(ctx, key, pool.ID, id); err != nil {
 					return nil, poolGamesOutput{}, toolError(fmt.Sprintf("pool_remove %s", id), err)
 				}
 			}
-			return nil, poolGamesOutput{Pool: &pb, Count: int64(len(ids)), Message: fmt.Sprintf("Removed %d game(s) from %q.", len(ids), pool.Name)}, nil
+			pb, err := freshPoolBrief(ctx, c, key, "pool_remove", pool.ID)
+			if err != nil {
+				return nil, poolGamesOutput{}, err
+			}
+			return nil, poolGamesOutput{Pool: pb, Count: int64(len(ids)), Message: fmt.Sprintf("Removed %d game(s) from %q.", len(ids), pool.Name)}, nil
 		})
 
 	addTool(s, &mcp.Tool{Name: "pool_queue", Description: "Set a pool's ordered queue (declarative — BulkAdd then SetQueue). Ambiguous pool/game refs return candidates — call again with ids."},
@@ -343,7 +388,6 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 				brief := poolBriefOf(*pool)
 				return nil, poolGamesOutput{Pool: &brief, GameCands: gameCands, Message: msg}, nil
 			}
-			pb := poolBriefOf(*pool)
 			if len(ids) > 0 {
 				if _, err := c.BulkAddPoolGames(ctx, key, pool.ID, ids); err != nil {
 					return nil, poolGamesOutput{}, toolError("pool_queue (bulk-add)", err)
@@ -352,10 +396,14 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 			if err := c.SetQueue(ctx, key, pool.ID, ids); err != nil {
 				return nil, poolGamesOutput{}, toolError("pool_queue (set-queue)", err)
 			}
-			if len(ids) == 0 {
-				return nil, poolGamesOutput{Pool: &pb, Message: fmt.Sprintf("Cleared the queue for %q.", pool.Name)}, nil
+			pb, err := freshPoolBrief(ctx, c, key, "pool_queue", pool.ID)
+			if err != nil {
+				return nil, poolGamesOutput{}, err
 			}
-			return nil, poolGamesOutput{Pool: &pb, Count: int64(len(ids)), Message: fmt.Sprintf("Queued %d game(s) in %q.", len(ids), pool.Name)}, nil
+			if len(ids) == 0 {
+				return nil, poolGamesOutput{Pool: pb, Message: fmt.Sprintf("Cleared the queue for %q.", pool.Name)}, nil
+			}
+			return nil, poolGamesOutput{Pool: pb, Count: int64(len(ids)), Message: fmt.Sprintf("Queued %d game(s) in %q.", len(ids), pool.Name)}, nil
 		})
 
 	addTool(s, &mcp.Tool{Name: "pool_reorder", Description: "Reorder pools — positions follow argument order. Ambiguous pool refs return candidates — call again with ids."},
@@ -365,7 +413,6 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 				return nil, poolWriteOutput{}, fmt.Errorf("pool_reorder: provide at least one pool")
 			}
 			var ids []string
-			var briefs []poolBrief
 			for _, ref := range in.Pools {
 				pool, cands, err := resolvePoolForWrite(ctx, c, key, ref, "pool_reorder")
 				if err != nil {
@@ -375,10 +422,13 @@ func registerPoolTools(s *toolSet, c *cliclient.Client, apiKey KeyFunc) {
 					return nil, *cands, nil
 				}
 				ids = append(ids, pool.ID)
-				briefs = append(briefs, poolBriefOf(*pool))
 			}
 			if err := c.ReorderPools(ctx, key, ids); err != nil {
 				return nil, poolWriteOutput{}, toolError("pool_reorder", err)
+			}
+			briefs, err := freshPoolBriefs(ctx, c, key, "pool_reorder", ids...)
+			if err != nil {
+				return nil, poolWriteOutput{}, err
 			}
 			return nil, poolWriteOutput{Pools: briefs, Message: fmt.Sprintf("Reordered %d pool(s).", len(ids))}, nil
 		})
