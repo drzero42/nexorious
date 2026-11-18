@@ -1,16 +1,15 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"strconv"
-	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 	"github.com/drzero42/nexorious/internal/cliui"
 )
 
@@ -34,13 +33,13 @@ func newGameListCmd() *cobra.Command {
 			c := cliclient.New(p.URL)
 
 			params := url.Values{}
-			setIf(params, "play_status", status)
-			setIf(params, "ownership_status", ownership)
-			setIf(params, "platform", platform)
-			setIf(params, "storefront", storefront)
-			setIf(params, "genre", genre)
-			setIf(params, "sort_by", sortBy)
-			setIf(params, "sort_order", order)
+			clientops.SetIf(params, "play_status", status)
+			clientops.SetIf(params, "ownership_status", ownership)
+			clientops.SetIf(params, "platform", platform)
+			clientops.SetIf(params, "storefront", storefront)
+			clientops.SetIf(params, "genre", genre)
+			clientops.SetIf(params, "sort_by", sortBy)
+			clientops.SetIf(params, "sort_order", order)
 			if cmd.Flags().Changed("wishlist") {
 				params.Set("wishlist", strconv.FormatBool(wishlist))
 			}
@@ -69,7 +68,7 @@ func newGameListCmd() *cobra.Command {
 				params.Set("page", strconv.Itoa(page))
 			}
 			if tag != "" {
-				id, err := resolveTagID(cmd.Context(), c, p.Key, tag)
+				id, err := clientops.ResolveTagID(cmd.Context(), c, p.Key, tag)
 				if err != nil {
 					return err
 				}
@@ -138,29 +137,9 @@ func newGameListCmd() *cobra.Command {
 	return cmd
 }
 
-func setIf(v url.Values, key, val string) {
-	if val != "" {
-		v.Set(key, val)
-	}
-}
-
 func max1(n int) int {
 	if n < 1 {
 		return 1
 	}
 	return n
-}
-
-// resolveTagID maps a tag name to its id (case-insensitive), erroring if unknown.
-func resolveTagID(ctx context.Context, c *cliclient.Client, key, name string) (string, error) {
-	tags, err := c.ListTags(ctx, key)
-	if err != nil {
-		return "", fmt.Errorf("resolve tag %q: %w", name, err)
-	}
-	for _, t := range tags {
-		if strings.EqualFold(t.Name, name) {
-			return t.ID, nil
-		}
-	}
-	return "", fmt.Errorf("no tag named %q", name)
 }

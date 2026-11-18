@@ -1,16 +1,14 @@
 package main
 
 import (
-	"errors"
-	"fmt"
-	"net/http"
+	"context"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
-	"github.com/drzero42/nexorious/internal/clicfg"
 	"github.com/drzero42/nexorious/internal/cliclient"
 	"github.com/drzero42/nexorious/internal/cliui"
+	"github.com/drzero42/nexorious/internal/mcptools"
 )
 
 func newMCPCmd() *cobra.Command {
@@ -49,39 +47,9 @@ func newMCPServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			srv := buildMCPServer(p)
+			key := func(context.Context) string { return p.Key }
+			srv := mcptools.NewServer(cliclient.New(p.URL), key, version)
 			return srv.Run(cmd.Context(), &mcp.StdioTransport{})
 		},
 	}
-}
-
-// buildMCPServer registers every mirror tool against a server whose handlers use
-// the given profile's URL + key. Transport is bound by the caller.
-func buildMCPServer(p clicfg.Profile) *mcp.Server {
-	srv := mcp.NewServer(&mcp.Implementation{Name: "nexorious", Version: version}, nil)
-	c := cliclient.New(p.URL)
-	registerGameTools(srv, c, p.Key)
-	registerPoolTools(srv, c, p.Key)
-	registerTagTools(srv, c, p.Key)
-	registerSyncTools(srv, c, p.Key)
-	registerDoctorTools(srv, c, p.Key)
-	return srv
-}
-
-// mcpToolError maps a cliclient error to an actionable tool error. A 403 from a
-// read-scoped key on a write tool gets a specific, corrective message.
-func mcpToolError(action string, err error) error {
-	if err == nil {
-		return nil
-	}
-	if isForbidden(err) {
-		return fmt.Errorf("%s: this profile's API key is read-only; mint a write-scoped key (`nexctl account api-key …`) to modify the collection", action)
-	}
-	return fmt.Errorf("%s: %w", action, err)
-}
-
-// isForbidden reports whether err is an HTTP 403 from cliclient.
-func isForbidden(err error) bool {
-	var he *cliclient.HTTPError
-	return errors.As(err, &he) && he.Status == http.StatusForbidden
 }

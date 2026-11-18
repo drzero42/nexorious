@@ -2,11 +2,8 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
-	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -14,6 +11,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 )
 
 func newGameCmd() *cobra.Command {
@@ -32,32 +30,10 @@ func newGameCmd() *cobra.Command {
 	return cmd
 }
 
-var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-
-func looksLikeUUID(s string) bool { return uuidRe.MatchString(s) }
-
-// findUserGamesByRef returns every library game matching ref: a UUID is fetched
-// directly (one element); a title is a search query (zero or more). No cmd, no
-// picker — callers own disambiguation.
-func findUserGamesByRef(ctx context.Context, c *cliclient.Client, key, ref string) ([]cliclient.UserGame, error) {
-	if looksLikeUUID(ref) {
-		u, err := c.GetUserGame(ctx, key, ref)
-		if err != nil {
-			return nil, err
-		}
-		return []cliclient.UserGame{*u}, nil
-	}
-	res, err := c.ListUserGames(ctx, key, urlValues("q", ref))
-	if err != nil {
-		return nil, err
-	}
-	return res.UserGames, nil
-}
-
 // resolveUserGameRef is the CLI wrapper: one hit is used; many prompt a picker
 // (interactive) or error with candidate ids (off-TTY).
 func resolveUserGameRef(cmd *cobra.Command, c *cliclient.Client, key, ref string) (*cliclient.UserGame, error) {
-	games, err := findUserGamesByRef(cmd.Context(), c, key, ref)
+	games, err := clientops.FindUserGamesByRef(cmd.Context(), c, key, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -152,16 +128,4 @@ func tagsOf(u *cliclient.UserGame) string {
 		parts = append(parts, t.Name)
 	}
 	return strings.Join(parts, ",")
-}
-
-// urlValues builds a url.Values from alternating key,value pairs, skipping
-// pairs with an empty value.
-func urlValues(kv ...string) url.Values {
-	v := url.Values{}
-	for i := 0; i+1 < len(kv); i += 2 {
-		if kv[i+1] != "" {
-			v.Set(kv[i], kv[i+1])
-		}
-	}
-	return v
 }

@@ -2,14 +2,12 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
-	"net/url"
-	"strconv"
 
 	"github.com/spf13/cobra"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 	"github.com/drzero42/nexorious/internal/cliui"
 )
 
@@ -27,9 +25,9 @@ func newGameRmCmd() *cobra.Command {
 			}
 			c := cliclient.New(p.URL)
 
-			games, err := gamesForRefsOrFilter(cmd, c, p.Key, args, gameFilter{
-				use: useFilter, status: filterStatus, tag: filterTag, platform: filterPlatform, wishlist: filterWishlist,
-				wishlistSet: cmd.Flags().Changed("filter-wishlist"),
+			games, err := gamesForRefsOrFilter(cmd, c, p.Key, args, useFilter, clientops.GameFilter{
+				Status: filterStatus, Tag: filterTag, Platform: filterPlatform, Wishlist: filterWishlist,
+				WishlistSet: cmd.Flags().Changed("filter-wishlist"),
 			})
 			if err != nil {
 				return err
@@ -65,46 +63,14 @@ func newGameRmCmd() *cobra.Command {
 	return cmd
 }
 
-// gameFilter is the subset of list filters supported for bulk edit/rm selection.
-type gameFilter struct {
-	use                   bool
-	status, tag, platform string
-	wishlist, wishlistSet bool
-}
-
-// gamesByFilter runs a filtered library query and returns the matching games and
-// the server total (for truncation warnings). No cmd, no picker — callers own
-// the warning and the per_page=200 cap is applied here.
-func gamesByFilter(ctx context.Context, c *cliclient.Client, key string, f gameFilter) (games []cliclient.UserGame, total int, err error) {
-	params := url.Values{}
-	setIf(params, "play_status", f.status)
-	setIf(params, "platform", f.platform)
-	if f.wishlistSet {
-		params.Set("wishlist", strconv.FormatBool(f.wishlist))
-	}
-	if f.tag != "" {
-		id, err := resolveTagID(ctx, c, key, f.tag)
-		if err != nil {
-			return nil, 0, err
-		}
-		params.Set("tag", id)
-	}
-	params.Set("per_page", "200")
-	res, err := c.ListUserGames(ctx, key, params)
-	if err != nil {
-		return nil, 0, err
-	}
-	return res.UserGames, res.Total, nil
-}
-
-// gamesForRefsOrFilter resolves explicit refs (args) or, when f.use is set, runs
-// a filtered list. Exactly one mode must be used.
-func gamesForRefsOrFilter(cmd *cobra.Command, c *cliclient.Client, key string, args []string, f gameFilter) ([]cliclient.UserGame, error) {
-	if f.use {
+// gamesForRefsOrFilter resolves explicit refs (args) or, when useFilter is set,
+// runs a filtered list. Exactly one mode must be used.
+func gamesForRefsOrFilter(cmd *cobra.Command, c *cliclient.Client, key string, args []string, useFilter bool, f clientops.GameFilter) ([]cliclient.UserGame, error) {
+	if useFilter {
 		if len(args) > 0 {
 			return nil, fmt.Errorf("pass refs or --filter, not both")
 		}
-		games, total, err := gamesByFilter(cmd.Context(), c, key, f)
+		games, total, err := clientops.GamesByFilter(cmd.Context(), c, key, f)
 		if err != nil {
 			return nil, err
 		}

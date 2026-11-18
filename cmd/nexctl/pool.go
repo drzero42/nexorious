@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 	"github.com/drzero42/nexorious/internal/cliui"
 )
 
@@ -21,35 +21,10 @@ func newPoolCmd() *cobra.Command {
 	return cmd
 }
 
-// findPoolsByRef returns every pool matching ref: a UUID is matched exactly; a
-// name is matched case-insensitively (zero or more results). No cmd, no picker —
-// callers own disambiguation.
-func findPoolsByRef(ctx context.Context, c *cliclient.Client, key, ref string) ([]cliclient.PoolListItem, error) {
-	pools, err := c.ListPools(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	if looksLikeUUID(ref) {
-		for i := range pools {
-			if pools[i].ID == ref {
-				return []cliclient.PoolListItem{pools[i]}, nil
-			}
-		}
-		return nil, fmt.Errorf("no pool with id %s", ref)
-	}
-	var matches []cliclient.PoolListItem
-	for i := range pools {
-		if strings.EqualFold(pools[i].Name, ref) {
-			matches = append(matches, pools[i])
-		}
-	}
-	return matches, nil
-}
-
 // resolvePoolRef resolves a pool by id (UUID) or name (case-insensitive) via the
 // pool list. Many matches prompt a TTY picker or, off-TTY, error with candidates.
 func resolvePoolRef(cmd *cobra.Command, c *cliclient.Client, key, ref string) (*cliclient.PoolListItem, error) {
-	pools, err := findPoolsByRef(cmd.Context(), c, key, ref)
+	pools, err := clientops.FindPoolsByRef(cmd.Context(), c, key, ref)
 	if err != nil {
 		return nil, err
 	}

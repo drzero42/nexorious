@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 	"github.com/drzero42/nexorious/internal/cliui"
 )
 
@@ -94,11 +95,11 @@ func newJobListCmd() *cobra.Command {
 			}
 
 			params := url.Values{}
-			setIf(params, "status", status)
-			setIf(params, "job_type", jobType)
-			setIf(params, "source", source)
-			setIf(params, "sort_by", sortBy)
-			setIf(params, "sort_order", order)
+			clientops.SetIf(params, "status", status)
+			clientops.SetIf(params, "job_type", jobType)
+			clientops.SetIf(params, "source", source)
+			clientops.SetIf(params, "sort_by", sortBy)
+			clientops.SetIf(params, "sort_order", order)
 			if limit > 0 {
 				params.Set("per_page", strconv.Itoa(limit))
 			}

@@ -1,4 +1,4 @@
-package main
+package mcptools
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 	"github.com/drzero42/nexorious/internal/enum"
 )
 
@@ -194,17 +195,16 @@ type gameRmInput struct {
 // Returns candidates (no mutation) if any ref is ambiguous or zero.
 func mcpResolveEditTargets(ctx context.Context, c *cliclient.Client, key string, refs []string, filter *gameEditFilter) (games []cliclient.UserGame, candidates []gameBrief, msg string, err error) {
 	if filter != nil {
-		f := gameFilter{
-			use:      true,
-			status:   filter.PlayStatus,
-			tag:      filter.Tag,
-			platform: filter.Platform,
+		f := clientops.GameFilter{
+			Status:   filter.PlayStatus,
+			Tag:      filter.Tag,
+			Platform: filter.Platform,
 		}
 		if filter.Wishlist != nil {
-			f.wishlist = *filter.Wishlist
-			f.wishlistSet = true
+			f.Wishlist = *filter.Wishlist
+			f.WishlistSet = true
 		}
-		gs, _, err := gamesByFilter(ctx, c, key, f)
+		gs, _, err := clientops.GamesByFilter(ctx, c, key, f)
 		if err != nil {
 			return nil, nil, "", err
 		}
@@ -213,7 +213,7 @@ func mcpResolveEditTargets(ctx context.Context, c *cliclient.Client, key string,
 	// resolve each ref individually; collect ambiguous matches as candidates
 	var all []cliclient.UserGame
 	for _, ref := range refs {
-		matches, err := findUserGamesByRef(ctx, c, key, ref)
+		matches, err := clientops.FindUserGamesByRef(ctx, c, key, ref)
 		if err != nil {
 			return nil, nil, "", err
 		}
@@ -233,18 +233,19 @@ func mcpResolveEditTargets(ctx context.Context, c *cliclient.Client, key string,
 	return all, nil, "", nil
 }
 
-func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
+func registerGameTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
 	mcp.AddTool(s, &mcp.Tool{Name: "game_list", Description: "List/search the collection (concise projection)."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameListInput) (*mcp.CallToolResult, gameListOutput, error) {
+			key := apiKey(ctx)
 			params := url.Values{}
-			setIf(params, "q", in.Q)
-			setIf(params, "play_status", in.PlayStatus)
-			setIf(params, "ownership_status", in.OwnershipStatus)
-			setIf(params, "genre", in.Genre)
-			setIf(params, "platform", in.Platform)
-			setIf(params, "storefront", in.Storefront)
-			setIf(params, "sort_by", in.SortBy)
-			setIf(params, "sort_order", in.SortOrder)
+			clientops.SetIf(params, "q", in.Q)
+			clientops.SetIf(params, "play_status", in.PlayStatus)
+			clientops.SetIf(params, "ownership_status", in.OwnershipStatus)
+			clientops.SetIf(params, "genre", in.Genre)
+			clientops.SetIf(params, "platform", in.Platform)
+			clientops.SetIf(params, "storefront", in.Storefront)
+			clientops.SetIf(params, "sort_by", in.SortBy)
+			clientops.SetIf(params, "sort_order", in.SortOrder)
 			if in.Wishlist != nil {
 				params.Set("wishlist", strconv.FormatBool(*in.Wishlist))
 			}
@@ -256,7 +257,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 			}
 			res, err := c.ListUserGames(ctx, key, params)
 			if err != nil {
-				return nil, gameListOutput{}, mcpToolError("game_list", err)
+				return nil, gameListOutput{}, toolError("game_list", err)
 			}
 			out := gameListOutput{Total: res.Total, Page: res.Page, Pages: res.Pages}
 			for i := range res.UserGames {
@@ -267,9 +268,10 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "game_show", Description: "Show full detail for one game (by id or title). If the title matches multiple games, returns candidates to disambiguate."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameShowInput) (*mcp.CallToolResult, gameShowOutput, error) {
-			games, err := findUserGamesByRef(ctx, c, key, in.Ref)
+			key := apiKey(ctx)
+			games, err := clientops.FindUserGamesByRef(ctx, c, key, in.Ref)
 			if err != nil {
-				return nil, gameShowOutput{}, mcpToolError("game_show", err)
+				return nil, gameShowOutput{}, toolError("game_show", err)
 			}
 			switch len(games) {
 			case 0:
@@ -291,22 +293,24 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "game_stats", Description: "Return aggregate collection statistics (total games, completion rate, hours, rating, breakdown by status/platform/genre)."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, *cliclient.CollectionStats, error) {
+			key := apiKey(ctx)
 			stats, err := c.GetCollectionStats(ctx, key)
 			if err != nil {
-				return nil, nil, mcpToolError("game_stats", err)
+				return nil, nil, toolError("game_stats", err)
 			}
 			return nil, stats, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "game_filters", Description: "Return valid values for every game_list filter and the platform slugs accepted by game_add/edit/acquire: play/ownership statuses, platforms, storefronts, and library-derived genre/game-mode/theme/perspective facets."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, gameFiltersOutput, error) {
+			key := apiKey(ctx)
 			opts, err := c.GetFilterOptions(ctx, key)
 			if err != nil {
-				return nil, gameFiltersOutput{}, mcpToolError("game_filters (filter-options)", err)
+				return nil, gameFiltersOutput{}, toolError("game_filters (filter-options)", err)
 			}
 			storefronts, err := c.ListStorefronts(ctx, key)
 			if err != nil {
-				return nil, gameFiltersOutput{}, mcpToolError("game_filters (storefronts)", err)
+				return nil, gameFiltersOutput{}, toolError("game_filters (storefronts)", err)
 			}
 			sfSlugs := make([]string, len(storefronts))
 			for i, sf := range storefronts {
@@ -314,7 +318,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 			}
 			platforms, err := c.ListPlatforms(ctx, key)
 			if err != nil {
-				return nil, gameFiltersOutput{}, mcpToolError("game_filters (platforms)", err)
+				return nil, gameFiltersOutput{}, toolError("game_filters (platforms)", err)
 			}
 			platSlugs := make([]string, len(platforms))
 			for i, p := range platforms {
@@ -335,15 +339,16 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "game_add", Description: "Add a game to the collection via IGDB lookup. Provide title or igdb_id. If title matches multiple IGDB games, returns candidates with igdb_id — call again with igdb_id to proceed."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameAddInput) (*mcp.CallToolResult, gameAddOutput, error) {
+			key := apiKey(ctx)
 			if in.IgdbID == 0 && in.Title == "" {
 				return nil, gameAddOutput{}, fmt.Errorf("game_add: provide title or igdb_id")
 			}
 			// Validate the platform up front so an invalid slug fails fast with an
 			// actionable error instead of a FK 500 after the IGDB import.
 			if in.Platform != "" {
-				pl, _ := splitPlatform(in.Platform)
-				if err := validatePlatform(ctx, c, key, pl); err != nil {
-					return nil, gameAddOutput{}, mcpToolError("game_add", err)
+				pl, _ := clientops.SplitPlatform(in.Platform)
+				if err := clientops.ValidatePlatform(ctx, c, key, pl); err != nil {
+					return nil, gameAddOutput{}, toolError("game_add", err)
 				}
 			}
 			// The backend performs ID inference, so route the structured igdb_id
@@ -352,9 +357,9 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 			if in.IgdbID != 0 {
 				query = fmt.Sprintf("igdb:%d", in.IgdbID)
 			}
-			cands, err := findIGDBCandidates(ctx, c, key, query)
+			cands, err := clientops.FindIGDBCandidates(ctx, c, key, query)
 			if err != nil {
-				return nil, gameAddOutput{}, mcpToolError("game_add", err)
+				return nil, gameAddOutput{}, toolError("game_add", err)
 			}
 			if len(cands) == 0 {
 				if in.IgdbID != 0 {
@@ -374,7 +379,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 			}
 			chosen := &cands[0]
 			if _, err := c.ImportIGDBGame(ctx, key, chosen.IgdbID); err != nil {
-				return nil, gameAddOutput{}, mcpToolError("game_add (import)", err)
+				return nil, gameAddOutput{}, toolError("game_add (import)", err)
 			}
 			status := in.PlayStatus
 			if status == "" {
@@ -389,7 +394,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 				PersonalNotes:  in.Notes,
 			}
 			if in.Platform != "" {
-				pl, sf := splitPlatform(in.Platform)
+				pl, sf := clientops.SplitPlatform(in.Platform)
 				if in.Storefront != "" {
 					sf = in.Storefront
 				}
@@ -397,7 +402,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 			}
 			ug, err := c.CreateUserGame(ctx, key, input)
 			if err != nil {
-				return nil, gameAddOutput{}, mcpToolError("game_add (create)", err)
+				return nil, gameAddOutput{}, toolError("game_add (create)", err)
 			}
 			b := briefOf(ug)
 			return nil, gameAddOutput{Game: &b}, nil
@@ -405,49 +410,50 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "game_edit", Description: "Edit one or more games in the collection (status, rating, notes, platforms, tags). Use refs (ids/title substrings) or filter. Ambiguous refs return candidates — call again with the id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameEditInput) (*mcp.CallToolResult, gameWriteOutput, error) {
+			key := apiKey(ctx)
 			if len(in.Refs) == 0 && in.Filter == nil {
 				return nil, gameWriteOutput{}, fmt.Errorf("game_edit: provide refs or filter")
 			}
 			games, cands, msg, err := mcpResolveEditTargets(ctx, c, key, in.Refs, in.Filter)
 			if err != nil {
-				return nil, gameWriteOutput{}, mcpToolError("game_edit", err)
+				return nil, gameWriteOutput{}, toolError("game_edit", err)
 			}
 			if cands != nil || msg != "" {
 				return nil, gameWriteOutput{Candidates: cands, Message: msg}, nil
 			}
-			opts := editOpts{
-				status:        in.PlayStatus,
-				statusSet:     in.PlayStatus != "",
-				addPlatform:   in.AddPlatform,
-				rmPlatform:    in.RmPlatform,
-				hoursPlatform: in.HoursPlatform,
-				addTags:       in.AddTags,
-				rmTags:        in.RmTags,
+			opts := clientops.EditOpts{
+				Status:        in.PlayStatus,
+				StatusSet:     in.PlayStatus != "",
+				AddPlatform:   in.AddPlatform,
+				RmPlatform:    in.RmPlatform,
+				HoursPlatform: in.HoursPlatform,
+				AddTags:       in.AddTags,
+				RmTags:        in.RmTags,
 			}
 			if in.Rating != nil {
-				opts.rating = *in.Rating
-				opts.ratingSet = true
+				opts.Rating = *in.Rating
+				opts.RatingSet = true
 			}
 			if in.Notes != nil {
-				opts.notes = *in.Notes
-				opts.notesSet = true
+				opts.Notes = *in.Notes
+				opts.NotesSet = true
 			}
 			if in.Hours != nil {
-				opts.hours = *in.Hours
-				opts.hoursSet = true
+				opts.Hours = *in.Hours
+				opts.HoursSet = true
 			}
 			if in.Loved != nil {
 				if *in.Loved {
-					opts.loved = true
+					opts.Loved = true
 				} else {
-					opts.noLoved = true
+					opts.NoLoved = true
 				}
 			}
 			updated := make([]gameBrief, 0, len(games))
 			for i := range games {
 				u := &games[i]
-				if err := editOne(ctx, c, key, u, opts); err != nil {
-					return nil, gameWriteOutput{}, mcpToolError(fmt.Sprintf("game_edit %q", u.Title()), err)
+				if err := clientops.EditOne(ctx, c, key, u, opts); err != nil {
+					return nil, gameWriteOutput{}, toolError(fmt.Sprintf("game_edit %q", u.Title()), err)
 				}
 				updated = append(updated, briefOf(u))
 			}
@@ -456,16 +462,17 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "game_acquire", Description: "Promote a wishlisted game to the library with a platform. Ref is a game id or title substring."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameAcquireInput) (*mcp.CallToolResult, gameWriteOutput, error) {
+			key := apiKey(ctx)
 			if in.Platform == "" {
 				return nil, gameWriteOutput{}, fmt.Errorf("game_acquire: platform is required")
 			}
-			plat, _ := splitPlatform(in.Platform)
-			if err := validatePlatform(ctx, c, key, plat); err != nil {
-				return nil, gameWriteOutput{}, mcpToolError("game_acquire", err)
+			plat, _ := clientops.SplitPlatform(in.Platform)
+			if err := clientops.ValidatePlatform(ctx, c, key, plat); err != nil {
+				return nil, gameWriteOutput{}, toolError("game_acquire", err)
 			}
-			matches, err := findUserGamesByRef(ctx, c, key, in.Ref)
+			matches, err := clientops.FindUserGamesByRef(ctx, c, key, in.Ref)
 			if err != nil {
-				return nil, gameWriteOutput{}, mcpToolError("game_acquire", err)
+				return nil, gameWriteOutput{}, toolError("game_acquire", err)
 			}
 			if len(matches) == 0 {
 				return nil, gameWriteOutput{}, fmt.Errorf("game_acquire: no game matching %q", in.Ref)
@@ -481,7 +488,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 				}, nil
 			}
 			u := &matches[0]
-			pl, sf := splitPlatform(in.Platform)
+			pl, sf := clientops.SplitPlatform(in.Platform)
 			if in.Storefront != "" {
 				sf = in.Storefront
 			}
@@ -493,7 +500,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 				{Platform: pl, Storefront: sf, OwnershipStatus: ownership},
 			})
 			if err != nil {
-				return nil, gameWriteOutput{}, mcpToolError("game_acquire", err)
+				return nil, gameWriteOutput{}, toolError("game_acquire", err)
 			}
 			b := briefOf(ug)
 			return nil, gameWriteOutput{Updated: []gameBrief{b}}, nil
@@ -501,12 +508,13 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "game_rm", Description: "Remove games from the collection. Use refs (ids/title substrings) or filter. No confirmation is required — the call is the intent."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in gameRmInput) (*mcp.CallToolResult, gameWriteOutput, error) {
+			key := apiKey(ctx)
 			if len(in.Refs) == 0 && in.Filter == nil {
 				return nil, gameWriteOutput{}, fmt.Errorf("game_rm: provide refs or filter")
 			}
 			games, cands, msg, err := mcpResolveEditTargets(ctx, c, key, in.Refs, in.Filter)
 			if err != nil {
-				return nil, gameWriteOutput{}, mcpToolError("game_rm", err)
+				return nil, gameWriteOutput{}, toolError("game_rm", err)
 			}
 			if cands != nil || msg != "" {
 				return nil, gameWriteOutput{Candidates: cands, Message: msg}, nil
@@ -515,7 +523,7 @@ func registerGameTools(s *mcp.Server, c *cliclient.Client, key string) {
 			for i := range games {
 				u := &games[i]
 				if err := c.DeleteUserGame(ctx, key, u.ID); err != nil {
-					return nil, gameWriteOutput{}, mcpToolError(fmt.Sprintf("game_rm %q", u.Title()), err)
+					return nil, gameWriteOutput{}, toolError(fmt.Sprintf("game_rm %q", u.Title()), err)
 				}
 				removed = append(removed, briefOf(u))
 			}

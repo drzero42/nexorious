@@ -2,14 +2,13 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
-	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 	"github.com/drzero42/nexorious/internal/cliui"
 )
 
@@ -17,33 +16,6 @@ func newTagCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "tag", Short: "Manage your tags"}
 	cmd.AddCommand(newTagListCmd(), newTagCreateCmd(), newTagRenameCmd(), newTagRmCmd())
 	return cmd
-}
-
-// resolveTagRef resolves a tag by id (UUID) or name (case-insensitive).
-func resolveTagRef(ctx context.Context, c *cliclient.Client, key, ref string) (*cliclient.Tag, error) {
-	if looksLikeUUID(ref) {
-		// No single-tag GET endpoint; fetch the list and match by id.
-		tags, err := c.ListTags(ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		for i := range tags {
-			if tags[i].ID == ref {
-				return &tags[i], nil
-			}
-		}
-		return nil, fmt.Errorf("no tag with id %s", ref)
-	}
-	tags, err := c.ListTags(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	for i := range tags {
-		if strings.EqualFold(tags[i].Name, ref) {
-			return &tags[i], nil
-		}
-	}
-	return nil, fmt.Errorf("no tag named %q", ref)
 }
 
 func newTagListCmd() *cobra.Command {
@@ -123,7 +95,7 @@ func newTagRenameCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			tag, err := resolveTagRef(cmd.Context(), c, p.Key, args[0])
+			tag, err := clientops.ResolveTagRef(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
@@ -149,7 +121,7 @@ func newTagRmCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			tag, err := resolveTagRef(cmd.Context(), c, p.Key, args[0])
+			tag, err := clientops.ResolveTagRef(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}

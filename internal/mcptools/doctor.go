@@ -1,4 +1,4 @@
-package main
+package mcptools
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/drzero42/nexorious/internal/cliclient"
+	"github.com/drzero42/nexorious/internal/clientops"
 )
 
 // --- input schemas ---
@@ -70,33 +71,36 @@ func resolveSmellRefIDs(ctx context.Context, c *cliclient.Client, key string, re
 	return ids, nil, "", nil
 }
 
-func registerDoctorTools(s *mcp.Server, c *cliclient.Client, key string) {
+func registerDoctorTools(s *mcp.Server, c *cliclient.Client, apiKey KeyFunc) {
 	mcp.AddTool(s, &mcp.Tool{Name: "library_smells_list", Description: "List every library-health check with its tier, whether it is auto-fixable, and how many games it currently flags."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, smellsListOutput, error) {
+			key := apiKey(ctx)
 			checks, err := c.ListSmells(ctx, key)
 			if err != nil {
-				return nil, smellsListOutput{}, mcpToolError("library_smells_list", err)
+				return nil, smellsListOutput{}, toolError("library_smells_list", err)
 			}
 			return nil, smellsListOutput{Checks: checks}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "library_smells_detail", Description: "List the flagged games for one check. suggested_status (auto-fix checks) or detail describes each finding."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in smellsDetailInput) (*mcp.CallToolResult, smellsDetailOutput, error) {
+			key := apiKey(ctx)
 			res, err := c.ListSmellItems(ctx, key, in.CheckID, in.Page, in.PerPage)
 			if err != nil {
-				return nil, smellsDetailOutput{}, mcpToolError("library_smells_detail", err)
+				return nil, smellsDetailOutput{}, toolError("library_smells_detail", err)
 			}
 			return nil, smellsDetailOutput{Items: res.Items, Total: res.Total, Page: res.Page, Pages: res.Pages}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "library_smells_apply", Description: "Apply an auto-fixable check's suggestion. With refs, fixes those games; with no refs, fixes every game the check flags. Ambiguous refs return candidates — call again with an id. Non-fixable checks return an error."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in smellsRefsInput) (*mcp.CallToolResult, smellsApplyOutput, error) {
+			key := apiKey(ctx)
 			var ids []string
 			if len(in.Refs) == 0 {
 				var err error
-				ids, err = collectFlaggedIDs(ctx, c, key, in.CheckID)
+				ids, err = clientops.CollectFlaggedIDs(ctx, c, key, in.CheckID)
 				if err != nil {
-					return nil, smellsApplyOutput{}, mcpToolError("library_smells_apply", err)
+					return nil, smellsApplyOutput{}, toolError("library_smells_apply", err)
 				}
 				if len(ids) == 0 {
 					return nil, smellsApplyOutput{Message: "no games flagged by this check"}, nil
@@ -104,7 +108,7 @@ func registerDoctorTools(s *mcp.Server, c *cliclient.Client, key string) {
 			} else {
 				resolved, cands, msg, err := resolveSmellRefIDs(ctx, c, key, in.Refs)
 				if err != nil {
-					return nil, smellsApplyOutput{}, mcpToolError("library_smells_apply", err)
+					return nil, smellsApplyOutput{}, toolError("library_smells_apply", err)
 				}
 				if cands != nil || msg != "" {
 					return nil, smellsApplyOutput{Candidates: cands, Message: msg}, nil
@@ -113,7 +117,7 @@ func registerDoctorTools(s *mcp.Server, c *cliclient.Client, key string) {
 			}
 			res, err := c.ApplySmell(ctx, key, in.CheckID, ids)
 			if err != nil {
-				return nil, smellsApplyOutput{}, mcpToolError("library_smells_apply", err)
+				return nil, smellsApplyOutput{}, toolError("library_smells_apply", err)
 			}
 			return nil, smellsApplyOutput{Applied: res.Applied, Skipped: res.Skipped,
 				Message: fmt.Sprintf("applied %d, skipped %d", res.Applied, res.Skipped)}, nil
@@ -121,41 +125,44 @@ func registerDoctorTools(s *mcp.Server, c *cliclient.Client, key string) {
 
 	mcp.AddTool(s, &mcp.Tool{Name: "library_smells_ignore", Description: "Dismiss flagged games for a check so they stop appearing. Ambiguous refs return candidates — call again with an id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in smellsRefsInput) (*mcp.CallToolResult, smellsMutateOutput, error) {
+			key := apiKey(ctx)
 			ids, cands, msg, err := resolveSmellRefIDs(ctx, c, key, in.Refs)
 			if err != nil {
-				return nil, smellsMutateOutput{}, mcpToolError("library_smells_ignore", err)
+				return nil, smellsMutateOutput{}, toolError("library_smells_ignore", err)
 			}
 			if cands != nil || msg != "" {
 				return nil, smellsMutateOutput{Candidates: cands, Message: msg}, nil
 			}
 			n, err := c.IgnoreSmell(ctx, key, in.CheckID, ids)
 			if err != nil {
-				return nil, smellsMutateOutput{}, mcpToolError("library_smells_ignore", err)
+				return nil, smellsMutateOutput{}, toolError("library_smells_ignore", err)
 			}
 			return nil, smellsMutateOutput{Ignored: n, Message: fmt.Sprintf("dismissed %d game(s)", n)}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "library_smells_restore", Description: "Un-dismiss previously ignored games for a check. Ambiguous refs return candidates — call again with an id."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in smellsRefsInput) (*mcp.CallToolResult, smellsMutateOutput, error) {
+			key := apiKey(ctx)
 			ids, cands, msg, err := resolveSmellRefIDs(ctx, c, key, in.Refs)
 			if err != nil {
-				return nil, smellsMutateOutput{}, mcpToolError("library_smells_restore", err)
+				return nil, smellsMutateOutput{}, toolError("library_smells_restore", err)
 			}
 			if cands != nil || msg != "" {
 				return nil, smellsMutateOutput{Candidates: cands, Message: msg}, nil
 			}
 			n, err := c.RestoreSmell(ctx, key, in.CheckID, ids)
 			if err != nil {
-				return nil, smellsMutateOutput{}, mcpToolError("library_smells_restore", err)
+				return nil, smellsMutateOutput{}, toolError("library_smells_restore", err)
 			}
 			return nil, smellsMutateOutput{Restored: n, Message: fmt.Sprintf("restored %d game(s)", n)}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "library_smells_ignored", Description: "List the games currently dismissed for one check."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in smellsDetailInput) (*mcp.CallToolResult, smellsIgnoredOutput, error) {
+			key := apiKey(ctx)
 			res, err := c.ListIgnoredSmells(ctx, key, in.CheckID, in.Page, in.PerPage)
 			if err != nil {
-				return nil, smellsIgnoredOutput{}, mcpToolError("library_smells_ignored", err)
+				return nil, smellsIgnoredOutput{}, toolError("library_smells_ignored", err)
 			}
 			return nil, smellsIgnoredOutput{Items: res.Items, Total: res.Total, Page: res.Page, Pages: res.Pages}, nil
 		})
