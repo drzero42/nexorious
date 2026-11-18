@@ -36,7 +36,7 @@ func newImportReviewCmd() *cobra.Command {
 				params.Set("status", "pending_review")
 				params.Set("per_page", "100")
 				params.Set("page", strconv.Itoa(pageNum))
-				page, err := c.GetJobItems(p.Key, args[0], params)
+				page, err := c.GetJobItems(cmd.Context(), p.Key, args[0], params)
 				if err != nil {
 					return fmt.Errorf("get job items failed: %w", err)
 				}
@@ -61,7 +61,7 @@ func newImportReviewCmd() *cobra.Command {
 				}
 				switch strings.TrimSpace(line) {
 				case "s":
-					results, err := c.SearchIGDB(p.Key, item.SourceTitle, 10)
+					results, err := c.SearchIGDB(cmd.Context(), p.Key, item.SourceTitle, 10)
 					if err != nil {
 						fmt.Fprintf(out, "search failed: %v\n", err)
 						continue
@@ -92,13 +92,13 @@ func newImportReviewCmd() *cobra.Command {
 						sel = n
 					}
 					chosen := results.Games[sel-1]
-					if resolveErr := c.ResolveJobItem(p.Key, item.ID, chosen.IgdbID); resolveErr != nil {
+					if resolveErr := c.ResolveJobItem(cmd.Context(), p.Key, item.ID, chosen.IgdbID); resolveErr != nil {
 						fmt.Fprintf(out, "resolve error: %v\n", resolveErr)
 						continue
 					}
 					fmt.Fprintf(out, "resolved %s -> igdb %d\n", item.SourceTitle, chosen.IgdbID)
 				case "k":
-					if skipErr := c.SkipJobItem(p.Key, item.ID); skipErr != nil {
+					if skipErr := c.SkipJobItem(cmd.Context(), p.Key, item.ID); skipErr != nil {
 						fmt.Fprintf(out, "skip error: %v\n", skipErr)
 						continue
 					}
@@ -133,7 +133,7 @@ func newImportResolveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := cliclient.New(p.URL).ResolveJobItem(p.Key, args[0], igdbID); err != nil {
+			if err := cliclient.New(p.URL).ResolveJobItem(cmd.Context(), p.Key, args[0], igdbID); err != nil {
 				return fmt.Errorf("resolve failed: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "resolved %s -> igdb %d\n", args[0], igdbID)
@@ -164,7 +164,7 @@ func newImportSkipCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := cliclient.New(p.URL).SkipJobItem(p.Key, args[0]); err != nil {
+			if err := cliclient.New(p.URL).SkipJobItem(cmd.Context(), p.Key, args[0]); err != nil {
 				return fmt.Errorf("skip failed: %w", err)
 			}
 			fmt.Fprintf(out, "skipped %s\n", args[0])

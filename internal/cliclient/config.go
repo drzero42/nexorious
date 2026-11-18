@@ -1,6 +1,7 @@
 package cliclient
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 )
@@ -12,9 +13,9 @@ type Settings struct {
 }
 
 // GetSettings returns the current user settings via GET /api/settings.
-func (c *Client) GetSettings(key string) (*Settings, error) {
+func (c *Client) GetSettings(ctx context.Context, key string) (*Settings, error) {
 	var out Settings
-	if err := c.doBearer(http.MethodGet, "/api/settings", key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, "/api/settings", key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -22,10 +23,10 @@ func (c *Client) GetSettings(key string) (*Settings, error) {
 
 // UpdateSettings sets the deal_region field via PATCH /api/settings and
 // returns the updated settings.
-func (c *Client) UpdateSettings(key, dealRegion string) (*Settings, error) {
+func (c *Client) UpdateSettings(ctx context.Context, key, dealRegion string) (*Settings, error) {
 	body := map[string]any{"deal_region": dealRegion}
 	var out Settings
-	if err := c.doBearer(http.MethodPatch, "/api/settings", key, body, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodPatch, "/api/settings", key, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -58,9 +59,9 @@ type subscriptionsEnvelope struct {
 
 // ListChannels returns the caller's notification channels via
 // GET /api/notifications/channels.
-func (c *Client) ListChannels(key string) ([]NotifyChannel, error) {
+func (c *Client) ListChannels(ctx context.Context, key string) ([]NotifyChannel, error) {
 	var out []NotifyChannel
-	if err := c.doBearer(http.MethodGet, "/api/notifications/channels", key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, "/api/notifications/channels", key, nil, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -68,10 +69,10 @@ func (c *Client) ListChannels(key string) ([]NotifyChannel, error) {
 
 // CreateChannel creates a notification channel with the given name and
 // webhook URL via POST /api/notifications/channels.
-func (c *Client) CreateChannel(key, name, channelURL string) (*NotifyChannel, error) {
+func (c *Client) CreateChannel(ctx context.Context, key, name, channelURL string) (*NotifyChannel, error) {
 	body := map[string]any{"name": name, "url": channelURL}
 	var out NotifyChannel
-	if err := c.doBearer(http.MethodPost, "/api/notifications/channels", key, body, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodPost, "/api/notifications/channels", key, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -80,9 +81,9 @@ func (c *Client) CreateChannel(key, name, channelURL string) (*NotifyChannel, er
 // UpdateChannel applies a partial update to a notification channel via
 // PATCH /api/notifications/channels/:id. Only keys present in fields are sent;
 // valid keys are name and url.
-func (c *Client) UpdateChannel(key, id string, fields map[string]any) (*NotifyChannel, error) {
+func (c *Client) UpdateChannel(ctx context.Context, key, id string, fields map[string]any) (*NotifyChannel, error) {
 	var out NotifyChannel
-	if err := c.doBearer(http.MethodPatch, "/api/notifications/channels/"+url.PathEscape(id), key, fields, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodPatch, "/api/notifications/channels/"+url.PathEscape(id), key, fields, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -90,28 +91,28 @@ func (c *Client) UpdateChannel(key, id string, fields map[string]any) (*NotifyCh
 
 // DeleteChannel removes a notification channel via
 // DELETE /api/notifications/channels/:id (expects 204).
-func (c *Client) DeleteChannel(key, id string) error {
-	return c.doBearer(http.MethodDelete, "/api/notifications/channels/"+url.PathEscape(id), key, nil, nil)
+func (c *Client) DeleteChannel(ctx context.Context, key, id string) error {
+	return c.doBearer(ctx, http.MethodDelete, "/api/notifications/channels/"+url.PathEscape(id), key, nil, nil)
 }
 
 // TestChannel sends a test notification through the channel with the given id
 // via POST /api/notifications/channels/:id/test (expects 204).
-func (c *Client) TestChannel(key, id string) error {
-	return c.doBearer(http.MethodPost, "/api/notifications/channels/"+url.PathEscape(id)+"/test", key, nil, nil)
+func (c *Client) TestChannel(ctx context.Context, key, id string) error {
+	return c.doBearer(ctx, http.MethodPost, "/api/notifications/channels/"+url.PathEscape(id)+"/test", key, nil, nil)
 }
 
 // TestURL sends a test notification to an unsaved webhook URL via
 // POST /api/notifications/test (expects 204).
-func (c *Client) TestURL(key, rawURL string) error {
+func (c *Client) TestURL(ctx context.Context, key, rawURL string) error {
 	body := map[string]any{"url": rawURL}
-	return c.doBearer(http.MethodPost, "/api/notifications/test", key, body, nil)
+	return c.doBearer(ctx, http.MethodPost, "/api/notifications/test", key, body, nil)
 }
 
 // ListEventTypes returns all available notification event types via
 // GET /api/notifications/event-types.
-func (c *Client) ListEventTypes(key string) ([]EventType, error) {
+func (c *Client) ListEventTypes(ctx context.Context, key string) ([]EventType, error) {
 	var out []EventType
-	if err := c.doBearer(http.MethodGet, "/api/notifications/event-types", key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, "/api/notifications/event-types", key, nil, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -120,9 +121,9 @@ func (c *Client) ListEventTypes(key string) ([]EventType, error) {
 // ListSubscriptions returns the caller's active notification subscriptions
 // (a slice of event-type strings) via GET /api/notifications/subscriptions.
 // The {"event_types":[...]} envelope is unwrapped before returning.
-func (c *Client) ListSubscriptions(key string) ([]string, error) {
+func (c *Client) ListSubscriptions(ctx context.Context, key string) ([]string, error) {
 	var env subscriptionsEnvelope
-	if err := c.doBearer(http.MethodGet, "/api/notifications/subscriptions", key, nil, &env); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, "/api/notifications/subscriptions", key, nil, &env); err != nil {
 		return nil, err
 	}
 	return env.EventTypes, nil
@@ -131,10 +132,10 @@ func (c *Client) ListSubscriptions(key string) ([]string, error) {
 // PutSubscriptions replaces the caller's notification subscriptions with the
 // given event-type strings via PUT /api/notifications/subscriptions. The
 // {"event_types":[...]} envelope is unwrapped before returning.
-func (c *Client) PutSubscriptions(key string, eventTypes []string) ([]string, error) {
+func (c *Client) PutSubscriptions(ctx context.Context, key string, eventTypes []string) ([]string, error) {
 	body := subscriptionsEnvelope{EventTypes: eventTypes}
 	var env subscriptionsEnvelope
-	if err := c.doBearer(http.MethodPut, "/api/notifications/subscriptions", key, body, &env); err != nil {
+	if err := c.doBearer(ctx, http.MethodPut, "/api/notifications/subscriptions", key, body, &env); err != nil {
 		return nil, err
 	}
 	return env.EventTypes, nil
@@ -144,9 +145,9 @@ func (c *Client) PutSubscriptions(key string, eventTypes []string) ([]string, er
 // defaults via POST /api/notifications/subscriptions/reset and returns the
 // resulting set of event types. The {"event_types":[...]} envelope is unwrapped
 // before returning.
-func (c *Client) ResetSubscriptions(key string) ([]string, error) {
+func (c *Client) ResetSubscriptions(ctx context.Context, key string) ([]string, error) {
 	var env subscriptionsEnvelope
-	if err := c.doBearer(http.MethodPost, "/api/notifications/subscriptions/reset", key, nil, &env); err != nil {
+	if err := c.doBearer(ctx, http.MethodPost, "/api/notifications/subscriptions/reset", key, nil, &env); err != nil {
 		return nil, err
 	}
 	return env.EventTypes, nil

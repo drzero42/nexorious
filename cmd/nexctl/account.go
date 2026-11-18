@@ -75,7 +75,7 @@ func runLogin(cmd *cobra.Command, urlFlag, usernameFlag string) error {
 		return fmt.Errorf("password is required")
 	}
 
-	return cliauth.LoginAndStoreKey(out, cliclient.New(url), cfg, name, url, username, password)
+	return cliauth.LoginAndStoreKey(cmd.Context(), out, cliclient.New(url), cfg, name, url, username, password)
 }
 
 func newLogoutCmd() *cobra.Command {
@@ -89,7 +89,7 @@ func newLogoutCmd() *cobra.Command {
 				return err
 			}
 			if p.KeyID != "" {
-				if err := cliclient.New(p.URL).RevokeAPIKeyWithBearer(p.Key, p.KeyID); err != nil {
+				if err := cliclient.New(p.URL).RevokeAPIKeyWithBearer(cmd.Context(), p.Key, p.KeyID); err != nil {
 					fmt.Fprintf(out, "warning: could not revoke key on server: %v\n", err)
 				}
 			}
@@ -111,7 +111,7 @@ func newWhoamiCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			username, err := cliclient.New(p.URL).Me(p.Key)
+			username, err := cliclient.New(p.URL).Me(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("could not verify stored key (it may be revoked or expired): %w", err)
 			}

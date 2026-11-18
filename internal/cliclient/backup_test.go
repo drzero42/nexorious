@@ -29,7 +29,7 @@ func TestGetBackupConfig(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	cfg, err := c.GetBackupConfig("k")
+	cfg, err := c.GetBackupConfig(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("GetBackupConfig: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestUpdateBackupConfig(t *testing.T) {
 		RetentionMode:  "count",
 		RetentionValue: 7,
 	}
-	out, err := c.UpdateBackupConfig("k", in)
+	out, err := c.UpdateBackupConfig(t.Context(), "k", in)
 	if err != nil {
 		t.Fatalf("UpdateBackupConfig: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestListBackups(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	backups, err := c.ListBackups("k")
+	backups, err := c.ListBackups(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("ListBackups: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestCreateBackup(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	res, err := c.CreateBackup("k")
+	res, err := c.CreateBackup(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("CreateBackup: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestCreateBackup_conflict(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	_, err := c.CreateBackup("k")
+	_, err := c.CreateBackup(t.Context(), "k")
 	if err == nil {
 		t.Fatal("expected error on 409, got nil")
 	}
@@ -216,7 +216,7 @@ func TestDeleteBackup(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.DeleteBackup("k", "bk-del"); err != nil {
+	if err := c.DeleteBackup(t.Context(), "k", "bk-del"); err != nil {
 		t.Fatalf("DeleteBackup: %v", err)
 	}
 }
@@ -240,7 +240,7 @@ func TestOpenBackupDownload(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	name, body, err := c.OpenBackupDownload("k", "bk-dl")
+	name, body, err := c.OpenBackupDownload(t.Context(), "k", "bk-dl")
 	if err != nil {
 		t.Fatalf("OpenBackupDownload: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestOpenBackupDownload_noContentDisposition(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	name, body, err := c.OpenBackupDownload("k", "bk-plain")
+	name, body, err := c.OpenBackupDownload(t.Context(), "k", "bk-plain")
 	if err != nil {
 		t.Fatalf("OpenBackupDownload: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestOpenBackupDownload_nonOK(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	name, body, err := c.OpenBackupDownload("k", "bk-missing")
+	name, body, err := c.OpenBackupDownload(t.Context(), "k", "bk-missing")
 	if err == nil {
 		if body != nil {
 			_ = body.Close()
@@ -329,7 +329,7 @@ func TestRestoreBackup(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.RestoreBackup("k", "bk-restore"); err != nil {
+	if err := c.RestoreBackup(t.Context(), "k", "bk-restore"); err != nil {
 		t.Fatalf("RestoreBackup: %v", err)
 	}
 }
@@ -357,7 +357,7 @@ func TestRestoreBackupUpload(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.RestoreBackupUpload("k", "backup.tar.gz", bytes.NewReader(payload)); err != nil {
+	if err := c.RestoreBackupUpload(t.Context(), "k", "backup.tar.gz", bytes.NewReader(payload)); err != nil {
 		t.Fatalf("RestoreBackupUpload: %v", err)
 	}
 }

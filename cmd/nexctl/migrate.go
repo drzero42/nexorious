@@ -30,7 +30,7 @@ func runNexctlMigrate(cmd *cobra.Command, _ []string) error {
 	url := resolveServerURL(cmd)
 	client := cliclient.New(url)
 
-	state, _, err := client.MigrationStatus()
+	state, _, err := client.MigrationStatus(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("could not reach server at %s — is it running? (%w)", url, err)
 	}
@@ -41,7 +41,7 @@ func runNexctlMigrate(cmd *cobra.Command, _ []string) error {
 	case "db_unavailable":
 		return fmt.Errorf("database is unavailable")
 	}
-	return cliauth.RunMigrateAndWait(out, client)
+	return cliauth.RunMigrateAndWait(cmd.Context(), out, client)
 }
 
 func newMigrateStatusCmd() *cobra.Command {
@@ -50,7 +50,7 @@ func newMigrateStatusCmd() *cobra.Command {
 		Short: "Show the server's migration state",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			state, detail, err := cliclient.New(resolveServerURL(cmd)).MigrationStatus()
+			state, detail, err := cliclient.New(resolveServerURL(cmd)).MigrationStatus(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("migration status: %w", err)
 			}

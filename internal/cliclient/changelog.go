@@ -1,6 +1,7 @@
 package cliclient
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 )
@@ -32,7 +33,7 @@ type ChangelogResult struct {
 // pure read of entries newer than that version; otherwise it requests the
 // since-last diff (auto-marks seen). rangeAll and since are mutually exclusive;
 // since takes precedence if both are set.
-func (c *Client) GetChangelog(key string, rangeAll bool, since string) (*ChangelogResult, error) {
+func (c *Client) GetChangelog(ctx context.Context, key string, rangeAll bool, since string) (*ChangelogResult, error) {
 	q := url.Values{}
 	switch {
 	case since != "":
@@ -45,7 +46,7 @@ func (c *Client) GetChangelog(key string, rangeAll bool, since string) (*Changel
 		path += "?" + enc
 	}
 	var out ChangelogResult
-	if err := c.doBearer(http.MethodGet, path, key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodGet, path, key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

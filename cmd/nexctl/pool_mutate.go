@@ -43,7 +43,7 @@ func newPoolCreateCmd() *cobra.Command {
 			if cmd.Flags().Changed("color") {
 				colorPtr = &color
 			}
-			pool, err := cliclient.New(p.URL).CreatePool(p.Key, args[0], colorPtr, raw)
+			pool, err := cliclient.New(p.URL).CreatePool(cmd.Context(), p.Key, args[0], colorPtr, raw)
 			if err != nil {
 				return fmt.Errorf("create pool failed: %w", err)
 			}
@@ -94,7 +94,7 @@ func newPoolEditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := c.UpdatePool(p.Key, ref.ID, fields); err != nil {
+			if _, err := c.UpdatePool(cmd.Context(), p.Key, ref.ID, fields); err != nil {
 				return fmt.Errorf("edit pool failed: %w", err)
 			}
 			fmt.Fprintf(out, "Updated pool %q.\n", ref.Name)
@@ -133,7 +133,7 @@ func newPoolRmCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("aborted")
 			}
-			if err := c.DeletePool(p.Key, ref.ID); err != nil {
+			if err := c.DeletePool(cmd.Context(), p.Key, ref.ID); err != nil {
 				return fmt.Errorf("delete pool failed: %w", err)
 			}
 			fmt.Fprintf(out, "Deleted pool %q.\n", ref.Name)

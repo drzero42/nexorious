@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"strings"
 	"text/tabwriter"
@@ -19,10 +20,10 @@ func newTagCmd() *cobra.Command {
 }
 
 // resolveTagRef resolves a tag by id (UUID) or name (case-insensitive).
-func resolveTagRef(c *cliclient.Client, key, ref string) (*cliclient.Tag, error) {
+func resolveTagRef(ctx context.Context, c *cliclient.Client, key, ref string) (*cliclient.Tag, error) {
 	if looksLikeUUID(ref) {
 		// No single-tag GET endpoint; fetch the list and match by id.
-		tags, err := c.ListTags(key)
+		tags, err := c.ListTags(ctx, key)
 		if err != nil {
 			return nil, err
 		}
@@ -33,7 +34,7 @@ func resolveTagRef(c *cliclient.Client, key, ref string) (*cliclient.Tag, error)
 		}
 		return nil, fmt.Errorf("no tag with id %s", ref)
 	}
-	tags, err := c.ListTags(key)
+	tags, err := c.ListTags(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +56,7 @@ func newTagListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tags, err := cliclient.New(p.URL).ListTags(p.Key)
+			tags, err := cliclient.New(p.URL).ListTags(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list tags failed: %w", err)
 			}
@@ -98,7 +99,7 @@ func newTagCreateCmd() *cobra.Command {
 			if cmd.Flags().Changed("color") {
 				colorPtr = &color
 			}
-			tag, err := cliclient.New(p.URL).CreateTag(p.Key, args[0], colorPtr)
+			tag, err := cliclient.New(p.URL).CreateTag(cmd.Context(), p.Key, args[0], colorPtr)
 			if err != nil {
 				return fmt.Errorf("create tag failed: %w", err)
 			}
@@ -122,12 +123,12 @@ func newTagRenameCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			tag, err := resolveTagRef(c, p.Key, args[0])
+			tag, err := resolveTagRef(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
 			newName := args[1]
-			if _, err := c.UpdateTag(p.Key, tag.ID, &newName, nil); err != nil {
+			if _, err := c.UpdateTag(cmd.Context(), p.Key, tag.ID, &newName, nil); err != nil {
 				return fmt.Errorf("rename tag failed: %w", err)
 			}
 			fmt.Fprintf(out, "Renamed %q to %q.\n", tag.Name, newName)
@@ -148,7 +149,7 @@ func newTagRmCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			tag, err := resolveTagRef(c, p.Key, args[0])
+			tag, err := resolveTagRef(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
@@ -160,7 +161,7 @@ func newTagRmCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("aborted")
 			}
-			if err := c.DeleteTag(p.Key, tag.ID); err != nil {
+			if err := c.DeleteTag(cmd.Context(), p.Key, tag.ID); err != nil {
 				return fmt.Errorf("delete tag failed: %w", err)
 			}
 			fmt.Fprintf(out, "Deleted tag %q.\n", tag.Name)

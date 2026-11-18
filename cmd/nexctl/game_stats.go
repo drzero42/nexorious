@@ -25,7 +25,7 @@ func newGameStatsCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			s, err := c.GetCollectionStats(p.Key)
+			s, err := c.GetCollectionStats(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("get collection stats failed: %w", err)
 			}

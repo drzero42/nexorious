@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -38,15 +39,15 @@ func looksLikeUUID(s string) bool { return uuidRe.MatchString(s) }
 // findUserGamesByRef returns every library game matching ref: a UUID is fetched
 // directly (one element); a title is a search query (zero or more). No cmd, no
 // picker — callers own disambiguation.
-func findUserGamesByRef(c *cliclient.Client, key, ref string) ([]cliclient.UserGame, error) {
+func findUserGamesByRef(ctx context.Context, c *cliclient.Client, key, ref string) ([]cliclient.UserGame, error) {
 	if looksLikeUUID(ref) {
-		u, err := c.GetUserGame(key, ref)
+		u, err := c.GetUserGame(ctx, key, ref)
 		if err != nil {
 			return nil, err
 		}
 		return []cliclient.UserGame{*u}, nil
 	}
-	res, err := c.ListUserGames(key, urlValues("q", ref))
+	res, err := c.ListUserGames(ctx, key, urlValues("q", ref))
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +57,7 @@ func findUserGamesByRef(c *cliclient.Client, key, ref string) ([]cliclient.UserG
 // resolveUserGameRef is the CLI wrapper: one hit is used; many prompt a picker
 // (interactive) or error with candidate ids (off-TTY).
 func resolveUserGameRef(cmd *cobra.Command, c *cliclient.Client, key, ref string) (*cliclient.UserGame, error) {
-	games, err := findUserGamesByRef(c, key, ref)
+	games, err := findUserGamesByRef(cmd.Context(), c, key, ref)
 	if err != nil {
 		return nil, err
 	}

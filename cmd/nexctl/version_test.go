@@ -42,7 +42,7 @@ func TestRunVersion_TextWithServer(t *testing.T) {
 	srv := versionServer(t, &gotAuth)
 
 	var buf bytes.Buffer
-	if err := runVersion(&buf, srv.URL, "nxr_key", false); err != nil {
+	if err := runVersion(t.Context(), &buf, srv.URL, "nxr_key", false); err != nil {
 		t.Fatalf("runVersion: %v", err)
 	}
 	got := buf.String()
@@ -61,7 +61,7 @@ func TestRunVersion_JSONWithServer(t *testing.T) {
 	srv := versionServer(t, nil)
 
 	var buf bytes.Buffer
-	if err := runVersion(&buf, srv.URL, "", true); err != nil {
+	if err := runVersion(t.Context(), &buf, srv.URL, "", true); err != nil {
 		t.Fatalf("runVersion: %v", err)
 	}
 	var out struct {
@@ -93,7 +93,7 @@ func TestRunVersion_ServerUnreachableTextExitsZero(t *testing.T) {
 	srv.Close()
 
 	var buf bytes.Buffer
-	if err := runVersion(&buf, url, "", false); err != nil {
+	if err := runVersion(t.Context(), &buf, url, "", false); err != nil {
 		t.Fatalf("runVersion must not return an error when the server is down: %v", err)
 	}
 	got := buf.String()
@@ -109,7 +109,7 @@ func TestRunVersion_NoProfileConfigured(t *testing.T) {
 	withTestVersion(t)
 
 	var buf bytes.Buffer
-	if err := runVersion(&buf, "", "", true); err != nil {
+	if err := runVersion(t.Context(), &buf, "", "", true); err != nil {
 		t.Fatalf("runVersion: %v", err)
 	}
 	var out struct {

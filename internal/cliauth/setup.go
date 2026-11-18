@@ -1,6 +1,7 @@
 package cliauth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -21,8 +22,8 @@ const (
 // and waited on automatically so a fresh instance comes up in one command. A
 // migration that previously *failed* aborts with the failure detail rather than
 // blindly retrying a broken migration.
-func Preflight(out io.Writer, client *cliclient.Client, url string) error {
-	status, err := client.Health()
+func Preflight(ctx context.Context, out io.Writer, client *cliclient.Client, url string) error {
+	status, err := client.Health(ctx)
 	if err != nil {
 		return fmt.Errorf("could not reach server at %s — is it running? (%w)", url, err)
 	}
@@ -34,9 +35,9 @@ func Preflight(out io.Writer, client *cliclient.Client, url string) error {
 	case "needs_migration", "migrating", "needs_adopt":
 		// needs_adopt (a v0.17.1 schema present, pending adoption) is resolved by
 		// the same migrate run, which performs adopt + catch-up server-side.
-		return RunMigrateAndWait(out, client)
+		return RunMigrateAndWait(ctx, out, client)
 	case "migration_failed":
-		return MigrationFailedErr(client)
+		return MigrationFailedErr(ctx, client)
 	default:
 		return fmt.Errorf("server is not ready (status: %s)", status)
 	}
@@ -44,8 +45,8 @@ func Preflight(out io.Writer, client *cliclient.Client, url string) error {
 
 // MigrationFailedErr builds the abort error for a server stuck in
 // migration_failed, surfacing the failure detail when available.
-func MigrationFailedErr(client *cliclient.Client) error {
-	_, detail, err := client.MigrationStatus()
+func MigrationFailedErr(ctx context.Context, client *cliclient.Client) error {
+	_, detail, err := client.MigrationStatus(ctx)
 	if err != nil {
 		return fmt.Errorf("migrations previously failed, and fetching the failure detail also failed: %w — check the server logs", err)
 	}
@@ -58,14 +59,14 @@ func MigrationFailedErr(client *cliclient.Client) error {
 // RunMigrateAndWait triggers migrations on the server and polls until the
 // server reports ready, or fails / times out. Driven over HTTP so the running
 // server's own migrator applies them.
-func RunMigrateAndWait(out io.Writer, client *cliclient.Client) error {
+func RunMigrateAndWait(ctx context.Context, out io.Writer, client *cliclient.Client) error {
 	fmt.Fprintln(out, "Running pending migrations...")
-	if err := client.RunMigrations(); err != nil {
+	if err := client.RunMigrations(ctx); err != nil {
 		return fmt.Errorf("start migrations: %w", err)
 	}
 	deadline := time.Now().Add(migrateTimeout)
 	for {
-		state, detail, err := client.MigrationStatus()
+		state, detail, err := client.MigrationStatus(ctx)
 		if err != nil {
 			return fmt.Errorf("poll migration status: %w", err)
 		}

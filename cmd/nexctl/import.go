@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,8 +34,8 @@ func readImportFile(path string) (filename string, data []byte, err error) {
 // fetching the sources list. Matching is case-insensitive. On success the
 // canonical slug is returned; on failure a descriptive error listing valid
 // options is returned.
-func resolveImportSource(c *cliclient.Client, key, arg string) (string, error) {
-	sources, err := c.ListImportSources(key)
+func resolveImportSource(ctx context.Context, c *cliclient.Client, key, arg string) (string, error) {
+	sources, err := c.ListImportSources(ctx, key)
 	if err != nil {
 		return "", fmt.Errorf("list import sources failed: %w", err)
 	}
@@ -79,7 +80,7 @@ func newImportSourcesCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sources, err := cliclient.New(p.URL).ListImportSources(p.Key)
+			sources, err := cliclient.New(p.URL).ListImportSources(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list import sources failed: %w", err)
 			}
@@ -124,7 +125,7 @@ func newImportNexoriousCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := cliclient.New(p.URL).ImportNexorious(p.Key, filename, data)
+			res, err := cliclient.New(p.URL).ImportNexorious(cmd.Context(), p.Key, filename, data)
 			if err != nil {
 				return fmt.Errorf("import failed: %w", err)
 			}
@@ -144,7 +145,7 @@ func newImportRunCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			slug, err := resolveImportSource(c, p.Key, args[0])
+			slug, err := resolveImportSource(cmd.Context(), c, p.Key, args[0])
 			if err != nil {
 				return err
 			}
@@ -152,7 +153,7 @@ func newImportRunCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := c.ImportSource(p.Key, slug, filename, data)
+			res, err := c.ImportSource(cmd.Context(), p.Key, slug, filename, data)
 			if err != nil {
 				return fmt.Errorf("import failed: %w", err)
 			}

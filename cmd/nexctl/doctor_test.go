@@ -125,7 +125,7 @@ func TestCollectFlaggedIDsPaginates(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ids, err := collectFlaggedIDs(cliclient.New(srv.URL), "k", "multi")
+	ids, err := collectFlaggedIDs(t.Context(), cliclient.New(srv.URL), "k", "multi")
 	if err != nil {
 		t.Fatalf("collectFlaggedIDs: %v", err)
 	}

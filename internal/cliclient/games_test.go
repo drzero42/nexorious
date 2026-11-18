@@ -27,7 +27,7 @@ func TestSearchIGDB(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	res, err := New(srv.URL).SearchIGDB("k", "hollow", 10)
+	res, err := New(srv.URL).SearchIGDB(t.Context(), "k", "hollow", 10)
 	if err != nil {
 		t.Fatalf("SearchIGDB: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestImportIGDBGame(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	g, err := New(srv.URL).ImportIGDBGame("k", 2131)
+	g, err := New(srv.URL).ImportIGDBGame(t.Context(), "k", 2131)
 	if err != nil {
 		t.Fatalf("ImportIGDBGame: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestListUserGames(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	res, err := New(srv.URL).ListUserGames("k", url.Values{"play_status": {"completed"}})
+	res, err := New(srv.URL).ListUserGames(t.Context(), "k", url.Values{"play_status": {"completed"}})
 	if err != nil {
 		t.Fatalf("ListUserGames: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestGetUserGame(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	ug, err := New(srv.URL).GetUserGame("k", "ug-1")
+	ug, err := New(srv.URL).GetUserGame(t.Context(), "k", "ug-1")
 	if err != nil {
 		t.Fatalf("GetUserGame: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestGetCollectionStats(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	s, err := New(srv.URL).GetCollectionStats("k")
+	s, err := New(srv.URL).GetCollectionStats(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("GetCollectionStats: %v", err)
 	}
@@ -169,11 +169,11 @@ func TestCreateUserGameAndReplaceTags(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	ug, err := c.CreateUserGame("k", CreateUserGameInput{GameID: 2131, PlayStatus: "not_started"})
+	ug, err := c.CreateUserGame(t.Context(), "k", CreateUserGameInput{GameID: 2131, PlayStatus: "not_started"})
 	if err != nil || ug.ID != "ug-9" {
 		t.Fatalf("CreateUserGame: %v %+v", err, ug)
 	}
-	if _, err := c.ReplaceTags("k", "ug-9", []string{"RPG", "Backlog"}); err != nil {
+	if _, err := c.ReplaceTags(t.Context(), "k", "ug-9", []string{"RPG", "Backlog"}); err != nil {
 		t.Fatalf("ReplaceTags: %v", err)
 	}
 }
@@ -188,7 +188,7 @@ func TestDeleteUserGame(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	if err := New(srv.URL).DeleteUserGame("k", "ug-1"); err != nil {
+	if err := New(srv.URL).DeleteUserGame(t.Context(), "k", "ug-1"); err != nil {
 		t.Fatalf("DeleteUserGame: %v", err)
 	}
 }

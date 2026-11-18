@@ -121,7 +121,7 @@ func newNotifyChannelListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			channels, err := cliclient.New(p.URL).ListChannels(p.Key)
+			channels, err := cliclient.New(p.URL).ListChannels(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list channels: %w", err)
 			}
@@ -170,7 +170,7 @@ func newNotifyChannelCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ch, err := cliclient.New(p.URL).CreateChannel(p.Key, name, channelURL)
+			ch, err := cliclient.New(p.URL).CreateChannel(cmd.Context(), p.Key, name, channelURL)
 			if err != nil {
 				return fmt.Errorf("create channel: %w", err)
 			}
@@ -218,7 +218,7 @@ func newNotifyChannelEditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ch, err := cliclient.New(p.URL).UpdateChannel(p.Key, id, fields)
+			ch, err := cliclient.New(p.URL).UpdateChannel(cmd.Context(), p.Key, id, fields)
 			if err != nil {
 				return fmt.Errorf("edit channel: %w", err)
 			}
@@ -250,7 +250,7 @@ func newNotifyChannelRmCmd() *cobra.Command {
 				fmt.Fprintln(out, "Aborted.")
 				return nil
 			}
-			if err := cliclient.New(p.URL).DeleteChannel(p.Key, args[0]); err != nil {
+			if err := cliclient.New(p.URL).DeleteChannel(cmd.Context(), p.Key, args[0]); err != nil {
 				return fmt.Errorf("delete channel: %w", err)
 			}
 			fmt.Fprintf(out, "removed channel %s\n", args[0])
@@ -270,7 +270,7 @@ func newNotifyChannelTestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := cliclient.New(p.URL).TestChannel(p.Key, args[0]); err != nil {
+			if err := cliclient.New(p.URL).TestChannel(cmd.Context(), p.Key, args[0]); err != nil {
 				return fmt.Errorf("test channel: %w", err)
 			}
 			fmt.Fprintln(out, "test notification sent")
@@ -308,7 +308,7 @@ func newNotifyTestURLCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := cliclient.New(p.URL).TestURL(p.Key, rawURL); err != nil {
+			if err := cliclient.New(p.URL).TestURL(cmd.Context(), p.Key, rawURL); err != nil {
 				return fmt.Errorf("test URL: %w", err)
 			}
 			fmt.Fprintln(out, "test notification sent")
@@ -328,7 +328,7 @@ func newNotifySubListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			types, err := cliclient.New(p.URL).ListSubscriptions(p.Key)
+			types, err := cliclient.New(p.URL).ListSubscriptions(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list subscriptions: %w", err)
 			}
@@ -347,7 +347,7 @@ func newNotifySubSetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			types, err := cliclient.New(p.URL).PutSubscriptions(p.Key, args)
+			types, err := cliclient.New(p.URL).PutSubscriptions(cmd.Context(), p.Key, args)
 			if err != nil {
 				return fmt.Errorf("set subscriptions: %w", err)
 			}
@@ -365,7 +365,7 @@ func newNotifySubResetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			types, err := cliclient.New(p.URL).ResetSubscriptions(p.Key)
+			types, err := cliclient.New(p.URL).ResetSubscriptions(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("reset subscriptions: %w", err)
 			}
@@ -384,7 +384,7 @@ func newNotifyEventsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			events, err := cliclient.New(p.URL).ListEventTypes(p.Key)
+			events, err := cliclient.New(p.URL).ListEventTypes(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list event types: %w", err)
 			}

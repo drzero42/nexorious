@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ func newGameAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := c.ImportIGDBGame(p.Key, cand.IgdbID); err != nil {
+			if _, err := c.ImportIGDBGame(cmd.Context(), p.Key, cand.IgdbID); err != nil {
 				return fmt.Errorf("import IGDB game failed: %w", err)
 			}
 
@@ -62,13 +63,13 @@ func newGameAddCmd() *cobra.Command {
 				if storefront != "" {
 					sf = storefront
 				}
-				if err := validatePlatform(c, p.Key, pl); err != nil {
+				if err := validatePlatform(cmd.Context(), c, p.Key, pl); err != nil {
 					return err
 				}
 				in.Platforms = []cliclient.PlatformInput{{Platform: pl, Storefront: sf, OwnershipStatus: "owned"}}
 			}
 
-			ug, err := c.CreateUserGame(p.Key, in)
+			ug, err := c.CreateUserGame(cmd.Context(), p.Key, in)
 			if err != nil {
 				return fmt.Errorf("add game failed: %w", err)
 			}
@@ -99,8 +100,8 @@ func splitPlatform(s string) (string, string) {
 // findIGDBCandidates returns the IGDB candidates for a query. The backend
 // performs ID inference ("igdb:NNNN" / bare number), so callers just pass the
 // raw query. No cmd, no picker — callers own disambiguation.
-func findIGDBCandidates(c *cliclient.Client, key, query string) ([]cliclient.IGDBCandidate, error) {
-	res, err := c.SearchIGDB(key, query, 10)
+func findIGDBCandidates(ctx context.Context, c *cliclient.Client, key, query string) ([]cliclient.IGDBCandidate, error) {
+	res, err := c.SearchIGDB(ctx, key, query, 10)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +112,7 @@ func findIGDBCandidates(c *cliclient.Client, key, query string) ([]cliclient.IGD
 // (backend ID inference included), with a TTY picker / off-TTY candidate-list
 // error when the search is ambiguous.
 func resolveIGDBCandidate(cmd *cobra.Command, c *cliclient.Client, key, query string) (*cliclient.IGDBCandidate, error) {
-	games, err := findIGDBCandidates(c, key, query)
+	games, err := findIGDBCandidates(cmd.Context(), c, key, query)
 	if err != nil {
 		return nil, err
 	}

@@ -66,7 +66,7 @@ func TestListImportSources(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	sources, err := c.ListImportSources("k")
+	sources, err := c.ListImportSources(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("ListImportSources: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestListImportSources_error(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	_, err := c.ListImportSources("bad")
+	_, err := c.ListImportSources(t.Context(), "bad")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -123,7 +123,7 @@ func TestImportNexorious(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	res, err := c.ImportNexorious("k", "export.json", payload)
+	res, err := c.ImportNexorious(t.Context(), "k", "export.json", payload)
 	if err != nil {
 		t.Fatalf("ImportNexorious: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestInspectCSV(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	res, err := c.InspectCSV("k", "games.csv", payload)
+	res, err := c.InspectCSV(t.Context(), "k", "games.csv", payload)
 	if err != nil {
 		t.Fatalf("InspectCSV: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestImportCSV_formatOnly(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	res, err := c.ImportCSV("k", "games.csv", payload, "grouvee", nil)
+	res, err := c.ImportCSV(t.Context(), "k", "games.csv", payload, "grouvee", nil)
 	if err != nil {
 		t.Fatalf("ImportCSV (format only): %v", err)
 	}
@@ -253,7 +253,7 @@ func TestImportCSV_mappingOnly(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	res, err := c.ImportCSV("k", "games.csv", payload, "", mappingJSON)
+	res, err := c.ImportCSV(t.Context(), "k", "games.csv", payload, "", mappingJSON)
 	if err != nil {
 		t.Fatalf("ImportCSV (mapping only): %v", err)
 	}
@@ -285,7 +285,7 @@ func TestImportCSV_bothFields(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	res, err := c.ImportCSV("k", "games.csv", payload, "grouvee", mappingJSON)
+	res, err := c.ImportCSV(t.Context(), "k", "games.csv", payload, "grouvee", mappingJSON)
 	if err != nil {
 		t.Fatalf("ImportCSV (both fields): %v", err)
 	}
@@ -319,7 +319,7 @@ func TestImportSource_pathEscape(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	res, err := c.ImportSource("k", "vglist", "export.json", payload)
+	res, err := c.ImportSource(t.Context(), "k", "vglist", "export.json", payload)
 	if err != nil {
 		t.Fatalf("ImportSource: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestImportSource_nonTwoXX(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	_, err := c.ImportSource("k", "vglist", "export.json", []byte("{}"))
+	_, err := c.ImportSource(t.Context(), "k", "vglist", "export.json", []byte("{}"))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -364,7 +364,7 @@ func TestImportCSV_DecodesAutoEnvelope(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	res, err := New(srv.URL).ImportCSV("k", "g.csv", []byte("Name\nCeleste\n"), "", nil)
+	res, err := New(srv.URL).ImportCSV(t.Context(), "k", "g.csv", []byte("Name\nCeleste\n"), "", nil)
 	if err != nil {
 		t.Fatalf("ImportCSV: %v", err)
 	}

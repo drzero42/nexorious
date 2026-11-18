@@ -42,11 +42,11 @@ func newGameFiltersCmd() *cobra.Command {
 				return err
 			}
 			c := cliclient.New(p.URL)
-			opts, err := c.GetFilterOptions(p.Key)
+			opts, err := c.GetFilterOptions(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("get filter options failed: %w", err)
 			}
-			storefronts, err := c.ListStorefronts(p.Key)
+			storefronts, err := c.ListStorefronts(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list storefronts failed: %w", err)
 			}

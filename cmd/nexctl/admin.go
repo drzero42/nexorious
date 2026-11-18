@@ -51,7 +51,7 @@ func newAdminUserListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			users, err := cliclient.New(p.URL).ListUsers(p.Key)
+			users, err := cliclient.New(p.URL).ListUsers(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list users: %w", err)
 			}
@@ -92,7 +92,7 @@ func newAdminUserShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			u, err := cliclient.New(p.URL).GetUser(p.Key, args[0])
+			u, err := cliclient.New(p.URL).GetUser(cmd.Context(), p.Key, args[0])
 			if err != nil {
 				return fmt.Errorf("get user: %w", err)
 			}
@@ -136,7 +136,7 @@ func newAdminUserCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			u, err := cliclient.New(p.URL).CreateUser(p.Key, username, password, adminFlag)
+			u, err := cliclient.New(p.URL).CreateUser(cmd.Context(), p.Key, username, password, adminFlag)
 			if err != nil {
 				return fmt.Errorf("create user: %w", err)
 			}
@@ -168,7 +168,7 @@ func newAdminUserEnableCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := cliclient.New(p.URL).UpdateUser(p.Key, args[0], map[string]any{"is_active": true}); err != nil {
+			if _, err := cliclient.New(p.URL).UpdateUser(cmd.Context(), p.Key, args[0], map[string]any{"is_active": true}); err != nil {
 				return fmt.Errorf("enable user: %w", err)
 			}
 			fmt.Fprintf(out, "enabled user %s\n", args[0])
@@ -199,7 +199,7 @@ func newAdminUserDisableCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := cliclient.New(p.URL).UpdateUser(p.Key, args[0], map[string]any{"is_active": false}); err != nil {
+			if _, err := cliclient.New(p.URL).UpdateUser(cmd.Context(), p.Key, args[0], map[string]any{"is_active": false}); err != nil {
 				return fmt.Errorf("disable user: %w", err)
 			}
 			fmt.Fprintf(out, "disabled user %s\n", args[0])
@@ -221,7 +221,7 @@ func newAdminUserSetAdminCmd() *cobra.Command {
 				return err
 			}
 			isAdmin := !revokeFlag
-			if _, err := cliclient.New(p.URL).UpdateUser(p.Key, args[0], map[string]any{"is_admin": isAdmin}); err != nil {
+			if _, err := cliclient.New(p.URL).UpdateUser(cmd.Context(), p.Key, args[0], map[string]any{"is_admin": isAdmin}); err != nil {
 				return fmt.Errorf("set-admin: %w", err)
 			}
 			if isAdmin {
@@ -260,7 +260,7 @@ func newAdminUserPasswdCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := cliclient.New(p.URL).ResetUserPassword(p.Key, args[0], password); err != nil {
+			if err := cliclient.New(p.URL).ResetUserPassword(cmd.Context(), p.Key, args[0], password); err != nil {
 				return fmt.Errorf("passwd: %w", err)
 			}
 			fmt.Fprintf(out, "password updated for user %s\n", args[0])
@@ -285,7 +285,7 @@ func newAdminUserRmCmd() *cobra.Command {
 			}
 			c := cliclient.New(p.URL)
 
-			impact, err := c.GetDeletionImpact(p.Key, args[0])
+			impact, err := c.GetDeletionImpact(cmd.Context(), p.Key, args[0])
 			if err != nil {
 				return fmt.Errorf("get deletion impact: %w", err)
 			}
@@ -311,7 +311,7 @@ func newAdminUserRmCmd() *cobra.Command {
 				fmt.Fprintln(out, "Aborted.")
 				return nil
 			}
-			if err := c.DeleteUser(p.Key, args[0]); err != nil {
+			if err := c.DeleteUser(cmd.Context(), p.Key, args[0]); err != nil {
 				return fmt.Errorf("delete user: %w", err)
 			}
 			fmt.Fprintf(out, "removed user %s\n", args[0])
@@ -343,7 +343,7 @@ func newAdminResetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := cliclient.New(p.URL).AdminReset(p.Key)
+			n, err := cliclient.New(p.URL).AdminReset(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("admin reset: %w", err)
 			}

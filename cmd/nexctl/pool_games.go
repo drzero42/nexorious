@@ -42,13 +42,13 @@ func newPoolAddCmd() *cobra.Command {
 				return err
 			}
 			if len(ids) == 1 {
-				if err := c.AddPoolGame(p.Key, pool.ID, ids[0]); err != nil {
+				if err := c.AddPoolGame(cmd.Context(), p.Key, pool.ID, ids[0]); err != nil {
 					return fmt.Errorf("add to pool failed: %w", err)
 				}
 				fmt.Fprintf(out, "Added 1 game to %q.\n", pool.Name)
 				return nil
 			}
-			n, err := c.BulkAddPoolGames(p.Key, pool.ID, ids)
+			n, err := c.BulkAddPoolGames(cmd.Context(), p.Key, pool.ID, ids)
 			if err != nil {
 				return fmt.Errorf("add to pool failed: %w", err)
 			}
@@ -79,7 +79,7 @@ func newPoolRemoveCmd() *cobra.Command {
 				return err
 			}
 			for _, id := range ids {
-				if err := c.RemovePoolGame(p.Key, pool.ID, id); err != nil {
+				if err := c.RemovePoolGame(cmd.Context(), p.Key, pool.ID, id); err != nil {
 					return fmt.Errorf("remove %s failed: %w", id, err)
 				}
 			}
@@ -111,11 +111,11 @@ func newPoolQueueCmd() *cobra.Command {
 			}
 			// Ensure membership before ordering (the queue endpoint requires it).
 			if len(ids) > 0 {
-				if _, err := c.BulkAddPoolGames(p.Key, pool.ID, ids); err != nil {
+				if _, err := c.BulkAddPoolGames(cmd.Context(), p.Key, pool.ID, ids); err != nil {
 					return fmt.Errorf("ensure pool membership failed: %w", err)
 				}
 			}
-			if err := c.SetQueue(p.Key, pool.ID, ids); err != nil {
+			if err := c.SetQueue(cmd.Context(), p.Key, pool.ID, ids); err != nil {
 				return fmt.Errorf("set queue failed: %w", err)
 			}
 			if len(ids) == 0 {
@@ -148,7 +148,7 @@ func newPoolReorderCmd() *cobra.Command {
 				}
 				ids = append(ids, pool.ID)
 			}
-			if err := c.ReorderPools(p.Key, ids); err != nil {
+			if err := c.ReorderPools(cmd.Context(), p.Key, ids); err != nil {
 				return fmt.Errorf("reorder pools failed: %w", err)
 			}
 			fmt.Fprintf(out, "Reordered %d pool(s).\n", len(ids))

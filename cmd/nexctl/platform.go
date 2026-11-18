@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,11 +15,11 @@ import (
 // platform column is a NOT-NULL FK to platforms(name), so an invalid value
 // would otherwise surface as an opaque 500. Shared by the CLI commands and the
 // MCP tools so the two front-ends validate identically.
-func validatePlatform(c *cliclient.Client, key, slug string) error {
+func validatePlatform(ctx context.Context, c *cliclient.Client, key, slug string) error {
 	if slug == "" {
 		return nil
 	}
-	plats, err := c.ListPlatforms(key)
+	plats, err := c.ListPlatforms(ctx, key)
 	if err != nil {
 		return fmt.Errorf("list platforms failed: %w", err)
 	}

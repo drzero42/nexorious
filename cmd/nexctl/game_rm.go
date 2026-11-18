@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -47,7 +48,7 @@ func newGameRmCmd() *cobra.Command {
 				return fmt.Errorf("aborted")
 			}
 			for i := range games {
-				if err := c.DeleteUserGame(p.Key, games[i].ID); err != nil {
+				if err := c.DeleteUserGame(cmd.Context(), p.Key, games[i].ID); err != nil {
 					return fmt.Errorf("delete %s failed: %w", games[i].ID, err)
 				}
 				fmt.Fprintf(out, "Removed %q (%s).\n", games[i].Title(), games[i].ID)
@@ -74,7 +75,7 @@ type gameFilter struct {
 // gamesByFilter runs a filtered library query and returns the matching games and
 // the server total (for truncation warnings). No cmd, no picker — callers own
 // the warning and the per_page=200 cap is applied here.
-func gamesByFilter(c *cliclient.Client, key string, f gameFilter) (games []cliclient.UserGame, total int, err error) {
+func gamesByFilter(ctx context.Context, c *cliclient.Client, key string, f gameFilter) (games []cliclient.UserGame, total int, err error) {
 	params := url.Values{}
 	setIf(params, "play_status", f.status)
 	setIf(params, "platform", f.platform)
@@ -82,14 +83,14 @@ func gamesByFilter(c *cliclient.Client, key string, f gameFilter) (games []clicl
 		params.Set("wishlist", strconv.FormatBool(f.wishlist))
 	}
 	if f.tag != "" {
-		id, err := resolveTagID(c, key, f.tag)
+		id, err := resolveTagID(ctx, c, key, f.tag)
 		if err != nil {
 			return nil, 0, err
 		}
 		params.Set("tag", id)
 	}
 	params.Set("per_page", "200")
-	res, err := c.ListUserGames(key, params)
+	res, err := c.ListUserGames(ctx, key, params)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -103,7 +104,7 @@ func gamesForRefsOrFilter(cmd *cobra.Command, c *cliclient.Client, key string, a
 		if len(args) > 0 {
 			return nil, fmt.Errorf("pass refs or --filter, not both")
 		}
-		games, total, err := gamesByFilter(c, key, f)
+		games, total, err := gamesByFilter(cmd.Context(), c, key, f)
 		if err != nil {
 			return nil, err
 		}

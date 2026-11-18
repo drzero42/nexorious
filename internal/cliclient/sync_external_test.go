@@ -28,7 +28,7 @@ func TestListExternalGames(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	games, err := c.ListExternalGames("k", "steam")
+	games, err := c.ListExternalGames(t.Context(), "k", "steam")
 	if err != nil {
 		t.Fatalf("ListExternalGames: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestRematchExternalGame(t *testing.T) {
 	c := New(srv.URL)
 
 	// without orphan_action: body must have igdb_id but NOT orphan_action
-	if err := c.RematchExternalGame("k", "eg-42", 1234, ""); err != nil {
+	if err := c.RematchExternalGame(t.Context(), "k", "eg-42", 1234, ""); err != nil {
 		t.Fatalf("RematchExternalGame (no orphan): %v", err)
 	}
 	if len(receivedBodies) != 1 {
@@ -75,7 +75,7 @@ func TestRematchExternalGame(t *testing.T) {
 	}
 
 	// with orphan_action: body must have both
-	if err := c.RematchExternalGame("k", "eg-42", 5678, "remove"); err != nil {
+	if err := c.RematchExternalGame(t.Context(), "k", "eg-42", 5678, "remove"); err != nil {
 		t.Fatalf("RematchExternalGame (with orphan): %v", err)
 	}
 	if len(receivedBodies) != 2 {
@@ -104,7 +104,7 @@ func TestRetryFailedExternalGames(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.RetryFailedExternalGames("k", "steam"); err != nil {
+	if err := c.RetryFailedExternalGames(t.Context(), "k", "steam"); err != nil {
 		t.Fatalf("RetryFailedExternalGames: %v", err)
 	}
 	if !called {
@@ -126,7 +126,7 @@ func TestSkipExternalGame(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.SkipExternalGame("k", "eg-99"); err != nil {
+	if err := c.SkipExternalGame(t.Context(), "k", "eg-99"); err != nil {
 		t.Fatalf("SkipExternalGame: %v", err)
 	}
 	if !called {

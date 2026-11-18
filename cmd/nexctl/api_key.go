@@ -47,7 +47,7 @@ func newAPIKeyGenerateCmd() *cobra.Command {
 				return err
 			}
 			client := cliclient.New(p.URL)
-			if existing, err := client.ListAPIKeys(p.Key); err == nil {
+			if existing, err := client.ListAPIKeys(cmd.Context(), p.Key); err == nil {
 				for _, k := range existing {
 					if k.Name == name {
 						fmt.Fprintf(out, "warning: an API key named %q already exists\n", name)
@@ -59,7 +59,7 @@ func newAPIKeyGenerateCmd() *cobra.Command {
 			if expiresAt != "" {
 				expPtr = &expiresAt
 			}
-			key, err := client.CreateAPIKeyWithBearer(p.Key, name, scopes, expPtr)
+			key, err := client.CreateAPIKeyWithBearer(cmd.Context(), p.Key, name, scopes, expPtr)
 			if err != nil {
 				return fmt.Errorf("create API key failed: %w", err)
 			}
@@ -85,7 +85,7 @@ func newAPIKeyListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			keys, err := cliclient.New(p.URL).ListAPIKeys(p.Key)
+			keys, err := cliclient.New(p.URL).ListAPIKeys(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list API keys failed: %w", err)
 			}
@@ -122,7 +122,7 @@ func newAPIKeyRevokeCmd() *cobra.Command {
 				return err
 			}
 			client := cliclient.New(p.URL)
-			keys, err := client.ListAPIKeys(p.Key)
+			keys, err := client.ListAPIKeys(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list API keys failed: %w", err)
 			}
@@ -141,7 +141,7 @@ func newAPIKeyRevokeCmd() *cobra.Command {
 					return fmt.Errorf("aborted")
 				}
 			}
-			if err := client.RevokeAPIKeyWithBearer(p.Key, targetID); err != nil {
+			if err := client.RevokeAPIKeyWithBearer(cmd.Context(), p.Key, targetID); err != nil {
 				return fmt.Errorf("revoke failed: %w", err)
 			}
 			if self {

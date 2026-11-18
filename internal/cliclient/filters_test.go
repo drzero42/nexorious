@@ -22,7 +22,7 @@ func TestGetFilterOptions(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	opts, err := New(srv.URL).GetFilterOptions("nxr_secret")
+	opts, err := New(srv.URL).GetFilterOptions(t.Context(), "nxr_secret")
 	if err != nil {
 		t.Fatalf("GetFilterOptions: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestListStorefronts(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	sfs, err := New(srv.URL).ListStorefronts("nxr_secret")
+	sfs, err := New(srv.URL).ListStorefronts(t.Context(), "nxr_secret")
 	if err != nil {
 		t.Fatalf("ListStorefronts: %v", err)
 	}

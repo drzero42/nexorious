@@ -37,7 +37,7 @@ func TestCreateUser(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	user, err := c.CreateUser("k", "alice", "s3cr3tpw", true)
+	user, err := c.CreateUser(t.Context(), "k", "alice", "s3cr3tpw", true)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestListUsers(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	users, err := c.ListUsers("k")
+	users, err := c.ListUsers(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("ListUsers: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestGetUser(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	user, err := c.GetUser("k", "u-42")
+	user, err := c.GetUser(t.Context(), "k", "u-42")
 	if err != nil {
 		t.Fatalf("GetUser: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestUpdateUser(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	user, err := c.UpdateUser("k", "u-7", map[string]any{"is_active": false})
+	user, err := c.UpdateUser(t.Context(), "k", "u-7", map[string]any{"is_active": false})
 	if err != nil {
 		t.Fatalf("UpdateUser: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestUpdateUser_ErrorSurfaced(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	_, err := c.UpdateUser("k", "self", map[string]any{"is_active": false})
+	_, err := c.UpdateUser(t.Context(), "k", "self", map[string]any{"is_active": false})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -184,7 +184,7 @@ func TestResetUserPassword(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.ResetUserPassword("k", "u-3", "newpass99"); err != nil {
+	if err := c.ResetUserPassword(t.Context(), "k", "u-3", "newpass99"); err != nil {
 		t.Fatalf("ResetUserPassword: %v", err)
 	}
 }
@@ -208,7 +208,7 @@ func TestGetDeletionImpact(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	impact, err := c.GetDeletionImpact("k", "u-5")
+	impact, err := c.GetDeletionImpact(t.Context(), "k", "u-5")
 	if err != nil {
 		t.Fatalf("GetDeletionImpact: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestDeleteUser(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.DeleteUser("k", "u-9"); err != nil {
+	if err := c.DeleteUser(t.Context(), "k", "u-9"); err != nil {
 		t.Fatalf("DeleteUser: %v", err)
 	}
 }
@@ -263,7 +263,7 @@ func TestAdminReset(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	deleted, err := c.AdminReset("k")
+	deleted, err := c.AdminReset(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("AdminReset: %v", err)
 	}

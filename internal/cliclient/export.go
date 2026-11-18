@@ -1,6 +1,7 @@
 package cliclient
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,12 +19,12 @@ type ExportResult struct {
 // TriggerExport enqueues an export job for the given format ("json" or "csv").
 // It returns an error immediately for any unsupported format string without
 // making a network request.
-func (c *Client) TriggerExport(key, format string) (*ExportResult, error) {
+func (c *Client) TriggerExport(ctx context.Context, key, format string) (*ExportResult, error) {
 	if format != "json" && format != "csv" {
 		return nil, fmt.Errorf("unsupported export format %q", format)
 	}
 	var out ExportResult
-	if err := c.doBearer(http.MethodPost, "/api/export/"+format, key, nil, &out); err != nil {
+	if err := c.doBearer(ctx, http.MethodPost, "/api/export/"+format, key, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -35,8 +36,8 @@ func (c *Client) TriggerExport(key, format string) (*ExportResult, error) {
 // server-suggested filename (parsed from Content-Disposition, "" when absent)
 // and the open body, which the caller must Close. On a non-2xx response the
 // body is consumed/closed and a nil body is returned alongside the error.
-func (c *Client) OpenExportDownload(key, jobID string) (filename string, body io.ReadCloser, err error) {
-	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/export/"+url.PathEscape(jobID)+"/download", nil)
+func (c *Client) OpenExportDownload(ctx context.Context, key, jobID string) (filename string, body io.ReadCloser, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/export/"+url.PathEscape(jobID)+"/download", nil)
 	if err != nil {
 		return "", nil, fmt.Errorf("build request: %w", err)
 	}

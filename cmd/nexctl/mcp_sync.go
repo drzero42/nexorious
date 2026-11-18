@@ -49,8 +49,8 @@ func externalBriefOf(eg *cliclient.ExternalGame) externalGameBrief {
 // mcpResolveExternalRef resolves a single external-game ref within a storefront.
 // On a unique match it returns the game; on ambiguity (>1) or no match it returns
 // candidates/message for the agent to disambiguate, without mutating anything.
-func mcpResolveExternalRef(c *cliclient.Client, key, sf, ref string) (*cliclient.ExternalGame, []externalGameBrief, string, error) {
-	matches, err := findExternalGamesByRef(c, key, sf, ref)
+func mcpResolveExternalRef(ctx context.Context, c *cliclient.Client, key, sf, ref string) (*cliclient.ExternalGame, []externalGameBrief, string, error) {
+	matches, err := findExternalGamesByRef(ctx, c, key, sf, ref)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -112,19 +112,19 @@ type syncReviewOutput struct {
 
 func registerSyncTools(s *mcp.Server, c *cliclient.Client, key string) {
 	mcp.AddTool(s, &mcp.Tool{Name: "sync_status", Description: "Return sync status. Without a storefront, lists all configured storefronts. With a storefront slug, returns real-time status for that storefront."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in syncStatusInput) (*mcp.CallToolResult, syncStatusOutput, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, in syncStatusInput) (*mcp.CallToolResult, syncStatusOutput, error) {
 			if in.Storefront == "" {
-				configs, err := c.ListSyncConfigs(key)
+				configs, err := c.ListSyncConfigs(ctx, key)
 				if err != nil {
 					return nil, syncStatusOutput{}, mcpToolError("sync_status", err)
 				}
 				return nil, syncStatusOutput{Configs: configs}, nil
 			}
-			sf, err := resolveStorefront(c, key, in.Storefront)
+			sf, err := resolveStorefront(ctx, c, key, in.Storefront)
 			if err != nil {
 				return nil, syncStatusOutput{}, mcpToolError("sync_status", err)
 			}
-			status, err := c.GetSyncStatus(key, sf)
+			status, err := c.GetSyncStatus(ctx, key, sf)
 			if err != nil {
 				return nil, syncStatusOutput{}, mcpToolError("sync_status", err)
 			}
@@ -132,12 +132,12 @@ func registerSyncTools(s *mcp.Server, c *cliclient.Client, key string) {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "sync_review", Description: "List external games with sync_status 'needs_review' for a storefront, so an agent can help the user match them to IGDB entries."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in syncReviewInput) (*mcp.CallToolResult, syncReviewOutput, error) {
-			sf, err := resolveStorefront(c, key, in.Storefront)
+		func(ctx context.Context, _ *mcp.CallToolRequest, in syncReviewInput) (*mcp.CallToolResult, syncReviewOutput, error) {
+			sf, err := resolveStorefront(ctx, c, key, in.Storefront)
 			if err != nil {
 				return nil, syncReviewOutput{}, mcpToolError("sync_review", err)
 			}
-			all, err := c.ListExternalGames(key, sf)
+			all, err := c.ListExternalGames(ctx, key, sf)
 			if err != nil {
 				return nil, syncReviewOutput{}, mcpToolError("sync_review", err)
 			}
@@ -151,12 +151,12 @@ func registerSyncTools(s *mcp.Server, c *cliclient.Client, key string) {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "sync_run", Description: "Trigger a sync for a storefront. Enqueues an async job and returns its id; does not block."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in syncRunInput) (*mcp.CallToolResult, syncJobOutput, error) {
-			sf, err := resolveStorefront(c, key, in.Storefront)
+		func(ctx context.Context, _ *mcp.CallToolRequest, in syncRunInput) (*mcp.CallToolResult, syncJobOutput, error) {
+			sf, err := resolveStorefront(ctx, c, key, in.Storefront)
 			if err != nil {
 				return nil, syncJobOutput{}, mcpToolError("sync_run", err)
 			}
-			res, err := c.TriggerSync(key, sf)
+			res, err := c.TriggerSync(ctx, key, sf)
 			if err != nil {
 				return nil, syncJobOutput{}, mcpToolError("sync_run", err)
 			}
@@ -164,74 +164,74 @@ func registerSyncTools(s *mcp.Server, c *cliclient.Client, key string) {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "sync_resolve", Description: "Resolve a pending-review external game by matching it to an IGDB id. Ambiguous refs return candidates — call again with the id."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in syncResolveInput) (*mcp.CallToolResult, syncMatchOutput, error) {
-			sf, err := resolveStorefront(c, key, in.Storefront)
+		func(ctx context.Context, _ *mcp.CallToolRequest, in syncResolveInput) (*mcp.CallToolResult, syncMatchOutput, error) {
+			sf, err := resolveStorefront(ctx, c, key, in.Storefront)
 			if err != nil {
 				return nil, syncMatchOutput{}, mcpToolError("sync_resolve", err)
 			}
-			eg, cands, msg, err := mcpResolveExternalRef(c, key, sf, in.Ref)
+			eg, cands, msg, err := mcpResolveExternalRef(ctx, c, key, sf, in.Ref)
 			if err != nil {
 				return nil, syncMatchOutput{}, mcpToolError("sync_resolve", err)
 			}
 			if cands != nil || msg != "" {
 				return nil, syncMatchOutput{Candidates: cands, Message: msg}, nil
 			}
-			if err := c.RematchExternalGame(key, eg.ID, in.IgdbID, in.OrphanAction); err != nil {
+			if err := c.RematchExternalGame(ctx, key, eg.ID, in.IgdbID, in.OrphanAction); err != nil {
 				return nil, syncMatchOutput{}, mcpToolError("sync_resolve", err)
 			}
 			return nil, syncMatchOutput{Message: fmt.Sprintf("resolved %q to IGDB id %d", eg.Title, in.IgdbID)}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "sync_skip", Description: "Skip a pending-review external game (leave it unmatched). Ambiguous refs return candidates — call again with the id."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in syncSkipInput) (*mcp.CallToolResult, syncMatchOutput, error) {
-			sf, err := resolveStorefront(c, key, in.Storefront)
+		func(ctx context.Context, _ *mcp.CallToolRequest, in syncSkipInput) (*mcp.CallToolResult, syncMatchOutput, error) {
+			sf, err := resolveStorefront(ctx, c, key, in.Storefront)
 			if err != nil {
 				return nil, syncMatchOutput{}, mcpToolError("sync_skip", err)
 			}
-			eg, cands, msg, err := mcpResolveExternalRef(c, key, sf, in.Ref)
+			eg, cands, msg, err := mcpResolveExternalRef(ctx, c, key, sf, in.Ref)
 			if err != nil {
 				return nil, syncMatchOutput{}, mcpToolError("sync_skip", err)
 			}
 			if cands != nil || msg != "" {
 				return nil, syncMatchOutput{Candidates: cands, Message: msg}, nil
 			}
-			if err := c.SkipExternalGame(key, eg.ID); err != nil {
+			if err := c.SkipExternalGame(ctx, key, eg.ID); err != nil {
 				return nil, syncMatchOutput{}, mcpToolError("sync_skip", err)
 			}
 			return nil, syncMatchOutput{Message: fmt.Sprintf("skipped %q", eg.Title)}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "sync_retry", Description: "Retry failed external-game matches for a storefront."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in syncStorefrontInput) (*mcp.CallToolResult, syncAckOutput, error) {
-			sf, err := resolveStorefront(c, key, in.Storefront)
+		func(ctx context.Context, _ *mcp.CallToolRequest, in syncStorefrontInput) (*mcp.CallToolResult, syncAckOutput, error) {
+			sf, err := resolveStorefront(ctx, c, key, in.Storefront)
 			if err != nil {
 				return nil, syncAckOutput{}, mcpToolError("sync_retry", err)
 			}
-			if err := c.RetryFailedExternalGames(key, sf); err != nil {
+			if err := c.RetryFailedExternalGames(ctx, key, sf); err != nil {
 				return nil, syncAckOutput{}, mcpToolError("sync_retry", err)
 			}
 			return nil, syncAckOutput{Storefront: sf, Message: "retrying failed external-game matches"}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "sync_reset", Description: "Reset (clear) sync data for a storefront. Destructive — call explicitly."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in syncStorefrontInput) (*mcp.CallToolResult, syncAckOutput, error) {
-			sf, err := resolveStorefront(c, key, in.Storefront)
+		func(ctx context.Context, _ *mcp.CallToolRequest, in syncStorefrontInput) (*mcp.CallToolResult, syncAckOutput, error) {
+			sf, err := resolveStorefront(ctx, c, key, in.Storefront)
 			if err != nil {
 				return nil, syncAckOutput{}, mcpToolError("sync_reset", err)
 			}
-			if err := c.ResetSyncData(key, sf); err != nil {
+			if err := c.ResetSyncData(ctx, key, sf); err != nil {
 				return nil, syncAckOutput{}, mcpToolError("sync_reset", err)
 			}
 			return nil, syncAckOutput{Storefront: sf, Message: "sync data reset"}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "sync_disconnect", Description: "Disconnect a storefront (remove its stored credentials)."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in syncStorefrontInput) (*mcp.CallToolResult, syncAckOutput, error) {
-			sf, err := resolveStorefront(c, key, in.Storefront)
+		func(ctx context.Context, _ *mcp.CallToolRequest, in syncStorefrontInput) (*mcp.CallToolResult, syncAckOutput, error) {
+			sf, err := resolveStorefront(ctx, c, key, in.Storefront)
 			if err != nil {
 				return nil, syncAckOutput{}, mcpToolError("sync_disconnect", err)
 			}
-			if err := c.DisconnectStorefront(key, sf); err != nil {
+			if err := c.DisconnectStorefront(ctx, key, sf); err != nil {
 				return nil, syncAckOutput{}, mcpToolError("sync_disconnect", err)
 			}
 			return nil, syncAckOutput{Storefront: sf, Message: "storefront disconnected"}, nil

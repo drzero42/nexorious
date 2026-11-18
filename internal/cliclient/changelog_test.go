@@ -16,7 +16,7 @@ func TestGetChangelog_QueryModes(t *testing.T) {
 	defer srv.Close()
 	c := New(srv.URL)
 
-	res, err := c.GetChangelog("k", false, "")
+	res, err := c.GetChangelog(t.Context(), "k", false, "")
 	if err != nil {
 		t.Fatalf("default: %v", err)
 	}
@@ -27,10 +27,10 @@ func TestGetChangelog_QueryModes(t *testing.T) {
 		t.Fatalf("default mode should send no query, got %q", gotQuery)
 	}
 
-	if _, err := c.GetChangelog("k", true, ""); err != nil || gotQuery != "range=all" {
+	if _, err := c.GetChangelog(t.Context(), "k", true, ""); err != nil || gotQuery != "range=all" {
 		t.Fatalf("--all query = %q err=%v", gotQuery, err)
 	}
-	if _, err := c.GetChangelog("k", false, "0.17.1"); err != nil || gotQuery != "since=0.17.1" {
+	if _, err := c.GetChangelog(t.Context(), "k", false, "0.17.1"); err != nil || gotQuery != "since=0.17.1" {
 		t.Fatalf("--since query = %q err=%v", gotQuery, err)
 	}
 }

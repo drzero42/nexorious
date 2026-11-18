@@ -19,7 +19,7 @@ func TestPreflightOK(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if err := Preflight(&bytes.Buffer{}, cliclient.New(srv.URL), srv.URL); err != nil {
+	if err := Preflight(t.Context(), &bytes.Buffer{}, cliclient.New(srv.URL), srv.URL); err != nil {
 		t.Fatalf("Preflight: %v", err)
 	}
 }
@@ -41,7 +41,7 @@ func TestPreflightRunsMigrations(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	var out bytes.Buffer
-	if err := Preflight(&out, cliclient.New(srv.URL), srv.URL); err != nil {
+	if err := Preflight(t.Context(), &out, cliclient.New(srv.URL), srv.URL); err != nil {
 		t.Fatalf("Preflight: %v", err)
 	}
 	if !ran {
@@ -68,7 +68,7 @@ func TestPreflightRunsMigrationsWhenNeedsAdopt(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if err := Preflight(&bytes.Buffer{}, cliclient.New(srv.URL), srv.URL); err != nil {
+	if err := Preflight(t.Context(), &bytes.Buffer{}, cliclient.New(srv.URL), srv.URL); err != nil {
 		t.Fatalf("Preflight: %v", err)
 	}
 	if !ran {
@@ -87,7 +87,7 @@ func TestPreflightMigrationFailedSurfacesDetail(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	err := Preflight(&bytes.Buffer{}, cliclient.New(srv.URL), srv.URL)
+	err := Preflight(t.Context(), &bytes.Buffer{}, cliclient.New(srv.URL), srv.URL)
 	if err == nil || !strings.Contains(err.Error(), "previously failed") || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v; want previously-failed + detail", err)
 	}
@@ -104,7 +104,7 @@ func TestPreflightMigrationFailedStatusUnreachable(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	err := Preflight(&bytes.Buffer{}, cliclient.New(srv.URL), srv.URL)
+	err := Preflight(t.Context(), &bytes.Buffer{}, cliclient.New(srv.URL), srv.URL)
 	if err == nil || !strings.Contains(err.Error(), "fetching the failure detail also failed") {
 		t.Fatalf("err = %v; want status-fetch-failure surfaced", err)
 	}

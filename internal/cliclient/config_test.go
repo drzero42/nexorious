@@ -22,7 +22,7 @@ func TestGetSettings(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	s, err := c.GetSettings("k")
+	s, err := c.GetSettings(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("GetSettings: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestUpdateSettings(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	s, err := c.UpdateSettings("k", "eu")
+	s, err := c.UpdateSettings(t.Context(), "k", "eu")
 	if err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestListChannels(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	channels, err := c.ListChannels("k")
+	channels, err := c.ListChannels(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("ListChannels: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestCreateChannel(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	ch, err := c.CreateChannel("k", "my-hook", "https://example.com/hook")
+	ch, err := c.CreateChannel(t.Context(), "k", "my-hook", "https://example.com/hook")
 	if err != nil {
 		t.Fatalf("CreateChannel: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestUpdateChannel(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	ch, err := c.UpdateChannel("k", "ch-7", map[string]any{"name": "renamed"})
+	ch, err := c.UpdateChannel(t.Context(), "k", "ch-7", map[string]any{"name": "renamed"})
 	if err != nil {
 		t.Fatalf("UpdateChannel: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestDeleteChannel(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.DeleteChannel("k", "ch-del"); err != nil {
+	if err := c.DeleteChannel(t.Context(), "k", "ch-del"); err != nil {
 		t.Fatalf("DeleteChannel: %v", err)
 	}
 }
@@ -194,7 +194,7 @@ func TestTestChannel(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.TestChannel("k", "ch-9"); err != nil {
+	if err := c.TestChannel(t.Context(), "k", "ch-9"); err != nil {
 		t.Fatalf("TestChannel: %v", err)
 	}
 }
@@ -218,7 +218,7 @@ func TestTestURL(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.TestURL("k", "https://example.com/test-hook"); err != nil {
+	if err := c.TestURL(t.Context(), "k", "https://example.com/test-hook"); err != nil {
 		t.Fatalf("TestURL: %v", err)
 	}
 }
@@ -246,7 +246,7 @@ func TestListEventTypes(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	types, err := c.ListEventTypes("k")
+	types, err := c.ListEventTypes(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("ListEventTypes: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestListSubscriptions(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	types, err := c.ListSubscriptions("k")
+	types, err := c.ListSubscriptions(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("ListSubscriptions: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestPutSubscriptions(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	types, err := c.PutSubscriptions("k", []string{"backup.failed"})
+	types, err := c.PutSubscriptions(t.Context(), "k", []string{"backup.failed"})
 	if err != nil {
 		t.Fatalf("PutSubscriptions: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestResetSubscriptions(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	types, err := c.ResetSubscriptions("k")
+	types, err := c.ResetSubscriptions(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("ResetSubscriptions: %v", err)
 	}
@@ -369,7 +369,7 @@ func TestDeleteChannel_ErrorSurfaced(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	err := c.DeleteChannel("k", "ch-missing")
+	err := c.DeleteChannel(t.Context(), "k", "ch-missing")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

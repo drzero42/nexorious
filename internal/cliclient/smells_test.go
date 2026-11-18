@@ -21,7 +21,7 @@ func TestListSmells(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	got, err := New(srv.URL).ListSmells("k")
+	got, err := New(srv.URL).ListSmells(t.Context(), "k")
 	if err != nil {
 		t.Fatalf("ListSmells: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestListSmellItems(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	res, err := New(srv.URL).ListSmellItems("k", "played-but-not-started", 1, 200)
+	res, err := New(srv.URL).ListSmellItems(t.Context(), "k", "played-but-not-started", 1, 200)
 	if err != nil {
 		t.Fatalf("ListSmellItems: %v", err)
 	}
@@ -87,15 +87,15 @@ func TestApplyIgnoreRestoreSmell(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	ap, err := c.ApplySmell("k", "wishlisted-yet-owned", []string{"a", "b"})
+	ap, err := c.ApplySmell(t.Context(), "k", "wishlisted-yet-owned", []string{"a", "b"})
 	if err != nil || ap.Applied != 2 {
 		t.Fatalf("ApplySmell: %+v err=%v", ap, err)
 	}
-	ig, err := c.IgnoreSmell("k", "wishlisted-yet-owned", []string{"a"})
+	ig, err := c.IgnoreSmell(t.Context(), "k", "wishlisted-yet-owned", []string{"a"})
 	if err != nil || ig != 1 {
 		t.Fatalf("IgnoreSmell: %d err=%v", ig, err)
 	}
-	rs, err := c.RestoreSmell("k", "wishlisted-yet-owned", []string{"a"})
+	rs, err := c.RestoreSmell(t.Context(), "k", "wishlisted-yet-owned", []string{"a"})
 	if err != nil || rs != 1 {
 		t.Fatalf("RestoreSmell: %d err=%v", rs, err)
 	}
@@ -118,7 +118,7 @@ func TestListIgnoredSmells(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	res, err := New(srv.URL).ListIgnoredSmells("k", "orphan-game", 1, 25)
+	res, err := New(srv.URL).ListIgnoredSmells(t.Context(), "k", "orphan-game", 1, 25)
 	if err != nil {
 		t.Fatalf("ListIgnoredSmells: %v", err)
 	}

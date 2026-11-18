@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -23,8 +24,8 @@ func newPoolCmd() *cobra.Command {
 // findPoolsByRef returns every pool matching ref: a UUID is matched exactly; a
 // name is matched case-insensitively (zero or more results). No cmd, no picker —
 // callers own disambiguation.
-func findPoolsByRef(c *cliclient.Client, key, ref string) ([]cliclient.PoolListItem, error) {
-	pools, err := c.ListPools(key)
+func findPoolsByRef(ctx context.Context, c *cliclient.Client, key, ref string) ([]cliclient.PoolListItem, error) {
+	pools, err := c.ListPools(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +49,7 @@ func findPoolsByRef(c *cliclient.Client, key, ref string) ([]cliclient.PoolListI
 // resolvePoolRef resolves a pool by id (UUID) or name (case-insensitive) via the
 // pool list. Many matches prompt a TTY picker or, off-TTY, error with candidates.
 func resolvePoolRef(cmd *cobra.Command, c *cliclient.Client, key, ref string) (*cliclient.PoolListItem, error) {
-	pools, err := findPoolsByRef(c, key, ref)
+	pools, err := findPoolsByRef(cmd.Context(), c, key, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +103,7 @@ func newPoolListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pools, err := cliclient.New(p.URL).ListPools(p.Key)
+			pools, err := cliclient.New(p.URL).ListPools(cmd.Context(), p.Key)
 			if err != nil {
 				return fmt.Errorf("list pools failed: %w", err)
 			}
@@ -146,7 +147,7 @@ func newPoolShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			detail, err := c.GetPool(p.Key, ref.ID)
+			detail, err := c.GetPool(cmd.Context(), p.Key, ref.ID)
 			if err != nil {
 				return fmt.Errorf("get pool failed: %w", err)
 			}

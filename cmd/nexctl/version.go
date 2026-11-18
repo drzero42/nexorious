@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"text/tabwriter"
@@ -19,7 +20,7 @@ func newVersionCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			url, key := profileTarget(cmd)
-			return runVersion(cmd.OutOrStdout(), url, key, flagBool(cmd, "json"))
+			return runVersion(cmd.Context(), cmd.OutOrStdout(), url, key, flagBool(cmd, "json"))
 		},
 	}
 }
@@ -54,7 +55,7 @@ type clientVersion struct {
 // runVersion prints the client version and, when a server URL is configured, the
 // server version fetched from GET /api/version. A server that cannot be reached
 // is reported inline (never fatal): the command always exits 0.
-func runVersion(out io.Writer, url, key string, asJSON bool) error {
+func runVersion(ctx context.Context, out io.Writer, url, key string, asJSON bool) error {
 	client := clientVersion{Version: version, Commit: commit}
 
 	var srv *cliclient.ServerVersionInfo
@@ -62,7 +63,7 @@ func runVersion(out io.Writer, url, key string, asJSON bool) error {
 	if url == "" {
 		srvErr = fmt.Errorf("no server configured (run `nexctl account login` first)")
 	} else {
-		srv, srvErr = cliclient.New(url).ServerVersion(key)
+		srv, srvErr = cliclient.New(url).ServerVersion(ctx, key)
 	}
 
 	if asJSON {

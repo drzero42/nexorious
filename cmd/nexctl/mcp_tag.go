@@ -46,8 +46,8 @@ type tagRmInput struct {
 
 func registerTagTools(s *mcp.Server, c *cliclient.Client, key string) {
 	mcp.AddTool(s, &mcp.Tool{Name: "tag_list", Description: "List all user tags with their game counts."},
-		func(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, tagListOutput, error) {
-			tags, err := c.ListTags(key)
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, tagListOutput, error) {
+			tags, err := c.ListTags(ctx, key)
 			if err != nil {
 				return nil, tagListOutput{}, mcpToolError("tag_list", err)
 			}
@@ -55,8 +55,8 @@ func registerTagTools(s *mcp.Server, c *cliclient.Client, key string) {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "tag_create", Description: "Create a new tag."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in tagCreateInput) (*mcp.CallToolResult, tagWriteOutput, error) {
-			tag, err := c.CreateTag(key, in.Name, in.Color)
+		func(ctx context.Context, _ *mcp.CallToolRequest, in tagCreateInput) (*mcp.CallToolResult, tagWriteOutput, error) {
+			tag, err := c.CreateTag(ctx, key, in.Name, in.Color)
 			if err != nil {
 				return nil, tagWriteOutput{}, mcpToolError("tag_create", err)
 			}
@@ -65,13 +65,13 @@ func registerTagTools(s *mcp.Server, c *cliclient.Client, key string) {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "tag_rename", Description: "Rename a tag. Resolves by id (UUID) or name (case-insensitive)."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in tagRenameInput) (*mcp.CallToolResult, tagWriteOutput, error) {
-			tag, err := resolveTagRef(c, key, in.Ref)
+		func(ctx context.Context, _ *mcp.CallToolRequest, in tagRenameInput) (*mcp.CallToolResult, tagWriteOutput, error) {
+			tag, err := resolveTagRef(ctx, c, key, in.Ref)
 			if err != nil {
 				return nil, tagWriteOutput{}, mcpToolError("tag_rename", err)
 			}
 			oldName := tag.Name
-			updated, err := c.UpdateTag(key, tag.ID, &in.NewName, nil)
+			updated, err := c.UpdateTag(ctx, key, tag.ID, &in.NewName, nil)
 			if err != nil {
 				return nil, tagWriteOutput{}, mcpToolError("tag_rename", err)
 			}
@@ -80,12 +80,12 @@ func registerTagTools(s *mcp.Server, c *cliclient.Client, key string) {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "tag_rm", Description: "Delete a tag. Resolves by id (UUID) or name (case-insensitive)."},
-		func(_ context.Context, _ *mcp.CallToolRequest, in tagRmInput) (*mcp.CallToolResult, tagWriteOutput, error) {
-			tag, err := resolveTagRef(c, key, in.Ref)
+		func(ctx context.Context, _ *mcp.CallToolRequest, in tagRmInput) (*mcp.CallToolResult, tagWriteOutput, error) {
+			tag, err := resolveTagRef(ctx, c, key, in.Ref)
 			if err != nil {
 				return nil, tagWriteOutput{}, mcpToolError("tag_rm", err)
 			}
-			if err := c.DeleteTag(key, tag.ID); err != nil {
+			if err := c.DeleteTag(ctx, key, tag.ID); err != nil {
 				return nil, tagWriteOutput{}, mcpToolError("tag_rm", err)
 			}
 			return nil, tagWriteOutput{Message: fmt.Sprintf("Deleted tag %q (%s).", tag.Name, tag.ID)}, nil
