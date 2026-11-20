@@ -303,7 +303,7 @@ controllers:
         image:
           repository: postgres
           # -- PostgreSQL image tag. Change to use a different version.
-          tag: 18-alpine
+          tag: 19-alpine
           pullPolicy: IfNotPresent
         env:
           POSTGRES_USER:
