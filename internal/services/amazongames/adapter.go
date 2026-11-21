@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 
 	"github.com/drzero42/nexorious/internal/logging"
@@ -30,7 +31,8 @@ type Adapter struct {
 // the decrypted nile user data loaded from user_sync_configs. onUserData is
 // called with nile's user data as it was after the run (a refreshed access
 // token), before any batch is delivered and even when the fetch fails; the
-// factory wires the DB write here. onUserData may be nil.
+// factory wires the DB write here; it is skipped when nile changed nothing.
+// onUserData may be nil.
 func NewAdapter(client LibraryClient, userData json.RawMessage, onUserData func(json.RawMessage) error) storefrontadapter.Adapter {
 	return &Adapter{client: client, userData: userData, onUserData: onUserData}
 }
@@ -45,7 +47,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	}
 
 	entitlements, refreshed, err := a.client.Library(ctx, a.userData)
-	if refreshed != nil && a.onUserData != nil {
+	if refreshed != nil && a.onUserData != nil && !equalJSON(refreshed, a.userData) {
 		if perr := a.onUserData(refreshed); perr != nil {
 			slog.ErrorContext(ctx, "amazon: persist refreshed sign-in failed",
 				logging.KeyErr, perr, logging.Cat(logging.CategoryDB))
@@ -58,7 +60,10 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		return err
 	}
 
-	entries := toEntries(entitlements)
+	entries, err := toEntries(entitlements)
+	if err != nil {
+		return err
+	}
 	slog.InfoContext(ctx, "amazon: library read", "entitlements", len(entitlements), "games", len(entries))
 
 	if batchSize <= 0 {
@@ -73,14 +78,29 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	return nil
 }
 
+// equalJSON reports whether a and b decode to the same value; nile rewrites its
+// files with its own formatting, so bytes differ even when nothing changed.
+func equalJSON(a, b json.RawMessage) bool {
+	var va, vb any
+	if json.Unmarshal(a, &va) != nil || json.Unmarshal(b, &vb) != nil {
+		return false
+	}
+	return reflect.DeepEqual(va, vb)
+}
+
 // toEntries maps entitlements to external games: one per Amazon product id,
 // in nile's order. A product with no title is still sent, under a title that
-// names its id, so it lands in review rather than being swept as removed.
-func toEntries(entitlements []Entitlement) []storefrontadapter.ExternalGameEntry {
+// names its id, so it lands in review rather than being swept as removed. An
+// entitlement with no product id fails the whole read for the same reason: a
+// game dropped here would be swept as removed.
+func toEntries(entitlements []Entitlement) ([]storefrontadapter.ExternalGameEntry, error) {
 	seen := make(map[string]bool, len(entitlements))
 	out := make([]storefrontadapter.ExternalGameEntry, 0, len(entitlements))
 	for _, e := range entitlements {
-		if e.ProductID == "" || seen[e.ProductID] {
+		if e.ProductID == "" || strings.TrimSpace(e.ProductID) != e.ProductID {
+			return nil, fmt.Errorf("amazon: entitlement product id %q is empty or padded", e.ProductID)
+		}
+		if seen[e.ProductID] {
 			continue
 		}
 		seen[e.ProductID] = true
@@ -95,5 +115,5 @@ func toEntries(entitlements []Entitlement) []storefrontadapter.ExternalGameEntry
 			OwnershipStatus: "owned",
 		})
 	}
-	return out
+	return out, nil
 }

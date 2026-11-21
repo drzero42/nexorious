@@ -113,6 +113,9 @@ func (c *Client) Register(ctx context.Context, code string, login Login) (*Accou
 	// registration succeeded. The user data on disk is the registration's
 	// outcome, so it decides.
 	userData, readErr := readNileConfig(dir)
+	if readErr == nil {
+		readErr = usableUserData(userData)
+	}
 	if readErr != nil {
 		detail := lastLines(stderr)
 		if runErr != nil {
@@ -150,15 +153,25 @@ func (c *Client) Library(ctx context.Context, userData json.RawMessage) (entitle
 
 	_, stderr, runErr := c.run(ctx, dir, "library", "sync", "--force")
 
+	// Only user data nile could sign in with again is handed back for storing:
+	// a blank token written over the stored one would break every later sync.
 	refreshed, readErr := readNileConfig(dir)
-	if readErr != nil {
+	if readErr != nil || usableUserData(refreshed) != nil {
 		refreshed = nil
+	}
+	// A failed refresh means the access token nile used afterwards was
+	// expired, so whatever library it wrote cannot be trusted: nile 1.2.0 still
+	// writes `[]` when the failed response carries an empty entitlement list.
+	// Only a refusal (a 4xx) is a credentials problem; a 5xx or a connection
+	// failure is an ordinary error, retried by the next sync.
+	if isAuthFailure(stderr) {
+		return nil, refreshed, ErrAuthFailed
+	}
+	if bytes.Contains(stderr, []byte("Failed to refresh the token")) {
+		return nil, refreshed, errors.New("amazon: nile could not refresh its access token; no library was read")
 	}
 	secrets := secretsOf(userData)
 	if runErr != nil {
-		if isAuthFailure(stderr) {
-			return nil, refreshed, ErrAuthFailed
-		}
 		return nil, refreshed, fmt.Errorf("amazon: nile library sync failed: %s",
 			sanitize(lastLines(stderr)+"\n"+runErr.Error(), secrets...))
 	}
@@ -175,8 +188,14 @@ func (c *Client) Library(ctx context.Context, userData json.RawMessage) (entitle
 }
 
 // parseLibrary reads nile's library.json: a list of entitlements, each with
-// the product it grants.
+// the product it grants. Anything but a list whose every entry names its
+// product is refused: the worker marks every game a sync does not return as
+// removed, so a `null` read as an empty library, or a dropped entry, would
+// remove games he owns.
 func parseLibrary(raw []byte) ([]Entitlement, error) {
+	if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
+		return nil, errors.New("amazon: nile library.json is not a list of entitlements")
+	}
 	var games []struct {
 		Product struct {
 			ID    string `json:"id"`
@@ -187,7 +206,10 @@ func parseLibrary(raw []byte) ([]Entitlement, error) {
 		return nil, errors.New("amazon: nile library.json is not a list of entitlements")
 	}
 	out := make([]Entitlement, 0, len(games))
-	for _, g := range games {
+	for i, g := range games {
+		if g.Product.ID == "" || strings.TrimSpace(g.Product.ID) != g.Product.ID {
+			return nil, fmt.Errorf("amazon: nile library.json entry %d has no product id", i)
+		}
 		out = append(out, Entitlement{ProductID: g.Product.ID, Title: g.Product.Title})
 	}
 	return out, nil

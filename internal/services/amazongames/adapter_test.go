@@ -192,9 +192,47 @@ func TestAdapter_RefreshedUserDataPersistedEvenOnFailure(t *testing.T) {
 }
 
 func TestAdapter_PersistFailureDoesNotFailSync(t *testing.T) {
-	fake := &fakeLibraryClient{configured: true, entitlements: entitlementsN(1), refreshed: json.RawMessage(`{}`)}
-	a := NewAdapter(fake, json.RawMessage(`{}`), func(json.RawMessage) error { return errors.New("db down") })
+	called := false
+	fake := &fakeLibraryClient{configured: true, entitlements: entitlementsN(1), refreshed: json.RawMessage(`{"new":true}`)}
+	a := NewAdapter(fake, json.RawMessage(`{"old":true}`), func(json.RawMessage) error { called = true; return errors.New("db down") })
 	if _, err := collect(t, a, 10); err != nil {
 		t.Fatalf("GetLibrary: %v", err)
+	}
+	if !called {
+		t.Error("the failing write-back never ran")
+	}
+}
+
+func TestAdapter_EntitlementWithoutIDFailsBeforeAnyBatch(t *testing.T) {
+	ents := []Entitlement{{"p1", "Game"}, {"", "Lost id"}}
+	batches, err := collect(t, NewAdapter(&fakeLibraryClient{configured: true, entitlements: ents}, json.RawMessage(`{}`), nil), 10)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if len(batches) != 0 {
+		t.Errorf("delivered %d batches", len(batches))
+	}
+}
+
+func TestAdapter_UnchangedUserDataIsNotWrittenBack(t *testing.T) {
+	persisted := 0
+	fake := &fakeLibraryClient{configured: true, entitlements: entitlementsN(1), refreshed: json.RawMessage(`{"b": 2, "a": 1}`)}
+	a := NewAdapter(fake, json.RawMessage(`{"a":1,"b":2}`), func(json.RawMessage) error { persisted++; return nil })
+	if _, err := collect(t, a, 10); err != nil {
+		t.Fatal(err)
+	}
+	if persisted != 0 {
+		t.Errorf("unchanged user data was written back %d time(s)", persisted)
+	}
+}
+
+func TestAdapter_PaddedProductIDFailsBeforeAnyBatch(t *testing.T) {
+	ents := []Entitlement{{"p1", "Game"}, {"p1 ", "Same game, padded id"}}
+	batches, err := collect(t, NewAdapter(&fakeLibraryClient{configured: true, entitlements: ents}, json.RawMessage(`{}`), nil), 10)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if len(batches) != 0 {
+		t.Errorf("delivered %d batches", len(batches))
 	}
 }

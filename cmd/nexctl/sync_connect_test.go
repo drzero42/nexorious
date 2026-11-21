@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/drzero42/nexorious/internal/clicfg"
 )
 
 // serveSyncConfigs registers the GET /api/sync/config handler that
@@ -268,6 +270,40 @@ func TestSyncConnectAmazonGamesStartOffTTY(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output = %q, want it to contain %q", out.String(), want)
 		}
+	}
+}
+
+// Started against a profile that is not the current one, the printed finish
+// command must name that profile: the attempt exists only on its server.
+func TestSyncConnectAmazonGamesStartKeepsProfile(t *testing.T) {
+	mux := http.NewServeMux()
+	serveSyncConfigs(mux, "amazon-games")
+	mux.HandleFunc("/api/sync/amazon-games/connection/login", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"attempt_id": "att-9", "login_url": "https://amazon.com/ap/signin?x=9"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	seedProfile(t, "http://127.0.0.1:1") // the current profile points elsewhere
+	cfg, err := clicfg.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.SetProfile("home", clicfg.Profile{URL: srv.URL, Username: "alice", Key: "k", KeyID: "key-2"})
+	if err := clicfg.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	root := newRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetIn(strings.NewReader(""))
+	root.SetArgs([]string{"--profile", "home", "sync", "connect", "amazon-games"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("connect: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "nexctl --profile 'home' sync connect amazon-games --attempt-id att-9") {
+		t.Errorf("output = %q, want the finish command to name the profile", out.String())
 	}
 }
 
