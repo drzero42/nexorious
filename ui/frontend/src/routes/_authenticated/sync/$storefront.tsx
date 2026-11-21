@@ -306,7 +306,7 @@ function SyncDetailPage() {
   return (
     <div className="space-y-6">
       {/* Navigation Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <nav className="flex items-center text-sm text-muted-foreground">
           <Link to="/dashboard" className="hover:text-foreground">
             Dashboard
@@ -319,7 +319,7 @@ function SyncDetailPage() {
           <span className="text-foreground">{displayName}</span>
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           {config.isConfigured && (
             <AlertDialog
               open={resetDialogOpen}
