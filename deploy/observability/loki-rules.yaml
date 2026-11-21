@@ -13,7 +13,7 @@
 # Fields (nexorious structured logging — see docs/logging-conventions.md):
 #   level    INFO | WARN | ERROR | DEBUG
 #   category db | auth | external_api | validation | config | panic  (warn/error only)
-#   source   steam | playstation-store | gog | epic-games-store | humble-bundle
+#   source   steam | playstation-store | gog | epic-games-store | humble-bundle | amazon-games
 #   msg      human message
 groups:
   - name: nexorious-db-startup

@@ -9,6 +9,7 @@ import {
   useEpicGamesStoreConnection,
   useGOGConnection,
   useHumbleStatus,
+  useAmazonGamesConnection,
 } from '@/hooks';
 import { SyncServiceCard } from '@/components/sync';
 import { Card, CardHeader } from '@/components/ui/card';
@@ -72,6 +73,9 @@ function SyncServiceCardWithStatus({
   const { data: humbleStatus } = useHumbleStatus({
     enabled: config.storefront === SyncStorefront.HUMBLE,
   });
+  const { data: amazonGamesConnection } = useAmazonGamesConnection({
+    enabled: config.storefront === SyncStorefront.AMAZON_GAMES,
+  });
 
   const pendingReviewCount = reviewData?.countsBySource?.[config.storefront] ?? 0;
 
@@ -82,7 +86,9 @@ function SyncServiceCardWithStatus({
     (config.storefront === SyncStorefront.EPIC_GAMES_STORE &&
       (epicGamesStoreConnection?.credentialsError ?? false)) ||
     (config.storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
-    (config.storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
+    (config.storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false)) ||
+    (config.storefront === SyncStorefront.AMAZON_GAMES &&
+      (amazonGamesConnection?.credentialsError ?? false));
 
   const handleTriggerSync = async () => {
     await onTriggerSync(config.storefront);
@@ -151,7 +157,8 @@ function SyncPage() {
         </nav>
         <h1 className="text-2xl font-bold">Sync</h1>
         <p className="text-muted-foreground">
-          Sync your Steam, Epic Games, and PlayStation Network libraries with Nexorious.
+          Sync your Steam, PlayStation, Epic Games, GOG, Humble Bundle, and Amazon Games libraries
+          with Nexorious.
         </p>
       </div>
 

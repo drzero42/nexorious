@@ -5,7 +5,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   syncKeys,
   useSyncConfig,
-  useSyncStatus,
   useUpdateSyncConfig,
   useTriggerSync,
   useResetSyncData,
@@ -16,6 +15,8 @@ import {
   useEpicGamesStoreConnection,
   useGOGConnection,
   useHumbleStatus,
+  useAmazonGamesConnection,
+  useSyncStatusWithConnections,
   jobsKeys,
   useJobCompletionEffect,
   useStorefront,
@@ -27,6 +28,7 @@ import {
   GOGConnectionCard,
   PlaystationStoreConnectionCard,
   HumbleConnectionCard,
+  AmazonGamesConnectionCard,
   ExternalGamesSection,
 } from '@/components/sync';
 import { RecentActivity } from '@/components/jobs';
@@ -129,7 +131,7 @@ function SyncDetailPage() {
 
   // Fetch sync config and status
   const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(storefront);
-  const { data: status, isLoading: statusLoading } = useSyncStatus(storefront);
+  const { data: status, isLoading: statusLoading } = useSyncStatusWithConnections(storefront);
 
   // Fetch PSN-specific status
   const { data: playstationStoreStatus } = usePlaystationStoreStatus();
@@ -143,6 +145,9 @@ function SyncDetailPage() {
 
   // Fetch Humble Bundle status
   const { data: humbleStatus } = useHumbleStatus();
+
+  // Fetch Amazon Games connection status
+  const { data: amazonGamesConnection } = useAmazonGamesConnection();
 
   // Fetch job details if there's an active job
   const { data: activeJob } = useJob(status?.activeJobId ?? undefined, {
@@ -192,7 +197,9 @@ function SyncDetailPage() {
     (storefront === SyncStorefront.EPIC_GAMES_STORE &&
       (epicGamesStoreConnection?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
-    (storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
+    (storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.AMAZON_GAMES &&
+      (amazonGamesConnection?.credentialsError ?? false));
 
   const [connectionSectionOpen, setConnectionSectionOpen] = useState(false);
   const connectionOpenInitialized = useRef(false);
@@ -306,7 +313,7 @@ function SyncDetailPage() {
   return (
     <div className="space-y-6">
       {/* Navigation Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <nav className="flex items-center text-sm text-muted-foreground">
           <Link to="/dashboard" className="hover:text-foreground">
             Dashboard
@@ -319,7 +326,7 @@ function SyncDetailPage() {
           <span className="text-foreground">{displayName}</span>
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           {config.isConfigured && (
             <AlertDialog
               open={resetDialogOpen}
@@ -376,8 +383,8 @@ function SyncDetailPage() {
       {/* Platform Header */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-muted">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-muted">
               {storefrontInfo?.icon_url && (
                 <img
                   src={`${envConfig.staticUrl}${storefrontInfo.icon_url}`}
@@ -387,11 +394,11 @@ function SyncDetailPage() {
                 />
               )}
             </div>
-            <div>
+            <div className="min-w-0">
               <CardTitle className="text-2xl">
                 {displayName}
                 {(status?.externalGameCount ?? 0) > 0 && (
-                  <span className="ml-2 text-base font-normal text-muted-foreground">
+                  <span className="ml-2 whitespace-nowrap text-base font-normal text-muted-foreground">
                     {status!.externalGameCount} games
                   </span>
                 )}
@@ -401,7 +408,7 @@ function SyncDetailPage() {
                 Last synced: {formatRelativeTime(config.lastSyncedAt, 'Never')}
               </CardDescription>
             </div>
-            <div className="ml-auto flex flex-col items-end gap-2">
+            <div className="ml-auto flex shrink-0 flex-col items-end gap-2">
               <Badge
                 variant={credentialsError ? 'destructive' : 'outline'}
                 className={
@@ -517,6 +524,16 @@ function SyncDetailPage() {
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
                 queryClient.invalidateQueries({ queryKey: syncKeys.humbleStatus() });
+              }}
+            />
+          )}
+
+          {/* Amazon Games Connection Card - only show for Amazon Games storefront */}
+          {storefront === SyncStorefront.AMAZON_GAMES && (
+            <AmazonGamesConnectionCard
+              isConfigured={config.isConfigured}
+              onConnectionChange={() => {
+                queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
               }}
             />
           )}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -32,6 +33,7 @@ import (
 	"github.com/drzero42/nexorious/internal/observability"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/scheduler"
+	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
@@ -239,7 +241,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	epicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
 		DB:      db,
-		Adapter: buildAdapterFactory(db, encrypter, epicClient),
+		Adapter: buildAdapterFactory(db, encrypter, epicClient, amazongamessvc.NewClient()),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
@@ -354,7 +356,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newEpicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 			newDispatchSync := &tasks.DispatchSyncWorker{
 				DB:      newDB,
-				Adapter: buildAdapterFactory(newDB, encrypter, newEpicClient),
+				Adapter: buildAdapterFactory(newDB, encrypter, newEpicClient, amazongamessvc.NewClient()),
 			}
 			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
 				DB:         newDB,
@@ -630,6 +632,7 @@ func buildAdapterFactory(
 	db *bun.DB,
 	encrypter *crypto.Encrypter,
 	epicClient *epicgamesstoresvc.Client,
+	amazonClient amazongamessvc.LibraryClient,
 ) func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 	return func(ctx context.Context, storefront string, cfg models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 		switch storefront {
@@ -649,7 +652,7 @@ func buildAdapterFactory(
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
-			return steamsvc.NewAdapter(steamsvc.NewClient(), creds.WebAPIKey, creds.SteamID), nil
+			return boundToCredentials(steamsvc.NewAdapter(steamsvc.NewClient(), creds.WebAPIKey, creds.SteamID), *cfg.StorefrontCredentials), nil
 
 		case "playstation-store":
 			if cfg.StorefrontCredentials == nil {
@@ -666,7 +669,7 @@ func buildAdapterFactory(
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
-			return playstationstoresvc.NewAdapter(playstationstoresvc.NewClient(), creds.NPSSOToken), nil
+			return boundToCredentials(playstationstoresvc.NewAdapter(playstationstoresvc.NewClient(), creds.NPSSOToken), *cfg.StorefrontCredentials), nil
 
 		case "gog":
 			if cfg.StorefrontCredentials == nil {
@@ -700,7 +703,7 @@ func buildAdapterFactory(
 				).Exec(context.Background())
 				return dbErr
 			}
-			return gogsvc.NewAdapter(gogsvc.NewClient(), creds.RefreshToken, onNewTokens), nil
+			return boundToCredentials(gogsvc.NewAdapter(gogsvc.NewClient(), creds.RefreshToken, onNewTokens), *cfg.StorefrontCredentials), nil
 
 		case "epic-games-store":
 			if cfg.StorefrontCredentials == nil {
@@ -729,6 +732,18 @@ func buildAdapterFactory(
 			}
 			return epicgamesstoresvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot), nil
 
+		case "amazon-games":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			loaded := *cfg.StorefrontCredentials
+			plain, err := encrypter.Decrypt(loaded)
+			if err != nil || !json.Valid(plain) {
+				slog.Warn("adapter factory: amazon-games decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
+				return nil, tasks.ErrCredentials
+			}
+			return boundToCredentials(amazongamessvc.NewAdapter(amazonClient, plain, amazonUserDataWriter(db, encrypter, cfg.UserID, loaded)), loaded), nil
+
 		case "humble-bundle":
 			if cfg.StorefrontCredentials == nil {
 				return nil, tasks.ErrCredentials
@@ -744,12 +759,57 @@ func buildAdapterFactory(
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
-			return humblesvc.NewAdapter(humblesvc.NewClient(), creds.SessionCookie), nil
+			return boundToCredentials(humblesvc.NewAdapter(humblesvc.NewClient(), creds.SessionCookie), *cfg.StorefrontCredentials), nil
 
 		default:
 			return nil, fmt.Errorf("unknown storefront: %s", storefront)
 		}
 	}
+}
+
+// amazonUserDataWriter persists nile's refreshed user data for an Amazon
+// sync. It writes only onto the connection the sync loaded (loaded is that
+// row's ciphertext): if the user reconnected while the sync ran, the new
+// sign-in stays and the refreshed old one is dropped.
+func amazonUserDataWriter(db *bun.DB, encrypter *crypto.Encrypter, userID, loaded string) func(json.RawMessage) error {
+	return func(userData json.RawMessage) error {
+		enc, err := encrypter.Encrypt(userData)
+		if err != nil {
+			return err
+		}
+		_, err = db.NewRaw(
+			`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now()
+			 WHERE user_id = ? AND storefront = 'amazon-games' AND storefront_credentials = ?`,
+			enc, userID, loaded,
+		).Exec(context.Background())
+		return err
+	}
+}
+
+// credentialsBoundAdapter ties an adapter's credentials failures to the stored
+// sign-in the sync loaded (tasks.CredentialsErrorFor), so the worker does not
+// flag a sign-in the user replaced while the sync ran. It wraps every store
+// whose credentials failure is reported before its adapter writes the stored
+// sign-in: Steam, PlayStation and Humble never write it, GOG fails on a refused
+// refresh before storing the new token, and Amazon writes back only user data
+// nile could sign in with. Not Epic, whose adapter rewrites its snapshot on
+// every run, failed ones included, so the loaded ciphertext is stale by the
+// time its failure is reported and binding to it would hide a real expiry.
+type credentialsBoundAdapter struct {
+	inner  tasks.StorefrontAdapter
+	loaded string
+}
+
+func boundToCredentials(inner tasks.StorefrontAdapter, loaded string) tasks.StorefrontAdapter {
+	return credentialsBoundAdapter{inner: inner, loaded: loaded}
+}
+
+func (a credentialsBoundAdapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]tasks.ExternalGameEntry) error) error {
+	err := a.inner.GetLibrary(ctx, batchSize, onBatch)
+	if errors.Is(err, tasks.ErrCredentials) {
+		return &tasks.CredentialsErrorFor{Credentials: &a.loaded, Err: err}
+	}
+	return err
 }
 
 // buildStoreLinkResolverFactory returns a factory the store-link enrichment item

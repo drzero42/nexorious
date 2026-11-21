@@ -140,13 +140,13 @@ export function GOGConnectionCard({
                   <p className="font-medium text-foreground">
                     GOG requires you to log in once to issue a short-lived authorization code.
                   </p>
-                  <ol className="list-inside list-decimal space-y-1">
+                  <ol className="list-outside list-decimal pl-5 space-y-1">
                     <li>
                       <a
                         href={GOG_AUTH_URL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-primary hover:underline"
+                        className="text-primary underline underline-offset-4"
                       >
                         Open the GOG login page <ExternalLink className="inline h-3 w-3" />
                       </a>{' '}

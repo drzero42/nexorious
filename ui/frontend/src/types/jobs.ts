@@ -23,6 +23,7 @@ export enum JobSource {
   PLAYSTATION_STORE = 'playstation-store',
   GOG = 'gog',
   HUMBLE_BUNDLE = 'humble-bundle',
+  AMAZON_GAMES = 'amazon-games',
   MANUAL = 'manual',
   VGLIST = 'vglist',
   NEXORIOUS = 'nexorious',

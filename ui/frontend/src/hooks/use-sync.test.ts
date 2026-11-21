@@ -10,7 +10,12 @@ import {
   useUpdateSyncConfig,
   useTriggerSync,
   useConnectEpicGamesStore,
+  invalidateSyncConnections,
+  useSyncStatusWithConnections,
+  syncKeys,
 } from './use-sync';
+import { createElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SyncStorefront, SyncFrequency } from '@/types';
 import * as syncApi from '@/api/sync';
 
@@ -34,6 +39,55 @@ const mockSyncStatusApi = {
   last_synced_at: '2025-01-01T12:00:00Z',
   active_job_id: null,
 };
+
+describe('invalidateSyncConnections', () => {
+  it('refetches every store connection status, Amazon Games included', () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    invalidateSyncConnections(queryClient);
+
+    const keys = spy.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
+    for (const key of [
+      syncKeys.steamConnection(),
+      syncKeys.epicGamesStoreConnection(),
+      syncKeys.gogConnection(),
+      syncKeys.playstationStoreStatus(),
+      syncKeys.humbleStatus(),
+      syncKeys.amazonGamesConnection(),
+    ]) {
+      expect(keys).toContain(JSON.stringify(key));
+    }
+  });
+});
+
+describe('useSyncStatusWithConnections', () => {
+  it('refetches connection statuses every time the polled status arrives', async () => {
+    server.use(
+      http.get(`${API_URL}/sync/amazon-games/status`, () =>
+        HttpResponse.json({ ...mockSyncStatusApi, storefront: 'amazon-games' }),
+      ),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+    const amazonKey = JSON.stringify(syncKeys.amazonGamesConnection());
+    const amazonCalls = () =>
+      spy.mock.calls.filter(([f]) => JSON.stringify(f?.queryKey) === amazonKey).length;
+
+    const { result } = renderHook(() => useSyncStatusWithConnections(SyncStorefront.AMAZON_GAMES), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(amazonCalls()).toBe(1));
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+    await waitFor(() => expect(amazonCalls()).toBe(2));
+  });
+});
 
 describe('use-sync hooks', () => {
   beforeEach(() => {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,7 @@ import (
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/logging"
+	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/usergame"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -82,6 +84,32 @@ type HumbleClient interface {
 	Verify(ctx context.Context, sessionCookie string) error
 }
 
+// AmazonGamesClient abstracts the nile CLI calls used during Amazon Games
+// account connection.
+type AmazonGamesClient interface {
+	Configured() bool
+	// LoginURL starts a sign-in and returns its URL and the values nile needs
+	// to finish it, which must stay server-side.
+	LoginURL(ctx context.Context) (*AmazonGamesLogin, error)
+	// Register finishes the sign-in with the authorization code and returns
+	// the account and nile's user data, which the caller stores encrypted.
+	Register(ctx context.Context, code string, login AmazonGamesLogin) (*AmazonGamesAccount, json.RawMessage, error)
+}
+
+// AmazonGamesLogin is one sign-in attempt's state.
+type AmazonGamesLogin struct {
+	URL          string
+	ClientID     string
+	CodeVerifier string
+	Serial       string
+}
+
+// AmazonGamesAccount identifies a connected Amazon account.
+type AmazonGamesAccount struct {
+	UserID string
+	Name   string
+}
+
 var (
 	ErrInvalidNPSSOToken   = errors.New("invalid npsso token")
 	ErrSteamRateLimited    = errors.New("steam rate limited")
@@ -92,7 +120,7 @@ var (
 // supportedStorefronts is the ordered list of storefront slugs the sync API
 // accepts. validStorefronts is its set form, derived from the same source so the
 // two can never drift apart.
-var supportedStorefronts = []string{"steam", "playstation-store", "epic-games-store", "gog", "humble-bundle"}
+var supportedStorefronts = []string{"steam", "playstation-store", "epic-games-store", "gog", "humble-bundle", "amazon-games"}
 
 var validStorefronts = func() map[string]bool {
 	m := make(map[string]bool, len(supportedStorefronts))
@@ -209,11 +237,13 @@ type SyncHandler struct {
 	epicGamesStoreClient   EpicGamesStoreClient
 	gogClient              GOGClient
 	humbleClient           HumbleClient
+	amazonGamesClient      AmazonGamesClient
+	amazonLogins           *amazonLoginAttempts
 }
 
 // NewSyncHandler constructs a SyncHandler.
-func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient) *SyncHandler {
-	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble}
+func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient, amazonGames AmazonGamesClient) *SyncHandler {
+	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble, amazonGamesClient: amazonGames, amazonLogins: newAmazonLoginAttempts(time.Now)}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
@@ -234,6 +264,10 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.PUT("/humble-bundle/connection", h.HandleHumbleConnect)
 	g.GET("/humble-bundle/connection", h.HandleGetHumbleConnection)
 	g.DELETE("/humble-bundle/connection", h.HandleHumbleDisconnect)
+	g.POST("/amazon-games/connection/login", h.HandleAmazonGamesLoginStart)
+	g.PUT("/amazon-games/connection", h.HandleAmazonGamesConnect)
+	g.GET("/amazon-games/connection", h.HandleGetAmazonGamesConnection)
+	g.DELETE("/amazon-games/connection", h.HandleAmazonGamesDisconnect)
 	g.GET("/ignored", h.HandleListIgnored)
 	g.POST("/ignored/:id", h.HandleSkipGame)
 	g.DELETE("/ignored/:id", h.HandleUnskipGame)
@@ -909,6 +943,200 @@ func (h *SyncHandler) HandleGetEpicGamesStoreConnection(c *echo.Context) error {
 				"display_name":      creds.DisplayName,
 			}, nil
 		})
+}
+
+// amazonLoginTTL bounds how long a started Amazon sign-in can be finished.
+const amazonLoginTTL = 15 * time.Minute
+
+// amazonLoginAttempts keeps each user's one live Amazon sign-in attempt: the
+// client id, code verifier and serial nile generated, which must never reach
+// the browser. Starting a new attempt replaces the old one. Attempts live in
+// this process's memory, so a restart between start and finish means starting
+// again.
+type amazonLoginAttempts struct {
+	mu     sync.Mutex
+	now    func() time.Time
+	byUser map[string]amazonLoginAttempt
+}
+
+type amazonLoginAttempt struct {
+	id      string
+	login   AmazonGamesLogin
+	started time.Time
+}
+
+func newAmazonLoginAttempts(now func() time.Time) *amazonLoginAttempts {
+	return &amazonLoginAttempts{now: now, byUser: make(map[string]amazonLoginAttempt)}
+}
+
+// start records a new attempt for userID, replacing any earlier one, and
+// returns its id.
+func (a *amazonLoginAttempts) start(userID string, login AmazonGamesLogin) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	id := uuid.NewString()
+	a.byUser[userID] = amazonLoginAttempt{id: id, login: login, started: a.now()}
+	return id
+}
+
+// get returns the attempt when id is userID's live attempt.
+func (a *amazonLoginAttempts) get(userID, id string) (AmazonGamesLogin, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.liveLocked(userID, id)
+}
+
+func (a *amazonLoginAttempts) liveLocked(userID, id string) (AmazonGamesLogin, bool) {
+	att, ok := a.byUser[userID]
+	if !ok || att.id != id {
+		return AmazonGamesLogin{}, false
+	}
+	if a.now().Sub(att.started) > amazonLoginTTL {
+		delete(a.byUser, userID)
+		return AmazonGamesLogin{}, false
+	}
+	return att.login, true
+}
+
+// finish runs save and removes the attempt, only while id is still userID's
+// live attempt; ok is false when a newer start replaced it or it expired while
+// nile registered. Holding the lock across save means a start cannot slip in
+// between the check and the write: a slow sign-in in one tab never overwrites
+// an account connected since in another.
+func (a *amazonLoginAttempts) finish(userID, id string, save func() error) (ok bool, err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if _, live := a.liveLocked(userID, id); !live {
+		return false, nil
+	}
+	if err := save(); err != nil {
+		return true, err
+	}
+	delete(a.byUser, userID)
+	return true, nil
+}
+
+// SetAmazonLoginClockForTest replaces the clock Amazon sign-in attempts expire by.
+func (h *SyncHandler) SetAmazonLoginClockForTest(now func() time.Time) {
+	h.amazonLogins.mu.Lock()
+	defer h.amazonLogins.mu.Unlock()
+	h.amazonLogins.now = now
+}
+
+func (h *SyncHandler) amazonGamesConfigured() bool {
+	return h.amazonGamesClient != nil && h.amazonGamesClient.Configured()
+}
+
+// HandleAmazonGamesLoginStart is POST /sync/amazon-games/connection/login: it
+// starts an Amazon sign-in and returns the URL to open and the attempt id to
+// finish it with.
+func (h *SyncHandler) HandleAmazonGamesLoginStart(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	if !h.amazonGamesConfigured() {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "Amazon Games sync not available (nile not installed)")
+	}
+	login, err := h.amazonGamesClient.LoginURL(c.Request().Context())
+	if err != nil {
+		slog.ErrorContext(c.Request().Context(), "amazon: start sign-in failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+		return echo.NewHTTPError(http.StatusBadGateway, "could not start an Amazon sign-in")
+	}
+	attemptID := h.amazonLogins.start(userID, *login)
+	return c.JSON(http.StatusOK, map[string]string{
+		"attempt_id": attemptID,
+		"login_url":  login.URL,
+	})
+}
+
+// HandleAmazonGamesConnect is PUT /sync/amazon-games/connection: it finishes
+// the sign-in with the landing address (or bare code), registers the device
+// through nile, and stores nile's user data encrypted.
+func (h *SyncHandler) HandleAmazonGamesConnect(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	if !h.amazonGamesConfigured() {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "Amazon Games sync not available (nile not installed)")
+	}
+	var body struct {
+		AttemptID   string `json:"attempt_id"`
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := c.Bind(&body); err != nil || body.AttemptID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "attempt_id is required")
+	}
+	code, err := amazongamessvc.ParseAuthCode(body.RedirectURL)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	login, ok := h.amazonLogins.get(userID, body.AttemptID)
+	if !ok {
+		return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in has expired or was replaced by a newer one; start again")
+	}
+	account, userData, err := h.amazonGamesClient.Register(c.Request().Context(), code, login)
+	if err != nil {
+		slog.WarnContext(c.Request().Context(), "amazon: device registration failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+		if _, live := h.amazonLogins.get(userID, body.AttemptID); !live {
+			return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in was replaced by a newer one while it finished; start again")
+		}
+		return echo.NewHTTPError(http.StatusBadRequest, "Amazon did not accept that sign-in; start again and paste the address you land on")
+	}
+	live, err := h.amazonLogins.finish(userID, body.AttemptID, func() error {
+		return h.persistStorefrontCredentials(context.Background(), userID, "amazon-games", userData)
+	})
+	if !live {
+		return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in was replaced by a newer one while it finished; start again")
+	}
+	if err != nil {
+		slog.ErrorContext(c.Request().Context(), "amazon: persist storefront credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Amazon Games connection")
+	}
+	return c.JSON(http.StatusOK, map[string]string{"username": account.Name})
+}
+
+// HandleGetAmazonGamesConnection is GET /sync/amazon-games/connection.
+func (h *SyncHandler) HandleGetAmazonGamesConnection(c *echo.Context) error {
+	if auth.UserIDFromContext(c) == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	if !h.amazonGamesConfigured() {
+		return c.JSON(http.StatusOK, map[string]any{
+			"connected": false,
+			"disabled":  true,
+			"reason":    "nile_not_installed",
+		})
+	}
+	return h.serveConnectionStatus(c, "amazon-games",
+		map[string]any{"connected": false, "disabled": false},
+		map[string]any{"connected": true, "credentials_error": true, "disabled": false},
+		func(plaintext []byte, credentialsError bool) (any, error) {
+			// The stored credential is nile's user data; the account name is
+			// its customer_info.given_name.
+			var creds struct {
+				Extensions struct {
+					CustomerInfo struct {
+						GivenName string `json:"given_name"`
+					} `json:"customer_info"`
+				} `json:"extensions"`
+			}
+			if err := json.Unmarshal(plaintext, &creds); err != nil {
+				return nil, err
+			}
+			return map[string]any{
+				"connected":         true,
+				"disabled":          false,
+				"credentials_error": credentialsError,
+				"username":          creds.Extensions.CustomerInfo.GivenName,
+			}, nil
+		})
+}
+
+// HandleAmazonGamesDisconnect is DELETE /sync/amazon-games/connection.
+func (h *SyncHandler) HandleAmazonGamesDisconnect(c *echo.Context) error {
+	return h.disconnectStorefront(c, "amazon-games")
 }
 
 func (h *SyncHandler) HandleListIgnored(c *echo.Context) error {

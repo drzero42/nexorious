@@ -8,6 +8,7 @@ export enum SyncStorefront {
   GOG = 'gog',
   PLAYSTATION_STORE = 'playstation-store',
   HUMBLE = 'humble-bundle',
+  AMAZON_GAMES = 'amazon-games',
 }
 
 export const SUPPORTED_SYNC_STOREFRONTS: SyncStorefront[] = [
@@ -16,6 +17,7 @@ export const SUPPORTED_SYNC_STOREFRONTS: SyncStorefront[] = [
   SyncStorefront.GOG,
   SyncStorefront.PLAYSTATION_STORE,
   SyncStorefront.HUMBLE,
+  SyncStorefront.AMAZON_GAMES,
 ];
 
 export enum SyncFrequency {
@@ -172,4 +174,23 @@ export interface ExternalGame {
   failed_job_item_id: string | null;
   platforms: string[];
   store_url: string | null;
+}
+
+// Amazon Games Auth Types
+export interface AmazonGamesLoginResponse {
+  attemptId: string;
+  loginUrl: string;
+}
+
+export interface AmazonGamesConnectResponse {
+  username: string;
+}
+
+export interface AmazonGamesConnectionResponse {
+  connected: boolean;
+  disabled: boolean;
+  credentialsError?: boolean;
+  username?: string;
+  /** Machine-readable cause when disabled=true, e.g. "nile_not_installed". */
+  reason?: string;
 }

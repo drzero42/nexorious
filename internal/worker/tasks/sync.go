@@ -38,6 +38,19 @@ type StorefrontAdapter = storefrontadapter.Adapter
 // expired, or cannot be decrypted. DispatchSyncWorker marks the job failed on this error.
 var ErrCredentials = storefrontadapter.ErrCredentials
 
+// CredentialsErrorFor is a credentials failure that belongs to one stored
+// sign-in: Credentials is the user_sync_configs ciphertext the sync loaded.
+// The worker flags credentials_error, and notifies, only while that sign-in is
+// still the stored one, in the same UPDATE that sets the flag, so a reconnect
+// committed while the sync ran is never marked expired by it.
+type CredentialsErrorFor struct {
+	Credentials *string // nil: the sync loaded no stored sign-in
+	Err         error
+}
+
+func (e *CredentialsErrorFor) Error() string { return e.Err.Error() }
+func (e *CredentialsErrorFor) Unwrap() error { return e.Err }
+
 // ── DispatchSync ──────────────────────────────────────────────────────────────
 
 // DispatchSyncArgs is the River job args type for "dispatch_sync".
@@ -194,7 +207,9 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	// Build adapter (credential loading, decryption, and token refresh happen inside).
 	adapter, err := w.Adapter(ctx, p.Storefront, cfg)
 	if errors.Is(err, ErrCredentials) {
-		handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
+		// Nothing has written the stored sign-in yet, so the failure belongs
+		// to exactly the one loaded above (none, when it is NULL).
+		handleCredentialError(ctx, w.DB, p, cfg.CredentialsError, &CredentialsErrorFor{Credentials: cfg.StorefrontCredentials, Err: err})
 		return nil
 	}
 	if err != nil {
@@ -258,7 +273,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		return nil
 	}); err != nil {
 		if errors.Is(err, ErrCredentials) {
-			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
+			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError, err)
 			return nil
 		}
 		slog.ErrorContext(ctx, "dispatch_sync: library fetch failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
@@ -379,18 +394,34 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 // that actionable event; everyone else falls back to sync.failed so they are
 // not left silent. While the storefront stays broken (priorErr == true) no
 // notification is sent, so repeated scheduled syncs do not nag.
-func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, priorErr bool) {
+func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, priorErr bool, cause error) {
 	markSyncJobFailed(ctx, db, p.JobID, "credentials error")
 	// A credentials failure is a hard sync failure; record it so it is visible
 	// in nexorious_sync_total rather than silently absent (see failSyncJob).
 	if p.Storefront != "" {
 		observability.RecordSyncOutcome(ctx, p.Storefront, "failed")
 	}
-	if _, err := db.NewRaw(
-		`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
-		p.UserID, p.Storefront,
-	).Exec(ctx); err != nil {
+	query := `UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`
+	args := []any{p.UserID, p.Storefront}
+	var bound *CredentialsErrorFor
+	if errors.As(cause, &bound) {
+		if bound.Credentials == nil {
+			query += ` AND storefront_credentials IS NULL`
+		} else {
+			query += ` AND storefront_credentials = ?`
+			args = append(args, *bound.Credentials)
+		}
+	}
+	res, err := db.NewRaw(query, args...).Exec(ctx)
+	if err != nil {
 		slog.WarnContext(ctx, "dispatch_sync: flag credentials_error failed", logging.KeyErr, err, logging.KeyUserID, p.UserID, logging.KeySource, p.Storefront, logging.Cat(logging.CategoryDB))
+		if bound != nil {
+			return // which sign-in is stored was never established: send no expiry alert
+		}
+	} else if bound != nil {
+		if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // RowsAffected never errors for this driver; 0 also reads as "replaced"
+			return // the user reconnected during the sync: the new sign-in is not expired
+		}
 	}
 
 	if priorErr {

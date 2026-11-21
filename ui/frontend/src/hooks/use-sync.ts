@@ -1,4 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import * as syncApi from '@/api/sync';
 import { SyncStorefront } from '@/types';
@@ -17,6 +18,9 @@ import type {
   PlaystationStoreStatusResponse,
   HumbleConnectResponse,
   HumbleStatusResponse,
+  AmazonGamesLoginResponse,
+  AmazonGamesConnectResponse,
+  AmazonGamesConnectionResponse,
 } from '@/types';
 
 // Query Keys
@@ -32,9 +36,28 @@ export const syncKeys = {
   gogConnection: () => [...syncKeys.all, 'gogConnection'] as const,
   playstationStoreStatus: () => [...syncKeys.all, 'playstationStoreStatus'] as const,
   humbleStatus: () => [...syncKeys.all, 'humbleStatus'] as const,
+  amazonGamesConnection: () => [...syncKeys.all, 'amazonGamesConnection'] as const,
   externalGames: (platform: SyncStorefront) =>
     [...syncKeys.all, 'external-games', platform] as const,
 };
+
+/**
+ * Refetch every store's connection status. A sync that ends can have flagged
+ * its store's sign-in as rejected, and a page already showing "Connected" must
+ * learn that and offer the sign-in again.
+ */
+export function invalidateSyncConnections(queryClient: QueryClient) {
+  for (const queryKey of [
+    syncKeys.steamConnection(),
+    syncKeys.epicGamesStoreConnection(),
+    syncKeys.gogConnection(),
+    syncKeys.playstationStoreStatus(),
+    syncKeys.humbleStatus(),
+    syncKeys.amazonGamesConnection(),
+  ]) {
+    queryClient.invalidateQueries({ queryKey });
+  }
+}
 
 // Query Hooks
 
@@ -63,6 +86,23 @@ export function useSyncStatus(platform: SyncStorefront) {
       return data?.isSyncing ? 5000 : 30000;
     },
   });
+}
+
+/**
+ * useSyncStatus, plus a refetch of every store's connection status each time
+ * the polled sync status arrives (every 5 s while syncing, else every 30 s).
+ * A sync started by the scheduler or the CLI, or one that flags its sign-in as
+ * rejected only after it reported failure, is then reflected within one poll,
+ * not just when this page saw the job end.
+ */
+export function useSyncStatusWithConnections(platform: SyncStorefront) {
+  const queryClient = useQueryClient();
+  const query = useSyncStatus(platform);
+  const { dataUpdatedAt } = query;
+  useEffect(() => {
+    if (dataUpdatedAt > 0) invalidateSyncConnections(queryClient);
+  }, [dataUpdatedAt, queryClient]);
+  return query;
 }
 
 /**
@@ -210,6 +250,70 @@ export function useDisconnectEpicGamesStore() {
     },
     onError: (error) => {
       console.error('Failed to disconnect Epic:', error);
+    },
+  });
+}
+
+// Amazon Games Auth Hooks
+
+/**
+ * Tells the UI whether Amazon Games sync is disabled server-side (nile not
+ * installed), connected, or simply not configured.
+ */
+export function useAmazonGamesConnection(options?: { enabled?: boolean }) {
+  return useQuery<AmazonGamesConnectionResponse, Error>({
+    queryKey: syncKeys.amazonGamesConnection(),
+    queryFn: syncApi.getAmazonGamesConnection,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    enabled: options?.enabled,
+  });
+}
+
+/**
+ * Starts an Amazon sign-in; returns the URL to open and the attempt id.
+ */
+export function useStartAmazonGamesLogin() {
+  return useMutation<AmazonGamesLoginResponse, Error>({
+    mutationFn: syncApi.startAmazonGamesLogin,
+  });
+}
+
+/**
+ * Finishes an Amazon sign-in. On success, refreshes connection status and the
+ * user's sync configs.
+ */
+export function useConnectAmazonGames() {
+  const queryClient = useQueryClient();
+
+  return useMutation<AmazonGamesConnectResponse, Error, { attemptId: string; redirectUrl: string }>(
+    {
+      mutationFn: ({ attemptId, redirectUrl }) =>
+        syncApi.connectAmazonGames(attemptId, redirectUrl),
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+        queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.AMAZON_GAMES) });
+        queryClient.invalidateQueries({ queryKey: syncKeys.amazonGamesConnection() });
+      },
+    },
+  );
+}
+
+/**
+ * Invalidates all Amazon Games queries on success.
+ */
+export function useDisconnectAmazonGames() {
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error>({
+    mutationFn: syncApi.disconnectAmazonGames,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.configs() });
+      queryClient.invalidateQueries({ queryKey: syncKeys.config(SyncStorefront.AMAZON_GAMES) });
+      queryClient.invalidateQueries({ queryKey: syncKeys.amazonGamesConnection() });
+    },
+    onError: (error) => {
+      console.error('Failed to disconnect Amazon Games:', error);
     },
   });
 }

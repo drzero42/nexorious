@@ -1071,6 +1071,22 @@ func (c *Client) ConnectStorefront(ctx context.Context, key, storefront string, 
 	return out, nil
 }
 
+// AmazonGamesLogin is a started Amazon sign-in: the address to open and the
+// attempt id to finish it with (PUT /api/sync/amazon-games/connection).
+type AmazonGamesLogin struct {
+	AttemptID string `json:"attempt_id"`
+	LoginURL  string `json:"login_url"`
+}
+
+// StartAmazonGamesLogin starts an Amazon sign-in.
+func (c *Client) StartAmazonGamesLogin(ctx context.Context, key string) (*AmazonGamesLogin, error) {
+	var out AmazonGamesLogin
+	if err := c.doBearer(ctx, http.MethodPost, "/api/sync/amazon-games/connection/login", key, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // DisconnectStorefront removes the connection credentials for a storefront.
 func (c *Client) DisconnectStorefront(ctx context.Context, key, storefront string) error {
 	return c.doBearer(ctx, http.MethodDelete, "/api/sync/"+url.PathEscape(storefront)+"/connection", key, nil, nil)

@@ -121,14 +121,14 @@ export function HumbleConnectionCard({
                     Humble Bundle library. Only DRM-free game downloads are imported — never ebooks,
                     audio, video, or Steam-key-only titles.
                   </p>
-                  <ol className="list-inside list-decimal space-y-1">
+                  <ol className="list-outside list-decimal pl-5 space-y-1">
                     <li>
                       Sign in at{' '}
                       <a
                         href="https://www.humblebundle.com"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-primary hover:underline"
+                        className="text-primary underline underline-offset-4"
                       >
                         humblebundle.com <ExternalLink className="inline h-3 w-3" />
                       </a>{' '}
