@@ -10,7 +10,12 @@ import {
   useUpdateSyncConfig,
   useTriggerSync,
   useConnectEpicGamesStore,
+  useSyncStatusWithConnections,
+  useGOGConnection,
+  syncKeys,
 } from './use-sync';
+import { createElement, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SyncStorefront, SyncFrequency } from '@/types';
 import * as syncApi from '@/api/sync';
 
@@ -34,6 +39,171 @@ const mockSyncStatusApi = {
   last_synced_at: '2025-01-01T12:00:00Z',
   active_job_id: null,
 };
+
+describe('useSyncStatusWithConnections', () => {
+  // The stores this hook refreshes today, named one by one so a store added
+  // later is added here, with its connection key in the hook, on purpose.
+  const connectionKeys: Partial<Record<SyncStorefront, readonly unknown[]>> = {
+    [SyncStorefront.STEAM]: syncKeys.steamConnection(),
+    [SyncStorefront.EPIC_GAMES_STORE]: syncKeys.epicGamesStoreConnection(),
+    [SyncStorefront.GOG]: syncKeys.gogConnection(),
+    [SyncStorefront.PLAYSTATION_STORE]: syncKeys.playstationStoreStatus(),
+    [SyncStorefront.HUMBLE]: syncKeys.humbleStatus(),
+  };
+  const idle = { ...mockSyncStatusApi, external_game_count: 10 };
+  const running = { ...idle, is_syncing: true, active_job_id: 'job-1' };
+
+  // Serves whatever status is current, renders the hook, and counts the
+  // connection-status invalidations per store.
+  async function setup(platform: SyncStorefront, first: object) {
+    let current = { ...first, storefront: platform };
+    let requests = 0;
+    server.use(
+      http.get(`${API_URL}/sync/${platform}/status`, () => {
+        requests += 1;
+        return HttpResponse.json(current);
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+    const { result } = renderHook(() => useSyncStatusWithConnections(platform), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const invalidated = () => {
+      const counts: Partial<Record<SyncStorefront, number>> = {};
+      for (const [store, key] of Object.entries(connectionKeys)) {
+        const n = spy.mock.calls.filter(
+          ([filters]) => JSON.stringify(filters?.queryKey) === JSON.stringify(key),
+        ).length;
+        if (n > 0) counts[store as SyncStorefront] = n;
+      }
+      return counts;
+    };
+    // One poll: the next status arrives and the render it causes has run its effects.
+    const poll = async (next: object) => {
+      current = { ...next, storefront: platform };
+      const served = requests;
+      await act(async () => {
+        await result.current.refetch();
+      });
+      expect(requests).toBe(served + 1);
+      await waitFor(() => expect(result.current.isFetching).toBe(false));
+      await act(async () => {});
+    };
+    return { invalidated, poll };
+  }
+
+  it('refetches no connection status on the first poll or on steady polls', async () => {
+    const { invalidated, poll } = await setup(SyncStorefront.STEAM, idle);
+    await poll(idle);
+    await poll({ ...idle, external_game_count: 11 });
+    expect(invalidated()).toEqual({});
+  });
+
+  it.each(Object.keys(connectionKeys) as SyncStorefront[])(
+    'refetches only %s connection status once when its sync ends',
+    async (platform) => {
+      const { invalidated, poll } = await setup(platform, running);
+      await poll(running);
+      expect(invalidated()).toEqual({});
+      await poll(idle);
+      expect(invalidated()).toEqual({ [platform]: 1 });
+      await poll(idle);
+      expect(invalidated()).toEqual({ [platform]: 1 });
+    },
+  );
+
+  it.each([
+    ['a new last sync time', idle, { ...idle, last_synced_at: '2025-01-02T12:00:00Z' }],
+    ['a job that started', idle, running],
+    ['one job replaced by another', running, { ...running, active_job_id: 'job-2' }],
+  ])('refetches once on %s', async (_name, before, after) => {
+    const { invalidated, poll } = await setup(SyncStorefront.GOG, before);
+    await poll(after);
+    expect(invalidated()).toEqual({ [SyncStorefront.GOG]: 1 });
+  });
+
+  it('compares a store only with itself when the page changes store', async () => {
+    server.use(
+      http.get(`${API_URL}/sync/steam/status`, () =>
+        HttpResponse.json({ ...running, storefront: 'steam' }),
+      ),
+      http.get(`${API_URL}/sync/gog/status`, () =>
+        HttpResponse.json({ ...idle, storefront: 'gog' }),
+      ),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+    const { result, rerender } = renderHook(
+      ({ platform }: { platform: SyncStorefront }) => useSyncStatusWithConnections(platform),
+      { wrapper, initialProps: { platform: SyncStorefront.STEAM } },
+    );
+    await waitFor(() => expect(result.current.data?.isSyncing).toBe(true));
+    rerender({ platform: SyncStorefront.GOG });
+    await waitFor(() => expect(result.current.data?.storefront).toBe(SyncStorefront.GOG));
+    await waitFor(() => expect(result.current.data?.isSyncing).toBe(false));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  // End to end with the real connection query mounted, as the store page does:
+  // a sync that flags the sign-in shows on the page, with one extra request.
+  it('refetches the mounted connection once, picking up a flagged sign-in', async () => {
+    let status: Record<string, unknown> = { ...running, storefront: 'gog' };
+    let credentialsError = false;
+    let connectionRequests = 0;
+    server.use(
+      http.get(`${API_URL}/sync/gog/status`, () => HttpResponse.json(status)),
+      http.get(`${API_URL}/sync/gog/connection`, () => {
+        connectionRequests += 1;
+        return HttpResponse.json({
+          connected: true,
+          credentials_error: credentialsError,
+          username: 'u',
+        });
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+    const { result } = renderHook(
+      () => ({
+        status: useSyncStatusWithConnections(SyncStorefront.GOG),
+        connection: useGOGConnection(),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.status.isSuccess).toBe(true));
+    await waitFor(() => expect(result.current.connection.data?.credentialsError).toBe(false));
+    expect(connectionRequests).toBe(1);
+
+    const poll = async () => {
+      await act(async () => {
+        await result.current.status.refetch();
+      });
+      await waitFor(() => expect(result.current.status.isFetching).toBe(false));
+      await act(async () => {});
+    };
+    await poll(); // steady
+    expect(connectionRequests).toBe(1);
+
+    credentialsError = true;
+    status = { ...idle, storefront: 'gog' };
+    await poll(); // the sync ended and flagged the sign-in
+    await waitFor(() => expect(result.current.connection.data?.credentialsError).toBe(true));
+    expect(connectionRequests).toBe(2);
+  });
+
+  // The documented limit: a sync that starts and fails between two polls
+  // changes no field the status endpoint reports, so nothing is refetched.
+  it('cannot see a sync that started and failed between two polls', async () => {
+    const { invalidated, poll } = await setup(SyncStorefront.STEAM, idle);
+    await poll({ ...idle });
+    expect(invalidated()).toEqual({});
+  });
+});
 
 describe('use-sync hooks', () => {
   beforeEach(() => {

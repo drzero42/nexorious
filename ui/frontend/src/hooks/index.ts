@@ -55,6 +55,7 @@ export {
   useSyncConfigs,
   useSyncConfig,
   useSyncStatus,
+  useSyncStatusWithConnections,
   useSyncStatuses,
   useUpdateSyncConfig,
   useTriggerSync,
