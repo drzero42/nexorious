@@ -25,6 +25,7 @@ const (
 	JobSourcePlaystationStore = "playstation-store"
 	JobSourceGOG              = "gog"
 	JobSourceHumbleBundle     = "humble-bundle"
+	JobSourceAmazonGames      = "amazon-games"
 	JobSourceManual           = "manual"
 	JobSourceNexorious        = "nexorious"
 	JobSourceVglist           = "vglist"

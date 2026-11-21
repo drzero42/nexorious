@@ -25,6 +25,7 @@ import (
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/ratelimit"
+	"github.com/drzero42/nexorious/internal/services/amazongames"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -1826,6 +1827,78 @@ func TestDispatchSync_CredentialsError_SetsFlag(t *testing.T) {
 			).Scan(ctx, &credsErr)
 			if !credsErr {
 				t.Error("expected credentials_error=true after ErrCredentials")
+			}
+		})
+	}
+}
+
+// amazonLibraryStub stands in for nile behind the real Amazon Games adapter.
+type amazonLibraryStub struct{ err error }
+
+func (s amazonLibraryStub) Configured() bool { return true }
+
+func (s amazonLibraryStub) Library(context.Context, json.RawMessage) ([]amazongames.Entitlement, json.RawMessage, error) {
+	return nil, nil, s.err
+}
+
+// TestDispatchSync_AmazonGames_FailureChangesNoGames runs the real Amazon
+// Games adapter through the worker: a rejected sign-in takes the shared
+// credentials path (credentials_error set) and any failure leaves the library
+// as it was — nothing is marked removed.
+func TestDispatchSync_AmazonGames_FailureChangesNoGames(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantFlag  bool
+		wantState string
+	}{
+		{"sign-in rejected", amazongames.ErrAuthFailed, true, "failed"},
+		{"library read failed", errors.New("amazon: nile library sync failed: KeyError"), false, "failed"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			ctx := context.Background()
+			userID := uuid.NewString()
+			jobID := uuid.NewString()
+			insertTestUser(t, testDB, userID)
+			_, _ = testDB.ExecContext(ctx,
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'amazon-games', 'pending', 'low')`,
+				jobID, userID,
+			)
+			_, _ = testDB.NewRaw(
+				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'amazon-games', 'daily')`,
+				uuid.NewString(), userID,
+			).Exec(ctx)
+			insertTestExternalGame(t, userID, "amazon-games", "amzn1.adg.product.1", "Owned Game", "pc-windows")
+
+			adapter := amazongames.NewAdapter(amazonLibraryStub{err: tc.err}, json.RawMessage(`{}`), nil)
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(adapter), RiverClient: nil}
+			if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "amazon-games"},
+			}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			var credsErr bool
+			_ = testDB.NewRaw(`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'amazon-games'`, userID).Scan(ctx, &credsErr)
+			if credsErr != tc.wantFlag {
+				t.Errorf("credentials_error = %v, want %v", credsErr, tc.wantFlag)
+			}
+			var status string
+			_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+			if status != tc.wantState {
+				t.Errorf("job status = %q, want %q", status, tc.wantState)
+			}
+			var available bool
+			_ = testDB.NewRaw(`SELECT is_available FROM external_games WHERE user_id = ? AND external_id = 'amzn1.adg.product.1'`, userID).Scan(ctx, &available)
+			if !available {
+				t.Error("an owned game was marked unavailable by a failed sync")
+			}
+			var changes int
+			_ = testDB.NewRaw(`SELECT COUNT(*) FROM changes WHERE job_id = ?`, jobID).Scan(ctx, &changes)
+			if changes != 0 {
+				t.Errorf("a failed sync wrote %d changes", changes)
 			}
 		})
 	}

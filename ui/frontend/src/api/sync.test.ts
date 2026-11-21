@@ -208,4 +208,60 @@ describe('syncApi', () => {
       expect(api.delete).toHaveBeenCalledWith('/sync/epic-games-store/connection');
     });
   });
+
+  describe('Amazon Games API', () => {
+    it('starts a sign-in and maps the attempt', async () => {
+      vi.mocked(api.post).mockResolvedValueOnce({
+        attempt_id: 'att-1',
+        login_url: 'https://amazon.com/ap/signin?x=1',
+      });
+
+      const result = await syncApi.startAmazonGamesLogin();
+
+      expect(api.post).toHaveBeenCalledWith('/sync/amazon-games/connection/login');
+      expect(result).toEqual({ attemptId: 'att-1', loginUrl: 'https://amazon.com/ap/signin?x=1' });
+    });
+
+    it('finishes a sign-in with the attempt id and landing address', async () => {
+      vi.mocked(api.put).mockResolvedValueOnce({ username: 'Ama' });
+
+      const result = await syncApi.connectAmazonGames(
+        'att-1',
+        'https://www.amazon.com/?openid.oa2.authorization_code=AN1',
+      );
+
+      expect(api.put).toHaveBeenCalledWith('/sync/amazon-games/connection', {
+        attempt_id: 'att-1',
+        redirect_url: 'https://www.amazon.com/?openid.oa2.authorization_code=AN1',
+      });
+      expect(result).toEqual({ username: 'Ama' });
+    });
+
+    it('maps connection status, defaulting credentials_error to false', async () => {
+      vi.mocked(api.get).mockResolvedValueOnce({
+        connected: true,
+        disabled: false,
+        username: 'Ama',
+      });
+
+      const result = await syncApi.getAmazonGamesConnection();
+
+      expect(api.get).toHaveBeenCalledWith('/sync/amazon-games/connection');
+      expect(result).toEqual({
+        connected: true,
+        disabled: false,
+        credentialsError: false,
+        username: 'Ama',
+        reason: undefined,
+      });
+    });
+
+    it('disconnects via DELETE', async () => {
+      vi.mocked(api.delete).mockResolvedValueOnce(undefined);
+
+      await syncApi.disconnectAmazonGames();
+
+      expect(api.delete).toHaveBeenCalledWith('/sync/amazon-games/connection');
+    });
+  });
 });

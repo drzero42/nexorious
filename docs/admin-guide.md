@@ -284,6 +284,14 @@ Getting `legendary` in place depends on how you deploy:
 
 Either way, point `LEGENDARY_WORK_DIR` at a writable, persistent directory and restart the server. Steam, PlayStation, GOG, and Humble Bundle sync have no such requirement.
 
+## Amazon Games sync
+
+Amazon Games sync works through the `nile` command-line tool ([imLinguin/nile](https://github.com/imLinguin/nile), the Amazon Games client Heroic uses), version 1.2.0 or newer. It needs no directory or setting: each run uses a temporary directory that is deleted afterwards, and the sign-in is kept encrypted in the database. While `nile` is not on the server's `PATH`, Amazon sync is disabled and users can't connect an Amazon account.
+
+- **Official container image**: `nile` is bundled, so Amazon sync works out of the box.
+- **Single binary / from source, or native package (`.deb`/`.rpm`)**: install nile 1.2.0 or newer yourself so `nile` is on the service's `PATH` (nile has no PyPI release; install it from its [GitHub releases](https://github.com/imLinguin/nile/releases)).
+- **Nix**: the package does not add nile yet. The nixos-26.05 channel ships nile 1.1.2, which keeps its sign-in in a format Nexorious does not read.
+
 ## MCP endpoint for AI agents
 
 The server serves the [Model Context Protocol](https://modelcontextprotocol.io) at `/api/mcp`, so users can connect AI chats and agents to their collection. The [User Guide](user-guide.md#connecting-ai-chats-and-agents) covers the client side: connection settings, key scopes, and what agents can and can't do.

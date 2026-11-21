@@ -16,6 +16,9 @@ import type {
   PlaystationStoreStatusResponse,
   HumbleConnectResponse,
   HumbleStatusResponse,
+  AmazonGamesLoginResponse,
+  AmazonGamesConnectResponse,
+  AmazonGamesConnectionResponse,
   ExternalGame,
 } from '@/types';
 
@@ -434,6 +437,84 @@ export async function getHumbleStatus(): Promise<HumbleStatusResponse> {
  */
 export async function disconnectHumble(): Promise<void> {
   await api.delete('/sync/humble-bundle/connection');
+}
+
+// ============================================================================
+// Amazon Games API Types
+// ============================================================================
+
+interface AmazonGamesLoginApiResponse {
+  attempt_id: string;
+  login_url: string;
+}
+
+interface AmazonGamesConnectApiRequest {
+  attempt_id: string;
+  redirect_url: string;
+}
+
+interface AmazonGamesConnectApiResponse {
+  username: string;
+}
+
+interface AmazonGamesConnectionApiResponse {
+  connected: boolean;
+  disabled: boolean;
+  credentials_error?: boolean;
+  username?: string;
+  reason?: string;
+}
+
+// ============================================================================
+// Amazon Games Functions
+// ============================================================================
+
+/**
+ * Start an Amazon sign-in. The backend runs `nile auth --login` and keeps the
+ * device registration values; the browser only gets the sign-in URL and an
+ * attempt id to finish with.
+ */
+export async function startAmazonGamesLogin(): Promise<AmazonGamesLoginResponse> {
+  const response = await api.post<AmazonGamesLoginApiResponse>(
+    '/sync/amazon-games/connection/login',
+  );
+  return { attemptId: response.attempt_id, loginUrl: response.login_url };
+}
+
+/**
+ * Finish an Amazon sign-in with the address Amazon landed on (or the bare
+ * code). The backend registers the device through nile.
+ */
+export async function connectAmazonGames(
+  attemptId: string,
+  redirectUrl: string,
+): Promise<AmazonGamesConnectResponse> {
+  const response = await api.put<AmazonGamesConnectApiResponse>('/sync/amazon-games/connection', {
+    attempt_id: attemptId,
+    redirect_url: redirectUrl,
+  } as AmazonGamesConnectApiRequest);
+  return { username: response.username };
+}
+
+/**
+ * Get current Amazon Games connection status.
+ */
+export async function getAmazonGamesConnection(): Promise<AmazonGamesConnectionResponse> {
+  const response = await api.get<AmazonGamesConnectionApiResponse>('/sync/amazon-games/connection');
+  return {
+    connected: response.connected,
+    disabled: response.disabled,
+    credentialsError: response.credentials_error ?? false,
+    username: response.username,
+    reason: response.reason,
+  };
+}
+
+/**
+ * Disconnect Amazon Games.
+ */
+export async function disconnectAmazonGames(): Promise<void> {
+  await api.delete('/sync/amazon-games/connection');
 }
 
 /**
