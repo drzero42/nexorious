@@ -18,7 +18,7 @@ export function CodeHelpAccordion({ value, trigger, children }: CodeHelpAccordio
   return (
     <Accordion type="single" collapsible className="w-full">
       <AccordionItem value={value} className="border-none">
-        <AccordionTrigger className="py-2 text-sm text-muted-foreground hover:no-underline">
+        <AccordionTrigger className="py-2 text-left text-sm text-muted-foreground hover:no-underline">
           {trigger}
         </AccordionTrigger>
         <AccordionContent className="text-sm text-muted-foreground">
