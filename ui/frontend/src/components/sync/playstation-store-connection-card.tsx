@@ -124,14 +124,14 @@ export function PlaystationStoreConnectionCard({
                     Your NPSSO token is a session cookie that allows Nexorious to access your
                     PlayStation game library.
                   </p>
-                  <ol className="list-inside list-decimal space-y-1">
+                  <ol className="list-outside list-decimal pl-5 space-y-1">
                     <li>
                       Go to{' '}
                       <a
                         href="https://ca.account.sony.com/api/v1/ssocookie"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-primary hover:underline"
+                        className="text-primary underline underline-offset-4"
                       >
                         Sony SSO Cookie Page <ExternalLink className="inline h-3 w-3" />
                       </a>

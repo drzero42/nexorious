@@ -152,13 +152,13 @@ export function SteamConnectionCard({
                   <p className="font-medium text-foreground">
                     Your Steam ID is a 17-digit number that uniquely identifies your account.
                   </p>
-                  <ol className="list-inside list-decimal space-y-1">
+                  <ol className="list-outside list-decimal pl-5 space-y-1">
                     <li>
                       Open Steam and go to your <strong>Profile</strong>
                     </li>
                     <li>
                       Look at the URL:
-                      <ul className="ml-4 list-inside list-disc">
+                      <ul className="ml-4 list-outside list-disc pl-5">
                         <li>
                           If it shows <code>steamcommunity.com/profiles/76561198...</code>, that
                           number is your Steam ID
@@ -175,7 +175,7 @@ export function SteamConnectionCard({
                         href="https://steamid.io"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-primary hover:underline"
+                        className="text-primary underline underline-offset-4"
                       >
                         steamid.io <ExternalLink className="inline h-3 w-3" />
                       </a>
@@ -185,7 +185,7 @@ export function SteamConnectionCard({
                   <div className="mt-2 rounded border border-yellow-200 bg-yellow-50 p-2 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
                     <strong>Important:</strong> Your Steam profile must be set to{' '}
                     <strong>Public</strong> for sync to work.
-                    <ol className="ml-4 mt-1 list-inside list-decimal">
+                    <ol className="ml-4 mt-1 list-outside list-decimal pl-5">
                       <li>Go to Steam → Settings → Privacy Settings</li>
                       <li>Set &quot;My profile&quot; to Public</li>
                       <li>Set &quot;Game details&quot; to Public</li>
@@ -211,14 +211,14 @@ export function SteamConnectionCard({
                   <p className="font-medium text-foreground">
                     A Steam Web API key allows Nexorious to read your game library.
                   </p>
-                  <ol className="list-inside list-decimal space-y-1">
+                  <ol className="list-outside list-decimal pl-5 space-y-1">
                     <li>
                       Go to{' '}
                       <a
                         href="https://steamcommunity.com/dev/apikey"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-primary hover:underline"
+                        className="text-primary underline underline-offset-4"
                       >
                         Steam Web API Key Registration <ExternalLink className="inline h-3 w-3" />
                       </a>

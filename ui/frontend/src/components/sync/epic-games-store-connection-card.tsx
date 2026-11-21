@@ -159,13 +159,13 @@ export function EpicGamesStoreConnectionCard({
                     Epic Games requires you to log in once to issue a short-lived authorization
                     code.
                   </p>
-                  <ol className="list-inside list-decimal space-y-1">
+                  <ol className="list-outside list-decimal pl-5 space-y-1">
                     <li>
                       <a
                         href={EPIC_AUTH_URL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-primary hover:underline"
+                        className="text-primary underline underline-offset-4"
                       >
                         Open the Epic Games login page <ExternalLink className="inline h-3 w-3" />
                       </a>{' '}
