@@ -151,7 +151,7 @@ function SyncPage() {
         </nav>
         <h1 className="text-2xl font-bold">Sync</h1>
         <p className="text-muted-foreground">
-          Sync your Steam, Epic Games, and PlayStation Network libraries with Nexorious.
+          Sync your Steam, Epic Games, GOG, PlayStation, and Humble Bundle libraries with Nexorious.
         </p>
       </div>
 
