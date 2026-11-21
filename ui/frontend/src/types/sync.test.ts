@@ -8,6 +8,7 @@ describe('SyncStorefront', () => {
         SyncStorefront.STEAM,
         SyncStorefront.EPIC_GAMES_STORE,
         SyncStorefront.PLAYSTATION_STORE,
+        SyncStorefront.AMAZON_GAMES,
       ]),
     );
   });

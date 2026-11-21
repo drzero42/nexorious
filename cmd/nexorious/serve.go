@@ -32,6 +32,7 @@ import (
 	"github.com/drzero42/nexorious/internal/observability"
 	"github.com/drzero42/nexorious/internal/ratelimit"
 	"github.com/drzero42/nexorious/internal/scheduler"
+	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
@@ -239,7 +240,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	epicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
 		DB:      db,
-		Adapter: buildAdapterFactory(db, encrypter, epicClient),
+		Adapter: buildAdapterFactory(db, encrypter, epicClient, amazongamessvc.NewClient()),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
@@ -354,7 +355,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newEpicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 			newDispatchSync := &tasks.DispatchSyncWorker{
 				DB:      newDB,
-				Adapter: buildAdapterFactory(newDB, encrypter, newEpicClient),
+				Adapter: buildAdapterFactory(newDB, encrypter, newEpicClient, amazongamessvc.NewClient()),
 			}
 			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
 				DB:         newDB,
@@ -606,6 +607,7 @@ func buildAdapterFactory(
 	db *bun.DB,
 	encrypter *crypto.Encrypter,
 	epicClient *epicgamesstoresvc.Client,
+	amazonClient amazongamessvc.LibraryClient,
 ) func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 	return func(ctx context.Context, storefront string, cfg models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 		switch storefront {
@@ -705,6 +707,18 @@ func buildAdapterFactory(
 			}
 			return epicgamesstoresvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot), nil
 
+		case "amazon-games":
+			if cfg.StorefrontCredentials == nil {
+				return nil, tasks.ErrCredentials
+			}
+			loaded := *cfg.StorefrontCredentials
+			plain, err := encrypter.Decrypt(loaded)
+			if err != nil || !json.Valid(plain) {
+				slog.Warn("adapter factory: amazon-games decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
+				return nil, tasks.ErrCredentials
+			}
+			return amazongamessvc.NewAdapter(amazonClient, plain, amazonUserDataWriter(db, encrypter, cfg.UserID, loaded)), nil
+
 		case "humble-bundle":
 			if cfg.StorefrontCredentials == nil {
 				return nil, tasks.ErrCredentials
@@ -725,6 +739,25 @@ func buildAdapterFactory(
 		default:
 			return nil, fmt.Errorf("unknown storefront: %s", storefront)
 		}
+	}
+}
+
+// amazonUserDataWriter persists nile's refreshed user data for an Amazon
+// sync. It writes only onto the connection the sync loaded (loaded is that
+// row's ciphertext): if the user reconnected while the sync ran, the new
+// sign-in stays and the refreshed old one is dropped.
+func amazonUserDataWriter(db *bun.DB, encrypter *crypto.Encrypter, userID, loaded string) func(json.RawMessage) error {
+	return func(userData json.RawMessage) error {
+		enc, err := encrypter.Encrypt(userData)
+		if err != nil {
+			return err
+		}
+		_, err = db.NewRaw(
+			`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now()
+			 WHERE user_id = ? AND storefront = 'amazon-games' AND storefront_credentials = ?`,
+			enc, userID, loaded,
+		).Exec(context.Background())
+		return err
 	}
 }
 

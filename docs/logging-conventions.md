@@ -97,7 +97,7 @@ worth pinning.
 
 `KeySource` carries the **canonical storefront slug** — the same value used as the
 job `source` and the adapter-factory `case` label: `steam`, `playstation-store`,
-`gog`, `epic-games-store`, `humble-bundle`. Use `KeySource` (never a custom
+`gog`, `epic-games-store`, `humble-bundle`, `amazon-games`. Use `KeySource` (never a custom
 `"storefront"` key) on every per-source boundary, and never the legacy `"psn"`
 value — `"psn"` may appear only as a human label inside a `msg`, never as a
 `source` value. (A bare `"storefront"` string-literal key remains only where the

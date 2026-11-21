@@ -289,7 +289,7 @@ nexorious/
 │   ├── db/          # Bun ORM models and SQL migrations
 │   ├── worker/      # River job workers (sync, import, export, metadata)
 │   ├── scheduler/   # Periodic maintenance jobs (cleanup, backup polling)
-│   ├── services/    # IGDB client, Steam/PSN/GOG/Epic sync, game matching
+│   ├── services/    # IGDB client, Steam/PSN/GOG/Epic/Humble/Amazon sync, game matching
 │   ├── auth/        # Session and API key auth + Echo middleware
 │   └── config/      # Environment variable config
 ├── ui/
@@ -312,7 +312,7 @@ The route handlers in `internal/api/` are the source of truth for available API 
 
 ## Container Image (Docker)
 
-The repo ships a multi-stage `Dockerfile` that builds the React SPA, compiles the Go binary, and produces a minimal `alpine:3.23` runtime image containing the `nexorious` binary, `ca-certificates`, `postgresql18-client` (for backup/restore), and `legendary-gl` with its Python runtime (for Epic Games Store sync). No Go or Node toolchain, source, or git is shipped in the final image.
+The repo ships a multi-stage `Dockerfile` that builds the React SPA, compiles the Go binary, and produces a minimal `alpine:3.23` runtime image containing the `nexorious` binary, `ca-certificates`, `postgresql18-client` (for backup/restore), and `legendary-gl` and `nile` with their Python runtime (for Epic Games Store and Amazon Games sync). No Go or Node toolchain, source, or git is shipped in the final image.
 
 **Build** (full source build — the default `runtime` target):
 

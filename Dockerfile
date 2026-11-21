@@ -32,13 +32,24 @@ RUN CGO_ENABLED=0 GOOS=linux \
       ./cmd/nexctl
 
 # ─── Shared runtime layer (defined exactly once) ─────────────────────────────
+# legendary (Epic) and nile (Amazon Games) are the storefront CLIs the sync
+# adapters run. nile has no PyPI release: its tagged source is installed with
+# its icon folder removed, because setuptools refuses a flat layout with two
+# top-level folders ("Multiple top-level packages discovered: nile, assets").
 FROM docker.io/library/alpine:3.24 AS runtime-base
 RUN apk add --no-cache \
       ca-certificates \
       postgresql18-client \
       python3 py3-requests py3-filelock \
- && apk add --no-cache --virtual .pip-tmp py3-pip \
+      py3-protobuf py3-pycryptodome py3-zstandard py3-json5 py3-platformdirs \
+ && apk add --no-cache --virtual .pip-tmp py3-pip py3-setuptools \
  && pip install --no-cache-dir --break-system-packages --no-deps legendary-gl==0.20.34 \
+ && wget -qO /tmp/nile.tar.gz https://github.com/imLinguin/nile/archive/refs/tags/v1.2.0.tar.gz \
+ && echo "a06dd595248f0b4bf8fccf2b14a534391c94b810f725b6bbeaca92bc3ac2673d  /tmp/nile.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/nile.tar.gz -C /tmp \
+ && rm -rf /tmp/nile-1.2.0/assets \
+ && pip install --no-cache-dir --break-system-packages --no-deps --no-build-isolation /tmp/nile-1.2.0 \
+ && rm -rf /tmp/nile.tar.gz /tmp/nile-1.2.0 \
  && apk del .pip-tmp \
  && addgroup -g 10001 -S nexorious \
  && adduser -u 10001 -S -G nexorious -h /app -s /sbin/nologin nexorious

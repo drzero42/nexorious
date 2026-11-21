@@ -47,7 +47,7 @@ func newSyncTestApp(t *testing.T, db *bun.DB, steam api.SteamClient, psn api.Pla
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -68,12 +68,12 @@ func TestSyncConfig_ListDefaults(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["total"].(float64) != 5 {
-		t.Fatalf("expected total=5, got %v", resp["total"])
+	if resp["total"].(float64) != 6 {
+		t.Fatalf("expected total=6, got %v", resp["total"])
 	}
 	configs := resp["configs"].([]any)
-	if len(configs) != 5 {
-		t.Fatalf("expected 5 configs, got %d", len(configs))
+	if len(configs) != 6 {
+		t.Fatalf("expected 6 configs, got %d", len(configs))
 	}
 	for _, c := range configs {
 		cfg := c.(map[string]any)
@@ -715,8 +715,8 @@ func TestSyncListConfig_AfterPut(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp["total"].(float64) != 5 {
-		t.Fatalf("expected total=5, got %v", resp["total"])
+	if resp["total"].(float64) != 6 {
+		t.Fatalf("expected total=6, got %v", resp["total"])
 	}
 	configs := resp["configs"].([]any)
 	// Find steam config and verify it has frequency=daily.
@@ -2011,7 +2011,7 @@ func newSyncTestAppWithEpicGamesStore(t *testing.T, db *bun.DB, steam api.SteamC
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, epic, (api.GOGClient)(nil), (api.HumbleClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, epic, (api.GOGClient)(nil), (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -2044,7 +2044,7 @@ func newSyncTestAppWithRiverClient(t *testing.T, db *bun.DB, steam api.SteamClie
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, rc, steam, psn, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -2073,7 +2073,7 @@ func newSyncTestAppWithGOG(t *testing.T, db *bun.DB, steam api.SteamClient, psn 
 	e := echo.New()
 	ah := api.NewAuthHandler(testDB, cfg)
 	e.POST("/api/auth/login", ah.HandleLogin)
-	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, (api.EpicGamesStoreClient)(nil), gog, (api.HumbleClient)(nil))
+	synch := api.NewSyncHandler(testEncrypter, db, newTestRiverClient(t), steam, psn, (api.EpicGamesStoreClient)(nil), gog, (api.HumbleClient)(nil), (api.AmazonGamesClient)(nil))
 	g := e.Group("/api/sync", auth.AuthMiddleware(db))
 	synch.RegisterRoutes(g)
 	return e
@@ -2290,6 +2290,321 @@ func TestHandleGetEpicGamesStoreConnection_ConnectedReturnsDisplayName(t *testin
 	}
 	if resp["display_name"] != "PlayerOne" {
 		t.Errorf("expected display_name from creds, got: %v", resp)
+	}
+}
+
+// ─── Amazon Games connection-handler tests ───────────────────────────────────
+
+type stubAmazonGamesClient struct {
+	configured  bool
+	loginErr    error
+	logins      int
+	registerErr error
+	gotCode     string
+	gotLogin    api.AmazonGamesLogin
+	userData    json.RawMessage
+}
+
+func (s *stubAmazonGamesClient) Configured() bool { return s.configured }
+
+func (s *stubAmazonGamesClient) LoginURL(_ context.Context) (*api.AmazonGamesLogin, error) {
+	if s.loginErr != nil {
+		return nil, s.loginErr
+	}
+	s.logins++
+	n := fmt.Sprint(s.logins)
+	return &api.AmazonGamesLogin{
+		URL:          "https://amazon.com/ap/signin?attempt=" + n,
+		ClientID:     "client-" + n,
+		CodeVerifier: "verifier-" + n,
+		Serial:       "serial-" + n,
+	}, nil
+}
+
+func (s *stubAmazonGamesClient) Register(_ context.Context, code string, login api.AmazonGamesLogin) (*api.AmazonGamesAccount, json.RawMessage, error) {
+	s.gotCode = code
+	s.gotLogin = login
+	if s.registerErr != nil {
+		return nil, nil, s.registerErr
+	}
+	return &api.AmazonGamesAccount{UserID: "amzn1.account.X", Name: "Ama"}, s.userData, nil
+}
+
+const amazonTestUserData = `{"tokens":{"bearer":{"refresh_token":"Atnr|R"}},"extensions":{"customer_info":{"user_id":"amzn1.account.X","given_name":"Ama"}}}`
+
+func newSyncTestAppWithAmazonGames(t *testing.T, amazon *stubAmazonGamesClient) (interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, *api.SyncHandler) {
+	t.Helper()
+	e := echo.New()
+	ah := api.NewAuthHandler(testDB, testCfg())
+	e.POST("/api/auth/login", ah.HandleLogin)
+	synch := api.NewSyncHandler(testEncrypter, testDB, newTestRiverClient(t), &stubSteamClient{}, &stubPlaystationStoreClient{}, (api.EpicGamesStoreClient)(nil), (api.GOGClient)(nil), (api.HumbleClient)(nil), amazon)
+	g := e.Group("/api/sync", auth.AuthMiddleware(testDB))
+	synch.RegisterRoutes(g)
+	return e, synch
+}
+
+// startAmazonLogin starts a sign-in and returns its attempt id.
+func startAmazonLogin(t *testing.T, e interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, token string) string {
+	t.Helper()
+	rec := postJSONAuth(t, e, "/api/sync/amazon-games/connection/login", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["attempt_id"] == "" {
+		t.Fatalf("start: no attempt_id in %v", resp)
+	}
+	return resp["attempt_id"]
+}
+
+const amazonLanding = "https://www.amazon.com/?openid.oa2.authorization_code=ANcode1&openid.mode=id_res"
+
+func TestAmazonGamesLoginStart_ReturnsURLAndKeepsSecretsServerSide(t *testing.T) {
+	truncateAllTables(t)
+	e, _ := newSyncTestAppWithAmazonGames(t, &stubAmazonGamesClient{configured: true})
+	_, token := setupTagUser(t, testDB, e, "amz-start")
+
+	rec := postJSONAuth(t, e, "/api/sync/amazon-games/connection/login", nil, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["login_url"] != "https://amazon.com/ap/signin?attempt=1" || resp["attempt_id"] == "" {
+		t.Errorf("unexpected response: %v", resp)
+	}
+	for _, secret := range []string{"client-1", "verifier-1", "serial-1"} {
+		if strings.Contains(rec.Body.String(), secret) {
+			t.Errorf("response leaks %q: %s", secret, rec.Body.String())
+		}
+	}
+}
+
+func TestAmazonGamesLoginStart_503WhenNileMissing(t *testing.T) {
+	truncateAllTables(t)
+	e, _ := newSyncTestAppWithAmazonGames(t, &stubAmazonGamesClient{configured: false})
+	_, token := setupTagUser(t, testDB, e, "amz-start-503")
+	rec := postJSONAuth(t, e, "/api/sync/amazon-games/connection/login", nil, token)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAmazonGamesConnect_FinishPersistsEncryptedUserData(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(amazonTestUserData)}
+	e, _ := newSyncTestAppWithAmazonGames(t, stub)
+	userID, token := setupTagUser(t, testDB, e, "amz-finish")
+
+	attempt := startAmazonLogin(t, e, token)
+	rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["username"] != "Ama" {
+		t.Errorf("unexpected response: %v", resp)
+	}
+	if stub.gotCode != "ANcode1" || stub.gotLogin.ClientID != "client-1" || stub.gotLogin.CodeVerifier != "verifier-1" || stub.gotLogin.Serial != "serial-1" {
+		t.Errorf("register got code=%q login=%+v", stub.gotCode, stub.gotLogin)
+	}
+
+	var credsRaw string
+	if err := testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'amazon-games'`, userID).
+		Scan(context.Background(), &credsRaw); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if strings.Contains(credsRaw, "Atnr|R") {
+		t.Fatal("credentials stored in the clear")
+	}
+	plain, err := testEncrypter.Decrypt(credsRaw)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	if string(plain) != amazonTestUserData {
+		t.Errorf("stored %s, want nile's user data", plain)
+	}
+
+	// The attempt is spent.
+	rec = putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("reusing a finished attempt: expected 409, got %d", rec.Code)
+	}
+}
+
+func TestAmazonGamesConnect_BareCodeAccepted(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(amazonTestUserData)}
+	e, _ := newSyncTestAppWithAmazonGames(t, stub)
+	_, token := setupTagUser(t, testDB, e, "amz-bare")
+	attempt := startAmazonLogin(t, e, token)
+	rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": "ANbare"}, token)
+	if rec.Code != http.StatusOK || stub.gotCode != "ANbare" {
+		t.Errorf("expected 200 with code ANbare, got %d code=%q: %s", rec.Code, stub.gotCode, rec.Body.String())
+	}
+}
+
+func TestAmazonGamesConnect_400WithoutCode(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true}
+	e, _ := newSyncTestAppWithAmazonGames(t, stub)
+	_, token := setupTagUser(t, testDB, e, "amz-nocode")
+	attempt := startAmazonLogin(t, e, token)
+	for _, landing := range []string{"https://www.amazon.com/?openid.mode=cancel", ""} {
+		rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": landing}, token)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("landing %q: expected 400, got %d: %s", landing, rec.Code, rec.Body.String())
+		}
+	}
+	if stub.gotCode != "" {
+		t.Error("register ran without a code")
+	}
+}
+
+func TestAmazonGamesConnect_409ForUnknownReplacedOrExpiredAttempt(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(amazonTestUserData)}
+	e, h := newSyncTestAppWithAmazonGames(t, stub)
+	_, token := setupTagUser(t, testDB, e, "amz-409")
+	finish := func(attempt string) int {
+		return putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token).Code
+	}
+
+	if code := finish("no-such-attempt"); code != http.StatusConflict {
+		t.Errorf("unknown attempt: expected 409, got %d", code)
+	}
+
+	// Two starts, then finishing with the first: it was replaced.
+	first := startAmazonLogin(t, e, token)
+	second := startAmazonLogin(t, e, token)
+	if code := finish(first); code != http.StatusConflict {
+		t.Errorf("replaced attempt: expected 409, got %d", code)
+	}
+
+	// Sixteen minutes later the live one has expired too.
+	h.SetAmazonLoginClockForTest(func() time.Time { return time.Now().Add(16 * time.Minute) })
+	if code := finish(second); code != http.StatusConflict {
+		t.Errorf("expired attempt: expected 409, got %d", code)
+	}
+	if stub.gotCode != "" {
+		t.Error("register ran for a dead attempt")
+	}
+}
+
+func TestAmazonGamesConnect_AttemptsAreUserScoped(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(amazonTestUserData)}
+	e, _ := newSyncTestAppWithAmazonGames(t, stub)
+	_, tokenA := setupTagUser(t, testDB, e, "amz-user-a")
+	_, tokenB := setupTagUser(t, testDB, e, "amz-user-b")
+	attemptA := startAmazonLogin(t, e, tokenA)
+	rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attemptA, "redirect_url": amazonLanding}, tokenB)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("another user's attempt: expected 409, got %d", rec.Code)
+	}
+}
+
+func TestAmazonGamesConnect_RegisterFailure(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true, registerErr: fmt.Errorf("amazon: device registration failed: [redacted]")}
+	e, _ := newSyncTestAppWithAmazonGames(t, stub)
+	userID, token := setupTagUser(t, testDB, e, "amz-regfail")
+	attempt := startAmazonLogin(t, e, token)
+	rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var n int
+	if err := testDB.NewRaw(`SELECT count(*) FROM user_sync_configs WHERE user_id = ? AND storefront = 'amazon-games' AND storefront_credentials IS NOT NULL`, userID).
+		Scan(context.Background(), &n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Error("a failed registration stored credentials")
+	}
+	// The attempt survives a failed paste, so the user can paste again.
+	stub.registerErr = nil
+	stub.userData = json.RawMessage(amazonTestUserData)
+	rec = putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token)
+	if rec.Code != http.StatusOK {
+		t.Errorf("retry on the same attempt: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func seedAmazonConnection(t *testing.T, userID string, credentialsError bool) {
+	t.Helper()
+	ct, err := testEncrypter.Encrypt([]byte(amazonTestUserData))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials, credentials_error, created_at, updated_at)
+		 VALUES (?, ?, 'amazon-games', 'manual', ?, ?, now(), now())`,
+		uuid.NewString(), userID, ct, credentialsError,
+	).Exec(context.Background()); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+}
+
+func TestGetAmazonGamesConnection(t *testing.T) {
+	truncateAllTables(t)
+	e, _ := newSyncTestAppWithAmazonGames(t, &stubAmazonGamesClient{configured: true})
+	userID, token := setupTagUser(t, testDB, e, "amz-status")
+	get := func() map[string]any {
+		rec := getAuth(t, e, "/api/sync/amazon-games/connection", token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		return resp
+	}
+	if resp := get(); resp["connected"] != false || resp["disabled"] != false {
+		t.Errorf("not connected: unexpected %v", resp)
+	}
+	seedAmazonConnection(t, userID, true)
+	resp := get()
+	if resp["connected"] != true || resp["username"] != "Ama" || resp["credentials_error"] != true {
+		t.Errorf("connected with credentials error: unexpected %v", resp)
+	}
+}
+
+func TestGetAmazonGamesConnection_DisabledWhenNileMissing(t *testing.T) {
+	truncateAllTables(t)
+	e, _ := newSyncTestAppWithAmazonGames(t, &stubAmazonGamesClient{configured: false})
+	_, token := setupTagUser(t, testDB, e, "amz-status-disabled")
+	rec := getAuth(t, e, "/api/sync/amazon-games/connection", token)
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["connected"] != false || resp["disabled"] != true || resp["reason"] != "nile_not_installed" {
+		t.Errorf("unexpected response: %v", resp)
+	}
+}
+
+func TestAmazonGamesDisconnect_ClearsCredentials(t *testing.T) {
+	truncateAllTables(t)
+	e, _ := newSyncTestAppWithAmazonGames(t, &stubAmazonGamesClient{configured: true})
+	userID, token := setupTagUser(t, testDB, e, "amz-disc")
+	seedAmazonConnection(t, userID, false)
+	rec := deleteAuth(t, e, "/api/sync/amazon-games/connection", token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var creds *string
+	if err := testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'amazon-games'`, userID).
+		Scan(context.Background(), &creds); err != nil {
+		t.Fatal(err)
+	}
+	if creds != nil {
+		t.Error("credentials not cleared")
 	}
 }
 
