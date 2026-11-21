@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { render, screen, waitFor } from '@testing-library/react';
 import { RouteGuard } from './route-guard';
 
@@ -48,8 +49,22 @@ describe('RouteGuard', () => {
         </RouteGuard>,
       );
 
-      const spinner = screen.getByRole('status', { name: 'Loading' });
-      expect(spinner.closest('[aria-busy="true"]')).not.toBeNull();
+      // A live region that is not marked busy, so the announcement is not held
+      // back for as long as loading lasts.
+      expect(screen.getByRole('status')).toHaveTextContent('Loading');
+      expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    });
+
+    it('creates the live region empty and inserts "Loading" after mount', () => {
+      mockUseAuth.mockReturnValue({ isLoading: true, isAuthenticated: false });
+      // Static markup is the first render, before any effect runs.
+      const firstRender = renderToStaticMarkup(
+        <RouteGuard>
+          <div>Protected Content</div>
+        </RouteGuard>,
+      );
+      expect(firstRender).toContain('role="status"');
+      expect(firstRender).not.toContain('Loading');
     });
 
     it('does not redirect while loading', async () => {
