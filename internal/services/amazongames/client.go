@@ -187,11 +187,42 @@ func (c *Client) Library(ctx context.Context, userData json.RawMessage) (entitle
 	return entitlements, refreshed, nil
 }
 
+// Logout deregisters the device userData belongs to with `nile auth --logout`,
+// which first refreshes an expired access token. nile removes its signed-in
+// user only when Amazon accepts the deregistration, and exits 0 without a word
+// when Amazon refuses, so the files it leaves behind decide, not its exit code.
+func (c *Client) Logout(ctx context.Context, userData json.RawMessage) error {
+	if _, err := accountOf(userData); err != nil {
+		return err
+	}
+	dir, err := newConfigDir()
+	if err != nil {
+		return err
+	}
+	defer removeConfigDir(dir)
+
+	if err := writeNileConfig(dir, userData); err != nil {
+		return err
+	}
+	_, stderr, runErr := c.run(ctx, dir, "auth", "--logout")
+	if _, statErr := os.Stat(filepath.Join(dir, "nile", "current_user.json")); errors.Is(statErr, os.ErrNotExist) {
+		return nil
+	}
+	detail := lastLines(stderr)
+	if runErr != nil {
+		detail += "\n" + runErr.Error()
+	}
+	if detail == "" {
+		detail = "Amazon did not accept the deregistration"
+	}
+	return fmt.Errorf("amazon: nile could not deregister the device: %s", sanitize(detail, secretsOf(userData)...))
+}
+
 // parseLibrary reads nile's library.json: a list of entitlements, each with
 // the product it grants. Anything but a list whose every entry names its
 // product is refused: the worker marks every game a sync does not return as
 // removed, so a `null` read as an empty library, or a dropped entry, would
-// remove games he owns.
+// remove games the user owns.
 func parseLibrary(raw []byte) ([]Entitlement, error) {
 	if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
 		return nil, errors.New("amazon: nile library.json is not a list of entitlements")

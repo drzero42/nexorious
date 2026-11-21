@@ -507,3 +507,83 @@ func TestRegister_RefusesUserDataWithoutTokens(t *testing.T) {
 		t.Fatal("expected an error")
 	}
 }
+
+// signOut acts as nile 1.2.0's logout after Amazon accepted it: the signed-in
+// user and its user data file are removed.
+func signOut(t *testing.T, dir string) {
+	t.Helper()
+	for _, name := range []string{"current_user.json", "095bcd5f2ec20d88c189d52912352950.enc"} {
+		if err := os.Remove(filepath.Join(dir, "nile", name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestLogout_DeregistersWithTheGivenSignIn(t *testing.T) {
+	userData := readFixture(t, "user-data.json")
+	f := &fakeNile{}
+	f.do = func(dir string) (string, string, error) {
+		seen, err := readNileConfig(dir)
+		if err != nil {
+			t.Fatalf("nile config not rebuilt: %v", err)
+		}
+		if !sameJSON(t, seen, userData) {
+			t.Errorf("nile saw different user data: %s", seen)
+		}
+		signOut(t, dir)
+		return "", "INFO [AUTH_MANAGER]: Successfully deregistered a device", nil
+	}
+	if err := newTestClient(f).Logout(context.Background(), userData); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+	if strings.Join(f.args, " ") != "auth --logout" {
+		t.Errorf("args = %v", f.args)
+	}
+	if _, err := os.Stat(f.dir); !os.IsNotExist(err) {
+		t.Errorf("config dir %s left behind", f.dir)
+	}
+}
+
+// Amazon refusing the deregistration leaves nile signed in and exits 0.
+func TestLogout_RefusedDeregistrationIsAnError(t *testing.T) {
+	userData := readFixture(t, "user-data.json")
+	f := &fakeNile{do: func(string) (string, string, error) { return "", "", nil }}
+	err := newTestClient(f).Logout(context.Background(), userData)
+	if err == nil || !strings.Contains(err.Error(), "could not deregister") {
+		t.Fatalf("err = %v, want a deregistration failure", err)
+	}
+	if _, statErr := os.Stat(f.dir); !os.IsNotExist(statErr) {
+		t.Errorf("config dir %s left behind", f.dir)
+	}
+}
+
+func TestLogout_FailureIsSanitized(t *testing.T) {
+	userData := readFixture(t, "user-data.json")
+	f := &fakeNile{do: func(string) (string, string, error) {
+		return "", "DEBUG token=Atna|FAKE-ACCESS-TOKEN refresh=Atnr|FAKE-REFRESH-TOKEN\n" +
+			"key FAKE-DEVICE-PRIVATE-KEY adp FAKE-ADP-TOKEN serial 0123456789ABCDEF0123456789ABCDEF\n" +
+			"ConnectionError: deregister", errExit1
+	}}
+	err := newTestClient(f).Logout(context.Background(), userData)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, secret := range []string{"FAKE-ACCESS-TOKEN", "FAKE-REFRESH-TOKEN", "FAKE-DEVICE-PRIVATE-KEY", "FAKE-ADP-TOKEN", "0123456789ABCDEF0123456789ABCDEF"} {
+		if strings.Contains(err.Error(), secret) {
+			t.Errorf("error %q leaks %q", err, secret)
+		}
+	}
+	if !strings.Contains(err.Error(), "ConnectionError") {
+		t.Errorf("error %q lost nile's own failure line", err)
+	}
+}
+
+func TestLogout_RefusesUserDataWithoutUserID(t *testing.T) {
+	f := &fakeNile{}
+	if err := newTestClient(f).Logout(context.Background(), json.RawMessage(`{"tokens":{}}`)); err == nil {
+		t.Fatal("expected an error")
+	}
+	if f.args != nil {
+		t.Errorf("nile ran: %v", f.args)
+	}
+}

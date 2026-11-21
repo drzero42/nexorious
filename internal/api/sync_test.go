@@ -2,7 +2,9 @@ package api_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -2304,6 +2306,35 @@ type stubAmazonGamesClient struct {
 	gotLogin    api.AmazonGamesLogin
 	userData    json.RawMessage
 	during      func() // runs inside Register, as if nile were still working
+
+	logoutMu     sync.Mutex
+	logouts      []string // user data each Logout was given
+	logoutErr    error
+	logoutHold   chan struct{} // when set, Logout waits for it to close (or its ctx to end)
+	logoutCtxErr error         // ctx.Err() when a held Logout returned
+}
+
+func (s *stubAmazonGamesClient) Logout(ctx context.Context, userData json.RawMessage) error {
+	s.logoutMu.Lock()
+	s.logouts = append(s.logouts, string(userData))
+	hold, err := s.logoutHold, s.logoutErr
+	s.logoutMu.Unlock()
+	if hold != nil {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+		}
+		s.logoutMu.Lock()
+		s.logoutCtxErr = ctx.Err()
+		s.logoutMu.Unlock()
+	}
+	return err
+}
+
+func (s *stubAmazonGamesClient) loggedOut() []string {
+	s.logoutMu.Lock()
+	defer s.logoutMu.Unlock()
+	return append([]string(nil), s.logouts...)
 }
 
 func (s *stubAmazonGamesClient) Configured() bool { return s.configured }
@@ -2437,11 +2468,6 @@ func TestAmazonGamesConnect_FinishPersistsEncryptedUserData(t *testing.T) {
 		t.Errorf("stored %s, want nile's user data", plain)
 	}
 
-	// The attempt is spent.
-	rec = putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token)
-	if rec.Code != http.StatusConflict {
-		t.Errorf("reusing a finished attempt: expected 409, got %d", rec.Code)
-	}
 }
 
 func TestAmazonGamesConnect_BareCodeAccepted(t *testing.T) {
@@ -2473,79 +2499,182 @@ func TestAmazonGamesConnect_400WithoutCode(t *testing.T) {
 	}
 }
 
-func TestAmazonGamesConnect_409ForUnknownReplacedOrExpiredAttempt(t *testing.T) {
-	truncateAllTables(t)
-	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(amazonTestUserData)}
-	e, h := newSyncTestAppWithAmazonGames(t, stub)
-	_, token := setupTagUser(t, testDB, e, "amz-409")
-	finish := func(attempt string) int {
-		return putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token).Code
+// amazonAttemptPayload builds an attempt_id the way the server does, so a test
+// can hand the finish an attempt whose fields it controls.
+func amazonAttemptPayload(t *testing.T, fields map[string]any) string {
+	t.Helper()
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
 	}
+	ct, err := testEncrypter.Encrypt(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ct
+}
 
-	if code := finish("no-such-attempt"); code != http.StatusConflict {
-		t.Errorf("unknown attempt: expected 409, got %d", code)
-	}
-
-	// Two starts, then finishing with the first: it was replaced.
-	first := startAmazonLogin(t, e, token)
-	second := startAmazonLogin(t, e, token)
-	if code := finish(first); code != http.StatusConflict {
-		t.Errorf("replaced attempt: expected 409, got %d", code)
-	}
-
-	// Sixteen minutes later the live one has expired too.
-	h.SetAmazonLoginClockForTest(func() time.Time { return time.Now().Add(16 * time.Minute) })
-	if code := finish(second); code != http.StatusConflict {
-		t.Errorf("expired attempt: expected 409, got %d", code)
-	}
-	if stub.gotCode != "" {
-		t.Error("register ran for a dead attempt")
+func validAmazonAttemptFields(userID string) map[string]any {
+	return map[string]any{
+		"kind":          "amazon-games-login",
+		"client_id":     "client-x",
+		"code_verifier": "verifier-x",
+		"serial":        "serial-x",
+		"user_id":       userID,
+		"expires_at":    time.Now().Add(10 * time.Minute),
 	}
 }
 
-// A sign-in replaced while nile was still registering it must not overwrite
-// whatever the newer sign-in saves.
-func TestAmazonGamesConnect_ReplacedWhileRegisteringIsNotSaved(t *testing.T) {
+// Every attempt_id the finish cannot trust is a 409, nile never runs, and
+// nothing is stored.
+func TestAmazonGamesConnect_409ForUnusableAttempt(t *testing.T) {
 	truncateAllTables(t)
 	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(amazonTestUserData)}
 	e, _ := newSyncTestAppWithAmazonGames(t, stub)
-	userID, token := setupTagUser(t, testDB, e, "amz-race")
+	userID, token := setupTagUser(t, testDB, e, "amz-409")
+	otherID, _ := setupTagUser(t, testDB, e, "amz-409-other")
 
-	first := startAmazonLogin(t, e, token)
-	var second string
-	stub.during = func() { second = startAmazonLogin(t, e, token) }
-	rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": first, "redirect_url": amazonLanding}, token)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("finishing a sign-in replaced mid-registration: expected 409, got %d: %s", rec.Code, rec.Body.String())
+	real := startAmazonLogin(t, e, token)
+	// One base64 character flipped in the middle of the attempt.
+	mid := len(real) / 2
+	flip := byte('A')
+	if real[mid] == 'A' {
+		flip = 'B'
+	}
+	tampered := real[:mid] + string(flip) + real[mid+1:]
+	storedCredential, err := testEncrypter.Encrypt([]byte(amazonTestUserData))
+	if err != nil {
+		t.Fatal(err)
+	}
+	with := func(key string, value any) string {
+		f := validAmazonAttemptFields(userID)
+		f[key] = value
+		return amazonAttemptPayload(t, f)
+	}
+	without := func(key string) string {
+		f := validAmazonAttemptFields(userID)
+		delete(f, key)
+		return amazonAttemptPayload(t, f)
+	}
+
+	for _, tc := range []struct{ name, attempt string }{
+		{"garbage", "no-such-attempt"},
+		{"several kilobytes", "enc:v1:" + strings.Repeat("A", 8192)},
+		{"tampered", tampered},
+		{"another ciphertext from the same key (a stored credential)", storedCredential},
+		{"wrong kind", with("kind", "gog-login")},
+		{"another user's", with("user_id", otherID)},
+		{"expired", with("expires_at", time.Now().Add(-time.Second))},
+		{"no client id", with("client_id", "")},
+		{"no code verifier", without("code_verifier")},
+		{"no serial", with("serial", "")},
+		{"no expiry", without("expires_at")},
+	} {
+		rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": tc.attempt, "redirect_url": amazonLanding}, token)
+		if rec.Code != http.StatusConflict {
+			t.Errorf("%s: expected 409, got %d: %s", tc.name, rec.Code, rec.Body.String())
+		}
+	}
+	if stub.gotCode != "" {
+		t.Error("register ran for an unusable attempt")
+	}
+	var n int
+	if err := testDB.NewRaw(`SELECT count(*) FROM user_sync_configs WHERE storefront = 'amazon-games' AND storefront_credentials IS NOT NULL`).
+		Scan(context.Background(), &n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("%d sign-ins stored from unusable attempts", n)
+	}
+
+	// The control: the same fields, unaltered, finish, and a real attempt_id
+	// fits well inside the length cap.
+	if len(real) > 1024 {
+		t.Errorf("a real attempt_id is %d characters; the cap assumes about 450", len(real))
+	}
+	if rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": amazonAttemptPayload(t, validAmazonAttemptFields(userID)), "redirect_url": amazonLanding}, token); rec.Code != http.StatusOK {
+		t.Errorf("a well-formed attempt: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// An attempt expires on the server's clock: fifteen minutes after it started.
+func TestAmazonGamesConnect_AttemptExpiresAfterFifteenMinutes(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(amazonTestUserData)}
+	e, h := newSyncTestAppWithAmazonGames(t, stub)
+	_, token := setupTagUser(t, testDB, e, "amz-expiry")
+	attempt := startAmazonLogin(t, e, token)
+
+	h.SetAmazonLoginClockForTest(func() time.Time { return time.Now().Add(16 * time.Minute) })
+	if rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token); rec.Code != http.StatusConflict {
+		t.Errorf("after 16 minutes: expected 409, got %d", rec.Code)
+	}
+	h.SetAmazonLoginClockForTest(func() time.Time { return time.Now().Add(14 * time.Minute) })
+	if rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token); rec.Code != http.StatusOK {
+		t.Errorf("after 14 minutes: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A sign-in started on one server finishes on another, or after a restart:
+// everything the finish needs travels in the attempt_id.
+func TestAmazonGamesConnect_SurvivesRestart(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(amazonTestUserData)}
+	first, _ := newSyncTestAppWithAmazonGames(t, stub)
+	userID, token := setupTagUser(t, testDB, first, "amz-restart")
+	attempt := startAmazonLogin(t, first, token)
+
+	restarted, _ := newSyncTestAppWithAmazonGames(t, stub)
+	rec := putJSONAuth(t, restarted, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("finishing on a new handler: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if stub.gotLogin.ClientID != "client-1" || stub.gotLogin.CodeVerifier != "verifier-1" || stub.gotLogin.Serial != "serial-1" {
+		t.Errorf("register got login=%+v, want the started attempt's values", stub.gotLogin)
 	}
 	var n int
 	if err := testDB.NewRaw(`SELECT count(*) FROM user_sync_configs WHERE user_id = ? AND storefront = 'amazon-games' AND storefront_credentials IS NOT NULL`, userID).
 		Scan(context.Background(), &n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 0 {
-		t.Error("the replaced sign-in was saved")
-	}
-
-	stub.during = nil
-	rec = putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": second, "redirect_url": amazonLanding}, token)
-	if rec.Code != http.StatusOK {
-		t.Errorf("the newer sign-in: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	if n != 1 {
+		t.Errorf("stored sign-ins = %d, want 1", n)
 	}
 }
 
-// A replaced sign-in whose registration then fails is still a 409: the user's
-// next step is the newer sign-in, not another paste into this one.
-func TestAmazonGamesConnect_ReplacedWhileRegisteringAndFailedIs409(t *testing.T) {
+// Two attempts started by one user can both finish; the last one stored wins.
+func TestAmazonGamesConnect_LastFinishWins(t *testing.T) {
 	truncateAllTables(t)
-	stub := &stubAmazonGamesClient{configured: true, registerErr: fmt.Errorf("amazon: device registration failed: [redacted]")}
+	stub := &stubAmazonGamesClient{configured: true}
 	e, _ := newSyncTestAppWithAmazonGames(t, stub)
-	_, token := setupTagUser(t, testDB, e, "amz-race-fail")
-	first := startAmazonLogin(t, e, token)
-	stub.during = func() { startAmazonLogin(t, e, token) }
-	rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": first, "redirect_url": amazonLanding}, token)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	userID, token := setupTagUser(t, testDB, e, "amz-last")
+	firstAttempt := startAmazonLogin(t, e, token)
+	secondAttempt := startAmazonLogin(t, e, token)
+
+	second := strings.Replace(amazonTestUserData, "Atnr|R", "Atnr|second", 1)
+	stub.userData = json.RawMessage(second)
+	if rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": secondAttempt, "redirect_url": amazonLanding}, token); rec.Code != http.StatusOK {
+		t.Fatalf("second attempt: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	firstData := strings.Replace(amazonTestUserData, "Atnr|R", "Atnr|first", 1)
+	stub.userData = json.RawMessage(firstData)
+	if rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": firstAttempt, "redirect_url": amazonLanding}, token); rec.Code != http.StatusOK {
+		t.Fatalf("first attempt, finished last: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if stub.gotLogin.ClientID != "client-1" {
+		t.Errorf("the last finish registered %q, want client-1", stub.gotLogin.ClientID)
+	}
+	var credsRaw string
+	if err := testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'amazon-games'`, userID).
+		Scan(context.Background(), &credsRaw); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := testEncrypter.Decrypt(credsRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(plain) != firstData {
+		t.Errorf("stored the earlier finish; want the last one")
 	}
 }
 
@@ -2639,22 +2768,157 @@ func TestGetAmazonGamesConnection_DisabledWhenNileMissing(t *testing.T) {
 	}
 }
 
-func TestAmazonGamesDisconnect_ClearsCredentials(t *testing.T) {
-	truncateAllTables(t)
-	e, _ := newSyncTestAppWithAmazonGames(t, &stubAmazonGamesClient{configured: true})
-	userID, token := setupTagUser(t, testDB, e, "amz-disc")
-	seedAmazonConnection(t, userID, false)
-	rec := deleteAuth(t, e, "/api/sync/amazon-games/connection", token)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
-	}
+func storedAmazonUserData(t *testing.T, userID string) *string {
+	t.Helper()
 	var creds *string
 	if err := testDB.NewRaw(`SELECT storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = 'amazon-games'`, userID).
-		Scan(context.Background(), &creds); err != nil {
+		Scan(context.Background(), &creds); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal(err)
 	}
-	if creds != nil {
-		t.Error("credentials not cleared")
+	if creds == nil {
+		return nil
+	}
+	plain, err := testEncrypter.Decrypt(*creds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(plain)
+	return &out
+}
+
+// Disconnecting removes the stored sign-in and answers 204 as before, then
+// signs that device out of Amazon with the sign-in it removed. Whether the
+// sign-out works, fails or hangs past its limit, the disconnect has succeeded.
+func TestAmazonGamesDisconnect_SignsTheDeviceOutBestEffort(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		logoutErr error
+		hang      bool
+	}{
+		{"sign-out works", nil, false},
+		{"sign-out fails", fmt.Errorf("amazon: nile could not deregister the device: [redacted]"), false},
+		{"sign-out hangs past its limit", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			stub := &stubAmazonGamesClient{configured: true, logoutErr: tc.logoutErr}
+			if tc.hang {
+				stub.logoutHold = make(chan struct{}) // never closed
+			}
+			e, h := newSyncTestAppWithAmazonGames(t, stub)
+			h.SetAmazonSignOutTimeoutForTest(100 * time.Millisecond)
+			userID, token := setupTagUser(t, testDB, e, "amz-disc")
+			seedAmazonConnection(t, userID, false)
+
+			rec := deleteAuth(t, e, "/api/sync/amazon-games/connection", token)
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+			}
+			if storedAmazonUserData(t, userID) != nil {
+				t.Error("credentials not cleared")
+			}
+			h.WaitForAmazonSignOutsForTest()
+			if got := stub.loggedOut(); len(got) != 1 || got[0] != amazonTestUserData {
+				t.Errorf("sign-outs = %v, want one with the removed sign-in", got)
+			}
+			if tc.hang && !errors.Is(stub.logoutCtxErr, context.DeadlineExceeded) {
+				t.Errorf("hung sign-out ended with %v, want the time limit", stub.logoutCtxErr)
+			}
+		})
+	}
+}
+
+// A store with nothing stored, or a server without nile, disconnects without
+// a sign-out.
+func TestAmazonGamesDisconnect_NoSignOutWithoutSignInOrNile(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		configured bool
+		seed       bool
+	}{
+		{"nothing stored", true, false},
+		{"nile not installed", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			stub := &stubAmazonGamesClient{configured: tc.configured}
+			e, h := newSyncTestAppWithAmazonGames(t, stub)
+			userID, token := setupTagUser(t, testDB, e, "amz-disc-none")
+			if tc.seed {
+				seedAmazonConnection(t, userID, false)
+			}
+			if rec := deleteAuth(t, e, "/api/sync/amazon-games/connection", token); rec.Code != http.StatusNoContent {
+				t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+			}
+			h.WaitForAmazonSignOutsForTest()
+			if storedAmazonUserData(t, userID) != nil {
+				t.Error("credentials not cleared")
+			}
+			if got := stub.loggedOut(); len(got) != 0 {
+				t.Errorf("signed out %d times, want none", len(got))
+			}
+		})
+	}
+}
+
+// A disconnect whose removal fails signs nothing out: the connection is still
+// stored and must stay usable, not revoked while the page shows it connected.
+func TestAmazonGamesDisconnect_FailedRemovalSignsNothingOut(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true}
+	e, h := newSyncTestAppWithAmazonGames(t, stub)
+	userID, token := setupTagUser(t, testDB, e, "amz-disc-fail")
+	seedAmazonConnection(t, userID, false)
+	ctx := context.Background()
+	if _, err := testDB.ExecContext(ctx, `CREATE FUNCTION r25_refuse_update() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''forced failure''; END'`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = testDB.ExecContext(ctx, `DROP TRIGGER IF EXISTS r25_refuse_update ON user_sync_configs`)
+		_, _ = testDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS r25_refuse_update()`)
+	})
+	if _, err := testDB.ExecContext(ctx, `CREATE TRIGGER r25_refuse_update BEFORE UPDATE ON user_sync_configs FOR EACH ROW EXECUTE FUNCTION r25_refuse_update()`); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := deleteAuth(t, e, "/api/sync/amazon-games/connection", token)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+	h.WaitForAmazonSignOutsForTest()
+	if got := stub.loggedOut(); len(got) != 0 {
+		t.Errorf("signed out %d times after a failed removal, want none", len(got))
+	}
+	if storedAmazonUserData(t, userID) == nil {
+		t.Error("the connection is gone after a failed removal")
+	}
+}
+
+// A reconnect stored while the sign-out still runs is untouched: the sign-out
+// uses only the sign-in the disconnect removed.
+func TestAmazonGamesDisconnect_ReconnectDuringSignOutIsKept(t *testing.T) {
+	truncateAllTables(t)
+	newer := strings.Replace(amazonTestUserData, "Atnr|R", "Atnr|newer", 1)
+	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(newer), logoutHold: make(chan struct{})}
+	e, h := newSyncTestAppWithAmazonGames(t, stub)
+	userID, token := setupTagUser(t, testDB, e, "amz-disc-reconnect")
+	seedAmazonConnection(t, userID, false)
+
+	if rec := deleteAuth(t, e, "/api/sync/amazon-games/connection", token); rec.Code != http.StatusNoContent {
+		t.Fatalf("disconnect: expected 204, got %d: %s", rec.Code, rec.Body.String())
+	}
+	attempt := startAmazonLogin(t, e, token)
+	if rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token); rec.Code != http.StatusOK {
+		t.Fatalf("reconnect: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	close(stub.logoutHold)
+	h.WaitForAmazonSignOutsForTest()
+
+	if got := stub.loggedOut(); len(got) != 1 || got[0] != amazonTestUserData {
+		t.Errorf("sign-outs = %v, want one with the removed (older) sign-in", got)
+	}
+	if got := storedAmazonUserData(t, userID); got == nil || *got != newer {
+		t.Error("the reconnected sign-in was not kept")
 	}
 }
 

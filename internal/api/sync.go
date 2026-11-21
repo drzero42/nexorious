@@ -94,6 +94,9 @@ type AmazonGamesClient interface {
 	// Register finishes the sign-in with the authorization code and returns
 	// the account and nile's user data, which the caller stores encrypted.
 	Register(ctx context.Context, code string, login AmazonGamesLogin) (*AmazonGamesAccount, json.RawMessage, error)
+	// Logout deregisters the device a stored sign-in (nile's user data)
+	// belongs to.
+	Logout(ctx context.Context, userData json.RawMessage) error
 }
 
 // AmazonGamesLogin is one sign-in attempt's state.
@@ -238,12 +241,14 @@ type SyncHandler struct {
 	gogClient              GOGClient
 	humbleClient           HumbleClient
 	amazonGamesClient      AmazonGamesClient
-	amazonLogins           *amazonLoginAttempts
+	amazonLoginClock       func() time.Time // nil: time.Now
+	amazonSignOutTimeout   time.Duration    // 0: amazonSignOutLimit
+	amazonSignOuts         sync.WaitGroup   // device sign-outs still running after a disconnect
 }
 
 // NewSyncHandler constructs a SyncHandler.
 func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient, amazonGames AmazonGamesClient) *SyncHandler {
-	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble, amazonGamesClient: amazonGames, amazonLogins: newAmazonLoginAttempts(time.Now)}
+	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble, amazonGamesClient: amazonGames}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
@@ -948,79 +953,96 @@ func (h *SyncHandler) HandleGetEpicGamesStoreConnection(c *echo.Context) error {
 // amazonLoginTTL bounds how long a started Amazon sign-in can be finished.
 const amazonLoginTTL = 15 * time.Minute
 
-// amazonLoginAttempts keeps each user's one live Amazon sign-in attempt: the
-// client id, code verifier and serial nile generated, which must never reach
-// the browser. Starting a new attempt replaces the old one. Attempts live in
-// this process's memory, so a restart between start and finish means starting
-// again.
-type amazonLoginAttempts struct {
-	mu     sync.Mutex
-	now    func() time.Time
-	byUser map[string]amazonLoginAttempt
-}
+// amazonLoginKind marks an attempt_id as an Amazon sign-in attempt, so no
+// other ciphertext made with the same key (a stored credential) is ever read
+// as one.
+const amazonLoginKind = "amazon-games-login"
 
+// maxAmazonAttemptIDLen bounds the attempt_id the finish will decrypt. A real
+// one is about 450 characters; the cap keeps a pasted multi-kilobyte value
+// from being decoded at all.
+const maxAmazonAttemptIDLen = 2048
+
+// amazonLoginAttempt is everything finishing an Amazon sign-in needs: the
+// client id, code verifier and serial nile generated, who started it and until
+// when it can be finished. The browser holds it encrypted with the server's
+// key as the attempt_id, so a start and a finish may reach different servers,
+// or one server either side of a restart. Starting again does not cancel an
+// earlier attempt; whichever finishes last is the stored sign-in.
 type amazonLoginAttempt struct {
-	id      string
-	login   AmazonGamesLogin
-	started time.Time
+	Kind         string    `json:"kind"`
+	ClientID     string    `json:"client_id"`
+	CodeVerifier string    `json:"code_verifier"`
+	Serial       string    `json:"serial"`
+	UserID       string    `json:"user_id"`
+	ExpiresAt    time.Time `json:"expires_at"`
 }
 
-func newAmazonLoginAttempts(now func() time.Time) *amazonLoginAttempts {
-	return &amazonLoginAttempts{now: now, byUser: make(map[string]amazonLoginAttempt)}
+// sealAmazonLogin returns the attempt_id for a sign-in userID just started.
+func (h *SyncHandler) sealAmazonLogin(userID string, login AmazonGamesLogin) (string, error) {
+	raw, err := json.Marshal(amazonLoginAttempt{
+		Kind:         amazonLoginKind,
+		ClientID:     login.ClientID,
+		CodeVerifier: login.CodeVerifier,
+		Serial:       login.Serial,
+		UserID:       userID,
+		ExpiresAt:    h.amazonLoginNow().Add(amazonLoginTTL),
+	})
+	if err != nil {
+		return "", err
+	}
+	return h.encrypter.Encrypt(raw)
 }
 
-// start records a new attempt for userID, replacing any earlier one, and
-// returns its id.
-func (a *amazonLoginAttempts) start(userID string, login AmazonGamesLogin) string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	id := uuid.NewString()
-	a.byUser[userID] = amazonLoginAttempt{id: id, login: login, started: a.now()}
-	return id
-}
-
-// get returns the attempt when id is userID's live attempt.
-func (a *amazonLoginAttempts) get(userID, id string) (AmazonGamesLogin, bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.liveLocked(userID, id)
-}
-
-func (a *amazonLoginAttempts) liveLocked(userID, id string) (AmazonGamesLogin, bool) {
-	att, ok := a.byUser[userID]
-	if !ok || att.id != id {
+// openAmazonLogin returns the sign-in an attempt_id carries, when it decrypts
+// with this server's key, is an Amazon sign-in attempt, was started by userID,
+// is complete and has not expired.
+func (h *SyncHandler) openAmazonLogin(userID, attemptID string) (AmazonGamesLogin, bool) {
+	if len(attemptID) > maxAmazonAttemptIDLen {
 		return AmazonGamesLogin{}, false
 	}
-	if a.now().Sub(att.started) > amazonLoginTTL {
-		delete(a.byUser, userID)
+	raw, err := h.encrypter.Decrypt(attemptID)
+	if err != nil {
 		return AmazonGamesLogin{}, false
 	}
-	return att.login, true
+	var a amazonLoginAttempt
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return AmazonGamesLogin{}, false
+	}
+	if a.Kind != amazonLoginKind || a.UserID != userID ||
+		a.ClientID == "" || a.CodeVerifier == "" || a.Serial == "" ||
+		a.ExpiresAt.IsZero() || !h.amazonLoginNow().Before(a.ExpiresAt) {
+		return AmazonGamesLogin{}, false
+	}
+	return AmazonGamesLogin{ClientID: a.ClientID, CodeVerifier: a.CodeVerifier, Serial: a.Serial}, true
 }
 
-// finish runs save and removes the attempt, only while id is still userID's
-// live attempt; ok is false when a newer start replaced it or it expired while
-// nile registered. Holding the lock across save means a start cannot slip in
-// between the check and the write: a slow sign-in in one tab never overwrites
-// an account connected since in another.
-func (a *amazonLoginAttempts) finish(userID, id string, save func() error) (ok bool, err error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if _, live := a.liveLocked(userID, id); !live {
-		return false, nil
+func (h *SyncHandler) amazonLoginNow() time.Time {
+	if h.amazonLoginClock != nil {
+		return h.amazonLoginClock()
 	}
-	if err := save(); err != nil {
-		return true, err
-	}
-	delete(a.byUser, userID)
-	return true, nil
+	return time.Now()
 }
 
-// SetAmazonLoginClockForTest replaces the clock Amazon sign-in attempts expire by.
+// amazonSignOutLimit bounds the best-effort device sign-out a disconnect
+// starts.
+const amazonSignOutLimit = 20 * time.Second
+
+// SetAmazonSignOutTimeoutForTest replaces amazonSignOutLimit.
+func (h *SyncHandler) SetAmazonSignOutTimeoutForTest(d time.Duration) {
+	h.amazonSignOutTimeout = d
+}
+
+// WaitForAmazonSignOutsForTest waits for every device sign-out a disconnect
+// started.
+func (h *SyncHandler) WaitForAmazonSignOutsForTest() {
+	h.amazonSignOuts.Wait()
+}
+
+// SetAmazonLoginClockForTest replaces the clock Amazon sign-in attempts are
+// stamped and expire by.
 func (h *SyncHandler) SetAmazonLoginClockForTest(now func() time.Time) {
-	h.amazonLogins.mu.Lock()
-	defer h.amazonLogins.mu.Unlock()
-	h.amazonLogins.now = now
+	h.amazonLoginClock = now
 }
 
 func (h *SyncHandler) amazonGamesConfigured() bool {
@@ -1043,7 +1065,11 @@ func (h *SyncHandler) HandleAmazonGamesLoginStart(c *echo.Context) error {
 		slog.ErrorContext(c.Request().Context(), "amazon: start sign-in failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusBadGateway, "could not start an Amazon sign-in")
 	}
-	attemptID := h.amazonLogins.start(userID, *login)
+	attemptID, err := h.sealAmazonLogin(userID, *login)
+	if err != nil {
+		slog.ErrorContext(c.Request().Context(), "amazon: seal sign-in attempt failed", logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+		return echo.NewHTTPError(http.StatusInternalServerError, "could not start an Amazon sign-in")
+	}
 	return c.JSON(http.StatusOK, map[string]string{
 		"attempt_id": attemptID,
 		"login_url":  login.URL,
@@ -1072,25 +1098,16 @@ func (h *SyncHandler) HandleAmazonGamesConnect(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	login, ok := h.amazonLogins.get(userID, body.AttemptID)
+	login, ok := h.openAmazonLogin(userID, body.AttemptID)
 	if !ok {
-		return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in has expired or was replaced by a newer one; start again")
+		return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in has expired or cannot be finished here; start again")
 	}
 	account, userData, err := h.amazonGamesClient.Register(c.Request().Context(), code, login)
 	if err != nil {
 		slog.WarnContext(c.Request().Context(), "amazon: device registration failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-		if _, live := h.amazonLogins.get(userID, body.AttemptID); !live {
-			return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in was replaced by a newer one while it finished; start again")
-		}
 		return echo.NewHTTPError(http.StatusBadRequest, "Amazon did not accept that sign-in; start again and paste the address you land on")
 	}
-	live, err := h.amazonLogins.finish(userID, body.AttemptID, func() error {
-		return h.persistStorefrontCredentials(context.Background(), userID, "amazon-games", userData)
-	})
-	if !live {
-		return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in was replaced by a newer one while it finished; start again")
-	}
-	if err != nil {
+	if err := h.persistStorefrontCredentials(context.Background(), userID, "amazon-games", userData); err != nil {
 		slog.ErrorContext(c.Request().Context(), "amazon: persist storefront credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Amazon Games connection")
 	}
@@ -1134,9 +1151,68 @@ func (h *SyncHandler) HandleGetAmazonGamesConnection(c *echo.Context) error {
 		})
 }
 
-// HandleAmazonGamesDisconnect is DELETE /sync/amazon-games/connection.
+// HandleAmazonGamesDisconnect is DELETE /sync/amazon-games/connection. It
+// removes the stored sign-in and answers as the other stores do, then signs
+// that device out of Amazon in the background, best effort, so reconnecting
+// does not leave another registered device on the account. The sign-out uses
+// only the sign-in this disconnect removed: a reconnect stored meanwhile is
+// never touched, and a removal that failed signs nothing out.
 func (h *SyncHandler) HandleAmazonGamesDisconnect(c *echo.Context) error {
-	return h.disconnectStorefront(c, "amazon-games")
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	removed, err := h.takeStorefrontCredentials(context.Background(), userID, "amazon-games")
+	if err != nil {
+		slog.ErrorContext(c.Request().Context(), "sync: disconnect failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect amazon-games")
+	}
+	if removed != nil && h.amazonGamesConfigured() {
+		// Detached from the request so the answer does not wait for Amazon,
+		// keeping the request's logging values.
+		ctx := context.WithoutCancel(c.Request().Context())
+		h.amazonSignOuts.Go(func() { h.signOutAmazonDevice(ctx, *removed) })
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// takeStorefrontCredentials clears a storefront's stored credentials and
+// returns the ciphertext it cleared, in one statement, so nothing stored after
+// it can be returned. It returns nil when nothing was stored.
+func (h *SyncHandler) takeStorefrontCredentials(ctx context.Context, userID, sf string) (*string, error) {
+	var removed *string
+	err := h.db.NewRaw(
+		`UPDATE user_sync_configs u SET storefront_credentials = NULL, updated_at = now()
+		 FROM (SELECT id, storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = ? FOR UPDATE) old
+		 WHERE u.id = old.id
+		 RETURNING old.storefront_credentials`,
+		userID, sf,
+	).Scan(ctx, &removed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return removed, err
+}
+
+// signOutAmazonDevice runs nile's logout with a removed Amazon sign-in, under
+// a time limit; any failure is logged and otherwise ignored.
+func (h *SyncHandler) signOutAmazonDevice(ctx context.Context, ciphertext string) {
+	limit := amazonSignOutLimit
+	if h.amazonSignOutTimeout > 0 {
+		limit = h.amazonSignOutTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	userData, err := h.encrypter.Decrypt(ciphertext)
+	if err != nil {
+		slog.WarnContext(ctx, "amazon: device sign-out skipped: the removed sign-in does not decrypt", logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+		return
+	}
+	if err := h.amazonGamesClient.Logout(ctx, userData); err != nil {
+		slog.WarnContext(ctx, "amazon: device sign-out after disconnect failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+		return
+	}
+	slog.InfoContext(ctx, "amazon: device signed out after disconnect")
 }
 
 func (h *SyncHandler) HandleListIgnored(c *echo.Context) error {

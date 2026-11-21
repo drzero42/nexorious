@@ -196,8 +196,8 @@ func startAmazonGamesLogin(cmd *cobra.Command, c *cliclient.Client, key string) 
 	}
 	fmt.Fprintf(out, "Open this address, sign in to Amazon, then copy the address of the page you land on:\n\n  %s\n\n", login.LoginURL)
 	if !interactive(cmd) {
-		// The attempt lives on the server this profile points at, so the finish
-		// command must name the same profile.
+		// The attempt is encrypted with the key of the server this profile
+		// points at, so the finish command must name the same profile.
 		profile := ""
 		if name, _ := cmd.Flags().GetString("profile"); name != "" { //nolint:errcheck // absent flag yields ""
 			profile = " --profile '" + strings.ReplaceAll(name, "'", `'\''`) + "'"

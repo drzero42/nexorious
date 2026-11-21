@@ -286,7 +286,7 @@ Either way, point `LEGENDARY_WORK_DIR` at a writable, persistent directory and r
 
 ## Amazon Games sync
 
-Amazon Games sync works through the `nile` command-line tool ([imLinguin/nile](https://github.com/imLinguin/nile), the Amazon Games client Heroic uses), version 1.2.0 or newer. It needs no directory or setting: each run uses a temporary directory that is deleted afterwards, and the sign-in is kept encrypted in the database. While `nile` is not on the server's `PATH`, Amazon sync is disabled and users can't connect an Amazon account.
+Amazon Games sync works through the `nile` command-line tool ([imLinguin/nile](https://github.com/imLinguin/nile), the Amazon Games client Heroic uses), version 1.2.0 or newer. It needs no directory or setting: each run uses a temporary directory that is deleted afterwards, and the sign-in is kept encrypted in the database. While `nile` is not on the server's `PATH`, Amazon sync is disabled and users can't connect an Amazon account. A sign-in in progress is carried by the browser, encrypted with `DB_ENCRYPTION_KEY`, so it finishes on any replica and survives a restart; changing that key during a sign-in means starting it again. Disconnecting Amazon also deregisters that device from the Amazon account when it can.
 
 - **Official container image**: `nile` is bundled, so Amazon sync works out of the box.
 - **Single binary / from source, or native package (`.deb`/`.rpm`)**: install nile 1.2.0 or newer yourself so `nile` is on the service's `PATH` (nile has no PyPI release; install it from its [GitHub releases](https://github.com/imLinguin/nile/releases)).

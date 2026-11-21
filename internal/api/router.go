@@ -628,6 +628,10 @@ func (a *amazonGamesClientAdapter) Register(ctx context.Context, code string, lo
 	return &AmazonGamesAccount{UserID: account.UserID, Name: account.Name}, userData, nil
 }
 
+func (a *amazonGamesClientAdapter) Logout(ctx context.Context, userData json.RawMessage) error {
+	return a.c.Logout(ctx, userData)
+}
+
 func spaHandler() echo.HandlerFunc {
 	fsys, err := fs.Sub(ui.UIBox, "frontend/dist")
 	if err != nil {
