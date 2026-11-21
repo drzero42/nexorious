@@ -983,6 +983,10 @@ func (a *amazonLoginAttempts) start(userID string, login AmazonGamesLogin) strin
 func (a *amazonLoginAttempts) get(userID, id string) (AmazonGamesLogin, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.liveLocked(userID, id)
+}
+
+func (a *amazonLoginAttempts) liveLocked(userID, id string) (AmazonGamesLogin, bool) {
 	att, ok := a.byUser[userID]
 	if !ok || att.id != id {
 		return AmazonGamesLogin{}, false
@@ -994,13 +998,22 @@ func (a *amazonLoginAttempts) get(userID, id string) (AmazonGamesLogin, bool) {
 	return att.login, true
 }
 
-// finish removes userID's attempt if it is still id.
-func (a *amazonLoginAttempts) finish(userID, id string) {
+// finish runs save and removes the attempt, only while id is still userID's
+// live attempt; ok is false when a newer start replaced it or it expired while
+// nile registered. Holding the lock across save means a start cannot slip in
+// between the check and the write: a slow sign-in in one tab never overwrites
+// an account connected since in another.
+func (a *amazonLoginAttempts) finish(userID, id string, save func() error) (ok bool, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if att, ok := a.byUser[userID]; ok && att.id == id {
-		delete(a.byUser, userID)
+	if _, live := a.liveLocked(userID, id); !live {
+		return false, nil
 	}
+	if err := save(); err != nil {
+		return true, err
+	}
+	delete(a.byUser, userID)
+	return true, nil
 }
 
 // SetAmazonLoginClockForTest replaces the clock Amazon sign-in attempts expire by.
@@ -1066,13 +1079,21 @@ func (h *SyncHandler) HandleAmazonGamesConnect(c *echo.Context) error {
 	account, userData, err := h.amazonGamesClient.Register(c.Request().Context(), code, login)
 	if err != nil {
 		slog.WarnContext(c.Request().Context(), "amazon: device registration failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+		if _, live := h.amazonLogins.get(userID, body.AttemptID); !live {
+			return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in was replaced by a newer one while it finished; start again")
+		}
 		return echo.NewHTTPError(http.StatusBadRequest, "Amazon did not accept that sign-in; start again and paste the address you land on")
 	}
-	if err := h.persistStorefrontCredentials(context.Background(), userID, "amazon-games", userData); err != nil {
+	live, err := h.amazonLogins.finish(userID, body.AttemptID, func() error {
+		return h.persistStorefrontCredentials(context.Background(), userID, "amazon-games", userData)
+	})
+	if !live {
+		return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in was replaced by a newer one while it finished; start again")
+	}
+	if err != nil {
 		slog.ErrorContext(c.Request().Context(), "amazon: persist storefront credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Amazon Games connection")
 	}
-	h.amazonLogins.finish(userID, body.AttemptID)
 	return c.JSON(http.StatusOK, map[string]string{"username": account.Name})
 }
 

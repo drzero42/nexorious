@@ -1,4 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import * as syncApi from '@/api/sync';
 import { SyncStorefront } from '@/types';
@@ -40,6 +41,24 @@ export const syncKeys = {
     [...syncKeys.all, 'external-games', platform] as const,
 };
 
+/**
+ * Refetch every store's connection status. A sync that ends can have flagged
+ * its store's sign-in as rejected, and a page already showing "Connected" must
+ * learn that and offer the sign-in again.
+ */
+export function invalidateSyncConnections(queryClient: QueryClient) {
+  for (const queryKey of [
+    syncKeys.steamConnection(),
+    syncKeys.epicGamesStoreConnection(),
+    syncKeys.gogConnection(),
+    syncKeys.playstationStoreStatus(),
+    syncKeys.humbleStatus(),
+    syncKeys.amazonGamesConnection(),
+  ]) {
+    queryClient.invalidateQueries({ queryKey });
+  }
+}
+
 // Query Hooks
 
 export function useSyncConfigs() {
@@ -67,6 +86,23 @@ export function useSyncStatus(platform: SyncStorefront) {
       return data?.isSyncing ? 5000 : 30000;
     },
   });
+}
+
+/**
+ * useSyncStatus, plus a refetch of every store's connection status each time
+ * the polled sync status arrives (every 5 s while syncing, else every 30 s).
+ * A sync started by the scheduler or the CLI, or one that flags its sign-in as
+ * rejected only after it reported failure, is then reflected within one poll,
+ * not just when this page saw the job end.
+ */
+export function useSyncStatusWithConnections(platform: SyncStorefront) {
+  const queryClient = useQueryClient();
+  const query = useSyncStatus(platform);
+  const { dataUpdatedAt } = query;
+  useEffect(() => {
+    if (dataUpdatedAt > 0) invalidateSyncConnections(queryClient);
+  }, [dataUpdatedAt, queryClient]);
+  return query;
 }
 
 /**

@@ -2303,6 +2303,7 @@ type stubAmazonGamesClient struct {
 	gotCode     string
 	gotLogin    api.AmazonGamesLogin
 	userData    json.RawMessage
+	during      func() // runs inside Register, as if nile were still working
 }
 
 func (s *stubAmazonGamesClient) Configured() bool { return s.configured }
@@ -2324,6 +2325,9 @@ func (s *stubAmazonGamesClient) LoginURL(_ context.Context) (*api.AmazonGamesLog
 func (s *stubAmazonGamesClient) Register(_ context.Context, code string, login api.AmazonGamesLogin) (*api.AmazonGamesAccount, json.RawMessage, error) {
 	s.gotCode = code
 	s.gotLogin = login
+	if s.during != nil {
+		s.during()
+	}
 	if s.registerErr != nil {
 		return nil, nil, s.registerErr
 	}
@@ -2496,6 +2500,52 @@ func TestAmazonGamesConnect_409ForUnknownReplacedOrExpiredAttempt(t *testing.T) 
 	}
 	if stub.gotCode != "" {
 		t.Error("register ran for a dead attempt")
+	}
+}
+
+// A sign-in replaced while nile was still registering it must not overwrite
+// whatever the newer sign-in saves.
+func TestAmazonGamesConnect_ReplacedWhileRegisteringIsNotSaved(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(amazonTestUserData)}
+	e, _ := newSyncTestAppWithAmazonGames(t, stub)
+	userID, token := setupTagUser(t, testDB, e, "amz-race")
+
+	first := startAmazonLogin(t, e, token)
+	var second string
+	stub.during = func() { second = startAmazonLogin(t, e, token) }
+	rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": first, "redirect_url": amazonLanding}, token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("finishing a sign-in replaced mid-registration: expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var n int
+	if err := testDB.NewRaw(`SELECT count(*) FROM user_sync_configs WHERE user_id = ? AND storefront = 'amazon-games' AND storefront_credentials IS NOT NULL`, userID).
+		Scan(context.Background(), &n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Error("the replaced sign-in was saved")
+	}
+
+	stub.during = nil
+	rec = putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": second, "redirect_url": amazonLanding}, token)
+	if rec.Code != http.StatusOK {
+		t.Errorf("the newer sign-in: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A replaced sign-in whose registration then fails is still a 409: the user's
+// next step is the newer sign-in, not another paste into this one.
+func TestAmazonGamesConnect_ReplacedWhileRegisteringAndFailedIs409(t *testing.T) {
+	truncateAllTables(t)
+	stub := &stubAmazonGamesClient{configured: true, registerErr: fmt.Errorf("amazon: device registration failed: [redacted]")}
+	e, _ := newSyncTestAppWithAmazonGames(t, stub)
+	_, token := setupTagUser(t, testDB, e, "amz-race-fail")
+	first := startAmazonLogin(t, e, token)
+	stub.during = func() { startAmazonLogin(t, e, token) }
+	rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": first, "redirect_url": amazonLanding}, token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

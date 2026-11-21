@@ -78,6 +78,8 @@ export {
   useConnectAmazonGames,
   useDisconnectAmazonGames,
   useResetSyncData,
+  invalidateSyncConnections,
+  useSyncStatusWithConnections,
 } from './use-sync';
 
 // Import/Export hooks

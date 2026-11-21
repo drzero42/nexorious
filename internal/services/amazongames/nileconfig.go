@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // nile's account files (nile/utils/config.py, v1.2.0):
@@ -46,6 +47,48 @@ func accountOf(userData json.RawMessage) (*Account, error) {
 		return nil, errors.New("amazon: stored sign-in has no Amazon user id")
 	}
 	return &Account{UserID: u.Extensions.CustomerInfo.UserID, Name: u.Extensions.CustomerInfo.GivenName}, nil
+}
+
+// usableUserData reports whether nile could sign in with userData: an Amazon
+// user id, both bearer tokens, and an expires_in nile can read with int()
+// (a whole number, or a string of digits).
+func usableUserData(userData json.RawMessage) error {
+	if _, err := accountOf(userData); err != nil {
+		return err
+	}
+	var u struct {
+		Tokens struct {
+			Bearer struct {
+				AccessToken  string          `json:"access_token"`
+				RefreshToken string          `json:"refresh_token"`
+				ExpiresIn    json.RawMessage `json:"expires_in"`
+			} `json:"bearer"`
+		} `json:"tokens"`
+	}
+	if err := json.Unmarshal(userData, &u); err != nil || u.Tokens.Bearer.AccessToken == "" || u.Tokens.Bearer.RefreshToken == "" {
+		return errors.New("amazon: nile user data has no usable tokens")
+	}
+	if !wholeNumber(u.Tokens.Bearer.ExpiresIn) {
+		return errors.New("amazon: nile user data has an unreadable token expiry")
+	}
+	return nil
+}
+
+// wholeNumber reports whether raw is a positive JSON whole number or a string
+// of digits: the forms nile's int(expires_in) reads. A numeric 0 is refused:
+// nile treats it as missing and never refreshes the token again.
+func wholeNumber(raw json.RawMessage) bool {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		_, err := strconv.ParseUint(s, 10, 64)
+		return err == nil
+	}
+	var n json.Number
+	if json.Unmarshal(raw, &n) != nil {
+		return false
+	}
+	v, err := n.Int64()
+	return err == nil && v > 0
 }
 
 func userDataFileName(userID string) string {

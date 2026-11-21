@@ -5,7 +5,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   syncKeys,
   useSyncConfig,
-  useSyncStatus,
   useUpdateSyncConfig,
   useTriggerSync,
   useResetSyncData,
@@ -17,6 +16,7 @@ import {
   useGOGConnection,
   useHumbleStatus,
   useAmazonGamesConnection,
+  useSyncStatusWithConnections,
   jobsKeys,
   useJobCompletionEffect,
   useStorefront,
@@ -131,7 +131,7 @@ function SyncDetailPage() {
 
   // Fetch sync config and status
   const { data: config, isLoading: configLoading, error: configError } = useSyncConfig(storefront);
-  const { data: status, isLoading: statusLoading } = useSyncStatus(storefront);
+  const { data: status, isLoading: statusLoading } = useSyncStatusWithConnections(storefront);
 
   // Fetch PSN-specific status
   const { data: playstationStoreStatus } = usePlaystationStoreStatus();

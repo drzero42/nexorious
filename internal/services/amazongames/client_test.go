@@ -369,3 +369,141 @@ func TestLibrary_RejectsUserDataWithoutUserID(t *testing.T) {
 		t.Error("nile ran without a usable sign-in")
 	}
 }
+
+// The worker marks every game a sync does not return as removed, so a library
+// that is not a list, or that loses an entry's id, must fail rather than read
+// as fewer games.
+func TestLibrary_RefusesLibraryThatWouldDropGames(t *testing.T) {
+	for name, body := range map[string]string{
+		"null":            `null`,
+		"object":          `{}`,
+		"entry no id":     `[{"product": {"id": "p1", "title": "A"}}, {"product": {"title": "B"}}]`,
+		"entry blank id":  `[{"product": {"id": "  ", "title": "B"}}]`,
+		"entry padded id": `[{"product": {"id": "p1 ", "title": "A"}}]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeNile{do: func(dir string) (string, string, error) {
+				writeLibrary(t, dir, body)
+				return "", "", nil
+			}}
+			if _, _, err := newTestClient(f).Library(context.Background(), readFixture(t, "user-data.json")); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
+// nile can log a refused refresh and still exit 0 without writing a library.
+func TestLibrary_RejectedRefreshWithCleanExitIsAuthFailure(t *testing.T) {
+	f := &fakeNile{do: func(string) (string, string, error) {
+		return "", "ERROR [AUTH_MANAGER]:\t Failed to refresh the token <Response [400]>\nINFO [LIBRARY]:\t Got next token in response, making next request", nil
+	}}
+	if _, _, err := newTestClient(f).Library(context.Background(), readFixture(t, "user-data.json")); !errors.Is(err, ErrAuthFailed) {
+		t.Fatalf("err = %v, want ErrAuthFailed", err)
+	}
+}
+
+// After a refused refresh nile 1.2.0 still writes `[]` when the failed
+// response carries an empty entitlement list; that must not read as a library
+// with no games.
+func TestLibrary_RejectedRefreshWithEmptyLibraryIsAuthFailure(t *testing.T) {
+	f := &fakeNile{do: func(dir string) (string, string, error) {
+		writeLibrary(t, dir, `[]`)
+		return "", "ERROR [AUTH_MANAGER]:\t Failed to refresh the token <Response [400]>", nil
+	}}
+	if _, _, err := newTestClient(f).Library(context.Background(), readFixture(t, "user-data.json")); !errors.Is(err, ErrAuthFailed) {
+		t.Fatalf("err = %v, want ErrAuthFailed", err)
+	}
+}
+
+// A refresh that failed without a refusal (a 5xx, a dropped connection) also
+// leaves nile reading with an expired token, so its library is not trusted;
+// it is an ordinary error, not a credentials one.
+func TestLibrary_FailedRefreshDiscardsLibrary(t *testing.T) {
+	for name, line := range map[string]string{
+		"server error":     "ERROR [AUTH_MANAGER]:\t Failed to refresh the token <Response [503]>",
+		"connection error": "ERROR [AUTH_MANAGER]:\t Failed to refresh the token HTTPSConnectionPool(host='api.amazon.com', port=443)",
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeNile{do: func(dir string) (string, string, error) {
+				writeLibrary(t, dir, `[]`)
+				return "", line, nil
+			}}
+			_, _, err := newTestClient(f).Library(context.Background(), readFixture(t, "user-data.json"))
+			if err == nil {
+				t.Fatal("expected an error, not an empty library")
+			}
+			if errors.Is(err, ErrAuthFailed) {
+				t.Errorf("err = %v, must not be a credentials failure", err)
+			}
+		})
+	}
+}
+
+func TestLibrary_RefreshedUserDataWithUnreadableExpiryIsNotReturned(t *testing.T) {
+	userData := readFixture(t, "user-data.json")
+	for _, expiry := range []string{`"invalid"`, `null`, `"36.5"`, `0`, `-5`} {
+		f := &fakeNile{do: func(dir string) (string, string, error) {
+			bad := strings.Replace(string(userData), `"expires_in": "3600"`, `"expires_in": `+expiry, 1)
+			if err := writeNileConfig(dir, json.RawMessage(bad)); err != nil {
+				t.Fatal(err)
+			}
+			writeLibrary(t, dir, `[]`)
+			return "", "", nil
+		}}
+		_, refreshed, err := newTestClient(f).Library(context.Background(), userData)
+		if err != nil {
+			t.Fatalf("expires_in %s: %v", expiry, err)
+		}
+		if refreshed != nil {
+			t.Errorf("expires_in %s: user data returned for storing", expiry)
+		}
+	}
+	for _, expiry := range []string{`"3600"`, `3600`, `"0"`} {
+		f := &fakeNile{do: func(dir string) (string, string, error) {
+			good := strings.Replace(string(userData), `"expires_in": "3600"`, `"expires_in": `+expiry, 1)
+			good = strings.Replace(good, "Atna|FAKE-ACCESS-TOKEN", "Atna|NEWER", 1)
+			if err := writeNileConfig(dir, json.RawMessage(good)); err != nil {
+				t.Fatal(err)
+			}
+			writeLibrary(t, dir, `[]`)
+			return "", "", nil
+		}}
+		if _, refreshed, _ := newTestClient(f).Library(context.Background(), userData); refreshed == nil {
+			t.Errorf("expires_in %s: usable user data was not returned", expiry)
+		}
+	}
+}
+
+// Refreshed user data is handed back for storing only if nile could sign in
+// with it again.
+func TestLibrary_UnusableRefreshedUserDataIsNotReturned(t *testing.T) {
+	userData := readFixture(t, "user-data.json")
+	f := &fakeNile{do: func(dir string) (string, string, error) {
+		blank := strings.Replace(string(userData), "Atna|FAKE-ACCESS-TOKEN", "", 1)
+		if err := writeNileConfig(dir, json.RawMessage(blank)); err != nil {
+			t.Fatal(err)
+		}
+		return "", "KeyError: 'entitlements'", errExit1
+	}}
+	_, refreshed, err := newTestClient(f).Library(context.Background(), userData)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if refreshed != nil {
+		t.Errorf("user data with a blank access token was returned for storing: %s", refreshed)
+	}
+}
+
+func TestRegister_RefusesUserDataWithoutTokens(t *testing.T) {
+	f := &fakeNile{do: func(dir string) (string, string, error) {
+		noTokens := `{"extensions": {"customer_info": {"user_id": "amzn1.account.X", "given_name": "A"}}, "tokens": {"bearer": {}}}`
+		if err := writeNileConfig(dir, json.RawMessage(noTokens)); err != nil {
+			t.Fatal(err)
+		}
+		return "", "", nil
+	}}
+	if _, _, err := newTestClient(f).Register(context.Background(), "CODE", Login{ClientID: "c", CodeVerifier: "v", Serial: "s"}); err == nil {
+		t.Fatal("expected an error")
+	}
+}
