@@ -81,3 +81,52 @@ func insertEmitUser(t *testing.T, username string) string {
 	}
 	return id
 }
+
+// EmitTx writes through the caller's transaction: rolled back, no event
+// remains; committed, it does and deliver can be called.
+func TestEmitTxFollowsTheTransaction(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	SetRiverClient(nil)
+	uid := insertEmitUser(t, "emit-tx-user")
+	params := func(key string) EmitParams {
+		return EmitParams{Type: TypeSyncFailed, Scope: ScopeUser, ActorUserID: uid, DedupKey: key}
+	}
+	count := func(key string) int {
+		var n int
+		if err := testDB.NewRaw(`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, key).Scan(ctx, &n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	tx, err := testDB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EmitTx(ctx, tx, params("rolled-back")); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if n := count("rolled-back"); n != 0 {
+		t.Errorf("rolled-back transaction left %d events", n)
+	}
+
+	tx, err = testDB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliver, err := EmitTx(ctx, tx, params("committed"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	deliver()
+	if n := count("committed"); n != 1 {
+		t.Errorf("committed transaction left %d events, want 1", n)
+	}
+}

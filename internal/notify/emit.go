@@ -42,6 +42,35 @@ func SetRiverClient(rc *river.Client[pgx.Tx]) {
 // enqueues a NotifyWorker to deliver it. Never returns an error: emission is
 // fire-and-forget and must not break the caller's primary work.
 func Emit(ctx context.Context, db *bun.DB, p EmitParams) {
+	id, err := insertEvent(ctx, db, p)
+	if err != nil {
+		slog.ErrorContext(ctx, "notify: insert event", "type", p.Type, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return
+	}
+	if id != "" {
+		enqueueNotify(ctx, id)
+	}
+}
+
+// EmitTx writes the event row through tx, so it commits or rolls back with
+// the caller's other writes, and returns deliver, which enqueues its
+// delivery. Call deliver only after tx has committed. Unlike Emit it returns
+// the insert's error, so the caller can roll its transaction back with it.
+func EmitTx(ctx context.Context, tx bun.IDB, p EmitParams) (deliver func(), err error) {
+	id, err := insertEvent(ctx, tx, p)
+	if err != nil {
+		return nil, err
+	}
+	return func() {
+		if id != "" {
+			enqueueNotify(ctx, id)
+		}
+	}, nil
+}
+
+// insertEvent writes the event row and returns its id, or "" when an event
+// with the same DedupKey already exists.
+func insertEvent(ctx context.Context, db bun.IDB, p EmitParams) (string, error) {
 	if p.Payload == nil {
 		p.Payload = map[string]any{}
 	}
@@ -70,14 +99,12 @@ func Emit(ctx context.Context, db *bun.DB, p EmitParams) {
 		id, p.Type, p.Scope, actor, json.RawMessage(payloadJSON), dedup,
 	).Scan(ctx, &insertedID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return
+		return "", nil
 	}
 	if err != nil {
-		slog.ErrorContext(ctx, "notify: insert event", "type", p.Type, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return
+		return "", err
 	}
-
-	enqueueNotify(ctx, insertedID)
+	return insertedID, nil
 }
 
 func enqueueNotify(ctx context.Context, eventID string) {

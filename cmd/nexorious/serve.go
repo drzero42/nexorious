@@ -615,7 +615,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: steam decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "steam", logging.Cat(logging.CategoryAuth))
+				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: steam decrypt failed", logging.KeyErr, err, logging.KeySource, "steam", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -625,7 +625,7 @@ func buildAdapterFactory(
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
-			return steamsvc.NewAdapter(steamsvc.NewClient(), creds.WebAPIKey, creds.SteamID), nil
+			return boundToCredentials(steamsvc.NewAdapter(steamsvc.NewClient(), creds.WebAPIKey, creds.SteamID), *cfg.StorefrontCredentials), nil
 
 		case "playstation-store":
 			if cfg.StorefrontCredentials == nil {
@@ -633,7 +633,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: psn decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "playstation-store", logging.Cat(logging.CategoryAuth))
+				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: psn decrypt failed", logging.KeyErr, err, logging.KeySource, "playstation-store", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -642,7 +642,7 @@ func buildAdapterFactory(
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
-			return playstationstoresvc.NewAdapter(playstationstoresvc.NewClient(), creds.NPSSOToken), nil
+			return boundToCredentials(playstationstoresvc.NewAdapter(playstationstoresvc.NewClient(), creds.NPSSOToken), *cfg.StorefrontCredentials), nil
 
 		case "gog":
 			if cfg.StorefrontCredentials == nil {
@@ -650,7 +650,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: gog decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "gog", logging.Cat(logging.CategoryAuth))
+				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: gog decrypt failed", logging.KeyErr, err, logging.KeySource, "gog", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -660,6 +660,7 @@ func buildAdapterFactory(
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
+			stored := newStoredCredentialsWriter(db, cfg.UserID, "gog", *cfg.StorefrontCredentials)
 			onNewTokens := func(refreshToken string) error {
 				creds.RefreshToken = refreshToken
 				newCredsJSON, merr := json.Marshal(creds) //nolint:gosec // marshaled only to encrypt immediately below before storage; never logged or returned
@@ -670,13 +671,9 @@ func buildAdapterFactory(
 				if encErr != nil {
 					return encErr
 				}
-				_, dbErr := db.NewRaw(
-					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'gog'`,
-					enc, cfg.UserID,
-				).Exec(context.Background())
-				return dbErr
+				return stored.write(context.WithoutCancel(ctx), enc)
 			}
-			return gogsvc.NewAdapter(gogsvc.NewClient(), creds.RefreshToken, onNewTokens), nil
+			return boundToCredentials(gogsvc.NewAdapter(gogsvc.NewClient(), creds.RefreshToken, onNewTokens), *cfg.StorefrontCredentials), nil
 
 		case "epic-games-store":
 			if cfg.StorefrontCredentials == nil {
@@ -684,24 +681,21 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: epic decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryAuth))
+				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: epic decrypt failed", logging.KeyErr, err, logging.KeySource, "epic-games-store", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var snapshot map[string]string
 			if err := json.Unmarshal(plain, &snapshot); err != nil {
 				return nil, tasks.ErrCredentials
 			}
+			stored := newStoredCredentialsWriter(db, cfg.UserID, "epic-games-store", *cfg.StorefrontCredentials)
 			onSnapshot := func(s map[string]string) error {
 				newJSON, _ := json.Marshal(s) //nolint:errcheck // marshaling a map[string]string cannot fail
 				enc, encErr := encrypter.Encrypt(newJSON)
 				if encErr != nil {
 					return encErr
 				}
-				_, dbErr := db.NewRaw(
-					`UPDATE user_sync_configs SET storefront_credentials = ?, updated_at = now() WHERE user_id = ? AND storefront = 'epic-games-store'`,
-					enc, cfg.UserID,
-				).Exec(context.Background())
-				return dbErr
+				return stored.write(context.WithoutCancel(ctx), enc)
 			}
 			return epicgamesstoresvc.NewAdapter(epicClient, cfg.UserID, snapshot, onSnapshot), nil
 
@@ -711,7 +705,7 @@ func buildAdapterFactory(
 			}
 			plain, err := encrypter.Decrypt(*cfg.StorefrontCredentials)
 			if err != nil {
-				slog.Warn("adapter factory: humble-bundle decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryAuth))
+				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: humble-bundle decrypt failed", logging.KeyErr, err, logging.KeySource, "humble-bundle", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			var creds struct {
@@ -720,7 +714,7 @@ func buildAdapterFactory(
 			if err := json.Unmarshal(plain, &creds); err != nil {
 				return nil, tasks.ErrCredentials
 			}
-			return humblesvc.NewAdapter(humblesvc.NewClient(), creds.SessionCookie), nil
+			return boundToCredentials(humblesvc.NewAdapter(humblesvc.NewClient(), creds.SessionCookie), *cfg.StorefrontCredentials), nil
 
 		default:
 			return nil, fmt.Errorf("unknown storefront: %s", storefront)

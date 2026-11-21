@@ -38,6 +38,19 @@ type StorefrontAdapter = storefrontadapter.Adapter
 // expired, or cannot be decrypted. DispatchSyncWorker marks the job failed on this error.
 var ErrCredentials = storefrontadapter.ErrCredentials
 
+// CredentialsErrorFor is a credentials failure that belongs to one stored
+// sign-in: Credentials is the user_sync_configs ciphertext the sync loaded.
+// The worker flags credentials_error, and notifies, only while that sign-in is
+// still the stored one, in the same UPDATE that sets the flag, so a reconnect
+// committed while the sync ran is never marked expired by it.
+type CredentialsErrorFor struct {
+	Credentials *string // nil: the sync loaded no stored sign-in
+	Err         error
+}
+
+func (e *CredentialsErrorFor) Error() string { return e.Err.Error() }
+func (e *CredentialsErrorFor) Unwrap() error { return e.Err }
+
 // ── DispatchSync ──────────────────────────────────────────────────────────────
 
 // DispatchSyncArgs is the River job args type for "dispatch_sync".
@@ -211,7 +224,9 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		return nil
 	}
 	if errors.Is(err, ErrCredentials) {
-		handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
+		// Nothing has written the stored sign-in yet, so the failure belongs
+		// to exactly the one loaded above (none, when it is NULL).
+		handleCredentialError(ctx, w.DB, p, cfg.CredentialsError, &CredentialsErrorFor{Credentials: cfg.StorefrontCredentials, Err: err})
 		return nil
 	}
 	if err != nil {
@@ -287,7 +302,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	}
 	if err := fetchErr; err != nil {
 		if errors.Is(err, ErrCredentials) {
-			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
+			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError, err)
 			return nil
 		}
 		slog.ErrorContext(ctx, "dispatch_sync: library fetch failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
@@ -414,7 +429,7 @@ func dispatchInterrupted(ctx context.Context) bool {
 // fails after a cancel does not turn 'cancelled' into 'failed' (#1302). It
 // reports whether it changed the Job; when it did not, the caller must skip its
 // own side effects (notification, metric, credentials_error flag).
-func markSyncJobFailed(ctx context.Context, db *bun.DB, jobID, msg string) bool {
+func markSyncJobFailed(ctx context.Context, db bun.IDB, jobID, msg string) bool {
 	msg = logging.ScrubURLQueries(msg)
 	now := time.Now().UTC()
 	res, err := db.NewRaw(
@@ -468,45 +483,116 @@ func FailSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 // that actionable event; everyone else falls back to sync.failed so they are
 // not left silent. While the storefront stays broken (priorErr == true) no
 // notification is sent, so repeated scheduled syncs do not nag.
-func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, priorErr bool) {
-	if !markSyncJobFailed(ctx, db, p.JobID, "credentials error") {
+func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, priorErr bool, cause error) {
+	var bound *CredentialsErrorFor
+	isBound := errors.As(cause, &bound)
+
+	// The flag and its notice are written in one transaction: either both
+	// happen or neither does. A notice that failed to save after the flag did
+	// would be lost for good, since later syncs see priorErr and stay quiet.
+	// Which notice to send is read before the transaction opens: a failed read
+	// inside it would abort the transaction and take the flag with it.
+	notice := credentialsNotice(ctx, db, p)
+	var deliver func()
+	var flagErr error
+	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		flagged, err := flagCredentialsError(ctx, tx, p, bound)
+		if err != nil {
+			flagErr = err
+			return err
+		}
+		if flagged && !priorErr {
+			deliver, err = notify.EmitTx(ctx, tx, notice)
+			if err != nil {
+				return err
+			}
+		}
+		// Write the flag before changing job status so the status poll can
+		// refresh the connection as soon as a failed job is visible. Roll
+		// back both writes if the job stopped being active in the meantime.
+		if !markSyncJobFailed(ctx, tx, p.JobID, "credentials error") {
+			return sql.ErrNoRows
+		}
+		return nil
+	})
+	if errors.Is(err, sql.ErrNoRows) {
 		return
+	}
+	if err != nil {
+		deliver = nil
+		slog.WarnContext(ctx, "dispatch_sync: flag credentials_error failed", logging.KeyErr, err, logging.KeyUserID, p.UserID, logging.KeySource, p.Storefront, logging.Cat(logging.CategoryDB))
+		if !markSyncJobFailed(ctx, db, p.JobID, "credentials error") {
+			return
+		}
 	}
 	// A credentials failure is a hard sync failure; record it so it is visible
 	// in nexorious_sync_total rather than silently absent (see FailSyncJob).
 	if p.Storefront != "" {
 		observability.RecordSyncOutcome(ctx, p.Storefront, "failed")
 	}
-	if _, err := db.NewRaw(
-		`UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`,
-		p.UserID, p.Storefront,
-	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "dispatch_sync: flag credentials_error failed", logging.KeyErr, err, logging.KeyUserID, p.UserID, logging.KeySource, p.Storefront, logging.Cat(logging.CategoryDB))
-	}
 
-	if priorErr {
-		return // already in error state; notify only on transition
+	switch {
+	case deliver != nil:
+		deliver()
+	case flagErr != nil && !isBound && !priorErr:
+		// An unbound failure whose flag could not be written still tells the
+		// user, as before; a bound one sends nothing, since which sign-in is
+		// stored was never established. A notice that failed to save is not
+		// retried on its own: its flag rolled back with it, so the next sync
+		// sends it.
+		notify.Emit(ctx, db, notice)
 	}
+}
 
+// credentialsNotice is the notice for a credentials failure: sync.auth_expired
+// for users subscribed to that actionable event, else sync.failed so nobody is
+// left silent.
+func credentialsNotice(ctx context.Context, db bun.IDB, p DispatchSyncArgs) notify.EmitParams {
 	if userSubscribed(ctx, db, p.UserID, notify.TypeSyncAuthExpired) {
-		notify.Emit(ctx, db, notify.EmitParams{
+		return notify.EmitParams{
 			Type: notify.TypeSyncAuthExpired, Scope: notify.ScopeUser, ActorUserID: p.UserID,
 			Payload:  notify.SyncAuthExpiredPayload{Storefront: p.Storefront},
 			DedupKey: p.JobID + ":" + notify.TypeSyncAuthExpired,
-		})
-		return
+		}
 	}
-	notify.Emit(ctx, db, notify.EmitParams{
+	return notify.EmitParams{
 		Type: notify.TypeSyncFailed, Scope: notify.ScopeUser, ActorUserID: p.UserID,
 		Payload:  notify.SyncFailedPayload{Storefront: p.Storefront, Error: "credentials error", JobID: p.JobID},
 		DedupKey: p.JobID + ":" + notify.TypeSyncFailed,
-	})
+	}
+}
+
+// flagCredentialsError sets credentials_error for the sync's store. A failure
+// bound to the sign-in the sync loaded flags the store only while that
+// sign-in is still stored, checked in the same UPDATE; flagged is false when
+// it is not (the user reconnected during the sync).
+func flagCredentialsError(ctx context.Context, db bun.IDB, p DispatchSyncArgs, bound *CredentialsErrorFor) (flagged bool, err error) {
+	query := `UPDATE user_sync_configs SET credentials_error = true, updated_at = now() WHERE user_id = ? AND storefront = ?`
+	args := []any{p.UserID, p.Storefront}
+	if bound != nil {
+		if bound.Credentials == nil {
+			query += ` AND storefront_credentials IS NULL`
+		} else {
+			query += ` AND storefront_credentials = ?`
+			args = append(args, *bound.Credentials)
+		}
+	}
+	res, err := db.NewRaw(query, args...).Exec(ctx)
+	if err != nil {
+		return false, err
+	}
+	if bound != nil {
+		if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // RowsAffected never errors for this driver; 0 also reads as "replaced"
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // userSubscribed reports whether the user is subscribed to eventType. On query
 // error it returns false, so a credential failure still falls back to the
 // default-on sync.failed event rather than going silent.
-func userSubscribed(ctx context.Context, db *bun.DB, userID, eventType string) bool {
+func userSubscribed(ctx context.Context, db bun.IDB, userID, eventType string) bool {
 	var subscribed bool
 	if err := db.NewRaw(
 		`SELECT EXISTS(SELECT 1 FROM notification_subscriptions WHERE user_id = ? AND event_type = ?)`,
