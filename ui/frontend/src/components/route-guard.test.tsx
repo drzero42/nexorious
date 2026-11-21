@@ -39,6 +39,19 @@ describe('RouteGuard', () => {
       expect(screen.queryByTestId('children')).not.toBeInTheDocument();
     });
 
+    it('announces the loading state to assistive technology', () => {
+      mockUseAuth.mockReturnValue({ isLoading: true, isAuthenticated: false });
+
+      render(
+        <RouteGuard>
+          <div>Protected Content</div>
+        </RouteGuard>,
+      );
+
+      const spinner = screen.getByRole('status', { name: 'Loading' });
+      expect(spinner.closest('[aria-busy="true"]')).not.toBeNull();
+    });
+
     it('does not redirect while loading', async () => {
       mockUseAuth.mockReturnValue({ isLoading: true, isAuthenticated: false });
 
