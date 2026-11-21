@@ -32,9 +32,9 @@ export function SyncServiceCard({
   const isCurrentlySyncing = isSyncing || status?.isSyncing;
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="flex flex-col overflow-hidden">
       <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
               {storefront?.icon_url && (
@@ -94,7 +94,7 @@ export function SyncServiceCard({
         </div>
       </CardHeader>
 
-      <CardFooter className="flex items-center justify-end border-t bg-muted/50 px-6 py-4">
+      <CardFooter className="mt-auto flex items-center justify-end border-t bg-muted/50 px-6 py-4">
         <Button
           onClick={onTriggerSync}
           disabled={isCurrentlySyncing || !config.isConfigured}

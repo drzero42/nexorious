@@ -376,8 +376,8 @@ function SyncDetailPage() {
       {/* Platform Header */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-muted">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-muted">
               {storefrontInfo?.icon_url && (
                 <img
                   src={`${envConfig.staticUrl}${storefrontInfo.icon_url}`}
@@ -387,11 +387,11 @@ function SyncDetailPage() {
                 />
               )}
             </div>
-            <div>
+            <div className="min-w-0">
               <CardTitle className="text-2xl">
                 {displayName}
                 {(status?.externalGameCount ?? 0) > 0 && (
-                  <span className="ml-2 text-base font-normal text-muted-foreground">
+                  <span className="ml-2 whitespace-nowrap text-base font-normal text-muted-foreground">
                     {status!.externalGameCount} games
                   </span>
                 )}
@@ -401,7 +401,7 @@ function SyncDetailPage() {
                 Last synced: {formatRelativeTime(config.lastSyncedAt, 'Never')}
               </CardDescription>
             </div>
-            <div className="ml-auto flex flex-col items-end gap-2">
+            <div className="ml-auto flex shrink-0 flex-col items-end gap-2">
               <Badge
                 variant={credentialsError ? 'destructive' : 'outline'}
                 className={
