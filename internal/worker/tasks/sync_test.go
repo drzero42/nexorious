@@ -1904,6 +1904,129 @@ func TestDispatchSync_AmazonGames_FailureChangesNoGames(t *testing.T) {
 	}
 }
 
+// A credentials failure bound to the sign-in a sync loaded flags the store only
+// while that sign-in is still stored; the check is in the flag's own UPDATE, so
+// a reconnect committed at any point during the sync is never marked expired.
+func TestDispatchSync_BoundCredentialsError_SparesReconnectedSignIn(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		reconnect      bool
+		wantFlag       bool
+		badCredentials bool
+		wantEvents     int
+	}{
+		{"same sign-in", false, true, false, 1},
+		{"reconnected during sync", true, false, false, 0},
+		{"flag update failed", false, false, true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			ctx := context.Background()
+			userID := uuid.NewString()
+			jobID := uuid.NewString()
+			insertTestUser(t, testDB, userID)
+			_, _ = testDB.ExecContext(ctx,
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'amazon-games', 'pending', 'low')`,
+				jobID, userID,
+			)
+			_, _ = testDB.NewRaw(
+				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency, storefront_credentials) VALUES (?, ?, 'amazon-games', 'daily', 'loaded-ct')`,
+				uuid.NewString(), userID,
+			).Exec(ctx)
+
+			factory := func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				return reconnectingAdapter{reconnect: tc.reconnect, badCredentials: tc.badCredentials, userID: userID}, nil
+			}
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: nil}
+			if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "amazon-games"},
+			}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			var credsErr bool
+			_ = testDB.NewRaw(`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'amazon-games'`, userID).Scan(ctx, &credsErr)
+			if credsErr != tc.wantFlag {
+				t.Errorf("credentials_error = %v, want %v", credsErr, tc.wantFlag)
+			}
+			var events int
+			_ = testDB.NewRaw(`SELECT count(*) FROM events WHERE actor_user_id = ?`, userID).Scan(ctx, &events)
+			if events != tc.wantEvents {
+				t.Errorf("expiry notifications = %d, want %d", events, tc.wantEvents)
+			}
+		})
+	}
+}
+
+// Building the adapter can fail before any write (no stored sign-in, or one
+// that does not decrypt). That failure belongs to what the sync loaded, NULL
+// included, so a sign-in connected meanwhile is not marked expired.
+func TestDispatchSync_FactoryCredentialsError_SparesSignInConnectedMeanwhile(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		connect  bool
+		wantFlag bool
+	}{
+		{"still disconnected", false, true},
+		{"connected during sync", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			truncateAllTables(t)
+			ctx := context.Background()
+			userID := uuid.NewString()
+			jobID := uuid.NewString()
+			insertTestUser(t, testDB, userID)
+			_, _ = testDB.ExecContext(ctx,
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, 'sync', 'steam', 'pending', 'low')`,
+				jobID, userID,
+			)
+			_, _ = testDB.NewRaw(
+				`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+				uuid.NewString(), userID,
+			).Exec(ctx)
+			factory := func(ctx context.Context, _ string, _ models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				if tc.connect {
+					if _, err := testDB.NewRaw(`UPDATE user_sync_configs SET storefront_credentials = 'fresh-ct' WHERE user_id = ?`, userID).Exec(ctx); err != nil {
+						return nil, err
+					}
+				}
+				return nil, tasks.ErrCredentials
+			}
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: factory, RiverClient: nil}
+			if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+			}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			var credsErr bool
+			_ = testDB.NewRaw(`SELECT credentials_error FROM user_sync_configs WHERE user_id = ? AND storefront = 'steam'`, userID).Scan(ctx, &credsErr)
+			if credsErr != tc.wantFlag {
+				t.Errorf("credentials_error = %v, want %v", credsErr, tc.wantFlag)
+			}
+		})
+	}
+}
+
+// reconnectingAdapter fails with a credentials error bound to 'loaded-ct',
+// first replacing the stored sign-in when reconnect is set.
+type reconnectingAdapter struct {
+	reconnect      bool
+	badCredentials bool
+	userID         string
+}
+
+func (a reconnectingAdapter) GetLibrary(ctx context.Context, _ int, _ func([]tasks.ExternalGameEntry) error) error {
+	if a.reconnect {
+		if _, err := testDB.NewRaw(`UPDATE user_sync_configs SET storefront_credentials = 'new-ct' WHERE user_id = ?`, a.userID).Exec(ctx); err != nil {
+			return err
+		}
+	}
+	loaded := "loaded-ct"
+	if a.badCredentials {
+		loaded = "a\x00b" // Postgres rejects a NUL in text: the flag UPDATE itself fails
+	}
+	return &tasks.CredentialsErrorFor{Credentials: &loaded, Err: tasks.ErrCredentials}
+}
+
 func TestDispatchSync_Success_ClearsCredentialsFlag(t *testing.T) {
 	truncateAllTables(t)
 	ctx := context.Background()

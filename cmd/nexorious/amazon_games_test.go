@@ -146,3 +146,18 @@ func TestAdapterFactory_AmazonGames_UnusableCredentials(t *testing.T) {
 		t.Errorf("undecryptable credentials: err = %v, want ErrCredentials", err)
 	}
 }
+
+// A refused sign-in is a credentials error bound to the stored sign-in the
+// sync loaded, so the worker can leave a reconnected account unflagged.
+func TestAdapterFactory_AmazonGames_RefusalIsBoundToLoadedSignIn(t *testing.T) {
+	enc := amazonTestEncrypter(t)
+	cfg := seedAmazonSync(t, enc, amazonOldUserData)
+	err := runAmazonFactory(t, enc, cfg, &fakeAmazonLibrary{err: amazongamessvc.ErrAuthFailed})
+	if !errors.Is(err, tasks.ErrCredentials) {
+		t.Fatalf("err = %v, want ErrCredentials", err)
+	}
+	var bound *tasks.CredentialsErrorFor
+	if !errors.As(err, &bound) || bound.Credentials == nil || *bound.Credentials != *cfg.StorefrontCredentials {
+		t.Errorf("err = %v, want it bound to the loaded ciphertext", err)
+	}
+}
