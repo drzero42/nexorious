@@ -173,6 +173,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			Status:         models.JobItemStatusCompleted,
 			Result:         json.RawMessage(`{}`),
 			IGDBCandidates: json.RawMessage(`[]`),
+			CreatedAt:      now,
 		}
 		if _, err := h.db.NewInsert().Model(poolsItem).Exec(ctx); err != nil {
 			slog.ErrorContext(reqCtx, "import: create pools item", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
@@ -220,6 +221,7 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 			Status:         models.JobItemStatusPending,
 			Result:         json.RawMessage(`{}`),
 			IGDBCandidates: json.RawMessage(`[]`),
+			CreatedAt:      now,
 		}
 		if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
@@ -304,6 +306,7 @@ func (h *ImportHandler) enqueueImportJob(reqCtx context.Context, userID, source,
 			Status:         models.JobItemStatusPending,
 			Result:         json.RawMessage(`{}`),
 			IGDBCandidates: json.RawMessage(`[]`),
+			CreatedAt:      now,
 		}
 		if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
 			return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")

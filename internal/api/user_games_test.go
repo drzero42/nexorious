@@ -2565,3 +2565,120 @@ func TestListUserGamesTimeToBeatFilter(t *testing.T) {
 		}
 	})
 }
+
+// ─── Tie order (#1311) ───────────────────────────────────────────────────────
+
+// tiedInsertOrder is the order the tie-order tests insert rows 1..4 in. It is
+// neither ascending nor descending, so a list whose ties fall back to heap
+// (insertion) order matches neither sort direction the tests assert.
+var tiedInsertOrder = []int{2, 4, 1, 3}
+
+// tiedTitles titles user games 1..4. Sorted by title ascending they fall into
+// two tie groups ("A": 2 and 4, "B": 1 and 3), so the title order disagrees
+// with id order across a page boundary and the id tiebreak decides within
+// each group.
+var tiedTitles = []string{"B", "A", "B", "A"}
+
+// listIDs GETs path (query included) and returns the "id" of every element of
+// the response's listKey array, in order.
+func listIDs(t *testing.T, handler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, path, token, listKey string) []string {
+	t.Helper()
+	rec := getAuth(t, handler, path, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s: status %d: %s", path, rec.Code, rec.Body.String())
+	}
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("GET %s: unmarshal: %v", path, err)
+	}
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(resp[listKey], &rows); err != nil {
+		t.Fatalf("GET %s: unmarshal %s: %v", path, listKey, err)
+	}
+	ids := make([]string, len(rows))
+	for i, r := range rows {
+		ids[i] = r.ID
+	}
+	return ids
+}
+
+// pagedIDs reads pages 1..n of path with per_page=1 and returns every id seen.
+func pagedIDs(t *testing.T, handler interface {
+	ServeHTTP(http.ResponseWriter, *http.Request)
+}, path, token, listKey string, n int) []string {
+	t.Helper()
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	var ids []string
+	for page := 1; page <= n; page++ {
+		ids = append(ids, listIDs(t, handler, fmt.Sprintf("%s%sper_page=1&page=%d", path, sep, page), token, listKey)...)
+	}
+	return ids
+}
+
+// insertTiedUserGames inserts four user games for userID, ids prefix-1..4, in
+// tiedInsertOrder, all with one identical created_at. Game n is titled
+// tiedTitles[n-1]. It returns the ids in descending order, the order the list
+// must use when no sort is chosen.
+func insertTiedUserGames(t *testing.T, userID, prefix string) []string {
+	t.Helper()
+	for _, n := range tiedInsertOrder {
+		g := insertTestGame(t, testDB, tiedTitles[n-1])
+		insertTestUserGame(t, testDB, fmt.Sprintf("%s-%d", prefix, n), userID, int(g))
+	}
+	if _, err := testDB.ExecContext(context.Background(),
+		`UPDATE user_games SET created_at = '2026-01-01T00:00:00Z' WHERE user_id = ?`, userID,
+	); err != nil {
+		t.Fatalf("tie created_at: %v", err)
+	}
+	return []string{prefix + "-4", prefix + "-3", prefix + "-2", prefix + "-1"}
+}
+
+func TestListUserGames_TiedCreatedAt_PagesByIDDesc(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	userID, token := setupUserGamesUser(t, testDB, e, "tie-pages")
+	want := insertTiedUserGames(t, userID, "ug-tie")
+
+	got := pagedIDs(t, e, "/api/user-games", token, "user_games", len(want))
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("one-per-page ids = %v, want %v (each once, id descending)", got, want)
+	}
+}
+
+func TestListUserGames_TiedCreatedAtAndSort_PagesByIDDesc(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	userID, token := setupUserGamesUser(t, testDB, e, "tie-sort")
+	insertTiedUserGames(t, userID, "ug-tsort")
+	// Title ascending, then id descending within each title.
+	want := []string{"ug-tsort-4", "ug-tsort-2", "ug-tsort-3", "ug-tsort-1"}
+
+	got := pagedIDs(t, e, "/api/user-games?sort_by=title&sort_order=asc", token, "user_games", len(want))
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("one-per-page ids sorted by title = %v, want %v (each once, title then id descending)", got, want)
+	}
+}
+
+// Every tied row on one page: catches the full-record query reordering rows
+// the id query already put in order, which one-per-page reads cannot see.
+func TestListUserGames_TiedCreatedAt_OnePageInIDOrder(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	userID, token := setupUserGamesUser(t, testDB, e, "tie-onepage")
+	byID := insertTiedUserGames(t, userID, "ug-tone")
+	byTitle := []string{"ug-tone-4", "ug-tone-2", "ug-tone-3", "ug-tone-1"}
+
+	for q, want := range map[string][]string{"": byID, "?sort_by=title&sort_order=asc": byTitle} {
+		got := listIDs(t, e, "/api/user-games"+q, token, "user_games")
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("one page%s: ids = %v, want %v", q, got, want)
+		}
+	}
+}

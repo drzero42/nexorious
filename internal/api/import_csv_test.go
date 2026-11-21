@@ -608,3 +608,28 @@ func postCSVImportFormat(t *testing.T, e interface {
 	e.ServeHTTP(rec, req)
 	return rec
 }
+
+// The CSV import goes through enqueueImportJob, the generic path every
+// registered import source shares.
+func TestImportCSV_ItemsCreatedAtEqualsJob(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
+	_, token := setupTagUser(t, testDB, e, "csv-createdat")
+
+	csvData := []byte("Name,Status\nCeleste,Beaten\nHades,Playing\nTunic,Beaten\n")
+	mapping := validMapping(t, map[string]string{"Beaten": "completed", "Playing": "in_progress"})
+	rec := postCSVImport(t, e, "/api/import/csv", "lib.csv", csvData, mapping, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body)
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	jobID, _ := resp["job_id"].(string)
+	if jobID == "" {
+		t.Fatalf("empty job_id")
+	}
+	assertImportItemsCreatedWithJob(t, jobID, []string{"game_0", "game_1", "game_2"})
+}

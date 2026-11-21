@@ -559,7 +559,7 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
 		}
 	} else {
-		if err := q.OrderExpr("created_at ASC").Limit(int64(perPage)).Offset(int64(offset)).Scan(context.Background(), &items); err != nil {
+		if err := q.OrderExpr("created_at ASC, id ASC").Limit(int64(perPage)).Offset(int64(offset)).Scan(context.Background(), &items); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
 		}
 	}
