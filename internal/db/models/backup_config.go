@@ -15,6 +15,6 @@ type BackupConfig struct {
 	RetentionMode  string     `bun:"retention_mode,notnull" json:"retention_mode"`
 	RetentionValue int        `bun:"retention_value,notnull" json:"retention_value"`
 	LastBackupAt   *time.Time `bun:"last_backup_at"          json:"last_backup_at"`
-	CreatedAt      time.Time  `bun:"created_at,notnull"      json:"created_at"`
-	UpdatedAt      time.Time  `bun:"updated_at,notnull" json:"updated_at"`
+	CreatedAt      time.Time  `bun:"created_at,nullzero,notnull"      json:"created_at"`
+	UpdatedAt      time.Time  `bun:"updated_at,nullzero,notnull" json:"updated_at"`
 }
