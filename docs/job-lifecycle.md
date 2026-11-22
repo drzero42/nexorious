@@ -214,6 +214,6 @@ A **Child game** follows its parent's match. Its item can therefore be `pending`
 ## Outside the lifecycle
 
 - **Sync rematch and unskip are not Job work** (see [ADR 0002](adr/0002-rematch-and-unskip-are-not-job-work.md)). Rematch updates the library in its own transaction. It touches an item in one case only: when the game has an item in Pending review, that item and the items of its waiting children are completed in the same transaction. A rematch of a game whose item is `pending` in an active Job is refused (409), because a worker is about to write it. Unskip writes the library directly when the game is already matched; an unmatched game is picked up by the next sync.
-- **The storefront view** shows a game as failed or in need of review from the game's newest item only, never from older items.
+- **The storefront view** shows a game as failed or in need of review from the game's newest item only, never from older items. A game that a rematch has written since that item failed is not shown as failed.
 - **Deleting Jobs** (the 30-day cleanup, clear library, reset sync data, admin reset, deleting a user) removes rows outright. A worker whose item or Job is gone owns nothing and exits.
 - **River jobs that are not tied to a Job** (the immediate metadata fetch, notification delivery, the periodic maintenance jobs) are not part of the lifecycle.
