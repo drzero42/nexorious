@@ -279,16 +279,17 @@ A sync that is running when the server shuts down resumes at the next startup; t
 
 - **During shutdown.** River gets 20 seconds to drain, then cancels the running workers. A cancelled `DispatchSyncWorker` stops without recording anything: the job is not failed, the removed-game sweep does not run, and `last_synced_at` and `dispatch_complete` are not written. The job stays `processing` with `dispatch_complete = false`.
 - **At startup**, before River starts, `scheduler.RecoverInterruptedSyncs` runs once (also after a backup restore):
-  1. River jobs of the sync kinds (`dispatch_sync`, `igdb_match`, `user_game_write`) that are still `running` are released for retry. A hard kill (SIGKILL, OOM) leaves them in that state.
-  2. The dispatch is re-enqueued for every active sync job with `dispatch_complete = false` that has no live `dispatch_sync` River job.
-  3. Pending job_items with no live River job are re-queued, whatever their age. No maintenance event is emitted.
-  4. The completion check runs for every `processing` sync job with `dispatch_complete = true`, so a job whose last item settled just before the shutdown is finalized and its notification sent.
+  1. River jobs of the sync kinds (`dispatch_sync`, `igdb_match`, `user_game_write`) that are still `running` with no attempts left are discarded, and what they were working on is failed: for a dispatch the job is failed (pending items cancelled, `sync.failed` sent), for an item job the item is failed. They are not retried, so work that kills the server every time cannot loop.
+  2. The remaining `running` River jobs of the sync kinds are released for retry. A hard kill (SIGKILL, OOM) leaves them in that state.
+  3. The dispatch is re-enqueued for every active sync job with `dispatch_complete = false` that has no live `dispatch_sync` River job.
+  4. Pending job_items with no live River job are re-queued, whatever their age. No maintenance event is emitted.
+  5. The completion check runs for every `processing` sync job with `dispatch_complete = true`, so a job whose last item settled just before the shutdown is finalized and its notification sent.
 
 Running a dispatch again for the same job is safe: external games and platforms are upserted, a job_item is inserted once per `(job_id, item_key)`, and a `skipped` change is recorded once per game.
 
 A dispatch only changes a job that is still `pending` or `processing`. One that starts after the job was cancelled does nothing, and one that fails after a cancel leaves the job `cancelled` and sends no notification.
 
-Not covered: a dispatch that was hard-killed on its last River attempt stays stuck until the stale-job cleanup ([maintenance.md](maintenance.md)), and the sync diff can be wrong for the one game that was being written when the process was killed.
+Not covered: the sync diff can be wrong for the one game that was being written when the process was killed.
 
 ### Job item statuses
 

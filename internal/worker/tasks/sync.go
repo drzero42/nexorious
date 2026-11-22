@@ -201,7 +201,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		if dispatchInterrupted(ctx) {
 			return nil
 		}
-		failSyncJob(ctx, w.DB, p.JobID, "no sync config found")
+		FailSyncJob(ctx, w.DB, p.JobID, "no sync config found")
 		return nil
 	}
 
@@ -215,7 +215,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		return nil
 	}
 	if err != nil {
-		failSyncJob(ctx, w.DB, p.JobID, err.Error())
+		FailSyncJob(ctx, w.DB, p.JobID, err.Error())
 		return nil
 	}
 
@@ -280,7 +280,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	})
 	// An interrupted fetch is neither a failure nor a full fetch, whatever it
 	// returned: its batch writes may have failed on the cancelled ctx. Stop
-	// before failSyncJob, the sweeps and the last_synced_at/dispatch_complete
+	// before FailSyncJob, the sweeps and the last_synced_at/dispatch_complete
 	// writes below (those two use context.Background() and would succeed).
 	if dispatchInterrupted(ctx) {
 		return nil
@@ -291,7 +291,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			return nil
 		}
 		slog.ErrorContext(ctx, "dispatch_sync: library fetch failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-		failSyncJob(ctx, w.DB, p.JobID, err.Error())
+		FailSyncJob(ctx, w.DB, p.JobID, err.Error())
 		return nil
 	}
 
@@ -308,13 +308,13 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			Count(ctx)
 		if err != nil {
 			slog.ErrorContext(ctx, "dispatch_sync: count available games failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-			failSyncJob(ctx, w.DB, p.JobID, "could not verify an empty library fetch; nothing was marked removed")
+			FailSyncJob(ctx, w.DB, p.JobID, "could not verify an empty library fetch; nothing was marked removed")
 			return nil
 		}
 		if known > 0 {
 			slog.ErrorContext(ctx, "dispatch_sync: empty library fetch with known games; refusing to mark them removed",
 				logging.KeySource, p.Storefront, "known_games", known, logging.Cat(logging.CategoryExternalAPI))
-			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf(
+			FailSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf(
 				"the storefront returned an empty library while %d games are known; nothing was marked removed. "+
 					"If the library really is empty, reset this storefront's sync data or disconnect it.", known))
 			return nil
@@ -439,10 +439,10 @@ func markSyncJobFailed(ctx context.Context, db *bun.DB, jobID, msg string) bool 
 	return true
 }
 
-// failSyncJob marks a job as failed (see markSyncJobFailed) and emits the
+// FailSyncJob marks a job as failed (see markSyncJobFailed) and emits the
 // generic sync.failed notification. Used for all non-credential failures;
 // credential failures go through handleCredentialError instead.
-func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
+func FailSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 	msg = logging.ScrubURLQueries(msg) // never leak URL query credentials into the event payload
 	if !markSyncJobFailed(ctx, db, jobID, msg) {
 		return
@@ -473,7 +473,7 @@ func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, 
 		return
 	}
 	// A credentials failure is a hard sync failure; record it so it is visible
-	// in nexorious_sync_total rather than silently absent (see failSyncJob).
+	// in nexorious_sync_total rather than silently absent (see FailSyncJob).
 	if p.Storefront != "" {
 		observability.RecordSyncOutcome(ctx, p.Storefront, "failed")
 	}

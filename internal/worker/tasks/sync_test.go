@@ -3128,7 +3128,7 @@ func TestFailSyncJobEmitsFailed(t *testing.T) {
 		t.Fatalf("insert user_sync_config: %v", err)
 	}
 
-	// Drive the real worker with a fetch error — this triggers failSyncJob internally.
+	// Drive the real worker with a fetch error — this triggers FailSyncJob internally.
 	w := &tasks.DispatchSyncWorker{
 		DB:          testDB,
 		Adapter:     fetchErrFactory(errors.New("network error")),
