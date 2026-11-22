@@ -100,17 +100,17 @@ export function JobCard({
         {/* Progress */}
         {showProgress && job.progress && (
           <div>
-            <div className="mb-2 flex justify-between text-sm text-muted-foreground">
-              <span>Progress</span>
+            <div className="mb-2 flex justify-between gap-2 text-sm text-muted-foreground">
               <span>
-                {job.progress.completed +
-                  job.progress.pendingReview +
-                  job.progress.skipped +
-                  job.progress.failed}{' '}
-                / {job.progress.total} ({job.progress.percent}%)
+                {job.progress.pendingReview > 0
+                  ? `${job.progress.pendingReview} waiting for your review`
+                  : 'Progress'}
+              </span>
+              <span className="whitespace-nowrap">
+                {job.progress.done} / {job.progress.total} ({job.progress.percent}%)
               </span>
             </div>
-            <Progress value={job.progress.percent} />
+            <Progress value={job.progress.percent} aria-label="Progress" />
           </div>
         )}
 
@@ -121,7 +121,7 @@ export function JobCard({
             <span className="text-muted-foreground">Duration:</span>
             <span className="font-medium">{formatDuration(job.durationSeconds)}</span>
           </div>
-          {job.progress && job.progress.pendingReview > 0 && (
+          {!showProgress && job.progress && job.progress.pendingReview > 0 && (
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground">Pending Review:</span>

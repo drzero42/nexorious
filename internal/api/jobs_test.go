@@ -143,6 +143,8 @@ func TestListJobs_ProgressCounts(t *testing.T) {
 	insertJobItem(t, testDB, uuid.New().String(), jobID, userID, "key-1", "Game A", "completed")
 	insertJobItem(t, testDB, uuid.New().String(), jobID, userID, "key-2", "Game B", "completed")
 	insertJobItem(t, testDB, uuid.New().String(), jobID, userID, "key-3", "Game C", "failed")
+	insertJobItem(t, testDB, uuid.New().String(), jobID, userID, "key-4", "Game D", "skipped")
+	insertJobItem(t, testDB, uuid.New().String(), jobID, userID, "key-5", "Game E", "pending_review")
 
 	rec := getAuth(t, e, "/api/jobs", token)
 	if rec.Code != http.StatusOK {
@@ -175,8 +177,14 @@ func TestListJobs_ProgressCounts(t *testing.T) {
 	if got := progress["failed"].(float64); got != 1 {
 		t.Errorf("expected progress.failed=1, got %v", got)
 	}
-	if got := progress["total"].(float64); got != 3 {
-		t.Errorf("expected progress.total=3, got %v", got)
+	if got := progress["total"]; got != float64(5) {
+		t.Errorf("expected progress.total=5, got %v", got)
+	}
+	if got := progress["done"]; got != float64(3) {
+		t.Errorf("expected progress.done=3, got %v", got)
+	}
+	if got := progress["percent"]; got != float64(60) {
+		t.Errorf("expected progress.percent=60, got %v", got)
 	}
 }
 

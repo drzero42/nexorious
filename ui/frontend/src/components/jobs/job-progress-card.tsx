@@ -51,17 +51,17 @@ export function JobProgressCard({ job, onCancel, isCancelling }: JobProgressCard
         <CardContent className="space-y-4">
           {showProgress && job.progress && job.progress.total > 0 && (
             <div>
-              <div className="mb-2 flex justify-between text-sm text-muted-foreground">
-                <span>Progress</span>
+              <div className="mb-2 flex justify-between gap-2 text-sm text-muted-foreground">
                 <span>
-                  {job.progress.completed +
-                    job.progress.pendingReview +
-                    job.progress.failed +
-                    job.progress.skipped}{' '}
-                  / {job.progress.total} ({job.progress.percent}%)
+                  {job.progress.pendingReview > 0
+                    ? `${job.progress.pendingReview} waiting for your review`
+                    : 'Progress'}
+                </span>
+                <span className="whitespace-nowrap">
+                  {job.progress.done} / {job.progress.total} ({job.progress.percent}%)
                 </span>
               </div>
-              <Progress value={job.progress.percent} />
+              <Progress value={job.progress.percent} aria-label="Progress" />
             </div>
           )}
 

@@ -63,15 +63,16 @@ func (h *JobsHandler) jobItemCounts(ctx context.Context, jobID string) (map[stri
 	for _, v := range m {
 		total += v
 	}
+	done := m["completed"] + m["skipped"]
 	percent := 0
 	if total > 0 {
-		percent = (m["completed"] + m["skipped"]) * 100 / total
+		percent = done * 100 / total
 	}
 	return map[string]any{
 		"pending": m["pending"], "processing": m["processing"],
 		"completed": m["completed"], "pending_review": m["pending_review"],
 		"skipped": m["skipped"], "failed": m["failed"],
-		"total": total, "percent": percent,
+		"done": done, "total": total, "percent": percent,
 	}, nil
 }
 
@@ -405,7 +406,7 @@ func (h *JobsHandler) HandleRecentJobs(c *echo.Context) error {
 			slog.ErrorContext(reqCtx, "HandleRecentJobs: failed to count job items", logging.KeyJobID, j.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 			progress = map[string]any{
 				"pending": 0, "processing": 0, "completed": 0, "pending_review": 0,
-				"skipped": 0, "failed": 0, "total": 0, "percent": 0,
+				"skipped": 0, "failed": 0, "done": 0, "total": 0, "percent": 0,
 			}
 		}
 

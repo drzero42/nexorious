@@ -35,6 +35,7 @@ const mockJobApi = {
     skipped: 2,
     failed: 0,
     total: 100,
+    done: 33,
     percent: 50,
   },
   total_items: 100,
@@ -58,6 +59,7 @@ const mockCompletedJobApi = {
     pending: 0,
     processing: 0,
     completed: 100,
+    done: 50,
     percent: 100,
   },
 };

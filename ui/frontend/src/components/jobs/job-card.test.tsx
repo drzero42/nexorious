@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { JobCard } from './job-card';
+import { JobProgressCard } from './job-progress-card';
 import type { Job } from '@/types';
 import { JobType, JobSource, JobStatus } from '@/types';
 
@@ -39,9 +40,10 @@ const mockJob: Job = {
     completed: 50,
     pendingReview: 3,
     skipped: 2,
-    failed: 0,
+    failed: 5,
+    done: 52,
     total: 100,
-    percent: 50,
+    percent: 52,
   },
   totalItems: 100,
   errorMessage: null,
@@ -64,6 +66,7 @@ const mockCompletedJob: Job = {
     pending: 0,
     processing: 0,
     completed: 100,
+    done: 100,
     percent: 100,
   },
 };
@@ -117,16 +120,17 @@ describe('JobCard', () => {
       expect(screen.getByText('Processing')).toBeInTheDocument();
       expect(screen.getByText('Duration:')).toBeInTheDocument();
       expect(screen.getByText('1m')).toBeInTheDocument();
-      expect(screen.getByText('Pending Review:')).toBeInTheDocument();
-      expect(screen.getByText('3')).toBeInTheDocument();
+      expect(screen.getByText('3 waiting for your review')).toBeInTheDocument();
     });
 
     it('shows progress section for processing jobs', () => {
       render(<JobCard job={mockJob} />);
 
-      expect(screen.getByText('Progress')).toBeInTheDocument();
-      // 50 completed + 3 pending review + 2 skipped + 0 failed = 55 done / 100 total
-      expect(screen.getByText('55 / 100 (50%)')).toBeInTheDocument();
+      expect(screen.getByRole('progressbar', { name: 'Progress' })).toHaveAttribute(
+        'aria-valuenow',
+        '52',
+      );
+      expect(screen.getByText('52 / 100 (52%)')).toBeInTheDocument();
     });
 
     it('does not show progress section for completed jobs', () => {
@@ -221,4 +225,10 @@ describe('JobCard', () => {
       expect(screen.getByText(expected)).toBeInTheDocument();
     });
   });
+});
+
+it('shows the server count and review backlog on the sync progress card', () => {
+  render(<JobProgressCard job={mockJob} onCancel={vi.fn()} />);
+  expect(screen.getByText('52 / 100 (52%)')).toBeInTheDocument();
+  expect(screen.getByText('3 waiting for your review')).toBeInTheDocument();
 });
