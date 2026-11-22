@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // testdata/nile/ was written by nile v1.2.0 itself (its config migration
@@ -97,14 +98,19 @@ func readFile(t *testing.T, path string) []byte {
 
 // fakeNile records each call and lets a test act as nile inside the config dir.
 type fakeNile struct {
-	args []string
-	dir  string
-	do   func(dir string) (stdout, stderr string, err error)
+	args  []string
+	dir   string
+	do    func(dir string) (stdout, stderr string, err error)
+	doCtx func(ctx context.Context, dir string) (stdout, stderr string, err error) // when set, used instead of do
 }
 
-func (f *fakeNile) run(_ context.Context, dir string, args ...string) ([]byte, []byte, error) {
+func (f *fakeNile) run(ctx context.Context, dir string, args ...string) ([]byte, []byte, error) {
 	f.args = args
 	f.dir = dir
+	if f.doCtx != nil {
+		stdout, stderr, err := f.doCtx(ctx, dir)
+		return []byte(stdout), []byte(stderr), err
+	}
 	if f.do == nil {
 		return nil, nil, nil
 	}
@@ -585,5 +591,169 @@ func TestLogout_RefusesUserDataWithoutUserID(t *testing.T) {
 	}
 	if f.args != nil {
 		t.Errorf("nile ran: %v", f.args)
+	}
+}
+
+// nile reads the device serial to fetch entitlements, so user data without one
+// is not a usable sign-in: a registration that wrote none is refused, and
+// refreshed data that lost it is not handed back for storing.
+func TestUserData_WithoutDeviceSerialIsRefused(t *testing.T) {
+	full := readFixture(t, "user-data.json")
+	for _, serial := range []string{`""`, `null`} {
+		noSerial := strings.Replace(string(full), `"0123456789ABCDEF0123456789ABCDEF"`, serial, 1)
+		if noSerial == string(full) {
+			t.Fatal("fixture has no serial to remove")
+		}
+		reg := &fakeNile{do: func(dir string) (string, string, error) {
+			if err := writeNileConfig(dir, json.RawMessage(noSerial)); err != nil {
+				t.Fatal(err)
+			}
+			return "", "", nil
+		}}
+		if _, _, err := newTestClient(reg).Register(context.Background(), "CODE", Login{ClientID: "c", CodeVerifier: "v", Serial: "s"}); err == nil {
+			t.Errorf("serial %s: registration accepted", serial)
+		}
+		lib := &fakeNile{do: func(dir string) (string, string, error) {
+			if err := writeNileConfig(dir, json.RawMessage(noSerial)); err != nil {
+				t.Fatal(err)
+			}
+			writeLibrary(t, dir, `[]`)
+			return "", "", nil
+		}}
+		if _, refreshed, err := newTestClient(lib).Library(context.Background(), full); err != nil || refreshed != nil {
+			t.Errorf("serial %s: Library returned refreshed=%s err=%v, want no refreshed data and no error", serial, refreshed, err)
+		}
+	}
+}
+
+// A nile that leaves a child holding its output pipes (a PyInstaller
+// launcher's Python process does) is cut off at the deadline with its whole
+// process group, instead of the call waiting for the child.
+func TestRunNile_DeadlineKillsTheProcessGroup(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "child-alive")
+	script := filepath.Join(dir, "fake-nile")
+	// The child sleeps holding stdout/stderr, then would write a marker file.
+	body := "#!/bin/sh\n(sleep 5; touch '" + marker + "') &\nsleep 30\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil { //nolint:gosec // test script
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, _, err := runNile(ctx, script, dir)
+	if err == nil {
+		t.Fatal("expected an error from a killed nile")
+	}
+	if took := time.Since(start); took > nileWaitDelay+2*time.Second {
+		t.Errorf("runNile returned after %v, want within the deadline plus %v", took, nileWaitDelay)
+	}
+	time.Sleep(6 * time.Second)
+	if _, statErr := os.Stat(marker); statErr == nil {
+		t.Error("nile's child outlived the deadline")
+	}
+}
+
+// nile's register syncs the whole library after writing the registration; a
+// slow sync must not hold the sign-in up, so Register stops nile as soon as
+// usable user data is on disk.
+func TestRegister_ReturnsOnceTheRegistrationIsWritten(t *testing.T) {
+	userData := readFixture(t, "user-data.json")
+	f := &fakeNile{doCtx: func(ctx context.Context, dir string) (string, string, error) {
+		if err := writeNileConfig(dir, userData); err != nil {
+			t.Fatal(err)
+		}
+		select { // the trailing library sync, which would take 30 s
+		case <-ctx.Done():
+			return "", "", errors.New("signal: killed")
+		case <-time.After(30 * time.Second):
+			return "", "", nil
+		}
+	}}
+	start := time.Now()
+	account, got, err := newTestClient(f).Register(context.Background(), "CODE", Login{ClientID: "c", CodeVerifier: "v", Serial: "s"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("Register took %v, want it to stop nile once the registration was written", took)
+	}
+	if account == nil || !sameJSON(t, got, userData) {
+		t.Errorf("Register returned account=%v data=%s", account, got)
+	}
+}
+
+// nile's temporary files (a PyInstaller nile extracts its runtime there) go
+// in the per-call folder, which is deleted after every call, even when nile
+// was killed before it could clean up.
+func TestRunNile_TempFilesStayInTheCallFolder(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(t.TempDir(), "fake-nile")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf %s \"$TMPDIR\"\n"), 0o700); err != nil { //nolint:gosec // test script
+		t.Fatal(err)
+	}
+	stdout, _, err := runNile(context.Background(), script, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(stdout) != dir {
+		t.Errorf("nile's TMPDIR = %q, want the call folder %q", stdout, dir)
+	}
+}
+
+// With TMPDIR unset, a host that points TEMP (or TMP) at an executable folder
+// because /tmp is noexec gets the call folder there, as PyInstaller would.
+func TestNewConfigDir_FollowsPyInstallerTempOrder(t *testing.T) {
+	temp, tmp := t.TempDir(), t.TempDir()
+	t.Setenv("TMPDIR", "")
+	t.Setenv("TEMP", temp)
+	t.Setenv("TMP", tmp)
+	dir, err := newConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer removeConfigDir(dir)
+	if filepath.Dir(dir) != temp {
+		t.Errorf("call folder %s, want it under TEMP %s", dir, temp)
+	}
+	t.Setenv("TEMP", "")
+	dir2, err := newConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer removeConfigDir(dir2)
+	if filepath.Dir(dir2) != tmp {
+		t.Errorf("call folder %s, want it under TMP %s", dir2, tmp)
+	}
+}
+
+// A TEMP that does not exist is passed over for the next candidate, TMP.
+func TestNewConfigDir_SkipsAMissingTempFolder(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", "")
+	t.Setenv("TEMP", filepath.Join(t.TempDir(), "gone"))
+	t.Setenv("TMP", tmp)
+	dir, err := newConfigDir()
+	if err != nil {
+		t.Fatalf("newConfigDir: %v", err)
+	}
+	defer removeConfigDir(dir)
+	if filepath.Dir(dir) != tmp {
+		t.Errorf("call folder %s, want it under TMP %s", dir, tmp)
+	}
+}
+
+// A stale TMPDIR with TEMP and TMP unset falls back to /tmp itself.
+func TestNewConfigDir_StaleTMPDIRFallsBackToTmp(t *testing.T) {
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "gone"))
+	t.Setenv("TEMP", "")
+	t.Setenv("TMP", "")
+	dir, err := newConfigDir()
+	if err != nil {
+		t.Fatalf("newConfigDir: %v", err)
+	}
+	defer removeConfigDir(dir)
+	if filepath.Dir(dir) != "/tmp" {
+		t.Errorf("call folder %s, want it under /tmp", dir)
 	}
 }

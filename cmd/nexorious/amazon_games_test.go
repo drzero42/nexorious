@@ -87,7 +87,7 @@ func storedAmazonUserData(t *testing.T, enc *crypto.Encrypter, userID string) st
 
 func runAmazonFactory(t *testing.T, enc *crypto.Encrypter, cfg models.UserSyncConfig, lib amazongamessvc.LibraryClient) error {
 	t.Helper()
-	factory := buildAdapterFactory(testDB, enc, epicgamesstoresvc.NewClient(""), lib)
+	factory := buildAdapterFactoryWithAmazon(testDB, enc, epicgamesstoresvc.NewClient(""), lib)
 	adapter, err := factory(context.Background(), "amazon-games", cfg)
 	if err != nil {
 		return err

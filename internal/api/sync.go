@@ -1062,12 +1062,12 @@ func (h *SyncHandler) HandleAmazonGamesLoginStart(c *echo.Context) error {
 	}
 	login, err := h.amazonGamesClient.LoginURL(c.Request().Context())
 	if err != nil {
-		slog.ErrorContext(c.Request().Context(), "amazon: start sign-in failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+		slog.ErrorContext(c.Request().Context(), "amazon: start sign-in failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusBadGateway, "could not start an Amazon sign-in")
 	}
 	attemptID, err := h.sealAmazonLogin(userID, *login)
 	if err != nil {
-		slog.ErrorContext(c.Request().Context(), "amazon: seal sign-in attempt failed", logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+		slog.ErrorContext(c.Request().Context(), "amazon: seal sign-in attempt failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
 		return echo.NewHTTPError(http.StatusInternalServerError, "could not start an Amazon sign-in")
 	}
 	return c.JSON(http.StatusOK, map[string]string{
@@ -1104,11 +1104,11 @@ func (h *SyncHandler) HandleAmazonGamesConnect(c *echo.Context) error {
 	}
 	account, userData, err := h.amazonGamesClient.Register(c.Request().Context(), code, login)
 	if err != nil {
-		slog.WarnContext(c.Request().Context(), "amazon: device registration failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+		slog.WarnContext(c.Request().Context(), "amazon: device registration failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
 		return echo.NewHTTPError(http.StatusBadRequest, "Amazon did not accept that sign-in; start again and paste the address you land on")
 	}
 	if err := h.persistStorefrontCredentials(context.Background(), userID, "amazon-games", userData); err != nil {
-		slog.ErrorContext(c.Request().Context(), "amazon: persist storefront credentials failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		slog.ErrorContext(c.Request().Context(), "amazon: persist storefront credentials failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryDB))
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Amazon Games connection")
 	}
 	return c.JSON(http.StatusOK, map[string]string{"username": account.Name})
@@ -1120,8 +1120,15 @@ func (h *SyncHandler) HandleGetAmazonGamesConnection(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 	if !h.amazonGamesConfigured() {
+		// Nothing can sign in or sync without nile, but a sign-in stored earlier
+		// is still reported so the page can offer to remove it.
+		st, err := h.loadConnectionStatus(context.Background(), auth.UserIDFromContext(c), "amazon-games")
+		if err != nil {
+			slog.ErrorContext(c.Request().Context(), "sync: load connection status failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryDB))
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to load Amazon Games connection")
+		}
 		return c.JSON(http.StatusOK, map[string]any{
-			"connected": false,
+			"connected": st.Connected,
 			"disabled":  true,
 			"reason":    "nile_not_installed",
 		})
@@ -1205,14 +1212,14 @@ func (h *SyncHandler) signOutAmazonDevice(ctx context.Context, ciphertext string
 	defer cancel()
 	userData, err := h.encrypter.Decrypt(ciphertext)
 	if err != nil {
-		slog.WarnContext(ctx, "amazon: device sign-out skipped: the removed sign-in does not decrypt", logging.KeyErr, err, logging.Cat(logging.CategoryAuth))
+		slog.WarnContext(ctx, "amazon: device sign-out skipped: the removed sign-in does not decrypt", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
 		return
 	}
 	if err := h.amazonGamesClient.Logout(ctx, userData); err != nil {
-		slog.WarnContext(ctx, "amazon: device sign-out after disconnect failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+		slog.WarnContext(ctx, "amazon: device sign-out after disconnect failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
 		return
 	}
-	slog.InfoContext(ctx, "amazon: device signed out after disconnect")
+	slog.InfoContext(ctx, "amazon: device signed out after disconnect", logging.KeySource, "amazon-games")
 }
 
 func (h *SyncHandler) HandleListIgnored(c *echo.Context) error {

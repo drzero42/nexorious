@@ -2312,9 +2312,17 @@ type stubAmazonGamesClient struct {
 	logoutErr    error
 	logoutHold   chan struct{} // when set, Logout waits for it to close (or its ctx to end)
 	logoutCtxErr error         // ctx.Err() when a held Logout returned
+	logoutBegan  chan struct{} // when set, closed as Logout starts
+	logoutEnded  chan struct{} // when set, closed as Logout returns
 }
 
 func (s *stubAmazonGamesClient) Logout(ctx context.Context, userData json.RawMessage) error {
+	if s.logoutBegan != nil {
+		close(s.logoutBegan)
+	}
+	if s.logoutEnded != nil {
+		defer close(s.logoutEnded)
+	}
 	s.logoutMu.Lock()
 	s.logouts = append(s.logouts, string(userData))
 	hold, err := s.logoutHold, s.logoutErr
@@ -2559,7 +2567,7 @@ func TestAmazonGamesConnect_409ForUnusableAttempt(t *testing.T) {
 
 	for _, tc := range []struct{ name, attempt string }{
 		{"garbage", "no-such-attempt"},
-		{"several kilobytes", "enc:v1:" + strings.Repeat("A", 8192)},
+		{"over the length cap, otherwise valid", with("client_id", strings.Repeat("c", 2100))},
 		{"tampered", tampered},
 		{"another ciphertext from the same key (a stored credential)", storedCredential},
 		{"wrong kind", with("kind", "gog-login")},
@@ -2768,6 +2776,21 @@ func TestGetAmazonGamesConnection_DisabledWhenNileMissing(t *testing.T) {
 	}
 }
 
+// Without nile a stored sign-in is still reported, so the page can offer to
+// remove it.
+func TestGetAmazonGamesConnection_DisabledStillReportsStoredSignIn(t *testing.T) {
+	truncateAllTables(t)
+	e, _ := newSyncTestAppWithAmazonGames(t, &stubAmazonGamesClient{configured: false})
+	userID, token := setupTagUser(t, testDB, e, "amz-status-disabled-stored")
+	seedAmazonConnection(t, userID, false)
+	rec := getAuth(t, e, "/api/sync/amazon-games/connection", token)
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if resp["connected"] != true || resp["disabled"] != true || resp["reason"] != "nile_not_installed" {
+		t.Errorf("unexpected response: %v", resp)
+	}
+}
+
 func storedAmazonUserData(t *testing.T, userID string) *string {
 	t.Helper()
 	var creds *string
@@ -2804,6 +2827,7 @@ func TestAmazonGamesDisconnect_SignsTheDeviceOutBestEffort(t *testing.T) {
 			stub := &stubAmazonGamesClient{configured: true, logoutErr: tc.logoutErr}
 			if tc.hang {
 				stub.logoutHold = make(chan struct{}) // never closed
+				stub.logoutEnded = make(chan struct{})
 			}
 			e, h := newSyncTestAppWithAmazonGames(t, stub)
 			h.SetAmazonSignOutTimeoutForTest(100 * time.Millisecond)
@@ -2813,6 +2837,13 @@ func TestAmazonGamesDisconnect_SignsTheDeviceOutBestEffort(t *testing.T) {
 			rec := deleteAuth(t, e, "/api/sync/amazon-games/connection", token)
 			if rec.Code != http.StatusNoContent {
 				t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
+			}
+			if tc.hang {
+				select {
+				case <-stub.logoutEnded:
+					t.Error("the disconnect waited for the hung sign-out before answering")
+				default:
+				}
 			}
 			if storedAmazonUserData(t, userID) != nil {
 				t.Error("credentials not cleared")
@@ -2899,18 +2930,36 @@ func TestAmazonGamesDisconnect_FailedRemovalSignsNothingOut(t *testing.T) {
 func TestAmazonGamesDisconnect_ReconnectDuringSignOutIsKept(t *testing.T) {
 	truncateAllTables(t)
 	newer := strings.Replace(amazonTestUserData, "Atnr|R", "Atnr|newer", 1)
-	stub := &stubAmazonGamesClient{configured: true, userData: json.RawMessage(newer), logoutHold: make(chan struct{})}
+	stub := &stubAmazonGamesClient{
+		configured: true, userData: json.RawMessage(newer),
+		logoutHold: make(chan struct{}), logoutBegan: make(chan struct{}), logoutEnded: make(chan struct{}),
+	}
 	e, h := newSyncTestAppWithAmazonGames(t, stub)
 	userID, token := setupTagUser(t, testDB, e, "amz-disc-reconnect")
 	seedAmazonConnection(t, userID, false)
+	stillRunning := func(when string) {
+		t.Helper()
+		select {
+		case <-stub.logoutEnded:
+			t.Fatalf("%s: the sign-out had already finished", when)
+		default:
+		}
+	}
 
 	if rec := deleteAuth(t, e, "/api/sync/amazon-games/connection", token); rec.Code != http.StatusNoContent {
 		t.Fatalf("disconnect: expected 204, got %d: %s", rec.Code, rec.Body.String())
 	}
+	select {
+	case <-stub.logoutBegan:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the sign-out never started")
+	}
+	stillRunning("after the disconnect answered")
 	attempt := startAmazonLogin(t, e, token)
 	if rec := putJSONAuth(t, e, "/api/sync/amazon-games/connection", map[string]any{"attempt_id": attempt, "redirect_url": amazonLanding}, token); rec.Code != http.StatusOK {
 		t.Fatalf("reconnect: expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
+	stillRunning("after the reconnect committed")
 	close(stub.logoutHold)
 	h.WaitForAmazonSignOutsForTest()
 

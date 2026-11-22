@@ -50,7 +50,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	if refreshed != nil && a.onUserData != nil && !equalJSON(refreshed, a.userData) {
 		if perr := a.onUserData(refreshed); perr != nil {
 			slog.ErrorContext(ctx, "amazon: persist refreshed sign-in failed",
-				logging.KeyErr, perr, logging.Cat(logging.CategoryDB))
+				logging.KeyErr, perr, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryDB))
 		}
 	}
 	if errors.Is(err, ErrAuthFailed) {
@@ -64,7 +64,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	if err != nil {
 		return err
 	}
-	slog.InfoContext(ctx, "amazon: library read", "entitlements", len(entitlements), "games", len(entries))
+	slog.InfoContext(ctx, "amazon: library read", logging.KeySource, "amazon-games", "entitlements", len(entitlements), "games", len(entries))
 
 	if batchSize <= 0 {
 		batchSize = len(entries)

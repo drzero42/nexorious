@@ -50,8 +50,9 @@ func accountOf(userData json.RawMessage) (*Account, error) {
 }
 
 // usableUserData reports whether nile could sign in with userData: an Amazon
-// user id, both bearer tokens, and an expires_in nile can read with int()
-// (a whole number, or a string of digits).
+// user id, both bearer tokens, an expires_in nile can read with int() (a
+// whole number, or a string of digits), and the device serial nile sends with
+// every entitlement request.
 func usableUserData(userData json.RawMessage) error {
 	if _, err := accountOf(userData); err != nil {
 		return err
@@ -64,12 +65,20 @@ func usableUserData(userData json.RawMessage) error {
 				ExpiresIn    json.RawMessage `json:"expires_in"`
 			} `json:"bearer"`
 		} `json:"tokens"`
+		Extensions struct {
+			DeviceInfo struct {
+				Serial *string `json:"device_serial_number"`
+			} `json:"device_info"`
+		} `json:"extensions"`
 	}
 	if err := json.Unmarshal(userData, &u); err != nil || u.Tokens.Bearer.AccessToken == "" || u.Tokens.Bearer.RefreshToken == "" {
 		return errors.New("amazon: nile user data has no usable tokens")
 	}
 	if !wholeNumber(u.Tokens.Bearer.ExpiresIn) {
 		return errors.New("amazon: nile user data has an unreadable token expiry")
+	}
+	if u.Extensions.DeviceInfo.Serial == nil || *u.Extensions.DeviceInfo.Serial == "" {
+		return errors.New("amazon: nile user data has no device serial")
 	}
 	return nil
 }

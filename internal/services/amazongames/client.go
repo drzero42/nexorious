@@ -20,6 +20,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // ErrAuthFailed is returned when Amazon rejects the stored sign-in: the
@@ -102,11 +104,33 @@ func (c *Client) Register(ctx context.Context, code string, login Login) (*Accou
 	}
 	defer removeConfigDir(dir)
 
-	_, stderr, runErr := c.run(ctx, dir, "register",
+	// nile registers, writes the user data, and then syncs the whole library
+	// in the same command, which can take long enough for the caller to give
+	// up. Once usable user data is on disk the registration is done, so nile
+	// is stopped there.
+	runCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	go func() {
+		tick := time.NewTicker(registrationPoll)
+		defer tick.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-tick.C:
+				if data, err := readNileConfig(dir); err == nil && usableUserData(data) == nil {
+					stop()
+					return
+				}
+			}
+		}
+	}()
+	_, stderr, runErr := c.run(runCtx, dir, "register",
 		"--code", code,
 		"--client-id", login.ClientID,
 		"--code-verifier", login.CodeVerifier,
 		"--serial", login.Serial)
+	stop()
 
 	// nile registers, writes the user data, and then syncs the library in the
 	// same command; a failure in that trailing sync exits non-zero after the
@@ -255,10 +279,34 @@ func isAuthFailure(stderr []byte) bool {
 	return refreshRejected.Match(stderr) || bytes.Contains(stderr, []byte("User not logged in"))
 }
 
+// registrationPoll is how often Register checks whether nile has written the
+// registration yet.
+const registrationPoll = 200 * time.Millisecond
+
+// nileWaitDelay bounds how long a cancelled nile call waits for its output
+// pipes to close after the process group was killed.
+const nileWaitDelay = 2 * time.Second
+
 // execNile runs the real nile binary.
 func execNile(ctx context.Context, configDir string, args ...string) ([]byte, []byte, error) {
-	cmd := exec.CommandContext(ctx, "nile", args...) //nolint:gosec // fixed binary; args are nile subcommands and values nile itself generated or Amazon returned
-	cmd.Env = append(os.Environ(), "NILE_CONFIG_PATH="+configDir)
+	return runNile(ctx, "nile", configDir, args...)
+}
+
+// runNile runs bin in its own process group. When ctx ends the whole group is
+// killed, not just bin: nile's standalone release is a PyInstaller launcher
+// whose Python child would otherwise keep running and hold the output pipes
+// open, so the call would outlive its deadline. WaitDelay bounds the wait for
+// those pipes in any case.
+func runNile(ctx context.Context, bin, configDir string, args ...string) ([]byte, []byte, error) {
+	cmd := exec.CommandContext(ctx, bin, args...) //nolint:gosec // fixed binary; args are nile subcommands and values nile itself generated or Amazon returned
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = nileWaitDelay
+	// TMPDIR points into the per-call folder the caller deletes, so what a
+	// killed PyInstaller nile extracted (its _MEI folder) goes with it.
+	cmd.Env = append(os.Environ(), "NILE_CONFIG_PATH="+configDir, "TMPDIR="+configDir)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -266,8 +314,31 @@ func execNile(ctx context.Context, configDir string, args ...string) ([]byte, []
 	return stdout.Bytes(), stderr.Bytes(), err
 }
 
+// tempBases are the folders a call's folder may be made in: TMPDIR, TEMP and
+// TMP, the order a PyInstaller nile reads them in, then /tmp itself (not
+// os.TempDir, which would read a stale TMPDIR again).
+// Its extracted runtime goes in the call folder (see runNile), so it lands
+// where the host allows it to run, even when /tmp is mounted noexec.
+func tempBases() []string {
+	var bases []string
+	for _, name := range []string{"TMPDIR", "TEMP", "TMP"} {
+		if v := os.Getenv(name); v != "" {
+			bases = append(bases, v)
+		}
+	}
+	return append(bases, "/tmp")
+}
+
 func newConfigDir() (string, error) {
-	dir, err := os.MkdirTemp("", "nexorious-nile-")
+	// The first folder a call folder can be made in wins; one that is missing
+	// or unwritable is passed over, as PyInstaller would.
+	var dir string
+	var err error
+	for _, base := range tempBases() {
+		if dir, err = os.MkdirTemp(base, "nexorious-nile-"); err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("amazon: create nile config dir: %w", err)
 	}

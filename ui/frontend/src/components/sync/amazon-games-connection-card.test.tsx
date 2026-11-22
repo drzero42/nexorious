@@ -205,6 +205,22 @@ describe('AmazonGamesConnectionCard', () => {
     );
     expect(screen.getByText('Amazon sign-in is no longer valid')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign in to Amazon again' })).toBeInTheDocument();
+    // The rejected sign-in is still stored, so it can still be removed.
+    expect(screen.getByRole('button', { name: /Disconnect/ })).toBeInTheDocument();
+  });
+
+  // Without nile nothing can sign in, but a sign-in stored earlier must still
+  // be removable from the page.
+  it('keeps Disconnect for a stored sign-in when the server has no nile', () => {
+    stubConnection({ connected: true, disabled: true, reason: 'nile_not_installed' });
+    render(
+      <AmazonGamesConnectionCard isConfigured={true} onConnectionChange={onConnectionChange} />,
+      {
+        wrapper: createWrapper(),
+      },
+    );
+    expect(screen.getByText(/Amazon Games sync is disabled on this server/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Disconnect/ })).toBeInTheDocument();
   });
 
   it('explains when the server has no nile', () => {
@@ -217,5 +233,6 @@ describe('AmazonGamesConnectionCard', () => {
     );
     expect(screen.getByText(/Amazon Games sync is disabled on this server/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sign in with Amazon' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Disconnect/ })).not.toBeInTheDocument();
   });
 });

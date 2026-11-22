@@ -36,18 +36,25 @@ RUN CGO_ENABLED=0 GOOS=linux \
 # adapters run. nile has no PyPI release: its tagged source is installed with
 # its icon folder removed, because setuptools refuses a flat layout with two
 # top-level folders ("Multiple top-level packages discovered: nile, assets").
+# One patch is applied: nile 1.2.0 checks a library page's HTTP status only
+# after it has read the page and decided whether another follows, so a failed
+# last page is accepted and a partial library written as complete. The patch
+# moves that check ahead of reading the page (deploy/docker/nile/).
 FROM docker.io/library/alpine:3.24 AS runtime-base
+COPY deploy/docker/nile/1.2.0-library-status.patch /tmp/nile-library-status.patch
 RUN apk add --no-cache \
       ca-certificates \
       postgresql18-client \
       python3 py3-requests py3-filelock \
       py3-protobuf py3-pycryptodome py3-zstandard py3-json5 py3-platformdirs \
- && apk add --no-cache --virtual .pip-tmp py3-pip py3-setuptools \
+ && apk add --no-cache --virtual .pip-tmp py3-pip py3-setuptools patch \
  && pip install --no-cache-dir --break-system-packages --no-deps legendary-gl==0.20.34 \
  && wget -qO /tmp/nile.tar.gz https://github.com/imLinguin/nile/archive/refs/tags/v1.2.0.tar.gz \
  && echo "a06dd595248f0b4bf8fccf2b14a534391c94b810f725b6bbeaca92bc3ac2673d  /tmp/nile.tar.gz" | sha256sum -c - \
  && tar -xzf /tmp/nile.tar.gz -C /tmp \
  && rm -rf /tmp/nile-1.2.0/assets \
+ && patch -d /tmp/nile-1.2.0 -p1 < /tmp/nile-library-status.patch \
+ && rm /tmp/nile-library-status.patch \
  && pip install --no-cache-dir --break-system-packages --no-deps --no-build-isolation /tmp/nile-1.2.0 \
  && rm -rf /tmp/nile.tar.gz /tmp/nile-1.2.0 \
  && apk del .pip-tmp \

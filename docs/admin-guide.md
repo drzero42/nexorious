@@ -288,8 +288,18 @@ Either way, point `LEGENDARY_WORK_DIR` at a writable, persistent directory and r
 
 Amazon Games sync works through the `nile` command-line tool ([imLinguin/nile](https://github.com/imLinguin/nile), the Amazon Games client Heroic uses), version 1.2.0 or newer. It needs no directory or setting: each run uses a temporary directory that is deleted afterwards, and the sign-in is kept encrypted in the database. While `nile` is not on the server's `PATH`, Amazon sync is disabled and users can't connect an Amazon account. A sign-in in progress is carried by the browser, encrypted with `DB_ENCRYPTION_KEY`, so it finishes on any replica and survives a restart; changing that key during a sign-in means starting it again. Disconnecting Amazon also deregisters that device from the Amazon account when it can.
 
-- **Official container image**: `nile` is bundled, so Amazon sync works out of the box.
-- **Single binary / from source, or native package (`.deb`/`.rpm`)**: install nile 1.2.0 or newer yourself so `nile` is on the service's `PATH` (nile has no PyPI release; install it from its [GitHub releases](https://github.com/imLinguin/nile/releases)).
+- **Official container image**: `nile` is bundled, so Amazon sync works out of the box. It carries one fix to nile 1.2.0 (`deploy/docker/nile/`): unpatched, nile accepts a failed last page of the library as if it were complete, and a sync would then mark the games on that page as removed.
+- **Single binary / from source, or native package (`.deb`/`.rpm`)**: install nile 1.2.0 yourself, from its tagged source with the same patch, so `nile` is on the service's `PATH`. nile has no PyPI release, and its prebuilt binaries cannot take the patch. It goes in its own virtual environment (Debian and Ubuntu need the `python3-venv`, `patch` and `curl` packages), linked onto `PATH`. From a checkout of this repository, as root; the chain stops at the first step that fails:
+
+  ```sh
+  curl -fsSL -o nile.tar.gz https://github.com/imLinguin/nile/archive/refs/tags/v1.2.0.tar.gz \
+    && echo "a06dd595248f0b4bf8fccf2b14a534391c94b810f725b6bbeaca92bc3ac2673d  nile.tar.gz" | sha256sum -c - \
+    && tar -xzf nile.tar.gz && rm -rf nile-1.2.0/assets \
+    && patch -d nile-1.2.0 -p1 < deploy/docker/nile/1.2.0-library-status.patch \
+    && python3 -m venv /opt/nile \
+    && /opt/nile/bin/pip install ./nile-1.2.0 \
+    && ln -sf /opt/nile/bin/nile /usr/local/bin/nile
+  ```
 - **Nix**: the package does not add nile yet. The nixos-26.05 channel ships nile 1.1.2, which keeps its sign-in in a format Nexorious does not read.
 
 ## MCP endpoint for AI agents

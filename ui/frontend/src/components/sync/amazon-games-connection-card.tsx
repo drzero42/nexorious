@@ -117,6 +117,16 @@ export function AmazonGamesConnectionCard({
     </Alert>
   );
 
+  // Offered wherever a sign-in is stored: connected, rejected, or with nile
+  // missing from the server.
+  const disconnect = (
+    <DisconnectDialog
+      serviceLabel="Amazon Games"
+      isDisconnecting={disconnectMutation.isPending}
+      onDisconnect={handleDisconnect}
+    />
+  );
+
   return (
     <Card>
       <CardHeader>
@@ -131,19 +141,18 @@ export function AmazonGamesConnectionCard({
       </CardHeader>
       <CardContent>
         {isDisabled ? (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>{disabledMessage(connection?.reason)}</AlertDescription>
-          </Alert>
+          <div className="space-y-4">
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>{disabledMessage(connection?.reason)}</AlertDescription>
+            </Alert>
+            {connection?.connected && disconnect}
+          </div>
         ) : isConfigured && !resolvedCredentialsError ? (
           <div className="space-y-4">
             <ConnectedSummary name={connection?.username} />
             {playtimeNote}
-            <DisconnectDialog
-              serviceLabel="Amazon Games"
-              isDisconnecting={disconnectMutation.isPending}
-              onDisconnect={handleDisconnect}
-            />
+            {disconnect}
           </div>
         ) : (
           <div className="space-y-4">
@@ -232,6 +241,7 @@ export function AmazonGamesConnectionCard({
                 </Button>
               </form>
             )}
+            {resolvedCredentialsError && connection?.connected && disconnect}
           </div>
         )}
       </CardContent>

@@ -240,7 +240,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	epicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
 		DB:      db,
-		Adapter: buildAdapterFactory(db, encrypter, epicClient, amazongamessvc.NewClient()),
+		Adapter: buildAdapterFactory(db, encrypter, epicClient),
 	}
 	metaDispatchWorker := &tasks.MetadataRefreshDispatchWorker{
 		DB:         db,
@@ -355,7 +355,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newEpicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 			newDispatchSync := &tasks.DispatchSyncWorker{
 				DB:      newDB,
-				Adapter: buildAdapterFactory(newDB, encrypter, newEpicClient, amazongamessvc.NewClient()),
+				Adapter: buildAdapterFactory(newDB, encrypter, newEpicClient),
 			}
 			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
 				DB:         newDB,
@@ -607,6 +607,16 @@ func buildAdapterFactory(
 	db *bun.DB,
 	encrypter *crypto.Encrypter,
 	epicClient *epicgamesstoresvc.Client,
+) func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+	return buildAdapterFactoryWithAmazon(db, encrypter, epicClient, amazongamessvc.NewClient())
+}
+
+// buildAdapterFactoryWithAmazon is buildAdapterFactory with the nile client
+// passed in, so tests can stand a fake in for nile.
+func buildAdapterFactoryWithAmazon(
+	db *bun.DB,
+	encrypter *crypto.Encrypter,
+	epicClient *epicgamesstoresvc.Client,
 	amazonClient amazongamessvc.LibraryClient,
 ) func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
 	return func(ctx context.Context, storefront string, cfg models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
@@ -714,7 +724,7 @@ func buildAdapterFactory(
 			loaded := *cfg.StorefrontCredentials
 			plain, err := encrypter.Decrypt(loaded)
 			if err != nil || !json.Valid(plain) {
-				slog.Warn("adapter factory: amazon-games decrypt failed", logging.KeyUserID, cfg.UserID, logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
+				slog.WarnContext(logging.WithUserID(ctx, cfg.UserID), "adapter factory: amazon-games decrypt failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
 				return nil, tasks.ErrCredentials
 			}
 			return amazongamessvc.NewAdapter(amazonClient, plain, amazonUserDataWriter(db, encrypter, cfg.UserID, loaded)), nil
