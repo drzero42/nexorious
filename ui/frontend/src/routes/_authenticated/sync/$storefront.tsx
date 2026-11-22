@@ -47,7 +47,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
+import { badgeVariants } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -69,6 +70,51 @@ export const Route = createFileRoute('/_authenticated/sync/$storefront')({
   head: () => ({ meta: [{ title: 'Sync | Nexorious' }] }),
   component: SyncDetailPage,
 });
+
+/**
+ * The status label in a store page's header, which also opens and closes the
+ * connection card below it.
+ */
+export function ConnectionToggle({
+  credentialsError,
+  isConfigured,
+  open,
+  onToggle,
+}: {
+  credentialsError: boolean;
+  isConfigured: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const label = credentialsError
+    ? 'Credentials Error'
+    : isConfigured
+      ? 'Connected'
+      : 'Not Configured';
+  // A native button styled as the badge (a div badge inside a button is not
+  // valid content for it).
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onToggle}
+      className={cn(
+        badgeVariants({ variant: credentialsError ? 'destructive' : 'outline' }),
+        'cursor-pointer',
+        !credentialsError &&
+          (isConfigured
+            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+            : 'bg-muted text-muted-foreground'),
+      )}
+    >
+      {label}
+      <ChevronDown
+        aria-hidden="true"
+        className={`ml-1 h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`}
+      />
+    </button>
+  );
+}
 
 function SyncDetailPageSkeleton() {
   return (
@@ -402,40 +448,12 @@ function SyncDetailPage() {
               </CardDescription>
             </div>
             <div className="ml-auto flex shrink-0 flex-col items-end gap-2">
-              <Badge
-                variant={credentialsError ? 'destructive' : 'outline'}
-                className={
-                  credentialsError
-                    ? 'cursor-pointer'
-                    : config.isConfigured
-                      ? 'cursor-pointer bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                      : 'cursor-pointer bg-muted text-muted-foreground'
-                }
-                onClick={() => setConnectionSectionOpen((o) => !o)}
-              >
-                {credentialsError ? (
-                  <>
-                    Credentials Error
-                    <ChevronDown
-                      className={`ml-1 h-3 w-3 transition-transform ${connectionSectionOpen ? 'rotate-180' : ''}`}
-                    />
-                  </>
-                ) : config.isConfigured ? (
-                  <>
-                    Connected
-                    <ChevronDown
-                      className={`ml-1 h-3 w-3 transition-transform ${connectionSectionOpen ? 'rotate-180' : ''}`}
-                    />
-                  </>
-                ) : (
-                  <>
-                    Not Configured
-                    <ChevronDown
-                      className={`ml-1 h-3 w-3 transition-transform ${connectionSectionOpen ? 'rotate-180' : ''}`}
-                    />
-                  </>
-                )}
-              </Badge>
+              <ConnectionToggle
+                credentialsError={credentialsError}
+                isConfigured={config.isConfigured}
+                open={connectionSectionOpen}
+                onToggle={() => setConnectionSectionOpen((o) => !o)}
+              />
               {config.isConfigured && (
                 <Select
                   value={effectiveFrequency}
