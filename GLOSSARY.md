@@ -46,7 +46,7 @@ A user stopping a Job before completion. Its unfinished items are cancelled with
 A Job ending because of an error. Its unfinished items are cancelled, as with Cancel.
 
 **Finishing effects**:
-What follows from a Job being completed or failed: its notifications, a sync's diff, an import's pools. They happen because the Job finished, never as part of an item's work.
+What follows from a Job being completed or failed, or coming to wait on the user: its notifications, a sync's diff, an import's pools. They happen because the Job reached that point, never as part of an item's work.
 
 **Retry**:
 Handing a Job's failed items back to a worker. Retrying reopens a completed Job until its next Completion. A failed or cancelled Job cannot be retried.

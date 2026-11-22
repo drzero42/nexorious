@@ -29,7 +29,7 @@ One package, `internal/joblifecycle` (the module), makes every change to `jobs.s
 Each Job kind registers with the module and tells it what is particular to the kind:
 
 - the River job kinds it uses for its dispatch and its items;
-- which worker runs an item next, decided from the item's own row;
+- which worker runs an item when the module queues it by itself (Retry, recovery, an item that stops waiting). A worker that hands an item on names the next stage itself;
 - how to run the Job's dispatch again, or that it cannot be run again;
 - what counts as a duplicate Job;
 - its finishing effects and, optionally, a metrics observer;
@@ -64,7 +64,7 @@ The module does not import the workers.
 
 `pending` and `pending_review` are *unfinished*. The status of an unfinished item only says who acts next. It never records a decision: the IGDB game chosen for an item is kept in `resolved_igdb_id`.
 
-`processing` remains a legal value of `job_items.status` for rows written by older versions. Nothing writes it any more, and the migration that moves a kind turns its `processing` items into `pending`.
+`processing` remains a legal value of `job_items.status` for rows written by older versions. Nothing writes it any more. Only the old import resolve handler ever did, and the migration that moves the import kinds turns those items into `pending`.
 
 ## Owners
 
@@ -78,6 +78,8 @@ The owner is recorded in the same transaction that inserts the River job (see [A
 **Only the owner writes.** An item worker may change only an item it owns; a dispatch worker may change only a Job whose dispatch it owns. The check is made inside the transaction, under the Job row lock. A River retry of the owning River job is still the owner. Any other River job for the same item or Job is refused and exits without doing anything. So is the owner itself once its item is no longer `pending`: a worker that committed its result and is then run again (after a crash) finds nothing to own.
 
 **Live.** A River job is *live* while its state is `available`, `scheduled`, `retryable`, `pending` or `running`. It has *ended* when its state is `completed`, `cancelled` or `discarded`, or when its row is gone (River deletes ended rows after a day or more).
+
+**Signalled.** Cancelling a River job that is `running` does not end it. River marks it (`metadata.cancel_attempted_at`) and notifies the worker, whose context is then cancelled; the row stays `running` until the worker returns. Such a River job is *signalled*.
 
 There is one legal way for a `pending` item to have no owner: it is [waiting on another item](#items-that-wait-on-another-item).
 
@@ -109,19 +111,19 @@ stateDiagram-v2
 | (new) | `completed` | Dispatch | Nothing. Used for an item that carries data for a finishing effect (the nexorious import's pools) |
 | `pending` | `pending` | The owner hands the item to its next stage | The owner's own writes for that step; new River job inserted; it replaces the old owner |
 | `pending` | `pending`, no owner | The owner asks to wait on another item, and the wait is allowed | Owner cleared |
-| `pending`, no owner | `pending` | The item it waited on finished, or the dispatch was marked done and that item is not unfinished | River job inserted and recorded as owner |
+| `pending`, no owner | `pending` | The item it waited on finished, or the dispatch was marked done and the item it waited on is absent or finished | River job inserted and recorded as owner |
 | `pending` | `pending_review` | The owner cannot match the item | Owner cleared; candidates stored; completion evaluated |
 | `pending` | `completed`, `failed` or `skipped` | The owner | The owner's own result (invariant 8); owner cleared; waiting items queued; completion evaluated |
 | `pending` | `failed` | Recovery: the owner ended without changing the item | Owner cleared; waiting items queued; completion evaluated |
 | `pending_review` | `pending` | Resolve (imports) | Chosen IGDB game stored; River job inserted and recorded |
 | `pending_review` | `completed` | Sync rematch of a game in Pending review | The library write itself (see [Outside the lifecycle](#outside-the-lifecycle)); completion evaluated |
-| `pending`, no owner | `completed` | Sync rematch of the game it waited on | The library write for this game too; completion evaluated |
+| `pending` | `completed` | Sync rematch of its parent game, for a child's item whether it is waiting or has an owner | The library write for this game too; owning River job cancelled, if any; completion evaluated |
 | `pending_review` | `skipped` | Skip | Waiting items queued; completion evaluated |
 | `pending` | `skipped` | Skip of the game (sync only) | Owning River job cancelled, if any; waiting items queued; completion evaluated |
 | `failed` | `pending` | Retry | Job reopened if it was `completed`; River job inserted and recorded |
 | `pending` or `pending_review` | `cancelled` | Cancel or Fail of the Job | The Job's queued River jobs cancelled, its running ones signalled |
 
-No other item transition exists. In particular, nothing moves an item out of `completed`, `skipped` or `cancelled`.
+No other item transition exists. In particular, nothing moves an item out of `completed`, `skipped` or `cancelled`. Recovery can also give a `pending` item a new owner without changing its status; see [Recovery](#recovery).
 
 ## Job transitions
 
@@ -158,7 +160,7 @@ A `failed` or `cancelled` Job is never reopened. Its dispatch may not have finis
 - Retry applies to `failed` items only, in a Job that is active or `completed`. On a `failed` or `cancelled` Job it is refused (HTTP 409).
 - Retry of a Job with no failed items changes nothing. It does not reopen the Job.
 - Reopening a `completed` Job takes the kind's duplicate lock. If another Job with the same duplicate key is active, Retry is refused (409): there is never more than one active Job per duplicate key.
-- Retrying an item also retries the `failed` items that wait on it (a sync parent's children), so they are not left failed behind it.
+- Retrying an item also retries every `failed` item that, by the kind's rule, waits on it (a sync parent's children), whatever the reason each of them failed. They are then waiting again, on the retried item.
 - A reopened Job completes again through the normal rule, and its finishing effects run again.
 
 ### What each transition writes besides status
@@ -171,6 +173,7 @@ A `failed` or `cancelled` Job is never reopened. Its dispatch may not have finis
 | `job_items.processed_at` | When the item finishes. Cleared by Retry |
 | `job_items.error_message` | When the item fails. Cleared by Retry |
 | `job_items.river_job_id` | Set with every River insert for the item; cleared whenever the item leaves `pending`, and when it starts waiting |
+| `job_items.resolved_igdb_id`, `resolved_at` | By Resolve, and by a worker's hand-over to the next stage |
 
 Error messages are passed through `logging.ScrubURLQueries` before they are stored (#937).
 
@@ -181,10 +184,10 @@ Completion is not an operation callers perform. The module evaluates it inside e
 | Outcome | Condition | Effect |
 |---|---|---|
 | Still working | The dispatch is not done, or a `pending` item has an owner | None |
-| Waiting on the user | The dispatch is done, no `pending` item has an owner, and at least one item is `pending_review` | The Job stays `processing`. When a worker's transition or the end of the dispatch produces this outcome, the kind's *awaiting review* effect is queued; a user action that leaves the Job still waiting does not queue it again |
+| Waiting on the user | The dispatch is done, no `pending` item has an owner, and at least one item is `pending_review` | The Job stays `processing`. When any transition other than a user action (Resolve, Skip, Retry, rematch) produces this outcome, the kind's *awaiting review* effect is queued; a user action that leaves the Job still waiting does not queue it again |
 | Completed | The dispatch is done and no item is `pending` or `pending_review` | The Job becomes `completed`; finishing effects are queued |
 
-One combination is left: the dispatch is done, the only `pending` items have no owner, and nothing is in Pending review. It cannot arise, because an item may only wait on an item that is unfinished in the same Job, and that item is then `pending` with an owner or in Pending review (an item that is waited on never waits itself). If recovery finds it anyway, it queues the waiting items.
+One combination is left: the dispatch is done, the only `pending` items have no owner, and nothing is in Pending review. It cannot arise, because an item may only wait on an item that is unfinished in the same Job, and that item is then `pending` with an owner or in Pending review. (An item that is waited on does not itself wait, except between a promotion and the end of the same dispatch, and the end of the dispatch queues it.) If recovery finds it anyway, it queues the waiting items.
 
 A Job waiting on the user stays `processing` for as long as it takes. For sync this means a storefront with games in **Pending review** does not start a new sync until they are resolved or skipped.
 
@@ -192,7 +195,7 @@ A Job waiting on the user stays `processing` for as long as it takes. For sync t
 
 Notifications, the sync diff, the store-link refresh that follows a sync, and applying imported pools are *finishing effects*. They are not run inline. The transaction that completes or fails a Job, or that finds it waiting on the user, inserts one River job that runs them, so a shutdown right after the transition cannot lose them. A kind with no effects for an outcome gets no River job.
 
-- The effects River job carries the Job id, the outcome (`completed`, `failed` or `awaiting_review`) and a small piece of kind data given to Fail.
+- The effects River job carries the Job id, the outcome (`completed`, `failed` or `awaiting_review`), whether this is the Job's first finish, and a small piece of kind data given to Fail.
 - Effects can run more than once (a River retry, or a Job that is retried and completes again), so each must be idempotent for its Job. Notifications are, through their dedup key.
 - An effect that fails returns its error so River retries the job. The effects River job has several attempts. If they are all used up the failure is logged as an error, which alerting picks up; the Job's status is not changed.
 - An effect whose Job no longer exists does nothing.
@@ -209,10 +212,11 @@ Metrics are in-process counters, and a counter must not be incremented twice for
 ## Transactions and locks
 
 - **Every module operation locks the Job row first** (`SELECT … FOR UPDATE`), checks what it expects, writes, and evaluates completion before it commits.
-- **The caller's own database writes go inside that transaction.** Every operation that a worker or handler calls accepts them: the library write with a finished item, the resolution with a next-stage hand-over, the credentials flag with Fail, `last_synced_at` with the end of a dispatch. They commit or roll back with the transition.
-- **Callers enter the module before they write.** A handler or worker that needs both a transition and its own writes does the writes inside the module's transaction, never before it. This keeps one lock order everywhere (Job row, then anything else) and so rules out deadlocks between a worker and a user action on the same game.
+- **The caller's own writes that record an outcome go inside that transaction.** Every operation that a worker or handler calls accepts them: the library write with a finished item, the resolution with a next-stage hand-over, the credentials flag with Fail, `last_synced_at` with the end of a dispatch. They commit or roll back with the transition.
+- **Callers enter the module before they write an outcome.** A handler or worker that needs both a transition and its own outcome writes does them inside the module's transaction, never before it. This keeps one lock order everywhere (Job row, then anything else) and so rules out deadlocks between a worker and a user action on the same game.
 - **Nothing slow happens inside.** Calls to IGDB or a storefront, cover-art downloads and file writes happen before the transaction. The Job row lock serialises the item transitions of one Job, so what is inside must be a handful of statements.
-- **Work outside the transaction must be safe to repeat**, because the transition after it can still be refused or rolled back. A file written for a transition that did not commit is removed by its writer.
+- **Progress writes may be committed on their own, before the transition.** These are writes that are safe to repeat and do not record the outcome of an item or Job: a store-link item saving each link as it resolves it, the sync dispatch upserting the games of a batch, the sweeps at the end of a dispatch, ensuring a `games` row, saving cover art. They must not take the place of the outcome write, and a dispatch checks that its Job is still active before each batch of them.
+- **Work outside the transaction must be safe to repeat**, because the transition after it can still be refused or rolled back. A file written for one Job's transition that did not commit is removed by its writer (an export file; not shared files such as cover art).
 
 ## Workers
 
@@ -221,7 +225,7 @@ Every way a worker can return is one of four things:
 1. It made a transition through the module.
 2. It was refused (not the owner, or the Job is not active) and exits cleanly. So does a worker whose item or Job row is gone.
 3. It returns an error, and River decides what happens to the River job.
-4. Its context was cancelled, and it returns `ctx.Err()` itself.
+4. Its context was cancelled, and it returns `ctx.Err()` itself, checked before it classifies any other error. River only puts a job back for free when the returned error is `context.Canceled`; an error from a driver or an API client that merely happened under a cancelled context does not count, and may look like a real failure (an authentication error, for instance).
 
 A worker never returns normally without one of the first two. A worker that does is a defect, and recovery fails its item or Job instead of running it again.
 
@@ -246,7 +250,7 @@ In all three the worker records nothing.
 5. Every item change locks the Job row and evaluates completion in the same transaction.
 6. Finishing effects are queued in the transaction that produces their outcome, and are idempotent.
 7. A finished Job has no unfinished items. Its queued River jobs are cancelled in the transaction that finishes it. A River job that is running at that moment is signalled to stop; it cannot be stopped from outside, but every write it attempts afterwards is refused.
-8. A worker's own result and its item transition commit in one transaction. A worker whose context is cancelled records nothing.
+8. The write that records an item's outcome (the library change, its `changes` rows, the item's `result`) and the item's transition commit in one transaction. A worker whose context is cancelled records no outcome.
 9. An active Job whose dispatch is not done has exactly one dispatch owner, recorded on the Job.
 10. There is at most one active Job per duplicate key.
 
@@ -267,15 +271,22 @@ Recovery is one rule with no time thresholds. It looks at the **active Jobs** of
 
 Nothing in the table re-runs work that ended by itself, so recovery cannot loop.
 
-The rule runs periodically, and once at startup before River starts. When it fails or re-queues something in a periodic run it emits one admin maintenance event; at startup it emits none, because a restart must not notify.
+The rule runs periodically, and once every time River is started: at startup and after a backup is restored. When it fails or re-queues something in a periodic run it emits one admin maintenance event; at startup it emits none, because a restart must not notify.
 
-**Single instance.** Nexorious runs as one instance. At startup nothing else is working, so every River job still `running` belongs to a dead process. Before the rule runs at startup, every `running` River job of a River kind the lifecycle uses (the kinds' dispatch and item jobs, and the finishing-effects job) is settled directly in `river_job`: cancelled if it had been signalled to stop, released for retry if it has attempts left, discarded if it has none. The rule then deals with what that leaves. Work that kills the process every time is therefore failed, not retried forever.
+**Single instance.** Nexorious runs as one instance. When River is about to be started nothing else is working, so every River job still `running` belongs to a dead process (or, after a restore, to the moment the backup was taken). Before the rule runs then, every `running` River job of a River kind the lifecycle uses (the kinds' dispatch and item jobs, and the finishing-effects job) is settled directly in `river_job`: cancelled if it had been signalled to stop, released for retry if it has attempts left, discarded if it has none. The rule then deals with what that leaves. Work that kills the process every time is therefore failed, not retried forever.
 
-While the server runs, a `running` River job is alive, and the rule leaves its item alone. River's own rescuer may retry or discard a River job that has been `running` far beyond its timeout; the conditional writes make that safe, and the rule handles a discard as above.
+While the server runs, the rule leaves the item of a `running` River job alone. A worker that hangs is ended by River: every lifecycle River kind has a finite timeout, after which its context is cancelled, and River's rescuer retries or discards a job that is still `running` an hour past that. The conditional writes make a second run safe, and the rule handles a discard as above.
 
-**The schema must be current.** Recovery and the River workers start only when no migration is pending. This also holds after a backup is restored: the restored database is migrated first.
+**The schema must be current.** Recovery and the River workers start only when no migration is pending. For a restore that means: River is stopped before the restore begins, the restored database is migrated, and only then is River started again, through the same single place that starts it at boot.
 
-**Rows from older versions.** The migration that moves a kind onto the module puts that kind's existing rows into a state the rule understands: unfinished items of finished Jobs become `cancelled`, `processing` items become `pending`, and an active Job that never started its dispatch gets `dispatch_complete = false` (the column's default is `true`, and older versions only wrote `false` when a dispatch began). River jobs queued by the older version are adopted by the rows above.
+**Rows from older versions.** The migration that moves a kind onto the module puts that kind's existing rows into a state the rule understands. No migration touches `river_job`.
+
+- Unfinished items of `failed` or `cancelled` Jobs become `cancelled`. A `pending` item of a `completed` Job (an old single-item retry that was still in flight) becomes `failed`, so it can be retried.
+- For a kind created with a dispatch (sync, export, a handler-triggered refresh): an active Job that never started its dispatch gets `dispatch_complete = false`. The column's default is `true`, and older versions only wrote `false` when a dispatch began. A Job in that state for more than a day is failed instead of being run.
+- For the import kinds: `processing` items become `pending`, and a nexorious import Job that is `pending` becomes `processing` (older versions kept it `pending` until it completed).
+- A Job the migration fails gets `completed_at`, an error message, and its unfinished items cancelled. It sends no notification.
+
+River jobs queued by the older version are adopted by the rule. A half-created import (an upload handler that died part-way) is failed by the rule, because its dispatch cannot be run again.
 
 ## Job kinds
 
@@ -284,11 +295,11 @@ While the server runs, a `running` River job is alive, and the rule leaves its i
 | Metadata refresh | Triggered by an admin: with a dispatch. Scheduled: by the dispatch River job itself, with all items | One | No | None |
 | Store-link refresh | Triggered by an admin: with a dispatch. After a sync: by the dispatch River job itself, with all items | One (an item is one user's storefront, not one game) | No | None |
 | Export | With a dispatch. It has no items; its worker is its dispatch, and marking the dispatch done completes it | None | No | Export completed / failed notification |
-| Generic import | By the upload handler, with all items | Match, then finalize | Yes | Completed: import completed, or import failed when any item failed |
+| Generic import | By the upload handler, with all items | Match, then finalize | Yes | Completed: import completed, or import failed when any item failed. Failed (by recovery only): import failed |
 | Nexorious import | By the upload handler, with all items | One | No | Completed: apply the imported pools; then as the generic import |
 | Sync | With a dispatch, which adds items in batches while it reads the library | Match, then write | Yes | Completed: sync completed (or completed with errors), sync diff, store-link refresh. Failed: sync failed or auth expired. Awaiting review: needs-review notification |
 
-- A dispatch River job that exists before any Job (the scheduled refreshes, the store-link refresh after a sync) is not Job work until it calls Create. If it finds nothing to do it creates no Job.
+- A dispatch River job that exists before any Job (the scheduled metadata refresh, the store-link refresh after a sync) is not Job work until it calls Create. If it finds nothing to do it creates no Job.
 - A dispatch that is interrupted is never marked done. A dispatch only changes a Job that is still active and whose dispatch it owns.
 - The admin notifications a refresh dispatch sends when it has queued its items are not finishing effects. They stay where they are and carry the Job id as their dedup key, so a dispatch that runs again does not send them twice.
 - An import Job has no dispatch to run again: its items are created with it. It can only be failed by recovery.
@@ -299,15 +310,15 @@ A sync **Child game** follows its parent's match, and the user never sees it on 
 
 - **Waiting is allowed only while it can end:** the dispatch is not done (the parent's item may be in a later batch), or the parent's item is unfinished in the same Job. The module decides this inside the transaction in which the child's worker asks to wait. If waiting is not allowed the worker is told so, and decides at once.
 - **When the parent's item finishes, in whatever status, its waiting children are queued** in the same transaction. Each child's worker then decides without waiting: it inherits when the parent is matched, is skipped when the game is skipped, and fails otherwise.
-- **When the dispatch is marked done,** a waiting child whose parent has no unfinished item in the Job is queued the same way.
+- **When the dispatch is marked done,** every waiting item whose awaited item is absent or finished is queued the same way. That includes a game promoted during this dispatch, which no longer has a parent at all.
 - **While the parent's item is in Pending review** the children keep waiting. They do not stop the Job from counting as waiting on the user.
-- **A rematch of the parent** completes the waiting children with it (see below).
+- **A rematch of the parent** completes its children's items with it, waiting or not (see below).
 
 Sync keeps a child from being left without a parent item in the first place (#1339): a child's skip follows its parent's, only a suitable game is chosen as a parent, and when an unmatched parent leaves the storefront library its oldest remaining child is promoted in its place. A child that fails for want of a parent is an error case, not a normal outcome.
 
 ## Outside the lifecycle
 
-- **Sync rematch and unskip are not Job work** (see [ADR 0002](adr/0002-rematch-and-unskip-are-not-job-work.md)). Rematch updates the library in its own transaction. It touches items in one case only: when the game has an item in Pending review in an active Job, that item and the items of its waiting children are completed in the same transaction, through the module. A rematch is refused (409) while a worker may be writing the game or one of its children: an item of theirs is `pending` with an owner. Unskip writes the library directly when the game is already matched; an unmatched game waits for the user to match it, or for the next sync.
+- **Sync rematch and unskip are not Job work** (see [ADR 0002](adr/0002-rematch-and-unskip-are-not-job-work.md)). Rematch updates the library in its own transaction. It touches items in one case only: when the game or one of its children has an unfinished item in an active Job. Then it runs inside the module's transaction for that Job, and completes the game's item if it is in Pending review and every unfinished item of its children, cancelling their owners. It is refused (409) only while the game's own item is `pending`: the sync has not finished with it. Unskip writes the library directly when the game is already matched; an unmatched game waits for the user to match it, or for the next sync.
 - **The storefront view** reads a game's status from its newest item only, never from older items. An item's status counts only while nothing has written the game to the library since.
 - **Reset sync data** cancels the storefront's active sync through the module, then deletes the storefront's games. Items of older Jobs lose their link to a game and stay as history.
 - **Deleting Jobs** (the 30-day cleanup, deleting a finished Job, clear library, admin reset, deleting a user) removes rows outright. A worker whose item or Job is gone owns nothing and exits.

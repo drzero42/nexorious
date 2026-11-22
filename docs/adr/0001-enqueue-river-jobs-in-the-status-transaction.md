@@ -15,4 +15,4 @@ We decided that the Job lifecycle module (`internal/joblifecycle`) inserts River
 - Cancelling River jobs for a Job also happens in the transaction (`JobCancelTx`). A queued River job is cancelled with the Job. One that is already running can only be signalled to stop; what keeps it harmless is that every write it attempts afterwards is refused.
 - Recovery needs no time thresholds: an item's recorded River job is either live or it has ended. See `docs/job-lifecycle.md`.
 - Bun migrations run before River's, so a Bun migration cannot read or write `river_job`. Anything that has to match rows to River jobs (adopting River jobs queued by an older version) is done by recovery in code, not in a migration.
-- River inserts made outside the lifecycle (notifications, periodic jobs, the immediate metadata fetch) are unaffected.
+- River inserts made outside the lifecycle (notifications, periodic jobs, the immediate metadata fetch, a dispatch River job that runs before its Job exists) are unaffected.
