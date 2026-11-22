@@ -182,7 +182,7 @@ var ErrAPIKeyRejected = errors.New("steam: API key rejected")
 // ErrOwnedGamesUnavailable means Steam's response cannot be used for a
 // removal sweep: it has no games and no explicit zero count, or its count
 // differs from the number of games listed.
-var ErrOwnedGamesUnavailable = errors.New("Steam returned an incomplete library. Check that Game details on your Steam profile are Public, then retry.")
+var ErrOwnedGamesUnavailable = errors.New("incomplete library from Steam; check that Game details on your Steam profile are Public, then retry")
 
 // GetAppDetailsPlatforms fetches platform availability for the given appID.
 // Returns (Platforms{}, nil) when success=false (removed/delisted app) — caller decides fallback.
