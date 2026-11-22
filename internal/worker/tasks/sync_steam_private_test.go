@@ -112,3 +112,58 @@ func TestDispatchSync_SteamPartialOwnedGames_FailsWithoutRemovingGames(t *testin
 		t.Error("credentials_error = true, want false (the key works; game details are private)")
 	}
 }
+
+func TestDispatchSync_SteamIncompleteLibrary_NotifiesOnceUntilRecovery(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+	if _, err := testDB.ExecContext(ctx,
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'steam', 'daily')`,
+		uuid.NewString(), userID,
+	); err != nil {
+		t.Fatalf("insert sync config: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		reply  string
+		status int
+		events int
+	}{
+		{"first incomplete reply", `{"response":{}}`, http.StatusOK, 1},
+		{"upstream network failure", `{}`, http.StatusBadGateway, 1},
+		{"repeat incomplete reply", `{"response":{"games":[]}}`, http.StatusOK, 0},
+		{"successful empty library", `{"response":{"game_count":0}}`, http.StatusOK, 0},
+		{"first failure after recovery", `{"response":{}}`, http.StatusOK, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			jobID := uuid.NewString()
+			if _, err := testDB.ExecContext(ctx,
+				`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'steam', 'pending', 'low', 0)`,
+				jobID, userID,
+			); err != nil {
+				t.Fatalf("insert job: %v", err)
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.reply))
+			}))
+			defer srv.Close()
+			client := steam.NewClientForTests(srv.Client(), rate.NewLimiter(rate.Inf, 1), srv.URL, srv.URL)
+			w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: func(_ context.Context, _ string, _ models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
+				return steam.NewAdapter(client, "key", "76561198000000001"), nil
+			}}
+			job := &river.Job[tasks.DispatchSyncArgs]{
+				Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
+			}
+			if err := w.Work(ctx, job); err != nil {
+				t.Fatalf("work: %v", err)
+			}
+			if got := eventCount(t, jobID+":sync.failed"); got != tc.events {
+				t.Errorf("sync.failed events = %d, want %d", got, tc.events)
+			}
+		})
+	}
+}
