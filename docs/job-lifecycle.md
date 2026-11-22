@@ -218,7 +218,7 @@ Metrics are in-process counters, and a counter must not be incremented twice for
 - **Callers enter the module before they write an outcome.** A handler or worker that needs both a transition and its own outcome writes does them inside the module's transaction, never before it. This keeps one lock order everywhere (Job row, then anything else) and so rules out deadlocks between a worker and a user action on the same game.
 - **Nothing slow happens inside.** Calls to IGDB or a storefront, cover-art downloads and file writes happen before the transaction. The Job row lock serialises the item transitions of one Job, so what is inside must be a handful of statements.
 - **Progress writes may be committed on their own, before the transition.** These are writes that are safe to repeat and do not record the outcome of an item or Job: a store-link item saving each link as it resolves it, the sync dispatch upserting the games of a batch, the sweeps at the end of a dispatch, ensuring a `games` row, saving cover art. They must not take the place of the outcome write. A dispatch makes each batch of them conditional on its Job still being active, and one that also writes a row referring to the Job (a `changes` row) takes a share lock on the Job row first, which keeps the lock order below.
-- **Work outside the transaction must be safe to repeat**, because the transition after it can still be refused or rolled back. A file written for one Job's transition that did not commit is removed by its writer (an export file; not shared files such as cover art).
+- **Work outside the transaction must be safe to repeat**, because the transition after it can still be refused or rolled back. A file written for one Job's transition that was refused is removed by its writer (an export file; not shared files such as cover art). When the writer cannot tell whether the transition committed, it leaves the file, and a periodic sweep removes files no Job refers to.
 
 ## Workers
 
@@ -231,7 +231,7 @@ Every way a worker can return is one of four things:
 
 A worker never returns normally without one of the first two. A worker that does is a defect, and recovery fails its item or Job instead of running it again.
 
-**Failures.** An error that will not go away by trying again (bad payload, unknown platform, a game IGDB does not know) fails the item, with its message, in a new transaction. An error that might (the database, an external service that is down, the transition itself failing) is returned to River, which retries. If River runs out of attempts it discards the River job, and recovery then fails the item with a generic message.
+**Failures.** An error that will not go away by trying again (bad payload, unknown platform, a game IGDB does not know) fails the item, with its message, in a new transaction. An error that might (the database, an external service that is down, the transition itself failing) is returned to River, which retries. A worker on its last attempt fails the item itself, with the real message, instead of returning the error. If River discards the River job anyway (a timeout or a crash on the last attempt), recovery fails the item with a generic message.
 
 **A cancelled context has three causes**, and they are not alike:
 
@@ -304,11 +304,11 @@ What is left is handled by the rule. River jobs queued by the older version are 
 | Nexorious import | By the upload handler, with all items | User and source | One | No | Completed: the notification as for the generic import, then, on the Job's first finish only, apply the imported pools |
 | Sync | With a dispatch, which adds items in batches while it reads the library | User and storefront | Match, then write | Yes | Completed: sync completed (or completed with errors), sync diff, store-link refresh. Failed: sync failed or auth expired. Awaiting review: needs-review notification |
 
-A River job names the Job or item it works on in its args (`job_id` for a dispatch, `job_item_id` for an item). Recovery uses that to adopt River jobs it has no record of.
+A River job names the Job or item it works on in its args (`job_id` for a dispatch, `job_item_id` for an item). Recovery uses that to adopt River jobs it has no record of, looking only at the kind's own River kinds.
 
 - A dispatch River job that exists before any Job (the scheduled metadata refresh, the store-link refresh after a sync) is not Job work until it calls Create. If it finds nothing to do it creates no Job.
 - A dispatch that is interrupted is never marked done. A dispatch only changes a Job that is still active and whose dispatch it owns.
-- The admin notifications a refresh dispatch sends when it has queued its items are not finishing effects. They stay where they are and carry the Job id as their dedup key, so a dispatch that runs again does not send them twice.
+- The admin notifications a refresh dispatch sends when it has queued its items are not finishing effects. They stay where they are and carry a dedup key (the Job, or the dispatch River job when no Job exists yet), so a dispatch that runs again does not send them twice. The one sent on success is written in the transaction that marks the dispatch done.
 - An import Job has no dispatch to run again: its items are created with it. It can only be failed by recovery.
 
 ### Items that wait on another item
