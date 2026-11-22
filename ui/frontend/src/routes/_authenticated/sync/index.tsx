@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import {
   useSyncConfigs,
   useTriggerSync,
-  useSyncStatus,
+  useSyncStatusWithConnections,
   usePendingReviewCount,
   useSteamConnection,
   usePlaystationStoreStatus,
@@ -51,9 +52,13 @@ function SyncServiceCardWithStatus({
   config: SyncConfig;
   onTriggerSync: (storefront: SyncStorefront) => Promise<void>;
 }) {
-  const { data: status } = useSyncStatus(config.storefront);
+  // Refreshes this tile's connection when its sync ends, so a sign-in the sync
+  // just flagged shows on the tile without a reload.
+  const { data: status } = useSyncStatusWithConnections(config.storefront);
   const { data: reviewData } = usePendingReviewCount();
-  const { isPending: isSyncing } = useTriggerSync();
+  // This tile's own start request, so its button says it is starting while
+  // the request is in flight; the server's status takes over once it answers.
+  const [isStarting, setIsStarting] = useState(false);
 
   // Fetch only this card's storefront connection for its credentials-error state,
   // so each card fires a single connection request instead of all four.
@@ -85,7 +90,14 @@ function SyncServiceCardWithStatus({
     (config.storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
 
   const handleTriggerSync = async () => {
-    await onTriggerSync(config.storefront);
+    setIsStarting(true);
+    try {
+      await onTriggerSync(config.storefront);
+    } catch {
+      // The page has already shown the error; the button just becomes usable again.
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   return (
@@ -95,13 +107,13 @@ function SyncServiceCardWithStatus({
       pendingReviewCount={pendingReviewCount}
       credentialsError={credentialsError}
       onTriggerSync={handleTriggerSync}
-      isSyncing={isSyncing}
+      isSyncing={isStarting}
       externalGameCount={status?.externalGameCount}
     />
   );
 }
 
-function SyncPage() {
+export function SyncPage() {
   const { data: configs, isLoading, error } = useSyncConfigs();
   const { mutateAsync: triggerSync } = useTriggerSync();
 
