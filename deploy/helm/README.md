@@ -412,12 +412,14 @@ See [docs/observability.md](../../docs/observability.md) for full setup.
 - The `migrate` initContainer always runs before the main container; you do
   not need a separate one-off migration job on upgrades.
 - The scheduler and background workers run inside the same `main`
-  container, so the deployment is fixed at 1 replica in the default values
-  (raise it only if you have made `internal/scheduler` leader-aware).
-  The chart refuses to render `replicas > 1` while the `storage` PVC is
-  `ReadWriteOnce` — multiple pods across nodes cannot attach the same
-  RWO volume. Switch `persistence.storage` to `ReadWriteMany` storage
-  (e.g. NFS) before scaling.
+  container, and neither is leader-aware: **a single instance is the only
+  supported deployment**, so the deployment is fixed at 1 replica in the
+  default values. Do not raise it. At startup the server resumes syncs the
+  previous process left unfinished, which is only correct when no other
+  instance is running.
+  The chart also refuses to render `replicas > 1` while the `storage` PVC
+  is `ReadWriteOnce` — multiple pods across nodes cannot attach the same
+  RWO volume.
 - The nexorious Deployment uses the `Recreate` update strategy: the old
   pod stops before the new one starts, so the RWO `storage` volume can
   re-attach wherever the new pod is scheduled. Upgrades therefore have a

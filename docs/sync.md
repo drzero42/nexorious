@@ -273,6 +273,23 @@ stateDiagram-v2
 
 A job is complete only when every job_item is either `completed` or `skipped`. Items in `pending_review` hold the job in `processing` indefinitely — the job does not time out waiting for the user.
 
+### Shutdowns and restarts
+
+A sync that is running when the server shuts down resumes at the next startup; the user does not have to do anything. This relies on Nexorious running as a **single instance**: at startup nothing else is working, so any unfinished sync work is left over from the previous process.
+
+- **During shutdown.** River gets 20 seconds to drain, then cancels the running workers. A cancelled `DispatchSyncWorker` stops without recording anything: the job is not failed, the removed-game sweep does not run, and `last_synced_at` and `dispatch_complete` are not written. The job stays `processing` with `dispatch_complete = false`.
+- **At startup**, before River starts, `scheduler.RecoverInterruptedSyncs` runs once (also after a backup restore):
+  1. River jobs of the sync kinds (`dispatch_sync`, `igdb_match`, `user_game_write`) that are still `running` are released for retry. A hard kill (SIGKILL, OOM) leaves them in that state.
+  2. The dispatch is re-enqueued for every active sync job with `dispatch_complete = false` that has no live `dispatch_sync` River job.
+  3. Pending job_items with no live River job are re-queued, whatever their age. No maintenance event is emitted.
+  4. The completion check runs for every `processing` sync job with `dispatch_complete = true`, so a job whose last item settled just before the shutdown is finalized and its notification sent.
+
+Running a dispatch again for the same job is safe: external games and platforms are upserted, a job_item is inserted once per `(job_id, item_key)`, and a `skipped` change is recorded once per game.
+
+A dispatch only changes a job that is still `pending` or `processing`. One that starts after the job was cancelled does nothing, and one that fails after a cancel leaves the job `cancelled` and sends no notification.
+
+Not covered: a dispatch that was hard-killed on its last River attempt stays stuck until the stale-job cleanup ([maintenance.md](maintenance.md)), and the sync diff can be wrong for the one game that was being written when the process was killed.
+
 ### Job item statuses
 
 | Status | Meaning |
