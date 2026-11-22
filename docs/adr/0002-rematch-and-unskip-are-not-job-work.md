@@ -11,7 +11,7 @@ We decided that rematch and unskip write the library directly, in the request's 
 
 ## Consequences
 
-- Only Retry reopens a Job, and only a `completed` one.
-- A rematch is refused (409) while the game has a `pending` item in an active Job; the sync is about to write it.
-- Unskipping a game that was never matched does nothing until the next sync matches it.
-- The storefront view reads "failed" and "needs review" from a game's newest item only. Older items are history.
+- Only Retry reopens a Job, and only a `completed` one. Retry is refused while another Job with the same duplicate key is active, so it cannot produce the second active sync that ruled out reopening here.
+- A rematch is refused (409) while a worker may be writing the game or one of its Child games. A child that is only waiting for its parent to be matched does not count: the rematch is what it waits for.
+- Unskipping a game that was never matched only clears the skip. It shows as unmatched, where the user can match it; otherwise the next sync does.
+- The storefront view reads "failed" and "needs review" from a game's newest item only, and only while nothing has written the game to the library since that item. Older items are history.
