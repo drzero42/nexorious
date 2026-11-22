@@ -417,12 +417,18 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			newUserGame.RiverClient = newClient
 			newImportMatch.RiverClient = newClient
 
+			// The restored database can hold syncs that were running when the
+			// backup was taken: resume them before River starts (#1302). notify
+			// must already point at the new client, or the recovery's
+			// sync.completed is persisted but never delivered.
+			notify.SetRiverClient(newClient)
+			scheduler.RecoverInterruptedSyncs(context.Background(), newDB, newClient)
+
 			if err := newClient.Start(riverCtx); err != nil {
 				return fmt.Errorf("RebuildServices: River start: %w", err)
 			}
 
 			riverClient = newClient
-			notify.SetRiverClient(riverClient)
 			pgxPool = newPgxPool
 			slog.Info("services rebuilt after restore")
 			return nil
@@ -467,7 +473,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			default:
 			}
 			if migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() {
-				reconcileOrphanedDispatchJobs(context.Background(), db)
+				scheduler.RecoverInterruptedSyncs(context.Background(), db, riverClient)
 				if err := riverClient.Start(riverCtx); err != nil {
 					slog.Error("failed to start River client", logging.KeyErr, err)
 				}
@@ -593,36 +599,6 @@ func parseSlogLevel(s string) slog.Level {
 		return slog.LevelError
 	default:
 		return slog.LevelInfo
-	}
-}
-
-// reconcileOrphanedDispatchJobs rescues dispatch_sync River jobs left in
-// 'running' state by a previous process that died mid-job. Called once at
-// startup before riverClient.Start so River picks them up for retry within
-// seconds. This is a single-instance assumption: any dispatch_sync job still
-// 'running' at startup belongs to a dead process. (River never populated its
-// river_client heartbeat table and dropped it in v0.40, so there is nothing to
-// check liveness against.)
-func reconcileOrphanedDispatchJobs(ctx context.Context, db *bun.DB) {
-	result, err := db.NewRaw(`
-		UPDATE river_job
-		   SET state = 'retryable',
-		       scheduled_at = now(),
-		       errors = array_append(errors, jsonb_build_object(
-		         'at', now(),
-		         'error', 'rescued at startup: previous process no longer running'
-		       ))
-		 WHERE kind = 'dispatch_sync'
-		   AND state = 'running'
-		   AND attempt < max_attempts`,
-	).Exec(ctx)
-	if err != nil {
-		slog.Error("startup: reconcile orphaned dispatch_sync failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return
-	}
-	rows, _ := result.RowsAffected() //nolint:errcheck // RowsAffected never errors for the pq driver; count is advisory
-	if rows > 0 {
-		slog.Info("startup: rescued orphaned dispatch_sync jobs", "count", rows)
 	}
 }
 
