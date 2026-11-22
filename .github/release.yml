@@ -1,0 +1,26 @@
+---
+# Categories for GitHub's generated release notes, which release-please uses
+# (`changelog-type: github` in release-please-config.json). Labels come from
+# .github/workflows/pr-labels.yaml, set from each PR's Conventional Commit type.
+# A PR lands in the first category that matches.
+changelog:
+  exclude:
+    labels:
+      - internal
+  categories:
+    - title: ⚠ Breaking changes
+      labels:
+        - breaking
+    - title: Features
+      labels:
+        - enhancement
+    - title: Bug fixes
+      labels:
+        - bug
+    - title: Dependencies
+      labels:
+        - dependencies
+    # Catch-all so an unlabelled PR still shows up instead of vanishing.
+    - title: Other changes
+      labels:
+        - "*"

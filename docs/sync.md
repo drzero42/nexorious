@@ -180,6 +180,7 @@ The `DispatchSyncWorker` runs once per sync job. It:
    - Upserts platform rows into `external_game_platforms`; removes any platform rows for that game that were not in this batch
    - Enqueues one Stage 2 job per game in the batch
 4. After all batches complete, runs a sweep: queries all `external_games` rows for this user and storefront where `is_available = true`, and marks any whose `external_id` is not in the fetched ID set as `is_available = false` — these are games that were not seen in this sync run and have been removed from the user's library. For each game marked unavailable, writes a `removed` entry to `sync_changes`
+   The sweep is skipped when the fetch returned no games at all while at least one game is still marked available for this storefront. An empty reply is far more likely a privacy setting, an upstream glitch or a changed response shape than a library that really went to zero, so the job fails instead (`sync.failed`) and nothing is marked removed. If the library really is empty, reset the storefront's sync data or disconnect it.
 
 If a credential error occurs at any point, the job is marked `failed` and all pending job_items are cancelled. Any `external_games` rows already upserted in this run are kept.
 
@@ -271,6 +272,24 @@ stateDiagram-v2
 ```
 
 A job is complete only when every job_item is either `completed` or `skipped`. Items in `pending_review` hold the job in `processing` indefinitely — the job does not time out waiting for the user.
+
+### Shutdowns and restarts
+
+A sync that is running when the server shuts down resumes at the next startup; the user does not have to do anything. This relies on Nexorious running as a **single instance**: at startup nothing else is working, so any unfinished sync work is left over from the previous process.
+
+- **During shutdown.** River gets 20 seconds to drain, then cancels the running workers. A cancelled `DispatchSyncWorker` stops without recording anything: the job is not failed, the removed-game sweep does not run, and `last_synced_at` and `dispatch_complete` are not written. The job stays `processing` with `dispatch_complete = false`.
+- **At startup**, before River starts, `scheduler.RecoverInterruptedSyncs` runs once (also after a backup restore):
+  1. River jobs of the sync kinds (`dispatch_sync`, `igdb_match`, `user_game_write`) that are still `running` with no attempts left are discarded, and what they were working on is failed: for a dispatch the job is failed (pending items cancelled, `sync.failed` sent), for an item job the item is failed. They are not retried, so work that kills the server every time cannot loop.
+  2. The remaining `running` River jobs of the sync kinds are released for retry. A hard kill (SIGKILL, OOM) leaves them in that state.
+  3. The dispatch is re-enqueued for every active sync job with `dispatch_complete = false` that has no live `dispatch_sync` River job.
+  4. Pending job_items with no live River job are re-queued, whatever their age. No maintenance event is emitted.
+  5. The completion check runs for every `processing` sync job with `dispatch_complete = true`, so a job whose last item settled just before the shutdown is finalized and its notification sent.
+
+Running a dispatch again for the same job is safe: external games and platforms are upserted, a job_item is inserted once per `(job_id, item_key)`, and a `skipped` change is recorded once per game.
+
+A dispatch only changes a job that is still `pending` or `processing`. One that starts after the job was cancelled does nothing, and one that fails after a cancel leaves the job `cancelled` and sends no notification.
+
+Not covered: the sync diff can be wrong for the one game that was being written when the process was killed.
 
 ### Job item statuses
 

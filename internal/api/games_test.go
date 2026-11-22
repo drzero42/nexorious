@@ -971,3 +971,30 @@ func TestHandleStartMetadataRefreshJob(t *testing.T) {
 		}
 	})
 }
+
+// Sorting games by a column that ties (release_date is NULL on every row here)
+// must fall back to id, so offset paging neither repeats nor drops a row
+// (#1313).
+func TestGamesList_TiedSortPagesDeterministically(t *testing.T) {
+	truncateAllTables(t)
+	cfg := testCfg()
+	e := newTestEcho(t, testDB, cfg)
+
+	insertAuthTestUser(t, testDB, "u-games-tie", "gamestie", "pass123", true, false)
+	token := loginAndGetToken(t, e, "gamestie", "pass123")
+
+	// Inserted in an order that is neither ascending nor descending by id.
+	for _, id := range []int32{910003, 910001, 910004, 910002} {
+		insertTestGameWithID(t, testDB, id, fmt.Sprintf("Tied %d", id))
+	}
+
+	for order, want := range map[string]string{
+		"asc":  "910001,910002,910003,910004",
+		"desc": "910004,910003,910002,910001",
+	} {
+		got := pageThroughIDs(t, e, "/api/games?sort_by=release_date&sort_order="+order, "games", token, 4)
+		if strings.Join(got, ",") != want {
+			t.Errorf("sort_order=%s: paged ids = %v, want %s", order, got, want)
+		}
+	}
+}

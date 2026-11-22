@@ -28,6 +28,13 @@ import (
 // River job was already finalized before the fix was deployed — or if the
 // job was lost for any other reason — this sweeper catches it.
 func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], age time.Duration) {
+	rescueOrphanedPendingItems(ctx, db, rc, age, true)
+}
+
+// rescueOrphanedPendingItems is RescueOrphanedPendingItems with the maintenance
+// event optional: the startup recovery pass (RecoverInterruptedSyncs) runs it
+// with no age limit and emitEvent=false, since a restart must not notify.
+func rescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], age time.Duration, emitEvent bool) {
 	var orphans []struct {
 		ID      string `bun:"id"`
 		JobType string `bun:"job_type"`
@@ -49,7 +56,9 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 		int64(age.Seconds()),
 	).Scan(ctx, &orphans); err != nil {
 		slog.ErrorContext(ctx, "rescue_orphaned_items: query failed", logging.Cat(logging.CategoryDB), logging.KeyErr, err)
-		emitMaint(ctx, db, true, notify.MaintPayload{Action: "rescue_orphaned_items", Error: err.Error()})
+		if emitEvent {
+			emitMaint(ctx, db, true, notify.MaintPayload{Action: "rescue_orphaned_items", Error: err.Error()})
+		}
 		return
 	}
 
@@ -71,7 +80,7 @@ func RescueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clien
 			successCount++
 		}
 	}
-	if successCount+failureCount > 0 {
+	if emitEvent && successCount+failureCount > 0 {
 		emitMaint(ctx, db, false, notify.MaintPayload{Action: "rescue_orphaned_items", Rescued: successCount, Failed: failureCount})
 	}
 }

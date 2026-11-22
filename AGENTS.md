@@ -291,11 +291,15 @@ All commits on `main` must follow [Conventional Commits](https://www.conventiona
 | `feat!: …` (or a `BREAKING CHANGE:` footer inside an override block) | **major bump** |
 | `chore:`, `ci:`, `docs:`, `refactor:`, `test:` | no release |
 
+### Release notes
+
+release-please writes the GitHub Release and `CHANGELOG.md` from GitHub's generated release notes (`"changelog-type": "github"`), so each entry is the merged **PR title** with its author, plus a "New Contributors" section. The version bump still comes from the Conventional Commit, but an override block's wording does not reach the notes: to reword an entry, edit the merged PR's title before the release. Categories are label-driven (`.github/release.yml`), and the `PR Labels` workflow (`pr-labels.yaml`, `pull_request_target` so fork PRs get labelled too) sets them from the commit type: `breaking` (`!` or a `BREAKING CHANGE:` footer), `enhancement` (`feat`), `bug` (`fix`/`perf`/`revert`), `dependencies` (`feat`/`fix` with scope `deps`), and `internal` for everything else, which the notes exclude. Labels are read when the notes are generated, so a wrong label can be fixed on the merged PR any time before the release.
+
 ### Cutting a release
 
 1. Wait until there is a `feat:` or `fix:` on `main` since the last release (otherwise release-please's Release PR will be empty).
 2. Find the open PR titled `chore(main): release X.Y.Z` (opened by `release-please-action`).
-3. Review the proposed `CHANGELOG.md` diff, `Chart.yaml` / `docker-compose.yml` version bumps.
+3. Review the proposed `CHANGELOG.md` diff (fix a misfiled entry by correcting the merged PR's label or title, then let release-please re-run), `Chart.yaml` / `docker-compose.yml` version bumps.
 4. Merge the Release PR. release-please creates the `vX.Y.Z` tag and publishes a GitHub Release; `release-artifacts.yaml` then builds — for amd64 and arm64, from one per-arch binary — the raw binary, `.deb`, `.rpm`, and a multi-arch container image, smoke-tests the packages, uploads the release assets, pushes the image (semver tag + `latest`) and Helm chart, and advances the `release` branch. The **`nexctl`** client ships the same way minus server-only pieces: per-arch raw binary + `.deb`/`.rpm` (via `deploy/packaging/nfpm-nexctl.yaml`, smoke-tested by the `smoke-test` job's `nexctl` matrix leg using `deploy/packaging/smoke-test-nexctl.sh`), but **no container image or Helm chart**. Both binaries share one repo version. There is no nightly/dev build flow (`build-push.yaml` was removed); non-release artifacts no longer exist.
 
 ### Overrides

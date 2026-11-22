@@ -173,13 +173,24 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	// that receive this ctx) is correlated to the user-facing jobs.id.
 	ctx = logging.WithJobID(ctx, p.JobID)
 
-	// Mark job as processing.
+	// Mark job as processing — only while it is still active. A dispatch can
+	// outlive its Job (cancel and reset leave a queued dispatch in River, and a
+	// restart re-runs one): it must never turn a cancelled or failed Job back
+	// into a running sync (#1302).
 	now := time.Now().UTC()
-	if _, err := w.DB.NewRaw(
-		`UPDATE jobs SET status = 'processing', started_at = ?, dispatch_complete = false WHERE id = ?`,
+	res, err := w.DB.NewRaw(
+		`UPDATE jobs SET status = 'processing', started_at = ?, dispatch_complete = false
+		 WHERE id = ? AND status IN ('pending', 'processing')`,
 		now, p.JobID,
-	).Exec(ctx); err != nil {
+	).Exec(ctx)
+	if dispatchInterrupted(ctx) {
+		return nil
+	}
+	if err != nil {
 		slog.WarnContext(ctx, "dispatch_sync: mark processing failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	} else if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // advisory RowsAffected
+		slog.InfoContext(ctx, "dispatch_sync: job is no longer active; nothing to do", logging.KeySource, p.Storefront)
+		return nil
 	}
 
 	// Load sync config.
@@ -187,18 +198,24 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	if err := w.DB.NewSelect().Model(&cfg).
 		Where("user_id = ? AND storefront = ?", p.UserID, p.Storefront).
 		Scan(ctx); err != nil {
-		failSyncJob(ctx, w.DB, p.JobID, "no sync config found")
+		if dispatchInterrupted(ctx) {
+			return nil
+		}
+		FailSyncJob(ctx, w.DB, p.JobID, "no sync config found")
 		return nil
 	}
 
 	// Build adapter (credential loading, decryption, and token refresh happen inside).
 	adapter, err := w.Adapter(ctx, p.Storefront, cfg)
+	if dispatchInterrupted(ctx) {
+		return nil
+	}
 	if errors.Is(err, ErrCredentials) {
 		handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
 		return nil
 	}
 	if err != nil {
-		failSyncJob(ctx, w.DB, p.JobID, err.Error())
+		FailSyncJob(ctx, w.DB, p.JobID, err.Error())
 		return nil
 	}
 
@@ -209,7 +226,7 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	//    enqueue Stage 2 (IGDBMatch) per batch as each batch completes.
 	slog.InfoContext(ctx, "dispatch_sync: starting library fetch", logging.KeyUserID, p.UserID, logging.KeySource, p.Storefront)
 	totalProcessed := 0
-	if err := adapter.GetLibrary(ctx, 10, func(batch []ExternalGameEntry) error {
+	fetchErr := adapter.GetLibrary(ctx, 10, func(batch []ExternalGameEntry) error {
 		var batchItemIDs []string
 		skippedInBatch := 0
 		for _, e := range batch {
@@ -232,10 +249,14 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 				skippedInBatch++
 				slog.DebugContext(ctx, "dispatch_sync: game is user-skipped, not enqueuing for matching",
 					"external_id", e.ExternalID, "title", e.Title)
+				// NOT EXISTS: a dispatch re-run after an interrupt sees the same
+				// skipped games again; changes has no unique constraint.
 				if _, err := w.DB.NewRaw(
 					`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-					 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
-					uuid.NewString(), p.JobID, p.UserID, egID, e.Title,
+					 SELECT ?, ?, ?, ?, 'skipped', ?, now()
+					 WHERE NOT EXISTS (
+					   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
+					uuid.NewString(), p.JobID, p.UserID, egID, e.Title, p.JobID, egID,
 				).Exec(ctx); err != nil {
 					slog.WarnContext(ctx, "dispatch_sync: insert sync_change (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 				}
@@ -256,14 +277,48 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 			_ = EnqueueOrFail(ctx, w.DB, w.RiverClient, itemID, IGDBMatchArgs{JobItemID: itemID}) //nolint:errcheck // EnqueueOrFail records its own failure on the job_item
 		}
 		return nil
-	}); err != nil {
+	})
+	// An interrupted fetch is neither a failure nor a full fetch, whatever it
+	// returned: its batch writes may have failed on the cancelled ctx. Stop
+	// before FailSyncJob, the sweeps and the last_synced_at/dispatch_complete
+	// writes below (those two use context.Background() and would succeed).
+	if dispatchInterrupted(ctx) {
+		return nil
+	}
+	if err := fetchErr; err != nil {
 		if errors.Is(err, ErrCredentials) {
 			handleCredentialError(ctx, w.DB, p, cfg.CredentialsError)
 			return nil
 		}
 		slog.ErrorContext(ctx, "dispatch_sync: library fetch failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-		failSyncJob(ctx, w.DB, p.JobID, err.Error())
+		FailSyncJob(ctx, w.DB, p.JobID, err.Error())
 		return nil
+	}
+
+	// Empty-fetch guard (#1324): a fetch that returns nothing while games are
+	// known for this storefront is far more likely a privacy setting, an
+	// upstream glitch or a changed response shape than a library that really
+	// went to zero. Running the sweep would mark every game removed and
+	// announce it through sync.diff, so fail the job instead. There is no
+	// adapter bypass on purpose: in those failure modes the adapter believes it
+	// saw a real, empty library.
+	if len(fetchedIDs) == 0 {
+		known, err := w.DB.NewSelect().Model((*models.ExternalGame)(nil)).
+			Where("user_id = ? AND storefront = ? AND is_available = true", p.UserID, p.Storefront).
+			Count(ctx)
+		if err != nil {
+			slog.ErrorContext(ctx, "dispatch_sync: count available games failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			FailSyncJob(ctx, w.DB, p.JobID, "could not verify an empty library fetch; nothing was marked removed")
+			return nil
+		}
+		if known > 0 {
+			slog.ErrorContext(ctx, "dispatch_sync: empty library fetch with known games; refusing to mark them removed",
+				logging.KeySource, p.Storefront, "known_games", known, logging.Cat(logging.CategoryExternalAPI))
+			FailSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf(
+				"the storefront returned an empty library while %d games are known; nothing was marked removed. "+
+					"If the library really is empty, reset this storefront's sync data or disconnect it.", known))
+			return nil
+		}
 	}
 
 	// Stale platform sweep: remove platform rows no longer present upstream.
@@ -302,6 +357,12 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		}
 	}
 
+	// The sweeps above ran on ctx: if it was cancelled meanwhile they may be
+	// unfinished, so the run must not be marked complete.
+	if dispatchInterrupted(ctx) {
+		return nil
+	}
+
 	// Update last_synced_at and clear any prior credentials_error flag.
 	syncedNow := time.Now().UTC()
 	if _, err := w.DB.NewRaw(
@@ -330,19 +391,44 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 	return nil
 }
 
+// dispatchInterrupted reports whether the dispatch's ctx was cancelled, which
+// (dispatch_sync has no timeout) means the server is shutting down. An
+// interrupted dispatch stops without recording anything: the Job stays
+// 'processing' with dispatch_complete = false, which is how the startup
+// recovery (scheduler.RecoverInterruptedSyncs) finds and re-runs it (#1302).
+func dispatchInterrupted(ctx context.Context) bool {
+	if ctx.Err() == nil {
+		return false
+	}
+	slog.InfoContext(ctx, "dispatch_sync: interrupted; the sync resumes at the next startup")
+	return true
+}
+
 // markSyncJobFailed marks a job as failed with the given error message and
 // cancels any pending job_items for that job so they are not left orphaned. It
 // performs no notification — callers decide which event (if any) to emit.
 // msg is scrubbed of URL query strings before persisting: a fetch failure's
 // *url.Error embeds the full request URL, query-string credentials included.
-func markSyncJobFailed(ctx context.Context, db *bun.DB, jobID, msg string) {
+//
+// The write only applies to a Job that is still active, so a dispatch that
+// fails after a cancel does not turn 'cancelled' into 'failed' (#1302). It
+// reports whether it changed the Job; when it did not, the caller must skip its
+// own side effects (notification, metric, credentials_error flag).
+func markSyncJobFailed(ctx context.Context, db *bun.DB, jobID, msg string) bool {
 	msg = logging.ScrubURLQueries(msg)
 	now := time.Now().UTC()
-	if _, err := db.NewRaw(
-		`UPDATE jobs SET status = 'failed', error_message = ?, completed_at = ? WHERE id = ?`,
+	res, err := db.NewRaw(
+		`UPDATE jobs SET status = 'failed', error_message = ?, completed_at = ?
+		 WHERE id = ? AND status IN ('pending', 'processing')`,
 		msg, now, jobID,
-	).Exec(ctx); err != nil {
+	).Exec(ctx)
+	if err != nil {
 		slog.WarnContext(ctx, "dispatch_sync: fail job update failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return false
+	}
+	if n, _ := res.RowsAffected(); n == 0 { //nolint:errcheck // advisory RowsAffected
+		slog.InfoContext(ctx, "dispatch_sync: job is no longer active; failure not recorded")
+		return false
 	}
 	if _, err := db.NewRaw(
 		`UPDATE job_items SET status = 'cancelled' WHERE job_id = ? AND status = 'pending'`,
@@ -350,14 +436,17 @@ func markSyncJobFailed(ctx context.Context, db *bun.DB, jobID, msg string) {
 	).Exec(ctx); err != nil {
 		slog.WarnContext(ctx, "dispatch_sync: cancel pending items failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 	}
+	return true
 }
 
-// failSyncJob marks a job as failed (see markSyncJobFailed) and emits the
+// FailSyncJob marks a job as failed (see markSyncJobFailed) and emits the
 // generic sync.failed notification. Used for all non-credential failures;
 // credential failures go through handleCredentialError instead.
-func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
+func FailSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 	msg = logging.ScrubURLQueries(msg) // never leak URL query credentials into the event payload
-	markSyncJobFailed(ctx, db, jobID, msg)
+	if !markSyncJobFailed(ctx, db, jobID, msg) {
+		return
+	}
 	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
 	// Record the hard failure so it surfaces in nexorious_sync_total alongside
 	// completed / completed_with_errors; without this a storefront that always
@@ -380,9 +469,11 @@ func failSyncJob(ctx context.Context, db *bun.DB, jobID, msg string) {
 // not left silent. While the storefront stays broken (priorErr == true) no
 // notification is sent, so repeated scheduled syncs do not nag.
 func handleCredentialError(ctx context.Context, db *bun.DB, p DispatchSyncArgs, priorErr bool) {
-	markSyncJobFailed(ctx, db, p.JobID, "credentials error")
+	if !markSyncJobFailed(ctx, db, p.JobID, "credentials error") {
+		return
+	}
 	// A credentials failure is a hard sync failure; record it so it is visible
-	// in nexorious_sync_total rather than silently absent (see failSyncJob).
+	// in nexorious_sync_total rather than silently absent (see FailSyncJob).
 	if p.Storefront != "" {
 		observability.RecordSyncOutcome(ctx, p.Storefront, "failed")
 	}
@@ -662,10 +753,14 @@ func (w *UserGameWorker) Work(ctx context.Context, job *river.Job[UserGameArgs])
 		).Exec(ctx); err != nil {
 			slog.WarnContext(ctx, "user_game_write: update external_game updated_at (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
+		// NOT EXISTS: this item can run twice across a restart (see the dispatch's
+		// 'skipped' insert).
 		if _, err := w.DB.NewRaw(
 			`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-			 VALUES (?, ?, ?, ?, 'skipped', ?, now())`,
-			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title,
+			 SELECT ?, ?, ?, ?, 'skipped', ?, now()
+			 WHERE NOT EXISTS (
+			   SELECT 1 FROM changes WHERE job_id = ? AND external_game_id = ? AND change_type = 'skipped')`,
+			uuid.NewString(), item.JobID, item.UserID, eg.ID, eg.Title, item.JobID, eg.ID,
 		).Exec(ctx); err != nil {
 			slog.WarnContext(ctx, "user_game_write: insert sync_change (skipped)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
 		}
@@ -916,6 +1011,11 @@ func SyncCheckJobCompletion(ctx context.Context, db *bun.DB, riverClient *river.
 	if !finalizeJobCompleted(ctx, db, jobID, "sync: SyncCheckJobCompletion finalize job failed", true) {
 		return
 	}
+
+	// The Job is finalized: nothing will run this check for it again, so the
+	// notifications, diff, metrics and store-link trigger below must not be
+	// lost to a shutdown that cancels ctx right here (#1302).
+	ctx = context.WithoutCancel(ctx)
 
 	userID, storefront := syncJobUserAndStorefront(ctx, db, jobID)
 	failedCount, ok := countJobItems(ctx, db, jobID, "status = 'failed'", "sync: count failed items for notify")

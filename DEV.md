@@ -8,7 +8,7 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 
 1. Merge one or more `feat:` or `fix:` PRs to `main`.
 2. release-please opens (or updates) a PR titled `chore: release main` proposing the next version.
-3. Review the `CHANGELOG.md` diff and version bumps in `Chart.yaml`, `docker-compose.yml`, and `flake.nix`.
+3. Review the `CHANGELOG.md` diff and version bumps in `Chart.yaml`, `docker-compose.yml`, and `flake.nix`. The notes are GitHub's generated release notes, grouped by the labels the `PR Labels` workflow sets from each PR's commit type (see `.github/release.yml`); fix a misfiled entry by correcting the merged PR's label or title.
 4. Merge the Release PR. CI (`release-artifacts.yaml`) then builds, for both amd64 and arm64, the raw binary, the `.deb`, the `.rpm`, and the multi-arch container image — all from the same per-arch binary — smoke-tests every package, publishes the GitHub Release assets, pushes the image and Helm chart, and advances the `release` branch. There is no nightly or dev build flow; artifacts are produced only when a release is published.
 
 ### Forcing a specific version
