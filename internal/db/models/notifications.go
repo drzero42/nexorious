@@ -17,7 +17,7 @@ type Event struct {
 	ActorUserID *string         `bun:"actor_user_id"     json:"actor_user_id"`
 	Payload     json.RawMessage `bun:"payload,notnull"   json:"payload"`
 	DedupKey    *string         `bun:"dedup_key"         json:"dedup_key"`
-	OccurredAt  time.Time       `bun:"occurred_at,notnull" json:"occurred_at"`
+	OccurredAt  time.Time       `bun:"occurred_at,nullzero,notnull" json:"occurred_at"`
 }
 
 // NotificationChannel mirrors notification_channels. EncryptedURL is never
@@ -29,7 +29,7 @@ type NotificationChannel struct {
 	UserID       string    `bun:"user_id,notnull"      json:"user_id"`
 	Name         string    `bun:"name,notnull"         json:"name"`
 	EncryptedURL string    `bun:"encrypted_url,notnull" json:"-"`
-	CreatedAt    time.Time `bun:"created_at,notnull"   json:"created_at"`
+	CreatedAt    time.Time `bun:"created_at,nullzero,notnull"   json:"created_at"`
 }
 
 // NotificationSubscription mirrors notification_subscriptions (pure presence).
@@ -38,5 +38,5 @@ type NotificationSubscription struct {
 
 	UserID    string    `bun:"user_id,pk"     json:"user_id"`
 	EventType string    `bun:"event_type,pk"  json:"event_type"`
-	CreatedAt time.Time `bun:"created_at,notnull" json:"created_at"`
+	CreatedAt time.Time `bun:"created_at,nullzero,notnull" json:"created_at"`
 }
