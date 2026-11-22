@@ -60,6 +60,7 @@ describe('store page connection toggle', () => {
     render(<Page />);
 
     const toggle = await screen.findByRole('button', { name: /not configured/i });
+    expect(screen.getByRole('heading', { level: 1, name: 'GOG' })).toBeInTheDocument();
     // A store that is not connected opens its connection card.
     await waitFor(() => expect(toggle).toHaveAttribute('aria-expanded', 'true'));
     expect(screen.getByText('GOG Connection')).toBeInTheDocument();

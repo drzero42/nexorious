@@ -38,7 +38,7 @@ import {
 } from '@/types';
 import type { SyncConfigUpdateData } from '@/types';
 import { JobProgressCard } from '@/components/jobs';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -434,14 +434,16 @@ function SyncDetailPage() {
               )}
             </div>
             <div className="min-w-0">
-              <CardTitle className="text-2xl">
-                {displayName}
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <h1 className="text-2xl font-semibold leading-none tracking-tight">
+                  {displayName}
+                </h1>
                 {(status?.externalGameCount ?? 0) > 0 && (
-                  <span className="ml-2 whitespace-nowrap text-base font-normal text-muted-foreground">
+                  <span className="whitespace-nowrap text-base font-normal text-muted-foreground">
                     {status!.externalGameCount} games
                   </span>
                 )}
-              </CardTitle>
+              </div>
               <CardDescription className="flex items-center gap-2 mt-1">
                 <Clock className="h-4 w-4" />
                 Last synced: {formatRelativeTime(config.lastSyncedAt, 'Never')}
