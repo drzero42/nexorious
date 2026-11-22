@@ -164,7 +164,10 @@ func (h *GamesHandler) HandleListGames(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
 	}
 
-	orderExpr := sortBy + " " + strings.ToUpper(sortOrder)
+	// Every sort column can tie (and release_date/rating_average are nullable),
+	// so end on the unique id or offset paging repeats and drops rows.
+	dir := strings.ToUpper(sortOrder)
+	orderExpr := sortBy + " " + dir + ", id " + dir
 	offset := (page - 1) * perPage
 
 	var games []models.Game
