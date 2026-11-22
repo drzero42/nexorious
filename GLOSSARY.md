@@ -30,7 +30,7 @@ _Avoid_: unmatched, needs review
 The IGDB game the user chose for an item in Pending review. Resolving lets the item be finished. In a sync the choice is made by a Rematch.
 
 **Skip**:
-The user's decision not to add a game to the library. It finishes the item that was waiting for a decision; in a sync it also stands for later syncs, until the user removes it.
+The user's decision not to add a game to the library. It finishes the game's unfinished item; in a sync it also stands for later syncs, until the user removes it.
 
 **Finished**:
 A Job or Job item whose work has ended: completed, failed, skipped (items only), or cancelled. Nothing acts on it again unless the user asks for a Retry.
