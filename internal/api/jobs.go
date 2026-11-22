@@ -165,7 +165,15 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 	}
 
 	offset := (page - 1) * perPage
-	q = q.OrderExpr(fmt.Sprintf("%s %s", sortBy, sortOrder)).
+	// Every sort column can tie (status and job_type on most rows), so end on
+	// a unique key or offset paging repeats and drops rows. created_at comes
+	// before id because ids are random UUIDs: ties stay chronological.
+	// sortBy and sortOrder are whitelisted above.
+	orderExpr := fmt.Sprintf("%s %s, created_at %s, id %s", sortBy, sortOrder, sortOrder, sortOrder)
+	if sortBy == "created_at" {
+		orderExpr = fmt.Sprintf("created_at %s, id %s", sortOrder, sortOrder)
+	}
+	q = q.OrderExpr(orderExpr).
 		Limit(int64(perPage)).Offset(int64(offset))
 
 	var jobs []models.Job
