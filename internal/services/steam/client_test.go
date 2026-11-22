@@ -344,14 +344,19 @@ func TestGetOwnedGames_ZeroGameCount_ReturnsEmptyLibrary(t *testing.T) {
 	}
 }
 
-func TestGetOwnedGames_EmptyGamesList_ReturnsEmptyLibrary(t *testing.T) {
-	c := ownedGamesClient(t, `{"response":{"games":[]}}`)
-	games, err := c.GetOwnedGames(context.Background(), "key", "steamid")
-	if err != nil {
-		t.Fatalf("GetOwnedGames: %v", err)
-	}
-	if len(games) != 0 {
-		t.Fatalf("want 0 games, got %d", len(games))
+func TestGetOwnedGames_IncompleteReply_ReturnsErrOwnedGamesUnavailable(t *testing.T) {
+	for name, reply := range map[string]string{
+		"empty list without count": `{"response":{"games":[]}}`,
+		"partial list":             `{"response":{"game_count":2,"games":[{"appid":730}]}}`,
+		"zero count with a game":   `{"response":{"game_count":0,"games":[{"appid":730}]}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := ownedGamesClient(t, reply)
+			games, err := c.GetOwnedGames(context.Background(), "key", "steamid")
+			if !errors.Is(err, steam.ErrOwnedGamesUnavailable) || len(games) != 0 {
+				t.Fatalf("want no games and ErrOwnedGamesUnavailable, got games=%v err=%v", games, err)
+			}
+		})
 	}
 }
 

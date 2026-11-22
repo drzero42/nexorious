@@ -136,9 +136,8 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 	}
 
 	// An account that owns nothing answers {"response":{"game_count":0}}, with
-	// no games key; one whose game details are private answers
-	// {"response":{}}. Games stays nil when the key is absent or null, and
-	// GameCount is a pointer so an absent count differs from 0.
+	// no games key; one whose game details are private can answer
+	// {"response":{}}. GameCount is a pointer so an absent count differs from 0.
 	var body struct {
 		Response struct {
 			GameCount *int `json:"game_count"`
@@ -152,15 +151,12 @@ func (c *Client) GetOwnedGames(ctx context.Context, apiKey, steamID string) ([]O
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, fmt.Errorf("steam decode error: %w", err)
 	}
-	if len(body.Response.Games) == 0 {
-		// Empty only when the reply says so: a game_count of 0, or an empty
-		// games list with no count contradicting it.
-		count := body.Response.GameCount
-		confirmedEmpty := (count != nil && *count == 0) || (count == nil && body.Response.Games != nil)
-		if !confirmedEmpty {
-			return nil, ErrOwnedGamesUnavailable
-		}
-		return []OwnedGame{}, nil
+	count := body.Response.GameCount
+	if count == nil && len(body.Response.Games) == 0 {
+		return nil, ErrOwnedGamesUnavailable
+	}
+	if count != nil && *count != len(body.Response.Games) {
+		return nil, ErrOwnedGamesUnavailable
 	}
 
 	games := make([]OwnedGame, 0, len(body.Response.Games))
@@ -183,13 +179,10 @@ var ErrRateLimited = errors.New("steam: rate limited (429)")
 // with HTTP 401 or 403, indicating the API key is invalid or revoked.
 var ErrAPIKeyRejected = errors.New("steam: API key rejected")
 
-// ErrOwnedGamesUnavailable is returned by GetOwnedGames when Steam answers 200
-// with no games and without a game_count of 0 to confirm the library is empty,
-// so the reply cannot be told apart from an empty library. The usual cause is
-// the account setting its game details to private after it was connected.
-// Treating that reply as an empty library would mark every Steam game removed
-// (#1310).
-var ErrOwnedGamesUnavailable = errors.New("steam: owned-games reply listed no games and did not report a game count of 0 (game details may be private)")
+// ErrOwnedGamesUnavailable means Steam's response cannot be used for a
+// removal sweep: it has no games and no explicit zero count, or its count
+// differs from the number of games listed.
+var ErrOwnedGamesUnavailable = errors.New("Steam returned an incomplete library. Check that Game details on your Steam profile are Public, then retry.")
 
 // GetAppDetailsPlatforms fetches platform availability for the given appID.
 // Returns (Platforms{}, nil) when success=false (removed/delisted app) — caller decides fallback.
