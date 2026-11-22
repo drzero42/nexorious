@@ -13,21 +13,21 @@ One unit of work inside a Job: one external game in a sync, one game in an impor
 _Avoid_: task, row, entry
 
 **Job kind**:
-The sort of a Job (sync, import from a given source, export, metadata refresh, store-link refresh), which decides how its items are worked, whether it can be retried, and what happens when it finishes.
+The sort of a Job (sync, import from a given source, export, metadata refresh, store-link refresh), which decides how its items are worked and what happens when it finishes.
 _Avoid_: job type (one input to the kind, not the whole of it)
 
 **Dispatch**:
 Creating all of a Job's items. A Job cannot complete until its dispatch is done, even if every item created so far is finished.
 
 **Item status**:
-While a Job item is unfinished, its status says who acts next: a worker (`pending`, `processing`) or the user (`pending_review`). It never records a decision; a Resolution is kept apart from it, so a resolved item is `pending` again until a worker finishes it.
+While a Job item is unfinished, its status says who acts next: a worker (`pending`) or the user (`pending_review`). It never records a decision; a Resolution is kept apart from it, so a resolved item is `pending` again until a worker finishes it.
 
 **Pending review**:
 A Job item a worker could not match to an IGDB game with confidence, waiting for the user to Resolve or Skip it. It keeps its Job from completing.
 _Avoid_: unmatched, needs review
 
 **Resolution**:
-The IGDB game the user chose for an item in Pending review. Resolving hands the item back to a worker to finish.
+The IGDB game the user chose for an item in Pending review. Resolving lets the item be finished. In a sync the choice is made by a Rematch.
 
 **Skip**:
 The user's decision to drop an item in Pending review without adding it to the library.
@@ -45,8 +45,11 @@ A user stopping a Job before completion. Its unfinished items are cancelled with
 **Fail**:
 A Job ending because of an error. Its unfinished items are cancelled, as with Cancel.
 
+**Finishing effects**:
+What follows from a Job being completed or failed: its notifications, a sync's diff, an import's pools. They happen because the Job finished, never as part of an item's work.
+
 **Retry**:
-Handing a Job's failed items back to a worker. Retrying reopens a finished Job until its next Completion. Not every Job kind can be retried.
+Handing a Job's failed items back to a worker. Retrying reopens a completed Job until its next Completion. A failed or cancelled Job cannot be retried.
 
 ## Storefront sync
 
@@ -54,6 +57,10 @@ Handing a Job's failed items back to a worker. Retrying reopens a finished Job u
 A game as it appears in a connected storefront's library, matched to at most one IGDB game.
 _Avoid_: storefront game
 
+**Child game**:
+An External game that is another edition of an External game already known for the same storefront, its parent. It follows the parent's match instead of being matched itself.
+_Avoid_: sibling
+
 **Rematch**:
-Changing which IGDB game an already matched External game points to.
-_Avoid_: resolve (that is for items in Pending review)
+Choosing or changing which IGDB game an External game points to. The library is updated at once; a Rematch is not a Job.
+_Avoid_: resolve (a Resolution is the choice; in a sync, the Rematch is the act that makes it)
