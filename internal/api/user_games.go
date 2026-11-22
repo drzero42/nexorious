@@ -340,7 +340,8 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 		if sortFieldsRequiringHoursJoin[sortBy] {
 			q = q.Join("LEFT JOIN (SELECT user_game_id, COALESCE(SUM(hours_played), 0) AS total FROM user_game_platforms GROUP BY user_game_id) hp ON hp.user_game_id = user_game.id")
 		}
-		q = q.OrderExpr(orderExpr)
+		// The model query uses Bun's user_game alias; the ID query uses ug.
+		q = q.OrderExpr(strings.ReplaceAll(orderExpr, "ug.", "user_game."))
 	}
 	q = q.OrderExpr("user_game.created_at DESC, user_game.id DESC")
 
