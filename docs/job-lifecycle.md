@@ -182,6 +182,7 @@ Recovery is one rule, with no time thresholds. It looks at every recorded owner:
 | An active Job whose dispatch is not done and whose dispatch River job was discarded | The Job is failed |
 | An active Job whose dispatch is not done and whose dispatch River job no longer exists or ended any other way | The dispatch is inserted again and recorded |
 | A `pending` item with no owner that is not a waiting child, or a `processing` item (both left by an older version) | It adopts the live River job that names it in its args, or is given a new one |
+| An active Job whose dispatch is done and that has no unfinished items (left by an older version, which completed Jobs in a separate step) | Completion is evaluated |
 
 The rule runs periodically, and once at startup before River starts.
 
