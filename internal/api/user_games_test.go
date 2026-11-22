@@ -2634,3 +2634,41 @@ func TestListUserGames_TiedCreatedAt_OnePageInIDOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestListUserGames_AcceptsAndClampsPageSize(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEcho(t, testDB, testCfg())
+	userID, token := setupUserGamesUser(t, testDB, e, "page-size")
+	ctx := context.Background()
+	if _, err := testDB.ExecContext(ctx,
+		"INSERT INTO games (id, title) SELECT n, 'Game ' || n FROM generate_series(10001, 10501) n"); err != nil {
+		t.Fatalf("insert games: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx,
+		"INSERT INTO user_games (id, game_id, user_id) SELECT 'ug-' || id, id, ? FROM games WHERE id BETWEEN 10001 AND 10501", userID); err != nil {
+		t.Fatalf("insert library: %v", err)
+	}
+
+	for _, tc := range []struct {
+		query string
+		size  int
+	}{{"", 25}, {"0", 25}, {"oops", 25}, {"200", 200}, {"500", 500}, {"501", 500}, {"10000", 500}, {"18446744073709551616", 500}} {
+		t.Run(tc.query, func(t *testing.T) {
+			rec := getAuth(t, e, "/api/user-games?per_page="+tc.query, token)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+			}
+			var resp struct {
+				UserGames []json.RawMessage `json:"user_games"`
+				PerPage   int               `json:"per_page"`
+				Total     int               `json:"total"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if len(resp.UserGames) != tc.size || resp.PerPage != tc.size || resp.Total != 501 {
+				t.Errorf("rows = %d, per_page = %d, total = %d; want %d, %d, 501", len(resp.UserGames), resp.PerPage, resp.Total, tc.size, tc.size)
+			}
+		})
+	}
+}
