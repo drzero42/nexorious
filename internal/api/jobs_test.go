@@ -1376,3 +1376,36 @@ func TestListJobs_TiedSortPagesDeterministically(t *testing.T) {
 		}
 	}
 }
+
+func TestListPagination_PastTheEnd(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "past-end")
+	insertJob(t, testDB, "job-past-end", userID, "import", "csv", "processing")
+	insertJobItem(t, testDB, "ji-past-end", "job-past-end", userID, "key", "Title", "pending_review")
+	gameID := insertTestGame(t, testDB, "Title")
+	insertTestUserGame(t, testDB, "ug-past-end", userID, int(gameID))
+
+	for _, endpoint := range []struct{ url, key, pages string }{
+		{"/api/user-games?", "user_games", "pages"},
+		{"/api/jobs?", "jobs", "total_pages"},
+		{"/api/jobs/job-past-end/items?", "items", "total_pages"},
+		{"/api/jobs/job-past-end/items?status=pending_review&", "items", "total_pages"},
+	} {
+		for _, page := range []string{"2", "4611686018427387905", "18446744073709551616"} {
+			t.Run(endpoint.url+page, func(t *testing.T) {
+				rec := getAuth(t, e, endpoint.url+"page="+page+"&per_page=4", token)
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+				}
+				var resp map[string]json.RawMessage
+				if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+					t.Fatalf("unmarshal: %v", err)
+				}
+				if string(resp[endpoint.key]) != "[]" || string(resp["total"]) != "1" || string(resp[endpoint.pages]) != "1" {
+					t.Errorf("expected empty page with total 1 and one page, got %s", rec.Body.String())
+				}
+			})
+		}
+	}
+}

@@ -189,13 +189,8 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	}
 
 	// Parse pagination.
-	page := 1
+	page := pageNumber(c.QueryParam("page"))
 	perPage := 25
-	if p := c.QueryParam("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v >= 1 {
-			page = v
-		}
-	}
 	if pp := c.QueryParam("per_page"); pp != "" {
 		if v, err := strconv.Atoi(pp); err == nil && v >= 1 && v <= 200 {
 			perPage = v
@@ -276,11 +271,12 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	pages := int(math.Ceil(float64(total) / float64(perPage)))
 	pages = max(pages, 1)
 
-	// Short-circuit: no results.
-	if total == 0 {
+	// Short-circuit when the requested page has no results.
+	offset, hasRows := pageOffset(page, perPage, int64(total))
+	if !hasRows {
 		return c.JSON(http.StatusOK, UserGameListResponse{
 			UserGames: []userGameWithPlatformsResponse{},
-			Total:     0,
+			Total:     total,
 			Page:      page,
 			PerPage:   perPage,
 			Pages:     pages,
@@ -303,7 +299,7 @@ func (h *UserGamesHandler) HandleListUserGames(c *echo.Context) error {
 	// stable secondary sort; id breaks created_at ties so rows that tie on every
 	// other key keep one order between page reads (#1311)
 	idQ = idQ.OrderExpr("ug.created_at DESC, ug.id DESC").
-		Offset(int64((page - 1) * perPage)).
+		Offset(offset).
 		Limit(int64(perPage))
 
 	// Wrap in subquery to get only IDs.

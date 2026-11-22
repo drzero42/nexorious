@@ -104,10 +104,7 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
 	}
 
-	page, _ := strconv.Atoi(c.QueryParam("page")) //nolint:errcheck // invalid/empty query param clamped to default below
-	if page < 1 {
-		page = 1
-	}
+	page := pageNumber(c.QueryParam("page"))
 	perPage, _ := strconv.Atoi(c.QueryParam("per_page")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if perPage < 1 {
 		perPage = 20
@@ -164,7 +161,6 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to count jobs")
 	}
 
-	offset := (page - 1) * perPage
 	// Every sort column can tie (status and job_type on most rows), so end on
 	// a unique key or offset paging repeats and drops rows. created_at comes
 	// before id because ids are random UUIDs: ties stay chronological.
@@ -173,13 +169,11 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 	if sortBy == "created_at" {
 		orderExpr = fmt.Sprintf("created_at %s, id %s", sortOrder, sortOrder)
 	}
-	q = q.OrderExpr(orderExpr).
-		Limit(int64(perPage)).Offset(int64(offset))
-
 	var jobs []models.Job
-	err = q.Scan(context.Background(), &jobs)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list jobs")
+	if offset, hasRows := pageOffset(page, perPage, total); hasRows {
+		if err := q.OrderExpr(orderExpr).Limit(int64(perPage)).Offset(offset).Scan(context.Background(), &jobs); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list jobs")
+		}
 	}
 
 	totalPages := int(math.Ceil(float64(total) / float64(perPage)))
@@ -529,10 +523,7 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "not found")
 	}
 
-	page, _ := strconv.Atoi(c.QueryParam("page")) //nolint:errcheck // invalid/empty query param clamped to default below
-	if page < 1 {
-		page = 1
-	}
+	page := pageNumber(c.QueryParam("page"))
 	perPage, _ := strconv.Atoi(c.QueryParam("per_page")) //nolint:errcheck // invalid/empty query param clamped to default below
 	if perPage < 1 {
 		perPage = 20
@@ -567,18 +558,19 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 		}
 	}
 
-	offset := (page - 1) * perPage
 	var items []models.JobItem
-	if statusParam == "pending_review" {
-		if err := h.db.NewRaw(
-			`SELECT DISTINCT ON (source_title) * FROM job_items WHERE job_id = ? AND status = 'pending_review' ORDER BY source_title ASC, created_at ASC, id ASC LIMIT ? OFFSET ?`,
-			jobID, perPage, offset,
-		).Scan(context.Background(), &items); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
-		}
-	} else {
-		if err := q.OrderExpr("created_at ASC, id ASC").Limit(int64(perPage)).Offset(int64(offset)).Scan(context.Background(), &items); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
+	if offset, hasRows := pageOffset(page, perPage, total); hasRows {
+		if statusParam == "pending_review" {
+			if err := h.db.NewRaw(
+				`SELECT DISTINCT ON (source_title) * FROM job_items WHERE job_id = ? AND status = 'pending_review' ORDER BY source_title ASC, created_at ASC, id ASC LIMIT ? OFFSET ?`,
+				jobID, perPage, offset,
+			).Scan(context.Background(), &items); err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
+			}
+		} else {
+			if err := q.OrderExpr("created_at ASC, id ASC").Limit(int64(perPage)).Offset(offset).Scan(context.Background(), &items); err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")
+			}
 		}
 	}
 	if items == nil {
