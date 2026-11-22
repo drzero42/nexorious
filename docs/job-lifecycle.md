@@ -26,7 +26,7 @@ Everything below exists to keep these four promises. When a change to the code i
 
 One package, `internal/joblifecycle` (the module), makes every change to `jobs.status`, `job_items.status` and `jobs.dispatch_complete`, and creates every Job and item. Workers, HTTP handlers and the scheduler ask the module for a transition; they never write these columns themselves.
 
-Each Job kind registers with the module and tells it three things: which worker runs an item next, how to run the Job's dispatch again, and what its finishing effects are. The module does not import the workers.
+Each Job kind registers with the module and tells it what is particular to the kind: which worker runs an item next, how to run the Job's dispatch again, what its finishing effects are, and what counts as a duplicate Job. The module does not import the workers.
 
 ## States
 
