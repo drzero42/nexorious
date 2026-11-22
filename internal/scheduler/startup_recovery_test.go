@@ -132,9 +132,6 @@ func TestRecoverInterruptedSyncs_ReleasesRunningSyncRiverJobs(t *testing.T) {
 		"user_game_write": insertRiverJob(t, ctx, "user_game_write", "running", "job_item_id", itemB, 2, 5),
 	}
 	otherKind := insertRiverJob(t, ctx, "export_json", "running", "job_id", uuid.NewString(), 1, 3)
-	// Last attempt: left for #1304.
-	lastJob := insertSyncJobState(t, ctx, userID, "processing", false)
-	lastAttempt := insertRiverJob(t, ctx, "dispatch_sync", "running", "job_id", lastJob, 3, 3)
 
 	scheduler.RecoverInterruptedSyncs(ctx, testDB, rc)
 
@@ -152,9 +149,6 @@ func TestRecoverInterruptedSyncs_ReleasesRunningSyncRiverJobs(t *testing.T) {
 	}
 	if s := state(otherKind); s != "running" {
 		t.Errorf("non-sync kind: want running (untouched), got %q", s)
-	}
-	if s := state(lastAttempt); s != "running" {
-		t.Errorf("dispatch on its last attempt: want running (untouched), got %q", s)
 	}
 	// The released dispatch counts as live: no second dispatch is stacked on it.
 	var n int
@@ -234,5 +228,104 @@ func TestRecoverInterruptedSyncs_FinalizesSettledJob(t *testing.T) {
 	}
 	if events != 1 {
 		t.Errorf("sync.completed events: want 1, got %d", events)
+	}
+}
+
+// A dispatch hard-killed on its last attempt is dead (#1304): its River job is
+// discarded and the Job failed, so it no longer blocks a new sync and is not
+// re-dispatched.
+func TestRecoverInterruptedSyncs_FailsJobWhoseDispatchHasNoAttemptsLeft(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	rc := newTestRiverClient(t)
+	userID := insertUser(t, ctx, nil)
+	jobID := insertSyncJobState(t, ctx, userID, "processing", false)
+	itemID := insertPendingItem(t, ctx, jobID, userID, 0)
+	insertRiverJob(t, ctx, "dispatch_sync", "running", "job_id", jobID, 3, 3)
+
+	scheduler.RecoverInterruptedSyncs(ctx, testDB, rc)
+
+	if n := countDispatches(t, ctx, jobID, "discarded"); n != 1 {
+		t.Errorf("want the exhausted dispatch discarded, got %d discarded", n)
+	}
+	var total int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM river_job WHERE kind = 'dispatch_sync' AND args->>'job_id' = ?`, jobID,
+	).Scan(ctx, &total); err != nil {
+		t.Fatalf("count dispatches: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("want no new dispatch for the failed Job, got %d dispatch river_jobs", total)
+	}
+
+	var status, itemStatus string
+	var errMsg *string
+	if err := testDB.NewRaw(`SELECT status, error_message FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status, &errMsg); err != nil {
+		t.Fatalf("load job: %v", err)
+	}
+	if status != "failed" || errMsg == nil || *errMsg == "" {
+		t.Errorf("want job failed with a message, got status=%q error_message=%v", status, errMsg)
+	}
+	if err := testDB.NewRaw(`SELECT status FROM job_items WHERE id = ?`, itemID).Scan(ctx, &itemStatus); err != nil {
+		t.Fatalf("load item: %v", err)
+	}
+	if itemStatus != "cancelled" {
+		t.Errorf("want pending item cancelled, got %q", itemStatus)
+	}
+	var events int
+	if err := testDB.NewRaw(
+		`SELECT COUNT(*) FROM events WHERE dedup_key = ?`, jobID+":sync.failed",
+	).Scan(ctx, &events); err != nil {
+		t.Fatalf("count sync.failed events: %v", err)
+	}
+	if events != 1 {
+		t.Errorf("want 1 sync.failed event, got %d", events)
+	}
+}
+
+// An item whose worker was hard-killed on its last attempt is failed rather
+// than re-queued (#1304): re-queueing would hand an item that crashes the
+// process fresh attempts on every restart.
+func TestRecoverInterruptedSyncs_FailsItemWhoseWorkerHasNoAttemptsLeft(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	rc := newTestRiverClient(t)
+	userID := insertUser(t, ctx, nil)
+	jobID := insertSyncJobState(t, ctx, userID, "processing", false)
+	items := map[string]string{
+		"igdb_match":      insertPendingItem(t, ctx, jobID, userID, 0),
+		"user_game_write": insertPendingItem(t, ctx, jobID, userID, 0),
+	}
+	riverIDs := map[string]int64{}
+	for kind, itemID := range items {
+		riverIDs[kind] = insertRiverJob(t, ctx, kind, "running", "job_item_id", itemID, 5, 5)
+	}
+
+	scheduler.RecoverInterruptedSyncs(ctx, testDB, rc)
+
+	for kind, itemID := range items {
+		var state, itemStatus string
+		var errMsg *string
+		if err := testDB.NewRaw(`SELECT state::text FROM river_job WHERE id = ?`, riverIDs[kind]).Scan(ctx, &state); err != nil {
+			t.Fatalf("load river_job: %v", err)
+		}
+		if state != "discarded" {
+			t.Errorf("%s: want river job discarded, got %q", kind, state)
+		}
+		if err := testDB.NewRaw(`SELECT status, error_message FROM job_items WHERE id = ?`, itemID).Scan(ctx, &itemStatus, &errMsg); err != nil {
+			t.Fatalf("load item: %v", err)
+		}
+		if itemStatus != "failed" || errMsg == nil || *errMsg == "" {
+			t.Errorf("%s: want item failed with a message, got status=%q error_message=%v", kind, itemStatus, errMsg)
+		}
+		var requeued int
+		if err := testDB.NewRaw(
+			`SELECT COUNT(*) FROM river_job WHERE args->>'job_item_id' = ? AND id <> ?`, itemID, riverIDs[kind],
+		).Scan(ctx, &requeued); err != nil {
+			t.Fatalf("count requeued: %v", err)
+		}
+		if requeued != 0 {
+			t.Errorf("%s: want item not re-queued, got %d new river jobs", kind, requeued)
+		}
 	}
 }

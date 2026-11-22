@@ -21,20 +21,24 @@ import (
 // call it while workers are running.
 //
 // In order:
-//  1. Release 'running' River jobs of the sync kinds to 'retryable' (a hard
-//     kill leaves them 'running'; a job on its last attempt is left alone,
-//     see #1304).
-//  2. Re-enqueue the dispatch of every active sync Job whose dispatch did not
+//  1. Settle 'running' River jobs of the sync kinds that have no attempts
+//     left (#1304): discard them, fail the Job of a dispatch and fail the item
+//     of an item job. They are not retried, so work that kills the process
+//     every time cannot loop forever.
+//  2. Release the remaining 'running' River jobs of the sync kinds to
+//     'retryable' (a hard kill leaves them 'running').
+//  3. Re-enqueue the dispatch of every active sync Job whose dispatch did not
 //     finish and that has no live dispatch_sync River job (a clean shutdown
 //     cancels the dispatch, which River then records as completed).
-//  3. Re-queue pending items that have no live River job, whatever their age.
-//  4. Run the completion check for sync Jobs whose dispatch finished, so a Job
+//  4. Re-queue pending items that have no live River job, whatever their age.
+//  5. Run the completion check for sync Jobs whose dispatch finished, so a Job
 //     whose last item settled just before the shutdown is finalized.
 //
 // Every step is best-effort: a failure is logged and the remaining steps
 // still run. The hourly orphan rescue and the stale-job sweep remain as the
 // safety nets behind it.
 func RecoverInterruptedSyncs(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx]) {
+	settleExhaustedSyncRiverJobs(ctx, db)
 	releaseRunningSyncRiverJobs(ctx, db)
 	reenqueueUnfinishedDispatches(ctx, db, rc)
 	// No maintenance event: a restart must not produce a notification.
@@ -42,12 +46,75 @@ func RecoverInterruptedSyncs(ctx context.Context, db *bun.DB, rc *river.Client[p
 	completeSettledSyncJobs(ctx, db, rc)
 }
 
-func releaseRunningSyncRiverJobs(ctx context.Context, db *bun.DB) {
-	kinds := []string{
+// syncRiverKinds are the River job kinds that make up a sync.
+func syncRiverKinds() []string {
+	return []string{
 		tasks.DispatchSyncArgs{}.Kind(),
 		tasks.IGDBMatchArgs{}.Kind(),
 		tasks.UserGameArgs{}.Kind(),
 	}
+}
+
+// interruptedSyncMessage is the error recorded on a sync Job or item whose
+// River job was hard-killed on its last attempt.
+const interruptedSyncMessage = "interrupted by repeated server restarts"
+
+// settleExhaustedSyncRiverJobs discards the 'running' sync River jobs that
+// have no attempts left and fails what they were working on: the Job for a
+// dispatch (pending items cancelled, sync.failed emitted), the item for an
+// item job. River's rescuer never touches such a dispatch (it has no timeout),
+// so without this the Job blocks new syncs until the stale-job sweep.
+//
+// If failing the Job errors after its River job is discarded, the next step
+// re-enqueues the dispatch with fresh attempts.
+func settleExhaustedSyncRiverJobs(ctx context.Context, db *bun.DB) {
+	var dead []struct {
+		Kind      string `bun:"kind"`
+		JobID     string `bun:"job_id"`
+		JobItemID string `bun:"job_item_id"`
+	}
+	if err := db.NewRaw(`
+		WITH dead AS (
+		  UPDATE river_job
+		     SET state = 'discarded',
+		         finalized_at = now(),
+		         errors = array_append(errors, jsonb_build_object(
+		           'at', now(),
+		           'error', 'discarded at startup: previous process no longer running and no attempts left'
+		         ))
+		   WHERE kind IN (?)
+		     AND state = 'running'
+		     AND attempt >= max_attempts
+		  RETURNING kind, args
+		)
+		SELECT kind,
+		       COALESCE(args->>'job_id', '') AS job_id,
+		       COALESCE(args->>'job_item_id', '') AS job_item_id
+		FROM dead`,
+		bun.List(syncRiverKinds()),
+	).Scan(ctx, &dead); err != nil {
+		slog.ErrorContext(ctx, "startup recovery: discard exhausted sync river jobs failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return
+	}
+	for _, d := range dead {
+		if d.Kind == (tasks.DispatchSyncArgs{}).Kind() {
+			slog.WarnContext(ctx, "startup recovery: failing sync whose dispatch was killed on its last attempt", logging.KeyJobID, d.JobID)
+			tasks.FailSyncJob(ctx, db, d.JobID, "sync "+interruptedSyncMessage)
+			continue
+		}
+		slog.WarnContext(ctx, "startup recovery: failing sync item whose worker was killed on its last attempt", logging.KeyJobItemID, d.JobItemID, "kind", d.Kind)
+		if _, err := db.NewRaw(
+			`UPDATE job_items SET status = 'failed', error_message = ?, processed_at = now()
+			 WHERE id = ? AND status = 'pending'`,
+			interruptedSyncMessage, d.JobItemID,
+		).Exec(ctx); err != nil {
+			slog.ErrorContext(ctx, "startup recovery: fail interrupted sync item failed", logging.KeyErr, err, logging.KeyJobItemID, d.JobItemID, logging.Cat(logging.CategoryDB))
+		}
+	}
+}
+
+func releaseRunningSyncRiverJobs(ctx context.Context, db *bun.DB) {
+	kinds := syncRiverKinds()
 	result, err := db.NewRaw(`
 		UPDATE river_job
 		   SET state = 'retryable',
