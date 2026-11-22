@@ -30,8 +30,8 @@ type Game struct {
 	Themes                     *string    `bun:"themes"                         json:"themes"`
 	PlayerPerspectives         *string    `bun:"player_perspectives"            json:"player_perspectives"`
 	GameMetadata               *string    `bun:"game_metadata"                  json:"game_metadata"`
-	LastUpdated                time.Time  `bun:"last_updated,notnull"           json:"last_updated"`
-	CreatedAt                  time.Time  `bun:"created_at,notnull"             json:"created_at"`
+	LastUpdated                time.Time  `bun:"last_updated,nullzero,notnull"           json:"last_updated"`
+	CreatedAt                  time.Time  `bun:"created_at,nullzero,notnull"             json:"created_at"`
 }
 
 type User struct {
@@ -42,8 +42,8 @@ type User struct {
 	PasswordHash string    `bun:"password_hash,notnull" json:"password_hash"`
 	IsActive     bool      `bun:"is_active,notnull"     json:"is_active"`
 	IsAdmin      bool      `bun:"is_admin,notnull"      json:"is_admin"`
-	CreatedAt    time.Time `bun:"created_at,notnull"    json:"created_at"`
-	UpdatedAt    time.Time `bun:"updated_at,notnull"    json:"updated_at"`
+	CreatedAt    time.Time `bun:"created_at,nullzero,notnull"    json:"created_at"`
+	UpdatedAt    time.Time `bun:"updated_at,nullzero,notnull"    json:"updated_at"`
 }
 
 type UserSession struct {
@@ -54,7 +54,7 @@ type UserSession struct {
 	SessionIDHash string     `bun:"session_id_hash,notnull"    json:"-"`
 	UserAgent     *string    `bun:"user_agent"                 json:"user_agent"`
 	IpAddress     *string    `bun:"ip_address"                 json:"ip_address"`
-	CreatedAt     time.Time  `bun:"created_at,notnull"         json:"created_at"`
+	CreatedAt     time.Time  `bun:"created_at,nullzero,notnull"         json:"created_at"`
 	ExpiresAt     time.Time  `bun:"expires_at,notnull"         json:"expires_at"`
 	LastUsedAt    *time.Time `bun:"last_used_at"               json:"last_used_at"`
 }
@@ -68,7 +68,7 @@ type APIKey struct {
 	KeyHash    string     `bun:"key_hash,notnull"   json:"-"`
 	Scopes     string     `bun:"scopes,notnull"     json:"scopes"`
 	LastUsedAt *time.Time `bun:"last_used_at"       json:"last_used_at"`
-	CreatedAt  time.Time  `bun:"created_at,notnull" json:"created_at"`
+	CreatedAt  time.Time  `bun:"created_at,nullzero,notnull" json:"created_at"`
 	ExpiresAt  *time.Time `bun:"expires_at"         json:"expires_at"`
 	RevokedAt  *time.Time `bun:"revoked_at"         json:"revoked_at"`
 }
@@ -84,8 +84,8 @@ type UserGame struct {
 	IsLoved        bool      `bun:"is_loved,notnull"      json:"is_loved"`
 	IsWishlisted   bool      `bun:"is_wishlisted,notnull" json:"is_wishlisted"`
 	PersonalNotes  *string   `bun:"personal_notes"        json:"personal_notes"`
-	CreatedAt      time.Time `bun:"created_at,notnull" json:"created_at"`
-	UpdatedAt      time.Time `bun:"updated_at,notnull" json:"updated_at"`
+	CreatedAt      time.Time `bun:"created_at,nullzero,notnull" json:"created_at"`
+	UpdatedAt      time.Time `bun:"updated_at,nullzero,notnull" json:"updated_at"`
 
 	Game      *Game              `bun:"rel:belongs-to,join:game_id=id"    json:"game,omitempty"`
 	Platforms []UserGamePlatform `bun:"rel:has-many,join:id=user_game_id" json:"platforms"`
@@ -107,8 +107,8 @@ type UserGamePlatform struct {
 	AcquiredDate         *time.Time `bun:"acquired_date"                json:"acquired_date"`
 	ExternalGameID       *string    `bun:"external_game_id"             json:"external_game_id"`
 	SyncFromSource       bool       `bun:"sync_from_source,notnull"     json:"sync_from_source"`
-	CreatedAt            time.Time  `bun:"created_at,notnull"           json:"created_at"`
-	UpdatedAt            time.Time  `bun:"updated_at,notnull"           json:"updated_at"`
+	CreatedAt            time.Time  `bun:"created_at,nullzero,notnull"           json:"created_at"`
+	UpdatedAt            time.Time  `bun:"updated_at,nullzero,notnull"           json:"updated_at"`
 
 	PlatformRecord   *Platform     `bun:"rel:belongs-to,join:platform=name"        json:"-"`
 	StorefrontRecord *Storefront   `bun:"rel:belongs-to,join:storefront=name"      json:"-"`
@@ -151,7 +151,7 @@ type SmellIgnore struct {
 	UserID     string    `bun:"user_id,notnull"      json:"user_id"`
 	UserGameID string    `bun:"user_game_id,notnull" json:"user_game_id"`
 	CheckID    string    `bun:"check_id,notnull"     json:"check_id"`
-	CreatedAt  time.Time `bun:"created_at,notnull"   json:"created_at"`
+	CreatedAt  time.Time `bun:"created_at,nullzero,notnull"   json:"created_at"`
 }
 
 type Tag struct {
@@ -161,8 +161,8 @@ type Tag struct {
 	UserID    string    `bun:"user_id,notnull"    json:"user_id"`
 	Name      string    `bun:"name,notnull"       json:"name"`
 	Color     *string   `bun:"color"              json:"color"`
-	CreatedAt time.Time `bun:"created_at,notnull" json:"created_at"`
-	UpdatedAt time.Time `bun:"updated_at,notnull" json:"updated_at"`
+	CreatedAt time.Time `bun:"created_at,nullzero,notnull" json:"created_at"`
+	UpdatedAt time.Time `bun:"updated_at,nullzero,notnull" json:"updated_at"`
 }
 
 type UserGameTag struct {
@@ -171,7 +171,7 @@ type UserGameTag struct {
 	ID         string    `bun:"id,pk"                 json:"id"`
 	UserGameID string    `bun:"user_game_id,notnull"  json:"user_game_id"`
 	TagID      string    `bun:"tag_id,notnull"        json:"tag_id"`
-	CreatedAt  time.Time `bun:"created_at,notnull"    json:"created_at"`
+	CreatedAt  time.Time `bun:"created_at,nullzero,notnull"    json:"created_at"`
 
 	Tag *Tag `bun:"rel:belongs-to,join:tag_id=id" json:"tag,omitempty"`
 }
@@ -193,8 +193,8 @@ type ExternalGame struct {
 	ParentID        *string         `bun:"parent_id"                json:"parent_id,omitempty"`
 	StoreLink       *string         `bun:"store_link"               json:"store_link,omitempty"`
 	SourceMetadata  json.RawMessage `bun:"source_metadata"          json:"source_metadata,omitempty"`
-	CreatedAt       time.Time       `bun:"created_at,notnull"       json:"created_at"`
-	UpdatedAt       time.Time       `bun:"updated_at,notnull"       json:"updated_at"`
+	CreatedAt       time.Time       `bun:"created_at,nullzero,notnull"       json:"created_at"`
+	UpdatedAt       time.Time       `bun:"updated_at,nullzero,notnull"       json:"updated_at"`
 
 	Platforms []ExternalGamePlatform `bun:"rel:has-many,join:id=external_game_id" json:"-"`
 }
@@ -210,7 +210,7 @@ type ExternalGamePlatform struct {
 	HoursPlayed          float64   `bun:"hours_played,notnull"     json:"hours_played"`
 	AchievementsUnlocked *int      `bun:"achievements_unlocked"     json:"achievements_unlocked"`
 	AchievementsTotal    *int      `bun:"achievements_total"        json:"achievements_total"`
-	CreatedAt            time.Time `bun:"created_at,notnull"        json:"created_at"`
+	CreatedAt            time.Time `bun:"created_at,nullzero,notnull"        json:"created_at"`
 }
 
 // UserSyncConfig mirrors the user_sync_configs table.
@@ -224,8 +224,8 @@ type UserSyncConfig struct {
 	StorefrontCredentials *string    `bun:"storefront_credentials"  json:"-"`
 	LastSyncedAt          *time.Time `bun:"last_synced_at"          json:"last_synced_at"`
 	CredentialsError      bool       `bun:"credentials_error"       json:"-"`
-	CreatedAt             time.Time  `bun:"created_at,notnull"      json:"created_at"`
-	UpdatedAt             time.Time  `bun:"updated_at,notnull"      json:"updated_at"`
+	CreatedAt             time.Time  `bun:"created_at,nullzero,notnull"      json:"created_at"`
+	UpdatedAt             time.Time  `bun:"updated_at,nullzero,notnull"      json:"updated_at"`
 }
 
 // JobChange mirrors the changes table — one row per library outcome per job run
@@ -242,7 +242,7 @@ type JobChange struct {
 	Title          string    `bun:"title,notnull"       json:"title"`
 	OldStatus      *string   `bun:"old_status"          json:"old_status"`
 	NewStatus      *string   `bun:"new_status"          json:"new_status"`
-	CreatedAt      time.Time `bun:"created_at,notnull"  json:"created_at"`
+	CreatedAt      time.Time `bun:"created_at,nullzero,notnull"  json:"created_at"`
 }
 
 // UserSettings mirrors the user_settings table — one row per user, lazily
@@ -255,8 +255,8 @@ type UserSettings struct {
 	DateFormat               string    `bun:"date_format,notnull"            json:"date_format"`
 	Theme                    string    `bun:"theme,notnull"                  json:"theme"`
 	LastSeenChangelogVersion *string   `bun:"last_seen_changelog_version"    json:"last_seen_changelog_version,omitempty"`
-	CreatedAt                time.Time `bun:"created_at,notnull"             json:"created_at"`
-	UpdatedAt                time.Time `bun:"updated_at,notnull"             json:"updated_at"`
+	CreatedAt                time.Time `bun:"created_at,nullzero,notnull"             json:"created_at"`
+	UpdatedAt                time.Time `bun:"updated_at,nullzero,notnull"             json:"updated_at"`
 }
 
 // Pool is a Play Planning pool — a sibling of Tag with ordering, an optional
@@ -270,8 +270,8 @@ type Pool struct {
 	Color     *string         `bun:"color"               json:"color"`
 	Position  int             `bun:"position,notnull"    json:"position"`
 	Filter    json.RawMessage `bun:"filter,type:jsonb"   json:"filter"`
-	CreatedAt time.Time       `bun:"created_at,notnull"  json:"created_at"`
-	UpdatedAt time.Time       `bun:"updated_at,notnull"  json:"updated_at"`
+	CreatedAt time.Time       `bun:"created_at,nullzero,notnull"  json:"created_at"`
+	UpdatedAt time.Time       `bun:"updated_at,nullzero,notnull"  json:"updated_at"`
 }
 
 // PoolGame is a pool membership row. position IS NULL = Candidate;
@@ -283,5 +283,5 @@ type PoolGame struct {
 	PoolID     string    `bun:"pool_id,notnull"       json:"pool_id"`
 	UserGameID string    `bun:"user_game_id,notnull"  json:"user_game_id"`
 	Position   *int      `bun:"position"              json:"position"`
-	CreatedAt  time.Time `bun:"created_at,notnull"    json:"created_at"`
+	CreatedAt  time.Time `bun:"created_at,nullzero,notnull"    json:"created_at"`
 }

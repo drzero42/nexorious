@@ -25,7 +25,7 @@
       # — sharing one value here makes drift impossible. When go.mod/go.sum
       # changes, run ./nix/update-go-vendor-hash.sh (Renovate runs it on Go
       # dependency PRs); the Nix Build workflow only verifies.
-      goVendorHash = "sha256-bLC6cIA3Mke4IpiJjy3FRCMjTnoL1uUgk+xjrleNMlk=";
+      goVendorHash = "sha256-IJLWarZSce1D/6GR5YnL2SZh/4ewlCCdUqhFBM6eUCE=";
     in
     {
       packages = forEachSystem (pkgs: let

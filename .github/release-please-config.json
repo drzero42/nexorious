@@ -6,6 +6,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
+      "changelog-type": "github",
       "changelog-path": "CHANGELOG.md",
       "initial-version": "0.1.0",
       "extra-files": [

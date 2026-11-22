@@ -1128,9 +1128,13 @@ func TestDispatchSync_RemovedGames_WritesSyncChange(t *testing.T) {
 	// Pre-seed a game that is NOT returned by the sync (should be marked removed).
 	insertTestExternalGame(t, userID, "steam", "999", "Old Game", "pc-windows")
 
-	// Sync returns an empty library — game 999 is gone.
-	fakeAdapter := &fakeStorefrontAdapter{}
-	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: nil}
+	// Sync returns a library without game 999 — it is gone. (The fetch must be
+	// non-empty: an empty fetch with known games fails the job, see
+	// TestDispatchSync_EmptyFetchWithKnownGames_FailsWithoutSweep.)
+	fakeAdapter := &fakeStorefrontAdapter{batches: [][]tasks.ExternalGameEntry{{
+		{ExternalID: "1000", Title: "Kept Game", Platforms: []string{"pc-windows"}, OwnershipStatus: "owned"},
+	}}}
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(fakeAdapter), RiverClient: newTestRiverClient(t)}
 	_ = w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
 		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "steam"},
 	})
@@ -1148,6 +1152,109 @@ func TestDispatchSync_RemovedGames_WritesSyncChange(t *testing.T) {
 	).Scan(ctx, &changeTitle)
 	if changeTitle != "Old Game" {
 		t.Errorf("change title: want 'Old Game', got %q", changeTitle)
+	}
+}
+
+// An empty fetch while games are known must not run the removal sweep (#1324):
+// the job fails, every game stays available, and no 'removed' change is written
+// (those feed the sync.diff notification).
+func TestDispatchSync_EmptyFetchWithKnownGames_FailsWithoutSweep(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'gog', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'gog', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+	insertTestExternalGame(t, userID, "gog", "1", "Game One", "pc-windows")
+	insertTestExternalGame(t, userID, "gog", "2", "Game Two", "pc-windows")
+	// A game on another storefront must not count as "known" for this one.
+	insertTestExternalGame(t, userID, "steam", "3", "Steam Game", "pc-windows")
+
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), RiverClient: nil}
+	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
+	}); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+
+	var status, errMsg string
+	var dispatchComplete bool
+	if err := testDB.NewRaw(
+		`SELECT status, COALESCE(error_message, ''), dispatch_complete FROM jobs WHERE id = ?`, jobID,
+	).Scan(ctx, &status, &errMsg, &dispatchComplete); err != nil {
+		t.Fatalf("load job: %v", err)
+	}
+	if status != "failed" {
+		t.Errorf("job status: want failed, got %q", status)
+	}
+	if !strings.Contains(errMsg, "empty library while 2 games are known") {
+		t.Errorf("error message should name the known-game count, got %q", errMsg)
+	}
+
+	var stillAvailable int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM external_games WHERE user_id = ? AND storefront = 'gog' AND is_available = true`, userID,
+	).Scan(ctx, &stillAvailable)
+	if stillAvailable != 2 {
+		t.Errorf("expected both games still available, got %d", stillAvailable)
+	}
+	var removed int
+	_ = testDB.NewRaw(
+		`SELECT COUNT(*) FROM changes WHERE job_id = ? AND change_type = 'removed'`, jobID,
+	).Scan(ctx, &removed)
+	if removed != 0 {
+		t.Errorf("expected no removed changes, got %d", removed)
+	}
+	var lastSynced *time.Time
+	_ = testDB.NewRaw(
+		`SELECT last_synced_at FROM user_sync_configs WHERE user_id = ? AND storefront = 'gog'`, userID,
+	).Scan(ctx, &lastSynced)
+	if lastSynced != nil {
+		t.Errorf("last_synced_at must stay unset on a refused sync, got %v", lastSynced)
+	}
+}
+
+// An empty fetch with nothing known is a genuinely empty library (first sync of
+// an empty account, or games already marked unavailable): the job completes.
+func TestDispatchSync_EmptyFetchNoKnownGames_Completes(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	jobID := uuid.NewString()
+	insertTestUser(t, testDB, userID)
+
+	_, _ = testDB.ExecContext(ctx,
+		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items) VALUES (?, ?, 'sync', 'gog', 'pending', 'low', 0)`,
+		jobID, userID,
+	)
+	_, _ = testDB.NewRaw(
+		`INSERT INTO user_sync_configs (id, user_id, storefront, frequency) VALUES (?, ?, 'gog', 'daily')`,
+		uuid.NewString(), userID,
+	).Exec(ctx)
+	// Already-unavailable rows are not "known available" and must not trip the guard.
+	insertTestExternalGame(t, userID, "gog", "1", "Gone Game", "pc-windows")
+	_, _ = testDB.ExecContext(ctx,
+		`UPDATE external_games SET is_available = false WHERE user_id = ? AND storefront = 'gog'`, userID)
+
+	w := &tasks.DispatchSyncWorker{DB: testDB, Adapter: adapterFactory(&fakeStorefrontAdapter{}), RiverClient: newTestRiverClient(t)}
+	if err := w.Work(ctx, &river.Job[tasks.DispatchSyncArgs]{
+		Args: tasks.DispatchSyncArgs{JobID: jobID, UserID: userID, Storefront: "gog"},
+	}); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+
+	var status string
+	_ = testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status)
+	if status != "completed" {
+		t.Errorf("job status: want completed, got %q", status)
 	}
 }
 
@@ -3021,7 +3128,7 @@ func TestFailSyncJobEmitsFailed(t *testing.T) {
 		t.Fatalf("insert user_sync_config: %v", err)
 	}
 
-	// Drive the real worker with a fetch error — this triggers failSyncJob internally.
+	// Drive the real worker with a fetch error — this triggers FailSyncJob internally.
 	w := &tasks.DispatchSyncWorker{
 		DB:          testDB,
 		Adapter:     fetchErrFactory(errors.New("network error")),

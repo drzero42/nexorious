@@ -9,7 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -445,10 +445,9 @@ func TestImportNexorious_CreatesPoolsItemHiddenFromListing(t *testing.T) {
 	}
 }
 
-// assertImportItemsCreatedWithJob checks that jobID holds exactly the items
-// keyed wantKeys, and that each item's created_at equals its job's and is not
-// Go's zero time (#1311: Bun wrote 0001-01-01 when CreatedAt was left unset).
-func assertImportItemsCreatedWithJob(t *testing.T, jobID string, wantKeys []string) {
+// assertImportItemOrder checks the exact order job items will be listed and
+// ensures their timestamps start with the job's timestamp and then increase.
+func assertImportItemOrder(t *testing.T, jobID string, wantKeys []string) {
 	t.Helper()
 	var rows []struct {
 		ItemKey string    `bun:"item_key"`
@@ -458,29 +457,23 @@ func assertImportItemsCreatedWithJob(t *testing.T, jobID string, wantKeys []stri
 	if err := testDB.NewRaw(
 		`SELECT ji.item_key, ji.created_at AS item_at, j.created_at AS job_at
 		 FROM job_items ji JOIN jobs j ON j.id = ji.job_id
-		 WHERE ji.job_id = ? ORDER BY ji.item_key`, jobID,
+		 WHERE ji.job_id = ? ORDER BY ji.created_at, ji.id`, jobID,
 	).Scan(context.Background(), &rows); err != nil {
 		t.Fatalf("read job items: %v", err)
 	}
 	gotKeys := make([]string, len(rows))
 	for i, r := range rows {
 		gotKeys[i] = r.ItemKey
-	}
-	sort.Strings(wantKeys)
-	if strings.Join(gotKeys, ",") != strings.Join(wantKeys, ",") {
-		t.Fatalf("item keys = %v, want %v", gotKeys, wantKeys)
-	}
-	for _, r := range rows {
-		if r.ItemAt.Year() < 2000 {
-			t.Errorf("item %s created_at = %v, want the job's creation time, not the zero time", r.ItemKey, r.ItemAt)
+		if want := r.JobAt.Add(time.Duration(i) * time.Microsecond); r.ItemAt.Year() < 2000 || !r.ItemAt.Equal(want) {
+			t.Errorf("item %s created_at = %v, want %v", r.ItemKey, r.ItemAt, want)
 		}
-		if !r.ItemAt.Equal(r.JobAt) {
-			t.Errorf("item %s created_at = %v, want its job's %v", r.ItemKey, r.ItemAt, r.JobAt)
-		}
+	}
+	if !slices.Equal(gotKeys, wantKeys) {
+		t.Errorf("item order = %v, want %v", gotKeys, wantKeys)
 	}
 }
 
-func TestImportNexorious_ItemsCreatedAtEqualsJob(t *testing.T) {
+func TestImportNexorious_ItemsFollowFileOrder(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
 	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
@@ -516,5 +509,5 @@ func TestImportNexorious_ItemsCreatedAtEqualsJob(t *testing.T) {
 	if jobID == "" {
 		t.Fatal("no job_id in response")
 	}
-	assertImportItemsCreatedWithJob(t, jobID, []string{"igdb_1", "igdb_2", "igdb_3", "__pools__"})
+	assertImportItemOrder(t, jobID, []string{"__pools__", "igdb_1", "igdb_2", "igdb_3"})
 }

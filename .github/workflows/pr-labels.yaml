@@ -1,0 +1,99 @@
+---
+# Labels each PR by its Conventional Commit type so GitHub's generated release
+# notes (release-please `changelog-type: github`, categories in
+# .github/release.yml) can group it: breaking changes, features, bug fixes,
+# dependencies. Everything else gets `internal` and is left out of the notes.
+#
+# The type comes from the message release-please will use for the version bump:
+# the PR title, or the first line of a non-empty BEGIN_COMMIT_OVERRIDE block in
+# the description (same rule as check-pr-commit-message.mjs).
+#
+# pull_request_target so PRs from forks can be labelled. Safe: the job never
+# checks out or runs PR code, and title/body reach the script only through env.
+name: PR Labels
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: Label by commit type
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Apply release-notes labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          msg=$PR_TITLE
+          case $PR_BODY in
+            *BEGIN_COMMIT_OVERRIDE*)
+              override=${PR_BODY#*BEGIN_COMMIT_OVERRIDE}
+              override=${override%%END_COMMIT_OVERRIDE*}
+              if [ -n "$(printf '%s' "$override" | tr -d '[:space:]')" ]; then
+                msg=$(printf '%s\n' "$override" | tr -d '\r')
+              fi
+              ;;
+          esac
+
+          subject=$(printf '%s\n' "$msg" | sed -n '/[^[:space:]]/{s/^[[:space:]]*//;p;q;}')
+          re='^([A-Za-z]+)(\(([^)]*)\))?(!)?: '
+          if [[ ! $subject =~ $re ]]; then
+            echo "Not a Conventional Commit subject, leaving labels alone: $subject"
+            exit 0
+          fi
+          type=${BASH_REMATCH[1],,}
+          scope=${BASH_REMATCH[3]}
+          bang=${BASH_REMATCH[4]}
+
+          want=()
+          case $type in
+            feat|fix|perf|revert)
+              if [ "$scope" = deps ]; then
+                want+=(dependencies)
+              elif [ "$type" = feat ]; then
+                want+=(enhancement)
+              else
+                want+=(bug)
+              fi
+              ;;
+            *) want+=(internal) ;;
+          esac
+          if [ -n "$bang" ] || printf '%s\n' "$msg" | grep -Eq '^BREAKING[ -]CHANGE:'; then
+            want+=(breaking)
+          fi
+
+          # Labels this workflow owns. `dependencies` is only ever added: Renovate
+          # also sets it on its own PRs, and `internal` already hides chore(deps).
+          managed=(breaking enhancement bug internal)
+          have=$(gh api "repos/$REPO/issues/$PR_NUMBER/labels" --jq '.[].name')
+
+          for l in "${managed[@]}"; do
+            if grep -qxF "$l" <<<"$have" && ! printf '%s\n' "${want[@]}" | grep -qxF "$l"; then
+              echo "Removing $l"
+              gh api -X DELETE "repos/$REPO/issues/$PR_NUMBER/labels/$l" --silent
+            fi
+          done
+          for l in "${want[@]}"; do
+            if ! grep -qxF "$l" <<<"$have"; then
+              echo "Adding $l"
+              gh api -X POST "repos/$REPO/issues/$PR_NUMBER/labels" -f "labels[]=$l" --silent
+            fi
+          done

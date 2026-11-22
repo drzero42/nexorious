@@ -1239,6 +1239,12 @@ func TestHandleGetJobItems_DeduplicatesPendingReview(t *testing.T) {
 	// Same source_title, different item_key (PS4 and PS5 SKUs of the same game).
 	insertJobItem(t, testDB, "ji-dedup-ps4", "job-dedup", userID, "CUSA12345_00", "Call of Duty", "pending_review")
 	insertJobItem(t, testDB, "ji-dedup-ps5", "job-dedup", userID, "PPSA07890_00", "Call of Duty", "pending_review")
+	insertJobItem(t, testDB, "ji-dedup-a", "job-dedup", userID, "SKU-3", "Call of Duty", "pending_review")
+	if _, err := testDB.ExecContext(context.Background(), `UPDATE job_items SET created_at =
+		CASE WHEN id = 'ji-dedup-ps4' THEN TIMESTAMPTZ '2026-01-02' ELSE TIMESTAMPTZ '2026-01-01' END
+		WHERE job_id = ?`, "job-dedup"); err != nil {
+		t.Fatalf("set test timestamps: %v", err)
+	}
 	// A distinct title to verify other items still appear.
 	insertJobItem(t, testDB, "ji-dedup-other", "job-dedup", userID, "CUSA99999_00", "Other Game", "pending_review")
 
@@ -1256,6 +1262,9 @@ func TestHandleGetJobItems_DeduplicatesPendingReview(t *testing.T) {
 	items := resp["items"].([]any)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items (deduplicated), got %d", len(items))
+	}
+	if got := items[0].(map[string]any)["id"]; got != "ji-dedup-a" {
+		t.Errorf("representative item ID = %v, want the earliest timestamp then smallest ID", got)
 	}
 	// Items must be sorted alphabetically.
 	titles := []string{
@@ -1307,5 +1316,63 @@ func TestHandleGetJobItems_TiedCreatedAt_OnePageInIDOrder(t *testing.T) {
 	got := listIDs(t, e, "/api/jobs/job-tone/items", token, "items")
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("one page: ids = %v, want %v (id ascending)", got, want)
+	}
+}
+
+// pageThroughIDs reads a list endpoint one row per page and returns the ids in
+// the order the pages yield them. basePath must already carry a query string.
+func pageThroughIDs(t *testing.T, e http.Handler, basePath, listKey, token string, total int) []string {
+	t.Helper()
+	ids := make([]string, 0, total)
+	for page := 1; page <= total; page++ {
+		rec := getAuth(t, e, fmt.Sprintf("%s&per_page=1&page=%d", basePath, page), token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s page %d: status %d: %s", basePath, page, rec.Code, rec.Body.String())
+		}
+		var resp map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		rows, _ := resp[listKey].([]any)
+		if len(rows) != 1 {
+			t.Fatalf("GET %s page %d: got %d rows, want 1", basePath, page, len(rows))
+		}
+		ids = append(ids, fmt.Sprint(rows[0].(map[string]any)["id"]))
+	}
+	return ids
+}
+
+// Sorting jobs by a column that ties (status here ties on every row) must fall
+// back to created_at and then id, so offset paging neither repeats nor drops a
+// row (#1313). Job ids are random UUIDs, hence created_at before id.
+func TestListJobs_TiedSortPagesDeterministically(t *testing.T) {
+	truncateAllTables(t)
+	e := newTestEchoWithPool(t, testDB)
+	userID, token := setupTagUser(t, testDB, e, "jobs-tiebreak")
+
+	// Inserted in an order that is neither the ascending nor the descending
+	// expected order. Two pairs share a created_at, so id must break those.
+	for _, j := range []struct {
+		id      string
+		minutes int
+	}{{"job-c", 1}, {"job-a", 2}, {"job-e", 1}, {"job-b", 2}, {"job-d", 0}} {
+		if _, err := testDB.ExecContext(context.Background(),
+			`INSERT INTO jobs (id, user_id, job_type, source, status, priority, created_at)
+			 VALUES (?, ?, 'import', 'steam', 'completed', 'high',
+			         TIMESTAMPTZ '2026-01-01 00:00:00+00' + make_interval(mins => ?))`,
+			j.id, userID, j.minutes,
+		); err != nil {
+			t.Fatalf("insert job %s: %v", j.id, err)
+		}
+	}
+
+	for order, want := range map[string]string{
+		"asc":  "job-d,job-c,job-e,job-a,job-b",
+		"desc": "job-b,job-a,job-e,job-c,job-d",
+	} {
+		got := pageThroughIDs(t, e, "/api/jobs?sort_by=status&sort_order="+order, "jobs", token, 5)
+		if strings.Join(got, ",") != want {
+			t.Errorf("sort_order=%s: paged ids = %v, want %s", order, got, want)
+		}
 	}
 }

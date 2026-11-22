@@ -611,7 +611,7 @@ func postCSVImportFormat(t *testing.T, e interface {
 
 // The CSV import goes through enqueueImportJob, the generic path every
 // registered import source shares.
-func TestImportCSV_ItemsCreatedAtEqualsJob(t *testing.T) {
+func TestImportCSV_ItemsFollowFileOrder(t *testing.T) {
 	truncateAllTables(t)
 	cfg := testCfg()
 	e := newTestEchoConfiguredIGDB(t, testDB, cfg, testIGDBClient(true))
@@ -631,5 +631,5 @@ func TestImportCSV_ItemsCreatedAtEqualsJob(t *testing.T) {
 	if jobID == "" {
 		t.Fatalf("empty job_id")
 	}
-	assertImportItemsCreatedWithJob(t, jobID, []string{"game_0", "game_1", "game_2"})
+	assertImportItemOrder(t, jobID, []string{"game_0", "game_1", "game_2"})
 }

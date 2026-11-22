@@ -165,7 +165,15 @@ func (h *JobsHandler) HandleListJobs(c *echo.Context) error {
 	}
 
 	offset := (page - 1) * perPage
-	q = q.OrderExpr(fmt.Sprintf("%s %s", sortBy, sortOrder)).
+	// Every sort column can tie (status and job_type on most rows), so end on
+	// a unique key or offset paging repeats and drops rows. created_at comes
+	// before id because ids are random UUIDs: ties stay chronological.
+	// sortBy and sortOrder are whitelisted above.
+	orderExpr := fmt.Sprintf("%s %s, created_at %s, id %s", sortBy, sortOrder, sortOrder, sortOrder)
+	if sortBy == "created_at" {
+		orderExpr = fmt.Sprintf("created_at %s, id %s", sortOrder, sortOrder)
+	}
+	q = q.OrderExpr(orderExpr).
 		Limit(int64(perPage)).Offset(int64(offset))
 
 	var jobs []models.Job
@@ -553,7 +561,7 @@ func (h *JobsHandler) HandleGetJobItems(c *echo.Context) error {
 	var items []models.JobItem
 	if statusParam == "pending_review" {
 		if err := h.db.NewRaw(
-			`SELECT DISTINCT ON (source_title) * FROM job_items WHERE job_id = ? AND status = 'pending_review' ORDER BY source_title ASC LIMIT ? OFFSET ?`,
+			`SELECT DISTINCT ON (source_title) * FROM job_items WHERE job_id = ? AND status = 'pending_review' ORDER BY source_title ASC, created_at ASC, id ASC LIMIT ? OFFSET ?`,
 			jobID, perPage, offset,
 		).Scan(context.Background(), &items); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to list job items")

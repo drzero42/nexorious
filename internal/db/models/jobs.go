@@ -62,7 +62,7 @@ type Job struct {
 	ErrorMessage     *string    `bun:"error_message"            json:"error_message"`
 	AutoRetryDone    bool       `bun:"auto_retry_done,notnull"   json:"auto_retry_done"`
 	DispatchComplete bool       `bun:"dispatch_complete,notnull" json:"-"`
-	CreatedAt        time.Time  `bun:"created_at,notnull"        json:"created_at"`
+	CreatedAt        time.Time  `bun:"created_at,nullzero,notnull"        json:"created_at"`
 	StartedAt        *time.Time `bun:"started_at"               json:"started_at"`
 	CompletedAt      *time.Time `bun:"completed_at"             json:"completed_at"`
 }
@@ -122,7 +122,7 @@ type JobItem struct {
 	IGDBCandidates  json.RawMessage `bun:"igdb_candidates,notnull"  json:"igdb_candidates"`
 	ResolvedIGDBID  *int            `bun:"resolved_igdb_id"         json:"resolved_igdb_id"`
 	MatchConfidence *float64        `bun:"match_confidence"         json:"match_confidence"`
-	CreatedAt       time.Time       `bun:"created_at,notnull"       json:"created_at"`
+	CreatedAt       time.Time       `bun:"created_at,nullzero,notnull"       json:"created_at"`
 	ProcessedAt     *time.Time      `bun:"processed_at"             json:"processed_at"`
 	ResolvedAt      *time.Time      `bun:"resolved_at"              json:"resolved_at"`
 }
