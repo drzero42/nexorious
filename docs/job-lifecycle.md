@@ -153,11 +153,18 @@ A Job waiting on the user stays `processing` for as long as it takes. For sync t
 
 ## Finishing effects
 
-Notifications, the sync diff, metrics, the store-link refresh that follows a sync, and applying imported pools are *finishing effects*. They are not run inline. The transaction that completes or fails a Job inserts one River job that runs them, so a shutdown right after the transition cannot lose them.
+Notifications, the sync diff, the store-link refresh that follows a sync, and applying imported pools are *finishing effects*. They are not run inline. The transaction that completes or fails a Job inserts one River job that runs them, so a shutdown right after the transition cannot lose them.
 
 Effects can run more than once (a River retry, or a Job that is retried and completes again), so each must be idempotent for its Job. Notifications already are, through their dedup key.
 
 Cancel has no finishing effects.
+
+### Metrics are not finishing effects
+
+Metrics are in-process counters, and a counter must not be incremented twice for one event. They are recorded by the module in-process, right after the transaction of the transition they count has committed. Each transition commits exactly once, so nothing is counted twice:
+
+- an item is counted when it finishes, once, with its outcome;
+- a Job's outcome is counted on its first finish only. A Job that Retry reopened does not count again when it completes again.
 
 ## Invariants
 
@@ -199,18 +206,20 @@ While the server runs, a `running` River job is alive, and the rule leaves its i
 | Export | Has no items; its worker is its dispatch | None | No | Export completed / failed notification |
 | Generic import | The upload handler, all at once | Match, then finalize | Yes | Import completed / failed notification |
 | Nexorious import | The upload handler, all at once | One | No | Apply the imported pools; import completed / failed notification |
-| Sync | The dispatch worker, in batches while it reads the library | Match, then write | Yes | On completion: sync completed (or completed with errors), sync diff, metrics, store-link refresh. On failure: sync failed or auth expired, credentials flag, metric. Awaiting review: needs-review notification |
+| Sync | The dispatch worker, in batches while it reads the library | Match, then write | Yes | On completion: sync completed (or completed with errors), sync diff, store-link refresh. On failure: sync failed or auth expired. Awaiting review: needs-review notification |
 
 A dispatch that is interrupted is never marked done. A dispatch only changes a Job that is still active.
 
 ### Sync: parent and child games
 
-A **Child game** follows its parent's match. Its item can therefore be `pending` with no owner while it waits for the parent's item:
+A **Child game** follows its parent's match, and the user never sees it on its own. Its item can therefore be `pending` with no owner while it waits for the parent's item:
 
-- A child waits only on an unfinished parent item **in the same Job**.
+- A child waits only when the waiting can end: the parent has an unfinished item **in the same Job**, or the dispatch is still running (the parent's item may be in a later batch than the child's).
 - Every way the parent's item can end settles its waiting children in the same transaction: parent completed, the children are queued and inherit its match; parent skipped, the children are skipped; parent failed, the children are failed.
-- When the dispatch is marked done, a waiting child whose parent has no unfinished item in the Job is detached from the parent and queued for matching on its own. (The parent may have left the storefront library, or its item may be in a later batch than the child's; only at the end of the dispatch is it known which.)
+- When the dispatch is marked done, a child still waiting on a parent that has no unfinished item in the Job is queued again. Its worker then decides without waiting: it inherits when the parent is matched, matches the game itself when it is no longer a child, and fails the item otherwise.
 - While the parent's item is in Pending review the children keep waiting. They do not stop the Job from counting as waiting on the user.
+
+Sync keeps a child from being left without a parent item in the first place (#1339): a child's skip follows its parent's, only an available or matched game is chosen as a parent, and when an unmatched parent leaves the storefront library its oldest remaining child is promoted in its place. What reaches the "fails the item" case above is an error, not a normal outcome.
 
 ## Outside the lifecycle
 
