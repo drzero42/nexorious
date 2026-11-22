@@ -266,6 +266,32 @@ func (w *DispatchSyncWorker) Work(ctx context.Context, job *river.Job[DispatchSy
 		return nil
 	}
 
+	// Empty-fetch guard (#1324): a fetch that returns nothing while games are
+	// known for this storefront is far more likely a privacy setting, an
+	// upstream glitch or a changed response shape than a library that really
+	// went to zero. Running the sweep would mark every game removed and
+	// announce it through sync.diff, so fail the job instead. There is no
+	// adapter bypass on purpose: in those failure modes the adapter believes it
+	// saw a real, empty library.
+	if len(fetchedIDs) == 0 {
+		known, err := w.DB.NewSelect().Model((*models.ExternalGame)(nil)).
+			Where("user_id = ? AND storefront = ? AND is_available = true", p.UserID, p.Storefront).
+			Count(ctx)
+		if err != nil {
+			slog.ErrorContext(ctx, "dispatch_sync: count available games failed", logging.KeySource, p.Storefront, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+			failSyncJob(ctx, w.DB, p.JobID, "could not verify an empty library fetch; nothing was marked removed")
+			return nil
+		}
+		if known > 0 {
+			slog.ErrorContext(ctx, "dispatch_sync: empty library fetch with known games; refusing to mark them removed",
+				logging.KeySource, p.Storefront, "known_games", known, logging.Cat(logging.CategoryExternalAPI))
+			failSyncJob(ctx, w.DB, p.JobID, fmt.Sprintf(
+				"the storefront returned an empty library while %d games are known; nothing was marked removed. "+
+					"If the library really is empty, reset this storefront's sync data or disconnect it.", known))
+			return nil
+		}
+	}
+
 	// Stale platform sweep: remove platform rows no longer present upstream.
 	for egID, platforms := range seenPlatforms {
 		if _, err := w.DB.NewRaw(`

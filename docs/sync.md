@@ -180,6 +180,7 @@ The `DispatchSyncWorker` runs once per sync job. It:
    - Upserts platform rows into `external_game_platforms`; removes any platform rows for that game that were not in this batch
    - Enqueues one Stage 2 job per game in the batch
 4. After all batches complete, runs a sweep: queries all `external_games` rows for this user and storefront where `is_available = true`, and marks any whose `external_id` is not in the fetched ID set as `is_available = false` — these are games that were not seen in this sync run and have been removed from the user's library. For each game marked unavailable, writes a `removed` entry to `sync_changes`
+   The sweep is skipped when the fetch returned no games at all while at least one game is still marked available for this storefront. An empty reply is far more likely a privacy setting, an upstream glitch or a changed response shape than a library that really went to zero, so the job fails instead (`sync.failed`) and nothing is marked removed. If the library really is empty, reset the storefront's sync data or disconnect it.
 
 If a credential error occurs at any point, the job is marked `failed` and all pending job_items are cancelled. Any `external_games` rows already upserted in this run are kept.
 
