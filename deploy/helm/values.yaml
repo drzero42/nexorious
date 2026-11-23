@@ -108,8 +108,17 @@ nexorious:
     key: ""
 
   postgresql:
-    # -- PostgreSQL username
+    # -- PostgreSQL admin username (the image's POSTGRES_USER, a superuser).
+    # -- Nexorious does not connect as it; see appUsername.
     username: nexorious
+    # -- Role the app connects to the bundled PostgreSQL as. A `db-role`
+    # -- initContainer (`nexorious ensure-db-role`) creates it on every start
+    # -- as a non-superuser that owns the database, using the same password
+    # -- as `username`, and takes over existing installs. A superuser role
+    # -- would let a crafted backup run programs in the database pod.
+    # -- Only used when the chart builds DATABASE_URL itself (no
+    # -- databaseUrl / databaseUrlFrom / db*From).
+    appUsername: nexorious_app
     # -- PostgreSQL password.
     # -- Leave empty (the default) to auto-generate a 32-character random
     # -- password on first install. The generated value is read back from the

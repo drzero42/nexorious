@@ -1,9 +1,14 @@
 # Simple deployment using the published container image.
 #
 # Services:
-#   db    — PostgreSQL 18 database
-#   app   — Nexorious binary (embeds frontend; serves the /migrate page until
-#           the schema is applied — migrations are not run automatically)
+#   db      — PostgreSQL 18 database. POSTGRES_USER (nexorious) is the
+#             database's superuser, for administration only.
+#   db-role — one-shot step, run before every app start: makes the
+#             non-superuser role nexorious_app (password POSTGRES_PASSWORD)
+#             the owner of the database. The app connects as that role, so a
+#             restored backup can't run programs on the database host.
+#   app     — Nexorious binary (embeds frontend; serves the /migrate page until
+#             the schema is applied — migrations are not run automatically)
 #
 # Usage:
 #   docker compose up -d        # Start all services
@@ -33,6 +38,17 @@ services:
         reservations:
           memory: 256m
 
+  db-role:
+    image: ghcr.io/drzero42/nexorious:0.98.0 # x-release-please-version
+    command: ["ensure-db-role"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://nexorious_app:${POSTGRES_PASSWORD}@db:5432/nexorious?sslmode=disable
+      DB_ADMIN_USER: nexorious
+      DB_ADMIN_PASSWORD: ${POSTGRES_PASSWORD}
+
   app:
     image: ghcr.io/drzero42/nexorious:0.98.0 # x-release-please-version
     # Explicit for clarity/robustness; the image CMD already defaults to serve.
@@ -42,8 +58,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-role:
+        condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://nexorious:${POSTGRES_PASSWORD}@db:5432/nexorious?sslmode=disable
+      DATABASE_URL: postgres://nexorious_app:${POSTGRES_PASSWORD}@db:5432/nexorious?sslmode=disable
       DB_ENCRYPTION_KEY: ${DB_ENCRYPTION_KEY:?DB_ENCRYPTION_KEY is required}
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID:?IGDB_CLIENT_ID is required}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET:?IGDB_CLIENT_SECRET is required}

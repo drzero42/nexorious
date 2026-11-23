@@ -22,7 +22,7 @@ cp .env.example .env   # fill in DB_ENCRYPTION_KEY, IGDB_CLIENT_ID, IGDB_CLIENT_
 docker compose up -d
 ```
 
-On the first launch the app serves the migration page until you apply the schema (see [First run](#first-run)); you can also run the migration as a one-shot with `docker compose run --rm app migrate`. The compose file provisions a `nexorious_storage` volume at `/app/storage` (with backups under `/app/storage/backups`), so uploads and backups survive a `docker compose down` and recreate; only `docker compose down -v` removes it.
+On the first launch the app serves the migration page until you apply the schema (see [First run](#first-run)); you can also run the migration as a one-shot with `docker compose run --rm app migrate`. Before the app starts, a one-shot `db-role` service makes the app's own non-superuser database role (see [Database role](#database-role)). The compose file provisions a `nexorious_storage` volume at `/app/storage` (with backups under `/app/storage/backups`), so uploads and backups survive a `docker compose down` and recreate; only `docker compose down -v` removes it.
 
 ### Native packages (Debian/Ubuntu, RHEL/Fedora/Rocky)
 
@@ -62,7 +62,7 @@ helm install nexorious oci://ghcr.io/drzero42/charts/nexorious \
   --set nexorious.postgresql.password="$(openssl rand -hex 16)"
 ```
 
-By default the chart adds a `migrate` initContainer that runs `nexorious migrate` before the main container serves traffic, so pending migrations are applied automatically on every deploy — there's no manual migration step. See `deploy/helm/values.yaml` in the repository for the full set of chart values (including how to adjust or disable that initContainer).
+With the bundled PostgreSQL, a `db-role` initContainer first makes the app's own non-superuser database role (see [Database role](#database-role)). By default the chart also adds a `migrate` initContainer that runs `nexorious migrate` before the main container serves traffic, so pending migrations are applied automatically on every deploy — there's no manual migration step. See `deploy/helm/values.yaml` in the repository for the full set of chart values (including how to adjust or disable that initContainer).
 
 ### NixOS
 
@@ -337,7 +337,28 @@ If they're missing, Nexorious starts normally but disables this whole section �
 
 A restore loads the backup's `database.sql` with `psql` in restricted mode, so psql commands in a backup file (such as `\!`, which runs a shell command) are refused and abort the restore; a backup can only change the database. This needs a `psql` with the `\restrict` command: PostgreSQL 18, or 17.6, 16.10, 15.14, 14.19, 13.22 or later in an older major version. With an older `psql`, restore fails with "psql is too old to restore safely". Backup files made by earlier Nexorious versions still restore. A restore runs as one transaction: if any statement in the backup fails, nothing from it is kept, and Nexorious then rolls back to the pre-restore backup when one was taken.
 
-The SQL in a backup still runs as Nexorious's database role, so **the role in `DATABASE_URL` must not be a PostgreSQL superuser**. A superuser can run programs on the database host from plain SQL (`COPY … TO PROGRAM`), and a crafted backup file could use that. Nexorious only needs a role that owns its database. The NixOS module's local database already uses one. The bundled PostgreSQL in the Docker Compose file and the Helm chart connects as the container's `POSTGRES_USER`, which the official image creates as a superuser. If you use those, only restore backup files you made yourself.
+The SQL in a backup still runs as Nexorious's database role, so **the role in `DATABASE_URL` must not be a PostgreSQL superuser**. See [Database role](#database-role).
+
+### Database role
+
+A restored backup is SQL that runs as the role in `DATABASE_URL`. A PostgreSQL superuser can run programs on the database host from plain SQL (`COPY … TO PROGRAM`), so if Nexorious connects as one, a crafted backup file could run commands there. The same goes for a role in `pg_execute_server_program` or `pg_write_server_files`. Nexorious needs none of that: a plain role that owns its database is enough, migrations included.
+
+When Nexorious is connected as such a role, it logs a warning at startup, and admins see a banner in the web interface until it's fixed.
+
+How each deployment handles it:
+
+- **Docker Compose and the Helm chart's bundled PostgreSQL** — the official `postgres` image creates `POSTGRES_USER` (`nexorious`) as a superuser. Nexorious keeps that role for administration only. Before every start, `nexorious ensure-db-role` (the Compose `db-role` service, or the chart's `db-role` initContainer) connects as it and makes `nexorious_app` a non-superuser role that owns the database and everything in it. The app connects as `nexorious_app`, with the same `POSTGRES_PASSWORD`. Existing installs are taken over the same way on their first start after upgrading, with no manual steps. In the Helm chart the role name is `nexorious.postgresql.appUsername`.
+- **NixOS module** — its local database already uses a plain owner role.
+- **Your own PostgreSQL** (including CloudNativePG) — give Nexorious a role that owns its database and is not a superuser. With CloudNativePG, use the cluster's `-app` Secret, not `-superuser`.
+
+`nexorious_app` shares its password with the `nexorious` superuser. SQL in a backup can't use that, but anyone holding the app's credentials could also log in as the superuser. To keep them apart, give the superuser its own password, or clear it so it can only log in from inside the database container:
+
+```bash
+docker compose exec db psql -U nexorious -c "ALTER ROLE nexorious PASSWORD NULL"
+# Helm: kubectl exec -it <release>-postgresql-0 -- psql -U nexorious -c "ALTER ROLE nexorious PASSWORD NULL"
+```
+
+If you change `POSTGRES_PASSWORD` later, `ensure-db-role` updates `nexorious_app`'s password on the next start; the superuser's password is yours to manage.
 
 Keeping backups somewhere off the server, especially before upgrades, is the safest habit while the project is still moving quickly.
 
@@ -371,6 +392,7 @@ These run on the server host. A `--config` flag on every command points at a `.e
 | `nexorious serve` | Start the HTTP server, background workers, and scheduler. This is the main run command. Add `--migrate` to apply any pending migrations on the way up — startup aborts if they fail, rather than serving against a broken schema. |
 | `nexorious migrate` | Apply any pending database migrations and exit. Useful as an init step in orchestrated deployments. |
 | `nexorious migrate status` | Show how many migrations are pending and the current schema version, without changing anything. |
+| `nexorious ensure-db-role` | Connect as a PostgreSQL superuser (`DB_ADMIN_USER` / `DB_ADMIN_PASSWORD`) and make the role in `DATABASE_URL` a non-superuser that owns the database. Safe to run on every start; the Compose file and Helm chart run it for you (see [Database role](#database-role)). |
 | `nexctl setup admin` | Create the first admin user against a running server — good for headless installs. Supports `--username` and reading the password from stdin (`--password-stdin`), runs pending migrations first, and can store an API key for you with `--login`. `nexctl` is available in the container image. |
 | `nexorious reset-password <username>` | Reset a user's password by talking to the database directly. Your recovery path if an admin is locked out and no other admin can help. |
 | `nexorious version` | Print version information. |
