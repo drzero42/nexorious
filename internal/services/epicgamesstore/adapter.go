@@ -14,14 +14,30 @@ import (
 // Tests inject a fake without invoking the real legendary subprocess.
 type clientInterface interface {
 	Configured() bool
-	RestoreSnapshot(userID string, snapshot map[string]string) error
-	GetLibrary(ctx context.Context, userID string, onBatch func([]ExternalGameEntry) error) error
-	CaptureSnapshot(userID string) (map[string]string, error)
+	newSession() (librarySession, error)
+}
+
+// librarySession is one sync's private legendary config directory.
+type librarySession interface {
+	RestoreSnapshot(snapshot map[string]string) error
+	GetLibrary(ctx context.Context, onBatch func([]ExternalGameEntry) error) error
+	CaptureSnapshot() (map[string]string, error)
+	Close() error
+}
+
+// newSession satisfies clientInterface for the real client.
+func (c *Client) newSession() (librarySession, error) {
+	s, err := c.openSession()
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // Adapter implements storefrontadapter.Adapter for the Epic Games Store via
-// the Legendary CLI. It restores a session snapshot before fetching and
-// captures the updated snapshot afterward, delegating persistence to onSnapshot.
+// the Legendary CLI. Each GetLibrary runs in its own session directory: it
+// restores the stored snapshot there, fetches, captures the updated snapshot
+// (delegating persistence to onSnapshot), and removes the directory.
 type Adapter struct {
 	client     clientInterface
 	userID     string
@@ -53,7 +69,13 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		return fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
 	}
 
-	if err := a.client.RestoreSnapshot(a.userID, a.snapshot); err != nil {
+	sess, err := a.client.newSession()
+	if err != nil {
+		return err
+	}
+	defer closeSession(ctx, sess)
+
+	if err := sess.RestoreSnapshot(a.snapshot); err != nil {
 		return fmt.Errorf("epic: restore snapshot: %w", err)
 	}
 
@@ -64,7 +86,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 		chunkSize = 10
 	}
 
-	fetchErr := a.client.GetLibrary(ctx, a.userID, func(batch []ExternalGameEntry) error {
+	fetchErr := sess.GetLibrary(ctx, func(batch []ExternalGameEntry) error {
 		for start := 0; start < len(batch); start += chunkSize {
 			end := min(start+chunkSize, len(batch))
 			mapped := make([]storefrontadapter.ExternalGameEntry, 0, end-start)
@@ -91,7 +113,7 @@ func (a *Adapter) GetLibrary(ctx context.Context, batchSize int, onBatch func([]
 	})
 
 	// Capture updated snapshot regardless of fetch error.
-	newSnapshot, captureErr := a.client.CaptureSnapshot(a.userID)
+	newSnapshot, captureErr := sess.CaptureSnapshot()
 	if captureErr != nil {
 		slog.WarnContext(ctx, "epic: capture snapshot failed",
 			logging.KeyUserID, a.userID, logging.KeyErr, captureErr,

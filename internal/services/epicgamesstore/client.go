@@ -48,38 +48,77 @@ type ExternalGameEntry struct {
 	OwnershipStatus string // always "owned"
 }
 
-// userDir returns the per-user base directory (XDG_CONFIG_HOME equivalent).
-func (c *Client) userDir(userID string) string {
-	return filepath.Join(c.workDir, userID)
+// sessionPrefix names the private per-operation directories under workDir.
+// Legacy per-user directories are named by user id, so they never collide.
+const sessionPrefix = "session-"
+
+// session is a private legendary config directory for one operation (a
+// sign-in or a sync). Each operation gets a fresh one and removes it when it
+// finishes, so credential files never outlive the operation, a sign-in never
+// starts from stale files, and two operations for the same user never share
+// files.
+type session struct {
+	dir string // XDG_CONFIG_HOME for legendary
+}
+
+// openSession creates a fresh, empty session directory under workDir.
+func (c *Client) openSession() (*session, error) {
+	if !c.Configured() {
+		return nil, fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
+	}
+	if err := os.MkdirAll(c.workDir, 0o750); err != nil {
+		return nil, fmt.Errorf("epic: create work dir: %w", err)
+	}
+	dir, err := os.MkdirTemp(c.workDir, sessionPrefix+"*")
+	if err != nil {
+		return nil, fmt.Errorf("epic: create session dir: %w", err)
+	}
+	return &session{dir: dir}, nil
+}
+
+// Close removes the session directory and every file legendary wrote in it.
+func (s *session) Close() error {
+	return os.RemoveAll(s.dir)
 }
 
 // legendaryDir returns the directory legendary writes its config into
 // (legendary appends "/legendary" to XDG_CONFIG_HOME itself).
-func (c *Client) legendaryDir(userID string) string {
-	return filepath.Join(c.userDir(userID), "legendary")
+func (s *session) legendaryDir() string {
+	return filepath.Join(s.dir, "legendary")
 }
 
-// Authenticate runs `legendary auth --code <code>` in a fresh per-user dir,
+// closeSession removes a session directory, logging a failure: the operation's
+// own result matters more to the caller than a leftover directory.
+func closeSession(ctx context.Context, s interface{ Close() error }) {
+	if err := s.Close(); err != nil {
+		slog.ErrorContext(ctx, "epic: remove session dir failed", logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
+	}
+}
+
+// Authenticate runs `legendary auth --code <code>` in a fresh session dir,
 // reads user.json to extract account info, captures the resulting snapshot,
-// and returns both. The snapshot must be stored in the DB by the caller.
-func (c *Client) Authenticate(ctx context.Context, userID, authCode string) (*EpicAccountInfo, map[string]string, error) {
+// and returns both. The snapshot must be stored in the DB by the caller. The
+// session dir is removed before returning, whether or not sign-in succeeded.
+func (c *Client) Authenticate(ctx context.Context, authCode string) (*EpicAccountInfo, map[string]string, error) {
 	if !c.Configured() {
 		return nil, nil, fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
 	}
 	if _, err := exec.LookPath("legendary"); err != nil {
 		return nil, nil, fmt.Errorf("epic: legendary not found in PATH")
 	}
-	if err := os.MkdirAll(c.legendaryDir(userID), 0o750); err != nil {
-		return nil, nil, fmt.Errorf("epic: create user dir: %w", err)
-	}
-	if _, err := c.runLegendary(ctx, userID, "auth", "--code", authCode); err != nil {
+	s, err := c.openSession()
+	if err != nil {
 		return nil, nil, err
 	}
-	info, err := c.readUserJSON(userID)
+	defer closeSession(ctx, s)
+	if _, err := s.runLegendary(ctx, "auth", "--code", authCode); err != nil {
+		return nil, nil, err
+	}
+	info, err := s.readUserJSON()
 	if err != nil {
 		return nil, nil, fmt.Errorf("epic: read user.json after auth: %w", err)
 	}
-	snapshot, err := c.CaptureSnapshot(userID)
+	snapshot, err := s.CaptureSnapshot()
 	if err != nil {
 		return nil, nil, fmt.Errorf("epic: capture snapshot after auth: %w", err)
 	}
@@ -89,11 +128,8 @@ func (c *Client) Authenticate(ctx context.Context, userID, authCode string) (*Ep
 // GetLibrary runs `legendary list --json`, parses the output, skips DLC entries,
 // and streams results to onBatch. The caller is responsible for restoring the
 // snapshot before calling this method and capturing it afterward.
-func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]ExternalGameEntry) error) error {
-	if !c.Configured() {
-		return fmt.Errorf("epic: legendary not configured (LEGENDARY_WORK_DIR unset)")
-	}
-	out, err := c.runLegendary(ctx, userID, "list", "--json")
+func (s *session) GetLibrary(ctx context.Context, onBatch func([]ExternalGameEntry) error) error {
+	out, err := s.runLegendary(ctx, "list", "--json")
 	if err != nil {
 		if isAuthError(err) {
 			return ErrAuthFailed
@@ -106,7 +142,7 @@ func (c *Client) GetLibrary(ctx context.Context, userID string, onBatch func([]E
 		return fmt.Errorf("epic: parse legendary list output: %w", err)
 	}
 
-	slog.InfoContext(ctx, "epic: library parsed", logging.KeyUserID, userID, "after_dlc_filter", len(entries))
+	slog.InfoContext(ctx, "epic: library parsed", "after_dlc_filter", len(entries))
 
 	if len(entries) == 0 {
 		return nil
@@ -159,15 +195,24 @@ func isDLC(mainGameItem json.RawMessage) bool {
 	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null"))
 }
 
-// Cleanup removes the per-user working directory.
+// Cleanup removes the per-user directory that versions before per-operation
+// sessions left behind (workDir/<userID>), which still holds that user's
+// legendary credentials. Sessions clean up after themselves, so this is the
+// only Epic state a disconnect has to remove.
 func (c *Client) Cleanup(_ context.Context, userID string) error {
-	return os.RemoveAll(c.userDir(userID))
+	if !c.Configured() {
+		return nil
+	}
+	if userID == "" || filepath.Base(userID) != userID || strings.HasPrefix(userID, ".") || strings.HasPrefix(userID, sessionPrefix) {
+		return fmt.Errorf("epic: cleanup: unsafe user id %q", userID)
+	}
+	return os.RemoveAll(filepath.Join(c.workDir, userID))
 }
 
-// RestoreSnapshot writes each file from snapshot into the per-user legendary
+// RestoreSnapshot writes each file from snapshot into the session's legendary
 // config directory, creating subdirectories as needed.
-func (c *Client) RestoreSnapshot(userID string, snapshot map[string]string) error {
-	legendaryDir := c.legendaryDir(userID)
+func (s *session) RestoreSnapshot(snapshot map[string]string) error {
+	legendaryDir := s.legendaryDir()
 	for relPath, content := range snapshot {
 		if filepath.IsAbs(relPath) || strings.Contains(relPath, "..") {
 			return fmt.Errorf("epic: restore snapshot: unsafe path %q", relPath)
@@ -183,11 +228,11 @@ func (c *Client) RestoreSnapshot(userID string, snapshot map[string]string) erro
 	return nil
 }
 
-// CaptureSnapshot reads all files from the per-user legendary config directory
+// CaptureSnapshot reads all files from the session's legendary config directory
 // into a map of relative-path → content, excluding *.lock, tmp/, and manifests/.
 // Returns an empty map (not an error) if the directory does not exist.
-func (c *Client) CaptureSnapshot(userID string) (map[string]string, error) {
-	legendaryDir := c.legendaryDir(userID)
+func (s *session) CaptureSnapshot() (map[string]string, error) {
+	legendaryDir := s.legendaryDir()
 	if _, err := os.Stat(legendaryDir); os.IsNotExist(err) {
 		return map[string]string{}, nil
 	}
@@ -238,11 +283,11 @@ func isAuthError(err error) bool {
 }
 
 // runLegendary executes legendary with the given args, setting XDG_CONFIG_HOME
-// to the per-user directory. Returns stdout on success, or an error wrapping
+// to the session directory. Returns stdout on success, or an error wrapping
 // stderr on non-zero exit.
-func (c *Client) runLegendary(ctx context.Context, userID string, args ...string) ([]byte, error) {
+func (s *session) runLegendary(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "legendary", args...) //nolint:gosec // fixed binary; args are internally-constructed legendary subcommands, not user input
-	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+c.userDir(userID))
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+s.dir)
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -259,8 +304,8 @@ type userJSON struct {
 	AccountID   string `json:"account_id"`
 }
 
-func (c *Client) readUserJSON(userID string) (*EpicAccountInfo, error) {
-	path := filepath.Join(c.legendaryDir(userID), "user.json")
+func (s *session) readUserJSON() (*EpicAccountInfo, error) {
+	path := filepath.Join(s.legendaryDir(), "user.json")
 	data, err := os.ReadFile(path) //nolint:gosec // path is an internally-derived legendary config path, not user input
 	if err != nil {
 		return nil, fmt.Errorf("epic: read user.json: %w", err)

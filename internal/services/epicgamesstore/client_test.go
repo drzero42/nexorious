@@ -1,20 +1,187 @@
 package epicgamesstore
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+func openTestSession(t *testing.T) *session {
+	t.Helper()
+	s, err := NewClient(t.TempDir()).openSession()
+	if err != nil {
+		t.Fatalf("openSession: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+// sessionDirs lists the session directories left under workDir.
+func sessionDirs(t *testing.T, workDir string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(workDir, sessionPrefix+"*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return matches
+}
+
+// fakeLegendary puts a stand-in legendary on PATH. `auth --code good` writes
+// user.json into $XDG_CONFIG_HOME/legendary; any other code fails.
+func fakeLegendary(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake legendary is a shell script")
+	}
+	bin := t.TempDir()
+	script := `#!/bin/sh
+if [ "$1" = auth ] && [ "$3" = good ]; then
+  mkdir -p "$XDG_CONFIG_HOME/legendary"
+  echo '{"displayName":"Player","account_id":"acct"}' > "$XDG_CONFIG_HOME/legendary/user.json"
+  exit 0
+fi
+echo "auth failed" >&2
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(bin, "legendary"), []byte(script), 0o700); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// Files from an earlier sign-in (the legacy per-user dir, or a session a crash
+// left behind) must never end up in a new sign-in's snapshot.
+func TestAuthenticate_IgnoresStaleFiles(t *testing.T) {
+	fakeLegendary(t)
+	workDir := t.TempDir()
+	for _, dir := range []string{
+		filepath.Join(workDir, "user-1", "legendary"),
+		filepath.Join(workDir, sessionPrefix+"crashed", "legendary"),
+	} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "stale.json"), []byte("old"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	info, snapshot, err := NewClient(workDir).Authenticate(context.Background(), "good")
+	if err != nil {
+		t.Fatalf("Authenticate: %v", err)
+	}
+	if info.AccountID != "acct" {
+		t.Errorf("account id = %q, want acct", info.AccountID)
+	}
+	if _, ok := snapshot["stale.json"]; ok || len(snapshot) != 1 {
+		t.Errorf("snapshot = %v, want only user.json", snapshot)
+	}
+}
+
+// The sign-in's session dir holds credentials, so it goes whether or not the
+// sign-in succeeded.
+func TestAuthenticate_RemovesSessionDir(t *testing.T) {
+	fakeLegendary(t)
+	for _, code := range []string{"good", "bad"} {
+		t.Run(code, func(t *testing.T) {
+			workDir := t.TempDir()
+			_, _, err := NewClient(workDir).Authenticate(context.Background(), code)
+			if (err != nil) != (code == "bad") {
+				t.Fatalf("Authenticate(%s) err = %v", code, err)
+			}
+			if left := sessionDirs(t, workDir); len(left) != 0 {
+				t.Errorf("session dirs left behind: %v", left)
+			}
+		})
+	}
+}
+
+// Two operations for the same user must not share files: one's restore must
+// not show up in the other's capture.
+func TestOpenSession_IsolatesOperations(t *testing.T) {
+	c := NewClient(t.TempDir())
+	a, err := c.openSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = a.Close() }()
+	b, err := c.openSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.Close() }()
+
+	if err := a.RestoreSnapshot(map[string]string{"user.json": "a"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := b.CaptureSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("second session sees the first one's files: %v", got)
+	}
+}
+
+func TestSessionClose_RemovesCredentials(t *testing.T) {
+	workDir := t.TempDir()
+	s, err := NewClient(workDir).openSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RestoreSnapshot(map[string]string{"user.json": "secret"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if left := sessionDirs(t, workDir); len(left) != 0 {
+		t.Errorf("session dirs left behind: %v", left)
+	}
+}
+
+func TestCleanup_RemovesLegacyUserDirOnly(t *testing.T) {
+	workDir := t.TempDir()
+	c := NewClient(workDir)
+	legacy := filepath.Join(workDir, "user-1", "legendary")
+	if err := os.MkdirAll(legacy, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	running, err := c.openSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = running.Close() }()
+
+	if err := c.Cleanup(context.Background(), "user-1"); err != nil {
+		t.Fatalf("Cleanup: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workDir, "user-1")); !os.IsNotExist(err) {
+		t.Errorf("legacy dir still present (stat err %v)", err)
+	}
+	if _, err := os.Stat(running.dir); err != nil {
+		t.Errorf("Cleanup removed a running session's dir: %v", err)
+	}
+}
+
+func TestCleanup_RejectsUnsafeUserID(t *testing.T) {
+	c := NewClient(t.TempDir())
+	for _, id := range []string{"", ".", "..", "../x", "a/b", sessionPrefix + "x"} {
+		if err := c.Cleanup(context.Background(), id); err == nil {
+			t.Errorf("Cleanup(%q) = nil, want error", id)
+		}
+	}
+}
 
 // Tests use package epic (not epic_test) so they can verify unexported behaviour
 // indirectly through the exported CaptureSnapshot / RestoreSnapshot methods.
 
 func TestCaptureSnapshot_ExcludesLocksAndDirs(t *testing.T) {
-	tmpDir := t.TempDir()
-	c := NewClient(tmpDir)
-	userID := "test-user"
+	s := openTestSession(t)
 
-	legendaryDir := filepath.Join(tmpDir, userID, "legendary")
+	legendaryDir := s.legendaryDir()
 	if err := os.MkdirAll(legendaryDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +207,7 @@ func TestCaptureSnapshot_ExcludesLocksAndDirs(t *testing.T) {
 		}
 	}
 
-	snapshot, err := c.CaptureSnapshot(userID)
+	snapshot, err := s.CaptureSnapshot()
 	if err != nil {
 		t.Fatalf("CaptureSnapshot: %v", err)
 	}
@@ -58,10 +225,9 @@ func TestCaptureSnapshot_ExcludesLocksAndDirs(t *testing.T) {
 }
 
 func TestCaptureSnapshot_EmptyWhenDirMissing(t *testing.T) {
-	tmpDir := t.TempDir()
-	c := NewClient(tmpDir)
+	s := openTestSession(t)
 
-	snapshot, err := c.CaptureSnapshot("nonexistent-user")
+	snapshot, err := s.CaptureSnapshot()
 	if err != nil {
 		t.Fatalf("expected nil error for missing dir, got: %v", err)
 	}
@@ -71,9 +237,7 @@ func TestCaptureSnapshot_EmptyWhenDirMissing(t *testing.T) {
 }
 
 func TestRestoreSnapshot_WritesFiles(t *testing.T) {
-	tmpDir := t.TempDir()
-	c := NewClient(tmpDir)
-	userID := "test-user"
+	s := openTestSession(t)
 
 	snapshot := map[string]string{
 		"user.json":              `{"displayName":"Tester","account_id":"xyz"}`,
@@ -81,11 +245,11 @@ func TestRestoreSnapshot_WritesFiles(t *testing.T) {
 		"metadata/SomeGame.json": `{"title":"Some Game"}`,
 	}
 
-	if err := c.RestoreSnapshot(userID, snapshot); err != nil {
+	if err := s.RestoreSnapshot(snapshot); err != nil {
 		t.Fatalf("RestoreSnapshot: %v", err)
 	}
 
-	legendaryDir := filepath.Join(tmpDir, userID, "legendary")
+	legendaryDir := s.legendaryDir()
 	for relPath, want := range snapshot {
 		got, err := os.ReadFile(filepath.Join(legendaryDir, relPath))
 		if err != nil {
@@ -99,9 +263,7 @@ func TestRestoreSnapshot_WritesFiles(t *testing.T) {
 }
 
 func TestRestoreAndCapture_RoundTrip(t *testing.T) {
-	tmpDir := t.TempDir()
-	c := NewClient(tmpDir)
-	userID := "test-user"
+	s := openTestSession(t)
 
 	original := map[string]string{
 		"user.json":           `{"displayName":"Player","account_id":"p123"}`,
@@ -109,10 +271,10 @@ func TestRestoreAndCapture_RoundTrip(t *testing.T) {
 		"metadata/Game2.json": `{"title":"Game 2"}`,
 	}
 
-	if err := c.RestoreSnapshot(userID, original); err != nil {
+	if err := s.RestoreSnapshot(original); err != nil {
 		t.Fatalf("RestoreSnapshot: %v", err)
 	}
-	restored, err := c.CaptureSnapshot(userID)
+	restored, err := s.CaptureSnapshot()
 	if err != nil {
 		t.Fatalf("CaptureSnapshot: %v", err)
 	}
@@ -127,8 +289,7 @@ func TestRestoreAndCapture_RoundTrip(t *testing.T) {
 }
 
 func TestRestoreSnapshot_RejectsUnsafePaths(t *testing.T) {
-	tmpDir := t.TempDir()
-	c := NewClient(tmpDir)
+	s := openTestSession(t)
 
 	cases := []struct {
 		name string
@@ -141,7 +302,7 @@ func TestRestoreSnapshot_RejectsUnsafePaths(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			snap := map[string]string{tc.key: "evil"}
-			if err := c.RestoreSnapshot("u", snap); err == nil {
+			if err := s.RestoreSnapshot(snap); err == nil {
 				t.Fatalf("expected error for unsafe path %q, got nil", tc.key)
 			}
 		})

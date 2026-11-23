@@ -18,21 +18,38 @@ type fakeEpicClient struct {
 	captureErr      error
 	libraryBatches  [][]ExternalGameEntry
 
-	restoreCalled    bool
-	getLibraryCalled bool
-	captureCalled    bool
-	restoredSnapshot map[string]string
+	openErr error
+
+	restoreCalled        bool
+	getLibraryCalled     bool
+	captureCalled        bool
+	closed               bool
+	persistedBeforeClose bool
+	restoredSnapshot     map[string]string
 }
 
 func (f *fakeEpicClient) Configured() bool { return f.configured }
 
-func (f *fakeEpicClient) RestoreSnapshot(_ string, snapshot map[string]string) error {
+// newSession hands back the fake itself as the session.
+func (f *fakeEpicClient) newSession() (librarySession, error) {
+	if f.openErr != nil {
+		return nil, f.openErr
+	}
+	return f, nil
+}
+
+func (f *fakeEpicClient) Close() error {
+	f.closed = true
+	return nil
+}
+
+func (f *fakeEpicClient) RestoreSnapshot(snapshot map[string]string) error {
 	f.restoreCalled = true
 	f.restoredSnapshot = snapshot
 	return f.restoreErr
 }
 
-func (f *fakeEpicClient) GetLibrary(_ context.Context, _ string, onBatch func([]ExternalGameEntry) error) error {
+func (f *fakeEpicClient) GetLibrary(_ context.Context, onBatch func([]ExternalGameEntry) error) error {
 	f.getLibraryCalled = true
 	if f.getLibraryErr != nil {
 		return f.getLibraryErr
@@ -45,7 +62,7 @@ func (f *fakeEpicClient) GetLibrary(_ context.Context, _ string, onBatch func([]
 	return nil
 }
 
-func (f *fakeEpicClient) CaptureSnapshot(_ string) (map[string]string, error) {
+func (f *fakeEpicClient) CaptureSnapshot() (map[string]string, error) {
 	f.captureCalled = true
 	return f.captureSnapshot, f.captureErr
 }
@@ -224,5 +241,45 @@ func TestEpicAdapter_ChunksLibraryIntoBatches(t *testing.T) {
 		if got != wantSizes[i] {
 			t.Errorf("batch %d size: want %d, got %d", i, wantSizes[i], got)
 		}
+	}
+}
+
+// The session directory holds the user's Epic credentials, so it must be
+// removed after every sync — and only after the refreshed snapshot is saved.
+func TestEpicAdapter_ClosesSessionAfterSync(t *testing.T) {
+	cases := []struct {
+		name string
+		fake *fakeEpicClient
+	}{
+		{"success", &fakeEpicClient{configured: true, captureSnapshot: map[string]string{"user.json": "new"}}},
+		{"fetch error", &fakeEpicClient{configured: true, getLibraryErr: errors.New("boom"), captureSnapshot: map[string]string{"user.json": "new"}}},
+		{"auth failure", &fakeEpicClient{configured: true, getLibraryErr: ErrAuthFailed, captureSnapshot: map[string]string{"user.json": "new"}}},
+		{"restore error", &fakeEpicClient{configured: true, restoreErr: errors.New("disk full")}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := tc.fake
+			onSnapshot := func(map[string]string) error {
+				fake.persistedBeforeClose = !fake.closed
+				return nil
+			}
+			a := NewAdapter(fake, "user1", map[string]string{"user.json": "old"}, onSnapshot)
+			_ = a.GetLibrary(context.Background(), 10, func([]storefrontadapter.ExternalGameEntry) error { return nil })
+			if !fake.closed {
+				t.Fatal("session was not closed")
+			}
+			if fake.captureCalled && !fake.persistedBeforeClose {
+				t.Error("snapshot was persisted after the session was closed")
+			}
+		})
+	}
+}
+
+func TestEpicAdapter_SessionOpenError(t *testing.T) {
+	fake := &fakeEpicClient{configured: true, openErr: errors.New("read-only fs")}
+	a := NewAdapter(fake, "user1", nil, nil)
+	err := a.GetLibrary(context.Background(), 10, func([]storefrontadapter.ExternalGameEntry) error { return nil })
+	if err == nil || fake.restoreCalled {
+		t.Fatalf("want open error before restore; err=%v restoreCalled=%v", err, fake.restoreCalled)
 	}
 }
