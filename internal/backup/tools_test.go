@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/uptrace/bun"
 )
 
 // TestExtractTarGz_PathTraversal exercises the path traversal detection path.
@@ -156,125 +154,6 @@ func TestNewBackupIDUnique(t *testing.T) {
 	}
 }
 
-// TestHandleRestoreFailure_NoPreRestore calls handleRestoreFailure directly
-// with an empty preRestoreID (no pre-restore backup available).
-func TestHandleRestoreFailure_NoPreRestore(t *testing.T) {
-	backupDir := t.TempDir()
-	storageDir := t.TempDir()
-	svc := NewService(nil, "", backupDir, storageDir, "0.1.0")
-
-	origErr := errors.New("simulated restore failure")
-	conn := DBConnParams{Host: "127.0.0.1", Port: "1", User: "u", Password: "p", DBName: "db"}
-	opts := RestoreOpts{
-		SetMaintenance:  func(bool) {},
-		ShutdownPool:    func() {},
-		StopScheduler:   func() {},
-		CloseDB:         func() error { return nil },
-		ReconnectDB:     func() (*bun.DB, error) { return nil, nil },
-		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func(*bun.DB) error { return nil },
-		SetAppState:     func(s string) {},
-	}
-	err := svc.handleRestoreFailure(origErr, "", conn, opts)
-	if err == nil {
-		t.Fatal("expected error returned from handleRestoreFailure")
-	}
-	// Should return the original error.
-	if !errors.Is(err, origErr) {
-		t.Errorf("expected original error, got: %v", err)
-	}
-}
-
-// TestHandleRestoreFailure_WithPreRestore exercises the rollback path where
-// preRestoreID is set but the archive is invalid (rollback fails at extraction).
-func TestHandleRestoreFailure_WithInvalidPreRestore(t *testing.T) {
-	backupDir := t.TempDir()
-	storageDir := t.TempDir()
-	svc := NewService(nil, "", backupDir, storageDir, "0.1.0")
-
-	// Create a fake pre-restore archive (not a real archive — rollback will fail at extraction).
-	preRestoreID := "backup-20260101-000000"
-	fakePath := filepath.Join(backupDir, preRestoreID+".tar.gz")
-	if err := os.WriteFile(fakePath, []byte("not-a-real-archive"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	origErr := errors.New("simulated restore failure")
-	conn := DBConnParams{Host: "127.0.0.1", Port: "1", User: "u", Password: "p", DBName: "db"}
-	appStateCalled := false
-	opts := RestoreOpts{
-		SetMaintenance:  func(bool) {},
-		ShutdownPool:    func() {},
-		StopScheduler:   func() {},
-		CloseDB:         func() error { return nil },
-		ReconnectDB:     func() (*bun.DB, error) { return nil, nil },
-		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func(*bun.DB) error { return nil },
-		SetAppState:     func(s string) { appStateCalled = true },
-	}
-	err := svc.handleRestoreFailure(origErr, preRestoreID, conn, opts)
-	if err == nil {
-		t.Fatal("expected error from rollback failure")
-	}
-	if !appStateCalled {
-		t.Error("expected SetAppState to be called on rollback failure")
-	}
-}
-
-// makeEmptyTarGz creates a valid but empty .tar.gz archive (no entries).
-// When extracted, the destination directory will be empty.
-func makeEmptyTarGz(t *testing.T, dir string) string {
-	t.Helper()
-	archivePath := filepath.Join(dir, "empty-pre-restore.tar.gz")
-	f, err := os.Create(archivePath)
-	if err != nil {
-		t.Fatalf("create empty archive: %v", err)
-	}
-	gw := gzip.NewWriter(f)
-	tw := tar.NewWriter(gw)
-	_ = tw.Close()
-	_ = gw.Close()
-	_ = f.Close()
-	return archivePath
-}
-
-// TestHandleRestoreFailure_EmptyArchive exercises the path where the pre-restore
-// archive extracts to an empty directory (no backup subdirectory found).
-func TestHandleRestoreFailure_EmptyArchive(t *testing.T) {
-	backupDir := t.TempDir()
-	storageDir := t.TempDir()
-	svc := NewService(nil, "", backupDir, storageDir, "0.1.0")
-
-	// Create an empty tar.gz as the pre-restore archive.
-	archivePath := makeEmptyTarGz(t, backupDir)
-	preRestoreID := "empty-pre-restore"
-	expectedPath := filepath.Join(backupDir, preRestoreID+".tar.gz")
-	if err := os.Rename(archivePath, expectedPath); err != nil {
-		t.Fatalf("rename: %v", err)
-	}
-
-	origErr := errors.New("simulated restore failure")
-	conn := DBConnParams{Host: "127.0.0.1", Port: "1", User: "u", Password: "p", DBName: "db"}
-	appStateCalled := false
-	opts := RestoreOpts{
-		SetMaintenance:  func(bool) {},
-		ShutdownPool:    func() {},
-		StopScheduler:   func() {},
-		CloseDB:         func() error { return nil },
-		ReconnectDB:     func() (*bun.DB, error) { return nil, nil },
-		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func(*bun.DB) error { return nil },
-		SetAppState:     func(s string) { appStateCalled = true },
-	}
-	err := svc.handleRestoreFailure(origErr, preRestoreID, conn, opts)
-	if err == nil {
-		t.Fatal("expected error for empty archive")
-	}
-	if !appStateCalled {
-		t.Error("expected SetAppState to be called for empty archive")
-	}
-}
-
 func TestParseDatabaseURL(t *testing.T) {
 	tests := []struct {
 		name string
@@ -365,7 +244,7 @@ func TestGetBackupPath_RejectsTraversal(t *testing.T) {
 // call, before any filesystem or DB access.
 func TestRestoreBackup_RejectsTraversal(t *testing.T) {
 	s := NewService(nil, "", t.TempDir(), t.TempDir(), "0.1.0")
-	if err := s.RestoreBackup("../../etc/passwd", RestoreOpts{}); !errors.Is(err, ErrInvalidBackupID) {
+	if _, err := s.RestoreBackup("../../etc/passwd", RestoreOpts{}); !errors.Is(err, ErrInvalidBackupID) {
 		t.Fatalf("RestoreBackup traversal: got %v, want ErrInvalidBackupID", err)
 	}
 }

@@ -409,3 +409,22 @@ func TestRunMigrations_ClearsLastErrorOnStart(t *testing.T) {
 		t.Errorf("LastError after successful run = %q, want empty", got)
 	}
 }
+
+// A stopped probe no longer reacts to the database: a restore stops it before
+// terminating the server's connections (#1341).
+func TestStartDBProbe_StopSwitchesItOff(t *testing.T) {
+	m := migrate.NewMigratorForTest(migrate.AppStateReady)
+	m.SetProbeIntervalForTest(30 * time.Millisecond)
+
+	stop := m.StartDBProbe(t.Context(), badBunDB(t), func(_ context.Context) error { return nil })
+	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if err := stop(stopCtx); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+
+	time.Sleep(120 * time.Millisecond)
+	if m.State() != migrate.AppStateReady {
+		t.Errorf("state after the probe was stopped = %v, want Ready", m.State())
+	}
+}

@@ -31,19 +31,7 @@ func newTestEchoBackup(t *testing.T, db *bun.DB, svc *backup.Service) interface 
 	t.Helper()
 	cfg := testCfg()
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(testEncrypter, cfg, m, db, "", nil, svc, nil, "dev", "unknown", nil)
-}
-
-// newTestEchoBackupWithCallbacks is newTestEchoBackup with restore callbacks
-// wired (so the restore compatibility window — MinMigration/MaxMigration — is
-// active in the handler under test).
-func newTestEchoBackupWithCallbacks(t *testing.T, db *bun.DB, svc *backup.Service, cb *api.RestoreCallbacks) interface {
-	ServeHTTP(http.ResponseWriter, *http.Request)
-} {
-	t.Helper()
-	cfg := testCfg()
-	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	return api.New(testEncrypter, cfg, m, db, "", nil, svc, cb, "dev", "unknown", nil)
+	return api.New(testEncrypter, cfg, m, db, "", nil, svc, "dev", "unknown", nil)
 }
 
 // writeManifestArchive writes a minimal .tar.gz containing just a manifest.json
@@ -90,11 +78,8 @@ func TestHandleSetupRestoreFromDisk_PreV0171ShowsMessage(t *testing.T) {
 	writeManifestArchive(t, backupDir, "old.tar.gz", "20260601000001") // below the floor
 
 	svc := backup.NewService(testDB, "", backupDir, "", "0.90.0")
-	cb := &api.RestoreCallbacks{
-		MaxMigration: "20260620000001",
-		MinMigration: "20260612000001",
-	}
-	e := newTestEchoBackupWithCallbacks(t, testDB, svc, cb)
+	svc.SetMigrationWindow("20260620000001", "20260612000001")
+	e := newTestEchoBackup(t, testDB, svc)
 
 	body, _ := json.Marshal(map[string]string{"filename": "old.tar.gz"})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup/restore/disk", bytes.NewReader(body))
@@ -237,7 +222,7 @@ func TestHandleUpdateConfig_InvalidCronTime(t *testing.T) {
 
 func TestHandleUpdateConfig_Success(t *testing.T) {
 	truncateAllTables(t)
-	e := newTestEcho(t, testDB, testCfg())
+	e := newTestEchoBackup(t, testDB, backup.NewService(nil, "", t.TempDir(), t.TempDir(), "0.1.0"))
 	_, tok := setupAdminUser(t, testDB, e, "backup-ucfg-ok")
 
 	body, _ := json.Marshal(map[string]any{
@@ -655,5 +640,42 @@ func assertOnlyRefusal(t *testing.T, rec *httptest.ResponseRecorder, want string
 	var extra json.RawMessage
 	if err := dec.Decode(&extra); err != io.EOF {
 		t.Errorf("handler continued after the refusal; extra body: %s (err=%v)", extra, err)
+	}
+}
+
+// Deleting a backup and changing the backup schedule are refused while the
+// service lock is held, as it is for the whole of a restore (#1341).
+func TestBackupChangesRefusedWhileLocked(t *testing.T) {
+	truncateAllTables(t)
+	svc := backup.NewService(nil, "", t.TempDir(), t.TempDir(), "0.1.0")
+	e := newTestEchoBackup(t, testDB, svc)
+	_, tok := setupAdminUser(t, testDB, e, "backup-locked")
+
+	requests := map[string]func() *http.Request{
+		"delete": func() *http.Request {
+			return httptest.NewRequest(http.MethodDelete, "/api/admin/backups/nexorious-backup-x", nil)
+		},
+		"schedule": func() *http.Request {
+			body := `{"schedule":"daily","schedule_time":"03:00","retention_mode":"count","retention_value":3}`
+			r := httptest.NewRequest(http.MethodPut, "/api/admin/backups/config", strings.NewReader(body))
+			r.Header.Set("Content-Type", "application/json")
+			return r
+		},
+	}
+	for name, newReq := range requests {
+		t.Run(name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			if err := svc.Exclusive(func() error {
+				req := newReq()
+				req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
+				e.ServeHTTP(rec, req)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != http.StatusConflict {
+				t.Errorf("status = %d, want 409: %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }

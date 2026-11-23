@@ -326,7 +326,7 @@ Under **Backup / Restore** you manage the instance's data backups.
 - **Retention** — keep either the most recent *N* backups or everything newer than a set age; older ones are pruned automatically.
 - **Manual backup** — create one immediately with a single button.
 - **The backups list** — each backup shows its type (scheduled, manual, or the automatic pre-restore one), when it was made, and its size. You can **download** any backup to keep off-server, **delete** ones you don't need, and **upload** a backup file from elsewhere.
-- **Restore** — restoring replaces the instance's current data with the backup's, so it's guarded by a confirmation and automatically takes a fresh "pre-restore" backup first, giving you a way back if a restore wasn't what you wanted.
+- **Restore** — restoring replaces the instance's current data with the backup's, so it's guarded by a confirmation and automatically takes a fresh "pre-restore" backup first, giving you a way back if a restore wasn't what you wanted. See [What a restore does](#what-a-restore-does).
 
 Backups and restores are produced by the standard PostgreSQL client tools — `pg_dump` writes each backup and `psql` applies a restore — so both have to be available to the server. As with `legendary`, this depends on how you deploy:
 
@@ -342,6 +342,31 @@ A restore loads the backup's `database.sql` with `psql` in restricted mode, so p
 The SQL in a backup still runs as Nexorious's database role, so **the role in `DATABASE_URL` must not be a PostgreSQL superuser**. See [Database role](#database-role).
 
 Keeping backups somewhere off the server, especially before upgrades, is the safest habit while the project is still moving quickly.
+
+#### What a restore does
+
+A restore first checks what it can without changing anything: that the backup file is intact (its checksums match), that it was made by a version this server can restore, that `pg_dump` is there for the pre-restore backup, and that the database role may create the schema `nexorious_restore`, where the restore records its progress. If any of that fails, the restore is refused and nothing changes.
+
+Otherwise it goes on, in this order:
+
+1. The server goes into maintenance mode. Requests other than `/health` and the backup pages answer "restore in progress", and backups, backup deletions, retention clean-ups and changes to the backup schedule are refused until the restore is over.
+2. All background work stops at once, without waiting for it to finish. If it has not stopped within 30 seconds, the restore gives up with nothing restored.
+3. The pre-restore backup is taken (not for a restore from the setup screen of a fresh install, where there is nothing to keep). If it fails, nothing is restored.
+4. The database is replaced with the backup's. If loading the backup fails, the pre-restore backup is loaded back. A failed restore from the setup screen leaves an empty database, back at the setup screen.
+5. The restored database is migrated if it is older than the server.
+6. The server answers the request and then **restarts itself**, however the restore ended, success or failure. It keeps its process id, so Docker, Kubernetes and systemd see no exit; it is unreachable for a few seconds while it starts again. If the restart itself fails, the process exits and relies on your supervisor to start it again: the Compose file sets `restart: unless-stopped` for this.
+
+**Work that was running or waiting is cancelled, not resumed**, whether the restore succeeded, failed or was rolled back. After the restart no Job is active: every Job that was pending or running is shown as failed with "interrupted by a restore". In practice:
+
+- an import has to be uploaded again, including one that was waiting for you to review matches;
+- an export has to be started again;
+- an interrupted sync is picked up by the next sync, which also raises again any games that were waiting for review.
+
+The restored database has its own sessions, so you usually have to log in again.
+
+Do not stop the server while a restore runs. A load cut off that way leaves the database in the state described below.
+
+The restore needs room in the server's temporary directory (`/tmp`): it extracts the backup there and, while that is still there, stages the pre-restore backup (a database dump and a copy of the cover art). If it has to roll back, it extracts the pre-restore backup there as well. An uploaded backup file also passes through it. Allow roughly twice the uncompressed size of a backup, plus the upload. The Helm chart limits `/tmp` to 2 GiB; raise `nexorious.tmpDir.sizeLimit` if your backups are larger.
 
 #### When a restore did not finish
 

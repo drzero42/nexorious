@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,10 +14,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/drzero42/nexorious/internal/backup"
 )
@@ -248,26 +243,18 @@ func TestDeleteBackup(t *testing.T) {
 	}
 }
 
-// testRestoreOpts returns RestoreOpts for tests against the shared container.
-// ReconnectDB repoints testDB at the restored database so later tests use it;
-// nothing closes the shared container's connections.
-func testRestoreOpts(dsn string, skipPreRestore bool) backup.RestoreOpts {
-	return backup.RestoreOpts{
-		SkipPreRestore: skipPreRestore,
-		SetMaintenance: func(bool) {},
-		ShutdownPool:   func() {},
-		StopScheduler:  func() {},
-		CloseDB:        func() error { return nil },
-		ReconnectDB: func() (*bun.DB, error) {
-			sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
-			testDB = bun.NewDB(sqldb, pgdialect.New())
-			return testDB, nil
-		},
-		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func(*bun.DB) error { return nil },
-		SetAppState:     func(string) {},
-		MaxMigration:    "99999999999999",
-	}
+// newRestoreService returns a Service for restore tests against the shared
+// container, wired with hooks that record what the restore did. Each restore
+// that gets past the marker keeps the service lock, so a test uses a fresh
+// Service per restore.
+func newRestoreService(t *testing.T, backupDir, storageDir string) (*backup.Service, *restoreRecorder) {
+	t.Helper()
+	resetRestoreMarker(t)
+	svc := backup.NewService(testDB, testDSN, backupDir, storageDir, "0.1.0")
+	svc.SetMigrationWindow("99999999999999", "")
+	rec := &restoreRecorder{}
+	svc.SetRestoreHooks(rec.hooks())
+	return svc, rec
 }
 
 // userIDs returns the ids in the users table, sorted.
@@ -313,8 +300,16 @@ func TestRestoreBackup(t *testing.T) {
 		t.Fatalf("users before restore = %v, want both rows", got)
 	}
 
-	if err := svc.RestoreBackup(id, testRestoreOpts(testDSN, true)); err != nil {
+	rsvc, rec := newRestoreService(t, backupDir, storageDir)
+	res, err := rsvc.RestoreBackup(id, backup.RestoreOpts{})
+	if err != nil {
 		t.Fatalf("RestoreBackup: %v", err)
+	}
+	if !res.Restarting || res.PreRestoreBackupID == "" || res.RolledBack {
+		t.Errorf("result = %+v, want restarting with a pre-restore backup", res)
+	}
+	if !rec.restarted() {
+		t.Error("the restore did not ask for a restart")
 	}
 
 	if got := userIDs(t); len(got) != 1 || got[0] != "in-backup" {
@@ -359,10 +354,12 @@ func TestRestoreFromUpload_WithPreRestoreBackup(t *testing.T) {
 	}
 	insertUser(t, "live-row")
 
-	uploadID, err := svc.RestoreFromUpload(uploadPath, testRestoreOpts(testDSN, false))
+	rsvc, _ := newRestoreService(t, backupDir, storageDir)
+	res, err := rsvc.RestoreFromUpload(uploadPath, backup.RestoreOpts{})
 	if err != nil {
 		t.Fatalf("RestoreFromUpload: %v", err)
 	}
+	uploadID := res.BackupID
 
 	if got := userIDs(t); len(got) != 1 || got[0] != "from-upload" {
 		t.Errorf("users after restore = %v, want [from-upload]", got)
@@ -424,19 +421,7 @@ func TestRestoreFromUpload_InvalidArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	opts := backup.RestoreOpts{
-		SetMaintenance:  func(bool) {},
-		ShutdownPool:    func() {},
-		StopScheduler:   func() {},
-		CloseDB:         func() error { return nil },
-		ReconnectDB:     func() (*bun.DB, error) { return nil, nil },
-		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func(*bun.DB) error { return nil },
-		SetAppState:     func(string) {},
-	}
-
-	_, err := svc.RestoreFromUpload(uploadedPath, opts)
-	if err == nil {
+	if _, err := svc.RestoreFromUpload(uploadedPath, backup.RestoreOpts{}); err == nil {
 		t.Fatal("expected error for invalid archive, got nil")
 	}
 }

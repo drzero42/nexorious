@@ -20,7 +20,7 @@ import (
 
 func TestAppStateMiddleware_RedirectsToMigrate(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/some/page", nil)
 	rec := httptest.NewRecorder()
@@ -36,7 +36,7 @@ func TestAppStateMiddleware_RedirectsToMigrate(t *testing.T) {
 
 func TestAppStateMiddleware_ApiReturnsJSON503(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/games", nil)
 	rec := httptest.NewRecorder()
@@ -59,7 +59,7 @@ func TestAppStateMiddleware_ApiReturnsJSON503(t *testing.T) {
 
 func TestDBUnavailable_ApiReturnsJSON503(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateDBUnavailable)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/games", nil)
 	rec := httptest.NewRecorder()
@@ -83,7 +83,7 @@ func TestDBUnavailable_ApiReturnsJSON503(t *testing.T) {
 func TestSetupGate_ApiReturnsJSON503(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
 	m.SetNeedsSetup(true)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/games", nil)
 	rec := httptest.NewRecorder()
@@ -106,7 +106,7 @@ func TestSetupGate_ApiReturnsJSON503(t *testing.T) {
 
 func TestAppStateMiddleware_BypassMigrationPaths(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/migrate/status", nil)
 	rec := httptest.NewRecorder()
@@ -119,7 +119,7 @@ func TestAppStateMiddleware_BypassMigrationPaths(t *testing.T) {
 
 func TestAppStateMiddleware_ReadyStatePassesThrough(t *testing.T) {
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -135,7 +135,7 @@ func TestAppStateMiddleware_ReadyStatePassesThrough(t *testing.T) {
 
 func TestDBUnavailable_RedirectsToErrorPage(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateDBUnavailable)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/some/page", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -150,7 +150,7 @@ func TestDBUnavailable_RedirectsToErrorPage(t *testing.T) {
 
 func TestDBUnavailable_EncodesFromParam(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateDBUnavailable)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/user-games?page=2&sort=title", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -163,7 +163,7 @@ func TestDBUnavailable_EncodesFromParam(t *testing.T) {
 func TestSetupGate_RedirectsArbitraryRoutes(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	migrator.SetNeedsSetup(true)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/some/page", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -178,7 +178,7 @@ func TestSetupGate_RedirectsArbitraryRoutes(t *testing.T) {
 func TestSetupGate_BypassesHealthEndpoint(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	migrator.SetNeedsSetup(true)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -190,7 +190,7 @@ func TestSetupGate_BypassesHealthEndpoint(t *testing.T) {
 func TestSetupGate_BypassesMigrateRoutes(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	migrator.SetNeedsSetup(true)
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/migrate/status", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -214,7 +214,7 @@ func TestMigrationGate_BypassesBrandIconAssets(t *testing.T) {
 	for _, path := range brandIconPaths {
 		t.Run(path, func(t *testing.T) {
 			m := migrate.NewMigratorForTest(migrate.AppStateNeedsMigration)
-			e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, nil, "dev", "unknown", nil)
+			e := api.New(testEncrypter, testCfg(), m, nil, "", nil, nil, "dev", "unknown", nil)
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
@@ -230,7 +230,7 @@ func TestSetupGate_BypassesBrandIconAssets(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 			migrator.SetNeedsSetup(true)
-			e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
+			e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, "dev", "unknown", nil)
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
@@ -260,7 +260,7 @@ func TestHealth_Status(t *testing.T) {
 			if tt.needsSetup {
 				migrator.SetNeedsSetup(true)
 			}
-			e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, nil, "dev", "unknown", nil)
+			e := api.New(testEncrypter, testCfg(), migrator, nil, "", nil, nil, "dev", "unknown", nil)
 			req := httptest.NewRequest(http.MethodGet, "/health", nil)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
@@ -284,7 +284,7 @@ func TestHealth_ReportsIGDBStatusOk(t *testing.T) {
 	cfg.IGDBClientID = "test-id"
 	cfg.IGDBClientSecret = "test-secret"
 	igdbClient := igdb.NewClient(cfg, ratelimit.NewLocal(100, 100))
-	e := api.New(testEncrypter, cfg, migrator, nil, "", igdbClient, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, cfg, migrator, nil, "", igdbClient, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -305,7 +305,7 @@ func TestHealth_ReportsIGDBStatusOk(t *testing.T) {
 func TestHealth_ReportsIGDBStatusNotConfigured(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	igdbClient := igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100))
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", igdbClient, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", igdbClient, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -326,7 +326,7 @@ func TestHealth_ReportsIGDBStatusNotConfigured(t *testing.T) {
 func TestHealth_ReportsIGDBStatusInvalidCredentials(t *testing.T) {
 	migrator := migrate.NewMigratorForTest(migrate.AppStateReady)
 	igdbClient := igdb.NewInvalidCredentialsClient(ratelimit.NewLocal(100, 100))
-	e := api.New(testEncrypter, testCfg(), migrator, nil, "", igdbClient, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), migrator, nil, "", igdbClient, nil, "dev", "unknown", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -354,7 +354,7 @@ func newVersionTestEcho(t *testing.T, cfg *config.Config, version, commit string
 	t.Helper()
 	truncateAllTables(t)
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testEncrypter, cfg, m, testDB, "", nil, nil, nil, version, commit, st)
+	e := api.New(testEncrypter, cfg, m, testDB, "", nil, nil, version, commit, st)
 	insertAuthTestUser(t, testDB, "u-version-1", "versionuser", "pass123", true, false)
 	token := loginAndGetToken(t, e, "versionuser", "pass123")
 	return e, token
@@ -363,7 +363,7 @@ func newVersionTestEcho(t *testing.T, cfg *config.Config, version, commit string
 func TestVersionEndpoint_RequiresAuth(t *testing.T) {
 	truncateAllTables(t)
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testEncrypter, testCfg(), m, testDB, "", nil, nil, nil, "1.2.3", "abc1234", nil)
+	e := api.New(testEncrypter, testCfg(), m, testDB, "", nil, nil, "1.2.3", "abc1234", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
 	rec := httptest.NewRecorder()
@@ -377,7 +377,7 @@ func TestVersionEndpoint_RequiresAuth(t *testing.T) {
 func TestVersionEndpoint_APIKeyBearer(t *testing.T) {
 	truncateAllTables(t)
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testEncrypter, testCfg(), m, testDB, "", nil, nil, nil, "1.2.3", "abc1234", nil)
+	e := api.New(testEncrypter, testCfg(), m, testDB, "", nil, nil, "1.2.3", "abc1234", nil)
 	insertAuthTestUser(t, testDB, "user-version-key", "versionkeyuser", "pw", true, false)
 	sessionID := insertAuthTestSession(t, testDB, "user-version-key")
 
@@ -565,7 +565,7 @@ func TestMetricsEndpoint_ServedAndBypassesGates(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := api.New(testEncrypter, testCfg(), tt.migrator(), nil, "", nil, nil, nil, "dev", "unknown", nil)
+			e := api.New(testEncrypter, testCfg(), tt.migrator(), nil, "", nil, nil, "dev", "unknown", nil)
 
 			req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 			rec := httptest.NewRecorder()
@@ -587,7 +587,7 @@ func TestMetricsEndpoint_ServedAndBypassesGates(t *testing.T) {
 		maint.SetMaintenanceMode(true)
 		t.Cleanup(func() { maint.SetMaintenanceMode(false) })
 
-		e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateReady), nil, "", nil, nil, nil, "dev", "unknown", nil)
+		e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateReady), nil, "", nil, nil, "dev", "unknown", nil)
 		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
@@ -612,7 +612,7 @@ func TestMetricsEndpoint_404WhenDisabled(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = prov.Shutdown(context.Background()) })
 
-	e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateReady), nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateReady), nil, "", nil, nil, "dev", "unknown", nil)
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -630,7 +630,7 @@ func TestMetricsEndpoint_404WhenDisabled(t *testing.T) {
 func TestUnauthenticatedUnmatchedRoutes_NotAuthGated(t *testing.T) {
 	truncateAllTables(t)
 	m := migrate.NewMigratorForTest(migrate.AppStateReady)
-	e := api.New(testEncrypter, testCfg(), m, testDB, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), m, testDB, "", nil, nil, "dev", "unknown", nil)
 
 	for path, want := range map[string]int{"/": 0, "/api/sync/no-such-route": http.StatusNotFound} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -648,7 +648,7 @@ func TestUnauthenticatedUnmatchedRoutes_NotAuthGated(t *testing.T) {
 // the id stays the same within one process, and the flag follows maintenance
 // mode, which only a restore switches on.
 func TestHealth_InstanceIDAndRestoreInProgress(t *testing.T) {
-	e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateReady), nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateReady), nil, "", nil, nil, "dev", "unknown", nil)
 	health := func() map[string]any {
 		t.Helper()
 		rec := httptest.NewRecorder()
@@ -687,7 +687,7 @@ func TestHealth_InstanceIDAndRestoreInProgress(t *testing.T) {
 // error page, its stylesheet, /health and /metrics are reachable. The
 // migration routes are refused too, unlike in the migration states.
 func TestRestoreFailed_Gate(t *testing.T) {
-	e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateRestoreFailed), nil, "", nil, nil, nil, "dev", "unknown", nil)
+	e := api.New(testEncrypter, testCfg(), migrate.NewMigratorForTest(migrate.AppStateRestoreFailed), nil, "", nil, nil, "dev", "unknown", nil)
 	get := func(path string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
