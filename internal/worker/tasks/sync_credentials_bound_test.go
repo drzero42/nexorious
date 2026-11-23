@@ -292,7 +292,7 @@ func TestDispatchSync_CredentialsError_SubscriptionReadFailureKeepsFlag(t *testi
 	}
 }
 
-// An unbound failure (Epic's kind) whose flag cannot be written still tells
+// An unbound failure whose flag cannot be written still tells
 // the user once, outside the failed transaction, and the job still fails.
 func TestDispatchSync_CredentialsError_UnboundFlagFailureStillNotifies(t *testing.T) {
 	truncateAllTables(t)
@@ -349,7 +349,7 @@ func TestDispatchSync_CredentialsError_FailedNoticeIsNotResentAlone(t *testing.T
 		_, _ = testDB.ExecContext(ctx, `DROP SEQUENCE IF EXISTS r25_event_tries`)
 	})
 
-	// An unbound failure (Epic's kind), the one that has a fallback notice.
+	// An unbound failure takes the worker's fallback notice path.
 	loaded := "loaded-ct"
 	userID, jobID := seedBoundSync(t, "epic-games-store", &loaded)
 	factory := func(context.Context, string, models.UserSyncConfig) (tasks.StorefrontAdapter, error) {
@@ -367,7 +367,7 @@ func TestDispatchSync_CredentialsError_FailedNoticeIsNotResentAlone(t *testing.T
 	}
 }
 
-// unboundFailingAdapter fails with a plain credentials error, as Epic's does.
+// unboundFailingAdapter fails with a plain credentials error.
 type unboundFailingAdapter struct{}
 
 func (unboundFailingAdapter) GetLibrary(context.Context, int, func([]tasks.ExternalGameEntry) error) error {

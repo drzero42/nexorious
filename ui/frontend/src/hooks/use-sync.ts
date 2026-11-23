@@ -80,6 +80,7 @@ const connectionStatusKeys: Partial<Record<SyncStorefront, readonly unknown[]>> 
   [SyncStorefront.GOG]: syncKeys.gogConnection(),
   [SyncStorefront.PLAYSTATION_STORE]: syncKeys.playstationStoreStatus(),
   [SyncStorefront.HUMBLE]: syncKeys.humbleStatus(),
+  [SyncStorefront.AMAZON_GAMES]: syncKeys.amazonGamesConnection(),
 };
 
 /**
