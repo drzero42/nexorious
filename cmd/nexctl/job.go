@@ -194,7 +194,6 @@ func newJobShowCmd() *cobra.Command {
 			fmt.Fprintf(out, "items:      %d\n", job.TotalItems)
 			fmt.Fprintf(out, "file:       %s\n", derefStr(job.FilePath))
 			fmt.Fprintf(out, "terminal:   %s\n", yesNo(job.IsTerminal))
-			fmt.Fprintf(out, "auto-retry: %s\n", yesNo(job.AutoRetryDone))
 			fmt.Fprintf(out, "created:    %s\n", job.CreatedAt)
 			fmt.Fprintf(out, "started:    %s\n", derefStr(job.StartedAt))
 			fmt.Fprintf(out, "completed:  %s\n", derefStr(job.CompletedAt))

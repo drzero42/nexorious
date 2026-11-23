@@ -97,7 +97,6 @@ func TestGetJob(t *testing.T) {
 			"status":           "completed",
 			"priority":         "low",
 			"total_items":      5,
-			"auto_retry_done":  true,
 			"is_terminal":      true,
 			"duration_seconds": dur,
 			"created_at":       "2026-06-01T10:00:00Z",
@@ -126,9 +125,6 @@ func TestGetJob(t *testing.T) {
 	}
 	if !job.IsTerminal {
 		t.Error("expected is_terminal true")
-	}
-	if !job.AutoRetryDone {
-		t.Error("expected auto_retry_done true")
 	}
 	if job.Progress.Total != 5 || job.Progress.Percent != 100 {
 		t.Errorf("progress = %+v", job.Progress)

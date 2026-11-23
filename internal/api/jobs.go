@@ -107,7 +107,6 @@ func toJobResponse(job *models.Job, progress map[string]any) map[string]any {
 		"file_path":        job.FilePath,
 		"total_items":      job.TotalItems,
 		"error_message":    job.ErrorMessage,
-		"auto_retry_done":  job.AutoRetryDone,
 		"created_at":       job.CreatedAt,
 		"started_at":       job.StartedAt,
 		"completed_at":     job.CompletedAt,
