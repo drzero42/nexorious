@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
@@ -36,8 +35,8 @@ func TestImportItem_BasicGame(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}})
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID}))
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -100,8 +99,8 @@ func TestImportItem_InvalidPlayStatusCoercedToNull(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
@@ -159,8 +158,8 @@ func TestImportItem_PromotesToInProgressWhenPlayed(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
@@ -202,8 +201,8 @@ func TestImportItem_PlayedDoesNotClobberExplicitStatus(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
@@ -240,8 +239,8 @@ func TestImportItem_InvalidOwnershipCoercedToOwned(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
@@ -274,8 +273,8 @@ func TestImportItem_MissingIGDBID(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}})
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID}))
 	if err != nil {
 		t.Fatalf("handler should not return error: %v", err)
 	}
@@ -311,16 +310,17 @@ func TestImportItem_DuplicateGame(t *testing.T) {
 		"title":   "Dupe Game",
 	}
 
-	// First import.
+	// Both items exist before either runs: once the first finished, a Job
+	// with only that item would be complete.
 	itemID1 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
+	itemID2 := insertTestJobItem(t, testDB, jobID, userID, gameData)
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID1, tasks.ImportItemArgs{JobItemID: itemID1})); err != nil {
 		t.Fatalf("first import error: %v", err)
 	}
 
 	// Second import of same game for same user.
-	itemID2 := insertTestJobItem(t, testDB, jobID, userID, gameData)
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID2}}); err != nil {
+	if err := w.Work(ctx, ownedJob(t, itemID2, tasks.ImportItemArgs{JobItemID: itemID2})); err != nil {
 		t.Fatalf("second import error: %v", err)
 	}
 
@@ -396,8 +396,8 @@ func TestImportItem_WithPlatformsAndTags(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -471,8 +471,8 @@ func TestImportItem_PlatformsSkippedWithoutSeed(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -562,11 +562,12 @@ func TestImportItem_ReimportDedup(t *testing.T) {
 			insertTestUser(t, testDB, userID)
 			insertTestJob(t, testDB, jobID, userID, 2)
 
-			w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+			w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
 
-			// First import.
+			// Both items exist before either runs (see DuplicateGame).
 			itemID1 := insertTestJobItem(t, testDB, jobID, userID, tc.game)
-			if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
+			itemID2 := insertTestJobItem(t, testDB, jobID, userID, tc.game)
+			if err := w.Work(ctx, ownedJob(t, itemID1, tasks.ImportItemArgs{JobItemID: itemID1})); err != nil {
 				t.Fatalf("first import: %v", err)
 			}
 
@@ -575,8 +576,7 @@ func TestImportItem_ReimportDedup(t *testing.T) {
 			}
 
 			// Second import of the same game — must not duplicate child rows.
-			itemID2 := insertTestJobItem(t, testDB, jobID, userID, tc.game)
-			if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID2}}); err != nil {
+			if err := w.Work(ctx, ownedJob(t, itemID2, tasks.ImportItemArgs{JobItemID: itemID2})); err != nil {
 				t.Fatalf("second import: %v", err)
 			}
 
@@ -633,8 +633,8 @@ func TestImportItem_JobCompletion(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -671,8 +671,8 @@ func TestImportItem_PreservesTimestamps(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -692,8 +692,8 @@ func TestImportItem_PreservesTimestamps(t *testing.T) {
 // TestImportItem_JobItemNotFound exercises the "item not found" path.
 func TestImportItem_JobItemNotFound(t *testing.T) {
 	truncateAllTables(t)
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(context.Background(), &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: "non-existent-id"}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(context.Background(), riverJob(1, 1, tasks.ImportItemArgs{JobItemID: uuid.NewString()})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
@@ -711,16 +711,16 @@ func TestImportItem_BadSourceMetadata(t *testing.T) {
 	// Insert a job_item with malformed source_metadata (not a JSON object with "data" key).
 	itemID := uuid.NewString()
 	_, err := testDB.ExecContext(ctx,
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, uuid.NewString(), "Bad Meta", json.RawMessage(`"not-an-object"`),
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, river_job_id)
+		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', ?)`,
+		itemID, jobID, userID, uuid.NewString(), "Bad Meta", json.RawMessage(`"not-an-object"`), nextFakeOwner(),
 	)
 	if err != nil {
 		t.Fatalf("insert job_item: %v", err)
 	}
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 
@@ -756,8 +756,8 @@ func TestImportItem_PartialJobCompletion(t *testing.T) {
 	// Insert item2 as pending — not processed.
 	_ = insertTestJobItem(t, testDB, jobID, userID, gameData2)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID1, tasks.ImportItemArgs{JobItemID: itemID1})); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -799,8 +799,8 @@ func TestImportItem_FailedItemsYieldsCompleted(t *testing.T) {
 		t.Fatalf("insert failed item: %v", err)
 	}
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID1}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID1, tasks.ImportItemArgs{JobItemID: itemID1})); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -847,8 +847,8 @@ func TestImportItem_StorefrontNotFound(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -895,8 +895,8 @@ func TestImportItem_EmitsImportCompleted(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -909,6 +909,7 @@ func TestImportItem_EmitsImportCompleted(t *testing.T) {
 		t.Fatalf("job status = %q, want completed (prerequisite for event assertion)", jobStatus)
 	}
 
+	runEffects(t, newTestLC(t))
 	dedupKey := jobID + ":" + notify.TypeImportCompleted
 	var count int
 	if err := testDB.QueryRowContext(ctx,
@@ -968,8 +969,8 @@ func TestImportItem_WritesChangeRows(t *testing.T) {
 	runImport := func(jobID string, gd map[string]any) {
 		insertTestJob(t, testDB, jobID, userID, 1)
 		itemID := insertTestJobItem(t, testDB, jobID, userID, gd)
-		w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-		if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+		if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 			t.Fatalf("work: %v", err)
 		}
 	}
@@ -1015,8 +1016,8 @@ func TestImportItem_EmitsImportFailedWhenItemsFail(t *testing.T) {
 	}
 	itemID := insertTestJobItem(t, testDB, jobID, userID, gameData)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("handler error: %v", err)
 	}
 
@@ -1029,6 +1030,7 @@ func TestImportItem_EmitsImportFailedWhenItemsFail(t *testing.T) {
 		t.Fatalf("item status = %q, want failed (prerequisite)", itemStatus)
 	}
 
+	runEffects(t, newTestLC(t))
 	failedKey := jobID + ":" + notify.TypeImportFailed
 	var failedCount int
 	if err := testDB.QueryRowContext(ctx,
@@ -1079,8 +1081,8 @@ func TestImportItem_AppliesWishlistAndAvailability(t *testing.T) {
 		},
 	})
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("work: %v", err)
 	}
 
@@ -1120,8 +1122,8 @@ func TestImportItem_WishlistSurvivesWithoutPlatforms(t *testing.T) {
 		"platforms":     []map[string]any{},
 	})
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("work: %v", err)
 	}
 
@@ -1166,13 +1168,14 @@ func TestImportItem_AppliesPoolsOnCompletion(t *testing.T) {
 	}}
 	insertTestPoolsItem(t, testDB, jobID, userID, poolsPayload)
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
 	for _, id := range []string{item1, item2} {
-		if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: id}}); err != nil {
+		if err := w.Work(ctx, ownedJob(t, id, tasks.ImportItemArgs{JobItemID: id})); err != nil {
 			t.Fatalf("work: %v", err)
 		}
 	}
 
+	runEffects(t, newTestLC(t))
 	var poolName string
 	var memberCount int
 	if err := testDB.NewRaw(`SELECT name FROM pools WHERE user_id = ? AND name = 'Backlog'`, userID).Scan(ctx, &poolName); err != nil {
@@ -1211,8 +1214,8 @@ func TestImportItem_BackwardCompatDefaults(t *testing.T) {
 		"platforms": []map[string]any{{"platform": "pc-windows"}},
 	})
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
-	if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("work: %v", err)
 	}
 
@@ -1275,7 +1278,9 @@ func TestApplyImportedPools_MergesIntoExistingPool(t *testing.T) {
 		},
 	}})
 
-	tasks.ApplyImportedPoolsForTest(ctx, testDB, jobID, userID)
+	if err := tasks.ApplyImportedPoolsForTest(ctx, testDB, jobID, userID); err != nil {
+		t.Fatal(err)
+	}
 
 	// Existing pool kept (color unchanged, no duplicate pool), ug2 merged in.
 	var poolCount, memberCount int

@@ -158,9 +158,9 @@ func insertTestJobItem(t *testing.T, db *bun.DB, jobID, userID string, gameData 
 	itemID := uuid.NewString()
 	sourceMetadata := mustMarshal(t, map[string]any{"data": gameData})
 	_, err := db.ExecContext(context.Background(),
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates)
-		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]')`,
-		itemID, jobID, userID, uuid.NewString(), "Test Game", sourceMetadata,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, river_job_id)
+		 VALUES (?, ?, ?, ?, ?, ?, 'pending', '{}', '[]', ?)`,
+		itemID, jobID, userID, uuid.NewString(), "Test Game", sourceMetadata, nextFakeOwner(),
 	)
 	if err != nil {
 		t.Fatalf("insertTestJobItem: %v", err)

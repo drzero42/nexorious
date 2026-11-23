@@ -9,8 +9,8 @@ How a **Job** and its **Job items** move from creation to a finished state, who 
 > | Metadata refresh | yes |
 > | Store-link refresh | yes |
 > | Export | yes |
-> | Generic import (registry sources, CSV) | no |
-> | Nexorious import | no |
+> | Generic import (registry sources, CSV) | yes |
+> | Nexorious import | yes |
 > | Sync | no |
 
 ## What the lifecycle guarantees
@@ -175,7 +175,8 @@ A `failed` or `cancelled` Job is never reopened. Its dispatch may not have finis
 | `job_items.processed_at` | When the item finishes. Cleared by Retry |
 | `job_items.error_message` | When the item fails. Cleared by Retry |
 | `job_items.river_job_id` | Set with every River insert for the item; cleared whenever the item leaves `pending`, and when it starts waiting |
-| `job_items.resolved_igdb_id`, `resolved_at` | By Resolve, and by a worker's hand-over to the next stage |
+| `job_items.resolved_igdb_id` | By Resolve, and by a worker's hand-over to the next stage |
+| `job_items.resolved_at` | By Resolve: when the user chose the game |
 
 Error messages are passed through `logging.ScrubURLQueries` before they are stored (#937).
 
@@ -309,7 +310,8 @@ A River job names the Job or item it works on in its args (`job_id` for a dispat
 - A dispatch River job that exists before any Job (the scheduled metadata refresh, the store-link refresh after a sync) is not Job work until it calls Create. If it finds nothing to do it creates no Job.
 - A dispatch that is interrupted is never marked done. A dispatch only changes a Job that is still active and whose dispatch it owns.
 - The admin notifications a refresh dispatch sends when it has queued its items are not finishing effects. They stay where they are and carry a dedup key (the Job, or the dispatch River job when no Job exists yet), so a dispatch that runs again does not send them twice. The one sent on success is written in the transaction that marks the dispatch done.
-- An import Job has no dispatch to run again: its items are created with it. It can only be failed by recovery.
+- An import Job has no dispatch to run again: its items are created with it. It can only be failed by recovery, which checks such a Job's dispatch before its items, so it queues nothing for a Job it is about to fail.
+- The generic import kind covers every import source except `nexorious`, including sources that have since been removed. A kind that names a source wins over one that names none.
 
 ### Items that wait on another item
 

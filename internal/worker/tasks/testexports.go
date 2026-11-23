@@ -34,8 +34,8 @@ func LoadUserGamesWithRelationsForTest(ctx context.Context, db *bun.DB, userID s
 }
 
 // ApplyImportedPoolsForTest exposes applyImportedPools for cross-package tests.
-func ApplyImportedPoolsForTest(ctx context.Context, db *bun.DB, jobID, userID string) {
-	applyImportedPools(ctx, db, jobID, userID)
+func ApplyImportedPoolsForTest(ctx context.Context, db *bun.DB, jobID, userID string) error {
+	return applyImportedPools(ctx, db, jobID, userID)
 }
 
 // ErrChildRepointedForTest exposes errChildRepointed for cross-package tests.

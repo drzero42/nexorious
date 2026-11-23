@@ -15,16 +15,16 @@ import (
 
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/enum"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
-	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/usergame"
 )
 
 // PoolsItemKey is the sentinel item_key of the synthetic job_item that carries
 // the Play Planning pools payload for a Nexorious JSON import. It is created
-// pre-completed and applied once at the job-completion transition; it is not a
-// game item and is excluded from per-job item listings.
+// already completed and applied by the Job's finishing effects on its first
+// finish; it is not a game item and is excluded from per-job item listings.
 const PoolsItemKey = "__pools__"
 
 // importPoolData is one pool entry in a Nexorious JSON import's `pools` section.
@@ -49,14 +49,17 @@ type ImportItemArgs struct {
 
 func (ImportItemArgs) Kind() string { return "import_item" }
 
+// InsertOpts: several attempts. The library write commits with the item's
+// completion, so running it again is safe.
 func (ImportItemArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 1, Priority: 3}
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3}
 }
 
-// ImportItemWorker processes a single import job item.
+// ImportItemWorker processes a single nexorious import job item.
 type ImportItemWorker struct {
 	river.WorkerDefaults[ImportItemArgs]
 	DB          *bun.DB
+	LC          *joblifecycle.Module
 	IGDBClient  *igdb.Client
 	StoragePath string
 }
@@ -130,50 +133,39 @@ func coercePlayStatus(ctx context.Context, s *string) *string {
 	return s
 }
 
-// Work processes a single import job item. It never returns an error —
-// failures are recorded on the JobItem itself.
+// Work imports one game of a nexorious export. The games row and cover art
+// are ensured first, outside the transition; the library write, its changes
+// row and the item's result then commit with the item's completion. Platforms
+// and storefronts the database does not know are left out, as they always
+// were for this format.
 func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemArgs]) error {
-	// Load JobItem
-	var item models.JobItem
-	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "import_item: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return nil
+	item, done, err := loadOwnedItem(ctx, w.DB, w.LC, job.Args.JobItemID, job.ID)
+	if done || err != nil {
+		return err
 	}
-	// Correlate every line below to the parent import job.
 	ctx = logging.WithJobID(ctx, item.JobID)
+	fail := func(msg string) error { return failItem(ctx, w.LC, item.ID, job.ID, msg) }
 
-	// Parse game data from source_metadata
 	var wrapper struct {
 		Data importGameData `json:"data"`
 	}
 	if err := json.Unmarshal(item.SourceMetadata, &wrapper); err != nil {
-		// Item writes use context.Background() so they succeed even if the River
-		// job context was cancelled during graceful shutdown.
-		markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("parse source_metadata: %v", err), "import_item: markItemFailed")
-		checkJobCompletion(w.DB, item.JobID)
-		return nil
+		return fail(fmt.Sprintf("parse source_metadata: %v", err))
 	}
 	gd := wrapper.Data
-
-	// Validate igdb_id
 	if gd.IGDBID == 0 {
-		markItemFailed(context.Background(), w.DB, &item, "missing igdb_id", "import_item: markItemFailed")
-		checkJobCompletion(w.DB, item.JobID)
-		return nil
+		return fail("missing igdb_id")
 	}
 
-	// Re-hydrate the game from IGDB by id (cover art, metadata). On any per-item
-	// IGDB failure, ensureGameRow inserts a minimal id+title row so user data is
-	// preserved; a later metadata refresh fills in the rest.
+	// Re-hydrate the game from IGDB by id. On an IGDB failure ensureGameRow
+	// inserts a minimal id+title row so user data is kept; a later metadata
+	// refresh fills in the rest.
 	if err := ensureGameRow(ctx, w.DB, w.IGDBClient, w.StoragePath, gd.IGDBID, gd.Title); err != nil {
-		markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("ensure game row: %v", err), "import_item: markItemFailed")
-		checkJobCompletion(w.DB, item.JobID)
-		return nil
+		return retryOrFail(ctx, w.LC, job.JobRow, item.ID, "ensure game row", err)
 	}
 
-	// Parse the meta fields for the (possible) initial insert. Acquire(ModeImport)
-	// writes these — and the caller-supplied timestamps — only when it creates the
-	// user_game row; an existing row (including its updated_at) is left untouched.
+	// Acquire(ModeImport) writes the meta fields and the given timestamps only
+	// when it creates the user_game row; an existing row is left untouched.
 	var personalRating *int32
 	if gd.PersonalRating != nil && *gd.PersonalRating >= 1 && *gd.PersonalRating <= 5 {
 		r := int32(*gd.PersonalRating) //nolint:gosec // bounded to 1..5 above
@@ -185,34 +177,76 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 	createdAt := parseRFC3339(gd.CreatedAt)
 	updatedAt := parseRFC3339(gd.UpdatedAt)
 
-	// Build platform inputs, verifying each platform/storefront against the DB
-	// (platforms not in the seed data are silently skipped; storefronts not found
-	// are recorded with a NULL storefront and a warning).
+	plats, err := w.platformInputs(ctx, gd.Platforms)
+	if err != nil {
+		return retryOrFail(ctx, w.LC, job.JobRow, item.ID, "look up platforms", err)
+	}
+	tags := make([]usergame.TagInput, 0, len(gd.Tags))
+	for _, td := range gd.Tags {
+		tags = append(tags, usergame.TagInput{Name: td.Name, Color: td.Color})
+	}
+
+	err = w.LC.FinishItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{
+		Status: models.JobItemStatusCompleted,
+		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
+			res, err := usergame.Acquire(ctx, tx, usergame.AcquireParams{
+				UserID: item.UserID, GameID: gd.IGDBID, Mode: usergame.ModeImport,
+				Platforms: plats, Tags: tags, TagMode: usergame.TagMerge,
+				PlayStatus: playStatus, PersonalRating: personalRating,
+				IsLoved: gd.IsLoved, IsWishlisted: gd.IsWishlisted, PersonalNotes: gd.PersonalNotes,
+				CreatedAt: createdAt, UpdatedAt: updatedAt,
+			})
+			if err != nil {
+				return nil, acquireError(err)
+			}
+			if _, err := tx.NewRaw(
+				`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, created_at)
+				 VALUES (?, ?, ?, NULL, ?, ?, ?, now())`,
+				uuid.NewString(), item.JobID, item.UserID, res.UserGameID, importChangeType(res), item.SourceTitle,
+			).Exec(ctx); err != nil {
+				return nil, fmt.Errorf("insert change: %w", err)
+			}
+			return json.Marshal(map[string]any{
+				"game_id":         gd.IGDBID,
+				"user_game_id":    res.UserGameID,
+				"is_new_addition": res.Created,
+				"already_exists":  !res.Created,
+			})
+		},
+	})
+	return finishImportItem(ctx, w.LC, job.JobRow, item.ID, err)
+}
+
+// platformInputs builds the Acquire platform inputs of a nexorious export
+// game. A platform the database does not know is left out; a storefront it
+// does not know is recorded as none. Only sql.ErrNoRows means "not known":
+// any other lookup error is returned.
+func (w *ImportItemWorker) platformInputs(ctx context.Context, pds []importPlatformData) ([]usergame.PlatformInput, error) {
 	var plats []usergame.PlatformInput
-	for _, pd := range gd.Platforms {
+	for _, pd := range pds {
 		if pd.Platform == "" {
 			continue
 		}
-
-		// Verify platform exists (must be seeded via seed data or migration).
 		var platformName string
-		if err := w.DB.QueryRowContext(ctx,
-			"SELECT name FROM platforms WHERE name = ?", pd.Platform,
-		).Scan(&platformName); err != nil {
-			slog.WarnContext(ctx, "import_item: platform not found, skipping (load seed data first)", "platform", pd.Platform)
-			continue
+		if err := w.DB.QueryRowContext(ctx, "SELECT name FROM platforms WHERE name = ?", pd.Platform).Scan(&platformName); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				slog.WarnContext(ctx, "import_item: platform not found, skipping (load seed data first)", "platform", pd.Platform)
+				continue
+			}
+			return nil, fmt.Errorf("platform %q: %w", pd.Platform, err)
 		}
 
-		// Verify storefront exists (nullable — store NULL if blank or not yet seeded).
 		var storefrontPtr *string
 		if pd.Storefront != "" {
 			var storefrontName string
-			if err := w.DB.QueryRowContext(ctx,
-				"SELECT name FROM storefronts WHERE name = ?", pd.Storefront,
-			).Scan(&storefrontName); err == nil {
+			err := w.DB.QueryRowContext(ctx, "SELECT name FROM storefronts WHERE name = ?", pd.Storefront).Scan(&storefrontName)
+			switch {
+			case err == nil:
 				storefrontPtr = &storefrontName
-			} else {
+			case errors.Is(err, sql.ErrNoRows):
 				slog.WarnContext(ctx, "import_item: storefront not found, recording platform without storefront (load seed data first)", "storefront", pd.Storefront)
+			default:
+				return nil, fmt.Errorf("storefront %q: %w", pd.Storefront, err)
 			}
 		}
 
@@ -235,129 +269,47 @@ func (w *ImportItemWorker) Work(ctx context.Context, job *river.Job[ImportItemAr
 			// SyncFromSource intentionally omitted (false) — imports are not storefront syncs.
 		})
 	}
-
-	// Build tag inputs.
-	tags := make([]usergame.TagInput, 0, len(gd.Tags))
-	for _, td := range gd.Tags {
-		tags = append(tags, usergame.TagInput{Name: td.Name, Color: td.Color})
-	}
-
-	// Snapshot the tag count BEFORE Acquire so we can detect newly merged links.
-	// (Acquire merges tags additively; counting after would make existingTagCount
-	// equal totalTagCount and produce newTagCount = 0.) Counts 0 for a row that
-	// does not exist yet, so the snapshot needs no prior existence check.
-	existingTagCount := 0
-	if len(tags) > 0 {
-		if err := w.DB.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM user_game_tags ugt"+
-				" JOIN user_games ug ON ug.id = ugt.user_game_id"+
-				" WHERE ug.user_id = ? AND ug.game_id = ?", item.UserID, gd.IGDBID,
-		).Scan(&existingTagCount); err != nil {
-			existingTagCount = 0
-		}
-	}
-
-	// Acquire creates the user_game with the imported meta + timestamps (or leaves
-	// an existing row, including its updated_at, untouched), merges platforms
-	// (max-hours, ownership upgrade), clears wishlist on acquire, auto-promotes
-	// play_status, and merges tags additively — all atomically.
-	res, err := usergame.Acquire(ctx, w.DB, usergame.AcquireParams{
-		UserID: item.UserID, GameID: gd.IGDBID, Mode: usergame.ModeImport,
-		Platforms: plats, Tags: tags, TagMode: usergame.TagMerge,
-		PlayStatus: playStatus, PersonalRating: personalRating,
-		IsLoved: gd.IsLoved, IsWishlisted: gd.IsWishlisted, PersonalNotes: gd.PersonalNotes,
-		CreatedAt: createdAt, UpdatedAt: updatedAt,
-	})
-	if err != nil {
-		markItemFailed(context.Background(), w.DB, &item, fmt.Sprintf("acquire: %v", err), "import_item: markItemFailed")
-		checkJobCompletion(w.DB, item.JobID)
-		return nil
-	}
-	alreadyExists := !res.Created
-
-	// Determine change type for the changes table.
-	newPlatformCount := 0
-	for _, ch := range res.PlatformChanges {
-		if ch.Created {
-			newPlatformCount++
-		}
-	}
-	// Count total tags post-Acquire; diff against the pre-Acquire snapshot.
-	var totalTagCount int
-	if len(tags) > 0 {
-		if err := w.DB.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM user_game_tags WHERE user_game_id = ?", res.UserGameID,
-		).Scan(&totalTagCount); err != nil {
-			totalTagCount = 0
-		}
-	}
-	newTagCount := totalTagCount - existingTagCount
-
-	// Mark item completed
-	// Record a per-item change row mirroring the sync worker's `changes` writes.
-	changeType := "added"
-	if alreadyExists {
-		if newPlatformCount+newTagCount > 0 {
-			changeType = "updated"
-		} else {
-			changeType = "already_in_library"
-		}
-	}
-	if _, err := w.DB.NewRaw(
-		`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, created_at)
-		 VALUES (?, ?, ?, NULL, ?, ?, ?, now())`,
-		uuid.NewString(), item.JobID, item.UserID, res.UserGameID, changeType, item.SourceTitle,
-	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "import_item: insert change", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-
-	result := map[string]any{
-		"game_id":         gd.IGDBID,
-		"user_game_id":    res.UserGameID,
-		"is_new_addition": !alreadyExists,
-		"already_exists":  alreadyExists,
-	}
-	markItemCompletedWithResult(context.Background(), w.DB, &item, result, "import_item: markItemCompleted")
-	checkJobCompletion(w.DB, item.JobID)
-	return nil
+	return plats, nil
 }
 
-// applyImportedPools reads the synthetic pools job_item for a finished import job
-// and applies its pools additively: find-or-create each pool by (user_id, name),
-// then attach members resolved from igdb_id to the user's user_games. It is
-// best-effort — a per-pool or per-member failure is logged and skipped, never
-// failing the job. Safe to call only on the single job-completion transition.
-func applyImportedPools(ctx context.Context, db *bun.DB, jobID, userID string) {
+// applyImportedPools reads the pools item of a finished nexorious import and
+// applies its pools additively: find-or-create each pool by (user_id, name),
+// then attach the members whose games are in the user's library. A bad pools
+// payload is logged and skipped; a database error is returned so the
+// finishing effects are retried (the SQL is idempotent). A member whose game
+// was not imported is skipped.
+func applyImportedPools(ctx context.Context, db *bun.DB, jobID, userID string) error {
 	var item models.JobItem
 	err := db.NewSelect().Model(&item).
 		Where("job_id = ? AND item_key = ?", jobID, PoolsItemKey).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
-		return
+		return nil
 	}
 	if err != nil {
-		slog.WarnContext(ctx, "import: load pools item", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return
+		return fmt.Errorf("load pools item: %w", err)
 	}
 	var wrapper struct {
 		Data []importPoolData `json:"data"`
 	}
 	if err := json.Unmarshal(item.SourceMetadata, &wrapper); err != nil {
-		slog.WarnContext(ctx, "import: parse pools payload", logging.KeyErr, err, logging.Cat(logging.CategoryValidation))
-		return
+		slog.WarnContext(ctx, "import: parse pools payload, pools not applied", logging.KeyErr, err, logging.Cat(logging.CategoryValidation))
+		return nil
 	}
 	for _, p := range wrapper.Data {
 		poolID, err := findOrCreatePool(ctx, db, userID, p)
 		if err != nil {
-			slog.WarnContext(ctx, "import: find/create pool", logging.KeyErr, err, "pool", p.Name, logging.Cat(logging.CategoryDB))
-			continue
+			return fmt.Errorf("find or create pool %q: %w", p.Name, err)
 		}
 		for _, m := range p.Games {
 			var ugID string
-			if err := db.NewRaw(
+			err := db.NewRaw(
 				`SELECT id FROM user_games WHERE user_id = ? AND game_id = ?`, userID, m.IGDBID,
-			).Scan(ctx, &ugID); err != nil {
-				// Game absent (failed import) or lookup error: skip this member.
-				continue
+			).Scan(ctx, &ugID)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue // the game was not imported
+			}
+			if err != nil {
+				return fmt.Errorf("look up pool member: %w", err)
 			}
 			if _, err := db.NewRaw(
 				`INSERT INTO pool_games (id, pool_id, user_game_id, position, created_at)
@@ -365,10 +317,11 @@ func applyImportedPools(ctx context.Context, db *bun.DB, jobID, userID string) {
 				 ON CONFLICT (pool_id, user_game_id) DO NOTHING`,
 				uuid.NewString(), poolID, ugID, m.Position,
 			).Exec(ctx); err != nil {
-				slog.WarnContext(ctx, "import: insert pool_game", logging.KeyErr, err, "pool", p.Name, logging.Cat(logging.CategoryDB))
+				return fmt.Errorf("insert pool member of %q: %w", p.Name, err)
 			}
 		}
 	}
+	return nil
 }
 
 // findOrCreatePool returns the id of the user's pool named p.Name, creating it
@@ -435,42 +388,4 @@ func igdbMetadataToGame(md *igdb.GameMetadata) *models.Game {
 		game.IgdbPlatformNames = &s
 	}
 	return game
-}
-
-// checkJobCompletion counts remaining pending items and updates the parent Job if done.
-// Uses context.Background() so the write succeeds even if the River job context
-// was cancelled during graceful shutdown.
-func checkJobCompletion(db *bun.DB, jobID string) {
-	ctx := context.Background()
-
-	pendingCount, ok := countJobItems(ctx, db, jobID, "status = 'pending'", "import_item: count pending items")
-	if !ok || pendingCount > 0 {
-		return
-	}
-
-	// No more pending — determine final job status.
-	failedCount, ok := countJobItems(ctx, db, jobID, "status = 'failed'", "import_item: count failed items")
-	if !ok {
-		return
-	}
-
-	finalized := finalizeJobCompleted(ctx, db, jobID, "import_item: update job status", false)
-
-	uid, _ := syncJobUserAndStorefront(ctx, db, jobID)
-	if finalized {
-		applyImportedPools(ctx, db, jobID, uid)
-	}
-	if failedCount > 0 {
-		notify.Emit(ctx, db, notify.EmitParams{
-			Type: notify.TypeImportFailed, Scope: notify.ScopeUser, ActorUserID: uid,
-			Payload:  notify.ImportFailedPayload{JobID: jobID, Failed: failedCount, Error: fmt.Sprintf("%d item(s) failed to import", failedCount)},
-			DedupKey: jobID + ":" + notify.TypeImportFailed,
-		})
-		return
-	}
-	notify.Emit(ctx, db, notify.EmitParams{
-		Type: notify.TypeImportCompleted, Scope: notify.ScopeUser, ActorUserID: uid,
-		Payload:  notify.ImportCompletedPayload{JobID: jobID},
-		DedupKey: jobID + ":" + notify.TypeImportCompleted,
-	})
 }

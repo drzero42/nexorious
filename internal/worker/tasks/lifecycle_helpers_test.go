@@ -2,6 +2,7 @@ package tasks_test
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	pgx "github.com/jackc/pgx/v5"
@@ -101,4 +102,20 @@ func newTestMetadataRiverClient(t *testing.T) *river.Client[pgx.Tx] {
 		t.Fatalf("river.NewClient: %v", err)
 	}
 	return rc
+}
+
+// fakeOwnerSeq hands out River job ids for items a test inserts directly: the
+// lifecycle only compares the recorded owner with the running River job's id,
+// so no river_job row is needed.
+var fakeOwnerSeq atomic.Int64
+
+func init() { fakeOwnerSeq.Store(1 << 40) }
+
+func nextFakeOwner() int64 { return fakeOwnerSeq.Add(1) }
+
+// ownedJob builds the River job a worker runs an item with, as its recorded
+// owner.
+func ownedJob[T river.JobArgs](t *testing.T, itemID string, args T) *river.Job[T] {
+	t.Helper()
+	return riverJob(itemOwner(t, itemID), 1, args)
 }

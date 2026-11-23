@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
@@ -15,8 +14,6 @@ import (
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/joblifecycle"
-	"github.com/drzero42/nexorious/internal/logging"
-	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
 
 type JobItemsHandler struct {
@@ -127,22 +124,36 @@ func (h *JobItemsHandler) HandleRetryItem(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// isImportSource reports whether a job source uses the generic job-item
-// resolve/skip path. Every generic-pipeline migration source (vglist, csv, …)
-// plus the nexorious round-trip import resolve through here. Sync
-// sources resolve through the external_games rematch endpoints instead and must
-// be rejected here so that flow is untouched.
-func isImportSource(source string) bool {
-	return tasks.UsesGenericImportPipeline(source) || source == models.JobSourceNexorious
-}
-
 type resolveItemRequest struct {
 	IGDBID int `json:"igdb_id"`
 }
 
+// reviewableImport returns the 400 for an item whose Job has no import review
+// stage: a sync Job (resolved through the external-games flow), the nexorious
+// import (one stage, no review), or any other kind. A sync Job is told by its
+// job_type, not by the import source registry, so an import from a source
+// that has since been removed can still be resolved.
+func reviewableImport(job *models.Job, verb string) error {
+	switch {
+	case job.JobType == models.JobTypeSync:
+		return echo.NewHTTPError(http.StatusBadRequest, "this item is "+verb+" through the sync flow")
+	case job.JobType != models.JobTypeImport || job.Source == models.JobSourceNexorious:
+		return echo.NewHTTPError(http.StatusBadRequest, "manual resolution is not supported for this import source")
+	}
+	return nil
+}
+
+// reviewHTTPError maps a Resolve or Skip refusal to its HTTP error.
+func reviewHTTPError(ctx context.Context, err error, what string) error {
+	if errors.Is(err, joblifecycle.ErrNotInReview) {
+		return echo.NewHTTPError(http.StatusConflict, "item is not pending review")
+	}
+	return lifecycleHTTPError(ctx, err, what)
+}
+
 // HandleResolveItem handles POST /api/job-items/:id/resolve. It records the
-// user's chosen IGDB id on a pending_review import item and enqueues the
-// import finalize worker. Scoped to import sources.
+// user's chosen IGDB id on an import item in Pending review; the item goes to
+// finalize. Scoped to import sources with a review stage.
 func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -155,38 +166,22 @@ func (h *JobItemsHandler) HandleResolveItem(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "igdb_id is required")
 	}
 
-	item, job, err := h.loadItemAndJob(itemID, userID)
+	_, job, err := h.loadItemAndJob(itemID, userID)
 	if err != nil {
 		return err
 	}
-	if !isImportSource(job.Source) {
-		return echo.NewHTTPError(http.StatusBadRequest, "this item is resolved through the sync flow")
+	if err := reviewableImport(job, "resolved"); err != nil {
+		return err
 	}
-	if item.Status != models.JobItemStatusPendingReview {
-		return echo.NewHTTPError(http.StatusConflict, "item is not pending review")
-	}
-	// Route the finalize task by source (rather than hard-coding it), and refuse
-	// import sources that have no interactive finalize stage. Resolved before
-	// mutating so a bad request never leaves the item half-resolved.
-	finalizeArgs, err := tasks.FinalizeArgsForSource(job.Source, itemID)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "manual resolution is not supported for this import source")
-	}
-
-	if _, err := h.db.NewRaw(
-		`UPDATE job_items SET resolved_igdb_id = ?, status = ?, resolved_at = now() WHERE id = ?`,
-		req.IGDBID, models.JobItemStatusProcessing, itemID,
-	).Exec(context.Background()); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to resolve item")
-	}
-
-	if err := tasks.EnqueueOrFail(context.Background(), h.db, h.riverClient, itemID, finalizeArgs); err != nil {
-		slog.ErrorContext(c.Request().Context(), "resolve_item: enqueue finalize", logging.KeyJobItemID, itemID, logging.KeyErr, err)
+	ctx := c.Request().Context()
+	if err := h.lc.Resolve(ctx, itemID, req.IGDBID); err != nil {
+		return reviewHTTPError(ctx, err, "resolve item")
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// HandleSkipItem handles POST /api/job-items/:id/skip. Scoped to import sources.
+// HandleSkipItem handles POST /api/job-items/:id/skip. Scoped to import
+// sources with a review stage.
 func (h *JobItemsHandler) HandleSkipItem(c *echo.Context) error {
 	userID := auth.UserIDFromContext(c)
 	if userID == "" {
@@ -194,24 +189,17 @@ func (h *JobItemsHandler) HandleSkipItem(c *echo.Context) error {
 	}
 	itemID := c.Param("id")
 
-	item, job, err := h.loadItemAndJob(itemID, userID)
+	_, job, err := h.loadItemAndJob(itemID, userID)
 	if err != nil {
 		return err
 	}
-	if !isImportSource(job.Source) {
-		return echo.NewHTTPError(http.StatusBadRequest, "this item is skipped through the sync flow")
+	if err := reviewableImport(job, "skipped"); err != nil {
+		return err
 	}
-	if item.Status != models.JobItemStatusPendingReview {
-		return echo.NewHTTPError(http.StatusConflict, "item is not pending review")
+	ctx := c.Request().Context()
+	if err := h.lc.Skip(ctx, itemID); err != nil {
+		return reviewHTTPError(ctx, err, "skip item")
 	}
-
-	if _, err := h.db.NewRaw(
-		`UPDATE job_items SET status = ?, processed_at = now() WHERE id = ?`,
-		models.JobItemStatusSkipped, itemID,
-	).Exec(context.Background()); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to skip item")
-	}
-	tasks.ImportCheckJobCompletion(h.db, job.ID)
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 

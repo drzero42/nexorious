@@ -3,18 +3,19 @@ package tasks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
-	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
 	"github.com/drzero42/nexorious/internal/services/matching"
@@ -28,60 +29,68 @@ type ImportMatchArgs struct {
 }
 
 func (ImportMatchArgs) Kind() string { return "import_match" }
+
+// InsertOpts: several attempts, as for every lifecycle item kind, so a hard
+// kill does not fail the item at startup. An IGDB error is retried; on the
+// last attempt the item goes to Pending review instead.
 func (ImportMatchArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 3, Priority: 3}
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3}
 }
 
 type ImportMatchWorker struct {
 	river.WorkerDefaults[ImportMatchArgs]
-	DB          *bun.DB
-	IGDBClient  *igdb.Client
-	RiverClient *river.Client[pgx.Tx]
+	DB         *bun.DB
+	LC         *joblifecycle.Module
+	IGDBClient *igdb.Client
 }
 
+// Work matches an import item's title against IGDB. A confident match, or a
+// payload that already carries an IGDB id, hands the item to finalize; no
+// match, no IGDB, or IGDB failing on the last attempt sends it to Pending
+// review.
 func (w *ImportMatchWorker) Work(ctx context.Context, job *river.Job[ImportMatchArgs]) error {
-	var item models.JobItem
-	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "import_match: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return nil
+	item, done, err := loadOwnedItem(ctx, w.DB, w.LC, job.Args.JobItemID, job.ID)
+	if done || err != nil {
+		return err
 	}
-	// Correlate every line below to the parent import job.
 	ctx = logging.WithJobID(ctx, item.JobID)
 
-	// Short-circuit: a row that already carries a real IGDB id (e.g. a
-	// re-imported Nexorious CSV export) needs no title matching. Trust it and
-	// hand straight to finalize, which hydrates via ensureGameRow (falling back
-	// to a title-only stub if IGDB doesn't recognize the id). Inert for sources
-	// that never set IGDBID. A nil/<=0 id falls through to title matching below.
+	toFinalize := func(igdbID int, confidence float64) error {
+		return exitOrRetry(ctx, w.LC.NextStage(ctx, item.ID, job.ID, joblifecycle.Stage{
+			Args:           ImportFinalizeArgs{JobItemID: item.ID},
+			ResolvedIGDBID: &igdbID, MatchConfidence: &confidence,
+		}))
+	}
+	toReview := func(candidates json.RawMessage, confidence *float64) error {
+		return exitOrRetry(ctx, w.LC.AwaitReview(ctx, item.ID, job.ID, joblifecycle.Review{
+			Candidates: candidates, MatchConfidence: confidence,
+		}))
+	}
+
+	// A row that already carries a real IGDB id (e.g. a re-imported Nexorious
+	// CSV export) needs no title matching: finalize hydrates it through
+	// ensureGameRow (a title-only stub if IGDB does not know the id). A
+	// nil/<=0 id falls through to title matching.
 	var payload importmodel.Game
 	if err := json.Unmarshal(item.SourceMetadata, &payload); err == nil &&
 		payload.IGDBID != nil && *payload.IGDBID > 0 {
-		if _, err := w.DB.NewRaw(
-			`UPDATE job_items SET resolved_igdb_id = ?, match_confidence = 1 WHERE id = ?`,
-			*payload.IGDBID, item.ID,
-		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "import_match: set resolved id from payload", logging.KeyErr, err, logging.KeyJobItemID, item.ID, logging.Cat(logging.CategoryDB))
-		}
-		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, item.ID, ImportFinalizeArgs{JobItemID: item.ID}); err != nil {
-			slog.WarnContext(ctx, "import_match: enqueue finalize (igdb-id short-circuit)", logging.KeyErr, err, logging.KeyJobItemID, item.ID, logging.Cat(logging.CategoryDB))
-			ImportCheckJobCompletion(w.DB, item.JobID)
-		}
-		return nil
+		return toFinalize(int(*payload.IGDBID), 1)
 	}
 
 	if w.IGDBClient == nil || !w.IGDBClient.Configured() {
-		importMarkPendingReview(ctx, w.DB, &item, nil, nil)
-		ImportCheckJobCompletion(w.DB, item.JobID)
-		return nil
+		return toReview(nil, nil)
 	}
 
 	candidates, err := w.IGDBClient.SearchGames(ctx, item.SourceTitle, 10, nil)
 	if err != nil {
-		if job.Attempt >= job.MaxAttempts {
+		// Checked first: a search cut off by a shutdown or a Cancel is
+		// neither an IGDB failure nor a reason to ask the user.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if lastAttempt(job.JobRow) {
 			slog.WarnContext(ctx, "import_match: IGDB failed on final attempt, pending_review", logging.KeyJobItemID, item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryExternalAPI))
-			importMarkPendingReview(ctx, w.DB, &item, nil, nil)
-			ImportCheckJobCompletion(w.DB, item.JobID)
-			return nil
+			return toReview(nil, nil)
 		}
 		return fmt.Errorf("import_match: search failed (will retry): %w", err)
 	}
@@ -91,39 +100,13 @@ func (w *ImportMatchWorker) Work(ctx context.Context, job *river.Job[ImportMatch
 		cands[i] = matching.Candidate{ID: int32(c.IgdbID), Title: c.Title} //nolint:gosec // IGDB ids are positive, fit int32
 	}
 	decision := matching.Decide(item.SourceTitle, cands)
-
 	if decision.Confident {
-		if _, err := w.DB.NewRaw(
-			`UPDATE job_items SET resolved_igdb_id = ?, match_confidence = ? WHERE id = ?`,
-			decision.ResolvedID, decision.BestScore, item.ID,
-		).Exec(ctx); err != nil {
-			slog.WarnContext(ctx, "import_match: set resolved id", logging.KeyErr, err, logging.KeyJobItemID, item.ID, logging.Cat(logging.CategoryDB))
-		}
-		if err := EnqueueOrFail(ctx, w.DB, w.RiverClient, item.ID, ImportFinalizeArgs{JobItemID: item.ID}); err != nil {
-			slog.WarnContext(ctx, "import_match: enqueue finalize", logging.KeyErr, err, logging.KeyJobItemID, item.ID, logging.Cat(logging.CategoryDB))
-			ImportCheckJobCompletion(w.DB, item.JobID)
-		}
-		return nil
+		return toFinalize(int(decision.ResolvedID), decision.BestScore)
 	}
 
 	candJSON, _ := json.Marshal(candidates) //nolint:errcheck // marshaling candidates cannot fail
 	bs := decision.BestScore
-	importMarkPendingReview(ctx, w.DB, &item, candJSON, &bs)
-	ImportCheckJobCompletion(w.DB, item.JobID)
-	return nil
-}
-
-func importMarkPendingReview(ctx context.Context, db *bun.DB, item *models.JobItem, candidates json.RawMessage, confidence *float64) {
-	item.Status = models.JobItemStatusPendingReview
-	if candidates != nil {
-		item.IGDBCandidates = candidates
-	}
-	item.MatchConfidence = confidence
-	if _, err := db.NewUpdate().Model(item).
-		Column("status", "igdb_candidates", "match_confidence").
-		Where("id = ?", item.ID).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "import_match: mark pending_review", "id", item.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
+	return toReview(candJSON, &bs)
 }
 
 // ── Stage 2: finalize ────────────────────────────────────────────────────────
@@ -133,155 +116,158 @@ type ImportFinalizeArgs struct {
 }
 
 func (ImportFinalizeArgs) Kind() string { return "import_finalize" }
+
+// InsertOpts: several attempts. The library write commits with the item's
+// completion, so running it again is safe.
 func (ImportFinalizeArgs) InsertOpts() river.InsertOpts {
-	return river.InsertOpts{MaxAttempts: 1, Priority: 3}
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3}
 }
 
 type ImportFinalizeWorker struct {
 	river.WorkerDefaults[ImportFinalizeArgs]
 	DB          *bun.DB
+	LC          *joblifecycle.Module
 	IGDBClient  *igdb.Client
 	StoragePath string
 }
 
+// Work writes a matched import item to the library. The games row and cover
+// art are ensured first, outside the transition (safe to repeat, and slow);
+// the library write, its changes row and the item's result then commit with
+// the item's completion.
 func (w *ImportFinalizeWorker) Work(ctx context.Context, job *river.Job[ImportFinalizeArgs]) error {
-	bg := context.Background()
-	var item models.JobItem
-	if err := w.DB.NewSelect().Model(&item).Where("id = ?", job.Args.JobItemID).Scan(ctx); err != nil {
-		slog.ErrorContext(ctx, "import_finalize: load job_item", "id", job.Args.JobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		return nil
+	item, done, err := loadOwnedItem(ctx, w.DB, w.LC, job.Args.JobItemID, job.ID)
+	if done || err != nil {
+		return err
 	}
-	// Correlate every line below to the parent import job.
 	ctx = logging.WithJobID(ctx, item.JobID)
+	fail := func(msg string) error { return failItem(ctx, w.LC, item.ID, job.ID, msg) }
+
 	if item.ResolvedIGDBID == nil {
-		markItemFailed(bg, w.DB, &item, "no resolved IGDB id", "import_finalize: markItemFailed")
-		ImportCheckJobCompletion(w.DB, item.JobID)
-		return nil
+		return fail("no resolved IGDB id")
 	}
 	igdbID := int32(*item.ResolvedIGDBID) //nolint:gosec // resolved id fits int32
 
 	var payload importmodel.Game
 	if err := json.Unmarshal(item.SourceMetadata, &payload); err != nil {
-		markItemFailed(bg, w.DB, &item, fmt.Sprintf("parse payload: %v", err), "import_finalize: markItemFailed")
-		ImportCheckJobCompletion(w.DB, item.JobID)
-		return nil
+		return fail(fmt.Sprintf("parse payload: %v", err))
 	}
 
 	if err := ensureGameRow(ctx, w.DB, w.IGDBClient, w.StoragePath, igdbID, payload.Title); err != nil {
-		markItemFailed(bg, w.DB, &item, fmt.Sprintf("ensure game: %v", err), "import_finalize: markItemFailed")
-		ImportCheckJobCompletion(w.DB, item.JobID)
-		return nil
+		return retryOrFail(ctx, w.LC, job.JobRow, item.ID, "ensure game", err)
 	}
 
-	// Parse the meta fields for the (possible) initial insert. Acquire(ModeImport)
-	// writes these — and the imported created_at — only when it creates the row;
-	// an existing row is left untouched. Its ON CONFLICT DO UPDATE also subsumes
-	// the concurrent-finalize race (duplicate titles resolving to the same game):
-	// the loser conflicts and proceeds down the merge path (res.Created == false)
-	// rather than failing on the user_games (user_id, game_id) unique index.
+	// Acquire(ModeImport) writes the meta fields and the imported created_at
+	// only when it creates the row; an existing row is left untouched. Its
+	// ON CONFLICT DO UPDATE also covers two items resolving to the same game:
+	// the second takes the merge path.
 	ps := coercePlayStatus(ctx, &payload.PlayStatus)
 	createdAt := parseDateOnly(payload.CreatedAt)
 
-	// Build platform inputs. Game-level HoursPlayed goes on the first entry only,
-	// matching the pre-refactor behaviour (playtime has no home if the first entry
-	// already exists, so Acquire's max-hours merge naturally handles that case).
+	// Game-level HoursPlayed goes on the first platform only.
 	owned := "owned"
 	plats := make([]usergame.PlatformInput, 0, len(payload.Platforms))
 	for i, pl := range payload.Platforms {
 		platform := pl.Platform
-		acquiredDate := parseDateOnly(pl.AcquiredDate)
 		pi := usergame.PlatformInput{
 			Platform:        &platform,
 			Storefront:      pl.Storefront,
 			OwnershipStatus: &owned,
-			AcquiredDate:    acquiredDate,
+			AcquiredDate:    parseDateOnly(pl.AcquiredDate),
 			// SyncFromSource intentionally omitted (false) — imports are not storefront syncs.
 		}
-		// Game-level total playtime on the first entry only.
 		if i == 0 {
 			pi.HoursPlayed = payload.HoursPlayed
 		}
 		plats = append(plats, pi)
 	}
-
-	// Build tag inputs (tags are plain strings in the pipeline payload).
 	tags := make([]usergame.TagInput, 0, len(payload.Tags))
 	for _, name := range payload.Tags {
 		tags = append(tags, usergame.TagInput{Name: name})
 	}
 
-	// Snapshot the tag count BEFORE Acquire so we can detect newly merged links.
-	// (Acquire merges tags additively; counting after would make existingTagCount
-	// equal totalTagCount and produce newTags = 0.) Counts 0 for a row that does
-	// not exist yet, so the snapshot needs no prior existence check.
-	existingTagCount := 0
-	if len(tags) > 0 {
-		if qerr := w.DB.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM user_game_tags ugt"+
-				" JOIN user_games ug ON ug.id = ugt.user_game_id"+
-				" WHERE ug.user_id = ? AND ug.game_id = ?", item.UserID, igdbID,
-		).Scan(&existingTagCount); qerr != nil {
-			existingTagCount = 0
-		}
-	}
-
-	// Acquire creates the user_game with the imported meta + created_at (or leaves
-	// an existing row untouched), merges platforms (max-hours, ownership upgrade),
-	// clears wishlist on acquire, auto-promotes play_status, and merges tags
-	// additively — all atomically.
-	acqRes, acqErr := usergame.Acquire(ctx, w.DB, usergame.AcquireParams{
-		UserID: item.UserID, GameID: igdbID, Mode: usergame.ModeImport,
-		Platforms: plats, Tags: tags, TagMode: usergame.TagMerge,
-		PlayStatus: ps, PersonalRating: payload.PersonalRating,
-		IsLoved: payload.IsLoved, IsWishlisted: payload.IsWishlisted, PersonalNotes: payload.PersonalNotes,
-		CreatedAt: createdAt,
+	err = w.LC.FinishItem(ctx, item.ID, job.ID, joblifecycle.ItemResult{
+		Status: models.JobItemStatusCompleted,
+		Own: func(ctx context.Context, tx bun.Tx) (json.RawMessage, error) {
+			res, err := usergame.Acquire(ctx, tx, usergame.AcquireParams{
+				UserID: item.UserID, GameID: igdbID, Mode: usergame.ModeImport,
+				Platforms: plats, Tags: tags, TagMode: usergame.TagMerge,
+				PlayStatus: ps, PersonalRating: payload.PersonalRating,
+				IsLoved: payload.IsLoved, IsWishlisted: payload.IsWishlisted, PersonalNotes: payload.PersonalNotes,
+				CreatedAt: createdAt,
+			})
+			if err != nil {
+				return nil, acquireError(err)
+			}
+			if _, err := tx.NewRaw(
+				`INSERT INTO changes (id, job_id, user_id, external_game_id, user_game_id, change_type, title, created_at)
+				 VALUES (?, ?, ?, NULL, ?, ?, ?, now())`,
+				uuid.NewString(), item.JobID, item.UserID, res.UserGameID, importChangeType(res), item.SourceTitle,
+			).Exec(ctx); err != nil {
+				return nil, fmt.Errorf("insert change: %w", err)
+			}
+			return json.Marshal(map[string]any{
+				"game_id": igdbID, "user_game_id": res.UserGameID, "is_new_addition": res.Created,
+			})
+		},
 	})
-	if acqErr != nil {
-		markItemFailed(bg, w.DB, &item, fmt.Sprintf("acquire: %v", acqErr), "import_finalize: markItemFailed")
-		ImportCheckJobCompletion(w.DB, item.JobID)
-		return nil
-	}
-	alreadyExists := !acqRes.Created
+	return finishImportItem(ctx, w.LC, job.JobRow, item.ID, err)
+}
 
-	// Determine change type from Acquire results.
-	newPlatforms := 0
-	for _, ch := range acqRes.PlatformChanges {
+// importChangeType is the changes row's change_type for an Acquire result.
+func importChangeType(res usergame.Result) string {
+	if res.Created {
+		return "added"
+	}
+	for _, ch := range res.PlatformChanges {
 		if ch.Created {
-			newPlatforms++
+			return "updated"
 		}
 	}
-	// Count total tags post-Acquire; diff against the pre-Acquire snapshot.
-	var totalTagCount int
-	if len(tags) > 0 {
-		if qerr := w.DB.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM user_game_tags WHERE user_game_id = ?", acqRes.UserGameID,
-		).Scan(&totalTagCount); qerr != nil {
-			totalTagCount = 0
-		}
+	if res.TagsAdded > 0 {
+		return "updated"
 	}
-	newTags := totalTagCount - existingTagCount
+	return "already_in_library"
+}
 
-	changeType := "added"
-	if alreadyExists {
-		if newPlatforms > 0 || newTags > 0 {
-			changeType = "updated"
-		} else {
-			changeType = "already_in_library"
-		}
-	}
-	if _, err := w.DB.NewRaw(
-		`INSERT INTO changes (id, job_id, user_id, external_game_id, change_type, title, created_at)
-		 VALUES (?, ?, ?, NULL, ?, ?, now())`,
-		uuid.NewString(), item.JobID, item.UserID, changeType, item.SourceTitle,
-	).Exec(ctx); err != nil {
-		slog.WarnContext(ctx, "import_finalize: insert change", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
+// errAcquire marks an Acquire error that will not go away by trying again.
+var errAcquire = errors.New("acquire")
 
-	markItemCompletedWithResult(bg, w.DB, &item, map[string]any{
-		"game_id": igdbID, "user_game_id": acqRes.UserGameID, "is_new_addition": !alreadyExists,
-	}, "import_finalize: markItemCompleted")
-	ImportCheckJobCompletion(w.DB, item.JobID)
-	return nil
+// acquireError turns an Acquire error into what the item's own write
+// returns: a validation error (an unknown platform or storefront) rolls the
+// transition back on purpose and fails the item; anything else is returned
+// to River.
+func acquireError(err error) error {
+	if errors.Is(err, usergame.ErrUnprocessable) || errors.Is(err, usergame.ErrValidation) {
+		return joblifecycle.Abort(fmt.Errorf("%w: %w", errAcquire, err))
+	}
+	return fmt.Errorf("acquire: %w", err)
+}
+
+// finishImportItem turns the result of an import item's FinishItem into what
+// its worker returns: an Acquire validation error fails the item, in a new
+// transaction; another error is retried, or fails the item on the last
+// attempt.
+func finishImportItem(ctx context.Context, lc *joblifecycle.Module, rj *rivertype.JobRow, itemID string, err error) error {
+	if err == nil || ctx.Err() != nil || joblifecycle.IsRefusal(err) {
+		return exitOrRetry(ctx, err)
+	}
+	if errors.Is(err, errAcquire) {
+		return failItem(ctx, lc, itemID, rj.ID, err.Error())
+	}
+	return retryOrFail(ctx, lc, rj, itemID, "finish", err)
+}
+
+// retryOrFail returns an error that may pass to River, or fails the item with
+// it on the worker's last attempt. A cancelled context is returned as is.
+func retryOrFail(ctx context.Context, lc *joblifecycle.Module, rj *rivertype.JobRow, itemID, what string, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if lastAttempt(rj) {
+		return failItem(ctx, lc, itemID, rj.ID, fmt.Sprintf("%s: %v", what, err))
+	}
+	return fmt.Errorf("%s: %w", what, err)
 }
 
 func parseDateOnly(s string) *time.Time {
@@ -320,40 +306,4 @@ func ensureGameRow(ctx context.Context, db *bun.DB, client *igdb.Client, storage
 		igdbID, title,
 	).Exec(ctx)
 	return err
-}
-
-// ImportCheckJobCompletion finalizes an import job once no active or
-// pending_review items remain. pending_review blocks termination (the job stays
-// processing until the user resolves/skips every such item).
-func ImportCheckJobCompletion(db *bun.DB, jobID string) {
-	ctx := context.Background()
-	active, ok := countJobItems(ctx, db, jobID, "status IN ('pending', 'processing')", "import: count active")
-	if !ok || active > 0 {
-		return
-	}
-	review, ok := countJobItems(ctx, db, jobID, "status = 'pending_review'", "import: count pending_review")
-	if !ok || review > 0 {
-		return
-	}
-	if !finalizeJobCompleted(ctx, db, jobID, "import: finalize job", true) {
-		return
-	}
-	uid, _ := syncJobUserAndStorefront(ctx, db, jobID)
-	failed, ok := countJobItems(ctx, db, jobID, "status = 'failed'", "import: count failed")
-	if !ok {
-		return
-	}
-	if failed > 0 {
-		notify.Emit(ctx, db, notify.EmitParams{
-			Type: notify.TypeImportFailed, Scope: notify.ScopeUser, ActorUserID: uid,
-			Payload:  notify.ImportFailedPayload{JobID: jobID, Failed: failed, Error: fmt.Sprintf("%d item(s) failed to import", failed)},
-			DedupKey: jobID + ":" + notify.TypeImportFailed,
-		})
-		return
-	}
-	notify.Emit(ctx, db, notify.EmitParams{
-		Type: notify.TypeImportCompleted, Scope: notify.ScopeUser, ActorUserID: uid,
-		Payload:  notify.ImportCompletedPayload{JobID: jobID},
-		DedupKey: jobID + ":" + notify.TypeImportCompleted,
-	})
 }

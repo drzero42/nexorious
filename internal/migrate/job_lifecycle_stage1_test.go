@@ -11,6 +11,18 @@ import (
 
 const stage1Migration = "20261123000002"
 
+// migrationsBefore returns every migration whose name sorts before name.
+func migrationsBefore(name string) *bunmigrate.Migrations {
+	out := bunmigrate.NewMigrations()
+	for _, m := range migrations.Migrations.Sorted() {
+		if m.Name >= name {
+			break
+		}
+		out.Add(m)
+	}
+	return out
+}
+
 // The Job lifecycle stage 1 migration (#1266) puts the rows of the kinds that
 // move onto internal/joblifecycle into a state its rules understand, and
 // leaves every other kind alone.
@@ -20,14 +32,7 @@ func TestJobLifecycleStage1Migration(t *testing.T) {
 	db := makeBunDB(t, testDSN)
 
 	// Everything before the stage 1 migration.
-	before := bunmigrate.NewMigrations()
-	for _, m := range migrations.Migrations.Sorted() {
-		if m.Name >= stage1Migration {
-			break
-		}
-		before.Add(m)
-	}
-	mg := bunmigrate.NewMigrator(db, before)
+	mg := bunmigrate.NewMigrator(db, migrationsBefore(stage1Migration))
 	if err := mg.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -69,8 +74,8 @@ func TestJobLifecycleStage1Migration(t *testing.T) {
 	job("import-failed", "import", "failed", "1 hour")
 	item("import-item", "import-failed", "pending")
 
-	all := bunmigrate.NewMigrator(db, migrations.Migrations)
-	if _, err := all.Migrate(ctx); err != nil {
+	// Up to stage 1 only: stage 2 (#1267) moves the import kinds.
+	if _, err := bunmigrate.NewMigrator(db, migrationsBefore(stage2Migration)).Migrate(ctx); err != nil {
 		t.Fatalf("migrate stage 1: %v", err)
 	}
 

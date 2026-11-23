@@ -59,11 +59,11 @@ recovery above.
 
 ## Orphaned item rescue
 
-Detects `job_items` of sync and import Jobs stuck in `pending` with no backing
-River job and re-enqueues them. This is a safety net for items whose River job
-was lost due to a crash or deployment. Only items older than one hour are
-considered, to avoid racing freshly-created items. The kinds on the Job
-lifecycle are left to job recovery above.
+Detects `job_items` of sync Jobs stuck in `pending` with no backing River job
+and re-enqueues them. This is a safety net for items whose River job was lost
+due to a crash or deployment. Only items older than one hour are considered, to
+avoid racing freshly-created items. Every other kind, imports included, is on
+the Job lifecycle and is left to job recovery above.
 
 ## Metadata refresh
 

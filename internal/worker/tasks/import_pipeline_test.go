@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
@@ -33,9 +32,9 @@ func insertImportItem(t *testing.T, userID string, payload map[string]any) (stri
 	}
 	title, _ := payload["title"].(string)
 	if _, err := testDB.NewRaw(
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, created_at)
-		 VALUES (?, ?, ?, 'game_0', ?, ?, 'pending', '{}', '[]', now())`,
-		itemID, jobID, userID, title, meta,
+		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, river_job_id, created_at)
+		 VALUES (?, ?, ?, 'game_0', ?, ?, 'pending', '{}', '[]', ?, now())`,
+		itemID, jobID, userID, title, meta, nextFakeOwner(),
 	).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -50,8 +49,8 @@ func TestImportMatch_NoIGDBClientMarksPendingReview(t *testing.T) {
 	payload := map[string]any{"title": "Whatever", "play_status": "not_started", "platforms": []map[string]any{}}
 	_, itemID := insertImportItem(t, userID, payload)
 
-	w := &tasks.ImportMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.ImportMatchArgs]{Args: tasks.ImportMatchArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportMatchWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportMatchArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("match: %v", err)
 	}
 	var status string
@@ -78,8 +77,8 @@ func TestImportMatch_IGDBIDShortCircuits(t *testing.T) {
 
 	// Nil IGDB client: without the short-circuit this item would go
 	// pending_review. With it, the id is trusted and resolved directly.
-	w := &tasks.ImportMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.ImportMatchArgs]{Args: tasks.ImportMatchArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportMatchWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportMatchArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("match: %v", err)
 	}
 
@@ -109,8 +108,8 @@ func TestImportMatch_NoIGDBIDStillPendingReview(t *testing.T) {
 	payload := map[string]any{"title": "Whatever", "play_status": "not_started", "platforms": []map[string]any{}}
 	_, itemID := insertImportItem(t, userID, payload)
 
-	w := &tasks.ImportMatchWorker{DB: testDB, IGDBClient: nil, RiverClient: nil}
-	if err := w.Work(ctx, &river.Job[tasks.ImportMatchArgs]{Args: tasks.ImportMatchArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportMatchWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportMatchArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("match: %v", err)
 	}
 	var status string
@@ -143,8 +142,8 @@ func TestImportFinalize_WritesUserGameAndPlatforms(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportFinalizeWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportFinalizeArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 
@@ -192,8 +191,8 @@ func TestImportFinalize_InvalidPlayStatusCoercedToNull(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportFinalizeWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportFinalizeArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 
@@ -229,8 +228,8 @@ func TestImportFinalize_PromotesToInProgressWhenPlayed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportFinalizeWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportFinalizeArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 
@@ -265,20 +264,20 @@ func TestImportFinalize_ConcurrentDuplicateGameNoFailure(t *testing.T) {
 	itemIDs := []string{uuid.NewString(), uuid.NewString()}
 	for i, id := range itemIDs {
 		if _, err := testDB.NewRaw(
-			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, resolved_igdb_id, created_at)
-			 VALUES (?, ?, ?, ?, 'Dup Game', ?, 'processing', '{}', '[]', 42, now())`,
-			id, jobID, userID, fmt.Sprintf("game_%d", i), json.RawMessage(meta)).Exec(ctx); err != nil {
+			`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, resolved_igdb_id, river_job_id, created_at)
+			 VALUES (?, ?, ?, ?, 'Dup Game', ?, 'pending', '{}', '[]', 42, ?, now())`,
+			id, jobID, userID, fmt.Sprintf("game_%d", i), json.RawMessage(meta), nextFakeOwner()).Exec(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	w := &tasks.ImportFinalizeWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil, StoragePath: t.TempDir()}
 	var wg sync.WaitGroup
 	for _, id := range itemIDs {
 		wg.Add(1)
 		go func(itemID string) {
 			defer wg.Done()
-			_ = w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}})
+			_ = w.Work(ctx, ownedJob(t, itemID, tasks.ImportFinalizeArgs{JobItemID: itemID}))
 		}(id)
 	}
 	wg.Wait()
@@ -296,58 +295,6 @@ func TestImportFinalize_ConcurrentDuplicateGameNoFailure(t *testing.T) {
 	}
 	if ugCount != 1 {
 		t.Errorf("user_games = %d, want 1", ugCount)
-	}
-}
-
-// A finalized item must NOT complete the job while dispatch is still in flight
-// (dispatch_complete=false) — this is the guard against the upload handler
-// finalizing the job before it has inserted every item.
-func TestImportCheckJobCompletion_BlockedUntilDispatchComplete(t *testing.T) {
-	truncateAllTables(t)
-	ctx := context.Background()
-	userID := "u-dk-dispatch"
-	insertTestUser(t, testDB, userID)
-	if _, err := testDB.NewRaw(`INSERT INTO games (id, title, last_updated, created_at) VALUES (42, 'G', now(), now())`).Exec(ctx); err != nil {
-		t.Fatal(err)
-	}
-	jobID := uuid.NewString()
-	if _, err := testDB.NewRaw(
-		`INSERT INTO jobs (id, user_id, job_type, source, status, priority, total_items, dispatch_complete, created_at)
-		 VALUES (?, ?, 'import', 'csv', 'processing', 'high', 1, false, now())`, jobID, userID).Exec(ctx); err != nil {
-		t.Fatal(err)
-	}
-	payload := map[string]any{"title": "G", "play_status": "not_started", "platforms": []map[string]any{}}
-	meta, _ := json.Marshal(payload)
-	itemID := uuid.NewString()
-	if _, err := testDB.NewRaw(
-		`INSERT INTO job_items (id, job_id, user_id, item_key, source_title, source_metadata, status, result, igdb_candidates, resolved_igdb_id, created_at)
-		 VALUES (?, ?, ?, 'game_0', 'G', ?, 'processing', '{}', '[]', 42, now())`,
-		itemID, jobID, userID, json.RawMessage(meta)).Exec(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
-		t.Fatal(err)
-	}
-	var status string
-	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
-		t.Fatal(err)
-	}
-	if status != "processing" {
-		t.Fatalf("job finalized while dispatch in flight: status=%s", status)
-	}
-
-	// Dispatch finishes → the completion check now finalizes the job.
-	if _, err := testDB.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, jobID).Exec(ctx); err != nil {
-		t.Fatal(err)
-	}
-	tasks.ImportCheckJobCompletion(testDB, jobID)
-	if err := testDB.NewRaw(`SELECT status FROM jobs WHERE id = ?`, jobID).Scan(ctx, &status); err != nil {
-		t.Fatal(err)
-	}
-	if status != "completed" {
-		t.Fatalf("job not completed after dispatch complete: status=%s", status)
 	}
 }
 
@@ -374,8 +321,8 @@ func TestImportFinalize_AdditiveMergeDoesNotOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportFinalizeWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportFinalizeArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 
@@ -417,8 +364,8 @@ func TestImportFinalize_TagsAndPlaytimeOnFirstPlatform(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
-	if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: itemID}}); err != nil {
+	w := &tasks.ImportFinalizeWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil, StoragePath: t.TempDir()}
+	if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportFinalizeArgs{JobItemID: itemID})); err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
 
@@ -483,9 +430,9 @@ func TestImportFinalize_WishlistFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := &tasks.ImportFinalizeWorker{DB: testDB, IGDBClient: nil, StoragePath: t.TempDir()}
+	w := &tasks.ImportFinalizeWorker{DB: testDB, LC: newTestLC(t), IGDBClient: nil, StoragePath: t.TempDir()}
 	for _, id := range []string{wishItem, ownedItem} {
-		if err := w.Work(ctx, &river.Job[tasks.ImportFinalizeArgs]{Args: tasks.ImportFinalizeArgs{JobItemID: id}}); err != nil {
+		if err := w.Work(ctx, ownedJob(t, id, tasks.ImportFinalizeArgs{JobItemID: id})); err != nil {
 			t.Fatalf("finalize %s: %v", id, err)
 		}
 	}

@@ -229,6 +229,20 @@ Per game entry:
 Unknown/extra fields in the input are ignored (forward tolerance). Missing
 optional fields take their documented defaults.
 
+The whole file is rejected up front, and nothing is imported, when no game
+entry is usable (every entry is malformed) or when the same `igdb_id` appears
+in more than one entry. A malformed entry among usable ones is left out and
+counted in the upload response's `skipped_count`.
+
+**Pools** (format 2.1) are applied once, when the import first completes,
+after every game in it has been imported or has failed. Each pool is found or
+created by name, and its games that are in your library are added to it;
+existing pools keep their settings. Pools are not applied again when failed
+items are retried and the import completes a second time, so a pool you
+deleted in the meantime is not recreated. The cost: a game that only imports
+on a retry is not added to its pools, and if applying the pools keeps failing
+they are not applied at all (the server logs an error).
+
 ## Relationship to sync
 
 Dropping store-linkage and sync-state fields is safe because storefront sync is

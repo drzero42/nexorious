@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,14 +10,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v5"
-	"github.com/riverqueue/river"
 	"github.com/uptrace/bun"
 
 	"github.com/drzero42/nexorious/internal/auth"
 	"github.com/drzero42/nexorious/internal/db/models"
+	"github.com/drzero42/nexorious/internal/joblifecycle"
 	"github.com/drzero42/nexorious/internal/logging"
 	"github.com/drzero42/nexorious/internal/services/igdb"
 	"github.com/drzero42/nexorious/internal/services/importmodel"
@@ -63,14 +60,14 @@ func (h *ImportHandler) igdbGuard(displayName string) error {
 
 // ImportHandler handles import-related endpoints.
 type ImportHandler struct {
-	db          *bun.DB
-	riverClient *river.Client[pgx.Tx]
-	igdbClient  *igdb.Client
+	db         *bun.DB
+	lc         *joblifecycle.Module
+	igdbClient *igdb.Client
 }
 
 // NewImportHandler returns a new ImportHandler.
-func NewImportHandler(db *bun.DB, riverClient *river.Client[pgx.Tx], igdbClient *igdb.Client) *ImportHandler {
-	return &ImportHandler{db: db, riverClient: riverClient, igdbClient: igdbClient}
+func NewImportHandler(db *bun.DB, lc *joblifecycle.Module, igdbClient *igdb.Client) *ImportHandler {
+	return &ImportHandler{db: db, lc: lc, igdbClient: igdbClient}
 }
 
 // nexoriousExport is the expected structure of a nexorious export file.
@@ -116,75 +113,30 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "games array is missing or empty")
 	}
 
-	ctx := context.Background()
-
-	// Check for an active nexorious import job for this user.
-	var existing models.Job
-	err := h.db.NewSelect().
-		Model(&existing).
-		Where("user_id = ?", userID).
-		Where("job_type = ?", models.JobTypeImport).
-		Where("source = ?", models.JobSourceNexorious).
-		Where("status IN (?)", bun.List([]string{models.JobStatusPending, models.JobStatusProcessing})).
-		Limit(1).
-		Scan(ctx)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to check active import")
-	}
-	if err == nil {
-		return echo.NewHTTPError(http.StatusConflict, "an active nexorious import is already in progress")
-	}
-
-	now := time.Now().UTC()
-	job := &models.Job{
-		ID:               uuid.NewString(),
-		UserID:           userID,
-		JobType:          models.JobTypeImport,
-		Source:           models.JobSourceNexorious,
-		Status:           models.JobStatusPending,
-		Priority:         models.JobPriorityHigh,
-		TotalItems:       len(export.Games),
-		DispatchComplete: true, // not a streaming sync; the completion gate is N/A
-		CreatedAt:        now,
-	}
-	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
-	}
-
 	reqCtx := c.Request().Context()
-	gameItemStart := now
+	now := time.Now().UTC()
+	var items []joblifecycle.NewItem
 
-	// Stash any pools section as a synthetic, pre-completed job_item. It carries
-	// no River task and is applied once at the job-completion transition, after
-	// every game's user_game exists. It is NOT counted in total_items. Inserted
-	// before any game task is enqueued so it is present at completion time (the
-	// legacy completion check does not gate on dispatch_complete).
+	// Any pools section is kept as an item created already completed, with no
+	// River job; the finishing effects apply it once the Job first completes.
+	// It is not counted in total_items.
+	gameItemStart := now
 	if len(export.Pools) > 0 && string(export.Pools) != "null" {
 		gameItemStart = now.Add(time.Microsecond)
 		poolsMeta, err := json.Marshal(map[string]any{"item_type": "pools", "data": export.Pools})
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to build pools item metadata")
 		}
-		poolsItem := &models.JobItem{
-			ID:             uuid.NewString(),
-			JobID:          job.ID,
-			UserID:         userID,
-			ItemKey:        tasks.PoolsItemKey,
-			SourceTitle:    "(pools)",
-			SourceMetadata: poolsMeta,
-			Status:         models.JobItemStatusCompleted,
-			Result:         json.RawMessage(`{}`),
-			IGDBCandidates: json.RawMessage(`[]`),
-			CreatedAt:      now,
-		}
-		if _, err := h.db.NewInsert().Model(poolsItem).Exec(ctx); err != nil {
-			slog.ErrorContext(reqCtx, "import: create pools item", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-		}
+		items = append(items, joblifecycle.NewItem{
+			UserID: userID, ItemKey: tasks.PoolsItemKey, SourceTitle: "(pools)",
+			SourceMetadata: poolsMeta, CreatedAt: now, Completed: true,
+		})
 	}
 
-	// Create one JobItem per game and enqueue a task. Space timestamps by
-	// PostgreSQL's precision so the jobs list preserves the order in the file.
-	var skipCount int
+	// One item per usable game record. Each item's created_at is offset by its
+	// index in the file, so the item list keeps the file's order (#1319).
+	var skipCount, games int
+	seen := make(map[int]bool, len(export.Games))
 	for i, raw := range export.Games {
 		var gameFields struct {
 			IgdbID *int    `json:"igdb_id"`
@@ -198,6 +150,11 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 
 		itemKey := fmt.Sprintf("game_%d", i)
 		if gameFields.IgdbID != nil {
+			// The item key is igdb_<id>, unique per Job.
+			if seen[*gameFields.IgdbID] {
+				return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("the file lists igdb_id %d more than once", *gameFields.IgdbID))
+			}
+			seen[*gameFields.IgdbID] = true
 			itemKey = fmt.Sprintf("igdb_%d", *gameFields.IgdbID)
 		}
 
@@ -213,123 +170,76 @@ func (h *ImportHandler) HandleImportNexorious(c *echo.Context) error {
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to build job item metadata")
 		}
-
-		item := &models.JobItem{
-			ID:             uuid.NewString(),
-			JobID:          job.ID,
-			UserID:         userID,
-			ItemKey:        itemKey,
-			SourceTitle:    sourceTitle,
-			SourceMetadata: metadata,
-			Status:         models.JobItemStatusPending,
-			Result:         json.RawMessage(`{}`),
-			IGDBCandidates: json.RawMessage(`[]`),
-			CreatedAt:      gameItemStart.Add(time.Duration(i) * time.Microsecond),
-		}
-		if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
-		}
-
-		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, item.ID, tasks.ImportItemArgs{JobItemID: item.ID}); err != nil {
-			slog.ErrorContext(reqCtx, "import: submit task", logging.KeyJobItemID, item.ID, logging.KeyErr, err)
-		}
+		items = append(items, joblifecycle.NewItem{
+			UserID: userID, ItemKey: itemKey, SourceTitle: sourceTitle, SourceMetadata: metadata,
+			CreatedAt: gameItemStart.Add(time.Duration(i) * time.Microsecond),
+		})
+		games++
+	}
+	if games == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "the file has no usable game records")
 	}
 
-	if skipCount > 0 {
-		if _, err := h.db.NewRaw(
-			`UPDATE jobs SET total_items = total_items - ? WHERE id = ?`,
-			skipCount, job.ID,
-		).Exec(ctx); err != nil {
-			slog.ErrorContext(reqCtx, "import: update total_items failed", logging.KeyErr, err, logging.KeyJobID, job.ID, logging.Cat(logging.CategoryDB))
-		} else {
-			job.TotalItems -= skipCount
-		}
+	// Detached from the request: a client that disconnects must not roll back
+	// a Job it was about to be told about.
+	created, err := h.lc.CreateWithItems(context.WithoutCancel(reqCtx), joblifecycle.NewJob{
+		UserID: userID, JobType: models.JobTypeImport, Source: models.JobSourceNexorious,
+		Priority: models.JobPriorityHigh, TotalItems: games,
+		CreatedAt: now,
+	}, items, nil)
+	if err != nil {
+		slog.ErrorContext(reqCtx, "import: create job", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
+	}
+	if !created.Created {
+		return echo.NewHTTPError(http.StatusConflict, "an active nexorious import is already in progress")
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"job_id":        job.ID,
-		"source":        job.Source,
-		"status":        job.Status,
-		"message":       fmt.Sprintf("Import job created. Processing %d games.", job.TotalItems),
-		"total_items":   job.TotalItems,
+		"job_id":        created.JobID,
+		"source":        models.JobSourceNexorious,
+		"status":        models.JobStatusProcessing,
+		"message":       fmt.Sprintf("Import job created. Processing %d games.", games),
+		"total_items":   games,
 		"skipped_count": skipCount,
 	})
 }
 
-// enqueueImportJob runs the shared post-mapping import tail: it refuses a second
-// active import for (user, source), inserts the processing job, creates one
-// job_item per game with an ImportMatch task, marks dispatch complete, and
-// triggers the completion check. It returns the job id and item count, or an
-// *echo.HTTPError the caller can return directly.
+// enqueueImportJob runs the shared post-mapping import tail: it creates the
+// processing Job with one job_item per game, each with its match River job, in
+// one transaction, refusing a second active import for (user, source). It
+// returns the job id and item count, or an *echo.HTTPError the caller can
+// return directly.
 func (h *ImportHandler) enqueueImportJob(reqCtx context.Context, userID, source, displayName string, games []importmodel.Game) (string, int, error) {
-	ctx := context.Background()
-
-	var existing models.Job
-	err := h.db.NewSelect().Model(&existing).
-		Where("user_id = ?", userID).
-		Where("job_type = ?", models.JobTypeImport).
-		Where("source = ?", source).
-		Where("status IN (?)", bun.List([]string{models.JobStatusPending, models.JobStatusProcessing})).
-		Limit(1).Scan(ctx)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to check active import")
-	}
-	if err == nil {
-		return "", 0, echo.NewHTTPError(http.StatusConflict, fmt.Sprintf("an active %s import is already in progress", displayName))
-	}
-
 	now := time.Now().UTC()
-	job := &models.Job{
-		ID:               uuid.NewString(),
-		UserID:           userID,
-		JobType:          models.JobTypeImport,
-		Source:           source,
-		Status:           models.JobStatusProcessing,
-		Priority:         models.JobPriorityHigh,
-		TotalItems:       len(games),
-		DispatchComplete: false,
-		CreatedAt:        now,
-	}
-	if _, err := h.db.NewInsert().Model(job).Exec(ctx); err != nil {
-		return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
-	}
-
+	items := make([]joblifecycle.NewItem, len(games))
 	for i, g := range games {
 		meta, err := json.Marshal(g)
 		if err != nil {
 			return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to marshal game payload")
 		}
-		item := &models.JobItem{
-			ID:             uuid.NewString(),
-			JobID:          job.ID,
-			UserID:         userID,
-			ItemKey:        fmt.Sprintf("game_%d", i),
-			SourceTitle:    g.Title,
-			SourceMetadata: meta,
-			Status:         models.JobItemStatusPending,
-			Result:         json.RawMessage(`{}`),
-			IGDBCandidates: json.RawMessage(`[]`),
-			CreatedAt:      now.Add(time.Duration(i) * time.Microsecond),
-		}
-		if _, err := h.db.NewInsert().Model(item).Exec(ctx); err != nil {
-			return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to create job item")
-		}
-		if err := tasks.EnqueueOrFail(ctx, h.db, h.riverClient, item.ID, tasks.ImportMatchArgs{JobItemID: item.ID}); err != nil {
-			slog.ErrorContext(reqCtx, "import: submit import_match", logging.KeyJobItemID, item.ID, logging.KeyErr, err)
+		// Offset by the index, so the item list keeps the file's order (#1319).
+		items[i] = joblifecycle.NewItem{
+			UserID: userID, ItemKey: fmt.Sprintf("game_%d", i), SourceTitle: g.Title,
+			SourceMetadata: meta, CreatedAt: now.Add(time.Duration(i) * time.Microsecond),
 		}
 	}
 
-	// Dispatch is complete only now that every item exists and is enqueued.
-	// Flipping the flag (and re-checking completion) here closes the window where
-	// an early item could finish and finalize the job before later items were
-	// inserted — the completion check refuses to finalize while dispatch is in
-	// flight (dispatch_complete=false), mirroring the sync dispatch worker.
-	if _, err := h.db.NewRaw(`UPDATE jobs SET dispatch_complete = true WHERE id = ?`, job.ID).Exec(ctx); err != nil {
-		slog.ErrorContext(reqCtx, "import: mark dispatch complete", logging.KeyJobID, job.ID, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+	// Detached from the request: a client that disconnects must not roll back
+	// a Job it was about to be told about.
+	created, err := h.lc.CreateWithItems(context.WithoutCancel(reqCtx), joblifecycle.NewJob{
+		UserID: userID, JobType: models.JobTypeImport, Source: source,
+		Priority: models.JobPriorityHigh, TotalItems: len(games),
+		CreatedAt: now,
+	}, items, nil)
+	if err != nil {
+		slog.ErrorContext(reqCtx, "import: create job", logging.KeySource, source, logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		return "", 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to create import job")
 	}
-	tasks.ImportCheckJobCompletion(h.db, job.ID)
-
-	return job.ID, len(games), nil
+	if !created.Created {
+		return "", 0, echo.NewHTTPError(http.StatusConflict, fmt.Sprintf("an active %s import is already in progress", displayName))
+	}
+	return created.JobID, len(games), nil
 }
 
 // handleImportSource returns an Echo handler for a registered import source.

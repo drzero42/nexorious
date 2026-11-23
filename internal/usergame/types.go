@@ -81,6 +81,9 @@ type Result struct {
 	UserGameID      string
 	Created         bool
 	PlatformChanges []PlatformChange
+	// TagsAdded is how many tag links Acquire inserted with TagMerge; links
+	// the game already had are not counted. Zero for TagReplace.
+	TagsAdded int
 	// PlatformID is populated by AddPlatform with the newly inserted platform row ID.
 	PlatformID string
 }

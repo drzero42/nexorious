@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -44,18 +43,6 @@ func markItemFailed(ctx context.Context, db *bun.DB, item *models.JobItem, msg, 
 	item.ErrorMessage = &msg
 	item.ProcessedAt = &now
 	execItemUpdate(ctx, db, item, logPrefix, "status", "error_message", "processed_at")
-}
-
-// markItemCompletedWithResult sets a job_item to completed, persisting the
-// marshalled result alongside processed_at=now. Used by the import worker, which
-// records a per-item result payload.
-func markItemCompletedWithResult(ctx context.Context, db *bun.DB, item *models.JobItem, result any, logPrefix string) {
-	now := time.Now().UTC()
-	resultJSON, _ := json.Marshal(result) //nolint:errcheck // marshaling the job result struct cannot fail
-	item.Status = models.JobItemStatusCompleted
-	item.Result = resultJSON
-	item.ProcessedAt = &now
-	execItemUpdate(ctx, db, item, logPrefix, "status", "result", "processed_at")
 }
 
 // markItemSkipped sets a job_item to skipped with processed_at=now.

@@ -22,8 +22,8 @@ import (
 //   - created_at older than age (0 = no age limit)
 //   - its Job is still active (status IN ('pending', 'processing'))
 //   - no river_job exists for it in a non-ended state
-//   - its Job's kind is not on internal/joblifecycle (its recovery rule owns
-//     those)
+//   - its Job is a sync (every other kind is on internal/joblifecycle, whose
+//     recovery rule owns it)
 //
 // jobID restricts the query to one Job; "" means every Job. The scheduled
 // orphan rescue and the startup recovery call it for every Job; the sync
@@ -43,13 +43,13 @@ func RequeueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clie
 		WHERE ji.status = 'pending'
 		  AND ji.created_at < now() - (?::text || ' seconds')::interval
 		  AND j.status IN ('pending', 'processing')
-		  AND j.job_type NOT IN (?)
+		  AND j.job_type = 'sync'
 		  AND NOT EXISTS (
 		    SELECT 1 FROM river_job rj
 		    WHERE rj.args->>'job_item_id' = ji.id::text
 		      AND rj.state NOT IN ('completed', 'discarded', 'cancelled')
 		  )`
-	args := []any{int64(age.Seconds()), bun.List(lifecycleJobTypes)}
+	args := []any{int64(age.Seconds())}
 	if jobID != "" {
 		q += ` AND ji.job_id = ?`
 		args = append(args, jobID)
@@ -59,10 +59,7 @@ func RequeueOrphanedPendingItems(ctx context.Context, db *bun.DB, rc *river.Clie
 	}
 
 	for _, o := range orphans {
-		// Route by job_type AND source so a generic-pipeline import (e.g. CSV,
-		// which shares the "import" job_type but needs its own match→finalize
-		// chain) re-enters at the right worker rather than the JSON importer.
-		jobArgs, err := ArgsForJobType(o.JobType, o.Source, o.ID)
+		jobArgs, err := ArgsForJobType(o.JobType, o.ID)
 		if err != nil {
 			slog.WarnContext(ctx, "rescue_orphaned_items: unknown job_type, skipping", logging.KeyJobItemID, o.ID, logging.KeyJobType, o.JobType, logging.KeySource, o.Source)
 			continue

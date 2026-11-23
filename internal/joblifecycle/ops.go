@@ -22,6 +22,9 @@ type NewJob struct {
 	Source     string
 	Priority   string
 	TotalItems int
+	// CreatedAt is the Job's created_at; zero means now. A creator that
+	// orders items relative to the Job sets both.
+	CreatedAt time.Time
 }
 
 // Created reports the Job a Create call ended with: the new Job, or the
@@ -40,10 +43,14 @@ func (nj NewJob) row(status string, dispatchComplete bool) *models.Job {
 	if prio == "" {
 		prio = models.JobPriorityNormal
 	}
+	created := nj.CreatedAt
+	if created.IsZero() {
+		created = time.Now().UTC()
+	}
 	return &models.Job{
 		ID: id, UserID: nj.UserID, JobType: nj.JobType, Source: nj.Source,
 		Status: status, Priority: prio, TotalItems: nj.TotalItems,
-		DispatchComplete: dispatchComplete, CreatedAt: time.Now().UTC(),
+		DispatchComplete: dispatchComplete, CreatedAt: created,
 	}
 }
 
