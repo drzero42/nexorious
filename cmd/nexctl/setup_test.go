@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/drzero42/nexorious/internal/clicfg"
 )
@@ -217,12 +218,14 @@ func TestSetupRestoreRequiresExactlyOne(t *testing.T) {
 
 func TestSetupRestoreFromDiskConfirmed(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	fastRestart(t, time.Second)
+	f := newFakeRestarter()
 	called := false
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", okHealth)
+	mux.HandleFunc("/health", f.health)
 	mux.HandleFunc("/api/auth/setup/restore/disk", func(w http.ResponseWriter, _ *http.Request) {
 		called = true
-		_, _ = w.Write([]byte(`{"success":true}`))
+		f.answerAndRestart(w, http.StatusOK, map[string]any{"success": true, "message": "Backup restored."})
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -234,8 +237,8 @@ func TestSetupRestoreFromDiskConfirmed(t *testing.T) {
 	if !called {
 		t.Fatal("restore/disk endpoint was not called")
 	}
-	if !strings.Contains(out, "Backup restored") {
-		t.Fatalf("out = %q", out)
+	if !strings.Contains(out, "Backup restored") || !strings.Contains(out, "The server is back.") {
+		t.Fatalf("out = %q, want the result and the restart", out)
 	}
 }
 

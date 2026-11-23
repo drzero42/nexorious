@@ -73,8 +73,14 @@ export interface BackupDeleteResponse {
   message: string;
 }
 
+// A restore that has started always ends with the server restarting; the
+// response says so and names the instance that sent it.
 export interface RestoreResponse {
   success: boolean;
   message: string;
-  session_invalidated: boolean;
+  restarting: boolean;
+  instance_id: string;
+  backup_id?: string;
+  pre_restore_backup_id?: string;
+  migration_error?: string;
 }

@@ -58,7 +58,21 @@ import {
 } from 'lucide-react';
 import * as backupApi from '@/api/backup';
 import { triggerBlobDownload } from '@/api/import-export';
-import type { BackupConfig, BackupInfo, BackupSchedule, RetentionMode } from '@/types';
+import {
+  mustWaitForRestart,
+  readHealth,
+  restoreBody,
+  stashRestoreOutcome,
+  waitForNewInstance,
+} from '@/lib/server-restart';
+import type { RestoreOutcome } from '@/lib/server-restart';
+import type {
+  BackupConfig,
+  BackupInfo,
+  BackupSchedule,
+  RestoreResponse,
+  RetentionMode,
+} from '@/types';
 import { useDateFormat } from '@/hooks';
 
 export const Route = createFileRoute('/_authenticated/admin/backups')({
@@ -107,7 +121,7 @@ function BackupPageSkeleton() {
   );
 }
 
-function BackupPage() {
+export function BackupPage() {
   const { formatDateTime } = useDateFormat();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
@@ -119,6 +133,10 @@ function BackupPage() {
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [restartWait, setRestartWait] = useState<{
+    outcome: RestoreOutcome;
+    timedOut: boolean;
+  } | null>(null);
 
   // Config form state
   const [schedule, setSchedule] = useState<BackupSchedule>('manual');
@@ -249,51 +267,75 @@ function BackupPage() {
     }
   };
 
-  const handleRestore = async () => {
-    if (!restoreBackupId) return;
+  // Runs one restore. A restore that has started ends with the server
+  // restarting (#1341), on success and on failure, so the outcome is shown
+  // while waiting for the new server and again after the page loads afresh.
+  const runRestore = async (send: () => Promise<RestoreResponse>, fallbackError: string) => {
+    setIsRestoring(true);
+    const before = await readHealth();
+    let result: RestoreResponse | undefined;
+    let error: unknown;
     try {
-      setIsRestoring(true);
-      const result = await backupApi.restoreBackup(restoreBackupId);
-      if (result.session_invalidated) {
-        toast.success('Restore completed. You will be logged out.');
-        setTimeout(() => navigate({ to: '/login' }), 2000);
+      result = await send();
+    } catch (err) {
+      error = err;
+    }
+    setRestoreBackupId(null);
+    setRestoreConfirmed(false);
+    setUploadDialogOpen(false);
+    setUploadFile(null);
+    setUploadConfirmed(false);
+
+    const errorMessage = error instanceof Error ? error.message : fallbackError;
+    if (!mustWaitForRestart(result, error)) {
+      setIsRestoring(false);
+      if (error !== undefined || !result) {
+        toast.error(errorMessage);
       } else {
         toast.success(result.message);
         void loadConfig();
         void loadBackups();
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to restore backup';
-      toast.error(message);
-    } finally {
-      setIsRestoring(false);
-      setRestoreBackupId(null);
-      setRestoreConfirmed(false);
+      return;
     }
+
+    const body = restoreBody(result, error);
+    const oldId = typeof body?.instance_id === 'string' ? body.instance_id : before?.instance_id;
+    let outcome: RestoreOutcome;
+    if (result) {
+      const warning = result.migration_error ? ` Warning: ${result.migration_error}.` : '';
+      outcome = { kind: 'success', message: result.message + warning };
+    } else if (body) {
+      outcome = { kind: 'error', message: errorMessage };
+    } else {
+      outcome = {
+        kind: 'error',
+        message:
+          'The restore request got no answer, so its outcome is unknown. Check the backups list and the server logs.',
+      };
+    }
+    setRestartWait({ outcome, timedOut: false });
+    try {
+      await waitForNewInstance(oldId);
+      stashRestoreOutcome(outcome);
+      // The session belongs to the restored database: /login forwards a
+      // session that is still valid, and asks for a login otherwise.
+      window.location.assign('/login');
+    } catch {
+      setRestartWait({ outcome, timedOut: true });
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!restoreBackupId) return;
+    const id = restoreBackupId;
+    await runRestore(() => backupApi.restoreBackup(id), 'Failed to restore backup');
   };
 
   const handleUploadRestore = async () => {
     if (!uploadFile) return;
-    try {
-      setIsRestoring(true);
-      const result = await backupApi.uploadAndRestoreBackup(uploadFile);
-      if (result.session_invalidated) {
-        toast.success('Restore completed. You will be logged out.');
-        setTimeout(() => navigate({ to: '/login' }), 2000);
-      } else {
-        toast.success(result.message);
-        void loadConfig();
-        void loadBackups();
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to restore from upload';
-      toast.error(message);
-    } finally {
-      setIsRestoring(false);
-      setUploadDialogOpen(false);
-      setUploadFile(null);
-      setUploadConfirmed(false);
-    }
+    const file = uploadFile;
+    await runRestore(() => backupApi.uploadAndRestoreBackup(file), 'Failed to restore from upload');
   };
 
   if (!currentUser) {
@@ -560,6 +602,7 @@ function BackupPage() {
                         <Button
                           variant="outline"
                           size="sm"
+                          aria-label="Restore backup"
                           onClick={() => {
                             setRestoreBackupId(backup.id);
                             setRestoreConfirmed(false);
@@ -620,7 +663,8 @@ function BackupPage() {
                 <ul className="mt-1 list-inside list-disc">
                   <li>All current data will be permanently replaced</li>
                   <li>A pre-restore backup will be created automatically</li>
-                  <li>You may be logged out after the restore completes</li>
+                  <li>All running and queued background work is cancelled</li>
+                  <li>The server restarts, and you may have to log in again</li>
                 </ul>
               </div>
               <div className="flex items-center space-x-2">
@@ -703,6 +747,8 @@ function BackupPage() {
                     <li>All current data will be permanently replaced</li>
                     <li>A pre-restore backup will be created automatically</li>
                     <li>The file will be validated before restore</li>
+                    <li>All running and queued background work is cancelled</li>
+                    <li>The server restarts, and you may have to log in again</li>
                   </ul>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -739,6 +785,33 @@ function BackupPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Server restart after a restore */}
+      <AlertDialog open={!!restartWait}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {restartWait?.outcome.kind === 'success' ? 'Restore completed' : 'Restore failed'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{restartWait?.outcome.message}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {restartWait?.timedOut ? (
+            <>
+              <p className="text-sm text-destructive">
+                The server did not come back after the restore. Check the server logs.
+              </p>
+              <AlertDialogFooter>
+                <Button onClick={() => window.location.reload()}>Reload</Button>
+              </AlertDialogFooter>
+            </>
+          ) : (
+            <p className="flex items-center text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              The server is restarting. This page reloads when it is back.
+            </p>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog

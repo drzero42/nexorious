@@ -117,26 +117,3 @@ func (c *Client) OpenBackupDownload(ctx context.Context, key, id string) (filena
 	}
 	return filenameFromContentDisposition(resp.Header.Get("Content-Disposition")), resp.Body, nil
 }
-
-// RestoreBackup restores the server's database from the backup with the given
-// id via POST /api/admin/backups/:id/restore. The {success,message} body is
-// discarded; any non-2xx response is returned as an error.
-func (c *Client) RestoreBackup(ctx context.Context, key, id string) error {
-	return c.doBearer(ctx, http.MethodPost, "/api/admin/backups/"+url.PathEscape(id)+"/restore", key, map[string]any{"confirm": true}, nil)
-}
-
-// RestoreBackupUpload uploads a backup archive and restores from it via
-// POST /api/admin/backups/restore/upload (multipart field "file"). body is
-// streamed into the request, so the caller can pass an *os.File directly
-// instead of reading a (potentially multi-GB) archive into memory.
-func (c *Client) RestoreBackupUpload(ctx context.Context, key, filename string, body io.Reader) error {
-	return c.doBearerMultipart(ctx, http.MethodPost, "/api/admin/backups/restore/upload", key, filename, body, nil, nil)
-}
-
-// SetupRestoreUpload uploads a backup archive and restores a fresh instance
-// from it via POST /api/auth/setup/restore (multipart field "file"). The body
-// is streamed, so the caller can pass an *os.File directly. Unauthenticated
-// (pre-bootstrap), so no API key is sent.
-func (c *Client) SetupRestoreUpload(ctx context.Context, filename string, body io.Reader) error {
-	return c.doBearerMultipart(ctx, http.MethodPost, "/api/auth/setup/restore", "", filename, body, nil, nil)
-}

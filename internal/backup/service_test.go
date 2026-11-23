@@ -421,8 +421,23 @@ func TestRestoreFromUpload_InvalidArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := svc.RestoreFromUpload(uploadedPath, backup.RestoreOpts{}); err == nil {
-		t.Fatal("expected error for invalid archive, got nil")
+	if _, err := svc.RestoreFromUpload(uploadedPath, backup.RestoreOpts{}); !errors.Is(err, backup.ErrDamagedArchive) {
+		t.Fatalf("err = %v, want ErrDamagedArchive", err)
+	}
+}
+
+// A file the server cannot read is the server's problem, not a damaged
+// archive: it must not be answered as the caller's fault.
+func TestRestore_UnreadableArchiveIsNotDamaged(t *testing.T) {
+	backupDir := t.TempDir()
+	svc := backup.NewService(nil, "postgres://u@localhost/db", backupDir, t.TempDir(), "0.1.0")
+	dir := filepath.Join(t.TempDir(), "upload.tar.gz")
+	if err := os.Mkdir(dir, 0o750); err != nil { // a directory: opens, but reading fails
+		t.Fatal(err)
+	}
+	_, err := svc.RestoreFromUpload(dir, backup.RestoreOpts{})
+	if err == nil || errors.Is(err, backup.ErrDamagedArchive) {
+		t.Fatalf("err = %v, want a non-damage error", err)
 	}
 }
 

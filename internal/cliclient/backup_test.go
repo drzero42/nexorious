@@ -329,7 +329,7 @@ func TestRestoreBackup(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.RestoreBackup(t.Context(), "k", "bk-restore"); err != nil {
+	if _, err := c.RestoreBackup(t.Context(), "k", "bk-restore"); err != nil {
 		t.Fatalf("RestoreBackup: %v", err)
 	}
 }
@@ -357,7 +357,7 @@ func TestRestoreBackupUpload(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := New(srv.URL)
 
-	if err := c.RestoreBackupUpload(t.Context(), "k", "backup.tar.gz", bytes.NewReader(payload)); err != nil {
+	if _, err := c.RestoreBackupUpload(t.Context(), "k", "backup.tar.gz", bytes.NewReader(payload)); err != nil {
 		t.Fatalf("RestoreBackupUpload: %v", err)
 	}
 }
