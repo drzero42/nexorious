@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/drzero42/nexorious/internal/db/migrations"
 	"github.com/drzero42/nexorious/internal/logging"
+	"github.com/drzero42/nexorious/internal/restoremarker"
 )
 
 type AppState int32
@@ -28,6 +30,10 @@ const (
 	AppStateMigrationFailed
 	AppStateNeedsAdopt
 	AppStateMigrationRefused
+	// AppStateRestoreFailed: the restore marker says a backup restore did not
+	// finish (#1341). The public schema may be half-loaded, so nothing
+	// migrates it or starts River on it. Recovery is manual (admin guide).
+	AppStateRestoreFailed
 )
 
 func (s AppState) String() string {
@@ -46,6 +52,8 @@ func (s AppState) String() string {
 		return "needs_adopt"
 	case AppStateMigrationRefused:
 		return "migration_refused"
+	case AppStateRestoreFailed:
+		return "restore_failed"
 	default:
 		return "unknown"
 	}
@@ -65,6 +73,8 @@ type Migrator struct {
 	logCh             chan string
 	logWriter         io.Writer
 	lastError         atomic.Value // string; "" or absent means no failure recorded
+	unavailableReason atomic.Value // string; why determineState stored DBUnavailable itself
+	restoreMarker     atomic.Pointer[restoremarker.Marker]
 }
 
 func NewMigrator(db *bun.DB) *Migrator {
@@ -78,7 +88,31 @@ func NewMigratorWithMigrations(db *bun.DB, set *bunmigrate.Migrations) *Migrator
 	return &Migrator{db: db, migrationSet: set}
 }
 
+// determineState computes the app state from the database and stores it. It is
+// the one place the state is computed, so the restore marker (#1341) is read
+// here and every caller gets it:
+//
+//   - a marker at restoring stores AppStateRestoreFailed, before bunMig.Init
+//     (which creates tables) or any migration step can touch the database;
+//   - a marker at cleanup is cleared (restoremarker.Clear) when the state would
+//     be Ready, and Ready is stored only once that has committed. A failing
+//     clear stores DBUnavailable with the reason, and the probe retries.
+//
+// A marker that cannot be read stores DBUnavailable: a database that went down
+// during a failed restore must not come back as a normal one.
 func (mg *Migrator) determineState() error {
+	ctx := context.Background()
+	mg.unavailableReason.Store("")
+	marker, err := restoremarker.Read(ctx, mg.db)
+	if err != nil {
+		return mg.storeUnavailable(fmt.Errorf("determine state: %w", err))
+	}
+	mg.restoreMarker.Store(marker)
+	if marker != nil && marker.Restoring() {
+		mg.state.Store(int32(AppStateRestoreFailed))
+		return nil
+	}
+
 	if mg.bunMig == nil {
 		mg.bunMig = bunmigrate.NewMigrator(mg.db, mg.migrationSet)
 		if err := mg.bunMig.Init(context.Background()); err != nil {
@@ -116,8 +150,48 @@ func (mg *Migrator) determineState() error {
 		return nil
 	}
 
+	if marker != nil {
+		cleared, err := restoremarker.Clear(ctx, mg.db)
+		if errors.Is(err, restoremarker.ErrStillRestoring) {
+			// The phase changed since it was read.
+			return mg.determineState()
+		}
+		if err != nil {
+			return mg.storeUnavailable(fmt.Errorf("determine state: %w", err))
+		}
+		mg.restoreMarker.Store(nil)
+		if cleared {
+			slog.InfoContext(ctx, "cleared work that was in flight when a backup restore began",
+				logging.Cat(logging.CategoryDB))
+		}
+	}
+
+	mg.lastError.Store("") // Ready implies no outstanding failure; clear before the state flip so an observer seeing Ready sees an empty LastError
 	mg.state.Store(int32(AppStateReady))
 	return nil
+}
+
+// storeUnavailable records why the state cannot be computed, stores
+// DBUnavailable so the gates keep requests out and the probe retries, and
+// returns err.
+func (mg *Migrator) storeUnavailable(err error) error {
+	mg.unavailableReason.Store(err.Error())
+	mg.lastUnavailableAt.Store(time.Now())
+	mg.state.Store(int32(AppStateDBUnavailable))
+	return err
+}
+
+// UnavailableReason is why the state could not be computed the last time it was
+// tried (an unreadable restore marker or a failing clear), or "" when the
+// database is unavailable only because it does not answer.
+func (mg *Migrator) UnavailableReason() string {
+	v, _ := mg.unavailableReason.Load().(string)
+	return v
+}
+
+// RestoreMarker is the restore marker as last read by determineState, or nil.
+func (mg *Migrator) RestoreMarker() *restoremarker.Marker {
+	return mg.restoreMarker.Load()
 }
 
 // riverNeedsMigration reports whether River has unapplied migrations, using
@@ -140,11 +214,6 @@ func (mg *Migrator) riverNeedsMigration(ctx context.Context) (bool, error) {
 
 func (mg *Migrator) DetermineState() error {
 	return mg.determineState()
-}
-
-func (mg *Migrator) TransitionToReady() {
-	mg.lastError.Store("") // Ready implies no outstanding failure; clear before state flip so any observer seeing Ready sees empty LastError
-	mg.state.Store(int32(AppStateReady))
 }
 
 // TransitionToFailed records the error and switches state to AppStateMigrationFailed.
@@ -175,6 +244,10 @@ func (mg *Migrator) PendingCount() (int, error) {
 	if mg.bunMig == nil {
 		if err := mg.determineState(); err != nil {
 			return 0, fmt.Errorf("pending count: init: %w", err)
+		}
+		if mg.bunMig == nil {
+			// A restore marker stopped determineState before bunMig.Init.
+			return 0, fmt.Errorf("pending count: %s", mg.State())
 		}
 	}
 	applied, err := mg.bunMig.AppliedMigrations(context.Background())
@@ -208,6 +281,10 @@ func (mg *Migrator) PendingCount() (int, error) {
 // intended for read-only CLI use such as `nexorious migrate status` and does
 // not mutate Migrator state.
 func (mg *Migrator) Status(ctx context.Context) (pending int, current string, err error) {
+	if mg.State() == AppStateRestoreFailed {
+		// Touch nothing: bunMig.Init would create tables in a half-loaded schema.
+		return 0, "unknown (restore did not finish)", nil
+	}
 	if mg.bunMig == nil {
 		mg.bunMig = bunmigrate.NewMigrator(mg.db, mg.migrationSet)
 		if err := mg.bunMig.Init(ctx); err != nil {
@@ -255,11 +332,35 @@ func (mg *Migrator) RunMigrations(ctx context.Context) error {
 	if AppState(mg.state.Load()) == AppStateMigrating {
 		return fmt.Errorf("migrations already in progress")
 	}
+	if mg.bunMig == nil {
+		return fmt.Errorf("migrate: state not determined (%s)", mg.State())
+	}
 
 	ch := make(chan string, 256)
 	mg.logCh = ch
 	mg.lastError.Store("") // clear any previous failure before starting
 	mg.state.Store(int32(AppStateMigrating))
+
+	// A restore that did not finish forbids any migration step (#1341). The
+	// state gates already keep callers out; this covers a marker written since
+	// the state was computed. It runs before bunMig.Lock, which writes.
+	marker, err := restoremarker.Read(ctx, mg.db)
+	if err != nil {
+		wrapped := fmt.Errorf("migrate: %w", err)
+		slog.ErrorContext(ctx, "migrate: read restore marker failed", logging.KeyErr, wrapped, logging.Cat(logging.CategoryDB))
+		mg.sendLog(ch, fmt.Sprintf("migration failed: %v\n", wrapped))
+		mg.TransitionToFailed(wrapped)
+		close(ch)
+		return wrapped
+	}
+	if marker != nil && marker.Restoring() {
+		wrapped := fmt.Errorf("migrate: a backup restore did not finish; refusing to migrate")
+		mg.sendLog(ch, fmt.Sprintf("migration refused: %v\n", wrapped))
+		mg.restoreMarker.Store(marker)
+		mg.state.Store(int32(AppStateRestoreFailed))
+		close(ch)
+		return wrapped
+	}
 
 	if err := mg.bunMig.Lock(ctx); err != nil {
 		wrapped := fmt.Errorf("migrate: acquire lock: %w", err)

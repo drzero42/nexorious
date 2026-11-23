@@ -3,11 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {{if .RestoreFailed}}
+  <title>Nexorious — Restore Did Not Finish</title>
+  {{else}}
   <title>Nexorious — Database Unavailable</title>
+  {{end}}
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
   <div class="card">
+    {{if .RestoreFailed}}
+    <h1 class="card-title">Restore Did Not Finish</h1>
+    <p class="card-description">
+      A backup restore was interrupted or failed and could not be rolled back.
+      The database may be only partly loaded, so the server will not migrate it
+      or start background work. An administrator has to recover it by hand and
+      restart the server; see "Backups and restore" in the admin guide.
+    </p>
+    <label class="label">Backup being restored</label>
+    <pre class="code">{{if .BackupID}}{{.BackupID}}{{else}}unknown{{end}}</pre>
+    <label class="label">Pre-restore backup</label>
+    <pre class="code">{{if .PreRestoreBackup}}{{.PreRestoreBackup}}{{else}}none{{end}}</pre>
+    {{if .MarkerUpdatedAt}}
+    <label class="label">Last recorded</label>
+    <pre class="code">{{.MarkerUpdatedAt}}</pre>
+    {{end}}
+    {{else}}
     <h1 class="card-title">Database Unavailable</h1>
     <p class="card-description">
       The server cannot reach the database. This page refreshes every 5 seconds.
@@ -16,7 +37,14 @@
     <pre class="code">{{.RedactedDSN}}</pre>
     <label class="label">Last failed</label>
     <pre class="code">{{.LastUnavailableAt}}</pre>
+    {{if .Reason}}
+    <label class="label">Reason</label>
+    <pre class="code">{{.Reason}}</pre>
+    {{end}}
+    {{end}}
   </div>
+  {{if not .RestoreFailed}}
   <script>setTimeout(() => location.reload(), 5000)</script>
+  {{end}}
 </body>
 </html>

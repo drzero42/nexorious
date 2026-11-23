@@ -343,6 +343,38 @@ The SQL in a backup still runs as Nexorious's database role, so **the role in `D
 
 Keeping backups somewhere off the server, especially before upgrades, is the safest habit while the project is still moving quickly.
 
+#### When a restore did not finish
+
+A restore records its progress in the database, in a table of its own, `nexorious_restore.marker`, which the restore itself never drops. If a restore failed and could not be rolled back, or the server stopped in the middle of one, the row says `restoring`: the database may be only partly loaded. Nexorious then refuses to use it until you have dealt with it, across restarts:
+
+- The server shows a **Restore Did Not Finish** page naming the backup that was being restored and the pre-restore backup, if one was taken. `/health` reports the status `restore_failed`. Every other page and API route is refused, the migration page included.
+- The server does not migrate the database and does not start background work, with or without `serve --migrate`.
+- `nexorious migrate` exits with an error naming the marker. On Helm, which runs it in an init container, the pod therefore stays in its init phase and the page is never served: look at the init container's log. `nexorious migrate status` prints `state=restore_failed` and changes nothing.
+
+To recover, connect to the database with `psql` as the role in `DATABASE_URL` and look at the row:
+
+```sql
+SELECT * FROM nexorious_restore.marker;
+```
+
+If the data needs reloading, load a backup by hand. `pre_restore_backup_id` names the backup taken just before the restore, at `$BACKUP_PATH/<id>.tar.gz`; any other backup works too. The archive holds a directory named after the backup, with `database.sql` and `cover_art/` in it:
+
+```sh
+mkdir /tmp/recover && tar -xzf "$BACKUP_PATH/<id>.tar.gz" -C /tmp/recover
+psql "$DATABASE_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+psql "$DATABASE_URL" --single-transaction -v ON_ERROR_STOP=1 -f /tmp/recover/<id>/database.sql
+```
+
+Then copy `/tmp/recover/<id>/cover_art/` over `$STORAGE_PATH/cover_art/`.
+
+When the database is in the state you want, **set the phase to `cleanup`** and restart the server:
+
+```sql
+UPDATE nexorious_restore.marker SET phase = 'cleanup';
+```
+
+Always set `cleanup`; never delete the row. On the next start, before the server reports ready, Nexorious clears whatever was in flight when the restore began: it empties the background queue and marks every Job that was still pending or running as failed with "interrupted by a restore", cancelling its unfinished items. Then it deletes the row and starts as usual, offering the migration page if the loaded backup is older than the server.
+
 ### Database role
 
 A restored backup is SQL that runs as the role in `DATABASE_URL`. A PostgreSQL superuser can run programs on the database host from plain SQL (`COPY … TO PROGRAM`), so if Nexorious connects as one, a crafted backup file could run commands there. The same goes for a role in `pg_execute_server_program` or `pg_write_server_files`. Nexorious needs none of that: a plain role that owns its database is enough, migrations included.

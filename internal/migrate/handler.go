@@ -100,6 +100,10 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 		return c.JSON(http.StatusConflict, map[string]string{
 			"error": "this database cannot be migrated automatically; see the page for upgrade instructions",
 		})
+	case AppStateRestoreFailed:
+		return c.JSON(http.StatusConflict, map[string]string{
+			"error": "a backup restore did not finish; see the admin guide before migrating",
+		})
 	}
 	// Allowed: AppStateNeedsMigration, AppStateMigrationFailed, and AppStateNeedsAdopt.
 	// (Gate 1 redirects callers away before AppStateDBUnavailable can reach here.)
@@ -118,7 +122,12 @@ func (h *Handler) HandleRun(c *echo.Context) error {
 				return
 			}
 		}
-		h.migrator.TransitionToReady()
+		// Ready goes through determineState, never straight to the state: with
+		// a restore marker at cleanup, work left in flight by the restore is
+		// cleared before Ready is stored (#1341).
+		if err := h.migrator.determineState(); err != nil {
+			slog.ErrorContext(ctx, "migrate: determine state after migrating failed", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
+		}
 	}()
 
 	return c.JSON(http.StatusAccepted, map[string]string{"status": "migration started"})

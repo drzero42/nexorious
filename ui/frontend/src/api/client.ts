@@ -37,6 +37,7 @@ function buildUrl(
 // gates return a 503 with this app_state instead and the client navigates here.
 const APP_STATE_REDIRECTS: Record<string, string> = {
   db_unavailable: '/db-error',
+  restore_failed: '/db-error',
   needs_migration: '/migrate',
   migrating: '/migrate',
   migration_failed: '/migrate',

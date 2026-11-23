@@ -150,6 +150,10 @@ func runMigrate(cmd *cobra.Command, _ []string) error {
 	case migrate.AppStateMigrationRefused:
 		return fmt.Errorf("migrate: refused — this database is not a clean v0.17.1 or baseline install; " +
 			"upgrade to v0.17.1 first (let it migrate fully) then to v0.90.0+, or export → fresh install → import")
+	case migrate.AppStateRestoreFailed:
+		return fmt.Errorf("migrate: refused — a backup restore did not finish (the restore marker in " +
+			"nexorious_restore.marker says restoring), so the database may be only partly loaded; " +
+			"see \"Backups and restore\" in the admin guide")
 	}
 	// AppStateNeedsMigration and AppStateNeedsAdopt both proceed to RunMigrations.
 

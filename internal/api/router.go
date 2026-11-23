@@ -107,11 +107,13 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 
 	registerObservabilityMiddleware(e)
 
-	// Gate 1: DB unavailable — redirect everything except /db-error, /health, /metrics, and /static/app.css
+	// Gate 1: DB unavailable or a restore that did not finish — redirect
+	// everything except /db-error, /health, /metrics, and /static/app.css.
+	// Restore-failed must be here, not in Gate 2, which lets /migrate through.
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			state := migrator.State()
-			if state == migrate.AppStateDBUnavailable {
+			if state == migrate.AppStateDBUnavailable || state == migrate.AppStateRestoreFailed {
 				path := c.Request().URL.Path
 				if path == "/db-error" || path == "/health" || path == "/metrics" || path == "/static/app.css" {
 					return next(c)
@@ -130,7 +132,7 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			state := migrator.State()
-			if state != migrate.AppStateReady && state != migrate.AppStateDBUnavailable {
+			if state != migrate.AppStateReady && state != migrate.AppStateDBUnavailable && state != migrate.AppStateRestoreFailed {
 				path := c.Request().URL.Path
 				if strings.HasPrefix(path, "/migrate") || strings.HasPrefix(path, "/api/migrate") ||
 					path == "/health" || path == "/metrics" || path == "/static/app.css" ||

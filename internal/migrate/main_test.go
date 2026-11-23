@@ -66,13 +66,13 @@ func TestMain(m *testing.M) {
 
 // resetPublicSchema drops and recreates the public schema on the shared
 // container, returning a pristine, un-migrated database to the caller. All
-// nexorious objects live in public (no extensions or extra schemas), so this is
-// a complete reset. Tests run sequentially, so the prior test's handle is
+// nexorious objects live in public, apart from the restore marker schema, which
+// is dropped too, so this is a complete reset. Tests run sequentially, so the prior test's handle is
 // already closed by the time this runs.
 func resetPublicSchema(t *testing.T) {
 	t.Helper()
 	if _, err := controlDB.ExecContext(context.Background(),
-		`DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO public;`); err != nil {
+		`DROP SCHEMA IF EXISTS nexorious_restore CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO public;`); err != nil {
 		t.Fatalf("resetPublicSchema: %v", err)
 	}
 }

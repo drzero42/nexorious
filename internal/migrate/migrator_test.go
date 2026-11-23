@@ -76,10 +76,17 @@ func TestRunMigrations_TransitionsToReady(t *testing.T) {
 	if m.State() != migrate.AppStateMigrating {
 		t.Errorf("expected Migrating after RunMigrations, got %v", m.State())
 	}
-	// Handler goroutine calls TransitionToReady after InitNeedsSetup.
-	m.TransitionToReady()
+	// The handler goroutine re-determines the state after InitNeedsSetup;
+	// Ready clears any failure left over.
+	m.SetLastErrorForTest("boom")
+	if err := m.DetermineState(); err != nil {
+		t.Fatalf("DetermineState: %v", err)
+	}
 	if m.State() != migrate.AppStateReady {
-		t.Errorf("expected Ready after TransitionToReady, got %v", m.State())
+		t.Errorf("expected Ready after DetermineState, got %v", m.State())
+	}
+	if got := m.LastError(); got != "" {
+		t.Errorf("LastError after Ready = %q, want empty", got)
 	}
 }
 
@@ -338,18 +345,6 @@ func TestTransitionToFailed_SetsStateAndStoresError(t *testing.T) {
 	}
 	if got := m.LastError(); got != "boom" {
 		t.Errorf("LastError = %q, want %q", got, "boom")
-	}
-}
-
-func TestTransitionToReady_ClearsLastError(t *testing.T) {
-	m := migrate.NewMigratorForTest(migrate.AppStateMigrating)
-	m.TransitionToFailed(errors.New("boom"))
-	m.TransitionToReady()
-	if got := m.LastError(); got != "" {
-		t.Errorf("LastError after TransitionToReady = %q, want empty", got)
-	}
-	if m.State() != migrate.AppStateReady {
-		t.Errorf("State = %v, want AppStateReady", m.State())
 	}
 }
 

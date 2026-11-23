@@ -143,8 +143,7 @@ func TestStartDBProbe_RecoveryFromFailed_ClearsLastError(t *testing.T) {
 	if got := m.LastError(); got != "" {
 		t.Errorf("expected LastError cleared after recovery, got %q", got)
 	}
-	// determineState() in the recovery arm (not RunMigrations) sets Ready directly,
-	// so unlike the happy-path migration flow no TransitionToReady() is involved.
+	// determineState() in the recovery arm sets Ready.
 	if m.State() != migrate.AppStateReady {
 		t.Errorf("expected Ready after recovery, got %v", m.State())
 	}
