@@ -649,8 +649,8 @@ func (h *JobsHandler) HandleCancelJob(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel job")
 	}
 
-	// Cancel any queued River jobs for this nexorious job. ImportItemArgs serialises
-	// as {"job_item_id": "..."}, so match against the job_items table.
+	// Cancel any queued River jobs of the Job's items. Item args serialise as
+	// {"job_item_id": "..."}, so match against the job_items table.
 	if _, err := h.db.NewRaw(`
 		UPDATE river_job
 		SET state = 'cancelled', finalized_at = NOW()
@@ -783,7 +783,7 @@ func (h *JobsHandler) HandleRetryFailed(c *echo.Context) error {
 // by EnqueueOrFail so it does not get stranded in 'pending' with no backing
 // river_job.
 func retryInsert(ctx context.Context, db *bun.DB, rc *river.Client[pgx.Tx], jobType, source, jobItemID string) {
-	args, err := tasks.ArgsForJobType(jobType, source, jobItemID)
+	args, err := tasks.ArgsForJobType(jobType, jobItemID)
 	if err != nil {
 		slog.ErrorContext(ctx, "retryInsert: unsupported job_type",
 			"job_type", jobType, logging.KeySource, source, logging.KeyJobItemID, jobItemID, logging.KeyErr, err, logging.Cat(logging.CategoryValidation))

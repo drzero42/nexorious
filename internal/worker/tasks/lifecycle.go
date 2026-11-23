@@ -17,13 +17,18 @@ import (
 	"github.com/drzero42/nexorious/internal/notify"
 )
 
-// lifecycleJobTypes are the job types whose Jobs internal/joblifecycle owns.
-// The old recovery paths (the orphan rescue, the stale sweep) leave them
-// alone. Stages 2 and 3 of #1265 add the import and sync kinds.
-var lifecycleJobTypes = []string{
-	models.JobTypeMetadataRefresh,
-	models.JobTypeStoreLinkRefresh,
-	models.JobTypeExport,
+// msgImportUploadLost fails an import whose upload handler died before it had
+// created every item. An import's items are created with its Job, so its
+// dispatch cannot be run again.
+const msgImportUploadLost = "interrupted while the upload was being read; start the import again"
+
+// importDuplicateKey allows one active import per user and source.
+func importDuplicateKey(j *models.Job) (joblifecycle.DupKey, bool) {
+	return joblifecycle.DupKey{Source: j.Source, UserID: j.UserID}, true
+}
+
+func importHasEffects(o joblifecycle.Outcome) bool {
+	return o == joblifecycle.OutcomeCompleted || o == joblifecycle.OutcomeFailed
 }
 
 // RegisterLifecycleKinds registers the Job kinds that are on the lifecycle
@@ -90,6 +95,80 @@ func RegisterLifecycleKinds(m *joblifecycle.Module) {
 		},
 		Effects: exportEffects,
 	})
+	// The nexorious import: one stage per game, plus the pools item.
+	m.Register(&joblifecycle.Kind{
+		JobType:        models.JobTypeImport,
+		Sources:        []string{models.JobSourceNexorious},
+		ItemRiverKinds: []string{ImportItemArgs{}.Kind()},
+		ItemArgs: func(_ *models.Job, it *models.JobItem) (river.JobArgs, error) {
+			return ImportItemArgs{JobItemID: it.ID}, nil
+		},
+		DispatchLostMessage: msgImportUploadLost,
+		DuplicateKey:        importDuplicateKey,
+		HasEffects:          importHasEffects,
+		Effects:             importEffects,
+	})
+	// The generic import: every other import source, including ones that
+	// have since been removed from the registry, so their Jobs are still
+	// completed, cancelled and recovered. Match, then finalize.
+	m.Register(&joblifecycle.Kind{
+		JobType:        models.JobTypeImport,
+		ItemRiverKinds: []string{ImportMatchArgs{}.Kind(), ImportFinalizeArgs{}.Kind()},
+		// An item that has its IGDB game (Resolved, or matched before it
+		// failed) goes to finalize; one that failed in match goes to match.
+		ItemArgs: func(_ *models.Job, it *models.JobItem) (river.JobArgs, error) {
+			if it.ResolvedIGDBID != nil {
+				return ImportFinalizeArgs{JobItemID: it.ID}, nil
+			}
+			return ImportMatchArgs{JobItemID: it.ID}, nil
+		},
+		DispatchLostMessage: msgImportUploadLost,
+		DuplicateKey:        importDuplicateKey,
+		HasEffects:          importHasEffects,
+		Effects:             importEffects,
+	})
+}
+
+// importEffects sends the import notification and, for a nexorious import on
+// its Job's first finish, applies the imported pools. The notification goes
+// first so a pools error that never goes away cannot hold it back. Pools are
+// applied on the first finish only: applying the file's pools again after a
+// Retry would recreate pools the user deleted since.
+func importEffects(ctx context.Context, db *bun.DB, e joblifecycle.Effect) error {
+	p := notify.EmitParams{Scope: notify.ScopeUser, ActorUserID: e.Job.UserID}
+	switch e.Outcome {
+	case joblifecycle.OutcomeCompleted:
+		var failed int
+		if err := db.NewRaw(`SELECT count(*) FROM job_items WHERE job_id = ? AND status = 'failed'`, e.Job.ID).Scan(ctx, &failed); err != nil {
+			return fmt.Errorf("count failed items: %w", err)
+		}
+		if failed > 0 {
+			p.Type = notify.TypeImportFailed
+			p.Payload = notify.ImportFailedPayload{JobID: e.Job.ID, Failed: failed, Error: fmt.Sprintf("%d item(s) failed to import", failed)}
+		} else {
+			p.Type = notify.TypeImportCompleted
+			p.Payload = notify.ImportCompletedPayload{JobID: e.Job.ID}
+		}
+	case joblifecycle.OutcomeFailed:
+		var msg string
+		if e.Job.ErrorMessage != nil {
+			msg = *e.Job.ErrorMessage
+		}
+		p.Type = notify.TypeImportFailed
+		p.Payload = notify.ImportFailedPayload{JobID: e.Job.ID, Error: msg}
+	default:
+		return nil
+	}
+	p.DedupKey = e.Job.ID + ":" + p.Type
+	if err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		return notify.EmitTx(ctx, tx, p)
+	}); err != nil {
+		return fmt.Errorf("emit %s: %w", p.Type, err)
+	}
+	if e.Outcome == joblifecycle.OutcomeCompleted && e.FirstFinish && e.Job.Source == models.JobSourceNexorious {
+		return applyImportedPools(ctx, db, e.Job.ID, e.Job.UserID)
+	}
+	return nil
 }
 
 // exportEffects sends the export completed / failed notification. The event

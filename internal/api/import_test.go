@@ -220,8 +220,9 @@ func TestImportNexorious_Success(t *testing.T) {
 	if resp["source"] != "nexorious" {
 		t.Fatalf("source = %v, want nexorious", resp["source"])
 	}
-	if resp["status"] != "pending" {
-		t.Fatalf("status = %v, want pending", resp["status"])
+	// The Job has all its items from the start (#1267).
+	if resp["status"] != "processing" {
+		t.Fatalf("status = %v, want processing", resp["status"])
 	}
 	totalItems, ok := resp["total_items"].(float64)
 	if !ok || int(totalItems) != 3 {

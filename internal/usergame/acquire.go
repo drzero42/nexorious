@@ -43,9 +43,11 @@ func Acquire(ctx context.Context, db bun.IDB, p AcquireParams) (Result, error) {
 			return fmt.Errorf("promote if played: %w", err)
 		}
 		if len(p.Tags) > 0 {
-			if err := reconcileTags(ctx, tx, ugID, p.UserID, p.Tags, p.TagMode); err != nil {
+			added, err := reconcileTags(ctx, tx, ugID, p.UserID, p.Tags, p.TagMode)
+			if err != nil {
 				return err
 			}
+			res.TagsAdded = added
 		}
 		return nil
 	})
@@ -400,28 +402,38 @@ func deref(s *string) string {
 	return *s
 }
 
-func reconcileTags(ctx context.Context, tx bun.IDB, ugID, userID string, tags []TagInput, mode TagMode) error {
+// reconcileTags applies tags in mode and, for TagMerge, returns how many tag
+// links it inserted (links the game already had are not counted). TagReplace
+// returns 0.
+func reconcileTags(ctx context.Context, tx bun.IDB, ugID, userID string, tags []TagInput, mode TagMode) (int, error) {
 	if mode == TagReplace {
 		names := make([]string, 0, len(tags))
 		for _, t := range tags {
 			names = append(names, t.Name)
 		}
-		return ReplaceTags(ctx, tx, ugID, userID, names)
+		return 0, ReplaceTags(ctx, tx, ugID, userID, names)
 	}
+	added := 0
 	// TagMerge: resolve/create each tag and insert the link if absent.
 	for _, t := range tags {
 		tagID, err := ResolveOrCreateTag(ctx, tx, userID, t.Name, t.Color)
 		if err != nil {
-			return err
+			return 0, err
 		}
-		if _, err := tx.NewRaw(
+		res, err := tx.NewRaw(
 			`INSERT INTO user_game_tags (id, user_game_id, tag_id, created_at)
 			 VALUES (?, ?, ?, now())
 			 ON CONFLICT (user_game_id, tag_id) DO NOTHING`,
 			uuid.NewString(), ugID, tagID,
-		).Exec(ctx); err != nil {
-			return fmt.Errorf("merge tag link: %w", err)
+		).Exec(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("merge tag link: %w", err)
 		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return 0, fmt.Errorf("merge tag link: %w", err)
+		}
+		added += int(n)
 	}
-	return nil
+	return added, nil
 }

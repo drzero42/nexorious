@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/riverqueue/river"
 
 	"github.com/drzero42/nexorious/internal/config"
 	"github.com/drzero42/nexorious/internal/db/models"
@@ -156,12 +155,13 @@ func TestImport_RoundTripPreservesUserData(t *testing.T) {
 		itemIDs = append(itemIDs, insertTestJobItem(t, testDB, jobID, dstUser, asMap))
 	}
 
-	w := &tasks.ImportItemWorker{DB: testDB, IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
+	w := &tasks.ImportItemWorker{DB: testDB, LC: newTestLC(t), IGDBClient: igdb.NewClient(&config.Config{}, ratelimit.NewLocal(100, 100)), StoragePath: ""}
 	for _, itemID := range itemIDs {
-		if err := w.Work(ctx, &river.Job[tasks.ImportItemArgs]{Args: tasks.ImportItemArgs{JobItemID: itemID}}); err != nil {
+		if err := w.Work(ctx, ownedJob(t, itemID, tasks.ImportItemArgs{JobItemID: itemID})); err != nil {
 			t.Fatalf("import work: %v", err)
 		}
 	}
+	runEffects(t, newTestLC(t))
 
 	// Assert destination user-owned data.
 	var got models.UserGame

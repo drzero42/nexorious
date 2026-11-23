@@ -68,17 +68,24 @@ type NewItem struct {
 	SourceTitle    string
 	SourceMetadata json.RawMessage
 	ExternalGameID *string
+	// CreatedAt orders the item in listings (created_at, id); zero means
+	// the time of the insert. A creator that keeps an order sets it.
+	CreatedAt time.Time
+	// Completed creates the item already finished, with no River job: an
+	// item that only carries data for a finishing effect.
+	Completed bool
 }
 
-// insertItems inserts pending items for job, each with its River job recorded
-// as owner, in the transaction.
+// insertItems inserts items for job, each pending one with its River job
+// recorded as owner, in the transaction.
 func (m *Module) insertItems(ctx context.Context, tx bun.Tx, k *Kind, job *models.Job, items []NewItem) error {
 	if len(items) == 0 {
 		return nil
 	}
 	now := time.Now().UTC()
 	rows := make([]models.JobItem, len(items))
-	args := make([]river.JobArgs, len(items))
+	args := make([]river.JobArgs, 0, len(items))
+	pending := make([]int, 0, len(items)) // indexes into rows, in args order
 	for i, it := range items {
 		id := it.ID
 		if id == "" {
@@ -88,24 +95,36 @@ func (m *Module) insertItems(ctx context.Context, tx bun.Tx, k *Kind, job *model
 		if len(meta) == 0 {
 			meta = json.RawMessage(`{}`)
 		}
+		created := it.CreatedAt
+		if created.IsZero() {
+			created = now
+		}
 		rows[i] = models.JobItem{
 			ID: id, JobID: job.ID, UserID: it.UserID, ExternalGameID: it.ExternalGameID,
 			ItemKey: it.ItemKey, SourceTitle: it.SourceTitle, SourceMetadata: meta,
 			Status: models.JobItemStatusPending, Result: json.RawMessage(`{}`),
-			IGDBCandidates: json.RawMessage(`[]`), CreatedAt: now,
+			IGDBCandidates: json.RawMessage(`[]`), CreatedAt: created,
+		}
+		if it.Completed {
+			rows[i].Status = models.JobItemStatusCompleted
+			rows[i].ProcessedAt = &now
+			continue
 		}
 		a, err := k.ItemArgs(job, &rows[i])
 		if err != nil {
 			return fmt.Errorf("item args: %w", err)
 		}
-		args[i] = a
+		args = append(args, a)
+		pending = append(pending, i)
 	}
-	ids, err := m.insertMany(ctx, tx, args)
-	if err != nil {
-		return err
-	}
-	for i := range rows {
-		rows[i].RiverJobID = &ids[i]
+	if len(args) > 0 {
+		ids, err := m.insertMany(ctx, tx, args)
+		if err != nil {
+			return err
+		}
+		for j, i := range pending {
+			rows[i].RiverJobID = &ids[j]
+		}
 	}
 	const chunk = 1000
 	for start := 0; start < len(rows); start += chunk {

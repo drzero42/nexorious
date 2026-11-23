@@ -162,11 +162,16 @@ func TestRescueOrphanedPendingItems_SkipsLifecycleKinds(t *testing.T) {
 	rc := newTestRiverClient(t)
 
 	userID := insertUser(t, ctx, nil)
-	for _, jt := range []string{"metadata_refresh", "store_link_refresh"} {
+	// Every kind but sync is on the module (imports since #1267).
+	for _, k := range []struct{ jt, source string }{
+		{"metadata_refresh", "system"}, {"store_link_refresh", "system"},
+		{"import", "csv"}, {"import", "nexorious"}, {"import", "darkadia"},
+	} {
+		jt := k.jt + "/" + k.source
 		jobID := uuid.NewString()
 		if _, err := testDB.NewRaw(
-			`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, ?, 'system', 'processing', 'low')`,
-			jobID, userID, jt,
+			`INSERT INTO jobs (id, user_id, job_type, source, status, priority) VALUES (?, ?, ?, ?, 'processing', 'low')`,
+			jobID, userID, k.jt, k.source,
 		).Exec(ctx); err != nil {
 			t.Fatal(err)
 		}

@@ -67,7 +67,9 @@ func TestRetryItem(t *testing.T) {
 
 	userID, token := setupTagUser(t, testDB, e, "ji-retry")
 
-	insertJob(t, testDB, "job-ji-retry", userID, "import", "steam", "failed")
+	// An import is on the lifecycle module: only an active or completed Job's
+	// items are retried.
+	insertJob(t, testDB, "job-ji-retry", userID, "import", "steam", "completed")
 	insertJobItem(t, testDB, "ji-retry-1", "job-ji-retry", userID, "key6", "Retry Game", "failed")
 
 	rec := postJSONAuth(t, e, "/api/job-items/ji-retry-1/retry", nil, token)

@@ -478,7 +478,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		jobItemsGroup.POST("/:id/skip", jih.HandleSkipItem)
 
 		// Import routes (all auth-protected)
-		imh := NewImportHandler(db, riverClient, igdbClient)
+		imh := NewImportHandler(db, lifecycle, igdbClient)
 		importGroup := e.Group("/api/import", auth.AuthMiddleware(db))
 		importGroup.GET("/sources", imh.HandleListImportSources)
 		importGroup.POST("/nexorious", imh.HandleImportNexorious)

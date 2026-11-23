@@ -276,7 +276,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	rescueOrphanedWorker := &scheduler.RescueOrphanedPendingItemsWorker{DB: db}
 	igdbMatchWorker := &tasks.IGDBMatchWorker{DB: db, IGDBClient: igdbClient}
 	userGameWorker := &tasks.UserGameWorker{DB: db, IGDBClient: igdbClient}
-	importMatchWorker := &tasks.ImportMatchWorker{DB: db, IGDBClient: igdbClient}
+	importMatchWorker := &tasks.ImportMatchWorker{DB: db, LC: lifecycle, IGDBClient: igdbClient}
 	storeLinkDispatchWorker := &tasks.StoreLinkRefreshDispatchWorker{DB: db, LC: lifecycle}
 	storeLinkItemWorker := &tasks.StoreLinkRefreshItemWorker{DB: db, LC: lifecycle, ResolverFor: buildStoreLinkResolverFactory(db, encrypter)}
 
@@ -284,7 +284,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	updateClient := updatecheck.NewClient()
 
 	workers := river.NewWorkers()
-	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, &tasks.ImportItemWorker{DB: db, LC: lifecycle, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.ExportJSONWorker{DB: db, LC: lifecycle, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &tasks.ExportCSVWorker{DB: db, LC: lifecycle, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, &joblifecycle.EffectsWorker{Module: lifecycle})
@@ -293,7 +293,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	river.AddWorker(workers, igdbMatchWorker)
 	river.AddWorker(workers, userGameWorker)
 	river.AddWorker(workers, importMatchWorker)
-	river.AddWorker(workers, &tasks.ImportFinalizeWorker{DB: db, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
+	river.AddWorker(workers, &tasks.ImportFinalizeWorker{DB: db, LC: lifecycle, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
 	river.AddWorker(workers, metaDispatchWorker)
 	river.AddWorker(workers, storeLinkDispatchWorker)
 	river.AddWorker(workers, storeLinkItemWorker)
@@ -338,7 +338,6 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	rescueOrphanedWorker.RiverClient = riverClient
 	igdbMatchWorker.RiverClient = riverClient
 	userGameWorker.RiverClient = riverClient
-	importMatchWorker.RiverClient = riverClient
 
 	// -------------------------------------------------------------------------
 	// HTTP server

@@ -58,6 +58,7 @@ var (
 	ErrNotRetryable    = errors.New("joblifecycle: not retryable")
 	ErrDuplicateActive = errors.New("joblifecycle: an equivalent job is already active")
 	ErrUnknownKind     = errors.New("joblifecycle: job kind is not on the module")
+	ErrNotInReview     = errors.New("joblifecycle: item is not in pending review")
 )
 
 // IsRefusal reports whether err means the caller no longer has anything to do:
@@ -128,6 +129,10 @@ type Kind struct {
 	// DispatchArgs returns the River args that run the Job's dispatch. Nil
 	// means the dispatch cannot be run again.
 	DispatchArgs func(job *models.Job) (river.JobArgs, error)
+	// DispatchLostMessage is the error recovery fails a Job with when its
+	// dispatch is not done, has no live owner, and cannot be run again
+	// (DispatchArgs is nil). Empty means a generic message.
+	DispatchLostMessage string
 	// DuplicateKey returns the Job's duplicate key; ok=false means Jobs of
 	// the kind are never duplicates.
 	DuplicateKey func(job *models.Job) (key DupKey, ok bool)
@@ -164,7 +169,9 @@ func New(db *bun.DB, rc *river.Client[*sql.Tx]) *Module {
 	return &Module{db: db, rc: rc}
 }
 
-// Register adds a Job kind. Kinds are found by job_type first, then source.
+// Register adds a Job kind. Kinds are found by job_type first, then source: a
+// kind that names the Job's source wins over one with no Sources, whatever the
+// order they were registered in.
 func (m *Module) Register(k *Kind) {
 	if k.ItemArgs == nil || k.DuplicateKey == nil {
 		panic(fmt.Sprintf("joblifecycle: kind %q needs ItemArgs and DuplicateKey", k.JobType))
@@ -178,12 +185,19 @@ func (m *Module) Handles(jobType, source string) bool {
 }
 
 func (m *Module) kindFor(jobType, source string) *Kind {
+	var catchAll *Kind
 	for _, k := range m.kinds {
-		if k.matches(jobType, source) {
+		if !k.matches(jobType, source) {
+			continue
+		}
+		if len(k.Sources) > 0 {
 			return k
 		}
+		if catchAll == nil {
+			catchAll = k
+		}
 	}
-	return nil
+	return catchAll
 }
 
 // JobTypes returns the job_type of every registered kind.
@@ -231,7 +245,7 @@ func (m *Module) run(ctx context.Context, op string, fn func(ctx context.Context
 		var ab abortError
 		switch {
 		case IsRefusal(err), errors.Is(err, ErrNotRetryable), errors.Is(err, ErrDuplicateActive),
-			errors.Is(err, ErrUnknownKind), errors.As(err, &ab):
+			errors.Is(err, ErrUnknownKind), errors.Is(err, ErrNotInReview), errors.As(err, &ab):
 		case ctx.Err() != nil:
 			slog.InfoContext(ctx, "job lifecycle: transition interrupted", logging.KeyOperation, op, logging.KeyErr, err)
 		default:
