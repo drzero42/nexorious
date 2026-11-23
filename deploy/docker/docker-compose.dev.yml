@@ -26,7 +26,7 @@ name: nexorious-dev
 
 services:
   db:
-    image: docker.io/postgres:18-alpine
+    image: docker.io/postgres:19-alpine
     environment:
       POSTGRES_USER: nexorious
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexorious}
