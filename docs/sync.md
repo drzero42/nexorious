@@ -281,7 +281,7 @@ Additionally, a manually added row has no `external_game_id` because it was not 
 
 Sync Jobs and their job items follow [docs/job-lifecycle.md](job-lifecycle.md): its states, transitions, recovery, and what happens on a shutdown or restart. A sync interrupted by a shutdown resumes at the next startup. A sync waiting on the user (items in Pending review) stays `processing` until they are resolved or skipped, and the storefront does not start a new sync meanwhile.
 
-The sync kind's finishing effects are `sync.completed` (or `sync.completed_with_errors`), `sync.diff` and the store-link refresh for the storefront when it completes; `sync.failed` or `sync.auth_expired` when it fails; and `sync.needs_review` when it starts waiting on the user.
+The sync kind's finishing effects are `sync.completed` (or `sync.completed_with_errors`), `sync.diff` and the store-link refresh for the storefront when it completes; `sync.failed` or `sync.auth_expired` when it fails; and `sync.needs_review` when it starts waiting on the user. `sync.recovered` is not a finishing effect: the dispatch sends it when it marks a successful fetch, in the same transaction that writes `last_synced_at` (see [Scheduled Sync](#scheduled-sync)).
 
 ---
 
@@ -397,6 +397,8 @@ A periodic worker checks `user_sync_configs` for all users where the sync freque
 After a failed sync the next scheduled one waits: 15 minutes after the newest failure, doubled for each further failure since the last successful sync (manual and credential failures count too), and never longer than the sync interval. A failed lookup of that history never holds a sync back.
 
 Only the first failure since the last successful sync sends `sync.failed`; later ones are logged and stay quiet, whatever their message, so one outage sends one notice. Credential failures are not counted for this, since they send their own notice (see [Credential errors](#credential-errors)) only on the change into the error state.
+
+The first successful fetch after such an outage sends `sync.recovered`, before `last_synced_at` moves past it, so the user learns the outage is over. A store that failed only for its credentials sent no `sync.failed`, and the user's reconnect ended it, so its recovery sends nothing.
 
 ---
 

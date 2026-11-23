@@ -4,7 +4,7 @@ import "testing"
 
 func TestRegistryHasExpectedTypes(t *testing.T) {
 	want := []string{
-		"sync.completed", "sync.completed_with_errors", "sync.failed",
+		"sync.completed", "sync.completed_with_errors", "sync.failed", "sync.recovered",
 		"sync.auth_expired", "sync.needs_review", "sync.diff",
 		"import.completed", "import.failed", "export.completed", "export.failed",
 		"admin.backup.completed", "admin.backup.failed",
@@ -24,8 +24,9 @@ func TestDefaultSubscriptionsAreFailuresOnly(t *testing.T) {
 	for _, d := range defaults {
 		got[d] = true
 	}
-	// admin.version.available is the deliberate non-failure exception: it is default-on by design (issue #899).
-	for _, typ := range []string{"sync.failed", "sync.auth_expired", "import.failed", "export.failed", "sync.completed_with_errors", "admin.backup.failed", "admin.maintenance.failed", "admin.version.available"} {
+	// admin.version.available (#899) and sync.recovered (#1385, the end of a
+	// failure already notified) are the deliberate non-failure exceptions.
+	for _, typ := range []string{"sync.failed", "sync.recovered", "sync.auth_expired", "import.failed", "export.failed", "sync.completed_with_errors", "admin.backup.failed", "admin.maintenance.failed", "admin.version.available"} {
 		if !got[typ] {
 			t.Errorf("expected default-on for %q", typ)
 		}

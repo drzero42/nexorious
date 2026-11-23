@@ -29,6 +29,16 @@ func Format(eventType string, payload json.RawMessage) (title, body string, deco
 			body = fmt.Sprintf("Your %s sync failed: %s", fallback(p.Storefront, "library"), fallback(p.Error, "unknown error"))
 		}
 
+	case TypeSyncRecovered:
+		var p SyncRecoveredPayload
+		decodeErr = json.Unmarshal(payload, &p)
+		title = "Sync working again"
+		if decodeErr != nil {
+			body = "A storefront sync is working again."
+		} else {
+			body = fmt.Sprintf("Your %s sync is working again.", fallback(p.Storefront, "library"))
+		}
+
 	case TypeSyncAuthExpired:
 		var p SyncAuthExpiredPayload
 		decodeErr = json.Unmarshal(payload, &p)

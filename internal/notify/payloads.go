@@ -28,6 +28,13 @@ type SyncFailedPayload struct {
 	JobID      string `json:"job_id"`
 }
 
+// SyncRecoveredPayload carries the storefront whose sync works again after an
+// outage that sent sync.failed.
+type SyncRecoveredPayload struct {
+	Storefront string `json:"storefront"`
+	JobID      string `json:"job_id"`
+}
+
 // SyncAuthExpiredPayload carries the storefront whose credentials expired. No
 // error string: it is always "credentials error", which is not useful to the
 // user — the actionable message is "go reconnect this storefront".
