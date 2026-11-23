@@ -8,8 +8,9 @@ import (
 	"github.com/drzero42/nexorious/internal/logging"
 )
 
-// riverStartGate starts River once the app is ready. It is meant to be the one
-// place River is started (#1341).
+// riverStartGate starts River once the app is ready. It is the one place River
+// is started (#1341); a restore switches it off for good and restarts the
+// process instead of starting River again.
 //
 // It waits for ready, runs runRecovery, then calls start. A start that fails is
 // retried, with runRecovery run again before each attempt and an exponential

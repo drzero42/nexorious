@@ -95,7 +95,7 @@ func registerObservabilityMiddleware(e *echo.Echo) {
 
 // New creates and configures the Echo instance with all middleware and routes.
 // The caller is responsible for configuring the global slog logger before calling New.
-func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, updateState *updatecheck.State, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
+func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migrator, db *bun.DB, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, version, commit string, updateState *updatecheck.State, riverClient ...*river.Client[pgx.Tx]) *echo.Echo {
 	// Echo v5.3 groups auto-register catch-all 404 routes that run the group's
 	// middleware; the empty-prefix admin group would then auth-gate "/" (the SPA).
 	e := echo.NewWithConfig(echo.Config{NoGroupAutoRegister404Routes: true})
@@ -185,12 +185,12 @@ func New(encrypter *crypto.Encrypter, cfg *config.Config, migrator *migrate.Migr
 	}
 
 	mh := migrate.NewHandler(migrator, db)
-	registerRoutes(e, encrypter, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, version, commit, updateState, rc)
+	registerRoutes(e, encrypter, cfg, mh, db, migrator, resolvedDatabaseURL, igdbClient, backupSvc, version, commit, updateState, rc)
 
 	return e
 }
 
-func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, restoreCallbacks *RestoreCallbacks, version, commit string, updateState *updatecheck.State, riverClient *river.Client[pgx.Tx]) {
+func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Config, mh *migrate.Handler, db *bun.DB, migrator *migrate.Migrator, resolvedDatabaseURL string, igdbClient *igdb.Client, backupSvc *backup.Service, version, commit string, updateState *updatecheck.State, riverClient *river.Client[pgx.Tx]) {
 	// Migration routes (bypass gate 2 via prefix)
 	e.GET("/migrate", mh.HandleMigrateUI)
 	e.GET("/api/migrate/status", mh.HandleStatus)
@@ -267,7 +267,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 	e.POST("/api/auth/setup/admin", sh.HandleSetupAdmin)
 
 	// Backup handler — used by both setup restore and admin routes
-	bh := NewBackupHandler(backupSvc, db, restoreCallbacks)
+	bh := NewBackupHandler(backupSvc, db)
 	e.POST("/api/auth/setup/restore", bh.HandleSetupRestore)
 	e.GET("/api/auth/setup/backups", bh.HandleSetupListBackups)
 	e.POST("/api/auth/setup/restore/disk", bh.HandleSetupRestoreFromDisk)

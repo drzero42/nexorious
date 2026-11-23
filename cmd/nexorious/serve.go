@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -323,6 +324,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// -------------------------------------------------------------------------
 	shutdownCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// A channel of their own, checked just before a restart after a restore:
+	// a process asked to stop must not exec a new image instead.
+	termSignals := make(chan os.Signal, 1)
+	signal.Notify(termSignals, syscall.SIGINT, syscall.SIGTERM)
 
 	// River runs on a context independent of the OS signal. If River were started
 	// on shutdownCtx, SIGTERM would hard-cancel in-flight jobs immediately (River
@@ -331,144 +336,21 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	riverCtx, riverCancel := context.WithCancel(context.Background())
 	defer riverCancel()
 
-	restoreCallbacks := &api.RestoreCallbacks{
-		SetMaintenance: maint.SetMaintenanceMode,
-		ShutdownPool:   func() {},
-		StopScheduler:  func() {},
-		CloseDB: func() error {
-			return nil
-		},
-		ReconnectDB: func() (*bun.DB, error) {
-			// The restore terminated every backend, including this pool's idle
-			// connections. Drop them before anything queries the restored DB, or
-			// each fails its next query with 57P01 (#1284).
-			nexdb.DropIdleConns(db)
-			backupSvc.SetDB(db)
-			return db, nil
-		},
-		RebuildServices: func(newDB *bun.DB) error {
-			_ = riverClient.Stop(context.Background()) //nolint:errcheck // best-effort stop during DB rebuild; nowhere to surface
-			pgxPool.Close()
+	// Restore compatibility window: reject backups newer than this binary
+	// (ceiling) and older than the v0.17.1 adopt stepping stone (floor).
+	// A pre-v0.17.1 backup is un-adoptable; restoring it would strand the
+	// instance in the refuse state, so it is rejected before any DB mutation.
+	backupSvc.SetMigrationWindow(migrate.LatestMigration(), migrate.MinRestorableMigration)
 
-			newPgxPool, err := openPgxPool(context.Background(), resolvedDatabaseURL)
-			if err != nil {
-				return fmt.Errorf("RebuildServices: pgxpool: %w", err)
-			}
-
-			newEpicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
-			newDispatchSync := &tasks.DispatchSyncWorker{
-				DB:      newDB,
-				Adapter: buildAdapterFactory(newDB, encrypter, newEpicClient),
-			}
-			newMetaDispatch := &tasks.MetadataRefreshDispatchWorker{
-				DB:         newDB,
-				IGDBClient: igdbClient,
-				MinAge:     cfg.MetadataRefreshMinAgeDuration(),
-			}
-			newCheckSyncs := &scheduler.CheckPendingSyncsWorker{DB: newDB}
-			newRescueOrphaned := &scheduler.RescueOrphanedPendingItemsWorker{DB: newDB}
-			newIGDBMatch := &tasks.IGDBMatchWorker{DB: newDB, IGDBClient: igdbClient}
-			newUserGame := &tasks.UserGameWorker{DB: newDB, IGDBClient: igdbClient}
-			newImportMatch := &tasks.ImportMatchWorker{DB: newDB, IGDBClient: igdbClient}
-			newStoreLinkDispatch := &tasks.StoreLinkRefreshDispatchWorker{DB: newDB}
-			newStoreLinkItem := &tasks.StoreLinkRefreshItemWorker{DB: newDB, ResolverFor: buildStoreLinkResolverFactory(newDB, encrypter)}
-
-			newWorkers := river.NewWorkers()
-			river.AddWorker(newWorkers, &tasks.ImportItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
-			river.AddWorker(newWorkers, &tasks.ExportJSONWorker{DB: newDB, StoragePath: cfg.StoragePath})
-			river.AddWorker(newWorkers, &tasks.ExportCSVWorker{DB: newDB, StoragePath: cfg.StoragePath})
-			river.AddWorker(newWorkers, newDispatchSync)
-			river.AddWorker(newWorkers, newIGDBMatch)
-			river.AddWorker(newWorkers, newUserGame)
-			river.AddWorker(newWorkers, newImportMatch)
-			river.AddWorker(newWorkers, &tasks.ImportFinalizeWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
-			river.AddWorker(newWorkers, newMetaDispatch)
-			river.AddWorker(newWorkers, newStoreLinkDispatch)
-			river.AddWorker(newWorkers, newStoreLinkItem)
-			river.AddWorker(newWorkers, &tasks.MetadataRefreshItemWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
-			river.AddWorker(newWorkers, &tasks.MetadataFetchWorker{DB: newDB, IGDBClient: igdbClient, StoragePath: cfg.StoragePath})
-			river.AddWorker(newWorkers, &scheduler.CleanupOldJobsWorker{DB: newDB})
-			river.AddWorker(newWorkers, &scheduler.CleanupExportsWorker{DB: newDB})
-			river.AddWorker(newWorkers, &scheduler.CleanupUnreferencedGamesWorker{DB: newDB})
-			river.AddWorker(newWorkers, &scheduler.CleanupExpiredSessionsWorker{DB: newDB})
-			river.AddWorker(newWorkers, &scheduler.CleanupStaleJobsWorker{DB: newDB})
-			river.AddWorker(newWorkers, &scheduler.CleanupSyncChangesWorker{DB: newDB})
-			river.AddWorker(newWorkers, newCheckSyncs)
-			river.AddWorker(newWorkers, newRescueOrphaned)
-			river.AddWorker(newWorkers, &scheduler.CheckScheduledBackupWorker{DB: newDB, BackupSvc: backupSvc})
-			river.AddWorker(newWorkers, &notify.NotifyWorker{DB: newDB, Encrypter: encrypter, Sender: notify.NewShoutrrrSender()})
-			river.AddWorker(newWorkers, &notify.PruneEventsWorker{DB: newDB})
-			river.AddWorker(newWorkers, &scheduler.CheckForUpdatesWorker{
-				DB:             newDB,
-				State:          updateState,
-				Client:         updateClient,
-				RunningVersion: version,
-				Enabled:        cfg.UpdateCheckEnabled,
-			})
-
-			newClient, err := river.NewClient(riverpgxv5.New(newPgxPool), newRiverConfig(cfg, obs, newWorkers, staleThreshold, quietJobKinds))
-			if err != nil {
-				slog.ErrorContext(ctx, "serve: river client init failed (rebuild)", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-				return fmt.Errorf("RebuildServices: river.NewClient: %w", err)
-			}
-
-			newDispatchSync.RiverClient = newClient
-			newMetaDispatch.RiverClient = newClient
-			newStoreLinkDispatch.RiverClient = newClient
-			newCheckSyncs.RiverClient = newClient
-			newRescueOrphaned.RiverClient = newClient
-			newIGDBMatch.RiverClient = newClient
-			newUserGame.RiverClient = newClient
-			newImportMatch.RiverClient = newClient
-
-			// The restored database can hold syncs that were running when the
-			// backup was taken: resume them before River starts (#1302). notify
-			// must already point at the new client, or the recovery's
-			// sync.completed is persisted but never delivered.
-			notify.SetRiverClient(newClient)
-			scheduler.RecoverInterruptedSyncs(context.Background(), newDB, newClient)
-
-			if err := newClient.Start(riverCtx); err != nil {
-				return fmt.Errorf("RebuildServices: River start: %w", err)
-			}
-
-			riverClient = newClient
-			pgxPool = newPgxPool
-			slog.Info("services rebuilt after restore")
-			return nil
-		},
-		ReinitMigrator: func(db *bun.DB) error {
-			// Bring the restored database up to date in place. A restored
-			// fully-migrated v0.17.1 dump (23 bun_migrations rows, no baseline)
-			// comes back AppStateNeedsAdopt; ReinitAfterRestore adopts it (and
-			// runs any catch-up migrations) so the restore returns the operator
-			// to a working, Ready app rather than the /migrate adopt page. A
-			// same-version dump is a no-op. An un-adoptable backup can't reach
-			// here — the restore floor gate rejects it before applying.
-			return migrator.ReinitAfterRestore(context.Background(), db)
-		},
-		SetAppState: func(state string) {
-			if state == "db_unavailable" {
-				migrator.SetStateForTest(migrate.AppStateDBUnavailable)
-			}
-		},
-		// Restore compatibility window: reject backups newer than this binary
-		// (ceiling) and older than the v0.17.1 adopt stepping stone (floor).
-		// A pre-v0.17.1 backup is un-adoptable; restoring it would strand the
-		// instance in the refuse state, so it is rejected before any DB mutation.
-		MaxMigration:     migrate.LatestMigration(),
-		MinMigration:     migrate.MinRestorableMigration,
-		RebuildBackupJob: func(_ context.Context, _, _ string, _ int) {},
-	}
-
-	e := api.New(encrypter, cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, restoreCallbacks, version, commit, updateState, riverClient)
+	e := api.New(encrypter, cfg, migrator, db, resolvedDatabaseURL, igdbClient, backupSvc, version, commit, updateState, riverClient)
 
 	// StartDBProbe — polls every 5s, calls initAppState on recovery.
-	migrator.StartDBProbe(shutdownCtx, db, initAppState)
+	stopProbe := migrator.StartDBProbe(shutdownCtx, db, initAppState)
 
-	// River start gate — waits for Ready && !NeedsSetup. The gate watches
-	// shutdownCtx so it stops polling if the process is shutting down, but starts
-	// River on riverCtx so SIGTERM doesn't hard-cancel jobs the moment they begin.
+	// River start gate — the one place River is started. It waits for Ready &&
+	// !NeedsSetup and watches gateCtx, so it stops polling if the process is
+	// shutting down or a restore switches it off, but starts River on riverCtx
+	// so SIGTERM doesn't hard-cancel jobs the moment they begin.
 	gate := riverStartGate{
 		ready: func() bool { return migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() },
 		runRecovery: func() {
@@ -479,7 +361,39 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		minBackoff: 2 * time.Second,
 		maxBackoff: time.Minute,
 	}
-	go gate.run(shutdownCtx)
+	gateCtx, stopGate := context.WithCancel(shutdownCtx)
+	defer stopGate()
+	gateDone := make(chan struct{})
+	go func() {
+		defer close(gateDone)
+		gate.run(gateCtx)
+	}()
+
+	// A restore ends by restarting the process (#1341): normal boot is then the
+	// only place that migrates, starts River and hands out the client.
+	restartRequested := make(chan struct{}, 1)
+	backupSvc.SetRestoreHooks(backup.RestoreHooks{
+		SetMaintenance: func() { maint.SetMaintenanceMode(true) },
+		StopBackground: func(ctx context.Context) error {
+			return stopBackground(ctx, stopGate, gateDone, stopProbe, riverClient.StopAndCancel)
+		},
+		// The restore terminated every backend, including this pool's idle
+		// connections. Drop them before anything queries the restored DB, or
+		// each fails its next query with 57P01 (#1284).
+		DropIdleConns: func() { nexdb.DropIdleConns(db) },
+		// Bring the restored database up to date in place. A restored
+		// fully-migrated v0.17.1 dump comes back AppStateNeedsAdopt;
+		// ReinitAfterRestore adopts it (and runs any catch-up migrations). An
+		// un-adoptable backup can't reach here — the restore floor gate
+		// rejects it before applying.
+		ReinitMigrator: func(ctx context.Context) error { return migrator.ReinitAfterRestore(ctx, db) },
+		Restart: func() {
+			select {
+			case restartRequested <- struct{}{}:
+			default:
+			}
+		},
+	})
 
 	if cfg.PprofEnabled {
 		startPprofServer(cfg.PprofAddr)
@@ -493,9 +407,39 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		HidePort:        true,
 	}
 
+	// The server stops on a termination signal or when a restore asks for a
+	// restart. Stopping it gracefully is what flushes the restore's response.
+	serveCtx, stopServing := context.WithCancel(shutdownCtx)
+	defer stopServing()
+	var restarting atomic.Bool
+	go func() {
+		select {
+		case <-restartRequested:
+			restarting.Store(true)
+			slog.Info("restore finished — restarting the server")
+			stopServing()
+		case <-serveCtx.Done():
+		}
+	}()
+
 	slog.Info("nexorious starting", "addr", addr, "version", version, "commit", commit)
-	if err := sc.Start(shutdownCtx, e); err != nil {
+	if err := sc.Start(serveCtx, e); err != nil {
 		slog.Info("server stopped", logging.KeyErr, err)
+	}
+
+	if restarting.Load() {
+		// Skip the River drain and do not close the database handle or the
+		// pgx pool: closing a pool waits for every connection to come back,
+		// and a River client that did not stop still holds one. Every
+		// descriptor is close-on-exec, so the kernel closes them. The restore
+		// removed its temporary directories before its response was written.
+		obsShutdownCtx, obsCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := obs.Shutdown(obsShutdownCtx); err != nil {
+			slog.Warn("observability shutdown", logging.KeyErr, err)
+		}
+		obsCancel()
+		// os.Exit, not return: returning would run the deferred pool closes.
+		os.Exit(restartSelf(termSignals, syscall.Exec))
 	}
 
 	// Graceful shutdown: drain in-flight River jobs. River was started on riverCtx
@@ -526,12 +470,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// runStartupMigrations implements the `serve --migrate` startup path: wait for
-// the database (retrying like the `migrate` subcommand), then apply any
-// pending application and River migrations. A non-nil error means startup must
-// abort — serving with pending or half-applied migrations is never safe.
-// newRiverConfig builds the River client config shared by the startup client
-// and the client rebuilt after a restore, so the two cannot drift.
+// newRiverConfig builds the River client config.
 //
 // otelriver goes in Plugins, not Middleware: River installs Middleware entries
 // only as middleware, so otelriver's MetricEmit hook (producer fetch metrics)
@@ -561,6 +500,10 @@ func newRiverConfig(cfg *config.Config, obs *observability.Providers, workers *r
 	}
 }
 
+// runStartupMigrations implements the `serve --migrate` startup path: wait for
+// the database (retrying like the `migrate` subcommand), then apply any
+// pending application and River migrations. A non-nil error means startup must
+// abort — serving with pending or half-applied migrations is never safe.
 func runStartupMigrations(ctx context.Context, db *bun.DB, migrator *migrate.Migrator, waitTimeout time.Duration) error {
 	if err := waitForDB(ctx, db, waitTimeout); err != nil {
 		return fmt.Errorf("serve --migrate: %w", err)

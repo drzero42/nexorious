@@ -47,6 +47,11 @@ type IncompatibleBackupError struct{ Msg string }
 func (e *IncompatibleBackupError) Error() string { return e.Msg }
 
 // Service handles backup create/list/delete/validate/restore operations.
+//
+// mu is the service lock. A backup, a deletion, a retention run and a change of
+// the backup schedule each hold it while they run; a restore takes it and, once
+// it has written the restore marker, never releases it: the process restarts
+// instead (see restore).
 type Service struct {
 	db          *bun.DB
 	databaseURL string
@@ -54,6 +59,10 @@ type Service struct {
 	storagePath string
 	appVersion  string
 	mu          sync.Mutex
+
+	hooks        RestoreHooks
+	maxMigration string
+	minMigration string
 }
 
 // NewService creates a new backup service.
@@ -67,19 +76,47 @@ func NewService(db *bun.DB, databaseURL, backupPath, storagePath, appVersion str
 	}
 }
 
-// SetDB updates the database connection (used after restore reconnect).
-func (s *Service) SetDB(db *bun.DB) {
-	s.db = db
+// SetMigrationWindow sets the range of migration versions a backup may have to
+// be restorable by this binary: not newer than maxMigration, not older than
+// minMigration. Empty means unbounded.
+func (s *Service) SetMigrationWindow(maxMigration, minMigration string) {
+	s.maxMigration = maxMigration
+	s.minMigration = minMigration
+}
+
+// MigrationWindow returns what SetMigrationWindow set.
+func (s *Service) MigrationWindow() (maxMigration, minMigration string) {
+	return s.maxMigration, s.minMigration
+}
+
+// Exclusive runs fn under the service lock, or returns ErrOperationInProgress
+// without running it when a backup, restore or deletion holds the lock. A
+// change of the backup schedule goes through it, so none is made during a
+// restore.
+func (s *Service) Exclusive(fn func() error) error {
+	if !s.mu.TryLock() {
+		return ErrOperationInProgress
+	}
+	defer s.mu.Unlock()
+	return fn()
 }
 
 // CreateBackup creates a backup archive and returns the backup ID.
-// backupType is "manual", "scheduled", or "pre_restore".
+// backupType is "manual" or "scheduled".
 func (s *Service) CreateBackup(backupType string) (string, error) {
 	if !s.mu.TryLock() {
 		return "", ErrOperationInProgress
 	}
 	defer s.mu.Unlock()
+	return s.createBackupLocked(backupType)
+}
 
+// runPgDump is RunPgDump; tests replace it to make a backup fail.
+var runPgDump = RunPgDump
+
+// createBackupLocked is CreateBackup for a caller that holds the lock: the
+// restore makes its pre-restore backup with it.
+func (s *Service) createBackupLocked(backupType string) (string, error) {
 	conn, err := ParseDatabaseURL(s.databaseURL)
 	if err != nil {
 		return "", fmt.Errorf("create backup: %w", err)
@@ -102,7 +139,7 @@ func (s *Service) CreateBackup(backupType string) (string, error) {
 	}
 
 	dbSQLPath := filepath.Join(backupDir, "database.sql")
-	if err := RunPgDump(conn, dbSQLPath); err != nil {
+	if err := runPgDump(conn, dbSQLPath); err != nil {
 		return "", fmt.Errorf("pg_dump: %w", err)
 	}
 
@@ -236,8 +273,18 @@ func (s *Service) GetBackupPath(backupID string) (string, error) {
 	return filepath.Join(s.backupPath, backupID+".tar.gz"), nil
 }
 
-// DeleteBackup removes a backup archive file.
+// DeleteBackup removes a backup archive file. It is refused with
+// ErrOperationInProgress while a backup or restore holds the lock, so the
+// backup a restore rolls back to cannot disappear under it.
 func (s *Service) DeleteBackup(backupID string) error {
+	if !s.mu.TryLock() {
+		return ErrOperationInProgress
+	}
+	defer s.mu.Unlock()
+	return s.deleteBackupLocked(backupID)
+}
+
+func (s *Service) deleteBackupLocked(backupID string) error {
 	path, err := s.GetBackupPath(backupID)
 	if err != nil {
 		return err
@@ -437,8 +484,15 @@ func archiveContainsFile(archivePath, filename string) (bool, error) {
 	}
 }
 
-// ApplyRetention deletes backups exceeding the retention policy.
+// ApplyRetention deletes backups exceeding the retention policy. Like
+// DeleteBackup it is refused with ErrOperationInProgress while the lock is
+// held.
 func (s *Service) ApplyRetention(retentionMode string, retentionValue int) error {
+	if !s.mu.TryLock() {
+		return ErrOperationInProgress
+	}
+	defer s.mu.Unlock()
+
 	backups, err := s.ListBackups()
 	if err != nil {
 		return err
@@ -448,7 +502,7 @@ func (s *Service) ApplyRetention(retentionMode string, retentionValue int) error
 
 	for _, b := range backups {
 		if b.BackupType == "pre_restore" && now.Sub(b.CreatedAt) > 7*24*time.Hour {
-			if err := s.DeleteBackup(b.ID); err != nil {
+			if err := s.deleteBackupLocked(b.ID); err != nil {
 				slog.Warn("retention: failed to delete old pre-restore backup", "id", b.ID, logging.KeyErr, err)
 			}
 		}
@@ -464,7 +518,7 @@ func (s *Service) ApplyRetention(retentionMode string, retentionValue int) error
 		cutoff := now.AddDate(0, 0, -retentionValue)
 		for _, b := range backups {
 			if b.BackupType != "pre_restore" && b.CreatedAt.Before(cutoff) {
-				if err := s.DeleteBackup(b.ID); err != nil {
+				if err := s.deleteBackupLocked(b.ID); err != nil {
 					slog.Warn("retention: failed to delete old backup", "id", b.ID, logging.KeyErr, err)
 				}
 			}
@@ -477,7 +531,7 @@ func (s *Service) ApplyRetention(retentionMode string, retentionValue int) error
 			}
 			nonPreRestore++
 			if nonPreRestore > retentionValue {
-				if err := s.DeleteBackup(b.ID); err != nil {
+				if err := s.deleteBackupLocked(b.ID); err != nil {
 					slog.Warn("retention: failed to delete excess backup", "id", b.ID, logging.KeyErr, err)
 				}
 			}
@@ -676,8 +730,12 @@ func verifyArchiveChecksums(archivePath string, manifest *Manifest) error {
 	if len(entries) == 0 {
 		return fmt.Errorf("empty archive")
 	}
-	backupDir := filepath.Join(tmpDir, entries[0].Name())
+	return verifyExtracted(filepath.Join(tmpDir, entries[0].Name()), manifest)
+}
 
+// verifyExtracted checks an extracted backup directory against the checksums
+// its manifest records.
+func verifyExtracted(backupDir string, manifest *Manifest) error {
 	dbChecksum, _ := checksumFile(filepath.Join(backupDir, "database.sql"))
 	expectedDB := strings.TrimPrefix(manifest.DatabaseChecksum, "sha256:")
 	if dbChecksum != expectedDB {
@@ -754,253 +812,6 @@ func ExtractTarGz(archivePath, destDir string) error {
 			}
 		}
 	}
-}
-
-// RestoreOpts holds callbacks for restore orchestration.
-type RestoreOpts struct {
-	SkipPreRestore  bool
-	SetMaintenance  func(bool)
-	ShutdownPool    func()
-	StopScheduler   func()
-	CloseDB         func() error
-	ReconnectDB     func() (*bun.DB, error)
-	RebuildServices func(db *bun.DB) error
-	ReinitMigrator  func(db *bun.DB) error
-	SetAppState     func(state string)
-	MaxMigration    string
-	MinMigration    string
-}
-
-// RestoreBackup restores from a stored backup archive.
-func (s *Service) RestoreBackup(backupID string, opts RestoreOpts) error {
-	if !s.mu.TryLock() {
-		return ErrOperationInProgress
-	}
-	defer s.mu.Unlock()
-
-	archivePath, err := s.GetBackupPath(backupID)
-	if err != nil {
-		return err
-	}
-	return s.doRestore(archivePath, backupID, opts)
-}
-
-// RestoreFromUpload validates an uploaded archive, moves it to the backup dir,
-// then restores it. Returns the backup ID assigned to the uploaded archive.
-func (s *Service) RestoreFromUpload(uploadedPath string, opts RestoreOpts) (string, error) {
-	if !s.mu.TryLock() {
-		return "", ErrOperationInProgress
-	}
-	defer s.mu.Unlock()
-
-	_, err := s.ValidateArchive(uploadedPath, true, opts.MaxMigration, opts.MinMigration)
-	if err != nil {
-		return "", fmt.Errorf("validate uploaded archive: %w", err)
-	}
-
-	id, err := newBackupID()
-	if err != nil {
-		return "", err
-	}
-	destPath := filepath.Join(s.backupPath, id+".tar.gz")
-	if err := os.MkdirAll(s.backupPath, 0o750); err != nil {
-		return "", fmt.Errorf("create backup dir: %w", err)
-	}
-	if err := moveNoReplace(uploadedPath, destPath); err != nil {
-		return "", fmt.Errorf("move uploaded archive: %w", err)
-	}
-
-	return id, s.doRestore(destPath, id, opts)
-}
-
-// RestoreFromArchive restores from an archive that already lives at its final
-// location (typically inside the configured backup directory) without renaming
-// or moving it. Unlike RestoreFromUpload — which "promotes" a temp upload to
-// a timestamped name inside the backup dir — this method preserves the input
-// path. Used by the setup-zone disk-restore handler so the operator's curated
-// on-disk backup is not mutated by the restore operation.
-//
-// Returns a derived backup ID (the archive's filename without the .tar.gz
-// suffix) and any error from the underlying restore.
-func (s *Service) RestoreFromArchive(archivePath string, opts RestoreOpts) (string, error) {
-	if !s.mu.TryLock() {
-		return "", ErrOperationInProgress
-	}
-	defer s.mu.Unlock()
-
-	if _, err := s.ValidateArchive(archivePath, true, opts.MaxMigration, opts.MinMigration); err != nil {
-		return "", fmt.Errorf("validate archive: %w", err)
-	}
-
-	// Derive an ID from the filename for logging/return value. doRestore reads
-	// directly from archivePath, so the file stays where it is.
-	id := strings.TrimSuffix(filepath.Base(archivePath), ".tar.gz")
-	return id, s.doRestore(archivePath, id, opts)
-}
-
-// applyRestoreFromDir applies an already-extracted backup directory to the live
-// database: it terminates existing connections, recreates the public schema,
-// loads the SQL dump, restores cover art, then reconnects the pool and rebuilds
-// dependent services. On success s.db points at the new pool.
-//
-// Cover-art copy failures are best-effort (logged, not returned): the database
-// is the source of truth and is fully restored before cover art, which is
-// re-derivable, so a missing image must not undo an otherwise-good restore.
-//
-// Errors from the DB-critical steps are returned with the failing step named in
-// the wrap; each caller decides how to react — the forward restore path rolls
-// back via handleRestoreFailure, while the rollback path escalates to
-// db_unavailable.
-func (s *Service) applyRestoreFromDir(extractedDir string, conn DBConnParams, opts RestoreOpts) error {
-	terminateCmd := "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();"
-	if err := RunPsqlCommand(conn, terminateCmd); err != nil {
-		return fmt.Errorf("terminate connections: %w", err)
-	}
-
-	if err := RunPsqlCommand(conn, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"); err != nil {
-		return fmt.Errorf("drop/recreate schema: %w", err)
-	}
-
-	sqlFile := filepath.Join(extractedDir, "database.sql")
-	if err := RunPsqlRestore(conn, sqlFile); err != nil {
-		return fmt.Errorf("psql restore: %w", err)
-	}
-
-	coverArtSrc := filepath.Join(extractedDir, "cover_art")
-	coverArtDst := filepath.Join(s.storagePath, "cover_art")
-	if err := os.RemoveAll(coverArtDst); err != nil {
-		slog.Warn("restore: failed to remove old cover_art", logging.KeyErr, err)
-	}
-	if _, err := os.Stat(coverArtSrc); err == nil {
-		if _, _, err := copyDir(coverArtSrc, coverArtDst); err != nil {
-			slog.Warn("restore: failed to restore cover art (best-effort)", logging.KeyErr, err)
-		}
-	}
-
-	newDB, err := opts.ReconnectDB()
-	if err != nil {
-		return fmt.Errorf("reconnect DB: %w", err)
-	}
-	s.db = newDB
-
-	if err := opts.RebuildServices(newDB); err != nil {
-		slog.Error("restore: rebuild services", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-
-	if err := opts.ReinitMigrator(newDB); err != nil {
-		slog.Error("restore: reinit migrator", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-
-	return nil
-}
-
-func (s *Service) doRestore(archivePath, backupID string, opts RestoreOpts) error {
-	conn, err := ParseDatabaseURL(s.databaseURL)
-	if err != nil {
-		return fmt.Errorf("restore: parse DB URL: %w", err)
-	}
-
-	_, err = s.ValidateArchive(archivePath, false, opts.MaxMigration, opts.MinMigration)
-	if err != nil {
-		return fmt.Errorf("restore: validate: %w", err)
-	}
-
-	opts.SetMaintenance(true)
-	opts.ShutdownPool()
-	opts.StopScheduler()
-
-	var preRestoreID string
-	if !opts.SkipPreRestore && PgDumpAvailable() {
-		s.mu.Unlock()
-		pid, err := s.CreateBackup("pre_restore")
-		s.mu.Lock()
-		if err != nil {
-			slog.Error("restore: failed to create pre-restore backup", logging.KeyErr, err)
-		} else {
-			preRestoreID = pid
-		}
-	}
-
-	if err := opts.CloseDB(); err != nil {
-		slog.Error("restore: close DB", logging.KeyErr, err, logging.Cat(logging.CategoryDB))
-	}
-
-	tmpDir, err := os.MkdirTemp("", "nexorious-restore-*")
-	if err != nil {
-		return s.handleRestoreFailure(fmt.Errorf("create temp dir: %w", err), preRestoreID, conn, opts)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	if err := ExtractTarGz(archivePath, tmpDir); err != nil {
-		return s.handleRestoreFailure(fmt.Errorf("extract archive: %w", err), preRestoreID, conn, opts)
-	}
-
-	entries, err := os.ReadDir(tmpDir)
-	if err != nil || len(entries) == 0 {
-		return s.handleRestoreFailure(fmt.Errorf("empty or unreadable archive"), preRestoreID, conn, opts)
-	}
-	extractedDir := filepath.Join(tmpDir, entries[0].Name())
-
-	if err := s.applyRestoreFromDir(extractedDir, conn, opts); err != nil {
-		return s.handleRestoreFailure(err, preRestoreID, conn, opts)
-	}
-
-	opts.SetMaintenance(false)
-
-	slog.Info("restore completed", "backup_id", backupID)
-	return nil
-}
-
-func (s *Service) handleRestoreFailure(originalErr error, preRestoreID string, conn DBConnParams, opts RestoreOpts) error {
-	slog.Error("restore failed", logging.KeyErr, originalErr)
-
-	if preRestoreID == "" {
-		slog.Error("restore failed with no pre-restore backup — database may be inconsistent. Manual intervention required.",
-			logging.KeyErr, originalErr)
-		opts.SetAppState("db_unavailable")
-		return originalErr
-	}
-
-	slog.Warn("attempting rollback to pre-restore backup", "pre_restore_id", preRestoreID)
-
-	archivePath, err := s.GetBackupPath(preRestoreID)
-	if err != nil {
-		slog.Error("rollback failed: invalid pre-restore backup id", logging.KeyErr, err, "original_err", originalErr)
-		opts.SetAppState("db_unavailable")
-		return fmt.Errorf("restore failed AND rollback failed (invalid pre-restore id). Original: %w. Rollback: %v", originalErr, err)
-	}
-	tmpDir, err := os.MkdirTemp("", "nexorious-rollback-*")
-	if err != nil {
-		slog.Error("rollback failed: create temp dir", logging.KeyErr, err, "original_err", originalErr)
-		opts.SetAppState("db_unavailable")
-		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	if err := ExtractTarGz(archivePath, tmpDir); err != nil {
-		slog.Error("rollback failed: extract archive", logging.KeyErr, err, "original_err", originalErr)
-		opts.SetAppState("db_unavailable")
-		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v", originalErr, err)
-	}
-
-	entries, _ := os.ReadDir(tmpDir) //nolint:errcheck // already in restore-failure path; empty result handled below
-	if len(entries) == 0 {
-		opts.SetAppState("db_unavailable")
-		return fmt.Errorf("restore failed AND rollback failed (empty archive). Original: %w", originalErr)
-	}
-	extractedDir := filepath.Join(tmpDir, entries[0].Name())
-
-	if err := s.applyRestoreFromDir(extractedDir, conn, opts); err != nil {
-		slog.Error("FATAL: rollback restore also failed", "rollback_err", err, "original_err", originalErr,
-			"pre_restore_path", archivePath)
-		opts.SetAppState("db_unavailable")
-		return fmt.Errorf("restore failed AND rollback failed. Original: %w. Rollback: %v. Pre-restore backup at: %s",
-			originalErr, err, archivePath)
-	}
-
-	opts.SetMaintenance(false)
-	slog.Warn("restore failed but successfully rolled back", "original_err", originalErr, "pre_restore_id", preRestoreID)
-	return fmt.Errorf("restore failed: %w (rolled back to pre-restore backup)", originalErr)
 }
 
 // moveNoReplace moves src to dst, refusing to overwrite an existing dst.

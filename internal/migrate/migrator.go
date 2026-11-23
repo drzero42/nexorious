@@ -511,7 +511,7 @@ func (mg *Migrator) InitNeedsSetup(ctx context.Context, db *bun.DB) error {
 // here (adopt and/or migrate, plus River). An un-adoptable database cannot
 // reach this point — the backup restore floor gate rejects it before applying —
 // so RunMigrations never refuses here. Intended to be the restore
-// orchestration's ReinitMigrator callback.
+// orchestration's ReinitMigrator hook.
 func (mg *Migrator) ReinitAfterRestore(ctx context.Context, db *bun.DB) error {
 	if err := mg.determineState(); err != nil {
 		return err
@@ -542,12 +542,21 @@ func (mg *Migrator) SetProbeIntervalForTest(d time.Duration) {
 	mg.probeInterval = d
 }
 
-func (mg *Migrator) StartDBProbe(ctx context.Context, db *bun.DB, onRecovery func(context.Context) error) {
+// StartDBProbe pings the database every few seconds, moving to DBUnavailable
+// when it stops answering and re-determining the state when it answers again.
+// It runs until ctx is done or stop is called. stop switches the probe off for
+// good and waits, up to the deadline of its ctx, until a recovery the probe is
+// in the middle of has finished: a restore calls it so the probe does not react
+// to the restore terminating its connections (#1341).
+func (mg *Migrator) StartDBProbe(ctx context.Context, db *bun.DB, onRecovery func(context.Context) error) (stop func(context.Context) error) {
 	interval := mg.probeInterval
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -559,6 +568,10 @@ func (mg *Migrator) StartDBProbe(ctx context.Context, db *bun.DB, onRecovery fun
 			pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			err := db.PingContext(pingCtx)
 			cancel()
+			if ctx.Err() != nil {
+				// Stopped while pinging: the failed ping says nothing.
+				return
+			}
 
 			if err != nil {
 				if AppState(mg.state.Load()) != AppStateDBUnavailable {
@@ -577,6 +590,15 @@ func (mg *Migrator) StartDBProbe(ctx context.Context, db *bun.DB, onRecovery fun
 			}
 		}
 	}()
+	return func(waitCtx context.Context) error {
+		cancel()
+		select {
+		case <-done:
+			return nil
+		case <-waitCtx.Done():
+			return fmt.Errorf("database probe did not stop: %w", waitCtx.Err())
+		}
+	}
 }
 
 func (mg *Migrator) recoverFromUnavailable(ctx context.Context, db *bun.DB, prev AppState, onRecovery func(context.Context) error) error {

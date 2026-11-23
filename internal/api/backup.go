@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -22,31 +21,15 @@ import (
 	"github.com/drzero42/nexorious/internal/logging"
 )
 
-// RestoreCallbacks holds the callbacks needed for restore orchestration.
-type RestoreCallbacks struct {
-	SetMaintenance   func(bool)
-	ShutdownPool     func()
-	StopScheduler    func()
-	CloseDB          func() error
-	ReconnectDB      func() (*bun.DB, error)
-	RebuildServices  func(db *bun.DB) error
-	ReinitMigrator   func(db *bun.DB) error
-	SetAppState      func(state string)
-	MaxMigration     string
-	MinMigration     string
-	RebuildBackupJob func(ctx context.Context, cron, retentionMode string, retentionValue int)
-}
-
 // BackupHandler handles admin backup endpoints.
 type BackupHandler struct {
-	svc       *backup.Service
-	db        *bun.DB
-	callbacks *RestoreCallbacks
+	svc *backup.Service
+	db  *bun.DB
 }
 
 // NewBackupHandler returns a new BackupHandler.
-func NewBackupHandler(svc *backup.Service, db *bun.DB, callbacks *RestoreCallbacks) *BackupHandler {
-	return &BackupHandler{svc: svc, db: db, callbacks: callbacks}
+func NewBackupHandler(svc *backup.Service, db *bun.DB) *BackupHandler {
+	return &BackupHandler{svc: svc, db: db}
 }
 
 // parseCronToSchedule converts a stored schedule_cron into the frontend-friendly
@@ -145,20 +128,23 @@ func (h *BackupHandler) HandleUpdateConfig(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	_, err = h.db.NewUpdate().
-		TableExpr("backup_config").
-		Set("schedule_cron = ?", cron).
-		Set("retention_mode = ?", req.RetentionMode).
-		Set("retention_value = ?", req.RetentionValue).
-		Set("updated_at = now()").
-		Where("id = 1").
-		Exec(c.Request().Context())
+	// Under the service lock, so the schedule does not change during a restore.
+	err = h.svc.Exclusive(func() error {
+		_, err := h.db.NewUpdate().
+			TableExpr("backup_config").
+			Set("schedule_cron = ?", cron).
+			Set("retention_mode = ?", req.RetentionMode).
+			Set("retention_value = ?", req.RetentionValue).
+			Set("updated_at = now()").
+			Where("id = 1").
+			Exec(c.Request().Context())
+		return err
+	})
+	if errors.Is(err, backup.ErrOperationInProgress) {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is in progress; try again when it has finished"})
+	}
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update backup config"})
-	}
-
-	if h.callbacks != nil && h.callbacks.RebuildBackupJob != nil {
-		h.callbacks.RebuildBackupJob(c.Request().Context(), cron, req.RetentionMode, req.RetentionValue)
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
@@ -228,6 +214,9 @@ func (h *BackupHandler) HandleDeleteBackup(c *echo.Context) error {
 		if errors.Is(err, backup.ErrNotFound) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "backup not found"})
 		}
+		if errors.Is(err, backup.ErrOperationInProgress) {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is in progress; try again when it has finished"})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to delete: %v", err)})
 	}
 	return c.NoContent(http.StatusNoContent)
@@ -262,26 +251,8 @@ func (h *BackupHandler) HandleRestore(c *echo.Context) error {
 	}
 
 	id := c.Param("id")
-	opts := h.makeRestoreOpts(false)
-	if err := h.svc.RestoreBackup(id, opts); err != nil {
-		if errors.Is(err, backup.ErrInvalidBackupID) {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid backup id"})
-		}
-		if errors.Is(err, backup.ErrOperationInProgress) {
-			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
-		}
-		var incompat *backup.IncompatibleBackupError
-		if errors.As(err, &incompat) {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
-		}
-		slog.ErrorContext(c.Request().Context(), "restore failed", "backup_id", id, logging.KeyErr, err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"success": true,
-		"message": fmt.Sprintf("Restore completed from: %s. All sessions have been cleared — please log in again.", id),
-	})
+	res, err := h.svc.RestoreBackup(id, backup.RestoreOpts{})
+	return writeRestoreResponse(c, res, err, false)
 }
 
 // HandleRestoreUpload restores from an uploaded file (POST /api/admin/backups/restore/upload).
@@ -325,24 +296,8 @@ func (h *BackupHandler) HandleRestoreUpload(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "file too large (max 2GB)"})
 	}
 
-	opts := h.makeRestoreOpts(false)
-	id, err := h.svc.RestoreFromUpload(tmpPath, opts)
-	if err != nil {
-		if errors.Is(err, backup.ErrOperationInProgress) {
-			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
-		}
-		var incompat *backup.IncompatibleBackupError
-		if errors.As(err, &incompat) {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
-		}
-		slog.ErrorContext(c.Request().Context(), "restore from upload failed", logging.KeyErr, err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("restore failed: %v", err)})
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"success": true,
-		"message": fmt.Sprintf("Restore completed from: %s. All sessions have been cleared — please log in again.", id),
-	})
+	res, err := h.svc.RestoreFromUpload(tmpPath, backup.RestoreOpts{})
+	return writeRestoreResponse(c, res, err, false)
 }
 
 // requireNoUsers enforces the setup-mode gate: the setup-zone restore handlers
@@ -409,23 +364,8 @@ func (h *BackupHandler) HandleSetupRestore(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "file too large (max 2GB)"})
 	}
 
-	opts := h.makeRestoreOpts(true)
-	if _, err := h.svc.RestoreFromUpload(tmpPath, opts); err != nil {
-		if errors.Is(err, backup.ErrOperationInProgress) {
-			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
-		}
-		var incompat *backup.IncompatibleBackupError
-		if errors.As(err, &incompat) {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
-		}
-		slog.ErrorContext(c.Request().Context(), "setup restore failed", logging.KeyErr, err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"success": true,
-		"message": "Backup restored successfully. Please log in with your restored credentials.",
-	})
+	res, err := h.svc.RestoreFromUpload(tmpPath, backup.RestoreOpts{SetupZone: true})
+	return writeRestoreResponse(c, res, err, true)
 }
 
 // HandleSetupListBackups lists candidate backup archives in the configured
@@ -435,11 +375,7 @@ func (h *BackupHandler) HandleSetupListBackups(c *echo.Context) error {
 		return err
 	}
 
-	maxMigration, minMigration := "", ""
-	if h.callbacks != nil {
-		maxMigration = h.callbacks.MaxMigration
-		minMigration = h.callbacks.MinMigration
-	}
+	maxMigration, minMigration := h.svc.MigrationWindow()
 
 	infos, err := h.svc.ListAvailableArchives(c.Request().Context(), maxMigration, minMigration)
 	if err != nil {
@@ -553,41 +489,70 @@ func (h *BackupHandler) HandleSetupRestoreFromDisk(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
 	}
 
-	opts := h.makeRestoreOpts(true)
-	if _, err := h.svc.RestoreFromArchive(fullPath, opts); err != nil {
-		if errors.Is(err, backup.ErrOperationInProgress) {
-			return c.JSON(http.StatusConflict, map[string]string{"error": "A backup or restore operation is already in progress"})
-		}
-		var incompat *backup.IncompatibleBackupError
-		if errors.As(err, &incompat) {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": incompat.Error()})
-		}
-		slog.ErrorContext(c.Request().Context(), "setup restore-from-disk failed", logging.KeyErr, err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "restore failed"})
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"success": true,
-		"message": "Backup restored successfully. Please log in with your restored credentials.",
-	})
+	res, err := h.svc.RestoreFromArchive(fullPath, backup.RestoreOpts{SetupZone: true})
+	return writeRestoreResponse(c, res, err, true)
 }
 
-// makeRestoreOpts constructs RestoreOpts from the handler's callbacks.
-func (h *BackupHandler) makeRestoreOpts(skipPreRestore bool) backup.RestoreOpts {
-	if h.callbacks == nil {
-		return backup.RestoreOpts{SkipPreRestore: skipPreRestore}
+// writeRestoreResponse answers a restore request. Every answer carries
+// restarting and the id of this process: once restarting is true the server
+// restarts after the response, on success and on failure, and a client waits
+// until /health reports a different instance id (#1341). setupZone keeps
+// internal error detail out of the answers of the unauthenticated setup zone.
+func writeRestoreResponse(c *echo.Context, res backup.RestoreResult, err error, setupZone bool) error {
+	ctx := c.Request().Context()
+	body := map[string]any{
+		"restarting":  res.Restarting,
+		"instance_id": instanceID,
 	}
-	return backup.RestoreOpts{
-		SkipPreRestore:  skipPreRestore,
-		SetMaintenance:  h.callbacks.SetMaintenance,
-		ShutdownPool:    h.callbacks.ShutdownPool,
-		StopScheduler:   h.callbacks.StopScheduler,
-		CloseDB:         h.callbacks.CloseDB,
-		ReconnectDB:     h.callbacks.ReconnectDB,
-		RebuildServices: h.callbacks.RebuildServices,
-		ReinitMigrator:  h.callbacks.ReinitMigrator,
-		SetAppState:     h.callbacks.SetAppState,
-		MaxMigration:    h.callbacks.MaxMigration,
-		MinMigration:    h.callbacks.MinMigration,
+	if res.BackupID != "" {
+		body["backup_id"] = res.BackupID
 	}
+	if res.PreRestoreBackupID != "" {
+		body["pre_restore_backup_id"] = res.PreRestoreBackupID
+	}
+	if res.MigrationError != nil {
+		slog.ErrorContext(ctx, "restore: migrating the restored database failed", logging.KeyErr, res.MigrationError, logging.Cat(logging.CategoryDB))
+		body["migration_error"] = "the restored database could not be migrated; the server offers the migration again when it is back"
+	}
+
+	if err == nil {
+		body["success"] = true
+		if setupZone {
+			body["message"] = "Backup restored. The server is restarting; log in with your restored credentials once it is back."
+		} else {
+			body["message"] = fmt.Sprintf("Restore completed from %s. The server is restarting; log in again once it is back.", res.BackupID)
+		}
+		return c.JSON(http.StatusOK, body)
+	}
+
+	status, msg := http.StatusInternalServerError, "restore failed"
+	var incompat *backup.IncompatibleBackupError
+	switch {
+	case errors.Is(err, backup.ErrOperationInProgress):
+		status, msg = http.StatusConflict, "A backup or restore operation is already in progress"
+	case errors.Is(err, backup.ErrInvalidBackupID):
+		status, msg = http.StatusBadRequest, "invalid backup id"
+	case errors.Is(err, backup.ErrNotFound):
+		status, msg = http.StatusNotFound, "backup not found"
+	case errors.As(err, &incompat):
+		status, msg = http.StatusBadRequest, incompat.Error()
+	case errors.Is(err, backup.ErrSetupNotPending):
+		status, msg = http.StatusForbidden, backup.ErrSetupNotPending.Error()
+	case errors.Is(err, backup.ErrSetupCheckFailed):
+		status, msg = http.StatusServiceUnavailable, "could not verify that setup is still pending; try again"
+	case errors.Is(err, backup.ErrPgDumpUnavailable):
+		status, msg = http.StatusServiceUnavailable, backup.ErrPgDumpUnavailable.Error()
+	case errors.Is(err, backup.ErrBackgroundStillRunning):
+		status, msg = http.StatusServiceUnavailable, "background work did not stop in time, so nothing was restored; the server is restarting, try again once it is back"
+	default:
+		slog.ErrorContext(ctx, "restore failed", "backup_id", res.BackupID, logging.KeyErr, err)
+		if !setupZone {
+			msg = fmt.Sprintf("restore failed: %v", err)
+		}
+	}
+	if res.RolledBack {
+		body["rolled_back"] = true
+	}
+	body["error"] = msg
+	return c.JSON(status, body)
 }

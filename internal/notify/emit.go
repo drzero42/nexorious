@@ -31,7 +31,7 @@ var (
 )
 
 // SetRiverClient registers (or replaces) the River client used to enqueue
-// NotifyWorker jobs. Called once at startup and again in RebuildServices.
+// NotifyWorker jobs. Called once at startup.
 func SetRiverClient(rc *river.Client[pgx.Tx]) {
 	rcMu.Lock()
 	defer rcMu.Unlock()

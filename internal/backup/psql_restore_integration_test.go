@@ -17,11 +17,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
-
 	"github.com/drzero42/nexorious/internal/backup"
+	"github.com/drzero42/nexorious/internal/restoremarker"
 )
 
 const restoreTestSchema = "psqlrestore_t"
@@ -374,33 +371,19 @@ func TestRestoreBackup_BackslashCommandRollsBackToPreRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var appState string
-	opts := backup.RestoreOpts{
-		SkipPreRestore: false,
-		SetMaintenance: func(bool) {},
-		ShutdownPool:   func() {},
-		StopScheduler:  func() {},
-		CloseDB:        func() error { return nil },
-		ReconnectDB: func() (*bun.DB, error) {
-			sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
-			testDB = bun.NewDB(sqldb, pgdialect.New())
-			return testDB, nil
-		},
-		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func(*bun.DB) error { return nil },
-		SetAppState:     func(s string) { appState = s },
-		MaxMigration:    "99999999999999",
-	}
-
-	err = svc.RestoreBackup(id, opts)
+	rsvc, rec := newRestoreService(t, backupDir, storageDir)
+	res, err := rsvc.RestoreBackup(id, backup.RestoreOpts{})
 	if err == nil {
 		t.Fatal("RestoreBackup succeeded; want the dump refused")
 	}
-	if !strings.Contains(err.Error(), "rolled back to pre-restore backup") {
-		t.Errorf("want a rolled-back error, got: %v", err)
+	if !res.RolledBack || !strings.Contains(err.Error(), "rolled back to pre-restore backup") {
+		t.Errorf("want a rolled-back restore, got %+v: %v", res, err)
 	}
-	if appState == "db_unavailable" {
-		t.Error("rollback reported db_unavailable")
+	if m := readMarker(t); m == nil || m.Phase != restoremarker.PhaseCleanup {
+		t.Errorf("marker after a rollback = %+v, want cleanup", m)
+	}
+	if !rec.restarted() {
+		t.Error("the restore did not ask for a restart")
 	}
 	if _, statErr := os.Stat(marker); !errors.Is(statErr, fs.ErrNotExist) {
 		t.Errorf("shell escape in the dump ran: marker stat = %v", statErr)
