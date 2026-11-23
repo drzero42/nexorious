@@ -2,9 +2,24 @@
 #
 # The Go vendorHash is supplied by flake.nix (goVendorHash) and shared with
 # nix/nexctl.nix — see that definition for how to refresh it.
-{ buildGoModule, makeWrapper, installShellFiles, stdenv, postgresql_18, legendary-gl, lib
+{ buildGoModule, makeWrapper, installShellFiles, stdenv, postgresql_18, legendary-gl, nile, lib
 , src, version, commit, nexorious-frontend, vendorHash }:
 
+let
+  # Amazon Games sync needs nile 1.2.0: 1.1.2 (nixos-26.05) keeps its sign-in
+  # in a format the connector does not read. Drop the version/src override once
+  # the pinned channel ships 1.2.0. The patch is the same one the container
+  # image applies (deploy/docker/nile/): unpatched, nile accepts a failed last
+  # library page as complete. Keep it until nile fixes that upstream.
+  nile_1_2_0 = nile.overridePythonAttrs (old: {
+    version = "1.2.0";
+    src = old.src.override {
+      tag = "v1.2.0";
+      hash = "sha256-tzf3sqD7P32AXzZu/WDauOSsEe/xhCh6x4KGQ1YnJqw=";
+    };
+    patches = (old.patches or [ ]) ++ [ ../deploy/docker/nile/1.2.0-library-status.patch ];
+  });
+in
 buildGoModule {
   pname = "nexorious";
   inherit version src vendorHash;
@@ -34,7 +49,7 @@ buildGoModule {
 
   postInstall = ''
     wrapProgram $out/bin/nexorious \
-      --prefix PATH : ${lib.makeBinPath [ postgresql_18 legendary-gl ]}
+      --prefix PATH : ${lib.makeBinPath [ postgresql_18 legendary-gl nile_1_2_0 ]}
   '' + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
     installShellCompletion --cmd nexorious \
       --bash <($out/bin/nexorious completion bash) \

@@ -300,7 +300,7 @@ Amazon Games sync works through the `nile` command-line tool ([imLinguin/nile](h
     && /opt/nile/bin/pip install ./nile-1.2.0 \
     && ln -sf /opt/nile/bin/nile /usr/local/bin/nile
   ```
-- **Nix**: the package does not add nile yet. The nixos-26.05 channel ships nile 1.1.2, which keeps its sign-in in a format Nexorious does not read.
+- **Nix**: the package puts nile 1.2.0 on the server's `PATH`, with the same patch, so Amazon sync works out of the box. (The nixos-26.05 channel ships nile 1.1.2, which keeps its sign-in in a format Nexorious does not read, so the package builds 1.2.0 itself.)
 
 ## MCP endpoint for AI agents
 
