@@ -248,6 +248,46 @@ func TestDeleteBackup(t *testing.T) {
 	}
 }
 
+// testRestoreOpts returns RestoreOpts for tests against the shared container.
+// ReconnectDB repoints testDB at the restored database so later tests use it;
+// nothing closes the shared container's connections.
+func testRestoreOpts(dsn string, skipPreRestore bool) backup.RestoreOpts {
+	return backup.RestoreOpts{
+		SkipPreRestore: skipPreRestore,
+		SetMaintenance: func(bool) {},
+		ShutdownPool:   func() {},
+		StopScheduler:  func() {},
+		CloseDB:        func() error { return nil },
+		ReconnectDB: func() (*bun.DB, error) {
+			sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
+			testDB = bun.NewDB(sqldb, pgdialect.New())
+			return testDB, nil
+		},
+		RebuildServices: func(*bun.DB) error { return nil },
+		ReinitMigrator:  func(*bun.DB) error { return nil },
+		SetAppState:     func(string) {},
+		MaxMigration:    "99999999999999",
+	}
+}
+
+// userIDs returns the ids in the users table, sorted.
+func userIDs(t *testing.T) []string {
+	t.Helper()
+	var ids []string
+	if err := testDB.NewSelect().Table("users").Column("id").Order("id").Scan(context.Background(), &ids); err != nil {
+		t.Fatalf("query users: %v", err)
+	}
+	return ids
+}
+
+func insertUser(t *testing.T, id string) {
+	t.Helper()
+	if _, err := testDB.ExecContext(context.Background(),
+		"INSERT INTO users (id, username, password_hash) VALUES (?, ?, 'x')", id, id); err != nil {
+		t.Fatalf("insert user %q: %v", id, err)
+	}
+}
+
 func TestRestoreBackup(t *testing.T) {
 	backup.CheckTools()
 	if !backup.PgDumpAvailable() || !backup.PsqlAvailable() {
@@ -255,60 +295,89 @@ func TestRestoreBackup(t *testing.T) {
 	}
 
 	truncateAllTables(t)
-	db := testDB
-	dsn := testDSN
 	backupDir := t.TempDir()
 	storageDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(storageDir, "cover_art"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	svc := backup.NewService(db, dsn, backupDir, storageDir, "0.1.0")
-
+	insertUser(t, "in-backup")
+	svc := backup.NewService(testDB, testDSN, backupDir, storageDir, "0.1.0")
 	id, err := svc.CreateBackup("manual")
 	if err != nil {
 		t.Fatalf("CreateBackup: %v", err)
 	}
 
-	ctx := context.Background()
-	_, _ = db.ExecContext(ctx, "INSERT INTO users (id) VALUES ('will-be-restored')")
-
-	var restoredDB *bun.DB
-	restoreOpts := backup.RestoreOpts{
-		SkipPreRestore: true,
-		SetMaintenance: func(bool) {},
-		ShutdownPool:   func() {},
-		StopScheduler:  func() {},
-		// Do NOT close testDB — the shared container must stay open for later tests.
-		CloseDB: func() error { return nil },
-		ReconnectDB: func() (*bun.DB, error) {
-			sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
-			restoredDB = bun.NewDB(sqldb, pgdialect.New())
-			// Reassign the shared testDB so subsequent tests use the new connection.
-			testDB = restoredDB
-			return restoredDB, nil
-		},
-		RebuildServices: func(*bun.DB) error { return nil },
-		ReinitMigrator:  func(*bun.DB) error { return nil },
-		SetAppState:     func(s string) {},
-		MaxMigration:    "99999999999999",
+	insertUser(t, "after-backup")
+	if got := userIDs(t); len(got) != 2 {
+		t.Fatalf("users before restore = %v, want both rows", got)
 	}
 
-	if err := svc.RestoreBackup(id, restoreOpts); err != nil {
+	if err := svc.RestoreBackup(id, testRestoreOpts(testDSN, true)); err != nil {
 		t.Fatalf("RestoreBackup: %v", err)
 	}
-	queryDB := restoredDB
-	if queryDB == nil {
-		queryDB = db
+
+	if got := userIDs(t); len(got) != 1 || got[0] != "in-backup" {
+		t.Errorf("users after restore = %v, want [in-backup]", got)
+	}
+}
+
+// TestRestoreFromUpload_WithPreRestoreBackup guards #1349: the pre-restore
+// backup used to get the uploaded archive's id (both were the time to the
+// second) and overwrite it, so the restore loaded the live database instead
+// of the upload and reported success.
+func TestRestoreFromUpload_WithPreRestoreBackup(t *testing.T) {
+	backup.CheckTools()
+	if !backup.PgDumpAvailable() || !backup.PsqlAvailable() {
+		t.Skip("pg_dump or psql not available")
 	}
 
-	var count int
-	err = queryDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE id = 'will-be-restored'").Scan(&count)
-	if err != nil {
-		t.Fatalf("query after restore: %v", err)
+	truncateAllTables(t)
+	backupDir := t.TempDir()
+	storageDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(storageDir, "cover_art"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if count != 0 {
-		t.Error("expected 'will-be-restored' row to be absent after restore")
+
+	insertUser(t, "from-upload")
+	svc := backup.NewService(testDB, testDSN, backupDir, storageDir, "0.1.0")
+	id, err := svc.CreateBackup("manual")
+	if err != nil {
+		t.Fatalf("CreateBackup: %v", err)
+	}
+	archivePath, err := svc.GetBackupPath(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploadPath := filepath.Join(t.TempDir(), "upload.tar.gz")
+	if err := os.Rename(archivePath, uploadPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := testDB.ExecContext(context.Background(), "DELETE FROM users"); err != nil {
+		t.Fatal(err)
+	}
+	insertUser(t, "live-row")
+
+	uploadID, err := svc.RestoreFromUpload(uploadPath, testRestoreOpts(testDSN, false))
+	if err != nil {
+		t.Fatalf("RestoreFromUpload: %v", err)
+	}
+
+	if got := userIDs(t); len(got) != 1 || got[0] != "from-upload" {
+		t.Errorf("users after restore = %v, want [from-upload]", got)
+	}
+
+	backups, err := svc.ListBackups()
+	if err != nil {
+		t.Fatalf("ListBackups: %v", err)
+	}
+	types := map[string]string{}
+	for _, b := range backups {
+		types[b.ID] = b.BackupType
+	}
+	if len(backups) != 2 || types[uploadID] != "manual" {
+		t.Errorf("backups after restore = %v, want the upload (%s, manual) and a pre_restore backup", types, uploadID)
 	}
 }
 

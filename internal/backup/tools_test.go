@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -83,6 +84,75 @@ func TestCopyFile_DstUnwritable(t *testing.T) {
 	err := copyFile(src, filepath.Join(tmpDir, "nonexistent", "dst.txt"))
 	if err == nil {
 		t.Fatal("expected error for unwritable destination")
+	}
+}
+
+// TestNoOverwrite guards #1349: an archive in the backup dir is never
+// replaced, whether by an upload move, its copy fallback, or a new backup.
+func TestNoOverwrite(t *testing.T) {
+	setup := func(t *testing.T) (src, dst string) {
+		t.Helper()
+		dir := t.TempDir()
+		src = filepath.Join(dir, "src.tar.gz")
+		dst = filepath.Join(dir, "dst.tar.gz")
+		if err := os.WriteFile(src, []byte("new"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dst, []byte("existing"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return src, dst
+	}
+	assertKept := func(t *testing.T, err error, src, dst string) {
+		t.Helper()
+		if !errors.Is(err, fs.ErrExist) {
+			t.Errorf("err = %v, want fs.ErrExist", err)
+		}
+		if data, _ := os.ReadFile(dst); string(data) != "existing" {
+			t.Errorf("dst = %q, want it untouched", data)
+		}
+		if src != "" {
+			if _, err := os.Stat(src); err != nil {
+				t.Errorf("src should be left in place: %v", err)
+			}
+		}
+	}
+
+	t.Run("moveNoReplace", func(t *testing.T) {
+		src, dst := setup(t)
+		assertKept(t, moveNoReplace(src, dst), src, dst)
+	})
+	t.Run("copyFile", func(t *testing.T) {
+		src, dst := setup(t)
+		assertKept(t, copyFile(src, dst), src, dst)
+	})
+	t.Run("createTarGz", func(t *testing.T) {
+		_, dst := setup(t)
+		base := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(base, "b"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(base, "b", "manifest.json"), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertKept(t, createTarGz(dst, base, "b"), "", dst)
+	})
+}
+
+func TestNewBackupIDUnique(t *testing.T) {
+	seen := map[string]bool{}
+	for range 100 {
+		id, err := newBackupID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := validateBackupID(id); err != nil {
+			t.Fatalf("generated id %q fails validation: %v", id, err)
+		}
+		if seen[id] {
+			t.Fatalf("duplicate id %q", id)
+		}
+		seen[id] = true
 	}
 }
 

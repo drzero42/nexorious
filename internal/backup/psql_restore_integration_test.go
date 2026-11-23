@@ -369,12 +369,6 @@ func TestRestoreBackup_BackslashCommandRollsBackToPreRestore(t *testing.T) {
 		}
 		return dump[:i+2] + `\! touch ` + marker + "\n" + dump[i+2:]
 	})
-	// Backup ids have one-second resolution, so the pre-restore backup taken
-	// below could reuse this id and overwrite the archive; move it aside.
-	id = "nexorious-backup-20000101-000000"
-	if err := os.Rename(archivePath, filepath.Join(backupDir, id+".tar.gz")); err != nil {
-		t.Fatal(err)
-	}
 
 	if _, err := testDB.ExecContext(ctx, "DELETE FROM users; INSERT INTO users (id, username, password_hash) VALUES ('live-row', 'live-row', 'x')"); err != nil {
 		t.Fatal(err)
