@@ -9,7 +9,7 @@ One run of background work started by a user or the system (a sync, an import, a
 _Avoid_: task, run, River job (the queue's unit of execution, of which one Job may have many)
 
 **Job item**:
-One unit of work inside a Job: one external game in a sync, one game in an import, one game in a refresh.
+One unit of work inside a Job: one external game in a sync, one game in an import, one game or one storefront in a refresh.
 _Avoid_: task, row, entry
 
 **Job kind**:
@@ -17,10 +17,10 @@ The sort of a Job (sync, import from a given source, export, metadata refresh, s
 _Avoid_: job type (one input to the kind, not the whole of it)
 
 **Dispatch**:
-Creating all of a Job's items. A Job cannot complete until its dispatch is done, even if every item created so far is finished.
+The first phase of a Job, in which its items are created. A Job cannot complete until its dispatch is done, even if every item created so far is finished. An export has no items: its dispatch is all of its work.
 
 **Item status**:
-While a Job item is unfinished, its status says who acts next: a worker (`pending`) or the user (`pending_review`). It never records a decision; a Resolution is kept apart from it, so a resolved item is `pending` again until a worker finishes it.
+While a Job item is unfinished, its status says who acts next: a worker (`pending`) or the user (`pending_review`). It never records a decision: a Resolution is kept apart from it.
 
 **Pending review**:
 A Job item a worker could not match to an IGDB game with confidence, waiting for the user to Resolve or Skip it. It keeps its Job from completing.
@@ -30,10 +30,10 @@ _Avoid_: unmatched, needs review
 The IGDB game the user chose for an item in Pending review. Resolving lets the item be finished. In a sync the choice is made by a Rematch.
 
 **Skip**:
-The user's decision to drop an item in Pending review without adding it to the library.
+The user's decision not to add a game to the library. It finishes the game's unfinished item; in a sync it also stands for later syncs, until the user removes it.
 
 **Finished**:
-A Job or Job item that nobody will act on again: completed, failed, skipped (items only), or cancelled.
+A Job or Job item whose work has ended: completed, failed, skipped (items only), or cancelled. Nothing acts on it again unless the user asks for a Retry.
 _Avoid_: terminal, done
 
 **Completion**:
@@ -46,7 +46,7 @@ A user stopping a Job before completion. Its unfinished items are cancelled with
 A Job ending because of an error. Its unfinished items are cancelled, as with Cancel.
 
 **Finishing effects**:
-What follows from a Job being completed or failed: its notifications, a sync's diff, an import's pools. They happen because the Job finished, never as part of an item's work.
+What follows from a Job being completed or failed, or coming to wait on the user: its notifications, a sync's diff, an import's pools. They happen because the Job reached that point, never as part of an item's work.
 
 **Retry**:
 Handing a Job's failed items back to a worker. Retrying reopens a completed Job until its next Completion. A failed or cancelled Job cannot be retried.
