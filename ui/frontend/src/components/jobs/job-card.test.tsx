@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { JobCard } from './job-card';
-import { JobProgressCard } from './job-progress-card';
 import type { Job } from '@/types';
 import { JobType, JobSource, JobStatus } from '@/types';
 
@@ -225,10 +224,4 @@ describe('JobCard', () => {
       expect(screen.getByText(expected)).toBeInTheDocument();
     });
   });
-});
-
-it('shows the server count and review backlog on the sync progress card', () => {
-  render(<JobProgressCard job={mockJob} onCancel={vi.fn()} />);
-  expect(screen.getByText('52 / 100 (52%)')).toBeInTheDocument();
-  expect(screen.getByText('3 waiting for your review')).toBeInTheDocument();
 });

@@ -35,8 +35,8 @@ const mockJobApi = {
     skipped: 2,
     failed: 0,
     total: 100,
-    done: 33,
-    percent: 50,
+    done: 52,
+    percent: 52,
   },
   total_items: 100,
   error_message: null,
@@ -58,8 +58,9 @@ const mockCompletedJobApi = {
     ...mockJobApi.progress,
     pending: 0,
     processing: 0,
-    completed: 100,
-    done: 50,
+    completed: 98,
+    pending_review: 0,
+    done: 100,
     percent: 100,
   },
 };
@@ -187,7 +188,7 @@ describe('use-jobs hooks', () => {
 
       expect(result.current.data?.id).toBe('job-1');
       expect(result.current.data?.jobType).toBe(JobType.SYNC);
-      expect(result.current.data?.progress.percent).toBe(50);
+      expect(result.current.data?.progress.percent).toBe(52);
     });
 
     it('does not fetch when jobId is undefined', () => {
