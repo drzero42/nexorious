@@ -243,6 +243,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	epicClient := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
+	// A sign-in or sync interrupted by a crash leaves its session directory,
+	// with the user's Epic credentials, behind (#1387).
+	if n := epicClient.RemoveStaleSessions(ctx, epicgamesstoresvc.StaleSessionAge); n > 0 {
+		slog.InfoContext(ctx, "epic: removed session directories left by an earlier crash", "count", n)
+	}
 	dispatchSyncWorker := &tasks.DispatchSyncWorker{
 		DB:      db,
 		Adapter: buildAdapterFactory(db, encrypter, epicClient),

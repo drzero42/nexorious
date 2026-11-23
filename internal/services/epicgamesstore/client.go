@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/drzero42/nexorious/internal/logging"
 )
@@ -85,6 +86,46 @@ func (s *session) Close() error {
 // (legendary appends "/legendary" to XDG_CONFIG_HOME itself).
 func (s *session) legendaryDir() string {
 	return filepath.Join(s.dir, "legendary")
+}
+
+// StaleSessionAge is how old a session directory must be before
+// RemoveStaleSessions deletes it: well beyond the longest sign-in or sync, so
+// an operation still running on another server that shares workDir is safe.
+const StaleSessionAge = time.Hour
+
+// RemoveStaleSessions deletes session directories older than olderThan. A
+// session normally removes itself, so one that remains was left by a server
+// that crashed mid-operation, and it still holds that user's legendary
+// credentials. Only session directories are touched. A directory that can't
+// be removed is logged and skipped; it returns how many were removed.
+func (c *Client) RemoveStaleSessions(ctx context.Context, olderThan time.Duration) int {
+	if !c.Configured() {
+		return 0
+	}
+	entries, err := os.ReadDir(c.workDir)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			slog.WarnContext(ctx, "epic: list work dir for stale sessions failed", logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
+		}
+		return 0
+	}
+	cutoff := time.Now().Add(-olderThan)
+	removed := 0
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), sessionPrefix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(c.workDir, e.Name())); err != nil {
+			slog.WarnContext(ctx, "epic: remove stale session dir failed", "dir", e.Name(), logging.KeyErr, err, logging.Cat(logging.CategoryConfig))
+			continue
+		}
+		removed++
+	}
+	return removed
 }
 
 // closeSession removes a session directory, logging a failure: the operation's

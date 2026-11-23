@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func openTestSession(t *testing.T) *session {
@@ -357,5 +358,59 @@ func TestParseLegendaryList_SkipsDLC(t *testing.T) {
 	}
 	if entries[0].ExternalID != "main123" {
 		t.Fatalf("kept entry ExternalID = %q, want main123 (the main game)", entries[0].ExternalID)
+	}
+}
+
+// A session left by a crash still holds credentials, so startup removes it;
+// a recent one may belong to another server sharing workDir and is kept.
+func TestRemoveStaleSessions(t *testing.T) {
+	workDir := t.TempDir()
+	old := time.Now().Add(-2 * time.Hour)
+	mk := func(name string, mtime time.Time) string {
+		dir := filepath.Join(workDir, name)
+		if err := os.MkdirAll(filepath.Join(dir, "legendary"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "legendary", "user.json"), []byte("secret"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(dir, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	stale := mk(sessionPrefix+"stale", old)
+	recent := mk(sessionPrefix+"recent", time.Now())
+	legacy := mk("user-1", old)
+	if err := os.WriteFile(filepath.Join(workDir, sessionPrefix+"file"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(workDir, sessionPrefix+"file"), old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := NewClient(workDir).RemoveStaleSessions(context.Background(), time.Hour); n != 1 {
+		t.Errorf("removed %d, want 1", n)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale session still present (stat err %v)", err)
+	}
+	for _, keep := range []string{recent, legacy, filepath.Join(workDir, sessionPrefix+"file")} {
+		if _, err := os.Stat(keep); err != nil {
+			t.Errorf("%s was removed: %v", keep, err)
+		}
+	}
+}
+
+func TestRemoveStaleSessions_NoWorkDir(t *testing.T) {
+	if n := NewClient("").RemoveStaleSessions(context.Background(), time.Hour); n != 0 {
+		t.Errorf("unset work dir: removed %d", n)
+	}
+	missing := filepath.Join(t.TempDir(), "absent")
+	if n := NewClient(missing).RemoveStaleSessions(context.Background(), time.Hour); n != 0 {
+		t.Errorf("missing work dir: removed %d", n)
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Error("sweep created the missing work dir")
 	}
 }

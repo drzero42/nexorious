@@ -478,7 +478,7 @@ All adapters implement the same interface. The differences below are the only pl
 ### Epic Games Store
 
 - **Prerequisites:** Requires the `LEGENDARY_WORK_DIR` environment variable to be set to a writable directory. If unset, Epic sync is disabled entirely — the adapter returns an error immediately and the storefront is unavailable in the UI
-- **Auth:** Managed by the Legendary CLI. Each sign-in and sync runs in its own fresh directory under `LEGENDARY_WORK_DIR`, removed when it finishes. A sync restores the encrypted session state snapshot from `user_sync_configs.storefront_credentials` into it, runs the CLI, then captures and re-encrypts the updated snapshot back to `storefront_credentials` — only if the stored sign-in is still the one the sync loaded, so a disconnect or reconnect during the sync wins
+- **Auth:** Managed by the Legendary CLI. Each sign-in and sync runs in its own fresh directory under `LEGENDARY_WORK_DIR`, removed when it finishes (one left behind by a crash is removed at the next startup once it is over an hour old). A sync restores the encrypted session state snapshot from `user_sync_configs.storefront_credentials` into it, runs the CLI, then captures and re-encrypts the updated snapshot back to `storefront_credentials` — only if the stored sign-in is still the one the sync loaded, so a disconnect or reconnect during the sync wins
 - **Library fetch:** `legendary list --json`; DLC entries are filtered out (identified by a non-empty `MainGameAppName`); the adapter chunks the output into batches of ≤10
 - **Rate limiting:** Handled internally by the Legendary CLI
 - **Platforms:** Epic does not expose per-game platform data; all entries are `pc-windows`
