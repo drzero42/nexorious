@@ -147,3 +147,61 @@ func TestStoreLinkRefreshDispatch_HandlerOwned_EmptyFinalizesCompleted(t *testin
 		t.Errorf("status: want completed, got %s", status)
 	}
 }
+
+// TestStoreLinkRefreshDispatch_HandlerOwned_UsersShareStorefront covers #1340:
+// the all-users refresh gives one item per (user, storefront), so two users
+// with the same storefront must not collide on job_items' UNIQUE (job_id,
+// item_key).
+func TestStoreLinkRefreshDispatch_HandlerOwned_UsersShareStorefront(t *testing.T) {
+	truncateAllTables(t)
+	ctx := context.Background()
+	adminID := insertMetaRefreshAdminUser(t)
+	otherID := uuid.NewString()
+	insertTestUser(t, testDB, otherID)
+
+	for _, uid := range []string{adminID, otherID} {
+		if _, err := testDB.NewRaw(
+			`INSERT INTO external_games (id, user_id, storefront, external_id, title, is_available, created_at, updated_at)
+			 VALUES (?, ?, 'steam', '440', 'Team Fortress 2', true, now(), now())`,
+			uuid.NewString(), uid,
+		).Exec(ctx); err != nil {
+			t.Fatalf("insert external_game: %v", err)
+		}
+	}
+
+	lc := newTestLC(t)
+	c, err := lc.CreateWithDispatch(ctx, joblifecycle.NewJob{
+		UserID: adminID, JobType: models.JobTypeStoreLinkRefresh, Source: models.JobSourceSystem, Priority: models.JobPriorityLow,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID := c.JobID
+	w := &tasks.StoreLinkRefreshDispatchWorker{DB: testDB, LC: lc}
+	if err := w.Work(ctx, riverJob(dispatchOwner(t, jobID), 1, tasks.StoreLinkRefreshDispatchArgs{Force: true, JobID: jobID})); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+
+	var items []struct {
+		UserID      string `bun:"user_id"`
+		ItemKey     string `bun:"item_key"`
+		SourceTitle string `bun:"source_title"`
+	}
+	if err := testDB.NewRaw(`SELECT user_id, item_key, source_title FROM job_items WHERE job_id = ? ORDER BY item_key`, jobID).Scan(ctx, &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("job_items: want 2, got %d", len(items))
+	}
+	for _, it := range items {
+		if want := it.UserID + ":steam"; it.ItemKey != want {
+			t.Errorf("item_key: want %q, got %q", want, it.ItemKey)
+		}
+		if it.SourceTitle != "steam" {
+			t.Errorf("source_title: want steam, got %q", it.SourceTitle)
+		}
+	}
+	if items[0].UserID == items[1].UserID {
+		t.Errorf("both items belong to user %s", items[0].UserID)
+	}
+}
