@@ -3,7 +3,7 @@ import { JobSource, NON_STOREFRONT_JOB_SOURCE_LABELS } from '@/types/jobs';
 
 /**
  * Returns a labeller for job sources. Storefront-typed sources (steam,
- * epic-games-store, gog, playstation-store, humble-bundle) resolve to the
+ * epic-games-store, gog, playstation-store, humble-bundle, amazon-games) resolve to the
  * catalog display_name — the single source of truth. Non-storefront origins
  * (manual, vglist, csv, ...) use a static label map.
  */

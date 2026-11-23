@@ -6,7 +6,7 @@ This document is the source of truth for how Nexorious syncs a user's game libra
 
 ## Overview
 
-Syncing imports a user's game library from an external storefront (Steam, PSN, GOG, Epic Games Store, or Humble Bundle) into Nexorious. The process fetches the library, matches each game to an entry in the IGDB game database, and creates or updates the user's Nexorious library accordingly.
+Syncing imports a user's game library from an external storefront (Steam, PSN, GOG, Epic Games Store, Humble Bundle, or Amazon Games) into Nexorious. The process fetches the library, matches each game to an entry in the IGDB game database, and creates or updates the user's Nexorious library accordingly.
 
 The sync pipeline is designed to be:
 
@@ -20,7 +20,7 @@ The sync pipeline is designed to be:
 
 | Term | Meaning |
 |---|---|
-| **Storefront** | An external game store: Steam, PSN, GOG, Epic Games Store, or Humble Bundle |
+| **Storefront** | An external game store: Steam, PSN, GOG, Epic Games Store, Humble Bundle, or Amazon Games |
 | **ExternalGame** | A game record fetched from a storefront; persisted across sync runs |
 | **ExternalGamePlatform** | A platform slug (e.g. `pc-windows`, `playstation-5`) that an ExternalGame is available on |
 | **Job** | A sync run for one user and one storefront; tracks overall progress and status |
@@ -374,6 +374,7 @@ All storefronts expose credential problems through a unified `credentials_error`
 | **GOG** | OAuth2 refresh token failure (refresh token expired or revoked) |
 | **Epic** | Decryption failure of `storefront_credentials`, or Legendary CLI reports an authentication failure |
 | **Humble Bundle** | Decryption failure of `storefront_credentials`, or the order API rejects the `_simpleauth_sess` session cookie (401/403); the cookie expires periodically and must be re-pasted |
+| **Amazon Games** | Decryption failure of `storefront_credentials`, or nile reports Amazon refused the refresh token (a 4xx on token refresh) or finds no signed-in user |
 
 When a credential error occurs mid-sync, the job is marked `failed` and all pending job_items are cancelled. The user must reconfigure their credentials before triggering a new sync.
 
@@ -398,6 +399,7 @@ A single `external_games.store_link` column holds whatever a store needs to buil
 | `epic-games-store` | product slug | `https://store.epicgames.com/en-US/p/{store_link}` |
 | `playstation-store` | concept ID | `https://store.playstation.com/en-us/concept/{store_link}` |
 | `humble-bundle` | — (always null) | no link |
+| `amazon-games` | — (always null) | no link |
 
 ### Ownership: enrichment is the sole writer
 
@@ -489,6 +491,18 @@ All adapters implement the same interface. The differences below are the only pl
 - **Playtime:** Not provided by Humble; always 0
 - **Store link:** none — there is no reliable public per-game store URL for the items ingested; `store_link` stays null and no link is rendered
 
+### Amazon Games
+
+- **Prerequisites:** The `nile` CLI (v1.2.0 or newer, from [imLinguin/nile](https://github.com/imLinguin/nile), the Amazon Games client Heroic uses) on the server's `PATH`. It is bundled in the container image. Without it Amazon sync is disabled: the connection endpoint reports `disabled` with reason `nile_not_installed`
+- **Auth:** Two steps. `POST /api/sync/amazon-games/connection/login` runs `nile auth --login --non-interactive`, which generates a device serial, client id and PKCE code verifier, and returns only the Amazon sign-in URL and an `attempt_id`: those three values, the user id and an expiry 15 minutes out, encrypted with the server's `DB_ENCRYPTION_KEY` (`crypto.Encrypter`), so nothing is kept server-side and any replica sharing the key can finish the sign-in, before or after a restart. The user signs in and pastes the amazon.com address they land on (or the bare `openid.oa2.authorization_code`) to `PUT /api/sync/amazon-games/connection`, which decrypts the attempt, checks it belongs to the caller and has not expired, runs `nile register` and stores nile's user data (device registration and tokens) encrypted in `storefront_credentials`. An attempt that does not decrypt, belongs to another user or has expired is a 409. Starting again does not cancel an earlier attempt; whichever finishes last is the stored sign-in
+- **Disconnect:** `DELETE /api/sync/amazon-games/connection` removes the stored sign-in and returns, then runs `nile auth --logout` with the removed sign-in in a temporary `NILE_CONFIG_PATH` (20-second limit) to deregister that device from the Amazon account. The sign-out is best effort: a failure is logged at warn and the disconnect has still succeeded. Without nile on the server the connection endpoint still reports a stored sign-in (`connected` with `disabled`), so it can be removed
+- **Library fetch:** For every nile call the adapter rebuilds nile's account files (`current_user.json` and the encrypted `<md5(user_id)>.enc`) in a fresh temporary `NILE_CONFIG_PATH`, runs `nile library sync --force`, reads `library.json`, and deletes the directory. nile reads every page of entitlements before it writes `library.json`, so the adapter delivers batches only once the whole library is read: a failure on any page fails the sync before Stage 1 sees anything, and nothing is marked removed. Each entitlement's Amazon product id is the `external_id`; duplicates are dropped; an entitlement with no title is sent as `Amazon product <id>` so it lands in review
+- **Token refresh:** nile refreshes an expired access token itself. The adapter persists the user data nile leaves behind before delivering any batch, even when the fetch then fails, and only onto the connection the sync loaded: if the user reconnected meanwhile, the new sign-in wins
+- **Platforms:** All entries are `pc-windows`
+- **Playtime:** Not provided; always 0
+- **Matching:** Title-based, as for Epic; IGDB has no Amazon Games external id
+- **Store link:** none; `store_link` stays null
+
 ### Microsoft Store (Xbox)
 
 > **Status:** not yet implemented. The notes below record what a spike (issue #752) validated end-to-end against a live Microsoft account, including the auth chain, the ownership/play-data endpoints, and the platform model. Storefront key is `microsoft-store` (already seeded; display name "Microsoft Store"). Treat the residual unknowns at the end as implementation to-dos.
@@ -539,7 +553,7 @@ The storefront name and a connection status badge. The badge is one of: **Connec
 Collapsible. Collapsed by default when the connection is working; expanded by default when the status is Credentials Error or Not Configured.
 
 Contains:
-- Storefront-specific credential input (e.g. API key for Steam, NPSSO token for PSN, OAuth flow for GOG and Epic)
+- Storefront-specific credential input (e.g. API key for Steam, NPSSO token for PSN, OAuth flow for GOG and Epic, an Amazon sign-in for Amazon Games)
 - Sync frequency setting (Manual / Hourly / Daily / Weekly)
 - Disconnect action
 

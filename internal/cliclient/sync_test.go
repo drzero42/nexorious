@@ -227,3 +227,23 @@ func TestResetSyncData(t *testing.T) {
 		t.Fatalf("ResetSyncData: %v", err)
 	}
 }
+
+func TestStartAmazonGamesLogin(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sync/amazon-games/connection/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"attempt_id": "att-1", "login_url": "https://amazon.com/ap/signin"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	login, err := New(srv.URL).StartAmazonGamesLogin(t.Context(), "k")
+	if err != nil {
+		t.Fatalf("StartAmazonGamesLogin: %v", err)
+	}
+	if login.AttemptID != "att-1" || login.LoginURL != "https://amazon.com/ap/signin" {
+		t.Errorf("login = %+v", login)
+	}
+}

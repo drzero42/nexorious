@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,7 @@ import (
 	"github.com/drzero42/nexorious/internal/crypto"
 	"github.com/drzero42/nexorious/internal/db/models"
 	"github.com/drzero42/nexorious/internal/logging"
+	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	"github.com/drzero42/nexorious/internal/worker/tasks"
 )
@@ -81,6 +83,35 @@ type HumbleClient interface {
 	Verify(ctx context.Context, sessionCookie string) error
 }
 
+// AmazonGamesClient abstracts the nile CLI calls used during Amazon Games
+// account connection.
+type AmazonGamesClient interface {
+	Configured() bool
+	// LoginURL starts a sign-in and returns its URL and the values nile needs
+	// to finish it, which must stay server-side.
+	LoginURL(ctx context.Context) (*AmazonGamesLogin, error)
+	// Register finishes the sign-in with the authorization code and returns
+	// the account and nile's user data, which the caller stores encrypted.
+	Register(ctx context.Context, code string, login AmazonGamesLogin) (*AmazonGamesAccount, json.RawMessage, error)
+	// Logout deregisters the device a stored sign-in (nile's user data)
+	// belongs to.
+	Logout(ctx context.Context, userData json.RawMessage) error
+}
+
+// AmazonGamesLogin is one sign-in attempt's state.
+type AmazonGamesLogin struct {
+	URL          string
+	ClientID     string
+	CodeVerifier string
+	Serial       string
+}
+
+// AmazonGamesAccount identifies a connected Amazon account.
+type AmazonGamesAccount struct {
+	UserID string
+	Name   string
+}
+
 var (
 	ErrInvalidNPSSOToken   = errors.New("invalid npsso token")
 	ErrSteamRateLimited    = errors.New("steam rate limited")
@@ -91,7 +122,7 @@ var (
 // supportedStorefronts is the ordered list of storefront slugs the sync API
 // accepts. validStorefronts is its set form, derived from the same source so the
 // two can never drift apart.
-var supportedStorefronts = []string{"steam", "playstation-store", "epic-games-store", "gog", "humble-bundle"}
+var supportedStorefronts = []string{"steam", "playstation-store", "epic-games-store", "gog", "humble-bundle", "amazon-games"}
 
 var validStorefronts = func() map[string]bool {
 	m := make(map[string]bool, len(supportedStorefronts))
@@ -208,11 +239,15 @@ type SyncHandler struct {
 	epicGamesStoreClient   EpicGamesStoreClient
 	gogClient              GOGClient
 	humbleClient           HumbleClient
+	amazonGamesClient      AmazonGamesClient
+	amazonLoginClock       func() time.Time // nil: time.Now
+	amazonSignOutTimeout   time.Duration    // 0: amazonSignOutLimit
+	amazonSignOuts         sync.WaitGroup   // device sign-outs still running after a disconnect
 }
 
 // NewSyncHandler constructs a SyncHandler.
-func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient) *SyncHandler {
-	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble}
+func NewSyncHandler(encrypter *crypto.Encrypter, db *bun.DB, riverClient *river.Client[pgx.Tx], steam SteamClient, playstationStore PlaystationStoreClient, epicGamesStore EpicGamesStoreClient, gog GOGClient, humble HumbleClient, amazonGames AmazonGamesClient) *SyncHandler {
+	return &SyncHandler{encrypter: encrypter, db: db, riverClient: riverClient, steamClient: steam, playstationStoreClient: playstationStore, epicGamesStoreClient: epicGamesStore, gogClient: gog, humbleClient: humble, amazonGamesClient: amazonGames}
 }
 
 // RegisterRoutes registers all sync routes on the given group.
@@ -233,6 +268,10 @@ func (h *SyncHandler) RegisterRoutes(g *echo.Group) {
 	g.PUT("/humble-bundle/connection", h.HandleHumbleConnect)
 	g.GET("/humble-bundle/connection", h.HandleGetHumbleConnection)
 	g.DELETE("/humble-bundle/connection", h.HandleHumbleDisconnect)
+	g.POST("/amazon-games/connection/login", h.HandleAmazonGamesLoginStart)
+	g.PUT("/amazon-games/connection", h.HandleAmazonGamesConnect)
+	g.GET("/amazon-games/connection", h.HandleGetAmazonGamesConnection)
+	g.DELETE("/amazon-games/connection", h.HandleAmazonGamesDisconnect)
 	g.GET("/ignored", h.HandleListIgnored)
 	g.POST("/ignored/:id", h.HandleSkipGame)
 	g.DELETE("/ignored/:id", h.HandleUnskipGame)
@@ -908,6 +947,278 @@ func (h *SyncHandler) HandleGetEpicGamesStoreConnection(c *echo.Context) error {
 				"display_name":      creds.DisplayName,
 			}, nil
 		})
+}
+
+// amazonLoginTTL bounds how long a started Amazon sign-in can be finished.
+const amazonLoginTTL = 15 * time.Minute
+
+// amazonLoginKind marks an attempt_id as an Amazon sign-in attempt, so no
+// other ciphertext made with the same key (a stored credential) is ever read
+// as one.
+const amazonLoginKind = "amazon-games-login"
+
+// maxAmazonAttemptIDLen bounds the attempt_id the finish will decrypt. A real
+// one is about 450 characters; the cap keeps a pasted multi-kilobyte value
+// from being decoded at all.
+const maxAmazonAttemptIDLen = 2048
+
+// amazonLoginAttempt is everything finishing an Amazon sign-in needs: the
+// client id, code verifier and serial nile generated, who started it and until
+// when it can be finished. The browser holds it encrypted with the server's
+// key as the attempt_id, so a start and a finish may reach different servers,
+// or one server either side of a restart. Starting again does not cancel an
+// earlier attempt; whichever finishes last is the stored sign-in.
+type amazonLoginAttempt struct {
+	Kind         string    `json:"kind"`
+	ClientID     string    `json:"client_id"`
+	CodeVerifier string    `json:"code_verifier"`
+	Serial       string    `json:"serial"`
+	UserID       string    `json:"user_id"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+// sealAmazonLogin returns the attempt_id for a sign-in userID just started.
+func (h *SyncHandler) sealAmazonLogin(userID string, login AmazonGamesLogin) (string, error) {
+	raw, err := json.Marshal(amazonLoginAttempt{
+		Kind:         amazonLoginKind,
+		ClientID:     login.ClientID,
+		CodeVerifier: login.CodeVerifier,
+		Serial:       login.Serial,
+		UserID:       userID,
+		ExpiresAt:    h.amazonLoginNow().Add(amazonLoginTTL),
+	})
+	if err != nil {
+		return "", err
+	}
+	return h.encrypter.Encrypt(raw)
+}
+
+// openAmazonLogin returns the sign-in an attempt_id carries, when it decrypts
+// with this server's key, is an Amazon sign-in attempt, was started by userID,
+// is complete and has not expired.
+func (h *SyncHandler) openAmazonLogin(userID, attemptID string) (AmazonGamesLogin, bool) {
+	if len(attemptID) > maxAmazonAttemptIDLen {
+		return AmazonGamesLogin{}, false
+	}
+	raw, err := h.encrypter.Decrypt(attemptID)
+	if err != nil {
+		return AmazonGamesLogin{}, false
+	}
+	var a amazonLoginAttempt
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return AmazonGamesLogin{}, false
+	}
+	if a.Kind != amazonLoginKind || a.UserID != userID ||
+		a.ClientID == "" || a.CodeVerifier == "" || a.Serial == "" ||
+		a.ExpiresAt.IsZero() || !h.amazonLoginNow().Before(a.ExpiresAt) {
+		return AmazonGamesLogin{}, false
+	}
+	return AmazonGamesLogin{ClientID: a.ClientID, CodeVerifier: a.CodeVerifier, Serial: a.Serial}, true
+}
+
+func (h *SyncHandler) amazonLoginNow() time.Time {
+	if h.amazonLoginClock != nil {
+		return h.amazonLoginClock()
+	}
+	return time.Now()
+}
+
+// amazonSignOutLimit bounds the best-effort device sign-out a disconnect
+// starts.
+const amazonSignOutLimit = 20 * time.Second
+
+// SetAmazonSignOutTimeoutForTest replaces amazonSignOutLimit.
+func (h *SyncHandler) SetAmazonSignOutTimeoutForTest(d time.Duration) {
+	h.amazonSignOutTimeout = d
+}
+
+// WaitForAmazonSignOutsForTest waits for every device sign-out a disconnect
+// started.
+func (h *SyncHandler) WaitForAmazonSignOutsForTest() {
+	h.amazonSignOuts.Wait()
+}
+
+// SetAmazonLoginClockForTest replaces the clock Amazon sign-in attempts are
+// stamped and expire by.
+func (h *SyncHandler) SetAmazonLoginClockForTest(now func() time.Time) {
+	h.amazonLoginClock = now
+}
+
+func (h *SyncHandler) amazonGamesConfigured() bool {
+	return h.amazonGamesClient != nil && h.amazonGamesClient.Configured()
+}
+
+// HandleAmazonGamesLoginStart is POST /sync/amazon-games/connection/login: it
+// starts an Amazon sign-in and returns the URL to open and the attempt id to
+// finish it with.
+func (h *SyncHandler) HandleAmazonGamesLoginStart(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	if !h.amazonGamesConfigured() {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "Amazon Games sync not available (nile not installed)")
+	}
+	login, err := h.amazonGamesClient.LoginURL(c.Request().Context())
+	if err != nil {
+		slog.ErrorContext(c.Request().Context(), "amazon: start sign-in failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
+		return echo.NewHTTPError(http.StatusBadGateway, "could not start an Amazon sign-in")
+	}
+	attemptID, err := h.sealAmazonLogin(userID, *login)
+	if err != nil {
+		slog.ErrorContext(c.Request().Context(), "amazon: seal sign-in attempt failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
+		return echo.NewHTTPError(http.StatusInternalServerError, "could not start an Amazon sign-in")
+	}
+	return c.JSON(http.StatusOK, map[string]string{
+		"attempt_id": attemptID,
+		"login_url":  login.URL,
+	})
+}
+
+// HandleAmazonGamesConnect is PUT /sync/amazon-games/connection: it finishes
+// the sign-in with the landing address (or bare code), registers the device
+// through nile, and stores nile's user data encrypted.
+func (h *SyncHandler) HandleAmazonGamesConnect(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	if !h.amazonGamesConfigured() {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "Amazon Games sync not available (nile not installed)")
+	}
+	var body struct {
+		AttemptID   string `json:"attempt_id"`
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := c.Bind(&body); err != nil || body.AttemptID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "attempt_id is required")
+	}
+	code, err := amazongamessvc.ParseAuthCode(body.RedirectURL)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	login, ok := h.openAmazonLogin(userID, body.AttemptID)
+	if !ok {
+		return echo.NewHTTPError(http.StatusConflict, "this Amazon sign-in has expired or cannot be finished here; start again")
+	}
+	account, userData, err := h.amazonGamesClient.Register(c.Request().Context(), code, login)
+	if err != nil {
+		slog.WarnContext(c.Request().Context(), "amazon: device registration failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
+		return echo.NewHTTPError(http.StatusBadRequest, "Amazon did not accept that sign-in; start again and paste the address you land on")
+	}
+	if err := h.persistStorefrontCredentials(context.Background(), userID, "amazon-games", userData); err != nil {
+		slog.ErrorContext(c.Request().Context(), "amazon: persist storefront credentials failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to persist Amazon Games connection")
+	}
+	return c.JSON(http.StatusOK, map[string]string{"username": account.Name})
+}
+
+// HandleGetAmazonGamesConnection is GET /sync/amazon-games/connection.
+func (h *SyncHandler) HandleGetAmazonGamesConnection(c *echo.Context) error {
+	if auth.UserIDFromContext(c) == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	if !h.amazonGamesConfigured() {
+		// Nothing can sign in or sync without nile, but a sign-in stored earlier
+		// is still reported so the page can offer to remove it.
+		st, err := h.loadConnectionStatus(context.Background(), auth.UserIDFromContext(c), "amazon-games")
+		if err != nil {
+			slog.ErrorContext(c.Request().Context(), "sync: load connection status failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryDB))
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to load Amazon Games connection")
+		}
+		return c.JSON(http.StatusOK, map[string]any{
+			"connected": st.Connected,
+			"disabled":  true,
+			"reason":    "nile_not_installed",
+		})
+	}
+	return h.serveConnectionStatus(c, "amazon-games",
+		map[string]any{"connected": false, "disabled": false},
+		map[string]any{"connected": true, "credentials_error": true, "disabled": false},
+		func(plaintext []byte, credentialsError bool) (any, error) {
+			// The stored credential is nile's user data; the account name is
+			// its customer_info.given_name.
+			var creds struct {
+				Extensions struct {
+					CustomerInfo struct {
+						GivenName string `json:"given_name"`
+					} `json:"customer_info"`
+				} `json:"extensions"`
+			}
+			if err := json.Unmarshal(plaintext, &creds); err != nil {
+				return nil, err
+			}
+			return map[string]any{
+				"connected":         true,
+				"disabled":          false,
+				"credentials_error": credentialsError,
+				"username":          creds.Extensions.CustomerInfo.GivenName,
+			}, nil
+		})
+}
+
+// HandleAmazonGamesDisconnect is DELETE /sync/amazon-games/connection. It
+// removes the stored sign-in and answers as the other stores do, then signs
+// that device out of Amazon in the background, best effort, so reconnecting
+// does not leave another registered device on the account. The sign-out uses
+// only the sign-in this disconnect removed: a reconnect stored meanwhile is
+// never touched, and a removal that failed signs nothing out.
+func (h *SyncHandler) HandleAmazonGamesDisconnect(c *echo.Context) error {
+	userID := auth.UserIDFromContext(c)
+	if userID == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+	}
+	removed, err := h.takeStorefrontCredentials(context.Background(), userID, "amazon-games")
+	if err != nil {
+		slog.ErrorContext(c.Request().Context(), "sync: disconnect failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryDB))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to disconnect amazon-games")
+	}
+	if removed != nil && h.amazonGamesConfigured() {
+		// Detached from the request so the answer does not wait for Amazon,
+		// keeping the request's logging values.
+		ctx := context.WithoutCancel(c.Request().Context())
+		h.amazonSignOuts.Go(func() { h.signOutAmazonDevice(ctx, *removed) })
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// takeStorefrontCredentials clears a storefront's stored credentials and
+// returns the ciphertext it cleared, in one statement, so nothing stored after
+// it can be returned. It returns nil when nothing was stored.
+func (h *SyncHandler) takeStorefrontCredentials(ctx context.Context, userID, sf string) (*string, error) {
+	var removed *string
+	err := h.db.NewRaw(
+		`UPDATE user_sync_configs u SET storefront_credentials = NULL, updated_at = now()
+		 FROM (SELECT id, storefront_credentials FROM user_sync_configs WHERE user_id = ? AND storefront = ? FOR UPDATE) old
+		 WHERE u.id = old.id
+		 RETURNING old.storefront_credentials`,
+		userID, sf,
+	).Scan(ctx, &removed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return removed, err
+}
+
+// signOutAmazonDevice runs nile's logout with a removed Amazon sign-in, under
+// a time limit; any failure is logged and otherwise ignored.
+func (h *SyncHandler) signOutAmazonDevice(ctx context.Context, ciphertext string) {
+	limit := amazonSignOutLimit
+	if h.amazonSignOutTimeout > 0 {
+		limit = h.amazonSignOutTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	userData, err := h.encrypter.Decrypt(ciphertext)
+	if err != nil {
+		slog.WarnContext(ctx, "amazon: device sign-out skipped: the removed sign-in does not decrypt", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryAuth))
+		return
+	}
+	if err := h.amazonGamesClient.Logout(ctx, userData); err != nil {
+		slog.WarnContext(ctx, "amazon: device sign-out after disconnect failed", logging.KeyErr, err, logging.KeySource, "amazon-games", logging.Cat(logging.CategoryExternalAPI))
+		return
+	}
+	slog.InfoContext(ctx, "amazon: device signed out after disconnect", logging.KeySource, "amazon-games")
 }
 
 func (h *SyncHandler) HandleListIgnored(c *echo.Context) error {

@@ -16,6 +16,7 @@ import {
   useEpicGamesStoreConnection,
   useGOGConnection,
   useHumbleStatus,
+  useAmazonGamesConnection,
   jobsKeys,
   useJobCompletionEffect,
   useStorefront,
@@ -27,6 +28,7 @@ import {
   GOGConnectionCard,
   PlaystationStoreConnectionCard,
   HumbleConnectionCard,
+  AmazonGamesConnectionCard,
   ExternalGamesSection,
 } from '@/components/sync';
 import { RecentActivity } from '@/components/jobs';
@@ -144,6 +146,9 @@ function SyncDetailPage() {
   // Fetch Humble Bundle status
   const { data: humbleStatus } = useHumbleStatus();
 
+  // Fetch Amazon Games connection status
+  const { data: amazonGamesConnection } = useAmazonGamesConnection();
+
   // Fetch job details if there's an active job
   const { data: activeJob } = useJob(status?.activeJobId ?? undefined, {
     enabled: !!status?.activeJobId,
@@ -192,7 +197,9 @@ function SyncDetailPage() {
     (storefront === SyncStorefront.EPIC_GAMES_STORE &&
       (epicGamesStoreConnection?.credentialsError ?? false)) ||
     (storefront === SyncStorefront.GOG && (gogConnection?.credentialsError ?? false)) ||
-    (storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false));
+    (storefront === SyncStorefront.HUMBLE && (humbleStatus?.credentialsError ?? false)) ||
+    (storefront === SyncStorefront.AMAZON_GAMES &&
+      (amazonGamesConnection?.credentialsError ?? false));
 
   const [connectionSectionOpen, setConnectionSectionOpen] = useState(false);
   const connectionOpenInitialized = useRef(false);
@@ -517,6 +524,16 @@ function SyncDetailPage() {
               onConnectionChange={() => {
                 queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
                 queryClient.invalidateQueries({ queryKey: syncKeys.humbleStatus() });
+              }}
+            />
+          )}
+
+          {/* Amazon Games Connection Card - only show for Amazon Games storefront */}
+          {storefront === SyncStorefront.AMAZON_GAMES && (
+            <AmazonGamesConnectionCard
+              isConfigured={config.isConfigured}
+              onConnectionChange={() => {
+                queryClient.invalidateQueries({ queryKey: syncKeys.config(storefront) });
               }}
             />
           )}

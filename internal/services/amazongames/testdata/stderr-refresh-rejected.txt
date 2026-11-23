@@ -1,0 +1,21 @@
+INFO [AUTH_MANAGER]:	 Refreshing token
+ERROR [AUTH_MANAGER]:	 Failed to refresh the token <Response [400]>
+INFO [LIBRARY]:	 Synchronizing library
+WARNING [LIBRARY]:	 Forcefully refreshing the library
+Traceback (most recent call last):
+  File "requests/models.py", line 965, in json
+  File "json/__init__.py", line 357, in loads
+  File "json/decoder.py", line 337, in decode
+  File "json/decoder.py", line 355, in raw_decode
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "cli.py", line 364, in <module>
+  File "cli.py", line 343, in main
+  File "cli.py", line 150, in handle_library
+  File "nile/api/library.py", line 120, in sync
+  File "requests/models.py", line 973, in json
+requests.exceptions.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+[PYI-1022927:ERROR] Failed to execute script 'cli' due to unhandled exception!

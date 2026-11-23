@@ -1,0 +1,411 @@
+// Package amazongames syncs an Amazon Games library through the nile CLI
+// (https://github.com/imLinguin/nile), the open-source Amazon Games client
+// Heroic uses, the way internal/services/epicgamesstore drives legendary.
+//
+// nile keeps its sign-in in its own config directory. Nexorious stores nile's
+// decrypted user data (the device registration and its tokens) encrypted in
+// user_sync_configs; for every nile call the client rebuilds nile's account
+// files in a fresh temporary NILE_CONFIG_PATH, runs nile, reads the possibly
+// refreshed user data back, and deletes the directory.
+package amazongames
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"syscall"
+	"time"
+)
+
+// ErrAuthFailed is returned when Amazon rejects the stored sign-in: the
+// refresh token was refused, or nile has no signed-in account to use.
+var ErrAuthFailed = errors.New("amazon: sign-in rejected")
+
+// Login is one sign-in attempt started by `nile auth --login --non-interactive`.
+// ClientID, CodeVerifier and Serial must be kept server-side until Register.
+type Login struct {
+	URL          string `json:"url"`
+	ClientID     string `json:"client_id"`
+	CodeVerifier string `json:"code_verifier"`
+	Serial       string `json:"serial"`
+}
+
+// Account identifies the Amazon account a registration belongs to.
+type Account struct {
+	UserID string
+	Name   string
+}
+
+// Entitlement is one game the Amazon account owns.
+type Entitlement struct {
+	ProductID string
+	Title     string
+}
+
+// runFunc runs nile with NILE_CONFIG_PATH set to configDir and returns its
+// stdout and stderr. err is non-nil when nile could not run or exited non-zero.
+type runFunc func(ctx context.Context, configDir string, args ...string) (stdout, stderr []byte, err error)
+
+// Client invokes the nile CLI as a subprocess.
+type Client struct {
+	run      runFunc
+	lookPath func(string) (string, error)
+}
+
+// NewClient returns a Client that runs the `nile` binary found on PATH.
+func NewClient() *Client {
+	return &Client{run: execNile, lookPath: exec.LookPath}
+}
+
+// Configured reports whether the nile binary is on PATH. Without it Amazon
+// sync is unavailable.
+func (c *Client) Configured() bool {
+	_, err := c.lookPath("nile")
+	return err == nil
+}
+
+// LoginURL starts a sign-in: nile generates a device serial, client id and
+// PKCE code verifier, and the Amazon sign-in URL built from them.
+func (c *Client) LoginURL(ctx context.Context) (*Login, error) {
+	dir, err := newConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	defer removeConfigDir(dir)
+
+	stdout, stderr, err := c.run(ctx, dir, "auth", "--login", "--non-interactive")
+	if err != nil {
+		return nil, fmt.Errorf("amazon: nile auth --login failed: %s", sanitize(lastLines(stderr), err.Error()))
+	}
+	var login Login
+	if err := json.Unmarshal(bytes.TrimSpace(stdout), &login); err != nil {
+		return nil, errors.New("amazon: nile auth --login printed no login data")
+	}
+	if login.URL == "" || login.ClientID == "" || login.CodeVerifier == "" || login.Serial == "" {
+		return nil, errors.New("amazon: nile auth --login printed incomplete login data")
+	}
+	return &login, nil
+}
+
+// Register finishes a sign-in with the authorization code Amazon put on the
+// landing address: `nile register` registers this device and writes the user
+// data, which is returned for the caller to store encrypted.
+func (c *Client) Register(ctx context.Context, code string, login Login) (*Account, json.RawMessage, error) {
+	dir, err := newConfigDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer removeConfigDir(dir)
+
+	// nile registers, writes the user data, and then syncs the whole library
+	// in the same command, which can take long enough for the caller to give
+	// up. Once usable user data is on disk the registration is done, so nile
+	// is stopped there.
+	runCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	go func() {
+		tick := time.NewTicker(registrationPoll)
+		defer tick.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-tick.C:
+				if data, err := readNileConfig(dir); err == nil && usableUserData(data) == nil {
+					stop()
+					return
+				}
+			}
+		}
+	}()
+	_, stderr, runErr := c.run(runCtx, dir, "register",
+		"--code", code,
+		"--client-id", login.ClientID,
+		"--code-verifier", login.CodeVerifier,
+		"--serial", login.Serial)
+	stop()
+
+	// nile registers, writes the user data, and then syncs the library in the
+	// same command; a failure in that trailing sync exits non-zero after the
+	// registration succeeded. The user data on disk is the registration's
+	// outcome, so it decides.
+	userData, readErr := readNileConfig(dir)
+	if readErr == nil {
+		readErr = usableUserData(userData)
+	}
+	if readErr != nil {
+		detail := lastLines(stderr)
+		if runErr != nil {
+			detail += "\n" + runErr.Error()
+		}
+		return nil, nil, fmt.Errorf("amazon: device registration failed: %s",
+			sanitize(detail, code, login.ClientID, login.CodeVerifier, login.Serial))
+	}
+	account, err := accountOf(userData)
+	if err != nil {
+		return nil, nil, err
+	}
+	return account, userData, nil
+}
+
+// Library reads the account's entitlements with `nile library sync --force`.
+// nile reads every page before it writes library.json, so the list is
+// complete or an error is returned. refreshed is nile's user data as it was
+// left after the run (nile refreshes an expired access token first); it is
+// returned whenever it can be read, even alongside an error, so the caller can
+// keep a refreshed token.
+func (c *Client) Library(ctx context.Context, userData json.RawMessage) (entitlements []Entitlement, refreshed json.RawMessage, err error) {
+	if _, err := accountOf(userData); err != nil {
+		return nil, nil, err
+	}
+	dir, err := newConfigDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer removeConfigDir(dir)
+
+	if err := writeNileConfig(dir, userData); err != nil {
+		return nil, nil, err
+	}
+
+	_, stderr, runErr := c.run(ctx, dir, "library", "sync", "--force")
+
+	// Only user data nile could sign in with again is handed back for storing:
+	// a blank token written over the stored one would break every later sync.
+	refreshed, readErr := readNileConfig(dir)
+	if readErr != nil || usableUserData(refreshed) != nil {
+		refreshed = nil
+	}
+	// A failed refresh means the access token nile used afterwards was
+	// expired, so whatever library it wrote cannot be trusted: nile 1.2.0 still
+	// writes `[]` when the failed response carries an empty entitlement list.
+	// Only a refusal (a 4xx) is a credentials problem; a 5xx or a connection
+	// failure is an ordinary error, retried by the next sync.
+	if isAuthFailure(stderr) {
+		return nil, refreshed, ErrAuthFailed
+	}
+	if bytes.Contains(stderr, []byte("Failed to refresh the token")) {
+		return nil, refreshed, errors.New("amazon: nile could not refresh its access token; no library was read")
+	}
+	secrets := secretsOf(userData)
+	if runErr != nil {
+		return nil, refreshed, fmt.Errorf("amazon: nile library sync failed: %s",
+			sanitize(lastLines(stderr)+"\n"+runErr.Error(), secrets...))
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, "nile", "library.json")) //nolint:gosec // path inside the temp config dir this call created
+	if err != nil {
+		return nil, refreshed, errors.New("amazon: nile library sync wrote no library")
+	}
+	entitlements, err = parseLibrary(raw)
+	if err != nil {
+		return nil, refreshed, err
+	}
+	return entitlements, refreshed, nil
+}
+
+// Logout deregisters the device userData belongs to with `nile auth --logout`,
+// which first refreshes an expired access token. nile removes its signed-in
+// user only when Amazon accepts the deregistration, and exits 0 without a word
+// when Amazon refuses, so the files it leaves behind decide, not its exit code.
+func (c *Client) Logout(ctx context.Context, userData json.RawMessage) error {
+	if _, err := accountOf(userData); err != nil {
+		return err
+	}
+	dir, err := newConfigDir()
+	if err != nil {
+		return err
+	}
+	defer removeConfigDir(dir)
+
+	if err := writeNileConfig(dir, userData); err != nil {
+		return err
+	}
+	_, stderr, runErr := c.run(ctx, dir, "auth", "--logout")
+	if _, statErr := os.Stat(filepath.Join(dir, "nile", "current_user.json")); errors.Is(statErr, os.ErrNotExist) {
+		return nil
+	}
+	detail := lastLines(stderr)
+	if runErr != nil {
+		detail += "\n" + runErr.Error()
+	}
+	if detail == "" {
+		detail = "Amazon did not accept the deregistration"
+	}
+	return fmt.Errorf("amazon: nile could not deregister the device: %s", sanitize(detail, secretsOf(userData)...))
+}
+
+// parseLibrary reads nile's library.json: a list of entitlements, each with
+// the product it grants. Anything but a list whose every entry names its
+// product is refused: the worker marks every game a sync does not return as
+// removed, so a `null` read as an empty library, or a dropped entry, would
+// remove games the user owns.
+func parseLibrary(raw []byte) ([]Entitlement, error) {
+	if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("[")) {
+		return nil, errors.New("amazon: nile library.json is not a list of entitlements")
+	}
+	var games []struct {
+		Product struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"product"`
+	}
+	if err := json.Unmarshal(raw, &games); err != nil {
+		return nil, errors.New("amazon: nile library.json is not a list of entitlements")
+	}
+	out := make([]Entitlement, 0, len(games))
+	for i, g := range games {
+		if g.Product.ID == "" || strings.TrimSpace(g.Product.ID) != g.Product.ID {
+			return nil, fmt.Errorf("amazon: nile library.json entry %d has no product id", i)
+		}
+		out = append(out, Entitlement{ProductID: g.Product.ID, Title: g.Product.Title})
+	}
+	return out, nil
+}
+
+// refreshRejected matches nile's log line when Amazon answers a token refresh
+// with a 4xx (an invalid or revoked refresh token). A connection failure logs
+// the same prefix without "<Response [4", and is not a credentials problem.
+var refreshRejected = regexp.MustCompile(`Failed to refresh the token <Response \[4\d\d\]>`)
+
+func isAuthFailure(stderr []byte) bool {
+	return refreshRejected.Match(stderr) || bytes.Contains(stderr, []byte("User not logged in"))
+}
+
+// registrationPoll is how often Register checks whether nile has written the
+// registration yet.
+const registrationPoll = 200 * time.Millisecond
+
+// nileWaitDelay bounds how long a cancelled nile call waits for its output
+// pipes to close after the process group was killed.
+const nileWaitDelay = 2 * time.Second
+
+// execNile runs the real nile binary.
+func execNile(ctx context.Context, configDir string, args ...string) ([]byte, []byte, error) {
+	return runNile(ctx, "nile", configDir, args...)
+}
+
+// runNile runs bin in its own process group. When ctx ends the whole group is
+// killed, not just bin: nile's standalone release is a PyInstaller launcher
+// whose Python child would otherwise keep running and hold the output pipes
+// open, so the call would outlive its deadline. WaitDelay bounds the wait for
+// those pipes in any case.
+func runNile(ctx context.Context, bin, configDir string, args ...string) ([]byte, []byte, error) {
+	cmd := exec.CommandContext(ctx, bin, args...) //nolint:gosec // fixed binary; args are nile subcommands and values nile itself generated or Amazon returned
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = nileWaitDelay
+	// TMPDIR points into the per-call folder the caller deletes, so what a
+	// killed PyInstaller nile extracted (its _MEI folder) goes with it.
+	cmd.Env = append(os.Environ(), "NILE_CONFIG_PATH="+configDir, "TMPDIR="+configDir)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), err
+}
+
+// tempBases are the folders a call's folder may be made in: TMPDIR, TEMP and
+// TMP, the order a PyInstaller nile reads them in, then /tmp itself (not
+// os.TempDir, which would read a stale TMPDIR again).
+// Its extracted runtime goes in the call folder (see runNile), so it lands
+// where the host allows it to run, even when /tmp is mounted noexec.
+func tempBases() []string {
+	var bases []string
+	for _, name := range []string{"TMPDIR", "TEMP", "TMP"} {
+		if v := os.Getenv(name); v != "" {
+			bases = append(bases, v)
+		}
+	}
+	return append(bases, "/tmp")
+}
+
+func newConfigDir() (string, error) {
+	// The first folder a call folder can be made in wins; one that is missing
+	// or unwritable is passed over, as PyInstaller would.
+	var dir string
+	var err error
+	for _, base := range tempBases() {
+		if dir, err = os.MkdirTemp(base, "nexorious-nile-"); err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return "", fmt.Errorf("amazon: create nile config dir: %w", err)
+	}
+	// nile downloads the Amazon Games SDK into <config>/nile/SDK on start
+	// unless that directory exists; Nexorious never installs games, so an
+	// empty one skips the download.
+	if err := os.MkdirAll(filepath.Join(dir, "nile", "SDK"), 0o700); err != nil {
+		removeConfigDir(dir)
+		return "", fmt.Errorf("amazon: create nile config dir: %w", err)
+	}
+	return dir, nil
+}
+
+func removeConfigDir(dir string) {
+	_ = os.RemoveAll(dir) //nolint:errcheck // best-effort removal of a temp dir; nothing to surface
+}
+
+// lastLines keeps the end of nile's stderr, where its error and a Python
+// traceback's final exception line are.
+func lastLines(stderr []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(stderr)), "\n")
+	if len(lines) > 4 {
+		lines = lines[len(lines)-4:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// tokenLike matches values that must never reach an error, a log line or a
+// job: Amazon tokens (Atna|…, Atnr|…, Atc|…), long hex strings (device serials
+// and client ids) and long base64 runs (private keys, ADP tokens).
+var tokenLike = regexp.MustCompile(`At[a-z]{1,3}\|[^\s"',}]+|[0-9A-Fa-f]{24,}|[A-Za-z0-9+/=_-]{48,}`)
+
+// sanitize removes every known secret, then anything shaped like one.
+func sanitize(text string, secrets ...string) string {
+	for _, s := range secrets {
+		if s != "" {
+			text = strings.ReplaceAll(text, s, "[redacted]")
+		}
+	}
+	return strings.TrimSpace(tokenLike.ReplaceAllString(text, "[redacted]"))
+}
+
+// secretsOf lists the user data's secret values, for sanitize.
+func secretsOf(userData json.RawMessage) []string {
+	var u struct {
+		Tokens struct {
+			Bearer struct {
+				AccessToken  string `json:"access_token"`
+				RefreshToken string `json:"refresh_token"`
+			} `json:"bearer"`
+			MacDMS struct {
+				DevicePrivateKey string `json:"device_private_key"`
+				ADPToken         string `json:"adp_token"`
+			} `json:"mac_dms"`
+		} `json:"tokens"`
+		Extensions struct {
+			DeviceInfo struct {
+				Serial string `json:"device_serial_number"`
+			} `json:"device_info"`
+		} `json:"extensions"`
+	}
+	if err := json.Unmarshal(userData, &u); err != nil {
+		return nil
+	}
+	return []string{
+		u.Tokens.Bearer.AccessToken, u.Tokens.Bearer.RefreshToken,
+		u.Tokens.MacDMS.DevicePrivateKey, u.Tokens.MacDMS.ADPToken,
+		u.Extensions.DeviceInfo.Serial,
+	}
+}

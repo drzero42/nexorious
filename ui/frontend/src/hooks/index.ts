@@ -73,6 +73,10 @@ export {
   useConnectHumble,
   useHumbleStatus,
   useDisconnectHumble,
+  useAmazonGamesConnection,
+  useStartAmazonGamesLogin,
+  useConnectAmazonGames,
+  useDisconnectAmazonGames,
   useResetSyncData,
 } from './use-sync';
 

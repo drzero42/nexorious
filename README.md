@@ -26,7 +26,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 - **Stop buying games you already own.** Before grabbing that bundle or sale, check Nexorious to see whether — and on which storefront — you already own the game.
 - **Search, don't type.** Add a game by searching for it — Nexorious pulls everything from IGDB automatically: cover art, descriptions, release dates, genres, ratings, and time-to-beat estimates. Your collection looks complete without manual data entry.
 - **Own your data.** Self-hosted, single binary, no third-party cloud, MIT-licensed.
-- **Automatic library sync** from Steam, PlayStation Network, GOG, and Epic Games Store today, with more sources on the way.
+- **Automatic library sync** from Steam, PlayStation Network, GOG, Epic Games Store, Humble Bundle, and Amazon Games today, with more sources on the way.
 - **Migrating from another tracker?** Whether you're leaving Darkadia (RIP), vglist, Grouvee, or Completionator, your collection doesn't have to stay behind. Export your library and import it straight into Nexorious — games, platforms, ratings, notes, and the date you added each game come across. Known formats are recognised automatically, and any other tracker's CSV can be mapped column-by-column.
 - **You want to know how bad your pile of shame is.** Nexorious counts the games you own but have never played, so you can confront — and maybe finally shrink — your backlog.
 
@@ -47,7 +47,7 @@ It is **not** a launcher or a library manager. Nexorious never installs, downloa
 ## Features
 
 - **Multi-Platform Game Tracking**: Support for Steam, Epic Games Store, PlayStation, Xbox, Nintendo, GOG, and physical media
-- **Sync Integrations**: Automatic library sync from Steam, PlayStation Network (PSN), GOG, and Epic Games Store (via legendary-gl)
+- **Sync Integrations**: Automatic library sync from Steam, PlayStation Network (PSN), GOG, Humble Bundle, Epic Games Store (via legendary-gl), and Amazon Games (via nile)
 - **Rich Game Discovery**: Search and import games from IGDB's extensive database with automatic metadata population
 - **Progress Tracking**: Track play status, personal ratings, time played, and detailed notes
 - **Import & Export**: Export your collection to JSON or CSV; import from Nexorious's own JSON or CSV, a vglist JSON export, a Darkadia, Grouvee, or Completionator CSV, or any other tracker's CSV via column mapping

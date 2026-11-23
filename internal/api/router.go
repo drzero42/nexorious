@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -26,6 +27,7 @@ import (
 	migrate "github.com/drzero42/nexorious/internal/migrate"
 	"github.com/drzero42/nexorious/internal/notify"
 	"github.com/drzero42/nexorious/internal/observability"
+	amazongamessvc "github.com/drzero42/nexorious/internal/services/amazongames"
 	epicgamesstoresvc "github.com/drzero42/nexorious/internal/services/epicgamesstore"
 	gogsvc "github.com/drzero42/nexorious/internal/services/gog"
 	humblesvc "github.com/drzero42/nexorious/internal/services/humble"
@@ -505,7 +507,7 @@ func registerRoutes(e *echo.Echo, encrypter *crypto.Encrypter, cfg *config.Confi
 		epicSvc := epicgamesstoresvc.NewClient(cfg.LegendaryWorkDir)
 		gogSvc := gogsvc.NewClient()
 		humbleSvc := humblesvc.NewClient()
-		synch := NewSyncHandler(encrypter, db, riverClient, &steamClientAdapter{c: steamSvc}, &playstationStoreClientAdapter{c: psnSvc}, &epicGamesStoreClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc}, &humbleClientAdapter{c: humbleSvc})
+		synch := NewSyncHandler(encrypter, db, riverClient, &steamClientAdapter{c: steamSvc}, &playstationStoreClientAdapter{c: psnSvc}, &epicGamesStoreClientAdapter{c: epicSvc}, &gogClientAdapter{c: gogSvc}, &humbleClientAdapter{c: humbleSvc}, &amazonGamesClientAdapter{c: amazongamessvc.NewClient()})
 		syncGroup := e.Group("/api/sync", auth.AuthMiddleware(db))
 		synch.RegisterRoutes(syncGroup)
 
@@ -607,6 +609,36 @@ func (a *humbleClientAdapter) Verify(ctx context.Context, sessionCookie string) 
 		return ErrInvalidHumbleCookie
 	}
 	return err
+}
+
+// amazonGamesClientAdapter bridges amazongamessvc.Client to the AmazonGamesClient interface
+// without creating an import cycle between internal/api and internal/services/amazongames.
+type amazonGamesClientAdapter struct{ c *amazongamessvc.Client }
+
+func (a *amazonGamesClientAdapter) Configured() bool {
+	return a.c.Configured()
+}
+
+func (a *amazonGamesClientAdapter) LoginURL(ctx context.Context) (*AmazonGamesLogin, error) {
+	l, err := a.c.LoginURL(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &AmazonGamesLogin{URL: l.URL, ClientID: l.ClientID, CodeVerifier: l.CodeVerifier, Serial: l.Serial}, nil
+}
+
+func (a *amazonGamesClientAdapter) Register(ctx context.Context, code string, login AmazonGamesLogin) (*AmazonGamesAccount, json.RawMessage, error) {
+	account, userData, err := a.c.Register(ctx, code, amazongamessvc.Login{
+		URL: login.URL, ClientID: login.ClientID, CodeVerifier: login.CodeVerifier, Serial: login.Serial,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return &AmazonGamesAccount{UserID: account.UserID, Name: account.Name}, userData, nil
+}
+
+func (a *amazonGamesClientAdapter) Logout(ctx context.Context, userData json.RawMessage) error {
+	return a.c.Logout(ctx, userData)
 }
 
 func spaHandler() echo.HandlerFunc {

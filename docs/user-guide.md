@@ -13,7 +13,7 @@ Nexorious is built around a simple idea: a **library** of the games you own and 
 If you've just got an account, here's your first ten minutes:
 
 1. **Sign in** with your username and password.
-2. **Choose how to fill your library.** If your collection already lives on Steam, GOG, Epic, PlayStation, or Humble Bundle, go to **Sync** and connect an account — for most people that's the quickest way to get going, since it pulls your whole purchase history in at once. If you only want to track a handful of titles, use **Add Game** to search for them instead. You can do both, and add more anytime.
+2. **Choose how to fill your library.** If your collection already lives on Steam, GOG, Epic, PlayStation, Humble Bundle, or Amazon Games, go to **Sync** and connect an account — for most people that's the quickest way to get going, since it pulls your whole purchase history in at once. If you only want to track a handful of titles, use **Add Game** to search for them instead. You can do both, and add more anytime.
 3. **Review any sync matches.** A sync brings most games in automatically; the few Nexorious isn't sure about wait in a **Needs Review** list for you to confirm. Clearing it once leaves your library tidy.
 4. **Explore your Library.** Browse, search, and filter your collection, and start tracking where you are with each game using its **play status**.
 
@@ -29,7 +29,7 @@ Once you're in, everything is reachable from the sidebar on the left (it collaps
 - **Library** — your full collection, where you search, filter, and sort.
 - **Wishlist** — games you want but don't own yet.
 - **Add Game** — search IGDB and add a game to your library or wishlist.
-- **Sync** — connect your Steam, PlayStation, GOG, Epic, and Humble Bundle accounts so your purchases flow in automatically.
+- **Sync** — connect your Steam, PlayStation, GOG, Epic, Humble Bundle, and Amazon accounts so your purchases flow in automatically.
 - **Tags** — your own labels for organising games.
 - **Import / Export** — bring a collection in from a file, or take yours out.
 
@@ -154,7 +154,7 @@ When you set a game's [play status](#tracking-your-progress) to **Completed**, *
 
 Sync is what makes Nexorious worth running if your games are spread across several stores: connect an account once and your purchases there show up in your library automatically, enriched with IGDB metadata. Each person connects their own accounts — your credentials are yours and are stored encrypted on the server.
 
-The **Sync** page shows a card for each supported service — **Steam**, **Epic Games Store**, **PlayStation Store**, **GOG**, and **Humble Bundle** — with its connection status, when it last synced, and how many games are waiting for your attention.
+The **Sync** page shows a card for each supported service — **Steam**, **Epic Games Store**, **PlayStation Store**, **GOG**, **Humble Bundle**, and **Amazon Games** — with its connection status, when it last synced, and how many games are waiting for your attention.
 
 ### Connecting a service
 
@@ -164,6 +164,7 @@ Open a service to connect it. What you provide depends on the store:
 - **PlayStation Network** — an NPSSO token from your signed-in PSN session; the page links to instructions for retrieving it.
 - **GOG** and **Epic Games Store** — open the login page Nexorious gives you, sign in at the store, then paste the authorization code (or the redirect URL you land on) back into Nexorious.
 - **Humble Bundle** — sign in to bring across your Humble purchases.
+- **Amazon Games** — choose **Sign in with Amazon**, open the Amazon sign-in page it links to, sign in, then paste the full address of the amazon.com page you land on back into Nexorious within 15 minutes. This brings across your Amazon Games purchases and Prime Gaming claims.
 
 Once connected, the card shows your account on that service and a way to disconnect.
 

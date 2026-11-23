@@ -41,6 +41,12 @@ var storefrontCreds = map[string][]storefrontCredField{
 	"humble-bundle": {
 		{bodyKey: "session_cookie", flagName: "session-cookie", label: "Humble session cookie", secret: true},
 	},
+	// amazon-games is two steps: without --attempt-id, connect first starts a
+	// sign-in (startAmazonGamesLogin) and fills it in.
+	"amazon-games": {
+		{bodyKey: "attempt_id", flagName: "attempt-id", label: "Sign-in attempt id", secret: false},
+		{bodyKey: "redirect_url", flagName: "redirect-url", label: "Address Amazon took you to", secret: false},
+	},
 }
 
 func newSyncCmd() *cobra.Command {
@@ -86,7 +92,9 @@ Flag reference by storefront:
   playstation-store  --npsso
   epic-games-store   --auth-code
   gog                --auth-code
-  humble-bundle      --session-cookie`,
+  humble-bundle      --session-cookie
+  amazon-games       --redirect-url (and --attempt-id from an earlier run);
+                     without --attempt-id it prints the Amazon sign-in address first`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
@@ -103,6 +111,13 @@ Flag reference by storefront:
 			fields, ok := storefrontCreds[sf]
 			if !ok {
 				return fmt.Errorf("no credential fields defined for storefront %q", sf)
+			}
+
+			if sf == "amazon-games" {
+				done, err := startAmazonGamesLogin(cmd, c, p.Key)
+				if err != nil || done {
+					return err
+				}
 			}
 
 			src := cmd.InOrStdin()
@@ -156,7 +171,41 @@ Flag reference by storefront:
 	f.String("npsso", "", "PSN npsso token (playstation-store only)")
 	f.String("auth-code", "", "Auth code (epic-games-store, gog)")
 	f.String("session-cookie", "", "Session cookie (humble-bundle only)")
+	f.String("attempt-id", "", "Sign-in attempt id from an earlier run (amazon-games only)")
+	f.String("redirect-url", "", "Address Amazon took you to after signing in (amazon-games only)")
 	return cmd
+}
+
+// startAmazonGamesLogin starts an Amazon sign-in unless --attempt-id names one,
+// prints the address to open, and sets --attempt-id for the field loop, which
+// then prompts for the address. Off a TTY there is nothing to read the address
+// from, so it prints the command that finishes the sign-in and reports done.
+func startAmazonGamesLogin(cmd *cobra.Command, c *cliclient.Client, key string) (done bool, err error) {
+	out := cmd.OutOrStdout()
+	attempt, _ := cmd.Flags().GetString("attempt-id") //nolint:errcheck // absent flag yields ""
+	if attempt != "" {
+		return false, nil
+	}
+	if redirect, _ := cmd.Flags().GetString("redirect-url"); redirect != "" { //nolint:errcheck // absent flag yields ""
+		// An address only finishes the attempt it was signed in for.
+		return false, errors.New("--redirect-url needs the --attempt-id printed with its sign-in address; run without --redirect-url to start one")
+	}
+	login, err := c.StartAmazonGamesLogin(cmd.Context(), key)
+	if err != nil {
+		return false, fmt.Errorf("start Amazon sign-in failed: %w", err)
+	}
+	fmt.Fprintf(out, "Open this address, sign in to Amazon, then copy the address of the page you land on:\n\n  %s\n\n", login.LoginURL)
+	if !interactive(cmd) {
+		// The attempt is encrypted with the key of the server this profile
+		// points at, so the finish command must name the same profile.
+		profile := ""
+		if name, _ := cmd.Flags().GetString("profile"); name != "" { //nolint:errcheck // absent flag yields ""
+			profile = " --profile '" + strings.ReplaceAll(name, "'", `'\''`) + "'"
+		}
+		fmt.Fprintf(out, "Then, within 15 minutes, run:\n  nexctl%s sync connect amazon-games --attempt-id %s --redirect-url '<address>'\n", profile, login.AttemptID)
+		return true, nil
+	}
+	return false, cmd.Flags().Set("attempt-id", login.AttemptID)
 }
 
 func newSyncDisconnectCmd() *cobra.Command {

@@ -1,0 +1,24 @@
+--- a/nile/api/library.py
++++ b/nile/api/library.py
+@@ -117,6 +117,10 @@
+                 token,
+                 request_data,
+             )
++            if not response.ok:
++                self.logger.error("There was an error syncing library")
++                self.logger.debug(response.content)
++                return
+             json_data = response.json()
+             new_games = json_data["entitlements"]
+             if not new_games and sync_point:
+@@ -129,10 +133,6 @@
+                 self.logger.info("Got next token in response, making next request")
+                 next_token = json_data["nextToken"]
+ 
+-            if not response.ok:
+-                self.logger.error("There was an error syncing library")
+-                self.logger.debug(response.content)
+-                return
+         # Remove duplicates
+         games_dict = dict()
+         for game in games:
