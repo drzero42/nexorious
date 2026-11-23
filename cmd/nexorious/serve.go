@@ -466,24 +466,17 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// River start gate — waits for Ready && !NeedsSetup. The gate watches
 	// shutdownCtx so it stops polling if the process is shutting down, but starts
 	// River on riverCtx so SIGTERM doesn't hard-cancel jobs the moment they begin.
-	go func(watchCtx, riverCtx context.Context) {
-		for {
-			select {
-			case <-watchCtx.Done():
-				return
-			default:
-			}
-			if migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() {
-				scheduler.RecoverInterruptedSyncs(context.Background(), db, riverClient)
-				if err := riverClient.Start(riverCtx); err != nil {
-					slog.Error("failed to start River client", logging.KeyErr, err)
-				}
-				slog.Info("app ready — River client started")
-				return
-			}
-			time.Sleep(2 * time.Second)
-		}
-	}(shutdownCtx, riverCtx)
+	gate := riverStartGate{
+		ready: func() bool { return migrator.State() == migrate.AppStateReady && !migrator.NeedsSetup() },
+		runRecovery: func() {
+			scheduler.RecoverInterruptedSyncs(context.Background(), db, riverClient)
+		},
+		start:      func() error { return riverClient.Start(riverCtx) },
+		poll:       2 * time.Second,
+		minBackoff: 2 * time.Second,
+		maxBackoff: time.Minute,
+	}
+	go gate.run(shutdownCtx)
 
 	if cfg.PprofEnabled {
 		startPprofServer(cfg.PprofAddr)
